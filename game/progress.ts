@@ -103,8 +103,8 @@ export interface Progress {
    * of the mission's pot (missionXp), the rung multiplies it, a random
    * map adds a quarter (grantRunReward), and it only ever goes up. The player's LEVEL is read off it through
    * the curve in economy.ts, and the level is a rung on the track
-   * (track.ts) — every map, pace and upgrade the save has is a function
-   * of this number. Nothing is stored twice.
+   * (track.ts) — every map, pace, turret, mod and relic the save has is a
+   * function of this number. Nothing is stored twice.
    */
   xp: number;
   /**
@@ -223,7 +223,7 @@ const fresh = (): Progress => ({
 
 /**
  * THE DEV SWITCH: on a dev build every save plays at the top of the track
- * — every map open, every pace, every upgrade — so any map and any rung
+ * — every map open, every pace, every module — so any map and any rung
  * can be reached without grinding first. Never in production. Its effect
  * is read at effectiveLevel and NEVER written into a save.
  */
@@ -504,7 +504,7 @@ export const levelOf = (p: Progress): number => levelForXp(p.xp);
 /**
  * THE LEVEL THE SAVE PLAYS AT: its real one, or the top of the track
  * while the dev switch is on. Every question about what the save may do
- * — which maps, which paces, which upgrades — is asked of this, and the
+ * — which maps, which paces, which modules — is asked of this, and the
  * printed level (levelOf) stays honest underneath.
  */
 export const effectiveLevel = (p: Progress): number =>

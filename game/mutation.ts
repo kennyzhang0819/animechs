@@ -1309,7 +1309,7 @@ export const SHIELD_TOWER_MAX_ALIVE = 20;
  * What each wave multiplies the previous wave's pools by.
  *
  * Compounding, not linear, because what it is racing is compounding: a
- * board's damage per second climbs by upgrades and by better bands, both
+ * board's damage per second climbs by modules and by better bands, both
  * of which multiply. A linear curve loses that race by construction —
  * it is only ever a question of which wave it starts losing on.
  */

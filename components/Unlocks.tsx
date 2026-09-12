@@ -27,11 +27,11 @@ import { tile } from "./tile";
  * slower than a page. So: a page.
  *
  * AND IT OPENS ON EVERYTHING. The filter strip is a filter and not a set
- * of doors: the default is ALL, every turret, module, map and rule in one
- * grid, because the first question is "what is there" and only the second
- * one is "what kind of thing is there". Categories stay contiguous inside
- * it — the guns, then the upgrades, then the rules, then the maps
- * (FILTERS) — so the grid is one list and not a shuffle.
+ * of doors: the default is ALL, every turret, mod, relic, map and rule in
+ * one grid, because the first question is "what is there" and only the
+ * second one is "what kind of thing is there". Categories stay contiguous
+ * inside it — the guns, then the mods, then the relics, then the rules,
+ * then the maps (FILTERS) — so the grid is one list and not a shuffle.
  *
  * THE SHAPES ARE NOT ON IT. Every save owns all five squares from wave
  * one (formation.ts), nothing on the track deals one, and a tab of tiles
@@ -63,14 +63,19 @@ import { tile } from "./tile";
  * before queueing — the surprise is meant to be WHICH ones a run rolls,
  * not what exists.
  *
- * WHICH IS WHY THE MODULES ARE HERE TOO (game/mods.ts) — what the deal's
- * M and G buttons sell, mods first and then relics. They used to be drawn
- * LIT whatever the save's level, because nothing handed one out and every
- * run could be offered every one of them from level one. The track deals
- * them now (track.ts MOD_UNLOCKS), so they are ordinary unlocks on this
- * board like everything else: dim until the level that opens them. What a
- * run still does not know is WHICH of the ones it has earned it will be
- * offered.
+ * WHICH IS WHY THE MODULES ARE HERE TOO — what the deal's M and G buttons
+ * sell, in the two tabs they actually are: MODS (game/mods.ts) and RELICS
+ * (game/relics.ts). They used to be one tab called "Upgrades", which put
+ * two different purchases and the tech tree's per-turret rungs under a
+ * word none of the three is called; a player reading it could not tell
+ * that half the shelf was a chance on a placement and the other half a
+ * rule over the whole board. Two categories, two tabs, and no tab named
+ * for a thing that does not exist.
+ *
+ * THE TWO TABS ALSO READ AS THE TWO HALVES OF THE TRACK. The mods are all
+ * dealt by level 14 and the relics all after RELICS_FROM (track.ts), so a
+ * save part way up sees a Mods tab that is mostly lit and a Relics tab
+ * that is mostly dim — which is the pacing of the catalog, visible.
  *
  * A LOCKED TILE IS DIMMED AND SAYS NOTHING ELSE. No level badged on it,
  * no line in its card about what hands it over. The track next door is
@@ -81,30 +86,34 @@ import { tile } from "./tile";
 /**
  * THE ORDER, and it is the order a player thinks in rather than the order
  * the track deals in: the GUN first, then what can be bolted to it, then
- * then the rules the run is played under, then the
- * ground it is played on. Turrets, upgrades, mutators, maps — one
- * list that walks outward from the thing on the board to the world round
- * it, and the strip and the "All" grid use the same order so switching a
- * filter never re-shuffles what was already on screen.
+ * the rule that governs the whole board, then the rules the run is played
+ * under, then the ground it is played on. Turrets, mods, relics, mutators,
+ * maps — one list that walks outward from the thing on the board to the
+ * world round it, and the strip and the "All" grid use the same order so
+ * switching a filter never re-shuffles what was already on screen.
+ *
+ * MODS BEFORE RELICS, which is both the order the corner's two buttons
+ * read in and the order the track deals them in (track.ts): the mid game's
+ * answer, then the late game's.
  */
 const FILTERS: readonly { id: Category | "all"; label: string }[] = [
   { id: "all", label: "All" },
   { id: "turret", label: "Turrets" },
-  { id: "upgrade", label: "Upgrades" },
+  { id: "mod", label: "Mods" },
+  { id: "relic", label: "Relics" },
   { id: "mutator", label: "Mutators" },
   { id: "world", label: "Maps" },
 ];
 
 /** every category, in strip order — what "All" concatenates */
-const EVERY: readonly Category[] = ["turret", "upgrade", "mutator", "world"];
+const EVERY: readonly Category[] = ["turret", "mod", "relic", "mutator", "world"];
 
 /**
- * A BOARD CATEGORY IS A TRACK CATEGORY — the same four names, asked of
- * the same function (unlocksOf). "Upgrade" is the widest of them: it
- * holds the modules the deal sells (mods.ts, mods then relics) and the
- * tech tree's per-turret branches (upgrades.ts, which nothing deals
- * today). The player's word for all of them is the same word, so the tab
- * is the same tab.
+ * A BOARD CATEGORY IS A TRACK CATEGORY — the same five names, asked of the
+ * same function (unlocksOf). There is no sixth for the tech tree's
+ * per-turret rungs: nothing deals one and nothing sells one, and the tab
+ * that used to hold them held two other things as well under a name none
+ * of the three went by.
  */
 type Category = UnlockKind;
 
@@ -283,10 +292,9 @@ export default function Unlocks({
         >
           {items.length === 0 ? (
             /* A CATEGORY WITH NOTHING IN IT says so in words rather than
-               in an empty rectangle. No filter reaches this today — the
-               upgrades tab, which used to, carries the twenty modules
-               now — but a category that empties out should explain
-               itself rather than look broken */
+               in an empty rectangle. No filter reaches this today — all
+               five tabs have something in them — but a category that
+               empties out should explain itself rather than look broken */
             <div className="ms-pane mt-6 max-w-md px-5 py-4 text-center text-[14px] text-[#A6A6AF]">
               <div className="mb-1 font-display text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
                 Nothing here yet

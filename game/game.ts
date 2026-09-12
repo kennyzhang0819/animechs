@@ -42,17 +42,22 @@ import {
   type BuyAmount,
 } from "./economy";
 import {
-  anyModLeft,
   anyModOpen,
   maskRarity,
   modsInMask,
-  MODULE_ODDS,
+  MOD_ODDS,
   rollMod,
-  shiftedWeights,
   TURRET_MOD_IDS,
   type ModId,
-  type ModScope,
 } from "./mods";
+import {
+  anyRelicLeft,
+  anyRelicOpen,
+  RELIC_ODDS,
+  rollRelic,
+  shiftedWeights,
+  type RelicId,
+} from "./relics";
 import {
   FORMATION_IDS,
   formationCells,
@@ -89,14 +94,29 @@ import {
 } from "./status";
 
 /**
- * WHAT ONE HALF OF THE MODULE CATALOG CAN DO RIGHT NOW (mods.ts): draw,
- * or the reason it cannot. The two reasons are genuinely different and
- * the button has to say which — "all owned" is a run that has taken
- * everything there is, and "locked" is a save the track has not dealt
- * this half to yet (track.ts MOD_UNLOCKS, RELICS_FROM). A player told
- * "all owned" on their first run would be told a lie about their save.
+ * WHAT ONE OF THE TWO MODULE BUTTONS CAN DO RIGHT NOW: draw, or the reason
+ * it cannot. The two reasons are genuinely different and the button has to
+ * say which — "all owned" is a run that has taken everything there is, and
+ * "locked" is a save the track has not dealt that category to yet (track.ts
+ * MOD_UNLOCKS, RELIC_UNLOCKS, RELICS_FROM). A player told "all owned" on
+ * their first run would be told a lie about their save.
+ *
+ * ONLY THE G BUTTON EVER READS "owned". A relic is held once and there are
+ * fifteen, so the relic half runs out; a mod has no cap, so the M button is
+ * OPEN or LOCKED and nothing else (Game.modDeal).
  */
 export type DealHalf = "open" | "owned" | "locked";
+
+/**
+ * WHAT ONE PRESS OF M OR G HANDED OVER — the reveal's whole input
+ * (Game.lastDraw). One press is one button, so a draw is all mods or all
+ * relics; the tag is what lets the card say the right word and read the
+ * right catalog.
+ */
+export type ModDraw =
+  | { kind: "mod"; ids: readonly ModId[] }
+  | { kind: "relic"; ids: readonly RelicId[] }
+  | null;
 
 export interface UiState {
   levelId: string;
@@ -179,16 +199,22 @@ export interface UiState {
   /** how many a press buys: the corner's fourth button (BUY_AMOUNTS) */
   amount: BuyAmount;
   /**
-   * EVERY UPGRADE THE RUN OWNS (mods.ts), catalog order, with its stack
-   * count — the shelf on the top-left of the field draws exactly this,
-   * turret attributes and relics alike. A relic is always in force, so it
-   * is always on screen.
+   * WHAT THE RUN OWNS, IN TWO LISTS BECAUSE IT IS TWO CATEGORIES. The
+   * shelf on the top-left of the field draws the relics first and then the
+   * mods, with a divider between (components/Relics.tsx): a relic is a rule
+   * always in force and a mod is a standing chance, and a row that mixed
+   * them said neither.
+   *
+   * The mods carry a stack count and the relics do not, which is the
+   * difference between the two spelled out in the shape of the data
+   * (mods.ts, relics.ts).
    */
-  relics: { id: ModId; n: number }[];
-  /** everything the LAST PRESS drew (one id, or ten), and a counter that
-   *  MOVES on every press — the two things a reveal needs to fire,
-   *  including for a repeat (Game.lastMods) */
-  lastMods: ModId[];
+  shelfMods: { id: ModId; n: number }[];
+  shelfRelics: RelicId[];
+  /** everything the LAST PRESS drew (one id, or ten) and WHICH BUTTON drew
+   *  it, plus a counter that MOVES on every press — the three things a
+   *  reveal needs to fire, including for a repeat (Game.lastDraw) */
+  lastDraw: ModDraw;
   modDraws: number;
   /** what each half of the catalog can do for this press — what lights
    *  the M button and the G button, and what each says when it cannot
@@ -803,10 +829,10 @@ export class Game {
   // the campaign's tower unlocks and caps (see setTech); null in the editor
   private tech: TechState | null = null;
   /**
-   * THE ODDS IN FORCE (rarity.ts). Fixed at the opening weights for the
-   * whole run today, and a field rather than a constant read at the roll
-   * because the upgrades that are coming are exactly this: a run that
-   * draws purple more often than one in a hundred.
+   * THE ODDS IN FORCE (rarity.ts). A field rather than a constant read at
+   * the roll because a RELIC moves it: Ascendancy Protocol (relics.ts) is
+   * exactly this, a run that draws purple one time in twenty rather than
+   * one in a hundred.
    */
   private rarityWeights: RarityWeights = TURRET_ODDS.live();
   /**
@@ -825,8 +851,13 @@ export class Game {
    * press handed over. The counter still moves once per PRESS, so ten
    * relics is one card of ten chips and not ten cards fighting over the
    * same corner for five seconds each.
+   *
+   * IT CARRIES ITS CATEGORY. One press is one button, so a draw is all
+   * mods or all relics and never a mix — and the reveal has to say which,
+   * because "3 mods" and "3 relics" are different sentences about
+   * different purchases.
    */
-  private lastMods: ModId[] = [];
+  private lastDraw: ModDraw = null;
   private modDraws = 0;
   /**
    * HOW MANY STRUCTURES THIS RUN HAS PLACED, only ever going up. The card
@@ -1358,9 +1389,10 @@ export class Game {
   }
 
   /**
-   * ONE DRAW OFF THE MODULE TABLE, AND IT IS ALREADY IN FORCE — the M
-   * button (turret attributes) and the R button (relics), which are this
-   * one method under two scopes (mods.ts).
+   * ONE DRAW OFF A MODULE TABLE, AND IT IS ALREADY IN FORCE — the M button
+   * (mods.ts) and the G button (relics.ts), which are two methods below
+   * because they are two categories and no longer one method under a
+   * `scope` flag.
    *
    * THERE IS NO CARD AND NOTHING TO PLACE. A turret draw hands over a
    * thing to put somewhere and the decision is WHERE; a module draw is
@@ -1382,49 +1414,60 @@ export class Game {
    * because the alternative is taking relic money for a relic that does
    * not exist.
    *
-   * It refuses outright when that half is owned out already (mods.ts
-   * anyModLeft) rather than taking the money for nothing.
+   * A RELIC PRESS can refuse outright, and a MOD press cannot: the relic
+   * half runs out (there are fifteen and each is held once) while the mod
+   * half never does (a copy is always worth something). That asymmetry is
+   * the two categories, not an accident — see relics.ts anyRelicLeft.
    */
-  private buyModules(scope: ModScope): ModId[] {
-    if (this.sim.lost() || this.won() || this.menuOpen) return [];
-    if (this.dealHalf(scope) !== "open") return [];
-    const each = this.modulePrice(scope);
+
+  /** THE M BUTTON: mods, a chance riding every placement still to come */
+  buyMods(): ModId[] {
+    if (!this.canBuyModules() || this.modDeal() !== "open") return [];
+    const each = this.dealing ? MOD_ROLL_PRICE : 0;
     const n = this.buyAmount;
     // the whole fleet or none of it — checked before a single draw is
     // taken, so a refused press has changed nothing at all
     if (this.sim.scrap < each * n && this.sim.charging) return [];
     const got: ModId[] = [];
     for (let i = 0; i < n; i++) {
-      const id = rollMod(this.sim.modLedger, scope, MODULE_ODDS.live(), Math.random, this.modPool());
-      if (!id) break; // this half is owned out mid-press: stop, charge for the rest
+      const id = rollMod(MOD_ODDS.live(), Math.random, this.modPool());
+      if (!id) break; // the save has opened no mod at all
       if (!this.sim.spend(each)) break;
       this.sim.takeMod(id);
       got.push(id);
     }
     if (got.length === 0) return [];
-    // ASCENDANCY (mods.ts) bends the TURRET deal's odds, so the weights
-    // are re-read off the run's relics here rather than being a constant
-    this.rarityWeights = shiftedWeights(TURRET_ODDS.live(), this.sim.modLedger);
-    this.lastMods = got;
+    this.lastDraw = { kind: "mod", ids: got };
     this.modDraws++;
     return got;
   }
 
-  /** the M button: turret attributes, a chance on every placement to come */
-  buyMods(): ModId[] {
-    return this.buyModules("turret");
+  /** THE G BUTTON: relics, in force over the whole board the moment they land */
+  buyRelics(): RelicId[] {
+    if (!this.canBuyModules() || this.relicDeal() !== "open") return [];
+    const each = this.dealing ? RELIC_ROLL_PRICE : 0;
+    const n = this.buyAmount;
+    if (this.sim.scrap < each * n && this.sim.charging) return [];
+    const got: RelicId[] = [];
+    for (let i = 0; i < n; i++) {
+      const id = rollRelic(this.sim.relicsHeld, RELIC_ODDS.live(), Math.random, this.relicPool());
+      if (!id) break; // the half is owned out mid-press: stop, charge for the rest
+      if (!this.sim.spend(each)) break;
+      this.sim.takeRelic(id);
+      got.push(id);
+    }
+    if (got.length === 0) return [];
+    // ASCENDANCY (relics.ts) bends the TURRET deal's odds, so the weights
+    // are re-read off the run's relics here rather than being a constant
+    this.rarityWeights = shiftedWeights(TURRET_ODDS.live(), this.sim.relicsHeld);
+    this.lastDraw = { kind: "relic", ids: got };
+    this.modDraws++;
+    return got;
   }
 
-  /** the R button: relics, in force over the whole board the moment they land */
-  buyRelics(): ModId[] {
-    return this.buyModules("global");
-  }
-
-  /** what one module of that half costs right now — flat (economy.ts),
-   *  and free on a free board */
-  private modulePrice(scope: ModScope): number {
-    if (!this.dealing) return 0;
-    return scope === "global" ? RELIC_ROLL_PRICE : MOD_ROLL_PRICE;
+  /** is the board in a state where either button may be pressed at all? */
+  private canBuyModules(): boolean {
+    return !this.sim.lost() && !this.won() && !this.menuOpen;
   }
 
   /**
@@ -1506,12 +1549,30 @@ export class Game {
     return this.tech ? this.tech.mods : null;
   }
 
-  /** what one half of the module catalog can do for this press: draw, or
-   *  why not — a half the track has not opened yet reads LOCKED, and one
-   *  the run has bought out reads OWNED */
-  private dealHalf(scope: ModScope): DealHalf {
-    if (!anyModOpen(scope, this.modPool())) return "locked";
-    return anyModLeft(this.sim.modLedger, scope, this.modPool()) ? "open" : "owned";
+  /** ...and the relics the G button may turn over (TechState.relics), which
+   *  a save below RELICS_FROM has none of */
+  private relicPool(): ReadonlySet<RelicId> | null {
+    return this.tech ? this.tech.relics : null;
+  }
+
+  /**
+   * WHAT THE M BUTTON CAN DO FOR THIS PRESS. It is only ever LOCKED or
+   * OPEN: a mod has no cap, so once the track has opened the half it stays
+   * drawable forever (mods.ts rollMod).
+   */
+  private modDeal(): DealHalf {
+    return anyModOpen(this.modPool()) ? "open" : "locked";
+  }
+
+  /**
+   * ...AND WHAT THE G BUTTON CAN DO, which has all three answers. A save
+   * below RELICS_FROM reads LOCKED, and a run holding all fifteen reads
+   * OWNED — a relic is held once, so this half genuinely runs out
+   * (relics.ts).
+   */
+  private relicDeal(): DealHalf {
+    if (!anyRelicOpen(this.relicPool())) return "locked";
+    return anyRelicLeft(this.sim.relicsHeld, this.relicPool()) ? "open" : "owned";
   }
 
   /** what one draw costs right now — flat (economy.ts), and nothing at
@@ -1520,7 +1581,7 @@ export class Game {
     return this.dealing ? TURRET_ROLL_PRICE : 0;
   }
 
-  /** point the deal at different odds — what an upgrade will do */
+  /** point the deal at different odds — what Ascendancy Protocol does */
   setRarityWeights(w: RarityWeights): void {
     this.rarityWeights = w;
   }
@@ -1995,14 +2056,15 @@ export class Game {
       unlocked: this.tech ? Array.from(this.tech.unlocked) : null,
       dealing: this.dealing,
       rollPrice: this.rollPrice(),
-      modPrice: this.modulePrice("turret"),
-      relicPrice: this.modulePrice("global"),
+      modPrice: this.dealing ? MOD_ROLL_PRICE : 0,
+      relicPrice: this.dealing ? RELIC_ROLL_PRICE : 0,
       amount: this.buyAmount,
-      relics: this.sim.ownedMods(),
-      lastMods: this.lastMods,
+      shelfMods: this.sim.ownedMods(),
+      shelfRelics: this.sim.ownedRelics(),
+      lastDraw: this.lastDraw,
       modDraws: this.modDraws,
-      modDeal: this.dealHalf("turret"),
-      relicDeal: this.dealHalf("global"),
+      modDeal: this.modDeal(),
+      relicDeal: this.relicDeal(),
       inspect: this.inspect(),
       built: this.built,
       // off the sim's live stats (statsFor), never the static table: the
@@ -2170,10 +2232,11 @@ export class Game {
 
   reset(): void {
     this.sim.reset();
-    // the run's upgrades went with the sim's reset (Sim.mods), so the odds
-    // they were bending go back to the opening table and the reveal empties
+    // the run's modules went with the sim's reset (Sim.mods, Sim.relics), so
+    // the odds Ascendancy was bending go back to the opening table and the
+    // reveal empties
     this.rarityWeights = TURRET_ODDS.live();
-    this.lastMods = [];
+    this.lastDraw = null;
     this.modDraws = 0;
     this.soakLayer = null; // a new level is a new coastline
     this.mmBase = null; // ...and a new ground under the minimap
@@ -2855,7 +2918,7 @@ export class Game {
       const mine = !onlyPicked || t === marked || picked?.has(t) === true;
       if (symbols && mine && structHasFieldStatus(t))
         this.queueStatusRow(t.x, top, this.statusBuf, structFieldStatuses(t, this.statusBuf));
-      // THE ATTRIBUTE PIP (mods.ts): a turret that won one of the upgrade
+      // THE MOD PIP (mods.ts): a turret that won one of the
       // rolls at its placement wears a dot in the corner of its footprint,
       // in the band of the BEST attribute it carries. It is drawn always
       // and not on hover, because the whole point of a chance-based

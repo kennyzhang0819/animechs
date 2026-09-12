@@ -56,7 +56,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   the fixed mission pot and how it is dealt out per wave cleared
   (`MISSION_XP`, `waveXpShare`), **what the corner's three buy buttons
   cost** (`TURRET_ROLL_PRICE` 1,000, `MOD_ROLL_PRICE` 2,000,
-  `RELIC_ROLL_PRICE` 30,000, all flat — the run's only outgoings) and the
+  `RELIC_ROLL_PRICE` 150,000, all flat — the run's only outgoings) and the
   **amount ladder** that multiplies them (`BUY_AMOUNTS`: 1 / 4 / 9, flat,
   no bulk discount), the three price bands and
   what a draw in each is WORTH (`TOWER_PRICE` — no longer what a board
@@ -66,14 +66,18 @@ stale tab or a cached bundle looks exactly like a fix not working.
   and authored to zero), and the audit/check arithmetic over the authored
   script — the **stage table** (`stageAudit`) that the turret prices are
   tuned against
-- `game/track.ts` — the **level track**: the fifteen-level roster phase —
-  a fresh save owns four turrets (`STARTING_ROSTER`) and three shapes
-  (`STARTING_SHAPES`), and the track hands out one more of each a level
-  (`UNLOCKS`, `SHAPE_UNLOCKS`) to a complete roster at 14 — then the
-  mutator phase, which opens with a whole band (`MUTATORS_FROM`) and one
-  rule a level after; and `techStateFor(level)`, what a save at that
-  level may do. The turret upgrade rungs are off the track for now
-  (`UPGRADES_ON_TRACK`)
+- `game/track.ts` — the **level track**: the roster phase — a fresh save
+  owns four turrets (`STARTING_ROSTER`) and four mods (`STARTING_MODS`), and
+  the track hands out a turret and a mod a level (`UNLOCKS`, `MOD_UNLOCKS`)
+  to a complete mod catalog at 14 and a complete roster at `ROSTER_TOP` —
+  then the **late half**, where the mutator phase opens with a whole band
+  (`MUTATORS_FROM` = 15) and the **relics** start one level later
+  (`RELIC_UNLOCKS`, `RELICS_FROM` = 16), one a level to the top of the track
+  at 29. **Mods across the front, relics across the back**, because the two
+  categories are two answers to two halves of a run. Plus
+  `techStateFor(level)`, what a save at that level may do. The turret
+  upgrade rungs are off the track for now (`UPGRADES_ON_TRACK`) and are not
+  a category: nothing deals one and no tab is named for them
 - `game/formation.ts` — **the second roll**: the twelve shapes a card can
   carry (`FORMATIONS`, 4 to 36 turrets), their bands read straight off the
   cell count (`formationRarity`), the deliberately soft odds between those
@@ -96,17 +100,29 @@ stale tab or a cached bundle looks exactly like a fix not working.
   turret is. **The track does not hand any of them out at the moment**, so
   every turret plays at its stock stats; the branches are intact and
   waiting
-- `game/mods.ts` — **the modules** (the code calls them *mods*, because
-  `upgrades.ts` above is the tech tree's): twenty of them, on the turrets'
-  own four rarities. Two scopes, and the corner sells them from **two
-  different buttons** (`rollMod`'s `scope`) because they are two
-  purchases — **global** relics (**G**, 30,000) that land the instant they
-  are bought and apply to everything, and **turret attributes** (**M**,
-  2,000) that are a standing CHANCE on every turret placed from then on
-  (`rollTurretMods`, folded into `Tower.mods` as a bitmask). The stat
-  surgery (`applyTurretMods`, `applyGlobalMods`), the odds (`MOD_WEIGHTS`:
-  52 / 30 / 16 / **2**, renormalised inside each half) and every tuning
-  number the behavioural relics need
+- `game/mods.ts` — **the MODS**, the first of the game's two categories of
+  module and the **mid game's** answer: sixteen of them on the turrets' own
+  four rarities, sold off **M** at 2,000, and each one a standing CHANCE on
+  every turret placed from then on (`rollTurretMods`, folded into
+  `Tower.mods` as a bitmask). A mod has no cap — a copy scales what a turret
+  born with it gets — so the M button never runs out. The stat surgery
+  (`applyTurretMods`), the odds (`MOD_WEIGHTS`: 52 / 30 / 16 / **2**) and
+  the roll chances live here
+- `game/relics.ts` — **the RELICS**, the second category and the **late
+  game's** answer: fifteen of them, sold off **G** at 150,000, each one a
+  RULE over the whole board in force the moment it is paid for. What they
+  are for is a swarm of T5 hulls — twenty thousand health behind
+  twenty-two points of armour — so five of them change the arithmetic
+  rather than the numbers: armour stops applying, a round gains a quarter
+  a tier, the last sliver of a pool is skipped, a heavy hull detonates
+  where it falls, and the swarm's support auras stop working. A relic is
+  held once, so a run's relics are a **Set** where its mods are a tally,
+  and the G button genuinely runs out. Its own odds table (`RELIC_ODDS`)
+  and every tuning number the behavioural relics need
+  > These two used to be one file with a `scope` field, and one tab called
+  > *Upgrades* held them both plus the tech tree's rungs. **There is no
+  > such thing as an "upgrade" in this game**: there are Mods and there are
+  > Relics
 - `game/mutation.ts` — the **mutators**: the catalog of rules a run can be
   played under, what each is worth in points, and the roller that draws
   three or four of them to fit a difficulty's budget
@@ -173,9 +189,13 @@ stale tab or a cached bundle looks exactly like a fix not working.
   is ground rather than variety. It keeps
   no state of its own: the card IS what is in hand (`Game.buildKind` +
   `buildForm` + the card's `n`), so the corner reads it off the HUD
-- `components/Relics.tsx` — **the shelf**: every upgrade the run owns, in
-  a row along the top-left of the field, each on its band's ground with a
-  glyph drawn rather than sprited and the live odds on its hover card
+- `components/Relics.tsx` — **the shelf**: every module the run owns, in a
+  row along the top-left of the field — **relics first, then a divider,
+  then the mods**, because a rule always in force and a 30% roll on the
+  next placement are two different kinds of thing and one undifferentiated
+  row said neither. Each chip is on its band's ground with a glyph drawn
+  rather than sprited; a mod's card carries its odds and its stack total, a
+  relic's says it is simply on
 - `components/MechSwarm.tsx` — React shell: HUD (scrap, XP), difficulty
   picker, the corner (the deal above, or — on a free board — StarCraft's
   command card, a fixed grid the size of the minimap, `BUILD_SLOTS`, one
@@ -189,25 +209,28 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `components/Progress.tsx` — the **progress screen**: the track top to
   bottom, one row a level with what it hands out
 - `components/RaritiesView.tsx` — the admin dashboard's **Rarities** tab:
-  every roll in the game and what it is weighed against — the turret, shape
-  and module band tables (`rarity.ts` `weightDial`) and the per-attribute
-  roll chance — each dial printing its own normalised share, because a band
-  weight is relative and means nothing until it is read against its table.
+  every roll in the game and what it is weighed against — the turret, shape,
+  **mod** and **relic** band tables (`rarity.ts` `weightDial`) and the
+  per-mod roll chance — each dial printing its own normalised share, because
+  a band weight is relative and means nothing until it is read against its
+  table. The mods and the relics get a knob each: they used to share one,
+  so bending "ultra" moved both categories at once.
   Saves into the same `public/balance.json` the prices use, whole-document
   (`currentBalanceDoc`) so neither admin page can wipe the other's afternoon
 - `components/Knob.tsx` — the dashboard's one slider-plus-field dial, shared
   by Balance and Rarities
-- `components/Unlocks.tsx` — its **second tab**: every turret, upgrade,
-  shape, rule and map in the game on one page with a strip of filters over
-  it — **turrets, upgrades, shapes, mutators, maps**, the order a player
-  thinks in, walking outward from the thing on the board to the world round
-  it. Locked track unlocks are dimmed; the **twenty modules** (mods.ts —
-  the ten mods, then the ten relics) sit under *Upgrades* and are always
-  lit, because no level opens one and a catalog a player can only read by
-  buying from it at two thousand scrap a look is one they cannot plan
-  against. It replaced the mutator codex, which answered only the rules
-  half of that and did it through a pannable camera left over from the old
-  tech tree — the wrong instrument for a list read once and closed
+- `components/Unlocks.tsx` — its **second tab**: every turret, mod, relic,
+  rule and map in the game on one page with a strip of filters over it —
+  **turrets, mods, relics, mutators, maps**, the order a player thinks in,
+  walking outward from the thing on the board to the world round it. The
+  mods and the relics are **two tabs**, not one *Upgrades* tab holding both
+  plus the tech tree's rungs: a player reading that could not tell which
+  half was a chance on a placement and which was a rule over the board.
+  Locked unlocks are dimmed, so a save part way up sees a Mods tab mostly
+  lit and a Relics tab mostly dim — the pacing of the catalog, visible. It
+  replaced the mutator codex, which answered only the rules half of that
+  and did it through a pannable camera left over from the old tech tree —
+  the wrong instrument for a list read once and closed
 - `components/LevelEditorView.tsx`, `MapEditorView.tsx`, `BalanceView.tsx` —
   the admin authoring surfaces
 
@@ -231,10 +254,10 @@ is no touch input.
 |---|---|
 | build | **T**, then left press on the ground. The draw comes out already in hand, so the flow is T, click, T, click. One card is one FORMATION, four to thirty-six turrets in a shape — times the amount (**X**). On a free board (sandbox, editors) pick a turret on the command card instead, or its key, and drag to chain; **shift-drag for a straight line** |
 | re-roll | **T** again — it throws the card in hand away and draws another, at full price. Spam it until the shape is the one you want |
-| buy mods | **M**, 2,000 each. Turret attributes: a standing chance on every turret placed from then on. In force the instant they land — nothing to aim, nothing to place, no re-roll |
-| buy relics | **G**, 30,000 each. Global rules that change the game — the board fires twice as fast, every kill pays triple, every turret stands back up — over the whole board the moment they are paid for. Same: nothing to aim, no re-roll |
+| buy mods | **M**, 2,000 each. The mid game's answer: a standing chance on every turret placed from then on. In force the instant they land — nothing to aim, nothing to place, no re-roll |
+| buy relics | **G**, 150,000 each, and **locked until level 16**. The late game's answer: rules that change the game over the whole board the moment they are paid for — the board fires twice as fast, armour stops applying, a dead T5 takes its escort with it, every turret stands back up. Same: nothing to aim, no re-roll |
 | turn the card | **R** while the ghost is up, or the strip under the card — a quarter clockwise, free, and it turns the WHOLE footprint. Ten of the twelve shapes are symmetric under a quarter turn, so only the Wedge visibly moves — and a fleet of wedges turns as one |
-| amount | **X** cycles ×1 / ×4 / ×9 and multiplies the next press, at flat price. On **M** and **R** that is N draws; on **T** it is one card carrying the shape **tiled** N times, square and gapless — so ×9 of a citadel is one ghost of 324 turrets in an 18×18 block to find ground for |
+| amount | **X** cycles ×1 / ×4 / ×9 and multiplies the next press, at flat price. On **M** and **G** that is N draws; on **T** it is one card carrying the shape **tiled** N times, square and gapless — so ×9 of a citadel is one ghost of 324 turrets in an 18×18 block to find ground for |
 | discard | right press while holding a card. No refund |
 | demolish | right press, drag to chain |
 | select a building | left click with no tool picked — ONE building shows its range ring; drag a box for a region, or shift-add, and the rings stay off so the fight is still visible |
@@ -376,8 +399,8 @@ the best way to play the campaign, not because it is bribed, and a bonus
 on it made every deliberate map choice feel like a tax on knowing what
 you want. XP turns into **player level** through a power-law curve
 (`xpToNext`), and **every level is a step on the track** (`game/track.ts`)
-that hands out a map, a turret, a shape or a mutator — nothing is chosen
-and nothing is bought.
+that hands out a map, a turret, a mod, a relic or a mutator — nothing is
+chosen and nothing is bought.
 
 ### The deal
 
@@ -465,9 +488,9 @@ the whole amount buys none of it rather than quietly handing over the
 seven it stretched to.
 
 **What the amount does is different on the two sides, and that is the
-design.** On **M** and **R** it is N independent draws: ten relics is ten
-relics, and one press gets ONE reveal card listing its ten rather than ten
-cards queued five seconds apart. On **T** it is *not* ten cards — it is
+design.** On **M** and **G** it is N independent draws: nine relics is nine
+relics, and one press gets ONE reveal card listing its nine rather than nine
+cards queued five seconds apart. On **T** it is *not* nine cards — it is
 **ONE card whose shape is tiled N times** (`fleetLayout`), so a ×9 press
 still rolls one gun and one shape and what it multiplies is **the ground
 being asked for**.
@@ -523,8 +546,8 @@ it fits.
 | Ultra Rare | purple | spectre, meltdown, foreshadow — every 4x4 | **1%** |
 
 The rarities are authored (`TURRET_RARITY`) and fixed for the whole run;
-the **weights are not** (`Game.setRarityWeights`), because shifting them
-is what the upgrades being built will do. A rarity is rolled first and a
+the **weights are not** (`Game.setRarityWeights`), because a relic can shift
+them — that is what Ascendancy Protocol is. A rarity is rolled first and a
 turret picked uniformly inside it, so adding a fourth purple would make
 *which* purple less predictable and never make purples more likely. The
 draw pool is exactly what the track has handed the save (`turretsAt`),
@@ -536,135 +559,127 @@ draw in ten against an ultra turret's one in a hundred. The turret roll is
 where a run's tension lives, and odds as steep on both would invert what a
 player feels at the button: *which gun* first, *how much of it* second.
 
-### The modules
+### The modules — Mods and Relics
 
-**The corner's bottom row is M and R**, and what either hands over is
-**already in force**. There is no card, nothing to aim and nothing to
-place: T is a bet on the ground and these are bets on the run, which is
-why they are not the same button as T. There is no re-roll either — what T
-buys can be thrown away and drawn again, because a shape you cannot fit is
-a dead card; what these buy is never dead, so pressing again is simply
-buying another module.
+**There are exactly two categories of module, and neither is called an
+"upgrade."** **MODS** (`game/mods.ts`) are the **mid game's** answer: a
+chance riding every turret placed from now on, bought by the fistful off
+**M**, each one a number on a gun. **RELICS** (`game/relics.ts`) are the
+**late game's** answer: a rule over the whole board, bought once off **G**,
+every one of them something the board could not do before.
 
-**They are two buttons because they are two purchases.** **M** (2,000)
-draws only turret attributes and **G** (30,000) only relics (`rollMod`'s
-`scope`). They used to be one button flipping a coin between the two
-scopes, which meant a player who needed a relic paid relic money for even
-odds of an attribute: **a purchase whose scope is random is a purchase the
-player cannot aim**, and the two scopes below are exactly the two things a
-player is ever trying to aim at. A relic is dearer because it is
-certainty — in force over every turret already standing and every one
-still to come — while a mod is odds on the board still to be bought. Each
-button goes dark on **its own** half being owned out, so a run that has
-taken every relic keeps buying mods.
+They used to be one file behind a `scope` field, and the Unlocks board had
+one tab called *Upgrades* holding both of them plus the tech tree's rungs —
+three unrelated things under a word none of the three is called. Two
+categories, two files, two odds tables, two buttons, two tabs.
 
-**A module wears one of the four bands** (`game/mods.ts`) and the roll
-picks a band first and a mod inside it, the same two-step the turret and
-shape tables use, **renormalised inside each half** so the relic table's
-own ultras come up at the ultra rate. The odds are **52 / 30 / 16 / 2** —
-steeper at the top than the shape table's, because a formation is spent
-the moment it is placed and a module is owned for the rest of the run. **A
-mod already at its cap is never offered**, so a late run draws from what is
-left instead of paying to be told it has the thing; a press whose half
-runs out part way through stops there and is **charged only for what it
-handed over**.
+**What either hands over is already in force.** There is no card, nothing
+to aim and nothing to place: T is a bet on the ground and these are bets on
+the run, which is why they are not the same button as T. There is no
+re-roll either — what T buys can be thrown away and drawn again, because a
+shape you cannot fit is a dead card; what these buy is never dead, so
+pressing again is simply buying another module.
 
-**Every upgrade buffs the player.** Nothing in the catalog weakens the
-swarm — that is the mutators' half of the game, and they pull the other
-way.
+**M is 2,000 and G is 150,000**, and the gap is the two categories. A mod
+is *odds on the board still to be bought*; a relic is *certainty*, in force
+over every turret already standing and every one still to come, and it
+never stops. They used to be one button flipping a coin between the two,
+which meant a player who needed a relic paid relic money for even odds of a
+mod: **a purchase whose category is random is a purchase the player cannot
+aim.**
 
-**There are two scopes and they are not the same kind of thing.**
+**Only the G button ever runs out.** A relic is held once and there are
+fifteen, so the relic half empties and the button goes dark saying *all
+owned*; a mod has no cap — a copy scales what a turret born with it gets —
+so M is **open or locked and nothing else**. A press whose half runs out
+part way through stops there and is **charged only for what it handed
+over**.
 
-**GLOBAL — a relic.** It applies to *everything*, the turrets already
-standing included, the instant it is bought, and it sits on a shelf at the
-**top-left of the field** for the rest of the run
-(`components/Relics.tsx`) — the relic row out of a deck builder, for the
-reason that genre has one: a rule the player cannot see is a rule they
-forget they bought.
+**Each category has its own band table**, and the roll picks a band first
+and a module inside it — the same two-step the turret and shape tables use.
+Both are **52 / 30 / 16 / 2**, steeper at the top than the shape table's,
+because a formation is spent the moment it is placed and a module is owned
+for the rest of the run. They used to share one dial, so bending "ultra"
+moved the odds of an ultra *mod* and of an ultra *relic* at once.
 
-**TURRET — an attribute, and it is a chance rather than a grant.** Owning
-one improves nothing on the board: it adds a roll to every turret *placed
-from now on*, and a turret that wins it carries the attribute for as long
+**The whole catalog buffs the player.** Nothing in either half weakens the
+swarm — that is the mutators' half of the game, and they pull the other way.
+
+**And the track deals them in that order** (`game/track.ts`). The mods fill
+the **front** of the campaign, levels 2 to 14, cheapest band first; the
+relics fill the **back**, `RELICS_FROM` = **16** to the top of the track at
+29. That is not housekeeping — it is the two categories being two answers to
+two halves of a run. The G button prints *locked* until level 16, which is
+the level after the mutator phase opens: where the game is first allowed to
+be hard. It used to open on level **3**, which handed a player Overclock
+Core before their second map.
+
+### The mods (M) — a chance on every turret placed
+
+Owning one improves nothing on the board: it adds a roll to every turret
+*placed from now on*, and a turret that wins it carries the mod for as long
 as it stands (`Tower.mods`, a bitmask; `Tower.spec`, its own resolved
 stats). A card puts down four to thirty-six turrets, so **a patch comes out
 speckled** — thirty-six duos, four of them gleaming. A turret carrying one
-wears a **pip in the corner of its footprint** in the band of the best
-attribute it has, always, not on hover: the whole point of a chance is
-being able to see which ones won it.
-
-**A turret attribute is on the shelf too**, even though it does nothing by
-itself, and its hover card prints the **live odds** with every copy owned
-folded in — a second copy raises the chance and never the effect
-(`chanceAt`: three copies of a 30% attribute is 65.7%, never 90%). A relic
-is owned once, so there is nothing to fold in on that side at all.
-
-### The mods (M) — turret attributes
+wears a **pip in the corner of its footprint** in the band of the best mod
+it has, always, not on hover: the whole point of a chance is being able to
+see which ones won it.
 
 **Only the rare and ultra ones have names.** A common is not a character,
-it is a tick: **"+10% damage" IS its name**, and a made-up one over the top
+it is a tick: **"+2% damage" IS its name**, and a made-up one over the top
 would be a word to learn in order to be told what the number already said.
 The **glyph is the stat** and the **band colour is the size**, so a grey
 barrel and a blue barrel are the same dial at two steps and need no caption
-at all. *(Relics keep their names, all of them — a relic is never a
+at all. *(Relics keep their names, all fifteen — a relic is never a
 number.)*
 
-**No attribute has a cap, and every relic has one of exactly one.** There
-is no third rule: an attribute is a standing *chance*, so a second copy is
-simply better odds and a twentieth is better odds again — nothing stops a
-run fielding ten sniper turrets, and the only thing making that rare is how
-rarely the top band comes up at all. A relic is a rule in force; a rule does
-not get more in force. Both are checked at import, and **nothing on screen
-says any of it** — the boards used to print "One a run" and "Up to 2 of
-them" under all twenty tiles, which is housekeeping repeated twenty times
-to say what one rule says once.
+**Every mod is rolled for every turret, independently** — there is no "at
+most one". A placement rolls once per mod the run owns (`rollTurretMods`),
+so a turret can come out carrying all of them and the odds alone make that
+rare. That is *why* the low bands are small numbers: a run banking ten mods
+is folding ten multipliers onto one gun.
 
-**A mod is anything that composes onto one turret's table.** It used to
-be narrower — "a stat tweak and nothing else" — and the line was in the
-wrong place: a fuse firing five spikes instead of three is the gun doing a
+**A second copy is a bigger number, not better odds.** The chance is the
+def's and never moves — a player reading "30% on every turret placed" off
+the shelf has to be able to keep reading it after they buy the fourth — and
+what a copy buys is the **effect**: three copies of +8% damage is +24% on
+every turret that wins the same one roll in three. Every mod's upside is
+linear in copies (`1 + (m − 1) × n`) and what it **charges** never scales: a
+second Sniper does not take another ninety per cent of the turret's health.
+It is still one bit on the turret, so the strength is read off the run's
+ledger when the spec is composed (`applyTurretMods`) — which is how a copy
+bought mid-wave reaches the turrets already standing.
+
+**A mod is anything that composes onto one turret's table.** It used to be
+narrower — "a stat tweak and nothing else" — and the line was in the wrong
+place: a fuse firing five spikes instead of three is the gun doing a
 different thing, not a number going up, and it is still one turret's
-business. So an attribute may change what a turret *does*, through its
-table — shots, spread, pierce, repair. What it may not do is reach past
-the turret it landed on: "when this dies" is a *moment*, not a table, and
-a moment belongs to the relics.
-
-**A relic changes the game, and is priced like it.** Thirty thousand scrap
-is thirty turret cards; nothing at that price may be a percentage.
+business. So a mod may change what a turret *does*, through its table —
+shots, spread, pierce, repair. What it may not do is reach past the turret
+it landed on: "when this dies" is a *moment*, not a table, and a moment is
+a relic.
 
 | mod | band | chance | what it does |
 |---|---|---|---|
-| +10% damage | Common | 30% | |
-| +10% fire rate | Common | 30% | |
-| +20% health | Common | 30% | |
-| +10% range | Common | 30% | |
-| +25% damage | Uncommon | 18% | |
-| +25% fire rate | Uncommon | 18% | |
-| +50% health | Uncommon | 18% | |
-| +25% range | Uncommon | 18% | |
-| +1 pierce | Uncommon | 18% | pierce is a whole body, never a percentage — one step, at the band where a body is worth about a quarter |
-| repairs 1% a second | Uncommon | 18% | the one stat a plain turret has none of, so the tick is the whole thing |
-| **Prototype Chassis** | Rare | 10% | +50% damage, +50% fire rate |
-| **Bulwark Plating** | Rare | 10% | +100% health, +6 armor, repairs 3% a second |
-| **Sabot Rounds** | Rare | 10% | +2 pierce, +50% damage |
-| **Splitter Array** | Rare | 30% *per fuse* | +2 spikes a volley — five instead of three. **Fuse only**: rolled on every fuse placed and nothing else |
-| **Giant** | **Ultra** | **12% a CARD** | **+1000% health, +200% damage, +10 armor, −90% range, twice the footprint — and it eats the card** |
-| **Sniper** | **Ultra** | 5% | **+300% range, +200% fire rate, +100% damage, −90% health** |
-| **All Round** | **Ultra** | 5% | **+100% damage, +100% fire rate, +100% health, +50% range, +3 pierce** |
+| +2% damage | Common | 30% | |
+| +2% fire rate | Common | 30% | |
+| +4% health | Common | 30% | |
+| +2% range | Common | 30% | |
+| +4% damage | Uncommon | 18% | |
+| +4% fire rate | Uncommon | 18% | |
+| +8% health | Uncommon | 18% | |
+| +4% range | Uncommon | 18% | |
+| repairs 0.15% a second | Uncommon | 18% | the one stat a plain turret has none of, so the tick is the whole thing |
+| **Prototype Chassis** | Rare | 10% | +12% damage, +12% fire rate |
+| **Bulwark Plating** | Rare | 10% | more health, armour and repair at once |
+| **Sabot Rounds** | Rare | 10% | +1 pierce and harder rounds with it |
+| **Splitter Array** | Rare | *per fuse* | +1 spike a volley. **Fuse only**: rolled on every fuse placed and nothing else |
+| **Giant** | **Ultra** | **per CARD** | vastly more health and damage, far less range, twice the footprint — and it eats the card |
+| **Sniper** | **Ultra** | | reaches four times as far and dies to a stiff breeze |
+| **All Round** | **Ultra** | | simply better at everything |
 
-**Every attribute is rolled for every turret, independently** — there is
-no "at most one". A placement rolls once per attribute the run owns
-(`rollTurretMods`), so a turret can come out carrying all of them and the
-odds alone make that rare. That is *why* the low bands are small numbers:
-a run banking ten attributes is folding ten multipliers onto one gun, and
-with the whole catalog owned once an average turret carries **2.7
-attributes at about ×1.31 damage**. A common worth a quarter of a turret
-would compound into nonsense by wave twenty.
-
-**Nothing stacks.** An attribute is either ON a turret or it is not — one
-bit in `Tower.mods`, so a turret may carry all sixteen and can never carry
-the same one twice. A second COPY owned is not a bigger effect and not a
-second application: it is **another roll** at every placement, folded into
-one probability and never summed (`chanceAt`). Three copies of a 30% tick
-is 1 − 0.7³ = **65.7%**, ten is **97.2%** — always better, never certain.
+(The exact steps are authored in `game/mods.ts` and turnable from the admin
+Rarities tab; the table above is the shape of the ladder, not a spec.)
 
 **THE GIANT EATS THE CARD.** If a placement rolls it, the shape is
 discarded and the whole card is spent on **one building** at the middle of
@@ -675,41 +690,104 @@ shadow it casts, the quad it is drawn on and what a unit walks into all
 read it, never the table.
 
 **It is rolled once per CARD, not once per turret,** and it has to be.
-Every other attribute is per placement because a patch coming out speckled
-is the charm of them; this one *replaces* the patch, and a ×9 citadel is
-324 rolls — at any chance worth having, 324 rolls is a giant every single
-time. **A giant that will not fit is not a wasted card:** if the ground has
-no room for the doubled footprint the shape goes down as it always would.
+Every other mod is per placement because a patch coming out speckled is the
+charm of them; this one *replaces* the patch, and a ×9 citadel is 324 rolls
+— at any chance worth having, 324 rolls is a giant every single time. **A
+giant that will not fit is not a wasted card:** if the ground has no room
+for the doubled footprint the shape goes down as it always would.
 
-### The relics (G) — global rules
+### The relics (G) — the late game's answer
 
-| relic | band | what it does |
-|---|---|---|
-| Overclock Core | Common | every turret deals **double** damage |
-| Coolant Loop | Common | every turret fires **twice** as fast |
-| Scavenger Rig | Common | every kill pays **triple** scrap |
-| Salvage Insurance | Uncommon | every wrecked turret pays 2,000 scrap — two cards' worth, every time |
-| Phosphor Rounds | Uncommon | every shot burns white, hits half again as hard, and punches through 2 more bodies |
-| Last Volley | Uncommon | a wrecked turret gives every turret within 8 tiles **triple** fire rate for 15s |
-| Phoenix Protocol | Rare | a wrecked turret has a 50% chance to stand straight back up — **every time**, no limit |
-| Twin Fire | Rare | every turret fires one more round in every volley |
-| **Undying Legion** | **Ultra** | **every turret you own stands back up once, at full health — the ones already down included** |
-| **Ascendancy Protocol** | **Ultra** | **the turret deal hands over rares 5× and ULTRAS 20× as often, for the rest of the run** |
+**What a relic is FOR is a swarm of T5s.** By the back half of the track the
+thing walking up the lane is twenty thousand health behind twenty-two points
+of armour, and it is not alone. Nothing a mod does answers that — a stack of
+"+4% damage" is a bigger number against a wall that subtracts a flat 22 off
+every round, which is the wall winning by arithmetic. So the relics are the
+answers that **change the arithmetic**.
 
-**The purples are the turret changing species**, and that is the whole
+**Every relic is powerful, and the price is why.** 150,000 scrap is a
+hundred and fifty turret cards, or the whole opening bank twenty times
+over, and nothing at that price may be a percentage. A relic at "+10%
+damage" would be a mod with a worse price tag, and the run could not tell
+the two buttons apart by what they did — only by what they cost.
+
+**The band is how OFTEN, not how good.** Every relic costs the same
+150,000, so the four rarities are only the odds G draws against: a *common*
+relic is the one that comes up often, and it still has to be worth the six
+figures when it does. Overclock Core is a common and it doubles the damage
+of every gun on the field.
+
+| relic | band | opens | what it does |
+|---|---|---|---|
+| Overclock Core | Common | 16 | every turret deals **double** damage |
+| Coolant Loop | Common | 17 | every turret fires **twice** as fast |
+| Scavenger Rig | Common | 18 | every kill pays **triple** scrap |
+| Salvage Insurance | Uncommon | 19 | every wrecked turret pays 2,000 scrap — two cards' worth, every time |
+| Phosphor Rounds | Uncommon | 20 | every shot burns white, hits half again as hard, and punches through 2 more bodies |
+| Last Volley | Uncommon | 21 | a wrecked turret gives every turret within 8 tiles **triple** fire rate for 15s |
+| **Cascade Charges** | Uncommon | 22 | a **T4 or T5 hull comes apart where it falls**, for a fifth of its own maximum health over 6 tiles — enough to set off the next one. A wall of heavies unzips itself |
+| **Aegis Breaker** | Uncommon | 23 | **the swarm's support line stops supporting**: no mending, no shields handed out, no borrowed plating and no borrowed speed, anywhere on the field |
+| Phoenix Protocol | Rare | 24 | a wrecked turret has a 50% chance to stand straight back up — **every time**, no limit |
+| Twin Fire | Rare | 25 | every turret fires one more round in every volley |
+| **Monofilament Rounds** | Rare | 26 | **ARMOUR STOPS APPLYING.** Every hit the board lands is dealt in full, whatever the body is plated in |
+| **Titan Rounds** | Rare | 27 | every hit gains **a quarter again per tier** above the first, so a T5 hull takes **double** |
+| **Undying Legion** | **Ultra** | 28 | **every turret you own stands back up once, at full health — the ones already on the field included** |
+| **Terminal Protocol** | **Ultra** | 29 | **anything knocked to 15% of its own health dies on the spot** — and 15% of an eclipse is three thousand the board never has to grind through |
+| **Ascendancy Protocol** | **Ultra** | 29 | **the turret deal hands over rares 5× and ULTRAS 20× as often, for the rest of the run** |
+
+**Four of them are stat surgery and the rest are moments.** Overclock,
+Coolant, Phosphor and Twin Fire compose onto every kind's table
+(`applyRelics`, once per kind per `refreshSpecs`, never per shot). The rest
+are read **by name** at the one place each of them happens — a revive, a
+refund, a body's parting blast — because there is no way to express "when
+this dies" as a stat.
+
+**The five anti-T5 relics live in the sim, not on a bullet,** and that is
+deliberate. `Sim.damageUnit` and `Sim.killUnit` are the chokepoints *every*
+damage path and *every* death in the game passes through. Written as
+`BulletStats` fields instead they would have been silently inert for half
+the roster: a bullet's own `pierceArmor` is honoured on exactly one of the
+sim's damage paths, so an "every round ignores armour" relic bolted onto the
+bullet would have done nothing at all for a lancer, an arc or a meltdown. A
+relic is a rule over the whole board, so it is enforced where the whole
+board passes.
+
+**Cascade Charges is a queue, not a call.** A detonation damages units, a
+damaged unit can die, and a death is what queues a detonation — done in
+place it would be `killUnit` recursing into itself in the middle of its own
+swap-remove. So a death only *writes* to the queue and the blasts go off
+once a frame where no removal is in flight (`drainCascades`), walking the
+queue by index so a charge that kills sets off the next one in the same
+frame, under a hard chain cap.
+
+**The shelf holds both categories, relics first** (`components/Relics.tsx`),
+with a divider between them: a rule always in force and a 30% roll on the
+next placement are two different kinds of thing, and one undifferentiated
+row said neither. A relic chip carries no count because a relic is held
+once; a mod chip carries an ×3 when the run has three.
+
+### The purple band, on both sides
+
+**An ultra MOD is the turret changing species**, and that is the whole
 argument for the band: one draw in fifty, so when one lands it has to be
 worth the fifty. A **Sniper** reaches four times as far and dies to a stiff
 breeze; an **All Round** is simply a better turret at no cost at all; a
-**Giant** is twice the building and eats a whole card to be it. On the
-relic side, Ascendancy turns a 1% ultra-turret draw into about **12.6%** —
-the run stops hoping for a 4×4 and starts planning around them. A "+15%"
-at the top band would be a betrayal of the border it wears.
+**Giant** is twice the building and eats a whole card to be it. A "+15%" at
+the top band would be a betrayal of the border it wears.
 
-**An ultra may charge for its size.** The catalog buffs the player on
+**An ultra RELIC is the run stopping scaling like a run.** Ascendancy turns
+a 1% ultra-turret draw into 20% — the run stops hoping for a 4×4 and starts
+planning around them; Undying gives the whole board a second life;
+Terminal Protocol makes every heavy in the game a sixth shorter, off the
+END of its pool, which is the part a board grinds through at its slowest
+with the hull already inside the line.
+
+**An ultra mod may charge for its size.** The catalog buffs the player on
 balance — weakening the swarm is the mutators' half of the game — but a
-top-band attribute is allowed to gut a stat the build does not want, which
-is what makes it a build and not a bonus. That is the Sniper's tenth of a
-health pool and the Giant's tenth of a range.
+top-band mod is allowed to gut a stat the build does not want, which is
+what makes it a build and not a bonus. That is the Sniper's tenth of a
+health pool and the Giant's tenth of a range. **A relic never charges**: at
+150,000 the price is the cost.
 
 **Repair is a percentage of the turret's OWN ceiling, per second.**
 `Sim.resolveTower` multiplies `modRegen(mask)` by that turret's `hpMax`

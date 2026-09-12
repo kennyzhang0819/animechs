@@ -22,14 +22,18 @@
  * forces the discipline — there is no room on a 16-grid for anything but
  * one clear object and one accent.
  *
- * THE RELICS ARE HERE TOO, and they are drawn LOUDER. A turret attribute
- * is one stat and its picture is one object in gunmetal with one accent;
- * a relic is the whole board doing something different, and at thirty
+ * THE RELICS ARE HERE TOO, and they are drawn LOUDER. A MOD is one stat
+ * and its picture is one object in gunmetal with one accent; a RELIC is
+ * the whole board doing something different, and at a hundred and fifty
  * thousand scrap it is the most expensive thing on the shelf, so its
  * picture carries the colour of what it does — heat, coolant blue, scrap
- * gold, mender green — over the whole drawing rather than as a pip. A
- * player scanning the shelf should be able to tell the relics from the
- * attributes before reading a single border.
+ * gold, mender green, shield blue — over the whole drawing rather than as
+ * a pip. A player scanning the shelf should be able to tell the relics
+ * from the mods before reading a single border.
+ *
+ * ONE TABLE, TWO CATALOGS. The drawings are keyed by glyph name and the
+ * two glyph unions are disjoint (mods.ts ModGlyph, relics.ts RelicGlyph),
+ * so this file draws both halves without either knowing the other exists.
  */
 
 import { memoDraw, PAL, type Pen } from "./pixelArt";
@@ -38,9 +42,10 @@ import { memoDraw, PAL, type Pen } from "./pixelArt";
 export const MOD_GRID = 16;
 
 /**
- * ELEVEN DRAWINGS FOR SIXTEEN TURRET MODS. Damage, fire rate, health and
- * range each have a common and an uncommon sharing one picture; pierce
- * has an uncommon and a rare sharing one; the rest are one apiece.
+ * TWELVE DRAWINGS FOR SIXTEEN MODS. Damage, fire rate, health and range
+ * each have a common and an uncommon sharing one picture; the rest are one
+ * apiece. The fifteen relics get one drawing each — a relic is never a
+ * "better version of" anything, so rule 3 has nothing to collapse.
  *
  * NONE OF THESE TRACES THE LINE GLYPH IT REPLACES (rule 1). The strokes
  * were two marks on a 24-grid and had to be abstract; these do not, so
@@ -317,6 +322,83 @@ const GLYPHS: Record<string, (g: Pen) => void> = {
     g.over((o) => o.box(0, 0.78, 1, 1, PAL.steelDark));
     g.box(0.36, 0.56, 0.64, 0.96, PAL.healDark);       // the gate
     g.box(0.42, 0.62, 0.58, 0.96, PAL.heal);
+  },
+
+  /** CASCADE CHARGES — one blast that has already gone off, and the bigger
+   *  one it set off. TWO rather than a row of three: at 16 pixels a chain
+   *  of rings is a texture, and "this one lit that one" needs exactly two
+   *  to be read. */
+  chain: (g) => {
+    g.ring(0.2, 0.74, 0.2, 2, PAL.emberDark);          // the hull that went first
+    g.disc(0.2, 0.74, 0.1, PAL.ember);
+    g.ring(0.62, 0.36, 0.34, 3, PAL.flame);            // ...and the one it lit
+    g.disc(0.62, 0.36, 0.16, PAL.emberLite);
+    g.disc(0.62, 0.36, 0.07, PAL.flameLite);
+  },
+
+  /** AEGIS BREAKER — a shield, in the FIELD BLUE every borrowed defence in
+   *  this game wears, with a break straight through it. The Bulwark mod's
+   *  shield above is gunmetal and whole; this one is the support's colour
+   *  and is not, which is the whole difference between owning a shield and
+   *  taking one away. */
+  aegis: (g) => {
+    g.poly([[0.12, 0.04], [0.88, 0.04], [0.88, 0.5], [0.5, 0.98], [0.12, 0.5]], PAL.field);
+    g.over((o) => {
+      o.box(0, 0, 1, 0.26, PAL.fieldLite);             // the lit top of the face
+      o.box(0, 0.74, 1, 1, PAL.fieldDark);             // ...and the dark of the point
+    });
+    // THE BREAK, and it is an ERASE rather than a dark line: a shield with
+    // a stripe painted on it is a shield with a stripe (rule 5), and a
+    // shield with a piece missing is a broken shield
+    g.erase((e) => e.poly([[0, 0.52], [1, 0.32], [1, 0.44], [0, 0.64]], null));
+  },
+
+  /** MONOFILAMENT ROUNDS — a plate in two pieces, and the thread that did
+   *  it. The Sabot mod's spike above is a dart stuck THROUGH a wall; this
+   *  is a wall that stopped being a wall, and the bead on the left is the
+   *  spool the filament came off. */
+  thread: (g) => {
+    g.box(0.06, 0.08, 0.8, 0.42, PAL.steel);           // the plate's top half
+    g.over((o) => o.box(0, 0.08, 1, 0.2, PAL.steelLite));
+    // ...and the half that SLID: three pixels over, which is the whole read
+    // — two plates flush is a plate with a stripe on it
+    g.box(0.26, 0.58, 1.0, 0.92, PAL.steel);
+    g.over((o) => o.box(0, 0.8, 1, 0.92, PAL.steelDark));
+    g.box(0.0, 0.46, 1.0, 0.54, PAL.steelWhite);       // the filament
+    g.disc(0.1, 0.5, 0.14, PAL.steelWhite);            // the spool it came off
+    g.disc(0.1, 0.5, 0.06, PAL.steelDeep);
+  },
+
+  /** TITAN ROUNDS — a hull too big for the square, and one small round
+   *  going into it with everything it has. The read is the SIZE DIFFERENCE:
+   *  this relic is worth nothing against a dagger and double against an
+   *  eclipse, so the picture is a little round and a large body. */
+  titan: (g) => {
+    g.box(0.38, 0.04, 1.0, 0.96, PAL.steelDark);       // the hull
+    g.over((o) => {
+      o.box(0, 0, 1, 0.26, PAL.steel);                 // its lit top plate
+      o.box(0, 0.84, 1, 1, PAL.steelDeep);             // ...and its skirt
+    });
+    g.box(0.0, 0.46, 0.2, 0.56, PAL.emberLite);        // the round, still coming
+    // THE HIT, and it has to be the loud part: a small round against a hull
+    // this size only reads as damage if the flash does
+    g.poly([[0.18, 0.5], [0.42, 0.14], [0.34, 0.5], [0.42, 0.86]], PAL.flame);
+    g.box(0.24, 0.38, 0.52, 0.62, PAL.flame);
+    g.box(0.28, 0.44, 0.46, 0.56, PAL.flameLite);
+  },
+
+  /** TERMINAL PROTOCOL — a skull, and it is the one drawing in this file
+   *  that is allowed to be a face (rule 6 is a warning about accidents).
+   *  Anything under fifteen per cent dies on the spot; a bar with a sliver
+   *  on it was the honest picture and nobody read it in half a second. */
+  terminal: (g) => {
+    g.disc(0.5, 0.4, 0.36, PAL.steelLite);             // the dome
+    g.box(0.28, 0.62, 0.72, 0.9, PAL.steelLite);       // the jaw
+    g.over((o) => o.box(0, 0, 1, 0.2, PAL.steelWhite));// bone, lit from above
+    g.box(0.22, 0.32, 0.4, 0.5, PAL.steelDeep);        // the sockets
+    g.box(0.6, 0.32, 0.78, 0.5, PAL.steelDeep);
+    g.box(0.46, 0.5, 0.54, 0.6, PAL.steelDeep);        // the nose
+    for (const x of [0.38, 0.52]) g.box(x, 0.68, x + 0.08, 0.9, PAL.steelDeep);  // the teeth
   },
 
   /** ASCENDANCY PROTOCOL — a four-point star, and the brightest thing in

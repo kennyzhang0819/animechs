@@ -148,14 +148,20 @@ export const TURRET_ROLL_PRICE = 1000;
  * same purchase. A turret card is SPENT: it is placed, it is shot at, and
  * one day it is gone. A module is OWNED for the rest of the run.
  *
- * AND A RELIC IS DEARER THAN A MOD, because the two halves of the catalog
- * are not the same purchase either (mods.ts). A MOD is a CHANCE — it
- * improves nothing standing and adds a roll to every turret placed from
- * here on, so what it is worth depends on how much board the run has left
- * to buy. A RELIC is IN FORCE THE MOMENT IT IS PAID FOR, over every turret
- * already up and every one still to come, and it never stops. The player
- * pressing the third button is buying certainty and the second one is
- * buying odds, and the prices have to say so.
+ * AND A RELIC IS DEARER THAN A MOD, because they are two categories and
+ * not the same purchase either. A MOD (mods.ts) is a CHANCE — it improves
+ * nothing standing and adds a roll to every turret placed from here on, so
+ * what it is worth depends on how much board the run has left to buy. A
+ * RELIC (relics.ts) is IN FORCE THE MOMENT IT IS PAID FOR, over every
+ * turret already up and every one still to come, and it never stops. The
+ * player pressing the third button is buying certainty and the second one
+ * is buying odds, and the prices have to say so.
+ *
+ * THE TWO PRICES ARE ALSO THE TWO HALVES OF THE TRACK. The mods are dealt
+ * across the front of a campaign and the relics across the back (track.ts
+ * RELICS_FROM), so a mod at two thousand is what a run spends on in the
+ * middle and a relic at a hundred and fifty thousand is what the late game
+ * saves for.
  *
  * Flat, like the roll fee and for the same reason: numbers a player can
  * hold in their head, and numbers a balance sweep turns.
@@ -166,7 +172,7 @@ export const MOD_ROLL_PRICE = 2000;
  * A HUNDRED AND FIFTY THOUSAND FOR A RELIC, AND IT IS NOT A TYPO. It was
  * three and a half thousand, which is where a "+10% damage" belongs, and
  * every relic in the catalog has since been rewritten to change the game
- * rather than nudge it (mods.ts) — the board fires twice as fast, every
+ * rather than nudge it (relics.ts) — the board fires twice as fast, every
  * kill pays triple, every turret stands back up. A rule that size at four
  * cards' price would be the first thing every run bought and the last
  * decision it ever made.
@@ -179,7 +185,9 @@ export const MOD_ROLL_PRICE = 2000;
  * thousand — a hundred and fifty cards, the opening bank twenty times
  * over — a relic is a whole act of a run saved for, and buying one is
  * giving up the board that money would have been. That is the trade the
- * button is supposed to put in front of the player.
+ * button is supposed to put in front of the player, and it is the right
+ * trade for what a relic ANSWERS: a wall of T5 hulls, which a board of
+ * ordinary turrets does not beat by being a little bigger.
  *
  * The amount ladder still multiplies it, so x9 relics is one and a
  * third million — nine relics is nine relics.

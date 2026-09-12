@@ -3066,11 +3066,11 @@ export default function MechSwarm() {
             which read as sentences and must not wrap. */}
         {hud && (
           <div className="ui-zoom absolute left-[1rem] top-[1rem] flex w-[34rem] max-w-[calc(100vw-8rem)] flex-col items-start gap-2">
-            {/* THE RELIC SHELF (components/Relics.tsx), over everything
-                else the corner says. An upgrade is a RULE in force for
-                the rest of the run, so it heads the corner that holds
-                what is true of the run for good. */}
-            <RelicShelf relics={hud.relics} />
+            {/* THE SHELF (components/Relics.tsx), over everything else the
+                corner says — the run's relics and then its mods. A relic
+                is a RULE in force for the rest of the run, so it heads the
+                corner that holds what is true of the run for good. */}
+            <RelicShelf relics={hud.shelfRelics} mods={hud.shelfMods} />
             {admin && !hud.lost && !hud.won && !hud.menuOpen && (
               /* THE PACE STRIP IS SANDBOX'S, and nothing else on the field
                  is. A campaign run plays at 1x — the multipliers have

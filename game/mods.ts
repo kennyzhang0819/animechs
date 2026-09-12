@@ -4,75 +4,62 @@ import type { TowerKind } from "./types";
 import { armored, faster, piercing, reaching, stronger } from "./upgrades";
 
 /**
- * MODS — the run's UPGRADES, and the second thing the deal sells.
+ * MODS — THE MID GAME'S ANSWER, and the first of the game's two categories
+ * of module.
  *
- * THE PLAYER'S WORD FOR THESE IS "UPGRADE". The code's word is MOD,
- * because `upgrades.ts` is already taken by the tech tree's per-turret
- * rungs — a save's permanent, skill-point-bought branches — and the two
- * are nothing alike. A rung is bought once for the whole account and
- * belongs to a KIND; a mod is bought in scrap, inside one run, and dies
- * with it. Nothing here touches that file's namespace and nothing there
- * knows this one exists.
+ * THERE ARE EXACTLY TWO CATEGORIES AND NEITHER IS CALLED "UPGRADE". A MOD
+ * is what this file sells: a CHANCE riding every turret placed from now
+ * on, bought in scrap by the fistful, each one a number on a gun. A RELIC
+ * (relics.ts) is the other one: a RULE over the whole board, bought once,
+ * every one of them something the board could not do before. The relics
+ * used to live in this file behind a `scope` field — which meant the code
+ * said a relic was a kind of mod, and every screen that grouped the two
+ * under one word repeated the untruth. They have their own file, their own
+ * ids, their own odds and their own button now, and the word "upgrade" is
+ * gone from both halves.
+ *
+ * WHAT A MOD IS FOR: THE MIDDLE OF A RUN. A mod makes the guns better at
+ * what they already do, and that is the answer for as long as the thing
+ * walking up the lane can be killed by a better gun. It stops being the
+ * answer when the T5 hulls arrive — twenty thousand health behind
+ * twenty-two points of armour will out-arithmetic any stack of "+4%
+ * damage" — and answering THAT is the relics' job, which is why the track
+ * deals the mods across its front half and the relics across its back
+ * (track.ts).
  *
  * A MOD IS A MODULE LIKE ANY OTHER. It carries one of the four rarities
  * (rarity.ts) and wears that band's border, exactly as a turret card and
  * a formation do — one palette, now answering "how good is this" a third
- * time. A press rolls a band and then a mod uniformly inside it, the same
- * two-step every table in this game uses.
+ * time. A press of M rolls a band and then a mod uniformly inside it, the
+ * same two-step every table in this game uses.
  *
- * THERE ARE TWO SCOPES, THEY ARE NOT THE SAME KIND OF THING, AND THEY ARE
- * SOLD BY TWO DIFFERENT BUTTONS. The corner's "Buy mods" (M) draws from
- * the turret half and "Buy relics" (R) from the global half, at prices of
- * their own (economy.ts MOD_ROLL_PRICE, RELIC_ROLL_PRICE) — see rollMod's
- * `scope`. They used to be one button and one coin-flip between the two,
- * which meant a player who needed a relic paid relic money for even odds
- * of an attribute; a purchase whose SCOPE is random is a purchase the
- * player cannot aim, and the two halves below are exactly the two things
- * a player is ever trying to aim at.
+ * IT IS A CHANCE RATHER THAN A GRANT. Owning one does not improve a single
+ * gun on the board: it adds a roll to every turret PLACED FROM NOW ON
+ * (`chance`), and a turret that wins that roll carries the attribute for
+ * as long as it stands. So a mod is a bet on the future of the board, and
+ * the patch a card puts down comes out speckled — thirty-six turrets, four
+ * of them gleaming.
  *
- *   GLOBAL — a RELIC. It lands the instant it is bought and it applies to
- *   EVERYTHING: every turret already standing, every turret still to come,
- *   the deal's own odds, what a kill pays, what happens when a structure
- *   falls. It is drawn on the top-left of the field for the rest of the
- *   run (components/Relics.tsx), Slay the Spire's shelf, because a rule
- *   that is always in force has to be always on screen.
+ * EVERY MOD IS ROLLED FOR EVERY TURRET, INDEPENDENTLY. There is no "at
+ * most one": a placement rolls once per mod the run owns (rollTurretMods),
+ * so a turret can come out carrying all of them, and the odds alone make
+ * that rare. That is why the low bands are small numbers — a run banking
+ * ten mods is folding ten multipliers onto the same gun, and a common
+ * worth a quarter of a turret would compound into nonsense by wave twenty.
  *
- *   TURRET — an ATTRIBUTE, and it is a CHANCE rather than a grant. Owning
- *   one does not improve a single gun on the board: it adds a roll to
- *   every turret PLACED FROM NOW ON (`chance`), and a turret that wins
- *   that roll carries the attribute for as long as it stands. So a turret
- *   mod is a bet on the future of the board, and the patch a card puts
- *   down comes out speckled — thirty-six turrets, four of them gleaming.
- *
- * EVERY ATTRIBUTE IS ROLLED FOR EVERY TURRET, INDEPENDENTLY. There is no
- * "at most one": a placement rolls once per attribute the run owns
- * (rollTurretMods), so a turret can come out carrying all of them, and
- * the odds alone make that rare. That is why the low bands are small
- * numbers — a run banking ten attributes is folding ten multipliers onto
- * the same gun, and a common worth a quarter of a turret would compound
- * into nonsense by wave twenty.
- *
- * A TURRET MOD IS ANYTHING THAT COMPOSES ONTO ONE TURRET'S TABLE. It used
- * to be narrower than that — "a stat tweak and nothing else, behaviour is
- * the relics' job" — and the line was drawn in the wrong place: a fuse
- * that fires five spikes instead of three is not a number going up, it is
- * the gun doing a different thing, and it is still one turret's business
- * and nobody else's. So an attribute may change what a turret DOES as
- * long as it says so through `apply` (the shot count, the spread, the
- * pierce) or `regen`; what it may not do is reach past the turret it
- * landed on. The one rule that survives is the mechanical one: a turret's
- * table is composed ONCE at the placement (Tower.spec) and read flat by
- * the fire loop, never switched on per shot — so an attribute has to be
- * expressible as a table, and "when this turret dies" is not.
- *
- * A RELIC CHANGES THE GAME, AND IS PRICED LIKE IT. A hundred and fifty
- * thousand scrap (economy.ts RELIC_ROLL_PRICE) is a hundred and fifty
- * turret cards, or the whole opening bank twenty times over, and nothing
- * at that price may be a
- * percentage: the board fires TWICE as fast, every kill pays TRIPLE, every
- * turret stands back up. A relic at "+10% damage" was a mod with a worse
- * price tag, and the run could not tell the two buttons apart by what
- * they did — only by what they cost.
+ * A MOD IS ANYTHING THAT COMPOSES ONTO ONE TURRET'S TABLE. It used to be
+ * narrower than that — "a stat tweak and nothing else, behaviour is the
+ * relics' job" — and the line was drawn in the wrong place: a fuse that
+ * fires five spikes instead of three is not a number going up, it is the
+ * gun doing a different thing, and it is still one turret's business and
+ * nobody else's. So a mod may change what a turret DOES as long as it says
+ * so through `apply` (the shot count, the spread, the pierce) or `regen`;
+ * what it may not do is reach past the turret it landed on. The one rule
+ * that survives is the mechanical one: a turret's table is composed ONCE
+ * at the placement (Tower.spec) and read flat by the fire loop, never
+ * switched on per shot — so a mod has to be expressible as a table, and
+ * "when this turret dies" is not. That belongs in relics.ts, where the sim
+ * reads a rule by name at the one place it happens.
  *
  * A SECOND COPY IS A BIGGER NUMBER, NOT BETTER ODDS. This is the one
  * rule in the file that has been turned round: a copy used to be another
@@ -80,37 +67,35 @@ import { armored, faster, piercing, reaching, stronger } from "./upgrades";
  * at the def — so the tenth "+10% damage" a run bought was still +10%
  * damage, bought at odds that were already nearly certain. It bought
  * nothing a player could feel. Now the ODDS ARE THE DEF'S AND NEVER MOVE,
- * and the copies multiply what a turret born with the attribute gets:
- * three copies of +8% damage is +24% on every turret that wins the same
- * one roll in three.
+ * and the copies multiply what a turret born with the mod gets: three
+ * copies of +8% damage is +24% on every turret that wins the same one
+ * roll in three.
  *
- * THE COPIES SCALE THE BONUS AND NEVER THE PRICE. Every attribute's
- * upside is linear in copies — a multiplier `m` reads 1 + (m - 1) x n,
- * and a flat step (pierce, plating, repair) is simply n of it — while
- * what an attribute CHARGES stays exactly where the def put it: a second
- * Sniper does not take another ninety per cent of the turret's health,
- * and a second Giant is not four times the footprint. A build is meant to
- * get better as it is repeated, not to become impossible.
+ * THE COPIES SCALE THE BONUS AND NEVER THE PRICE. Every mod's upside is
+ * linear in copies — a multiplier `m` reads 1 + (m - 1) x n, and a flat
+ * step (pierce, plating, repair) is simply n of it — while what a mod
+ * CHARGES stays exactly where the def put it: a second Sniper does not
+ * take another ninety per cent of the turret's health, and a second Giant
+ * is not four times the footprint. A build is meant to get better as it is
+ * repeated, not to become impossible.
  *
  * AND IT IS STILL ONE BIT ON THE TURRET. Tower.mods is a mask, so a
- * turret carries an attribute or does not; the STRENGTH is read off the
- * run's ledger when the spec is composed (applyTurretMods), which means a
- * copy bought mid-wave reaches the turrets already standing. That is a
- * deliberate change from what an attribute used to promise — it used to
- * change nothing on the board at all — and it is the only way "the number
- * goes up" can mean anything to a player who already has a board.
+ * turret carries a mod or does not; the STRENGTH is read off the run's
+ * ledger when the spec is composed (applyTurretMods), which means a copy
+ * bought mid-wave reaches the turrets already standing. That is a
+ * deliberate change from what a mod used to promise — it used to change
+ * nothing on the board at all — and it is the only way "the number goes
+ * up" can mean anything to a player who already has a board.
  *
- * A TURRET ATTRIBUTE HAS NO CAP AND A RELIC HAS ONE OF EXACTLY ONE. An
- * attribute is a number that grows, so there is always something a copy
- * can do. A relic is a rule in force; a rule does not get more in force,
- * so owning it twice would have to mean something and there is nothing
- * for it to mean.
+ * A MOD HAS NO CAP AND A RELIC HAS ONE OF EXACTLY ONE. A mod is a number
+ * that grows, so there is always something a copy can do, and the run's
+ * holdings are a TALLY. A relic is a rule in force; a rule does not get
+ * more in force, so the run's relics are a SET (relics.ts).
  *
  * SO THE ONLY HOUSEKEEPING ON SCREEN IS THE COUNT. The boards used to
  * print "One a run" and "Up to 2 of them" under every module, which is a
- * line repeated twenty times to say what one rule says once. A relic is
- * self-explanatory; an attribute prints its odds, and the x3 on its chip
- * is now the whole of what the copies did.
+ * line repeated twenty times to say what one rule says once. A mod prints
+ * its odds, and the x3 on its chip is now the whole of what the copies did.
  *
  * THE LOW BANDS WERE HALVED WHEN THE COPIES STARTED COUNTING. A tick was
  * worth a tenth of a turret when a tenth was all it would ever be worth;
@@ -122,20 +107,20 @@ import { armored, faster, piercing, reaching, stronger } from "./upgrades";
  * left alone: at a tenth of a draw and a fiftieth, a run holding three of
  * one has earned whatever that is.
  *
- * ONLY THE RARE AND ULTRA ATTRIBUTES HAVE NAMES. A common is not a
- * character, it is a tick: "+10% damage" IS its name, and a made-up one
- * over the top of that ("Honed Barrels") is a word the player has to
- * learn in order to be told a thing the number already said. So the low
- * bands print their tweak and the top two print a name — and the glyph
- * says WHICH STAT while the band colour says HOW MUCH, so a grey barrel
- * and a blue barrel are the same stat at two sizes and need no caption at
- * all. Relics keep their names, all of them: a relic is never a number.
+ * ONLY THE RARE AND ULTRA MODS HAVE NAMES. A common is not a character,
+ * it is a tick: "+10% damage" IS its name, and a made-up one over the top
+ * of that ("Honed Barrels") is a word the player has to learn in order to
+ * be told a thing the number already said. So the low bands print their
+ * tweak and the top two print a name — and the glyph says WHICH STAT
+ * while the band colour says HOW MUCH, so a grey barrel and a blue barrel
+ * are the same stat at two sizes and need no caption at all. Relics keep
+ * their names, all of them: a relic is never a number.
  *
  * THE WHOLE CATALOG BUFFS THE PLAYER, on balance. Nothing here weakens
  * the swarm — debuffing the enemy is the mutators' half of the game
- * (mutation.ts) and they pull the other way — but an ULTRA attribute may
- * pay for its size by gutting a stat the build does not want, which is
- * what makes it a build and not a bonus.
+ * (mutation.ts) and they pull the other way — but an ULTRA mod may pay
+ * for its size by gutting a stat the build does not want, which is what
+ * makes it a build and not a bonus.
  *
  * AN ULTRA MOD IS THE TURRET CHANGING SPECIES. One draw in fifty
  * (MOD_WEIGHTS), so when one lands it has to be worth the fifty: a
@@ -145,10 +130,15 @@ import { armored, faster, piercing, reaching, stronger } from "./upgrades";
  * top band would be a betrayal of the border it wears.
  */
 
+/**
+ * EVERY MOD, in catalog order — and the order is load-bearing twice over:
+ * a turret carries the ones it rolled as a BITMASK keyed by position
+ * (TURRET_MOD_IDS), and the shelf, the codex and the track all read the
+ * catalog in this order. The unnamed ticks come first, band by band, and
+ * their id is the stat and the step because their LABEL is the tweak (see
+ * the header).
+ */
 export const MOD_IDS = [
-  // ---- turret attributes: a chance to be born on a new turret ----------
-  // the unnamed ticks first, band by band — their id is the stat and the
-  // step, because their LABEL is the tweak (see the header)
   "dmg1",
   "rate1",
   "hp1",
@@ -166,25 +156,8 @@ export const MOD_IDS = [
   "giant",
   "sniper",
   "allround",
-  // ---- globals: relics, in force the moment they are bought ------------
-  "overclock",
-  "coolant",
-  "scavenger",
-  "insurance",
-  "phosphor",
-  "lastVolley",
-  "phoenix",
-  "twinfire",
-  "undying",
-  "ascendancy",
 ] as const;
 export type ModId = (typeof MOD_IDS)[number];
-
-/**
- * WHICH HALF OF THE SYSTEM A MOD IS IN. See the header: "global" is a
- * relic on the shelf, "turret" is a chance rolled at every placement.
- */
-export type ModScope = "global" | "turret";
 
 /**
  * The face a mod wears on its chip. There are no sprites for these — a
@@ -210,41 +183,30 @@ export type ModGlyph =
   | "giant"
   | "scope"
   | "allround"
-  | "core"
-  | "coolant"
-  | "coin"
-  | "vault"
-  | "flame"
-  | "volley"
-  | "phoenix"
-  | "fan"
-  | "twin"
-  | "legion"
-  | "star";
+  | "fan";
 
 export interface ModDef {
   id: ModId;
   /**
-   * THE NAME — and only the RARE and ULTRA attributes have one, plus
-   * every relic (see the header). A common is a tick, not a character:
-   * its label is its tweak, and `modName` is the one place that decides.
+   * THE NAME — and only the RARE and ULTRA mods have one (see the header).
+   * A common is a tick, not a character: its label is its tweak, and
+   * `modName` is the one place that decides.
    */
   name?: string;
   /**
    * WHAT IT DOES TO THE STATS, in the fewest words that can be true:
-   * "+10% damage", "+50% damage, +50% fire rate". Every turret attribute
-   * carries one — it is the LABEL of an unnamed one and the summary line
-   * of a named one — and a relic carries one only where it is a plain
-   * stat change. It is written by hand rather than derived from `apply`,
-   * because a function that returns a TowerStats cannot be asked what it
-   * changed without running it on something.
+   * "+10% damage", "+50% damage, +50% fire rate". EVERY mod carries one —
+   * it is the LABEL of an unnamed one and the summary line of a named
+   * one. It is written by hand rather than derived from `apply`, because
+   * a function that returns a TowerStats cannot be asked what it changed
+   * without running it on something.
    */
   tweak?: string;
   /**
    * THE SAME TWEAK AT THE COPY COUNT THE RUN ACTUALLY HOLDS — "+2%
-   * damage" at one, "+14% damage" at seven. Every turret attribute
-   * carries one and no relic does (a relic caps at one copy, so its
-   * tweak is already its total).
+   * damage" at one, "+14% damage" at seven. Every mod carries one. A
+   * relic has no equivalent and needs none: it is held once, so its blurb
+   * is already the whole of what it is worth (relics.ts).
    *
    * IT EXISTS BECAUSE THE SHELF USED TO SAY "3 copies — every one of
    * them applies", which is the arithmetic handed to the player to do
@@ -254,26 +216,17 @@ export interface ModDef {
    */
   total?: (copies: number) => string;
   rarity: Rarity;
-  scope: ModScope;
   glyph: ModGlyph;
   /** what owning it does, in the player's own terms — the hover card */
   blurb: string;
   /**
-   * HOW MANY OF IT ONE RUN MAY HOLD, and there are only two answers:
-   * Infinity for a turret attribute, 1 for a relic (checked at import, and
-   * see the header for why). The roll never offers a mod already at its
-   * cap (rollMod), which is what lets the relic half be owned out and the
-   * attribute half never be.
+   * THE ODDS ONE NEW TURRET IS BORN WITH THIS, and they are a CONSTANT —
+   * copies buy strength, never odds (see the header).
    *
-   * A SECOND COPY IS EFFECT AND NEVER ODDS (see the header). It scales
-   * what a turret born with the attribute gets — a second Sniper makes
-   * sniper turrets better, not likelier — and the chance below does not
-   * move for it.
-   */
-  max: number;
-  /**
-   * TURRET MODS ONLY: the odds one new turret is born with this, and they
-   * are a CONSTANT — copies buy strength, never odds (see the header).
+   * THERE IS NO CAP FIELD. A mod is a number that grows, so a run may
+   * hold any number of copies and the M button never stops offering one:
+   * the half cannot be bought out, which is exactly the difference
+   * between it and the relics (relics.ts anyRelicLeft).
    * Read through chanceAt, which is the dashboard's dial folded in.
    *
    * These numbers are small on purpose and they are multiplied by the
@@ -284,18 +237,15 @@ export interface ModDef {
    */
   chance?: number;
   /**
-   * The stat surgery, if the mod is one — both scopes use it.
+   * The stat surgery.
    *
-   * IT IS HANDED THE RUN'S COPY COUNT and every turret attribute below
-   * uses it: the bonuses are linear in `copies` and the costs are not
-   * (see the header). A relic is capped at one, so its own `apply` is
-   * always called with 1.
+   * IT IS HANDED THE RUN'S COPY COUNT and every mod below uses it: the
+   * bonuses are linear in `copies` and the costs are not (see the header).
    *
-   * Mods with no `apply` are the behavioural ones — a revive, a refund, a
-   * shift in the deal's odds — and the sim reads those BY NAME at the one
-   * place each of them happens. There is no way to express "when a turret
-   * dies" as a stat, and pretending otherwise would put a switch in the
-   * hot loop for every one of them.
+   * EVERY MOD HAS ONE, or repairs (`regen`) — checked at import. A module
+   * that is a MOMENT rather than a table ("when this turret dies") cannot
+   * be expressed here at all, and is a relic (relics.ts), where the sim
+   * reads it by name at the one place it happens.
    */
   apply?: (s: TowerStats, copies: number) => TowerStats;
   /**
@@ -339,23 +289,20 @@ export interface ModDef {
    * A MOD THAT ONLY MEANS ANYTHING ON ONE KIND — the Splitter Array is a
    * fuse's attribute and nothing else's. Unset is every kind.
    *
-   * On a turret attribute it gates the ROLL: a placement of any other
-   * kind never rolls for it at all (rollTurretMods), so the odds are per
-   * FUSE placed and the shelf says so (oddsLine). On a relic it gates the
-   * apply, so refreshSpecs can skip the call for the kinds it has nothing
-   * to say about. It is on the def rather than inside `apply` because the
-   * roll happens before there is a table to apply anything to.
+   * It gates the ROLL: a placement of any other kind never rolls for it
+   * at all (rollTurretMods), so the odds are per FUSE placed and the shelf
+   * says so (oddsLine). It is on the def rather than inside `apply`
+   * because the roll happens before there is a table to apply anything to.
    */
   only?: TowerKind;
 }
 
 // ---------------------------------------------------------------------------
-// THE TUNING BEHIND THE BEHAVIOURAL MODS
+// THE TUNING BEHIND THE MODS THAT ARE NOT A PLAIN MULTIPLIER
 //
-// Every number a global's effect needs, written here beside the def it
-// belongs to rather than at the sim site that reads it — the sim owns WHEN
-// a thing happens and this file owns HOW MUCH, the same split the mutators
-// keep (mutation.ts).
+// The numbers are written here beside the def they belong to rather than at
+// the site that reads them. Every relic's tuning lives in relics.ts for the
+// same reason.
 // ---------------------------------------------------------------------------
 
 /**
@@ -364,66 +311,6 @@ export interface ModDef {
  * will ever stand on this board, core included.
  */
 export const GIANT_SCALE = 2;
-
-/**
- * INSURANCE: what a wrecked turret pays, EVERY time. It used to be a 40%
- * chance at five hundred — an expected two hundred scrap a death, which
- * on a relic priced in six figures pays itself back after seven hundred
- * and fifty wrecks, which is a relic that never pays. Two cards' worth,
- * certain, is seventy-five wrecks: a line that is being chewed through is
- * also a line that is funding its own replacement.
- */
-export const INSURANCE_SCRAP = 2000;
-
-/** scavenger: what it adds to every kill's drop — TWO more of it, so a
- *  kill pays triple. The economy relic, and the one that has to pay its
- *  own six figures back fastest */
-export const SCAVENGER_BONUS = 2;
-
-/** last volley: the reload multiplier a death hands its neighbours, how
- *  long it lasts, and how far it reaches (in tiles). Triple, for a
- *  quarter of a minute, over a bigger ring — a death is an EVENT now */
-export const LAST_VOLLEY_RATE = 3;
-export const LAST_VOLLEY_SECONDS = 15;
-export const LAST_VOLLEY_TILES = 8;
-
-/**
- * PHOENIX: the odds a wrecked turret stands back up — EVERY time, not
- * once. A coin flip with no floor under it is worth one extra life on
- * average, the same as Undying's certain one, and it never runs out; the
- * two are the same relic told as certainty and as luck, and a run that
- * owns both spends the certainty first (Sim.reviveTower).
- */
-export const PHOENIX_CHANCE = 0.5;
-
-/** overclock and coolant: the board's damage and rate, DOUBLED */
-export const OVERCLOCK_MUL = 2;
-export const COOLANT_MUL = 2;
-
-/** phosphor: every round hits half again as hard and goes through two
- *  more bodies, on top of burning white */
-export const PHOSPHOR_MUL = 1.5;
-export const PHOSPHOR_PIERCE = 2;
-
-/** twin fire: one more round in every volley on the board */
-export const TWINFIRE_SHOTS = 1;
-
-/**
- * ASCENDANCY: what the relic does to the TURRET deal's odds (rarity.ts
- * BASE_WEIGHTS). It multiplies the two top bands rather than replacing
- * the table, so a future relic that also bends the odds composes with it
- * instead of fighting it.
- *
- * Twenty times on purple is one draw in twenty rather than one in a
- * hundred — the run stops hoping for a 4x4 and starts planning around
- * them, which is exactly what an ultra relic should be worth.
- */
-export const ASCENDANCY_MUL: Readonly<Record<Rarity, number>> = {
-  common: 1,
-  uncommon: 1,
-  rare: 5,
-  ultra: 20,
-};
 
 // ---------------------------------------------------------------------------
 // THE CATALOG
@@ -469,11 +356,7 @@ const tick = (
   tweak,
   total,
   rarity,
-  scope: "turret",
   glyph,
-  // NO CAP. An unnamed tick is a dial, and a dial with a stop at three is
-  // a dial that stops being a decision — see the header
-  max: Infinity,
   chance,
   blurb: `A chance for a new turret to be born with ${tweak} — again for every copy held.`,
   apply,
@@ -565,9 +448,7 @@ const TURRET_MODS: readonly ModDef[] = [
     tweak: "+12% damage, +12% fire rate",
     total: bothOf(pctOf(1.12, "damage"), pctOf(1.12, "fire rate")),
     rarity: "rare",
-    scope: "turret",
     glyph: "chassis",
-    max: Infinity,
     chance: 0.1,
     blurb: "A chance for a new turret to be born on a prototype frame: more damage and more rate of fire, on both axes at once.",
     apply: (t, n) => faster(stronger(t, per(1.12, n)), per(1.12, n)),
@@ -579,9 +460,7 @@ const TURRET_MODS: readonly ModDef[] = [
     total: bothOf(pctOf(1.25, "health"), flatOf(2, "armor"), (n) =>
       `repairs ${(0.8 * nOf(n)).toFixed(2).replace(/\.?0+$/, "")}% a second`),
     rarity: "rare",
-    scope: "turret",
     glyph: "shield",
-    max: Infinity,
     chance: 0.1,
     // the +2 is half a mace's plate — a copy is not the difference
     // between a dagger biting and bouncing off any more, but four are
@@ -595,9 +474,7 @@ const TURRET_MODS: readonly ModDef[] = [
     tweak: "+1 pierce, +15% damage",
     total: bothOf(flatOf(1, "pierce"), pctOf(1.15, "damage")),
     rarity: "rare",
-    scope: "turret",
     glyph: "spike",
-    max: Infinity,
     chance: 0.1,
     blurb: "A chance for a new turret to fire sabot: harder rounds, and each one punches through another body.",
     apply: (t, n) => piercing(stronger(t, per(1.15, n)), 1 * Math.max(1, n)),
@@ -614,10 +491,8 @@ const TURRET_MODS: readonly ModDef[] = [
     tweak: "+1 spike a volley, fuse only",
     total: (n) => `+${nOf(n)} spike${nOf(n) === 1 ? "" : "s"} a volley, fuse only`,
     rarity: "rare",
-    scope: "turret",
     glyph: "fan",
     only: "fuse",
-    max: Infinity,
     // STEEPER THAN THE OTHER RARES, because it rolls against ONE kind: a
     // tenth would speckle a patch of duos and never once show on the two
     // fuses a run puts down
@@ -636,9 +511,7 @@ const TURRET_MODS: readonly ModDef[] = [
     total: bothOf(pctOf(11, "health"), pctOf(3, "damage"), flatOf(10, "armor"), () =>
       "−90% range, twice the footprint"),
     rarity: "ultra",
-    scope: "turret",
     glyph: "giant",
-    max: Infinity,
     // ROLLED ONCE PER CARD (`solo`), not once per turret — so this is the
     // odds that a PLACEMENT comes out giant, whatever the card was. It is
     // the loosest of the three because it costs the whole card to happen
@@ -660,9 +533,7 @@ const TURRET_MODS: readonly ModDef[] = [
     tweak: "+300% range, +200% fire rate, +100% damage, −90% health",
     total: bothOf(pctOf(4, "range"), pctOf(3, "fire rate"), pctOf(2, "damage"), () => "−90% health"),
     rarity: "ultra",
-    scope: "turret",
     glyph: "scope",
-    max: Infinity,
     chance: 0.04,
     blurb:
       "New turrets have a chance to be born SNIPER: four times the reach, triple the rate of fire and double the damage — on a tenth of the health. It kills everything it can see and dies to anything that reaches it.",
@@ -679,9 +550,7 @@ const TURRET_MODS: readonly ModDef[] = [
       flatOf(3, "pierce"),
     ),
     rarity: "ultra",
-    scope: "turret",
     glyph: "allround",
-    max: Infinity,
     // THE RAREST OF THE THREE, because it is the only one that charges
     // nothing: the giant gives up its range and the sniper its health, and
     // this one is simply a better turret (see the header)
@@ -696,142 +565,16 @@ const TURRET_MODS: readonly ModDef[] = [
   },
 ];
 
-const GLOBAL_MODS: readonly ModDef[] = [
-  // EVERY RELIC BELOW IS THE BOARD DOING A DIFFERENT THING, not the same
-  // thing a little better — see the header. The bands are what the deal
-  // draws against, not what the relics are worth: at one price for all
-  // of them, a common relic is the one that comes up often, and it still
-  // has to be worth the hundred and fifty thousand when it does
-  {
-    id: "overclock",
-    name: "Overclock Core",
-    rarity: "common",
-    scope: "global",
-    glyph: "core",
-    max: 1,
-    blurb: "Every turret on the field deals DOUBLE damage.",
-    apply: (s) => stronger(s, OVERCLOCK_MUL),
-  },
-  {
-    id: "coolant",
-    name: "Coolant Loop",
-    rarity: "common",
-    scope: "global",
-    glyph: "coolant",
-    max: 1,
-    blurb: "Every turret on the field fires TWICE as fast.",
-    apply: (s) => faster(s, COOLANT_MUL),
-  },
-  {
-    id: "scavenger",
-    name: "Scavenger Rig",
-    rarity: "common",
-    scope: "global",
-    glyph: "coin",
-    max: 1,
-    blurb: "Every kill pays TRIPLE scrap.",
-  },
-  {
-    id: "insurance",
-    name: "Salvage Insurance",
-    rarity: "uncommon",
-    scope: "global",
-    glyph: "vault",
-    max: 1,
-    blurb: "Every destroyed turret pays out 2,000 scrap — two cards' worth, every time.",
-  },
-  {
-    id: "phosphor",
-    name: "Phosphor Rounds",
-    rarity: "uncommon",
-    scope: "global",
-    glyph: "flame",
-    max: 1,
-    // the "bullet upgrade that changes what an attack LOOKS like": every
-    // round on the board goes white-hot, muzzle spray and hit included —
-    // and now it goes THROUGH things, which is what white-hot should mean
-    blurb: "Every shot on the field burns phosphor-white: half again the damage, and it punches through two more bodies.",
-    apply: (s) => {
-      const hot = piercing(stronger(s, PHOSPHOR_MUL), PHOSPHOR_PIERCE);
-      return {
-        ...hot,
-        bullet: {
-          ...hot.bullet,
-          fxColor: PAL.bulletYellow,
-          ...(hot.bullet.sprite
-            ? {
-                sprite: {
-                  ...hot.bullet.sprite,
-                  front: PAL.white,
-                  back: PAL.bulletYellowBack,
-                },
-              }
-            : null),
-        },
-      };
-    },
-  },
-  {
-    id: "lastVolley",
-    name: "Last Volley",
-    rarity: "uncommon",
-    scope: "global",
-    glyph: "volley",
-    max: 1,
-    blurb:
-      "A destroyed turret spends its last charge on its neighbours: every turret within 8 tiles fires at TRIPLE rate for 15 seconds.",
-  },
-  {
-    id: "phoenix",
-    name: "Phoenix Protocol",
-    rarity: "rare",
-    scope: "global",
-    glyph: "phoenix",
-    max: 1,
-    blurb: "A destroyed turret has a 50% chance to stand straight back up at full health — every time it falls, with no limit.",
-  },
-  {
-    id: "twinfire",
-    name: "Twin Fire",
-    rarity: "rare",
-    scope: "global",
-    glyph: "twin",
-    max: 1,
-    // what was the Splitter Array's slot: a whole-board version of the
-    // same idea, one more round in every volley from every gun
-    blurb: "Every turret on the field fires one more round in every volley.",
-    apply: (s) => ({ ...s, shots: s.shots + TWINFIRE_SHOTS }),
-  },
-  {
-    id: "undying",
-    name: "Undying Legion",
-    rarity: "ultra",
-    scope: "global",
-    glyph: "legion",
-    max: 1,
-    blurb:
-      "EVERY turret you own stands back up once, at full health, the first time it is destroyed — the ones already on the field included.",
-  },
-  {
-    id: "ascendancy",
-    name: "Ascendancy Protocol",
-    rarity: "ultra",
-    scope: "global",
-    glyph: "star",
-    max: 1,
-    blurb:
-      "The deal starts handing over the big guns: rare turrets come up five times as often and ULTRA turrets twenty times as often, for the rest of the run.",
-  },
-];
-
-export const MODS: readonly ModDef[] = [...TURRET_MODS, ...GLOBAL_MODS];
+/** the whole catalog — one category, so this IS the turret mods */
+export const MODS: readonly ModDef[] = TURRET_MODS;
 
 const BY_ID = new Map<ModId, ModDef>(MODS.map((m) => [m.id, m]));
 
 /**
  * WHAT TO CALL ONE, and the single answer every screen reads: the name if
  * it has one, and its tweak if it does not (see the header — only the
- * rare and ultra attributes are named, and every relic is).
+ * rare and ultra mods are named). A relic always has a name, so its side
+ * needs no such rule (relics.ts relicName).
  */
 export const modName = (d: ModDef): string => d.name ?? d.tweak ?? d.id;
 
@@ -846,10 +589,6 @@ export const modDef = (id: ModId): ModDef => {
   if (!d) throw new Error(`no such mod: ${id}`);
   return d;
 };
-
-/** every mod of one scope, in catalog order */
-export const modsOfScope = (scope: ModScope): readonly ModDef[] =>
-  MODS.filter((m) => m.scope === scope);
 
 /** every mod of one band, in catalog order — for the codex */
 export const modsOfRarity = (r: Rarity): readonly ModDef[] => MODS.filter((m) => m.rarity === r);
@@ -869,7 +608,7 @@ export const TURRET_MOD_IDS: readonly ModId[] = TURRET_MODS.map((m) => m.id);
 
 const BIT: ReadonlyMap<ModId, number> = new Map(TURRET_MOD_IDS.map((id, i) => [id, 1 << i]));
 
-/** the bit one turret attribute occupies in Tower.mods, or 0 for a global */
+/** the bit one mod occupies in Tower.mods */
 export const modBit = (id: ModId): number => BIT.get(id) ?? 0;
 
 /** does this turret carry that attribute? */
@@ -910,11 +649,9 @@ export function maskRarity(mask: number): Rarity | null {
  * the shelf has to be able to keep reading it after they buy the fourth.
  */
 export function chanceAt(id: ModId): number {
-  const d = modDef(id);
-  // chanceOf, not d.chance: the dashboard's dial has to move the odds the
-  // shelf prints and the odds the placement rolls, or the two disagree
-  const c = chanceOf(id);
-  return d.scope === "turret" && c ? Math.min(1, c) : 0;
+  // chanceOf, not the def's own: the dashboard's dial has to move the odds
+  // the shelf prints and the odds the placement rolls, or the two disagree
+  return Math.min(1, chanceOf(id));
 }
 
 /**
@@ -965,25 +702,6 @@ export function applyTurretMods(
     if ((mask & modBit(id)) === 0) continue;
     const f = modDef(id).apply;
     if (f) out = f(out, Math.max(1, owned[id] ?? 1));
-  }
-  return out;
-}
-
-/**
- * ...and the run's RELICS folded onto one kind's stats. Called once per
- * kind per refreshSpecs and never per shot — see Sim.specs.
- */
-export function applyGlobalMods(
-  s: TowerStats,
-  kind: TowerKind,
-  owned: Readonly<Partial<Record<ModId, number>>>,
-): TowerStats {
-  let out = s;
-  for (const d of GLOBAL_MODS) {
-    const n = owned[d.id] ?? 0;
-    if (n <= 0 || !d.apply) continue;
-    if (d.only && d.only !== kind) continue;
-    out = d.apply(out, n);
   }
   return out;
 }
@@ -1053,15 +771,14 @@ export function rollSolo(
 }
 
 /**
- * THE ODDS AT THE UPGRADE BUTTON, and they are STEEPER THAN THE TURRET
- * DEAL'S at the top: one draw in fifty is purple against the formation
- * table's one in ten. A formation is spent the moment it is placed and an
- * upgrade is owned for the rest of the run, so the two cannot possibly be
- * priced against the same curve.
+ * THE ODDS AT THE M BUTTON, and they are STEEPER THAN THE TURRET DEAL'S
+ * at the top: one draw in fifty is purple against the formation table's
+ * one in ten. A formation is spent the moment it is placed and a mod is
+ * owned for the rest of the run, so the two cannot possibly be priced
+ * against the same curve.
  *
  * Relative, like every weight table here, and renormalised over the bands
- * that still have an unowned mod in them (rollMod) — so a run that has
- * taken every common keeps drawing.
+ * the save has actually opened (rollMod).
  */
 export const MOD_WEIGHTS: RarityWeights = {
   common: 52,
@@ -1070,10 +787,14 @@ export const MOD_WEIGHTS: RarityWeights = {
   ultra: 2,
 };
 
-/** ...and the same table as a dial the dashboard can turn (rarity.ts
- *  weightDial). BOTH BUTTONS READ IT: M and G roll the same bands and
- *  renormalise inside their own half, so there is one table, not two */
-export const MODULE_ODDS: WeightDial = weightDial(MOD_WEIGHTS);
+/**
+ * ...and the same table as a dial the dashboard can turn (rarity.ts
+ * weightDial). IT IS THE MODS' TABLE AND NOTHING ELSE'S: the relics have
+ * their own (relics.ts RELIC_ODDS). The two used to share this one, which
+ * meant bending the odds of an ultra MOD bent the odds of an ultra RELIC
+ * with it — two categories with one knob between them.
+ */
+export const MOD_ODDS: WeightDial = weightDial(MOD_WEIGHTS);
 
 /**
  * WHAT ONE ATTRIBUTE'S ROLL COSTS TO TURN, per mod id — the second half of
@@ -1118,40 +839,25 @@ export function applyChanceOverrides(doc: Record<string, unknown>): void {
  * for the same reason: adding a fourth ultra mod must make WHICH ultra
  * less predictable and never make ultras more likely.
  *
- * `scope` IS WHICH BUTTON WAS PRESSED. The corner sells the two halves of
- * this catalog separately — "Buy mods" draws only turret attributes,
- * "Buy relics" only globals — because they are different purchases and a
- * player who needs one should not be made to pay for a coin-flip between
- * them. Null draws from the whole table, which is what a test or a free
- * board wants.
+ * IT NEVER RETURNS NULL ON A CAMPAIGN THAT HAS OPENED ANYTHING. A mod has
+ * no cap — a copy is always worth something — so unlike the relic half
+ * (relics.ts rollRelic) this pool never empties and the M button is never
+ * bought out. Null means the save has opened no mod at all, which only a
+ * board with an empty `open` can manage.
  *
- * EACH HALF RENORMALISES OVER ITSELF. The bands are weighed across the
- * mods that are actually in the pool, so the relic table's own ultras
- * come up at the ultra rate rather than at half of it.
- *
- * A MOD AT ITS CAP IS NOT IN THE POOL. `owned` is the run's copies, and a
- * mod with max copies is skipped and its band's weight redistributed — a
- * late run draws from what is left rather than paying to be told it
- * already has the thing. Null when that half is owned out, which is the
- * one case the button must refuse.
- *
- * NEITHER IS ONE THE SAVE HAS NOT EARNED. `open` is what the track has
- * dealt (track.ts modsAt, carried in on TechState.mods); null is every
- * module there is, which is what a free board draws from — the sandbox
- * and the editors are not a campaign and have nothing to unlock.
+ * `open` IS WHAT THE TRACK HAS DEALT (track.ts modsAt, carried in on
+ * TechState.mods); null is every mod there is, which is what a free board
+ * draws from — the sandbox and the editors are not a campaign and have
+ * nothing to unlock.
  */
 export function rollMod(
-  owned: Readonly<Partial<Record<ModId, number>>> = {},
-  scope: ModScope | null = null,
-  weights: RarityWeights = MODULE_ODDS.live(),
+  weights: RarityWeights = MOD_ODDS.live(),
   rng: () => number = Math.random,
   open: ReadonlySet<ModId> | null = null,
 ): ModId | null {
   const byRarity = new Map<Rarity, ModId[]>();
   for (const m of MODS) {
-    if (scope && m.scope !== scope) continue;
     if (open && !open.has(m.id)) continue;
-    if ((owned[m.id] ?? 0) >= m.max) continue;
     const list = byRarity.get(m.rarity);
     if (list) list.push(m.id);
     else byRarity.set(m.rarity, [m.id]);
@@ -1186,7 +892,6 @@ export function rollMod(
  * what the copies moved is the strength — stackLine says that half.
  */
 export function oddsLine(d: ModDef): string {
-  if (d.scope === "global") return "In force over the whole board the moment it is bought";
   const pct = Math.round(chanceAt(d.id) * 100);
   // "chance to roll" rather than "on every turret placed": the words a
   // player is reading mid-wave should be the shortest true ones, and
@@ -1198,7 +903,7 @@ export function oddsLine(d: ModDef): string {
 
 /**
  * WHAT THE STACK IS WORTH RIGHT NOW — the accumulated tweak at the copy
- * count the run holds, and null for a relic, which cannot have one.
+ * count the run holds. A relic has no equivalent: it is held once.
  *
  * IT USED TO SAY THE COUNT AND MAKE THE PLAYER DO THE ARITHMETIC: "3
  * copies — every one of them applies, so a turret born with it gets all
@@ -1214,45 +919,19 @@ export function oddsLine(d: ModDef): string {
  * nothing about the numbers.
  */
 export function stackLine(d: ModDef, copies: number): string | null {
-  if (d.scope !== "turret" || !d.total) return null;
+  if (!d.total) return null;
   if (copies <= 1 && !d.name) return null;
   return d.total(Math.max(1, copies));
 }
 
-/** is there anything left in this half of the catalog to draw? — what
- *  greys one of the two buttons out on a run that has bought it out.
- *  `open` is the save's earned catalog, as rollMod takes it */
-export const anyModLeft = (
-  owned: Readonly<Partial<Record<ModId, number>>>,
-  scope: ModScope | null = null,
-  open: ReadonlySet<ModId> | null = null,
-): boolean =>
-  MODS.some(
-    (m) =>
-      (!scope || m.scope === scope) &&
-      (!open || open.has(m.id)) &&
-      (owned[m.id] ?? 0) < m.max,
-  );
-
-/** has the track opened this half of the catalog AT ALL? — the difference
- *  between a button that has been bought out and one not yet earned */
-export const anyModOpen = (scope: ModScope, open: ReadonlySet<ModId> | null): boolean =>
-  !open || MODS.some((m) => m.scope === scope && open.has(m.id));
-
-/** the turret deal's odds as the run's relics leave them (ascendancy) */
-export function shiftedWeights(
-  base: RarityWeights,
-  owned: Readonly<Partial<Record<ModId, number>>>,
-): RarityWeights {
-  if (!(owned.ascendancy ?? 0)) return base;
-  return Object.fromEntries(
-    RARITIES.map((r) => [r, base[r] * ASCENDANCY_MUL[r]]),
-  ) as unknown as RarityWeights;
-}
-
-/** what one kill pays, times this — the scavenger relic and nothing else */
-export const dropScale = (owned: Readonly<Partial<Record<ModId, number>>>): number =>
-  1 + SCAVENGER_BONUS * (owned.scavenger ?? 0);
+/**
+ * HAS THE TRACK OPENED THE MOD HALF AT ALL? — what tells a LOCKED M
+ * button from a live one. There is no "bought out" answer on this side:
+ * a mod has no cap, so once the half is open it stays open (see rollMod).
+ * The relic half has both answers (relics.ts).
+ */
+export const anyModOpen = (open: ReadonlySet<ModId> | null): boolean =>
+  !open || MODS.some((m) => open.has(m.id));
 
 /**
  * A MASK IS A 32-BIT NUMBER and the attributes have to fit in one —
@@ -1272,37 +951,27 @@ export const dropScale = (owned: Readonly<Partial<Record<ModId, number>>>): numb
     // (stackLine), so an attribute without one is an attribute whose
     // stack is invisible to the player who bought it
     if (!m.total) throw new Error(`the turret mod "${m.id}" does not say what a stack of it is worth`);
-    // A TURRET MOD COMPOSES ONTO ONE TURRET'S TABLE (see the header): if
-    // it neither composes the table nor repairs, it is a moment wearing an
-    // attribute's clothes — "when this dies" is not a table — and it
-    // belongs in the relic half, where the sim reads it by name
+    // A MOD COMPOSES ONTO ONE TURRET'S TABLE (see the header): if it
+    // neither composes the table nor repairs, it is a moment wearing a
+    // mod's clothes — "when this dies" is not a table — and it belongs in
+    // relics.ts, where the sim reads a rule by name
     if (!m.apply && !m.regen)
-      throw new Error(`the turret mod "${m.id}" composes nothing onto the table — a moment belongs to the relics`);
+      throw new Error(`the mod "${m.id}" composes nothing onto the table — a moment is a relic`);
     // ONLY RARE AND ULTRA ARE NAMED — the low bands print their tweak
     const named = m.rarity === "rare" || m.rarity === "ultra";
     if (named !== (m.name !== undefined))
       throw new Error(
         `the ${m.rarity} turret mod "${m.id}" ${m.name ? "has" : "has no"} name; only rare and ultra are named`,
       );
-    // ...AND NO ATTRIBUTE HAS A CAP. A copy buys odds, and odds have no
-    // ceiling worth authoring — see the header
-    if (m.max !== Infinity)
-      throw new Error(`the turret mod "${m.id}" is capped at ${m.max}; attributes have no cap`);
   }
-  for (const m of GLOBAL_MODS) {
-    if (m.chance) throw new Error(`the global mod "${m.id}" carries a placement chance`);
-    // A RELIC CAPS AT ONE COPY, so its tweak is already its total and a
-    // second line would be the first one repeated
-    if (m.total) throw new Error(`the relic "${m.id}" carries a stack total; it can only be held once`);
-    // EVERY RELIC IS NAMED. A relic is never a number, so there is
-    // nothing for an unnamed one to be called
-    if (!m.name) throw new Error(`the relic "${m.id}" has no name`);
-    // ONE IS ENOUGH. A rule in force does not get more in force, so a
-    // second copy would have to mean something and there is nothing for
-    // it to mean
-    if (m.max !== 1) throw new Error(`the relic "${m.id}" may be held ${m.max} times; one is enough`);
-    if (m.solo || m.scale) throw new Error(`the relic "${m.id}" is trying to be a turret`);
-  }
+  // THE CATALOG AND ITS ID LIST AGREE, in both directions — the mask is
+  // keyed by position in TURRET_MOD_IDS, so a def missing from MOD_IDS
+  // would silently take a bit off every mod written after it
+  const ids = new Set<string>(MOD_IDS);
+  for (const m of MODS)
+    if (!ids.has(m.id)) throw new Error(`the mod "${m.id}" is not in MOD_IDS`);
+  if (MODS.length !== MOD_IDS.length)
+    throw new Error("the catalog and MOD_IDS disagree about how many mods there are");
   // ONE GLYPH MAY BE WORN TWICE, but never inside one band, where the
   // border colour could not tell the two apart (see ModGlyph)
   const worn = new Set<string>();

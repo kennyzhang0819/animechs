@@ -8,13 +8,14 @@ import {
   authoredChance,
   chanceOf,
   modName,
-  modsOfScope,
-  MODULE_ODDS,
+  MODS,
+  MOD_ODDS,
   setChance,
   TURRET_MOD_IDS,
   modDef,
   type ModId,
 } from "@/game/mods";
+import { RELICS, RELIC_ODDS } from "@/game/relics";
 import {
   RARITIES,
   RARITY,
@@ -32,7 +33,7 @@ import { Knob } from "./Knob";
  * THE RARITIES BOARD — every roll in the game and what it is weighed
  * against, on one screen, turnable without a rebuild.
  *
- * FOUR TABLES, AND THEY ARE ONE QUESTION ASKED FOUR TIMES: how often does
+ * FIVE TABLES, AND THEY ARE ONE QUESTION ASKED FIVE TIMES: how often does
  * the good thing happen.
  *
  *   THE TURRET DEAL (rarity.ts) — which gun a card turns over. The number
@@ -44,16 +45,19 @@ import { Knob } from "./Knob";
  *   should feel at T is "which gun" first and "how much of it" second, and
  *   odds as steep as the turrets' would invert that.
  *
- *   THE MODULE DEAL (mods.ts) — which upgrade M and G hand over. BOTH
- *   BUTTONS READ ONE TABLE: each renormalises over its own half of the
- *   catalog, so bending "ultra" here moves the odds of an ultra mod AND of
- *   an ultra relic.
+ *   THE MOD DEAL (mods.ts) — which mod M hands over.
  *
- *   THE ATTRIBUTE ROLL (mods.ts ModDef.chance) — once a run OWNS an
- *   attribute, how often it lands on a turret being placed. This is the
- *   one that decides how speckled a patch comes out, and it is the one
- *   that compounds: every attribute is rolled for every turret
- *   independently, so the whole column multiplies together on one gun.
+ *   THE RELIC DEAL (relics.ts) — which relic G hands over. A TABLE OF ITS
+ *   OWN, and that is the point: the two used to share one dial, so bending
+ *   "ultra" moved the odds of an ultra mod AND of an ultra relic at once.
+ *   They are two categories bought off two buttons at two prices, so they
+ *   get a knob each.
+ *
+ *   THE MOD ROLL (mods.ts ModDef.chance) — once a run OWNS a mod, how
+ *   often it lands on a turret being placed. This is the one that decides
+ *   how speckled a patch comes out, and it is the one that compounds:
+ *   every mod is rolled for every turret independently, so the whole
+ *   column multiplies together on one gun.
  *
  * A BAND WEIGHT IS RELATIVE, NOT A PERCENTAGE. The roll normalises
  * whatever it is handed over the bands actually in the pool, so 62/27/10/1
@@ -205,23 +209,38 @@ export default function RaritiesView() {
       />
 
       <OddsTable
-        title="The module deal — what M and G hand over"
-        blurb="ONE table, both buttons. Each half of the catalog renormalises over itself, so
-          bending a band here moves the odds of a mod of that band AND of a relic of it.
-          Steeper at the top than the shape table's on purpose: a formation is spent the
-          moment it is placed and a module is owned for the rest of the run."
-        dial={MODULE_ODDS}
-        contents={(r) => {
-          const mods = modsOfScope("turret").filter((d) => d.rarity === r).length;
-          const relics = modsOfScope("global").filter((d) => d.rarity === r).length;
-          return `${mods} mod${mods === 1 ? "" : "s"}, ${relics} relic${relics === 1 ? "" : "s"}`;
-        }}
+        title="The mod deal — what M hands over"
+        blurb="Steeper at the top than the shape table's on purpose: a formation is spent the
+          moment it is placed and a mod is owned for the rest of the run. This half never runs
+          out — a mod has no cap, so a copy is always worth something and the M button is never
+          bought out."
+        dial={MOD_ODDS}
+        contents={(r) =>
+          MODS.filter((d) => d.rarity === r)
+            .map((d) => modName(d))
+            .join(", ") || "nothing in this band"
+        }
+        onChange={touched}
+      />
+
+      <OddsTable
+        title="The relic deal — what G hands over"
+        blurb="The relics' OWN table, not the mods'. Every relic costs the same hundred and fifty
+          thousand, so a band here is only how OFTEN one comes up and never how good it is — the
+          common band holds Overclock Core, which doubles the damage of every gun on the field.
+          A relic is held once, so this half genuinely runs out."
+        dial={RELIC_ODDS}
+        contents={(r) =>
+          RELICS.filter((d) => d.rarity === r)
+            .map((d) => d.name)
+            .join(", ") || "nothing in this band"
+        }
         onChange={touched}
       />
 
       <div className="mb-4 rounded-lg border border-[#2E2E36] p-4">
         <div className="mb-1 text-[17px] font-bold text-[#EDEDEF]">
-          The attribute roll — how often an owned mod lands on a new turret
+          The mod roll — how often an owned mod lands on a new turret
         </div>
         <p className="mb-2 max-w-3xl text-[14.5px] text-[#71717C]">
           Once a run owns an attribute, every turret it places rolls for it — and for every
@@ -234,9 +253,7 @@ export default function RaritiesView() {
           (mods.ts), so the column below is what a run is offered and never what it is worth.
         </p>
         {(["common", "uncommon", "rare", "ultra"] as const).map((band) => {
-          const ids = modsOfScope("turret")
-            .filter((d) => d.rarity === band)
-            .map((d) => d.id as ModId);
+          const ids = MODS.filter((d) => d.rarity === band).map((d) => d.id as ModId);
           if (ids.length === 0) return null;
           return (
             <div key={band} className="mt-3 first:mt-0">

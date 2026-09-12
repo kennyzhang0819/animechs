@@ -58,8 +58,10 @@ const RUNG_KEYS: readonly string[] = Array.from({ length: RUNG_COUNT }, (_, i) =
 const MUTATION_KEYS: readonly string[] = MUTATIONS.map((m) => m.id);
 
 /**
- * THE ODDS SECTION. Three band tables plus the per-attribute roll chance,
- * and each one has a different idea of what a sane number is.
+ * THE ODDS SECTION. Four band tables plus the per-mod roll chance, and each
+ * one has a different idea of what a sane number is. The four are `turret`,
+ * `shape`, `mod` and `relic` — the mods and the relics are two categories
+ * with a dial each, where they used to share one `module` table.
  *
  * A BAND WEIGHT IS RELATIVE, NOT A PERCENTAGE (rarity.ts): the roll
  * normalises whatever it is handed over the bands actually in the pool, so
@@ -155,7 +157,13 @@ export async function POST(req: Request): Promise<NextResponse> {
       const section: Record<string, Record<string, number>> = {};
       for (const [table, entries] of Object.entries(raw as Record<string, unknown>)) {
         const chances = table === "chances";
-        if (!chances && table !== "turret" && table !== "shape" && table !== "module")
+        if (
+          !chances &&
+          table !== "turret" &&
+          table !== "shape" &&
+          table !== "mod" &&
+          table !== "relic"
+        )
           return NextResponse.json({ error: `unknown odds table ${table}` }, { status: 400 });
         if (!entries || typeof entries !== "object")
           return NextResponse.json({ error: `bad ${table} table` }, { status: 400 });

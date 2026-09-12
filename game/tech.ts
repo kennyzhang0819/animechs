@@ -5,6 +5,7 @@ import {
   type UpgradePoints,
 } from "./upgrades";
 import type { ModId } from "./mods";
+import type { RelicId } from "./relics";
 import { FIELDED_KINDS, type TowerKind } from "./types";
 
 /**
@@ -18,11 +19,14 @@ export interface TechState {
   unlocked: ReadonlySet<TowerKind>;
   /** the fast-forward paces switched on, ascending, 1x included */
   speeds: readonly number[];
-  /** the MODULES the save owns the right to be offered (mods.ts) — the
-   *  mods the M button may roll and the relics the G button may, dealt by
-   *  the track exactly as the turrets are. A half of the catalog with
-   *  nothing in it yet is a button that says so */
+  /** the MODS the M button may roll (mods.ts), dealt by the track exactly
+   *  as the turrets are */
   mods: ReadonlySet<ModId>;
+  /** ...and the RELICS the G button may (relics.ts). Two sets because they
+   *  are two categories: a save below RELICS_FROM has an empty one here and
+   *  a full one above, which is what makes the G button say "locked" and
+   *  the M button not */
+  relics: ReadonlySet<RelicId>;
   /** each turret's upgrade rungs, as the sim folds them (upgradedTower) */
   upgrades: Record<TowerKind, UpgradePoints>;
 }

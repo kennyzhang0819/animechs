@@ -13,9 +13,10 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  *
  * THE RARITIES ARE FIXED FOR THE WHOLE RUN, but the WEIGHTS are not: they
  * are handed in at the roll (rollTurret) rather than read off this module,
- * because the upgrades that are coming shift them — that is what an
- * upgrade will BE, a run that draws purple more often than one in a
- * hundred. Nothing here may assume BASE_WEIGHTS is what is in force.
+ * because a RELIC can shift them. That is what Ascendancy Protocol is
+ * (relics.ts shiftedWeights) — a run that draws purple one time in twenty
+ * rather than one in a hundred — and nothing here may assume BASE_WEIGHTS
+ * is what is in force.
  */
 export const RARITIES = ["common", "uncommon", "rare", "ultra"] as const;
 export type Rarity = (typeof RARITIES)[number];

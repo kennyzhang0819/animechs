@@ -3,30 +3,38 @@
 import type { RefObject } from "react";
 
 import { modDef, modName, oddsLine, stackLine, type ModGlyph, type ModId } from "@/game/mods";
+import { relicDef, RELIC_NOTE, type RelicGlyph, type RelicId } from "@/game/relics";
 import { MOD_GRID, modGlyph } from "./modArt";
 import { RARITY } from "@/game/rarity";
 import { HoverCard, useHoverCard } from "./HoverCard";
 import { tile } from "./tile";
+import type { ModDraw } from "@/game/game";
 
 /**
- * THE SHELF — every upgrade the run owns, in a row along the top-left of
+ * THE SHELF — every module the run owns, in a row along the top-left of
  * the field, and it never goes away.
  *
  * IT IS THE RELIC ROW OUT OF A DECK BUILDER, and it is there for exactly
- * the reason that genre puts one there: an upgrade is a RULE, not a thing
- * on the board, and a rule the player cannot see is a rule they will
- * forget they bought. A run forty minutes deep carrying nine of these has
- * a shape, and the shelf is where that shape is legible.
+ * the reason that genre puts one there: a module is a RULE or a standing
+ * CHANCE, not a thing on the board, and what a player cannot see they will
+ * forget they bought. A run forty minutes deep carrying nine of these has a
+ * shape, and the shelf is where that shape is legible.
  *
- * IT HOLDS BOTH SCOPES (mods.ts). The globals are the relics proper —
- * always in force, applying to everything. The turret attributes are on
- * the shelf too even though they do nothing by themselves, because what
- * they are is a standing CHANCE on every placement from here on, and a
- * player deciding whether to press T needs to know the odds they have
- * bought. THE ODDS NO LONGER MOVE: a copy used to be another roll folded
- * in, so "+10% damage x3" printed 66%; copies buy the NUMBER now (mods.ts),
- * so the chip says 30% however many are on it and the card says what the
- * x3 in the corner is worth.
+ * IT HOLDS BOTH CATEGORIES, IN TWO RUNS, RELICS FIRST. The relics
+ * (relics.ts) lead because they are the ones in force right now — a rule
+ * over the whole board, bought once, and the late game's whole answer. The
+ * mods (mods.ts) follow: they do nothing by themselves, and what they are
+ * is a standing chance on every placement from here on, which is what a
+ * player deciding whether to press T needs the odds of.
+ *
+ * THE TWO RUNS ARE DIVIDED AND THE DIVIDER IS THE POINT. One undifferentiated
+ * row said neither thing: a chip that is always in force and a chip that is a
+ * 30% roll read as the same kind of object, and the player had to hover to
+ * find out which. Relics, a rule, mods — in that order, left to right.
+ *
+ * A RELIC CHIP CARRIES NO COUNT because a relic is held once; a mod chip
+ * carries an x3 when the run has three. That asymmetry is the two
+ * categories, spelled out in what the chip does and does not print.
  *
  * The band colour is the whole legend, the same four the cards wear.
  */
@@ -42,9 +50,9 @@ import { tile } from "./tile";
  * is on the border of the box this sits in at every call site. That is
  * what lets the common "+10% damage" and the uncommon "+25%" share one
  * barrel — same art, different border, one legend — and it is why the
- * relics read as a different kind of thing from across the room: an
- * attribute is one gunmetal object with a pip of colour, a relic is the
- * colour of what it does over the whole drawing.
+ * relics read as a different kind of thing from across the room: a mod is
+ * one gunmetal object with a pip of colour, a relic is the colour of what
+ * it does over the whole drawing.
  *
  * They are read at 12 to 22 CSS pixels, so every one of them is a
  * silhouette and none of them is a picture.
@@ -53,7 +61,7 @@ export function Glyph({
   glyph,
   className = "h-[15px] w-[15px]",
 }: {
-  glyph: ModGlyph;
+  glyph: ModGlyph | RelicGlyph;
   className?: string;
 }) {
   return (
@@ -70,52 +78,100 @@ export function Glyph({
   );
 }
 
-/** one owned upgrade: its face on its band's ground, how many COPIES the
- *  run holds if it is more than one, and what it does on hover */
-function RelicChip({ id, n }: { id: ModId; n: number }) {
+/** the chip itself, with no idea which catalog it is drawing — one square,
+ *  one band border, a count in the corner if there is one, and a card on
+ *  hover. Both runs of the shelf and both reveals go through it */
+function Chip({
+  glyph,
+  name,
+  rarity,
+  n,
+  aria,
+  blurb,
+  note,
+  stack,
+}: {
+  glyph: ModGlyph | RelicGlyph;
+  name: string;
+  rarity: keyof typeof RARITY;
+  /** how many copies — 1 prints nothing, and a relic is always 1 */
+  n: number;
+  aria: string;
+  /** the prose under the title, or null where the title already said it */
+  blurb: string | null;
+  /** the odds line: a mod's chance, or a relic's "in force" */
+  note: string;
+  /** what the whole stack is worth right now — mods only */
+  stack: string | null;
+}) {
   const tip = useHoverCard("down");
-  const d = modDef(id);
-  const r = RARITY[d.rarity];
-  // an unnamed tick is CALLED its tweak — "+10% damage" is the whole
-  // thing it is, and a made-up name over the top would be a word to learn
-  // in order to be told what the number already said (mods.ts)
-  const name = modName(d);
-  // A TURRET ATTRIBUTE PRINTS ITS ODDS and a relic prints nothing: the
-  // chance is the one thing a player has to know before pressing T, and
-  // it is per CARD rather than per turret where that is what it means.
-  // It does not move any more — copies buy strength now (mods.ts) — so
-  // what a second copy did is the line under it
-  const odds = d.scope === "turret" ? oddsLine(d) : null;
-  // WHAT THE WHOLE STACK IS WORTH, at the count the run holds — the one
-  // number a player wanted off this chip (mods.ts stackLine)
-  const stack = stackLine(d, n);
-  // AN UNNAMED TICK SHOWS NO BLURB. Its title IS its tweak, so the
-  // sentence under it ("a chance for a new turret to be born with +2%
-  // damage...") is the title, the odds line and the total all said again
-  // in prose — three lines of reading for a card that exists to be
-  // glanced at mid-wave. A named attribute keeps its blurb, because a
-  // name says nothing about what the thing does.
-  const blurb = d.name ? d.blurb : null;
+  const r = RARITY[rarity];
   return (
     <span
       ref={tip.ref as RefObject<HTMLSpanElement | null>}
       {...tip.anchorProps}
       className="ms-tile ms-tile-sm pointer-events-auto flex h-[22px] w-[22px] items-center justify-center"
       style={tile(r.color)}
-      aria-label={`${name}${n > 1 ? ` times ${n}` : ""}, ${r.name} upgrade`}
+      aria-label={aria}
     >
-      <Glyph glyph={d.glyph} />
+      <Glyph glyph={glyph} />
       {n > 1 && <span className="ms-tile-count">{n}</span>}
       <HoverCard tip={tip} title={name} tag={r.name} color={r.color} align="left">
         {blurb}
-        {odds && (
-          <span className="mt-1.5 block font-bold" style={{ color: r.color }}>
-            {odds}
-          </span>
-        )}
+        <span className="mt-1.5 block font-bold" style={{ color: r.color }}>
+          {note}
+        </span>
         {stack && <span className="mt-1.5 block font-bold text-[#EDEDEF]">{stack}</span>}
       </HoverCard>
     </span>
+  );
+}
+
+/** one owned RELIC: no count, and a card that says it is simply on */
+function RelicChip({ id }: { id: RelicId }) {
+  const d = relicDef(id);
+  return (
+    <Chip
+      glyph={d.glyph}
+      name={d.name}
+      rarity={d.rarity}
+      n={1}
+      aria={`${d.name}, ${RARITY[d.rarity].name} relic`}
+      blurb={d.blurb}
+      note={RELIC_NOTE}
+      stack={null}
+    />
+  );
+}
+
+/** ...and one owned MOD: its odds, and how many copies the run holds */
+function ModChip({ id, n }: { id: ModId; n: number }) {
+  const d = modDef(id);
+  // an unnamed tick is CALLED its tweak — "+10% damage" is the whole
+  // thing it is, and a made-up name over the top would be a word to learn
+  // in order to be told what the number already said (mods.ts)
+  const name = modName(d);
+  return (
+    <Chip
+      glyph={d.glyph}
+      name={name}
+      rarity={d.rarity}
+      n={n}
+      aria={`${name}${n > 1 ? ` times ${n}` : ""}, ${RARITY[d.rarity].name} mod`}
+      // AN UNNAMED TICK SHOWS NO BLURB. Its title IS its tweak, so the
+      // sentence under it ("a chance for a new turret to be born with +2%
+      // damage...") is the title, the odds line and the total all said
+      // again in prose — three lines of reading for a card that exists to
+      // be glanced at mid-wave. A named mod keeps its blurb, because a
+      // name says nothing about what the thing does.
+      blurb={d.name ? d.blurb : null}
+      // THE ODDS DO NOT MOVE WITH THE COPIES. A copy used to be another
+      // roll folded in, so "+10% damage x3" printed 66%; copies buy the
+      // NUMBER now (mods.ts), so the chip says 30% however many are on it
+      // and the line below says what the x3 is worth
+      note={oddsLine(d)}
+      stack={stackLine(d, n)}
+    />
   );
 }
 
@@ -124,12 +180,27 @@ function RelicChip({ id, n }: { id: ModId; n: number }) {
  * these and every one of them is still in force, so none of them may be
  * hidden behind a scrollbar the player has to think about.
  */
-export function RelicShelf({ relics }: { relics: { id: ModId; n: number }[] }) {
-  if (relics.length === 0) return null;
+export function RelicShelf({
+  relics,
+  mods,
+}: {
+  relics: readonly RelicId[];
+  mods: readonly { id: ModId; n: number }[];
+}) {
+  if (relics.length === 0 && mods.length === 0) return null;
   return (
     <div className="pointer-events-none flex max-w-full flex-wrap items-center gap-1">
-      {relics.map((r) => (
-        <RelicChip key={r.id} id={r.id} n={r.n} />
+      {relics.map((id) => (
+        <RelicChip key={id} id={id} />
+      ))}
+      {/* THE DIVIDER, and only where there is something on both sides of
+          it: a rule in force and a standing chance are two kinds of thing
+          and the row has to say so (see the header) */}
+      {relics.length > 0 && mods.length > 0 && (
+        <span className="mx-0.5 h-[16px] w-px shrink-0 bg-[#4d4e58]" aria-hidden="true" />
+      )}
+      {mods.map((m) => (
+        <ModChip key={m.id} id={m.id} n={m.n} />
       ))}
     </div>
   );
@@ -140,11 +211,12 @@ export function RelicShelf({ relics }: { relics: { id: ModId; n: number }[] }) {
  *
  * A MODULE HAS NOWHERE TO LAND. A turret draw puts a card in the corner
  * and the player is left holding it; a module is in force the instant it
- * is paid for (Game.buyModules), so without this the only feedback for
- * a hundred and fifty thousand scrap would be a chip quietly appearing in a
- * row at the other end of the screen. So the draw gets a card of its own
- * for a few seconds, over the buttons, in the band's colour and saying
- * what it does — and then it goes, because it is not a thing being held.
+ * is paid for (Game.buyMods, Game.buyRelics), so without this the only
+ * feedback for a hundred and fifty thousand scrap would be a chip quietly
+ * appearing in a row at the other end of the screen. So the draw gets a
+ * card of its own for a few seconds, over the buttons, in the band's
+ * colour and saying what it does — and then it goes, because it is not a
+ * thing being held.
  *
  * ONE PRESS IS ONE CARD, whatever the amount button said. A x10 press
  * gets ONE reveal listing its ten, not ten cards queued five seconds
@@ -154,43 +226,64 @@ export function RelicShelf({ relics }: { relics: { id: ModId; n: number }[] }) {
  * what it does, and a player who bought one thing is reading it — and a
  * fleet of them gets a compact list, band colour a row, which is the most
  * that can honestly be said about ten things at once.
+ *
+ * ONE PRESS IS ALSO ONE CATEGORY, because it is one button: a draw is all
+ * mods or all relics (game.ts ModDraw), which is what lets the card say
+ * the right word rather than "3 modules".
  */
-export function ModReveal({ ids }: { ids: readonly ModId[] }) {
-  if (ids.length === 0) return null;
-  if (ids.length === 1) return <SingleReveal id={ids[0]} />;
+
+/** what the card needs to know about one drawn module, whichever catalog
+ *  it came out of — the reveal is the same card either way */
+type Drawn = { id: string; name: string; glyph: ModGlyph | RelicGlyph; rarity: keyof typeof RARITY; blurb: string; note: string };
+
+const drawnMod = (id: ModId): Drawn => {
+  const d = modDef(id);
+  return { id, name: modName(d), glyph: d.glyph, rarity: d.rarity, blurb: d.blurb, note: "on new turrets" };
+};
+
+const drawnRelic = (id: RelicId): Drawn => {
+  const d = relicDef(id);
+  return { id, name: d.name, glyph: d.glyph, rarity: d.rarity, blurb: d.blurb, note: "in force now" };
+};
+
+export function ModReveal({ draw }: { draw: ModDraw }) {
+  if (!draw || draw.ids.length === 0) return null;
+  const rows: Drawn[] =
+    draw.kind === "relic" ? draw.ids.map(drawnRelic) : draw.ids.map(drawnMod);
+  if (rows.length === 1) return <SingleReveal d={rows[0]} />;
   // the same module drawn twice in one press is ONE row with a count on
-  // it: "Coolant x3" is what happened, and three identical rows is not
-  const rows: { id: ModId; n: number }[] = [];
-  for (const id of ids) {
-    const at = rows.find((r) => r.id === id);
+  // it: "Coolant x3" is what happened, and three identical rows is not.
+  // (A relic press can never repeat — a relic is held once — so in
+  // practice this only ever folds mods)
+  const folded: { d: Drawn; n: number }[] = [];
+  for (const d of rows) {
+    const at = folded.find((f) => f.d.id === d.id);
     if (at) at.n++;
-    else rows.push({ id, n: 1 });
+    else folded.push({ d, n: 1 });
   }
-  const scope = modDef(ids[0]).scope;
   return (
     <div
       className="ms-pane pointer-events-none flex w-[13rem] flex-col gap-1 p-2"
       role="status"
     >
       <span className="text-[10px] font-bold uppercase leading-none tracking-widest text-[#A6A6AF]">
-        {ids.length} {scope === "global" ? "relics" : "mods"}
+        {rows.length} {draw.kind === "relic" ? "relics" : "mods"}
       </span>
-      {rows.map((row) => {
-        const d = modDef(row.id);
-        const r = RARITY[d.rarity];
+      {folded.map((row) => {
+        const r = RARITY[row.d.rarity];
         return (
-          <span key={row.id} className="flex items-center gap-1.5">
+          <span key={row.d.id} className="flex items-center gap-1.5">
             <span
               className="ms-tile ms-tile-sm flex h-[18px] w-[18px] shrink-0 items-center justify-center"
               style={tile(r.color)}
             >
-              <Glyph glyph={d.glyph} className="h-[12px] w-[12px]" />
+              <Glyph glyph={row.d.glyph} className="h-[12px] w-[12px]" />
             </span>
             <span
               className="min-w-0 flex-1 truncate text-[10px] font-bold uppercase leading-none tracking-wide"
               style={{ color: r.color }}
             >
-              {modName(d)}
+              {row.d.name}
             </span>
             {row.n > 1 && (
               <span className="text-[10px] font-bold leading-none" style={{ color: r.color }}>
@@ -205,8 +298,7 @@ export function ModReveal({ ids }: { ids: readonly ModId[] }) {
 }
 
 /** one module, with room to say what it does */
-function SingleReveal({ id }: { id: ModId }) {
-  const d = modDef(id);
+function SingleReveal({ d }: { d: Drawn }) {
   const r = RARITY[d.rarity];
   return (
     <div
@@ -225,11 +317,11 @@ function SingleReveal({ id }: { id: ModId }) {
           className="min-w-0 flex-1 truncate text-[11px] font-bold uppercase leading-none tracking-wide"
           style={{ color: r.color }}
         >
-          {modName(d)}
+          {d.name}
         </span>
       </div>
       <span className="text-[9px] font-bold uppercase leading-none tracking-wide opacity-70" style={{ color: r.color }}>
-        {r.name} — {d.scope === "global" ? "in force now" : "on new turrets"}
+        {r.name} — {d.note}
       </span>
       <span className="text-[10px] leading-snug text-[#EDEDEF]">{d.blurb}</span>
     </div>

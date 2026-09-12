@@ -1,8 +1,9 @@
 import { allScrapPriceOverrides, applyScrapPriceOverrides } from "./economy";
 import { SHAPE_ODDS } from "./formation";
 import { allRungOverrides, applyRungOverrides, type RungKnobs } from "./ladder";
-import { allChanceOverrides, applyChanceOverrides, MODULE_ODDS } from "./mods";
+import { allChanceOverrides, applyChanceOverrides, MOD_ODDS } from "./mods";
 import { allMutationCostOverrides, applyMutationCostOverrides } from "./mutation";
+import { RELIC_ODDS } from "./relics";
 import { TURRET_ODDS } from "./rarity";
 
 /**
@@ -17,13 +18,17 @@ import { TURRET_ODDS } from "./rarity";
  *   `mutations`     what each mutator is WORTH, keyed by its catalog id
  *                   (mutationCostOf in mutation.ts) — the one dial that
  *                   decides which difficulties can afford which rules
- *   `rarities`      THE ODDS. The three band tables the three rolls are
+ *   `rarities`      THE ODDS. The four band tables the four rolls are
  *                   weighed against — `turret` (rarity.ts), `shape`
- *                   (formation.ts) and `module` (mods.ts) — and
- *                   `chances`, the per-attribute odds of landing on one
- *                   new turret (mods.ts ModDef.chance). Four tables in one
- *                   section because they are one question asked four
- *                   times: how often does the good thing happen
+ *                   (formation.ts), `mod` (mods.ts) and `relic`
+ *                   (relics.ts) — and `chances`, the per-mod odds of
+ *                   landing on one new turret (mods.ts ModDef.chance).
+ *                   Five tables in one section because they are one
+ *                   question asked five times: how often does the good
+ *                   thing happen. `mod` and `relic` used to be a single
+ *                   `module` key, from when the two categories shared one
+ *                   dial; an old document's `module` is ignored like any
+ *                   other retired key
  *
  * It exists so the dial can be turned WITHOUT a rebuild. The admin dashboard
  * writes it, the game reads it at startup, and a key missing from it simply
@@ -46,7 +51,8 @@ export interface BalanceDoc {
   rarities?: {
     turret?: Record<string, number>;
     shape?: Record<string, number>;
-    module?: Record<string, number>;
+    mod?: Record<string, number>;
+    relic?: Record<string, number>;
     chances?: Record<string, number>;
   };
 }
@@ -77,13 +83,14 @@ export async function loadBalanceDoc(): Promise<void> {
     applyMutationCostOverrides(
       mutations && typeof mutations === "object" ? mutations : {},
     );
-    // THE ODDS, all four tables. Each apply CLEARS what it held first, so
+    // THE ODDS, all five tables. Each apply CLEARS what it held first, so
     // a band dropped from the document goes back to the authored weight
     // rather than lingering from the last load
     const odds = rarities && typeof rarities === "object" ? rarities : {};
     TURRET_ODDS.apply(odds.turret ?? {});
     SHAPE_ODDS.apply(odds.shape ?? {});
-    MODULE_ODDS.apply(odds.module ?? {});
+    MOD_ODDS.apply(odds.mod ?? {});
+    RELIC_ODDS.apply(odds.relic ?? {});
     applyChanceOverrides(odds.chances ?? {});
   } catch {
     // offline, or a half-written file mid-save: the authored numbers stand
@@ -116,8 +123,10 @@ export function currentBalanceDoc(): BalanceDoc {
   if (Object.keys(turret).length > 0) rarities.turret = turret as Record<string, number>;
   const shape = SHAPE_ODDS.overrides();
   if (Object.keys(shape).length > 0) rarities.shape = shape as Record<string, number>;
-  const mod = MODULE_ODDS.overrides();
-  if (Object.keys(mod).length > 0) rarities.module = mod as Record<string, number>;
+  const mod = MOD_ODDS.overrides();
+  if (Object.keys(mod).length > 0) rarities.mod = mod as Record<string, number>;
+  const relic = RELIC_ODDS.overrides();
+  if (Object.keys(relic).length > 0) rarities.relic = relic as Record<string, number>;
   const chances = allChanceOverrides();
   if (Object.keys(chances).length > 0) rarities.chances = chances;
   if (Object.keys(rarities).length > 0) doc.rarities = rarities;

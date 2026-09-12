@@ -164,14 +164,14 @@ export interface Tower {
   hp: number;
   /**
    * THIS TURRET'S OWN CEILING, and it is per-TURRET rather than per-kind
-   * (constants.ts towerMaxHp) because the upgrade attributes move it: a
+   * (constants.ts towerMaxHp) because a turret's mods move it: a
    * duo born with Braced Frame carries half again what the duo beside it
    * does. Everything that draws or reads a structure's fullness reads
    * this, never the table.
    */
   hpMax: number;
   /**
-   * THE UPGRADE ATTRIBUTES THIS TURRET WAS BORN WITH, as a bitmask over
+   * THE MODS THIS TURRET WAS BORN WITH, as a bitmask over
    * mods.ts TURRET_MOD_IDS — 0, the usual case, for a plain turret.
    *
    * IT IS FIXED AT THE PLACEMENT AND NEVER MOVES. A turret mod is a

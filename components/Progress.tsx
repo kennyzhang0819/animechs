@@ -12,6 +12,7 @@ import { levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
 import { WORLDS } from "@/game/levels";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import { modDef } from "@/game/mods";
+import { relicDef } from "@/game/relics";
 import { mutationById } from "@/game/mutation";
 import { effectiveLevel, levelOf, type Progress } from "@/game/progress";
 import {
@@ -85,9 +86,10 @@ const REWARD_COLOR: Record<Reward["kind"], string> = {
   // chip below holds a full-colour turret sprite and a flat-tinted glyph
   // was the odd one out
   mutator: MUT_LIT,
-  // a module wears its own band (rarityDef below), like a turret does —
-  // this is the fallback nothing reaches
-  module: "#C6C6CE",
+  // a mod and a relic each wear their own band (rarityDef below), like a
+  // turret does — these two are the fallback nothing reaches
+  mod: "#C6C6CE",
+  relic: "#C08BFF",
   upgrade: "#FFD37F",
 };
 
@@ -134,9 +136,12 @@ function RewardFace({ reward }: { reward: Reward }) {
     return <span className="font-display text-[13px] font-bold leading-none">{reward.mult}x</span>;
   if (reward.kind === "mutator") return <MutationFace id={reward.id} size="h-6 w-6" />;
   // a module has no sprite — it is not a building — so it wears the same
-  // small geometry the shelf and the reveal draw it as (Relics.tsx)
-  if (reward.kind === "module")
+  // small geometry the shelf and the reveal draw it as (Relics.tsx), and
+  // a mod and a relic read the drawing off their own catalog
+  if (reward.kind === "mod")
     return <Glyph glyph={modDef(reward.id).glyph} className="h-[22px] w-[22px]" />;
+  if (reward.kind === "relic")
+    return <Glyph glyph={relicDef(reward.id).glyph} className="h-[22px] w-[22px]" />;
   const kind = reward.kind === "turret" ? reward.id : upgradeDef(reward.id).turret;
   return (
     <img
@@ -167,8 +172,8 @@ function RewardFace({ reward }: { reward: Reward }) {
  * WHAT ONE REWARD IS DRAWN AND COLOURED BY — the single answer both
  * boards read.
  *
- * A TURRET IS BORDERED BY ITS RARITY (rarity.ts), and a module by its
- * own, not by the fact that they are a turret and a module.
+ * A TURRET IS BORDERED BY ITS RARITY (rarity.ts), and a mod and a relic by
+ * their own, not by the fact of what kind of thing they are.
  * The track is where a player learns what the deal can hand them, and it
  * teaches the border at the same time it teaches the gun: the row that
  * opens a spectre is purple here, the tile on the unlocks board is purple
@@ -183,9 +188,11 @@ export function rewardLook(reward: Reward): {
   const rarity =
     reward.kind === "turret"
       ? rarityDef(reward.id)
-      : reward.kind === "module"
+      : reward.kind === "mod"
         ? RARITY[modDef(reward.id).rarity]
-        : null;
+        : reward.kind === "relic"
+          ? RARITY[relicDef(reward.id).rarity]
+          : null;
   return {
     face: <RewardFace reward={reward} />,
     color: rarity ? rarity.color : REWARD_COLOR[reward.kind],

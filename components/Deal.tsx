@@ -12,9 +12,8 @@ import {
   type Facing,
   type FormationId,
 } from "@/game/formation";
-import type { DealHalf, Game, UiState } from "@/game/game";
+import type { DealHalf, Game, ModDraw, UiState } from "@/game/game";
 import { RARITY, rarityDef } from "@/game/rarity";
-import type { ModId } from "@/game/mods";
 import type { TowerKind } from "@/game/types";
 import { TOWER_ICONS } from "./towerIcons";
 import { Glyph, ModReveal } from "./Relics";
@@ -63,8 +62,9 @@ const HALF_SUB: Record<Exclude<DealHalf, "open">, string> = {
  * GHOST, aimed with the cursor, and it belongs under the hand rather than
  * in a panel the hand would have to leave the board to reach. R is the
  * rotate key every builder in the genre uses, so the relics moved to G —
- * which is the key the merged upgrade button used to own, and therefore
- * the key an older run's fingers already go to for a module.
+ * which is the key the single merged module button used to own, back when
+ * one press was a coin-flip between a mod and a relic, and therefore the
+ * key an older run's fingers already go to for a module.
  *
  * WHAT THE AMOUNT DOES IS DIFFERENT ON THE TWO SIDES, and that is the
  * whole design. On the modules it is N draws: nine relics is nine relics.
@@ -238,9 +238,9 @@ const REVEAL_MS = 5000;
  * and the ids need not, so drawing a third Calibration Matrix re-opens
  * the reveal instead of silently leaving the second one's card standing.
  */
-function useReveal(hud: UiState | null): readonly ModId[] {
+function useReveal(hud: UiState | null): ModDraw {
   const draws = hud?.modDraws ?? 0;
-  const ids = hud?.lastMods;
+  const draw = hud?.lastDraw ?? null;
   const [shownAt, setShownAt] = useState(0);
   const [gone, setGone] = useState(true);
   useEffect(() => {
@@ -250,10 +250,8 @@ function useReveal(hud: UiState | null): readonly ModId[] {
     const t = window.setTimeout(() => setGone(true), REVEAL_MS);
     return () => window.clearTimeout(t);
   }, [draws]);
-  return !gone && shownAt === draws && ids ? ids : EMPTY;
+  return !gone && shownAt === draws ? draw : null;
 }
-
-const EMPTY: readonly ModId[] = [];
 
 /**
  * THE FORMATION, AS A PICTURE (formation.ts): the shape's own grid, a
@@ -497,7 +495,7 @@ export function DealCorner({
   const free = hud.scrap === null;
   return (
     <div className="flex flex-col items-end gap-2">
-      <ModReveal ids={revealed} />
+      <ModReveal draw={revealed} />
       {card && (
         <TurretCard
           card={card}
@@ -555,9 +553,9 @@ export function DealCorner({
             onPress={deal.buyMods}
             aria={
               hud.modDeal === "open"
-                ? `Buy ${n} turret mod${n > 1 ? "s" : ""} for ${modCost} scrap, shortcut M`
+                ? `Buy ${n} mod${n > 1 ? "s" : ""} for ${modCost} scrap, shortcut M`
                 : hud.modDeal === "owned"
-                  ? "Buy mods — every turret mod is owned"
+                  ? "Buy mods — every mod is owned"
                   : "Buy mods — locked until the track opens one"
             }
           />

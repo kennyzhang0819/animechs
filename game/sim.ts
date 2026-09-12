@@ -153,22 +153,33 @@ import {
 import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap, type SpawnCircle } from "./maps";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
 import {
-  applyGlobalMods,
   applyTurretMods,
-  dropScale,
-  INSURANCE_SCRAP,
-  LAST_VOLLEY_RATE,
-  LAST_VOLLEY_SECONDS,
-  LAST_VOLLEY_TILES,
   modBit,
   modRegen,
   rollSolo,
   sizeWithMods,
   MODS,
-  PHOENIX_CHANCE,
   rollTurretMods,
   type ModId,
 } from "./mods";
+import {
+  applyRelics,
+  CASCADE_CHAIN_CAP,
+  CASCADE_FRACTION,
+  CASCADE_MIN_TIER,
+  CASCADE_TILES,
+  dropScale,
+  INSURANCE_SCRAP,
+  LAST_VOLLEY_RATE,
+  LAST_VOLLEY_SECONDS,
+  LAST_VOLLEY_TILES,
+  PHOENIX_CHANCE,
+  RELICS,
+  TERMINAL_FRACTION,
+  TITAN_MUL,
+  type RelicId,
+  type RelicsHeld,
+} from "./relics";
 import { RICH_SCRAP, SCRAP_START, sellValue } from "./economy";
 import { airWalkMask, isBuildableWall, isWaterFloor, navalWalkMask, WALL_DEEP, type Terrain } from "./terrain";
 import {
@@ -1222,22 +1233,66 @@ export class Sim {
   private specsHold = 0;
   private specsPending = false;
   /**
-   * THE RUN'S UPGRADES (mods.ts), id to how many copies of it are owned —
-   * both scopes in one ledger, because the deal draws them off one table
-   * and the cap that stops a mod being offered twice is one rule.
+   * THE RUN'S MODS (mods.ts), id to how many copies of it are owned — a
+   * TALLY, because a mod is a number that grows and a run may hold any
+   * number of copies.
    *
-   * IT IS RUN STATE AND NOT SAVE STATE. Nothing here survives a reset:
-   * upgrades are bought in scrap inside one mission and are gone with it,
-   * which is what makes them a different thing from the tech tree's rungs
+   * IT IS RUN STATE AND NOT SAVE STATE. Nothing here survives a reset: a
+   * mod is bought in scrap inside one mission and is gone with it, which
+   * is what makes it a different thing from the tech tree's rungs
    * (upgrades.ts) that the save owns forever.
    *
-   * The GLOBALS in it are folded into every kind's spec (refreshSpecs) and
-   * read by name at the handful of sites whose effect is not a stat — a
-   * kill's drop, a turret's death. The TURRET ones are never read here at
-   * all past the placement: they are rolled once into Tower.mods and the
-   * attribute lives on the structure from then on.
+   * NOTHING READS IT PAST THE PLACEMENT. A mod is rolled once into
+   * Tower.mods and the attribute lives on the structure from then on; the
+   * ledger is here so that a copy bought mid-wave can re-compose the
+   * turrets already standing (resolveTower).
    */
   private mods: Partial<Record<ModId, number>> = {};
+  /**
+   * ...AND THE RUN'S RELICS (relics.ts), which are a SET and not a tally:
+   * a relic is a rule in force, held once, and a rule does not get more
+   * in force. The two categories keep two ledgers because they are two
+   * categories — they used to share one behind a `scope` field, and the
+   * cap that stopped a relic being offered twice was arithmetic on a
+   * count that could only ever be 0 or 1.
+   *
+   * Run state, exactly as the mods are. The four relics that are stat
+   * surgery are folded into every kind's spec (refreshSpecs) and the rest
+   * are read BY NAME at the one site each of them happens — a kill's
+   * drop, a turret's death, the damage chokepoint. The five that answer a
+   * T5 swarm are pre-read into the flags below, so the hot loop tests a
+   * number rather than a Set.
+   */
+  private relics = new Set<RelicId>();
+  /**
+   * THE ANTI-T5 RELICS, PRE-READ (relics.ts, and see `relics` above).
+   * Every one of these is checked inside Sim.damageUnit or Sim.killUnit —
+   * the chokepoints every damage path and every death in the game passes
+   * through — so what they must never be is a Set lookup per hit. They
+   * are refreshed together whenever the run's relics change (takeRelic).
+   *
+   *   armorBlind  Monofilament Rounds: armour stops applying, full stop
+   *   titanOn     Titan Rounds: a round gains a quarter a tier (TITAN_MUL)
+   *   executeAt   Terminal Protocol: the fraction of its own pool a body
+   *               dies at, or 0 for "nothing is executed"
+   *   cascadeOn   Cascade Charges: a heavy hull detonates where it falls
+   *   aegisOn     Aegis Breaker: the swarm's support auras do nothing
+   */
+  private armorBlind = false;
+  private titanOn = false;
+  private executeAt = 0;
+  private cascadeOn = false;
+  private aegisOn = false;
+  /**
+   * WHAT CASCADE CHARGES HAS LEFT TO SET OFF — a queue rather than a call,
+   * and it has to be one. A detonation damages units, a damaged unit can
+   * die, and a death is what queues a detonation: done in place it would
+   * be killUnit recursing into itself through Sim.splash, in the middle
+   * of the swap-remove that killUnit is halfway through. So a death only
+   * WRITES here, and the blasts go off once a frame at a point where no
+   * removal is in flight (drainCascades).
+   */
+  private readonly cascades: { x: number; y: number; r: number; dmg: number }[] = [];
   /** is the Hungry mutator in force this run? (see reset) */
   private hungryOn = false;
   /**
@@ -1609,8 +1664,12 @@ export class Sim {
     this.killsByKind.fill(0);
     this.scrap = SCRAP_START;
     this.scrapEarned = 0;
-    // the run's upgrades are the RUN's (see `mods`): a new board owns none
+    // the run's modules are the RUN's (see `mods` and `relics`): a new
+    // board owns none of either half
     this.mods = {};
+    this.relics.clear();
+    this.readRelics();
+    this.cascades.length = 0;
     // the run's rules, read once: the feed pass runs over every unit on the
     // field, and a spec lookup per unit per tick to answer a question that
     // cannot change mid-run would be pure waste
@@ -2248,7 +2307,7 @@ export class Sim {
       const base = up && counts
         ? upgradedTower(kind, up[kind] ?? NO_UPGRADES, { count: counts[kind] })
         : TOWERS[kind];
-      const spec = applyGlobalMods(base, kind, this.mods);
+      const spec = applyRelics(base, this.relics);
       if (spec !== TOWERS[kind]) this.specs.set(kind, spec);
     }
     // ...and every STANDING turret re-composed on top of that, because its
@@ -2285,15 +2344,15 @@ export class Sim {
     t.regen = modRegen(t.mods, this.mods) * max;
   }
 
-  // ---------- the run's upgrades (mods.ts) ----------
+  // ---------- the run's modules: mods (mods.ts) and relics (relics.ts) ----------
 
-  /** how many copies of one upgrade the run owns */
+  /** how many copies of one mod the run owns */
   modStacks(id: ModId): number {
     return this.mods[id] ?? 0;
   }
 
-  /** every upgrade the run owns, catalog order, with its stack count — the
-   *  shelf on the top-left of the field reads exactly this */
+  /** every MOD the run owns, catalog order, with its stack count — half of
+   *  what the shelf on the top-left of the field draws */
   ownedMods(): { id: ModId; n: number }[] {
     const out: { id: ModId; n: number }[] = [];
     for (const m of MODS) {
@@ -2303,23 +2362,45 @@ export class Sim {
     return out;
   }
 
-  /** the whole ledger, for the roll that must not offer a maxed mod */
+  /** ...and every RELIC, catalog order — the other half, and no counts,
+   *  because a relic is held once (relics.ts) */
+  ownedRelics(): RelicId[] {
+    return RELICS.filter((d) => this.relics.has(d.id)).map((d) => d.id);
+  }
+
+  /** the whole mod ledger, for the composers that read a copy count */
   get modLedger(): Readonly<Partial<Record<ModId, number>>> {
     return this.mods;
   }
 
+  /** ...and the relics held, for the roll that must not offer one twice */
+  get relicsHeld(): RelicsHeld {
+    return this.relics;
+  }
+
   /**
-   * TAKE AN UPGRADE, and it lands NOW. A global is folded into every
-   * kind's stats on the spot and reaches the turrets already standing; a
-   * turret attribute only joins the pool the next placement rolls
-   * against, and deliberately changes nothing on the board (see mods.ts).
-   *
-   * Undying Legion is the one global that has to reach back: it grants a
-   * revive to EVERY turret, and a player who buys it mid-wave is buying
-   * it for the line that is being chewed on right now.
+   * TAKE A MOD. It joins the pool the NEXT placement rolls against and
+   * deliberately changes nothing already on the board — except that a
+   * COPY scales what the turrets born with it already get, which is what
+   * refreshSpecs carries back to them (see mods.ts).
    */
   takeMod(id: ModId): void {
     this.mods[id] = (this.mods[id] ?? 0) + 1;
+    this.refreshSpecs();
+  }
+
+  /**
+   * TAKE A RELIC, and it lands NOW — that is the whole difference between
+   * the two categories. It is folded into every kind's stats on the spot
+   * and reaches every turret already standing.
+   *
+   * Undying Legion is the one that has to reach further back than the
+   * stats do: it grants a revive to EVERY turret, and a player who buys
+   * it mid-wave is buying it for the line being chewed on right now.
+   */
+  takeRelic(id: RelicId): void {
+    this.relics.add(id);
+    this.readRelics();
     if (id === "undying")
       for (const t of this.towers) {
         if (t.team !== "player") continue; // the swarm's copies are not the run's to bless
@@ -2327,6 +2408,20 @@ export class Sim {
         t.revivesMax = Math.max(t.revivesMax, 1);
       }
     this.refreshSpecs();
+  }
+
+  /**
+   * THE FIVE FLAGS THE HOT LOOPS READ, re-derived from the set (see
+   * `armorBlind` and the fields beside it). Called wherever the run's
+   * relics change and nowhere else — damageUnit must never do a Set
+   * lookup, and killUnit must never do five.
+   */
+  private readRelics(): void {
+    this.armorBlind = this.relics.has("monofil");
+    this.titanOn = this.relics.has("titan");
+    this.executeAt = this.relics.has("terminal") ? TERMINAL_FRACTION : 0;
+    this.cascadeOn = this.relics.has("cascade");
+    this.aegisOn = this.relics.has("aegis");
   }
 
   /**
@@ -2503,9 +2598,9 @@ export class Sim {
       virus: false,
       // Undying Legion (mods.ts) grants every turret one stand-up, the
       // ones bought after it included
-      revives: this.mods.undying ? 1 : 0,
+      revives: this.relics.has("undying") ? 1 : 0,
       // ...and what Conquest hands the swarm's copy back (Tower.revivesMax)
-      revivesMax: this.mods.undying ? 1 : 0,
+      revivesMax: this.relics.has("undying") ? 1 : 0,
       boostT: 0,
       aimShieldTower: -1,
       aimTower: null,
@@ -2607,6 +2702,10 @@ export class Sim {
     this.updateProjectiles(dt);
     this.updateUnitWeapons(dt);
     this.updateEnemyShots(dt);
+    // CASCADE CHARGES (relics.ts): the heavy hulls that fell this tick,
+    // going off — after every pass that can kill, so nothing is halfway
+    // through a removal when a blast reaps its own dead (drainCascades)
+    if (this.cascadeOn) this.drainCascades();
     // RECONSTRUCTION (mutation.ts): the corpses standing back up, at the
     // very end of the tick — a body raised here starts walking on the NEXT
     // one, with a fresh hash and a fresh set of alive bounds under it,
@@ -3540,7 +3639,7 @@ export class Sim {
               if (KIND_PAYLOAD[ukind[i]]) {
                 if (!this.aimReach(tgt, x, y, CONTACT_REACH)) break;
                 this.detonate(i);
-                const half = Math.round((unitDrop(kind).scrap * dropScale(this.mods)) / 2);
+                const half = Math.round((unitDrop(kind).scrap * dropScale(this.relics)) / 2);
                 this.scrap += half;
                 this.scrapEarned += half;
               } else {
@@ -4206,8 +4305,8 @@ export class Sim {
   }
 
   /**
-   * ONE ORDINARY TURRET. THE ATTRIBUTE ROLL HAPPENS HERE (mods.ts): one
-   * independent roll per turret upgrade the run owns, so a card that puts
+   * ONE ORDINARY TURRET. THE MOD ROLL HAPPENS HERE (mods.ts): one
+   * independent roll per mod the run owns, so a card that puts
    * down thirty-six turrets rolls thirty-six times and the patch comes
    * out speckled rather than uniform.
    *
@@ -4848,15 +4947,25 @@ export class Sim {
             : 0;
         continue;
       }
-      const repair = KIND_REPAIR[k];
-      const shield = KIND_SHIELD[k];
-      const energy = KIND_ENERGY[k];
+      // AEGIS BREAKER (relics.ts): the swarm's SUPPORT auras do nothing
+      // while the relic is in force — the mender's pool, the energy field's
+      // top-up, the shield it hands out, the plating stamp and the haste
+      // stamp, which are the five things that make a wall of T5s a wall.
+      // The jam, the wake, the spotter and the drill below are the swarm's
+      // other business — they make the board harder to HOLD rather than a
+      // body harder to kill — and a relic that switched every aura in the
+      // game off would be four relics in one coat. Read off the flag, not
+      // the Set: this pass runs over every carrier on the field every tick
+      const aegis = this.aegisOn;
+      const repair = aegis ? null : KIND_REPAIR[k];
+      const shield = aegis ? null : KIND_SHIELD[k];
+      const energy = aegis ? null : KIND_ENERGY[k];
       // THE TWO STAMPS (levels.ts armorField / hasteField). They ride the
       // same clock and the same one search as the healers above, because
       // they are the same shape of thing: a carrier, a radius, a reload.
       // What they write is a timer rather than a pool
-      const armorF = KIND_ARMOR_F[k];
-      const hasteF = KIND_HASTE_F[k];
+      const armorF = aegis ? null : KIND_ARMOR_F[k];
+      const hasteF = aegis ? null : KIND_HASTE_F[k];
       // ...and the sky's and the sea's (levels.ts jamField / wakeField)
       const jamF = KIND_JAM_F[k];
       const wakeF = KIND_WAKE_F[k];
@@ -5262,10 +5371,24 @@ export class Sim {
     // the kill's scrap, into the run — off the kind's health (economy.ts)
     // ...times what the SCAVENGER RIG relics add (mods.ts), which is the
     // one thing in the run that moves what a body is worth
-    const drop = Math.round(unitDrop(UNIT_KINDS[kind]).scrap * dropScale(this.mods));
+    const drop = Math.round(unitDrop(UNIT_KINDS[kind]).scrap * dropScale(this.relics));
     this.scrap += drop;
     this.scrapEarned += drop;
     this.pushDeathFx(x, y);
+    // CASCADE CHARGES (relics.ts): a T4 or T5 hull comes apart where it
+    // falls, for a fifth of its OWN maximum health over six tiles. Read
+    // here, while the row is still the dead body's, and set off later —
+    // the blast can kill, and a kill is what queues a blast, so doing it
+    // in place would be this function recursing into itself in the middle
+    // of its own swap-remove (see `cascades`)
+    if (this.cascadeOn && KIND_TIER[kind] >= CASCADE_MIN_TIER)
+      this.cascades.push({
+        x,
+        y,
+        // the hull's own hitbox widens the reach, exactly as Volatile's does
+        r: CASCADE_TILES * CELL + this.urad[i],
+        dmg: this.uhpmax[i] * CASCADE_FRACTION,
+      });
     // VOLATILE (mutation.ts): the body's parting blast, before the arrays
     // reshuffle under it
     if (this.volatileOn) this.volatileBlast(x, y, this.urad[i], kind);
@@ -5422,7 +5545,7 @@ export class Sim {
       if (body.grace > 0) continue;
       // nowhere to stand, and no more time to wait: it was a kill after all
       this.killsByKind[body.kind]++;
-      const drop = Math.round(unitDrop(UNIT_KINDS[body.kind]).scrap * dropScale(this.mods));
+      const drop = Math.round(unitDrop(UNIT_KINDS[body.kind]).scrap * dropScale(this.relics));
       this.scrap += drop;
       this.scrapEarned += drop;
       this.kills++;
@@ -6634,7 +6757,7 @@ export class Sim {
    * an Undying board arms the swarm with turrets that have to be killed
    * twice. What it never gets is the player's Phoenix roll (an unlimited
    * flip the RUN owns, held to the player's side in reviveTower), a share
-   * of the player's later upgrades (refreshSpecs skips it), or its full
+   * of the player's later modules (refreshSpecs skips it), or its full
    * pool: it rises on CONQUEST_HP of its ceiling and
    * fires at CONQUEST_RATE of its rate.
    */
@@ -6731,7 +6854,7 @@ export class Sim {
     if (t.revives > 0) {
       t.revives--;
       rose = true;
-    } else if (t.team === "player" && this.mods.phoenix && Math.random() < PHOENIX_CHANCE) {
+    } else if (t.team === "player" && this.relics.has("phoenix") && Math.random() < PHOENIX_CHANCE) {
       // PHOENIX IS THE RUN'S LUCK, NOT THE TURRET'S (mods.ts): an
       // unlimited coin flip the player bought. A turret the swarm has
       // taken (Conquest, mutation.ts) keeps the hard charges it was born
@@ -6769,12 +6892,12 @@ export class Sim {
     // insurance pays EVERY wreck, no roll: a certain two thousand is what
     // makes a line being chewed through into a line funding its own
     // replacement (mods.ts INSURANCE_SCRAP)
-    if (this.mods.insurance) {
+    if (this.relics.has("insurance")) {
       this.scrap += INSURANCE_SCRAP;
       this.scrapEarned += INSURANCE_SCRAP;
       this.pushFx(t.x, t.y, 0.5, FxKind.Absorb);
     }
-    if (this.mods.lastVolley) {
+    if (this.relics.has("lastVolley")) {
       // the dying turret dumps its charge into everything nearby, itself
       // excluded — it is not on the board a tick from now
       const r = LAST_VOLLEY_TILES * CELL;
@@ -6787,6 +6910,36 @@ export class Sim {
       }
       this.pushFx(t.x, t.y, 0.45, FxKind.ShieldWave, 0, r);
     }
+  }
+
+  /**
+   * CASCADE CHARGES (relics.ts): every queued detonation, set off.
+   *
+   * IT IS A CHAIN AND IT IS BOUNDED. A blast kills, a kill queues another
+   * blast, and the loop walks the queue by index so a detonation that
+   * lands one goes off in the same frame — which is what makes a wall of
+   * heavies unzip rather than pop one hull at a time. CASCADE_CHAIN_CAP is
+   * the stop: a pathological board cannot spend a whole frame detonating,
+   * and anything past the cap simply does not go off. Nothing is carried
+   * over to the next frame, because a charge that fires a second late
+   * lands on a board that has moved.
+   *
+   * IT RUNS WHERE NO REMOVAL IS IN FLIGHT — once a frame, after every pass
+   * that can kill has finished (Sim.update). Sim.splash reaps its own dead
+   * from the highest index down, exactly as every other blast in the game
+   * does, so a detonation may safely kill.
+   */
+  private drainCascades(): void {
+    if (this.cascades.length === 0) return;
+    for (let k = 0; k < this.cascades.length && k < CASCADE_CHAIN_CAP; k++) {
+      const c = this.cascades[k];
+      // AIR AND GROUND BOTH. A hull coming apart does not check what is
+      // flying over it, and the air T5s are exactly the swarm this relic
+      // is an answer to
+      this.splash(c.x, c.y, c.r, c.dmg, true, true);
+      this.pushFx(c.x, c.y, 0.45, FxKind.Shockwave, 0, c.r);
+    }
+    this.cascades.length = 0;
   }
 
   /**
@@ -8537,7 +8690,19 @@ export class Sim {
       HAS_ARMOR_AURA && this.uarmorT[i] > 0
         ? this.uarmor[i] + this.uarmorAdd[i]
         : this.uarmor[i];
-    let amount = pierceArmor ? raw : Sim.applyArmor(raw, armor * armorMult);
+    // TITAN ROUNDS (relics.ts): the round gains a quarter again for every
+    // tier the body stands above the first, so the ramp is worth nothing
+    // against a dagger and DOUBLE against an eclipse. Before armour,
+    // because it is the round hitting harder and not the plate mattering
+    // less — Monofilament below is the other one
+    const hit = this.titanOn ? raw * TITAN_MUL[KIND_TIER[this.ukind[i]]] : raw;
+    // MONOFILAMENT ROUNDS (relics.ts): armour stops applying, to every
+    // damage path in the game at once. It is here rather than on
+    // BulletStats because a bullet's own `pierceArmor` is honoured by
+    // exactly ONE of the sim's damage paths — a relic written as a bullet
+    // field would have done nothing at all for a lancer or a meltdown
+    let amount =
+      pierceArmor || this.armorBlind ? hit : Sim.applyArmor(hit, armor * armorMult);
     // LEADERSHIP (mutation.ts): the CEILING on one hit, taken after
     // plating and before anything is spent — so a hit that lands on a led
     // body is worth at most LEADERSHIP_CAP whether it goes into the force
@@ -8545,6 +8710,14 @@ export class Sim {
     // of each shot is worth exactly that. It sits on this line because
     // this line is the one door every point of damage to a body comes
     // through: a shot, a blast's share, a beam's tick, fire, venom
+    //
+    // AND IT IS LAST, WHICH MEANS IT BEATS THE RELICS THAT MAKE A HIT
+    // BIGGER. Titan and Monofilament both land above this line, so under
+    // Leadership they buy almost nothing — a capped hit is a capped hit
+    // however hard the round was. That is the mutators pulling the other
+    // way, exactly as they are supposed to, and it is why TERMINAL
+    // PROTOCOL is the relic that answers this rule: an execute is not
+    // damage, so it does not come through this door at all.
     if (this.uled[i] > 0 && amount > LEADERSHIP_CAP) amount = LEADERSHIP_CAP;
     if (this.ushield[i] > 0.0001) {
       this.ushieldAlpha[i] = 1;
@@ -8554,6 +8727,13 @@ export class Sim {
     }
     if (amount > 0) {
       this.uhp[i] -= amount;
+      // TERMINAL PROTOCOL (relics.ts): a body knocked to the last fraction
+      // of its own pool does not get to spend it. Zeroing the health is
+      // the whole of it — every caller of this already reaps whatever came
+      // out of it at or below zero, so the death goes through the one path
+      // it always did
+      if (this.executeAt > 0 && this.uhp[i] > 0 && this.uhp[i] <= this.uhpmax[i] * this.executeAt)
+        this.uhp[i] = 0;
       // BLINK (levels.ts blink): a hit that got through throws the body
       // forward, if its jump is off cooldown and it is still alive to jump
       if (HAS_BLINK && this.uhp[i] > 0 && this.ublinkCd[i] <= 0) {
