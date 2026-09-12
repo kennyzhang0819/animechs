@@ -466,10 +466,8 @@ export const enum FxKind {
    *  underneath fading away. WaveSpawner.spawnEffect fires it on every
    *  unit a wave puts on the map */
   UnitSpawn = 36,
-  /** Fx.spawn: the accent square that snaps out where a unit finished
-   *  arriving. Mindustry runs it 30 ticks BEHIND unitSpawn, which is
-   *  exactly when the unit stops being unmoving and walks */
-  Spawn = 37,
+  // 37 was Fx.spawn, the accent square that snapped out where a unit
+  // finished arriving. The entrance below already reads as an arrival
   /** Fx.wet — StatusEffects.wet's flicker, burning's blue counterpart:
    *  a water-coloured droplet fading off a soaked unit at effectChance
    *  per tick */

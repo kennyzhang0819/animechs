@@ -1729,6 +1729,12 @@ export type MoveLayer = (typeof MOVE_LAYERS)[number];
  * we skip it for walkers (see terrain.ts WALL_DEEP): there, a speed
  * penalty would be a pathfinding input. Here it is not one — the field
  * never reads it.
+ *
+ * IT IS THE DEFAULT AND NOT THE RULE: a kind may name its own tax
+ * (levels.ts UnitStats.landSpeed), and the Wraith fleet does — it pays a
+ * fifth, because the sniper family's crawl up the beach is the Harpoon
+ * fleet's premise and the wraiths' whole idea is a body that cannot be
+ * held wherever it is.
  */
 export const NAVAL_LAND_SPEED = 0.5;
 /**
@@ -1781,11 +1787,9 @@ export const LAYER_BIT: Readonly<Record<ZoneKind, number>> = {
  *  and what a pre-layer document's exits are read as */
 export const ALL_MOVE_BITS = LAYER_BIT.ground | LAYER_BIT.air | LAYER_BIT.water;
 
-/** Fx.unitSpawn's own 30 ticks, and Fx.spawn's — the second is run 30
- *  ticks BEHIND the first (Time.run), so it lands exactly as the unit
- *  stops being unmoving and takes its first step */
+/** Fx.unitSpawn's own 30 ticks — the entrance, and the only thing an
+ *  arrival draws now */
 export const FX_UNIT_SPAWN = 30 / TICK;
-export const FX_SPAWN = 30 / TICK;
 
 // StatusEffects.burning, 1:1: 0.167 damage per tick, and it pierces armor
 // (StatusEffect.update calls damageContinuousPierce) — but a shield still

@@ -154,7 +154,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   pass. Water is a batch and a program of its own — Mindustry's
   `water.frag`, ported
 - `game/game.ts` — rAF loop, input, 2d overlay (placement ghost, range
-  rings, health bars, the focus mark), stats and the **minimap**
+  rings, health bars, the inspect mark), stats and the **minimap**
   (`drawMinimap`): the whole map at a cell a dot, never zoomed, the
   player's structures white, the swarm red, the viewport framed; a press
   looks there, a drag keeps steering
@@ -239,10 +239,10 @@ is no touch input.
 | amount | **X** cycles ×1 / ×4 / ×9 and multiplies the next press, at flat price. On **M** and **R** that is N draws; on **T** it is one card carrying the shape **tiled** N times, square and gapless — so ×9 of a citadel is one ghost of 324 turrets in an 18×18 block to find ground for |
 | discard | right press while holding a card. No refund |
 | demolish | right press, drag to chain |
-| select a building | left click with no tool picked — its range ring shows; drag a box for a region; shift adds |
+| select a building | left click with no tool picked — ONE building shows its range ring; drag a box for a region, or shift-add, and the rings stay off so the fight is still visible |
 | select every like it nearby | ctrl-click or double-click (`SEL_LIKE_STRUCT_R`) |
 | sell the selection | delete or backspace |
-| focus fire | click an enemy body or a shield tower — every turret in range drops what it was doing for it |
+| inspect an enemy | click an enemy body, a shield tower or a taken turret — the panel reads it out and an arrow marks it. A question only: no turret changes aim for it |
 | pan | middle drag, WASD/arrows, two-finger trackpad scroll |
 | minimap | click to look there, drag to keep steering — bottom-left, never zoomed |
 | zoom | wheel, trackpad pinch |

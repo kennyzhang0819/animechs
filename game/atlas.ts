@@ -2093,6 +2093,98 @@ export async function turretIcon(url: string): Promise<string> {
 }
 
 /**
+ * A BODY OFF THE PACKED SHEET, as a data URL — for the HUD's unit
+ * pictures, so a thumbnail shows the body the game actually puts on the
+ * board rather than Mindustry's raw sprite file.
+ *
+ * The difference is the whole reason this exists. What lands on the map is
+ * the packed cell: outlined, run through the antialias pass, and wearing
+ * its FAMILY'S colour on its team cell (levels.ts FAMILY_ACCENT, which
+ * the renderer multiplies into the cell art the same way this does). A
+ * thumbnail loaded straight from /mindustry/sprites/units was none of
+ * those things — no outline, no smoothing, and still carrying upstream's
+ * crux red where the family hue belongs.
+ *
+ * `accent` is passed in rather than looked up because this file knows
+ * UnitKind as a TYPE only: a value import from levels.ts would close a
+ * cycle. The icon comes out FACING UP, undoing drawFacingRight's quarter
+ * turn, because that is the way a picture of a unit is read.
+ */
+export async function unitIcon(
+  kind: UnitKind,
+  accent: readonly [number, number, number],
+): Promise<string> {
+  const sheet = await buildAtlas();
+  const { uv } = UNIT_ART[kind];
+  const x = Math.round(uv[0] * ATLAS_W), y = Math.round(uv[1] * ATLAS_H);
+  const size = Math.round((uv[2] - uv[0]) * ATLAS_W);
+  const cell = UNIT_CELL[kind];
+
+  // the body's cell onto its own canvas, on the sheet's axes
+  const flat = document.createElement("canvas");
+  flat.width = size;
+  flat.height = size;
+  const fc = flat.getContext("2d");
+  if (!fc) throw new Error(`2d context unavailable for the ${kind} icon`);
+  fc.imageSmoothingEnabled = false;
+  fc.drawImage(sheet, x, y, size, size, 0, 0, size, size);
+
+  // ...and the team cell over it, in the family's colour. The renderer
+  // MULTIPLIES the colour into the cell texture, so this does too: a flat
+  // fill would throw away the shading in the art. Multiply alone paints
+  // the transparent margin as well (an opaque source leaves alpha 1
+  // everywhere), hence the destination-in pass putting the art's own
+  // alpha back
+  if (cell) {
+    const cw = Math.max(1, Math.round(cell.w * size));
+    const ch = Math.max(1, Math.round(cell.h * size));
+    const cx = Math.round(cell.uv[0] * ATLAS_W), cy = Math.round(cell.uv[1] * ATLAS_H);
+    const tint = document.createElement("canvas");
+    tint.width = cw;
+    tint.height = ch;
+    const tc = tint.getContext("2d");
+    if (!tc) throw new Error(`2d context unavailable for the ${kind} icon cell`);
+    tc.imageSmoothingEnabled = false;
+    const paint = () => {
+      tc.drawImage(sheet, cx, cy, cw, ch, 0, 0, cw, ch);
+    };
+    paint();
+    tc.globalCompositeOperation = "multiply";
+    tc.fillStyle = `rgb(${accent.map((v) => Math.round(v * 255)).join(",")})`;
+    tc.fillRect(0, 0, cw, ch);
+    tc.globalCompositeOperation = "destination-in";
+    paint();
+    // dx/dy are fractions of the body's quad, off its centre, in the
+    // sprite's frame — which IS the sheet's frame for art already turned
+    fc.drawImage(
+      tint,
+      Math.round(size / 2 + cell.dx * size - cw / 2),
+      Math.round(size / 2 + cell.dy * size - ch / 2),
+    );
+  }
+
+  // and the quarter turn back, so the body points up the way the sprite
+  // files it was composited from do — CROPPED TO WHAT IT COVERS on the
+  // way, because a sheet cell is bigger than the art in it by a different
+  // margin for every kind (a flare's 48px body sits in a 64px cell, a
+  // risso's in a 128) and the HUD scales an icon to a fixed square. Left
+  // uncropped, a family's picture came out the size of its own padding
+  // and a row of them read as a row of different-sized units
+  const crop = opaqueBounds(flat) ?? { x: 0, y: 0, w: size, h: size };
+  const out = document.createElement("canvas");
+  // the turn swaps the crop's axes
+  out.width = crop.h;
+  out.height = crop.w;
+  const oc = out.getContext("2d");
+  if (!oc) throw new Error(`2d context unavailable for the ${kind} icon turn`);
+  oc.imageSmoothingEnabled = false;
+  oc.translate(crop.h / 2, crop.w / 2);
+  oc.rotate(-Math.PI / 2);
+  oc.drawImage(flat, crop.x, crop.y, crop.w, crop.h, -crop.w / 2, -crop.h / 2, crop.w, crop.h);
+  return out.toDataURL();
+}
+
+/**
  * Mindustry sprites face up; our shader treats rotation 0 as facing +x.
  * Pre-rotate 90° clockwise at composite time so runtime rotation stays a
  * single angle.

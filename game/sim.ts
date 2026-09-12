@@ -21,7 +21,6 @@ import {
   POISON_TIME,
   SHORT_FX_LIFE,
   SHORT_FX_RATE,
-  FX_SPAWN,
   FX_UNIT_SPAWN,
   SPAWN_INVINCIBLE as SPAWN_INVINCIBLE_IMPORT,
   SPAWN_UNMOVING as SPAWN_UNMOVING_IMPORT,
@@ -569,6 +568,14 @@ const KIND_WET_IMMUNE = Uint8Array.from(UNIT_KINDS, (k) =>
  * state one carries.
  */
 const KIND_DRAG = Float32Array.from(UNIT_KINDS, (k) => UNIT_STATS[k].drag ?? 0.3);
+/** what each kind's drive is multiplied by on a cell that is not water —
+ *  the layer's land tax unless the kind names its own (levels.ts
+ *  UnitStats.landSpeed, which the Wraith fleet does). Read for naval
+ *  kinds only: nothing else is charged it */
+const KIND_LAND_SPEED = Float32Array.from(
+  UNIT_KINDS,
+  (k) => UNIT_STATS[k].landSpeed ?? NAVAL_LAND_SPEED,
+);
 /** the gait of every legged kind, indexed like UNIT_KINDS — null for the
  * mechs and flyers, whose animation is one sliding pair of leg sprites */
 const KIND_LEGS = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
@@ -714,7 +721,7 @@ const KIND_ROT = Float32Array.from(UNIT_KINDS, (k) => {
  * A shield tower EMERGES mid-run (updateShieldTowers rolls the spot) and a destroyed
  * one is gone for good — hp 0 is its tombstone. The ENTRY, though, is
  * never removed from Sim.shieldTowers and the array is never reordered, so an
- * index into it (a tower's aimShieldTower, the player's focus, a pierce
+ * index into it (a tower's aimShieldTower, the player's mark, a pierce
  * ledger sentinel) is stable for the run.
  */
 export interface ShieldTower {
@@ -1244,7 +1251,7 @@ export class Sim {
    * empty unless the rule was rolled. Entries are appended as shieldTowers
    * emerge and NEVER removed or reordered (a dead shield tower keeps its slot at
    * hp 0), so an index into this array is stable for the whole run and
-   * everything — tower aim, the player's focus, a pierce shot's
+   * everything — tower aim, the player's mark, a pierce shot's
    * been-there list — holds indices freely.
    */
   readonly shieldTowers: ShieldTower[] = [];
@@ -1262,16 +1269,16 @@ export class Sim {
    * swap-removes exactly as fldI is) or a shield tower index; never both. Every
    * turret that can reach the mark drops what it was doing for it.
    */
-  private focusUid = -1;
-  private focusIdx = -1;
-  private focusShieldTower = -1;
+  private inspectUid = -1;
+  private inspectIdx = -1;
+  private inspectShieldTower = -1;
   /**
    * ...and the third kind of mark: one of the SWARM's conquered turrets
    * (Conquest, mutation.ts), held by reference rather than by index — a
    * building has no uid, and its cells are what say whether it still
    * stands. Null in every run without the rule.
    */
-  private focusTower: Tower | null = null;
+  private inspectTower: Tower | null = null;
 
   /** is the Volatile mutator in force this run? (see reset) */
   private volatileOn = false;
@@ -1561,10 +1568,10 @@ export class Sim {
     this.shieldTowers.length = 0;
     this.shieldTowerT = 0;
     this.domesUp = false;
-    this.focusUid = -1;
-    this.focusIdx = -1;
-    this.focusShieldTower = -1;
-    this.focusTower = null;
+    this.inspectUid = -1;
+    this.inspectIdx = -1;
+    this.inspectShieldTower = -1;
+    this.inspectTower = null;
     // the mission sets the clock (levels.ts); the core's pool is CORE_HP on every map
     const mission = this.level.mission;
     this.deadline = mission.kind === "survive" ? mission.minutes * 60 : 0;
@@ -4839,17 +4846,12 @@ export class Sim {
   private updateStatus(dt: number): void {
     const { uburn, uwet, uhp, uhpmax, upx, upy, urad, uspawn } = this;
     for (let i = this.n - 1; i >= 0; i--) {
-      // the arrival clock. Mindustry schedules Fx.spawn with Time.run(30),
-      // which lands on the frame `unmoving` expires — so the ring going up
-      // and the unit taking its first step are the same moment, and one
-      // threshold crossing does for both
-      if (uspawn[i] > 0) {
-        const was = uspawn[i];
-        uspawn[i] = Math.max(0, was - dt);
-        const walks = SPAWN_INVINCIBLE - SPAWN_UNMOVING;
-        if (was > walks && uspawn[i] <= walks)
-          this.pushFx(upx[i], upy[i], FX_SPAWN, FxKind.Spawn);
-      }
+      // the arrival clock. Nothing is drawn when it runs out any more:
+      // Fx.spawn's accent square used to snap out on the frame `unmoving`
+      // expired, and the entrance (Fx.unitSpawn) already says a body
+      // arrived — the square on top of it was a second announcement of
+      // the same event
+      if (uspawn[i] > 0) uspawn[i] = Math.max(0, uspawn[i] - dt);
       // THE TWO STAMPED AURAS running down (constants.ts AURA_LINGER). No
       // effect on the way out: an aura is a thing a body has while it is
       // near the carrier, and a puff announcing that it no longer is would
@@ -5238,14 +5240,14 @@ export class Sim {
       if (this.fldI[f] === i) this.fldI[f] = this.fldI[--this.fldN];
       else if (this.fldI[f] === n) this.fldI[f] = i;
     }
-    // the player's focus mark rides the same reshuffle: the marked unit
+    // the player's inspect mark rides the same reshuffle: the marked unit
     // dying clears the mark for good, and the unit swapped down into its
-    // slot drags the index hint with it (see setFocusUnit)
-    if (this.focusIdx === i) {
-      this.focusIdx = -1;
-      this.focusUid = -1;
-    } else if (this.focusIdx === n) {
-      this.focusIdx = i;
+    // slot drags the index hint with it (see setInspectUnit)
+    if (this.inspectIdx === i) {
+      this.inspectIdx = -1;
+      this.inspectUid = -1;
+    } else if (this.inspectIdx === n) {
+      this.inspectIdx = i;
     }
     this.upx[i] = this.upx[n];
     this.upy[i] = this.upy[n];
@@ -5764,8 +5766,17 @@ export class Sim {
       // than a place it is drawn to.
       // ...AND HALF AGAIN AFLOAT (NAVAL_WATER_SPEED): the water is the road
       // the family is quick on, and a hull under the sei's bow wave
-      // (ubowT, levels.ts wakeField) keeps its afloat pace ashore too
-      const land = !nav ? 1 : water[ci] ? NAVAL_WATER_SPEED : HAS_WAKE_AURA && this.ubowT[i] > 0 ? 1 : NAVAL_LAND_SPEED;
+      // (ubowT, levels.ts wakeField) keeps its afloat pace ashore too.
+      // The tax itself is per KIND (KIND_LAND_SPEED): the Wraith fleet
+      // pays a fifth where the Harpoon fleet pays a half, because the
+      // crawl ashore is the sniper family's premise and not the wraiths'
+      const land = !nav
+        ? 1
+        : water[ci]
+          ? NAVAL_WATER_SPEED
+          : HAS_WAKE_AURA && this.ubowT[i] > 0
+            ? 1
+            : KIND_LAND_SPEED[ukind[i]];
       // ...and a FOURTH multiplier: the spiroct's pace stamp (levels.ts
       // hasteField). It rides here with the wet slow and the land penalty
       // rather than on uspd, so it is a thing happening TO the body and
@@ -6272,7 +6283,7 @@ export class Sim {
     // FREE ROCK and only free rock (see trySpawnShieldTower), so it never
     // held a turret and the swarm's routes never knew it existed
     // a dead shield tower is no longer anyone's mark
-    if (this.focusShieldTower === idx) this.focusShieldTower = -1;
+    if (this.inspectShieldTower === idx) this.inspectShieldTower = -1;
     this.pushFx(s.x, s.y, 0.6, FxKind.Breach);
     this.pushFx(s.x, s.y, 0.5, FxKind.Shockwave);
   }
@@ -6564,43 +6575,44 @@ export class Sim {
     this.pushFx(x, y, 0.35, FxKind.Shockwave, 0, reach);
   }
 
-  // ---------- the player's focus mark ----------
+  // ---------- the player's inspect mark ----------
 
   /**
-   * Mark one unit for focus fire: every turret in range drops what it was
-   * doing for it (see fireTowers). The mark is a uid plus an index hint
-   * maintained across swap-removes, exactly as the force-field carrier
-   * list is — it dies with the unit and is never dangling.
+   * Mark one unit as THE THING THE PANEL IS ANSWERING ABOUT (Game.inspect)
+   * — what it is, how much of it is left, what has landed on it. It is not
+   * an order: no turret's aim changes for it (see fireTowers). The mark is
+   * a uid plus an index hint maintained across swap-removes, exactly as
+   * the force-field carrier list is — it dies with the unit and is never
+   * dangling.
    */
-  setFocusUnit(idx: number): void {
+  setInspectUnit(idx: number): void {
     if (idx < 0 || idx >= this.n) return;
-    this.focusUid = this.uid[idx];
-    this.focusIdx = idx;
-    this.focusShieldTower = -1;
-    this.focusTower = null;
+    this.inspectUid = this.uid[idx];
+    this.inspectIdx = idx;
+    this.inspectShieldTower = -1;
+    this.inspectTower = null;
   }
 
-  /** mark one shield tower for focus fire — same contract, the other kind */
-  setFocusShieldTower(idx: number): void {
+  /** mark one shield tower for the panel — same contract, the other kind */
+  setInspectShieldTower(idx: number): void {
     if (idx < 0 || idx >= this.shieldTowers.length || this.shieldTowers[idx].hp <= 0) return;
-    this.focusShieldTower = idx;
-    this.focusUid = -1;
-    this.focusIdx = -1;
-    this.focusTower = null;
+    this.inspectShieldTower = idx;
+    this.inspectUid = -1;
+    this.inspectIdx = -1;
+    this.inspectTower = null;
   }
 
   /**
-   * ...and on one of the SWARM'S CONQUERED TURRETS (Conquest): the one way
-   * a player can make the line drop a wave and take a lost emplacement
-   * back down, since an unmarked building is only ever shot at by a turret
-   * with nothing else to do (see fireTowers).
+   * ...and on one of the SWARM'S CONQUERED TURRETS (Conquest): a taken
+   * emplacement reads as a building, pools and plating and all, and the
+   * panel is the only place to read it.
    */
-  setFocusTower(t: Tower | null): void {
+  setInspectTower(t: Tower | null): void {
     if (!t || t.team !== "enemy" || this.cellTower[t.gy * COLS + t.gx] !== t) return;
-    this.focusTower = t;
-    this.focusUid = -1;
-    this.focusIdx = -1;
-    this.focusShieldTower = -1;
+    this.inspectTower = t;
+    this.inspectUid = -1;
+    this.inspectIdx = -1;
+    this.inspectShieldTower = -1;
   }
 
   /** the SWARM's building under a world point, if one stands there —
@@ -6612,70 +6624,70 @@ export class Sim {
   }
 
 
-  clearFocus(): void {
-    this.focusUid = -1;
-    this.focusIdx = -1;
-    this.focusShieldTower = -1;
-    this.focusTower = null;
+  clearInspect(): void {
+    this.inspectUid = -1;
+    this.inspectIdx = -1;
+    this.inspectShieldTower = -1;
+    this.inspectTower = null;
   }
 
   /**
    * THE MARKED BODY, as a live index — -1 when the mark is on something
    * else, on a body that has since died, or on nothing.
    *
-   * A tap on an enemy was always two things at once: an order (every gun
-   * in range drops what it was doing for it) and a QUESTION — what is
-   * that, and what is happening to it. The order was answered by the
-   * bobbing arrow and the question by nothing at all, so this is what the
-   * inspector reads to answer the second half (Game.inspect).
+   * A tap on an enemy is one thing and not two: a QUESTION — what is
+   * that, and what is happening to it — which the inspector reads to
+   * answer (Game.inspect). It used to be an order as well, every gun in
+   * range dropping what it was doing for the tapped body; it is not one
+   * any more.
    *
-   * The revalidation is focusMark's, for the same reason: indices are
+   * The revalidation is inspectMark's, for the same reason: indices are
    * recycled by swap-remove, so a uid that no longer sits at the hint is
    * a body that is gone.
    */
-  get focusedUnit(): number {
-    return this.focusIdx >= 0 && this.focusIdx < this.n && this.uid[this.focusIdx] === this.focusUid
-      ? this.focusIdx
+  get inspectedUnit(): number {
+    return this.inspectIdx >= 0 && this.inspectIdx < this.n && this.uid[this.inspectIdx] === this.inspectUid
+      ? this.inspectIdx
       : -1;
   }
 
   /** the marked SHIELD TOWER, or null — the same question of the mutator's
    *  structure. A dead one is not a mark, and its entry never moves */
-  get focusedShieldTower(): ShieldTower | null {
-    const s = this.focusShieldTower >= 0 ? this.shieldTowers[this.focusShieldTower] : undefined;
+  get inspectedShieldTower(): ShieldTower | null {
+    const s = this.inspectShieldTower >= 0 ? this.shieldTowers[this.inspectShieldTower] : undefined;
     return s && s.hp > 0 ? s : null;
   }
 
   /** the marked TURRET OF THE SWARM'S (Conquest), or null. Held by
    *  reference, so the occupancy grid is what says it is still standing */
-  get focusedTower(): Tower | null {
-    const t = this.focusTower;
+  get inspectedTower(): Tower | null {
+    const t = this.inspectTower;
     return t && this.cellTower[t.gy * COLS + t.gx] === t ? t : null;
   }
 
   /**
-   * Where the focus mark should be drawn, in world px — the overlay's
+   * Where the inspect mark should be drawn, in world px — the overlay's
    * arrow. `top` is above the target's art; null when nothing is marked
    * (or the marked unit has died since, which clears the mark for good).
    */
-  focusMark(): { x: number; y: number; top: number } | null {
-    if (this.focusTower) {
-      const t = this.focusTower;
+  inspectMark(): { x: number; y: number; top: number } | null {
+    if (this.inspectTower) {
+      const t = this.inspectTower;
       // a building that came down is not a mark any more, and the cells
       // are what know: nothing else is holding this reference
       if (this.cellTower[t.gy * COLS + t.gx] !== t) {
-        this.focusTower = null;
+        this.inspectTower = null;
         return null;
       }
       return { x: t.x, y: t.y, top: t.y - (t.size * CELL) / 2 - 4 };
     }
-    if (this.focusShieldTower >= 0) {
-      const s = this.shieldTowers[this.focusShieldTower];
+    if (this.inspectShieldTower >= 0) {
+      const s = this.shieldTowers[this.inspectShieldTower];
       if (!s || s.hp <= 0) return null;
       return { x: s.x, y: s.y, top: s.y - SHIELD_TOWER_SIZE * CELL * 0.75 };
     }
-    if (this.focusIdx >= 0 && this.focusIdx < this.n && this.uid[this.focusIdx] === this.focusUid) {
-      const i = this.focusIdx;
+    if (this.inspectIdx >= 0 && this.inspectIdx < this.n && this.uid[this.inspectIdx] === this.inspectUid) {
+      const i = this.inspectIdx;
       return { x: this.upx[i], y: this.upy[i], top: this.upy[i] - this.urad[i] * 2.4 - 6 };
     }
     return null;
@@ -7047,32 +7059,12 @@ export class Sim {
           t.targetT = TARGET_INTERVAL;
           aimT = this.nearestStructure(t.x, t.y, st.range, false, "player");
         }
-      } else if (this.focusIdx >= 0 && this.uid[this.focusIdx] === this.focusUid) {
-        // THE PLAYER'S MARK FIRST (setFocusUnit / setFocusShieldTower /
-        // setFocusTower): a tapped target overrides both the held target
-        // and the scan for every turret that can reach it. At most one of
-        // the three kinds is ever set
-        const fi = this.focusIdx;
-        if (this.ufly[fi] !== 0 ? st.targetAir : st.targetGround) {
-          const dx = upx[fi] - t.x, dy = upy[fi] - t.y;
-          if (dx * dx + dy * dy < r2t) best = fi;
-        }
-      } else if (this.focusShieldTower >= 0 && st.targetGround) {
-        const s = this.shieldTowers[this.focusShieldTower];
-        if (s && s.hp > 0) {
-          const dx = s.x - t.x, dy = s.y - t.y;
-          if (dx * dx + dy * dy < r2t) shr = s;
-        }
-      } else if (this.focusTower && st.targetGround) {
-        // ...and the third kind of mark: a CONQUERED TURRET the player has
-        // tapped (setFocusTower). It overrides the scan exactly as a
-        // tapped body does, which is the one way a line can be made to
-        // drop a wave and take its own turret back down mid-fight
-        const ft = this.focusTower;
-        if (this.cellTower[ft.gy * COLS + ft.gx] === ft && this.inReach(ft, t.x, t.y, st.range))
-          aimT = ft;
       }
-      if (!hostile && best < 0 && !shr && !aimT) {
+      // A TAP MARKS NOTHING FOR THE GUNS. Clicking an enemy used to
+      // override both the held target and the scan for every turret that
+      // could reach it; it is a QUESTION now and only that (Game.inspect),
+      // so a line's aim is its own sort's and never the cursor's
+      if (!hostile) {
         if (
           t.target >= 0 &&
           t.targetIdx >= 0 &&
@@ -7106,8 +7098,7 @@ export class Sim {
         // ...AND THE SWARM'S CONQUERED TURRETS THE SAME WAY (Conquest):
         // only a turret with nothing else in range spends its reload on
         // one unforced, so taking a lost emplacement back down costs time
-        // between waves and never mid-wave DPS — and the player can always
-        // force it with the focus mark above. The held building is kept
+        // between waves and never mid-wave DPS. The held building is kept
         // between scans for the same reason the swarm's gun keeps its:
         // finding one is a ring walk over the board
         if (best < 0 && !shr && st.targetGround && this.enemyTowers > 0) {
@@ -8085,17 +8076,10 @@ export class Sim {
     const prevKey = t.aimShieldTower >= 0 ? -2 - t.aimShieldTower : t.target;
     const r2 = st.range * st.range;
 
-    // THE PLAYER'S MARK FIRST, exactly as the volley path takes it: a
-    // tapped body overrides both the held lock and the scan for every
-    // turret that can reach it
+    // Nothing the cursor has tapped gets a say here, exactly as the volley
+    // path takes it: a click is a question about a body, never an order to
+    // the line (Game.inspect)
     let best = -1;
-    if (this.focusIdx >= 0 && this.uid[this.focusIdx] === this.focusUid) {
-      const fi = this.focusIdx;
-      if (ufly[fi] !== 0 ? st.targetAir : st.targetGround) {
-        const dx = upx[fi] - t.x, dy = upy[fi] - t.y;
-        if (dx * dx + dy * dy < r2) best = fi;
-      }
-    }
     // the held lock, revalidated against the uid the index hint claims —
     // alive, and still within reach counted from its EDGE, so a wide body
     // sliding out is not dropped a moment before it visibly leaves
