@@ -147,7 +147,7 @@ export function RelicShelf({ relics }: { relics: { id: ModId; n: number }[] }) {
  * A MODULE HAS NOWHERE TO LAND. A turret draw puts a card in the corner
  * and the player is left holding it; a module is in force the instant it
  * is paid for (Game.buyModules), so without this the only feedback for
- * thirty thousand scrap would be a chip quietly appearing in a
+ * a hundred and fifty thousand scrap would be a chip quietly appearing in a
  * row at the other end of the screen. So the draw gets a card of its own
  * for a few seconds, over the buttons, in the band's colour and saying
  * what it does — and then it goes, because it is not a thing being held.

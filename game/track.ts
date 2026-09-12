@@ -237,7 +237,8 @@ const UNLOCKS: Readonly<Record<number, readonly TowerKind[]>> = {
  *
  * RELICS OPEN AT RELICS_FROM, and they are the one half of a corner
  * button that starts SHUT. That is deliberate and it is said out loud: a
- * relic changes the game and costs thirty thousand (economy.ts), and a
+ * relic changes the game and costs a hundred and fifty thousand
+ * (economy.ts), and a
  * save that has not yet seen its second map has no business being offered
  * one. The G button prints "locked" until the level lands.
  *

@@ -65,9 +65,10 @@ import { armored, faster, piercing, reaching, stronger } from "./upgrades";
  * the fire loop, never switched on per shot — so an attribute has to be
  * expressible as a table, and "when this turret dies" is not.
  *
- * A RELIC CHANGES THE GAME, AND IS PRICED LIKE IT. Thirty thousand scrap
- * (economy.ts RELIC_ROLL_PRICE) is thirty turret cards, or the whole
- * opening bank four times over, and nothing at that price may be a
+ * A RELIC CHANGES THE GAME, AND IS PRICED LIKE IT. A hundred and fifty
+ * thousand scrap (economy.ts RELIC_ROLL_PRICE) is a hundred and fifty
+ * turret cards, or the whole opening bank twenty times over, and nothing
+ * at that price may be a
  * percentage: the board fires TWICE as fast, every kill pays TRIPLE, every
  * turret stands back up. A relic at "+10% damage" was a mod with a worse
  * price tag, and the run could not tell the two buttons apart by what
@@ -367,15 +368,16 @@ export const GIANT_SCALE = 2;
 /**
  * INSURANCE: what a wrecked turret pays, EVERY time. It used to be a 40%
  * chance at five hundred — an expected two hundred scrap a death, which
- * on a thirty-thousand relic pays itself back after a hundred and fifty
- * wrecks. Two cards' worth, certain, is a relic: a line that is being
- * chewed through is now also a line that is funding its own replacement.
+ * on a relic priced in six figures pays itself back after seven hundred
+ * and fifty wrecks, which is a relic that never pays. Two cards' worth,
+ * certain, is seventy-five wrecks: a line that is being chewed through is
+ * also a line that is funding its own replacement.
  */
 export const INSURANCE_SCRAP = 2000;
 
 /** scavenger: what it adds to every kill's drop — TWO more of it, so a
- *  kill pays triple. The economy relic, and the one that has to pay the
- *  thirty thousand back fastest */
+ *  kill pays triple. The economy relic, and the one that has to pay its
+ *  own six figures back fastest */
 export const SCAVENGER_BONUS = 2;
 
 /** last volley: the reload multiplier a death hands its neighbours, how
@@ -603,7 +605,8 @@ const TURRET_MODS: readonly ModDef[] = [
   {
     // THE FIRST ATTRIBUTE THAT IS NOT A NUMBER GOING UP — see the header.
     // It was a relic, and a relic that improves one kind of gun is a
-    // thirty-thousand-scrap bet on the deal handing over fuses; as a
+    // hundred-and-fifty-thousand-scrap bet on the deal handing over
+    // fuses; as a
     // fuse's OWN attribute it is rolled on every fuse placed and on
     // nothing else, which is the shape the thing always had
     id: "splitter",
@@ -698,7 +701,7 @@ const GLOBAL_MODS: readonly ModDef[] = [
   // thing a little better — see the header. The bands are what the deal
   // draws against, not what the relics are worth: at one price for all
   // of them, a common relic is the one that comes up often, and it still
-  // has to be worth the thirty thousand when it does
+  // has to be worth the hundred and fifty thousand when it does
   {
     id: "overclock",
     name: "Overclock Core",
