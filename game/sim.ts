@@ -3418,7 +3418,7 @@ export class Sim {
           if (ucharge[i] > 0) {
             ucharge[i] -= dt;
             if (ucharge[i] <= 0) {
-              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp, wrange, true);
+              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp, wrange, true, fed);
               ucd[slot] = wp.reload - wp.charge;
             }
             continue;
@@ -3445,7 +3445,7 @@ export class Sim {
           case "bullet":
           case "missile":
           case "shell": {
-            for (let k = 0; k < shots; k++) this.fireUnitShot(x, y, tgt, wp, k);
+            for (let k = 0; k < shots; k++) this.fireUnitShot(x, y, tgt, wp, k, fed);
             break;
           }
           case "gun": {
@@ -3466,7 +3466,7 @@ export class Sim {
           case "laser": {
             // a volley of them fans by ShootSpread (the pulsar's three)
             for (let k = 0; k < shots; k++)
-              this.fireUnitLaser(x, y, aim + (k - (shots - 1) / 2) * (wp.spread ?? 0), tgt, wp, wrange, KIND_TIER[ukind[i]] >= 4);
+              this.fireUnitLaser(x, y, aim + (k - (shots - 1) / 2) * (wp.spread ?? 0), tgt, wp, wrange, KIND_TIER[ukind[i]] >= 4, fed);
             break;
           }
           case "sap": {
@@ -3715,7 +3715,7 @@ export class Sim {
   }
 
   /** a bullet, missile or shell leaves the unit for the structure */
-  private fireUnitShot(x: number, y: number, tgt: Aim, wp: UnitWeapon, k: number): void {
+  private fireUnitShot(x: number, y: number, tgt: Aim, wp: UnitWeapon, k: number, fed = 1): void {
     const look = wp.look;
     if (!look) return;
     const half = tgt.half;
@@ -3733,8 +3733,11 @@ export class Sim {
       x, y,
       vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
       life, age: 0,
-      damage: wp.damage,
-      splash: wp.splash ?? 0,
+      // ...at what the BODY hits for, not what the weapon says: a fed
+      // Hungry mech's shells carry its meals exactly as its direct hits do
+      // (see `fed` in updateUnitWeapons)
+      damage: wp.damage * fed,
+      splash: (wp.splash ?? 0) * fed,
       splashRadius: wp.splashRadius ?? 0,
       look,
       collide: look.collide !== false,
@@ -3762,6 +3765,7 @@ export class Sim {
    */
   private fireUnitLaser(
     x: number, y: number, aim: number, tgt: Aim | null, wp: UnitWeapon, range = wp.range, big = true,
+    fed = 1,
   ): void {
     const st = wp.laser;
     if (wp.pierce) {
@@ -3770,13 +3774,13 @@ export class Sim {
       const halfW = ((st?.width ?? 6) * MU) / 2;
       const hit = this.structuresAlong(x, y, aim, range, halfW, this.alongOut);
       for (let k = 0; k < hit.length; k++) {
-        this.hitStructure(hit[k], wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+        this.hitStructure(hit[k], wp.damage * fed, wp.poison ?? 0, wp.poisonChance ?? 1);
         if (wp.short) this.shortTower(hit[k], wp.short, wp.shortChance ?? 1);
         if (st && k > 0 && k < (big ? 6 : 2))
           this.pushFxCol(hit[k].x, hit[k].y, 12 / 60, FxKind.HitLaserBlast, aim, 0, st.colors[st.colors.length - 1][0]);
       }
     } else if (tgt && this.aimReach(tgt, x, y, range)) {
-      this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+      this.aimHit(tgt, wp.damage * fed, wp.poison ?? 0, wp.poisonChance ?? 1);
     }
     if (!st) return;
     // only a heavy tier's beam is forced past the effect cap (`big`): a
