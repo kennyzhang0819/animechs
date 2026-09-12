@@ -283,7 +283,7 @@ function FormationMark({ form, n, facing }: { form: FormationId; n: number; faci
   return (
     <span
       aria-hidden="true"
-      className="pointer-events-none absolute right-[2px] top-[2px] flex h-[17px] w-[17px] items-center justify-center border bg-[#0b0b0d]"
+      className="pointer-events-none absolute right-[3px] top-[3px] flex h-[18px] w-[18px] items-center justify-center border-[3px] bg-[#0d0d10]"
       style={{ borderColor: color }}
     >
       <svg viewBox={`0 0 ${span} ${span}`} className="h-[13px] w-[13px]">
@@ -352,7 +352,7 @@ function TurretCard({
           ? `Aimed, turned ${facing * 90} degrees — R turns it, click the board to place it.`
           : "Click to pick it up."
       }`}
-      className={`ms-deal-card pointer-events-auto relative flex h-[5rem] w-[3.8rem] cursor-pointer flex-col items-center justify-center gap-0.5 border-2 p-0 ${
+      className={`ms-deal-card pointer-events-auto relative flex h-[5rem] w-[4.5rem] cursor-pointer flex-col items-center justify-center gap-0.5 border-[3px] p-0 ${
         aimed ? "" : "ms-deal-down"
       }`}
       style={{ borderColor: r.color, background: r.ground, color: r.color }}
@@ -360,10 +360,10 @@ function TurretCard({
       <FormationMark form={card.form} n={card.n} facing={facing} />
       {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
       <img src={icon} alt="" className="mt-1.5 h-8 w-8 [image-rendering:pixelated]" />
-      <span className="max-w-full truncate px-0.5 text-[10px] font-bold uppercase leading-none tracking-wide">
+      <span className="max-w-full px-0.5 text-center font-display text-[8px] font-bold uppercase leading-[1.15]">
         {n}× {stats.name}
       </span>
-      <span className="max-w-full truncate px-0.5 text-[8px] font-bold uppercase leading-none tracking-wide opacity-70">
+      <span className="max-w-full truncate px-0.5 font-display text-[7px] font-bold uppercase leading-none opacity-70">
         {shape}
       </span>
       <HoverCard tip={tip} title={`${n}× ${stats.name}`} tag={r.name} color={r.color} align="right">
@@ -432,17 +432,15 @@ function BuyButton({
       disabled={disabled}
       aria-keyshortcuts={keyCap}
       aria-label={aria}
-      className={`ms-btn ms-btn-tint relative flex h-full w-full flex-col items-center justify-center gap-1 px-1 py-1 ${
+      className={`ms-btn ms-btn-key ms-btn-tint relative flex h-full w-full flex-col items-center justify-center gap-1 px-1 py-1 ${
         !disabled && poor ? "opacity-60" : ""
       }`}
       style={{ ["--ms-tint" as string]: tint }}
     >
-      <span className="pointer-events-none absolute left-[4px] top-[3px] text-[10px] font-bold leading-none text-[#A6A6AF]">
-        {keyCap}
-      </span>
+      <span className="ms-key">{keyCap}</span>
       {amount > 1 && !disabled && (
         <span
-          className="pointer-events-none absolute right-[4px] top-[3px] text-[10px] font-bold leading-none"
+          className="pointer-events-none absolute right-[3px] top-[3px] font-display text-[9px] font-bold leading-none"
           style={{ color: tint }}
         >
           {"×"}
@@ -450,19 +448,19 @@ function BuyButton({
         </span>
       )}
       {glyph}
-      <span className="max-w-full truncate text-[11px] font-bold uppercase leading-none tracking-wide text-[#EDEDEF]">
+      <span className="max-w-full truncate font-display text-[10px] font-bold uppercase leading-none text-[#E8E4D8]">
         {label}
       </span>
       {price !== null && (
         <span
-          className={`text-[13px] font-bold leading-none tabular-nums ${
+          className={`font-display text-[12px] font-bold leading-none tabular-nums ${
             poor ? "text-[#FF8A8A]" : "text-white"
           }`}
         >
           {price.toLocaleString()}
         </span>
       )}
-      <span className="max-w-full truncate text-[8px] font-bold uppercase leading-none tracking-widest text-[#7A7A85]">
+      <span className="max-w-full truncate font-display text-[7px] font-bold uppercase leading-none text-[#8A8E98]">
         {sub}
       </span>
     </button>
@@ -599,21 +597,19 @@ export function DealCorner({
             onClick={deal.cycleAmount}
             aria-keyshortcuts="X"
             aria-label={`Amount: ${n} per press. Click to cycle, shortcut X`}
-            className={`ms-btn relative flex h-full w-full flex-col items-center justify-center gap-1 px-1 py-1 ${
+            className={`ms-btn ms-btn-key relative flex h-full w-full flex-col items-center justify-center gap-1 px-1 py-1 ${
               n > 1 ? "ms-on" : ""
             }`}
           >
-            <span className="pointer-events-none absolute left-[4px] top-[3px] text-[10px] font-bold leading-none text-[#A6A6AF]">
-              X
-            </span>
-            <span className="font-display text-[28px] font-bold leading-none tabular-nums">
+            <span className="ms-key">X</span>
+            <span className="font-display text-[26px] font-bold leading-none tabular-nums">
               {"×"}
               {n}
             </span>
-            <span className="text-[11px] font-bold uppercase leading-none tracking-wide text-[#EDEDEF]">
+            <span className="font-display text-[10px] font-bold uppercase leading-none text-[#E8E4D8]">
               Amount
             </span>
-            <span className="text-[8px] font-bold uppercase leading-none tracking-widest text-[#7A7A85]">
+            <span className="font-display text-[7px] font-bold uppercase leading-none text-[#8A8E98]">
               per press
             </span>
           </button>

@@ -207,7 +207,7 @@ function SingleReveal({ id }: { id: ModId }) {
   const r = RARITY[d.rarity];
   return (
     <div
-      className="ms-deal-card pointer-events-none flex w-[13rem] flex-col gap-1 border-2 p-2"
+      className="ms-deal-card pointer-events-none flex w-[13rem] flex-col gap-1 border-[3px] p-2"
       style={{ borderColor: r.color, background: r.ground }}
       role="status"
     >
