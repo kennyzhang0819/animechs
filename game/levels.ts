@@ -1,4 +1,4 @@
-import { CELL, HP0, PAL, UNIT_SPEED, UR, type MoveLayer } from "./constants";
+import { CELL, HP0, PAL, TEAM_CRUX_RGB, UNIT_SPEED, UR, type MoveLayer } from "./constants";
 import { ANIMAL_ART } from "./animalFlag";
 import { explain, type RGB, type SaveResult } from "./types";
 import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
@@ -44,6 +44,34 @@ export const UNIT_ID: Record<UnitKind, number> = {
   aegires: 29,
   navanax: 30,
 };
+
+/**
+ * WHAT A FAMILY IS CALLED, and what one of its bodies is called — in one
+ * place, because two tables name the same six lines (UNIT_TREES for the
+ * editor's rows, FAMILIES for the deal) and a family renamed in one of
+ * them and not the other is a family with two names.
+ *
+ * The four the animal art has taken over are named for their ANIMAL now,
+ * not for their weapon — the line is a herd of rhinos, not "ground mechs"
+ * — and the gimmick behind the name is untouched: the Ironhides still
+ * fire the straight round, the Weavers still rot what they hit. The two
+ * fleets are still Mindustry's whales and sea slugs on screen and keep
+ * their weapon names; they become the Tuskers (narwhal) and the Livewires
+ * (electric eel) when their art is drawn.
+ *
+ * `body` is the SINGULAR the family's five bodies are named off — the
+ * family word without its plural or its "fleet" — because a body is not
+ * given a name of its own (UNIT_NAMES). Off the switch, all six read
+ * exactly as they shipped.
+ */
+export const FAMILY_NAMES = {
+  ground: { name: ANIMAL_ART ? "Ironhides" : "Ground mechs", body: "Ironhide" },
+  crawler: { name: ANIMAL_ART ? "Weavers" : "Venom spitters", body: "Weaver" },
+  groundSupport: { name: ANIMAL_ART ? "Starhart" : "Starlight mechs", body: "Starhart" },
+  air: { name: ANIMAL_ART ? "Stoop" : "Skyfall bombers", body: "Stoop" },
+  naval: { name: "Harpoon fleet", body: "Harpoon" },
+  navalSupport: { name: "Wraith fleet", body: "Wraith" },
+} as const satisfies Record<string, { name: string; body: string }>;
 
 /**
  * THE NAVAL TANKS RUN SLOWER THAN MINDUSTRY'S HULLS. A risso's stock 1.1
@@ -1416,17 +1444,17 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
  * a unit's position in a row is its tier.
  */
 export const UNIT_TREES = [
-  { key: "ground", name: "Ground mechs", kinds: ["dagger", "mace", "fortress", "scepter", "reign"] },
-  { key: "support", name: "Starlight mechs", kinds: ["nova", "pulsar", "quasar", "vela", "corvus"] },
-  { key: "crawler", name: "Venom spitters", kinds: ["crawler", "atrax", "spiroct", "arkyid", "toxopid"] },
-  { key: "air", name: "Skyfall bombers", kinds: ["flare", "horizon", "zenith", "antumbra", "eclipse"] },
+  { key: "ground", name: FAMILY_NAMES.ground.name, kinds: ["dagger", "mace", "fortress", "scepter", "reign"] },
+  { key: "support", name: FAMILY_NAMES.groundSupport.name, kinds: ["nova", "pulsar", "quasar", "vela", "corvus"] },
+  { key: "crawler", name: FAMILY_NAMES.crawler.name, kinds: ["crawler", "atrax", "spiroct", "arkyid", "toxopid"] },
+  { key: "air", name: FAMILY_NAMES.air.name, kinds: ["flare", "horizon", "zenith", "antumbra", "eclipse"] },
   // the two naval tank trees: upgrade paths like the four above, on the
   // amphibious layer. They used to be the only rows whose units needed a
   // MAP to field them — a wave asking for rissos on a map with no water
   // sent nothing at all — and they no longer are: a naval tank comes in
   // by a ground door and drives to the core when there is no sea
-  { key: "naval", name: "Harpoon fleet", kinds: ["risso", "minke", "bryde", "sei", "omura"] },
-  { key: "navalSupport", name: "Wraith fleet", kinds: ["retusa", "oxynoe", "cyerce", "aegires", "navanax"] },
+  { key: "naval", name: FAMILY_NAMES.naval.name, kinds: ["risso", "minke", "bryde", "sei", "omura"] },
+  { key: "navalSupport", name: FAMILY_NAMES.navalSupport.name, kinds: ["retusa", "oxynoe", "cyerce", "aegires", "navanax"] },
   // not an upgrade path: the boss row holds the kinds that arrive as an
   // event rather than a stream, so its slots do not read as tiers
   { key: "boss", name: "Boss", kinds: ["disrupt"] },
@@ -1535,7 +1563,7 @@ export const FAMILIES = [
   //
   // WHAT IT POSES: a wall that walks, and armour is a flat shave floored at
   // a tenth (Sim.applyArmor) — so the answer is calibre and never volume.
-  { key: "ground", name: "Ground mechs", layer: "ground", icon: "dagger",
+  { key: "ground", name: FAMILY_NAMES.ground.name, layer: "ground", icon: "dagger",
     kinds: ["dagger", "mace", "fortress", "scepter", "reign"] },
   // THE SPITTERS: light, quick, and every shot they fire is the same purple
   // orb landing the same rot (weapons.ts POISON). No suicide charge, no
@@ -1547,7 +1575,7 @@ export const FAMILIES = [
   // WHAT IT POSES: rot ignores armour, so this is the family a board that
   // out-plated the ground mechs still loses turrets to. Kill them before
   // the clock refreshes, or bring repair.
-  { key: "crawler", name: "Venom spitters", layer: "ground", icon: "crawler",
+  { key: "crawler", name: FAMILY_NAMES.crawler.name, layer: "ground", icon: "crawler",
     kinds: ["crawler", "atrax", "spiroct", "arkyid", "toxopid"] },
   // THE LIGHT: named for stars, armed with green lasers, and every laser
   // PIERCES — it takes every structure along its length (weapons.ts
@@ -1559,7 +1587,7 @@ export const FAMILIES = [
   // that keeps mending. The answer is the carriers — kill the vela and
   // the corvus before the line reaches the guns, because a row under a
   // corvus beam is a row.
-  { key: "groundSupport", name: "Starlight mechs", layer: "ground", icon: "nova",
+  { key: "groundSupport", name: FAMILY_NAMES.groundSupport.name, layer: "ground", icon: "nova",
     kinds: ["nova", "pulsar", "quasar", "vela", "corvus"] },
   // THE BOMBERS: five bodies that ARE bombs (payload). Not one carries a
   // gun; each dives at the nearest structure inside its seek reach and
@@ -1572,7 +1600,7 @@ export const FAMILIES = [
   //
   // WHAT IT POSES: an AA line over the guns it protects detonates bombers
   // over them. The answer is reach — kill them over nothing.
-  { key: "air", name: "Skyfall bombers", layer: "air", icon: "flare",
+  { key: "air", name: FAMILY_NAMES.air.name, layer: "air", icon: "flare",
     kinds: ["flare", "horizon", "zenith", "antumbra", "eclipse"] },
   // THE SNIPERS: the whales — risso, minke, bryde, sei, omura — and every
   // gun on them is a HARPOON RAIL from beyond the board's reach (forty to
@@ -1585,7 +1613,7 @@ export const FAMILIES = [
   // WHAT IT POSES: it is shooting you long before you can shoot it, and
   // it is getting stronger. The answer is the long guns, and killing
   // them young — the spotter and the drill first.
-  { key: "naval", name: "Harpoon fleet", layer: "water", icon: "risso",
+  { key: "naval", name: FAMILY_NAMES.naval.name, layer: "water", icon: "risso",
     kinds: ["risso", "minke", "bryde", "sei", "omura"] },
   // THE WRAITHS: the sea slugs — retusa, oxynoe, cyerce, aegires, navanax
   // — and every gun on them is an ARC (weapons.ts): violet chain lightning
@@ -1603,7 +1631,7 @@ export const FAMILIES = [
   // WHAT IT POSES: a line that cannot hold a target. The answer is
   // bursts and fields that catch a body wherever it lands, and killing
   // the flagship in the seconds it shows.
-  { key: "navalSupport", name: "Wraith fleet", layer: "water", icon: "retusa",
+  { key: "navalSupport", name: FAMILY_NAMES.navalSupport.name, layer: "water", icon: "retusa",
     kinds: ["retusa", "oxynoe", "cyerce", "aegires", "navanax"] },
 ] as const satisfies readonly {
   key: string;
@@ -1688,6 +1716,70 @@ export const familyOf = (kind: UnitKind): FamilyKey | null => FAMILY_OF[kind] ??
 
 /** a family's entry by key — every key in FamilyKey is in the table */
 export const familyByKey = (key: FamilyKey) => FAMILIES.find((f) => f.key === key)!;
+
+/**
+ * THE HUE A BODY WEARS: its family's, or the swarm's crux red for the boss,
+ * which is in no family. The renderer bakes this into a per-kind table
+ * (KIND_ACCENT) and the HUD's thumbnails ask for it one body at a time
+ * (unitIcon), and both wanted the same two lines.
+ */
+export const unitAccent = (kind: UnitKind): RGB => {
+  const f = familyOf(kind);
+  return f ? FAMILY_ACCENT[f] : TEAM_CRUX_RGB;
+};
+
+/**
+ * THE FIVE STEPS A FAMILY COMES IN, T1 to T5 — the whole of a body's
+ * name past its family's.
+ */
+export const UNIT_RANKS = ["runt", "brute", "elite", "champion", "apex"] as const;
+export type UnitRank = (typeof UNIT_RANKS)[number];
+
+/**
+ * WHAT A BODY IS CALLED ON SCREEN, and it is NOT its kind. The kind is an
+ * ID — it keys the sim's arrays, the sprite files under public/mindustry
+ * and every wave in public/levels/campaign.json — and a panel that
+ * answers "what is this?" with "quasar" is naming a Mindustry unit the
+ * player has never been shown a picture of.
+ *
+ * A BODY DOES NOT GET A NAME OF ITS OWN. It is its family and how far up
+ * the family it is: an Ironhide (runt) and an Ironhide (apex) are the
+ * same rhino at two sizes (docs/unit-art.md — five tiers are one animal
+ * growing up), and twenty proper nouns made a player learn twenty things
+ * to read what the ladder already says. Five words, shared by all six
+ * lines, and the family in front of them is the whole roster.
+ *
+ * It is built off FAMILIES rather than typed out, so a family added to
+ * that table is named the moment it has a `body` word and cannot go in
+ * half-named. The boss is in no family and keeps its own name.
+ *
+ * Off ANIMAL_ART the ids come back as the names, capitalised, along with
+ * Mindustry's sprites — the whole promise of that switch.
+ */
+export const UNIT_NAMES: Record<UnitKind, string> = (() => {
+  const capitalised = Object.fromEntries(
+    UNIT_KINDS.map((k) => [k, k[0].toUpperCase() + k.slice(1)]),
+  ) as Record<UnitKind, string>;
+  if (!ANIMAL_ART) return capitalised;
+  const out = { ...capitalised };
+  for (const f of FAMILIES)
+    f.kinds.forEach((k, i) => {
+      out[k] = `${FAMILY_NAMES[f.key].body} (${UNIT_RANKS[i]})`;
+    });
+  return out;
+})();
+
+/** what to print for a body: its name, never its id */
+export const unitName = (kind: UnitKind): string => UNIT_NAMES[kind];
+
+/**
+ * How far up its family a body is, as the word the name carries — for a
+ * panel that has already said which family this is and would only be
+ * repeating itself. Null for the boss, which is in no family.
+ */
+const UNIT_RANK_OF: Partial<Record<UnitKind, UnitRank>> = {};
+for (const f of FAMILIES) f.kinds.forEach((k, i) => (UNIT_RANK_OF[k] = UNIT_RANKS[i]));
+export const unitRank = (kind: UnitKind): UnitRank | null => UNIT_RANK_OF[kind] ?? null;
 
 /**
  * Clean a raw list of family keys: families IN PLAY only (the shelf is

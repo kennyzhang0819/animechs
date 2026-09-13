@@ -220,13 +220,22 @@ function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
           rewardNote(reward) ? `. ${rewardNote(reward)}` : ""
         }`}
         {...tip.anchorProps}
-        className="ms-tile flex h-9 w-9 shrink-0 cursor-default items-center justify-center overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
-        style={tile(color)}
+        className="flex h-9 w-9 shrink-0 cursor-default focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
       >
-        {/* the fade is on the FACE and the frame keeps its colour: a
-            purple the save has not reached is still legibly a purple
-            (Unlocks.tsx says the same) */}
-        <span className={`flex items-center justify-center ${reached ? "" : "opacity-45"}`}>
+        {/* THE FRAME FADES WITH THE FACE, so a reward the save has not
+            reached reads as one dim thing rather than a lit border round
+            a ghost (Unlocks.tsx says the same). The hue rides through it:
+            a purple that is not open yet is still legibly a purple, which
+            is why the chip is faded and not repainted grey.
+
+            The fade is a layer IN from the focusable span, so the ring
+            and the card this anchors keep their full strength. */}
+        <span
+          className={`ms-tile flex h-full w-full items-center justify-center overflow-hidden ${
+            reached ? "" : "opacity-45"
+          }`}
+          style={tile(color)}
+        >
           <RewardFace reward={reward} />
         </span>
       </span>

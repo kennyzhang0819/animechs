@@ -26,6 +26,22 @@ the other way round.
   the wraith fleet. The family accent colours in `PAL` (`game/constants.ts`)
   carry across: the stag's glows are star-gold, the bat's charge is
   magenta.
+- **A body is its family and how far up it stands, and the IDS never
+  move.** No tier gets a proper noun of its own. The family word goes in
+  `FAMILY_NAMES.body` and the five steps are the same for every line —
+  **runt, brute, elite, champion, apex** (`UNIT_RANKS`, `game/levels.ts`)
+  — so a tier reads `Ironhide (runt)` through `Ironhide (apex)`. That is
+  the rule above said out loud: five tiers are ONE animal growing up, and
+  twenty proper nouns said the opposite. `UNIT_NAMES` is built off
+  `FAMILIES`, so a family added to that table is named the moment it has
+  a `body` word and cannot go in half-named. All of it switches with
+  `ANIMAL_ART`, which restores Mindustry's names along with its sprites.
+  What does NOT change is the `UnitKind`: `dagger` stays `dagger` in the
+  sim's arrays, in `public/mindustry`'s file names and in every wave of
+  `public/levels/campaign.json`. Nothing in the UI prints a kind — it
+  prints `unitName(kind)`, and a portrait comes off the packed sheet
+  (`components/unitIcons.ts`), never from a sprite file a drawn family
+  does not have.
 - **Five tiers are one animal growing up, not five animals.** The T1 is
   the same silhouette as the T5, small. What changes up the ladder is
   scale, stance and ornament: the stag's crown gains beams and tines, the
@@ -119,47 +135,47 @@ sprite's own world size (stock native px × 0.625).
 
 Starhart, the stag (Starlight mechs' cells):
 
-| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
-| --- | --- | --- | --- | --- | --- | --- |
-| T1 | nova | 64 | 1.5 | 60 | 35 | 10 |
-| T2 | pulsar | 64 | 1.5 | 60 | 42 | 13.75 |
-| T3 | quasar | 128 | 1.4 | 112 | 50 | 16.25 |
-| T4 | vela | 256 | 1.6 | 256 | 106 | 30 |
-| T5 | corvus | 256 | 2.0 | 320 | 134 | 36.25 |
+| tier | kind | rank | cell | scale | quad, world px | stock, world px | hitbox radius |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| T1 | nova | runt | 64 | 1.5 | 60 | 35 | 10 |
+| T2 | pulsar | brute | 64 | 1.5 | 60 | 42 | 13.75 |
+| T3 | quasar | elite | 128 | 1.4 | 112 | 50 | 16.25 |
+| T4 | vela | champion | 256 | 1.6 | 256 | 106 | 30 |
+| T5 | corvus | apex | 256 | 2.0 | 320 | 134 | 36.25 |
 
 Stoop, the bat (Skyfall bombers' cells):
 
-| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
-| --- | --- | --- | --- | --- | --- | --- |
-| T1 | flare | 64 | 1.4 | 56 | 30 | 11.25 |
-| T2 | horizon | 128 | 1.2 | 96 | 45 | 13.75 |
-| T3 | zenith | 128 | 1.5 | 120 | 70 | 25 |
-| T4 | antumbra | 256 | 1.4 | 224 | 150 | 57.5 |
-| T5 | eclipse | 384 | 1.6 | 384 | 200 | 72.5 |
+| tier | kind | rank | cell | scale | quad, world px | stock, world px | hitbox radius |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| T1 | flare | runt | 64 | 1.4 | 56 | 30 | 11.25 |
+| T2 | horizon | brute | 128 | 1.2 | 96 | 45 | 13.75 |
+| T3 | zenith | elite | 128 | 1.5 | 120 | 70 | 25 |
+| T4 | antumbra | champion | 256 | 1.4 | 224 | 150 | 57.5 |
+| T5 | eclipse | apex | 384 | 1.6 | 384 | 200 | 72.5 |
 
 Ironhide, the rhino (ground mechs' cells; mech rig to T3, four legs from T4):
 
-| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
-| --- | --- | --- | --- | --- | --- | --- |
-| T1 | dagger | 64 | 1.5 | 60 | 30 | 10 |
-| T2 | mace | 64 | 1.6 | 64 | 40 | 12.5 |
-| T3 | fortress | 128 | 1.4 | 112 | 62 | 16.25 |
-| T4 | scepter | 256 | 1.6 | 256 | 106 | 27.5 |
-| T5 | reign | 256 | 2.0 | 320 | 134 | 37.5 |
+| tier | kind | rank | cell | scale | quad, world px | stock, world px | hitbox radius |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| T1 | dagger | runt | 64 | 1.5 | 60 | 30 | 10 |
+| T2 | mace | brute | 64 | 1.6 | 64 | 40 | 12.5 |
+| T3 | fortress | elite | 128 | 1.4 | 112 | 62 | 16.25 |
+| T4 | scepter | champion | 256 | 1.6 | 256 | 106 | 27.5 |
+| T5 | reign | apex | 256 | 2.0 | 320 | 134 | 37.5 |
 
 Weaver, the spider (venom spitters' cells; legged rig at every tier, six legs on the T1 and eight above):
 
-| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
-| --- | --- | --- | --- | --- | --- | --- |
-| T1 | crawler | 64 | 1.5 | 60 | 30 | 10 |
-| T2 | atrax | 128 | 1.1 | 88 | 55 | 16.25 |
-| T3 | spiroct | 128 | 1.4 | 112 | 59 | 18.75 |
-| T4 | arkyid | 256 | 1.6 | 256 | 80 | 28.75 |
-| T5 | toxopid | 256 | 2.0 | 320 | 119 | 32.5 |
+| tier | kind | rank | cell | scale | quad, world px | stock, world px | hitbox radius |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| T1 | crawler | runt | 64 | 1.5 | 60 | 30 | 10 |
+| T2 | atrax | brute | 128 | 1.1 | 88 | 55 | 16.25 |
+| T3 | spiroct | elite | 128 | 1.4 | 112 | 59 | 18.75 |
+| T4 | arkyid | champion | 256 | 1.6 | 256 | 80 | 28.75 |
+| T5 | toxopid | apex | 256 | 2.0 | 320 | 119 | 32.5 |
 
 The spider's legs are the size that matters for that family: leg length
 runs 12, 18, 26, 50 and 60 Mindustry units up the ladder against the
-stock line's 5 to 20, so the widow spans some twenty tiles foot to foot
+stock line's 5 to 20, so the apex spans some twenty tiles foot to foot
 on a body drawn at sixteen.
 
 The T4 and T5 stags also get longer legs than the stock walkers
@@ -192,7 +208,13 @@ antlers or wingspan.
 4. Declare the cells in `game/atlas.ts` with `sprite()`, `upright()` or
    `flat()`, pack them in `packAnimalArt`, and set the per-tier scale in
    the `if (ANIMAL_ART)` block, applied to every part together.
-5. Check in the built game, not in a preview. The preview tooling draws
+5. Name it, which is two words. `FAMILY_NAMES` (`game/levels.ts`) takes
+   the family's `name` and the singular `body` its tiers are called
+   after; the five ranks are already there and are the same for every
+   family. Nothing else has to change: `UNIT_NAMES` builds itself off
+   `FAMILIES`, every panel prints `unitName(kind)`, and the portraits
+   come off the packed sheet.
+6. Check in the built game, not in a preview. The preview tooling draws
    the art at scale but cannot show the rig moving, and the walk cycle is
    where a stance goes wrong. Spawn all five tiers side by side with the
    stock family and look at both zoomed out.

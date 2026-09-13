@@ -34,6 +34,8 @@ import {
   missionText,
   rollFamilies,
   transformScript,
+  unitName,
+  unitRank,
   waveGroups,
   WORLD,
   worldById,
@@ -41,6 +43,7 @@ import {
   type FamilyKey,
   type LevelSpec,
   type TowerKind,
+  type UnitKind,
 } from "@/game/levels";
 import {
   audit,
@@ -94,7 +97,7 @@ import {
   type Progress,
   type RunReward,
 } from "@/game/progress";
-import { atlasReady, buildAtlas, turretIcon, unitIcon } from "@/game/atlas";
+import { atlasReady, buildAtlas, turretIcon } from "@/game/atlas";
 import {
   cleanMutations,
   mutationById,
@@ -136,6 +139,7 @@ import MenuBackground from "./MenuBackground";
 import { useEscapeBack } from "./Board";
 import { DealCorner, useDeal } from "./Deal";
 import { Inspector } from "./Inspector";
+import { carveUnitIcon, unitIconOf } from "./unitIcons";
 import { RelicShelf } from "./Relics";
 import { useConfirm } from "./ConfirmDialog";
 
@@ -447,7 +451,7 @@ function PickerDialog({
    * HOW WIDE THE ROWS ARE, and the whole of why it is a knob: a row is
    * ONE LINE and a truncated one is a row a player cannot read. The map
    * and difficulty lists hold short proper nouns and fit the default;
-   * the factions and the mutators are two-word names ("Starlight mechs",
+   * the factions and the mutators run to two words ("Harpoon fleet",
    * "Armored Swarms") that need the wider column, and the dialog widens
    * with them so the detail pane does not pay for it.
    */
@@ -934,7 +938,7 @@ function FactionPicker({
         <div className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
           <img
-            src={FAMILY_ICONS.get(family.key) ?? `/mindustry/sprites/units/${family.icon}.png`}
+            src={unitIconOf(family.icon) ?? stockSprite(family.icon)}
             alt=""
             className="h-10 w-10 shrink-0 object-contain [image-rendering:pixelated]"
           />
@@ -949,10 +953,13 @@ function FactionPicker({
           {familyFlies(family.key) ? "air" : family.layer === "water" ? "water" : "ground"}
         </DetailLine>
         {/* the five bodies in tier order — a family IS one idea at five
-            sizes (see FAMILIES), and the names are how a player who has
-            met them recognises which one this is */}
+            sizes (see FAMILIES), and a body is named for its family and
+            how far up it stands (levels.ts UNIT_NAMES). The family's own
+            name is the line above, so these are the RANKS alone: five
+            rows of "Ironhide" under a heading reading IRONHIDES is the
+            same word six times. */}
         <p className="text-[14px] leading-snug text-[#A6A6AF]">
-          {family.kinds.join(" · ")}
+          {family.kinds.map(unitRank).join(" · ")}
         </p>
         <SelectButton
           label={on ? "Remove" : full ? `Hand is full — ${FAMILIES_PER_RUN}` : "Add"}
@@ -1144,35 +1151,27 @@ function MutatorPicker({
 const DEAL_COLOR = "#FFD37F";
 
 /**
- * THE FAMILY PICTURES, one per family, carved off the PACKED SHEET rather
- * than loaded from /mindustry/sprites/units (atlas.ts unitIcon).
+ * THE FAMILY PICTURES, one per family: its T1, carved off the PACKED SHEET
+ * rather than loaded from /mindustry/sprites/units
+ * (components/unitIcons.ts, atlas.ts unitIcon).
  *
- * The raw sprite file is not the body the game draws: the packed one is
- * outlined, antialiased, and wears its family's colour on its team cell,
- * so a thumbnail off the file showed a picture of upstream's unit — right
- * silhouette, wrong edges, and Mindustry's crux red where the hue that
- * tells a player which family this is belongs.
+ * The raw sprite file is not the body the game draws, and for four of the
+ * six families there is no file at all — the rhinos, spiders, stags and
+ * bats are generated at load (game/animalArt.ts) and packed over the
+ * stock cells, so a thumbnail off public/mindustry showed a picture of
+ * upstream's unit: wrong animal, wrong edges, and Mindustry's crux red
+ * where the hue that tells a player which family this is belongs.
  *
- * Built ONCE per page, memoised on the promise so overlapping callers
- * share one build, and primed by the boot warm-up so the squares are not
- * empty on the first wave. A failure leaves the map short an entry and
+ * Built ONCE per page and shared with every other panel that wants a
+ * body's portrait, and primed by the boot warm-up so the squares are not
+ * empty on the first wave. A failure leaves the cache short an entry and
  * the cell falls back to the sprite file.
  */
-const FAMILY_ICONS = new Map<FamilyKey, string>();
-let familyIconBuild: Promise<void> | null = null;
+const buildFamilyIcons = (): Promise<void> =>
+  Promise.all(FAMILIES.map((f) => carveUnitIcon(f.icon))).then(() => undefined);
 
-function buildFamilyIcons(): Promise<void> {
-  familyIconBuild ??= Promise.all(
-    FAMILIES.map(async (f) => {
-      try {
-        FAMILY_ICONS.set(f.key, await unitIcon(f.icon, FAMILY_ACCENT[f.key]));
-      } catch {
-        // the fallback in DealFamiliesCell covers it
-      }
-    }),
-  ).then(() => undefined);
-  return familyIconBuild;
-}
+/** the fallback under a portrait that has not been carved (or failed to) */
+const stockSprite = (kind: UnitKind): string => `/mindustry/sprites/units/${kind}.png`;
 
 /** the bottom square: which families the die dealt this map */
 function DealFamiliesCell({ families }: { families: readonly FamilyKey[] }) {
@@ -1202,10 +1201,7 @@ function DealFamiliesCell({ families }: { families: readonly FamilyKey[] }) {
       {families.map((f) => (
         <img
           key={f}
-          src={
-            FAMILY_ICONS.get(f) ??
-            `/mindustry/sprites/units/${familyByKey(f).icon}.png`
-          }
+          src={unitIconOf(familyByKey(f).icon) ?? stockSprite(familyByKey(f).icon)}
           alt=""
           className="h-4 w-4 object-contain [image-rendering:pixelated]"
         />
@@ -3128,7 +3124,7 @@ export default function Animechs() {
             {hud.bosses.map((b) => (
               <div key={b.id}>
                 <div className="mb-0.5 text-center text-[12px] font-bold uppercase tracking-widest text-[#F25555] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
-                  {b.kind}
+                  {unitName(b.kind)}
                 </div>
                 <div className="ms-bar w-full">
                   <div

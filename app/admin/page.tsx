@@ -9,6 +9,7 @@ import { loadBalanceDoc } from "@/game/balance";
 import { ADMIN_ENABLED } from "@/game/env";
 import LevelEditorView from "@/components/LevelEditorView";
 import MapEditorView from "@/components/MapEditorView";
+import SaveEditorView from "@/components/SaveEditorView";
 import {
   loadLevelDocs,
   UNIT_KINDS,
@@ -148,7 +149,8 @@ function AdminInner() {
   // on any run for the rest of what the sandbox was (whole tech tree,
   // free placement, every pace). A bookmarked ?tab=sandbox lands on the
   // content tab rather than on nothing.
-  const tab = raw === "balance" || raw === "rarities" ? raw : "content";
+  const tab =
+    raw === "balance" || raw === "rarities" || raw === "save" ? raw : "content";
   const [maps, setMaps] = useState<MapData[]>([]);
   const [open, setOpen] = useState<MapData | null>(null);
   // level documents overlay WORLDS in place, so this is a "have they landed
@@ -209,7 +211,8 @@ function AdminInner() {
               Debug tool. Ctrl+Shift+M toggles this page. Map edits write public/maps/&lt;id&gt;.json
               and ARE the official map; level edits write public/levels/campaign.json — the one
               wave script every map plays, re-cast per deploy into the families the die rolls; balance and
-              rarity edits write public/balance.json and override the authored tuning coefficients.
+              rarity edits write public/balance.json and override the authored tuning coefficients; the Save
+              tab edits this machine&apos;s own campaign — its XP, and therefore its level.
             </p>
           </div>
           <button
@@ -225,6 +228,7 @@ function AdminInner() {
             ["content", "Levels & maps"],
             ["balance", "Balance"],
             ["rarities", "Rarities"],
+            ["save", "Save"],
           ] as const).map(([id, label]) => (
             <button
               key={id}
@@ -257,6 +261,12 @@ function AdminInner() {
           ) : (
             <p className="text-[#71717C]">Reading public/balance.json…</p>
           ))}
+
+        {/* THE SAVE, and it is the odd one out on this page: every other
+            tab writes a document into the repo, this one writes the
+            PLAYER'S save — localStorage in a tab, the shell's file on the
+            desktop. Nothing to fetch first, so nothing to wait on */}
+        {tab === "save" && <SaveEditorView />}
 
         {tab === "content" && (
           <>
