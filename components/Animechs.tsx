@@ -1480,30 +1480,120 @@ function StepSlider({
   steps,
   value,
   onPick,
+  settleOnRelease = false,
 }: {
   label: string;
   steps: readonly number[];
   value: number;
   onPick: (v: number) => void;
+  /**
+   * FOR THE ONE SLIDER THAT MOVES ITSELF. UI size is set from inside a
+   * `.ui-zoom` panel, so applying it mid-drag resizes the slider under the
+   * pointer — and a range input reads the pointer against its own box, so
+   * the new box gives a new value, which gives a new box. That is a
+   * feedback loop, and it shows as the panel flickering between two sizes
+   * and the knob refusing to be put anywhere.
+   *
+   * The cure is to let the knob be dragged without the value following it:
+   * the track and the percentage move live, the game is set once, when the
+   * button comes up. The arrow keys still step it one at a time and settle
+   * on each press — a key press is not measured against the box, so there
+   * is nothing there to loop.
+   *
+   * Every other slider sets something the panel's own layout does not
+   * depend on (pan speed), and those stay live.
+   */
+  settleOnRelease?: boolean;
 }) {
   const at = Math.max(0, steps.indexOf(value));
   const text = (v: number): string => `${Math.round(v * 100)}%`;
+  const rowRef = useRef<HTMLDivElement>(null);
+  /** where the knob has been dragged to, while the value is still `at` */
+  const [held, setHeld] = useState<number | null>(null);
+  const heldRef = useRef<number | null>(null);
+  /** the drag's window listeners, so an unmount mid-drag does not leak them */
+  const dropRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => dropRef.current?.(), []);
+  const shown = held ?? at;
+
+  /**
+   * SET IT, AND KEEP THE ROW WHERE THE HAND LEFT IT. A bigger HUD is a
+   * taller panel, and the rows above this one grow with it, so the slider
+   * itself slides down the screen and out from under the cursor — which
+   * makes a second nudge a hunt. Measure the row, let the new size land,
+   * and scroll by the difference.
+   */
+  const settle = (i: number): void => {
+    if (steps[i] === value) return;
+    const before = rowRef.current?.getBoundingClientRect().top ?? null;
+    onPick(steps[i]);
+    if (before === null) return;
+    requestAnimationFrame(() => {
+      const after = rowRef.current?.getBoundingClientRect().top;
+      if (after === undefined) return;
+      const drift = after - before;
+      if (Math.abs(drift) < 1) return;
+      let el: HTMLElement | null = rowRef.current;
+      while (el && el !== document.body) {
+        const style = getComputedStyle(el);
+        if (/(auto|scroll)/.test(style.overflowY) && el.scrollHeight > el.clientHeight) {
+          el.scrollTop += drift;
+          return;
+        }
+        el = el.parentElement;
+      }
+      window.scrollBy(0, drift);
+    });
+  };
+
+  const grab = (): void => {
+    if (!settleOnRelease) return;
+    const release = (): void => {
+      dropRef.current?.();
+      const i = heldRef.current;
+      heldRef.current = null;
+      setHeld(null);
+      if (i !== null) settle(i);
+    };
+    const drop = (): void => {
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", release);
+      dropRef.current = null;
+    };
+    dropRef.current = drop;
+    // on the window, not the input: a drag that ends off the knob is still
+    // the end of the drag, and not every browser captures the pointer
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
+    heldRef.current = at;
+    setHeld(at);
+  };
+
   return (
     <SettingRow label={label}>
-      <div className="flex shrink-0 items-center gap-3">
+      <div ref={rowRef} className="flex shrink-0 items-center gap-3">
         <input
           type="range"
           className="ms-slider w-40"
           min={0}
           max={steps.length - 1}
           step={1}
-          value={at}
+          value={shown}
           aria-label={label}
-          aria-valuetext={text(steps[at])}
-          onChange={(e) => onPick(steps[Number(e.target.value)])}
+          aria-valuetext={text(steps[shown])}
+          onPointerDown={grab}
+          onChange={(e) => {
+            const i = Number(e.target.value);
+            if (dropRef.current) {
+              heldRef.current = i;
+              setHeld(i);
+            } else {
+              settle(i);
+            }
+          }}
         />
         <div className="w-12 text-right text-[15px] font-bold tabular-nums text-[#EDEDEF]">
-          {text(steps[at])}
+          {text(steps[shown])}
         </div>
       </div>
     </SettingRow>
@@ -2507,6 +2597,9 @@ export default function Animechs() {
               label="UI size"
               steps={UI_SCALES}
               value={uiScale}
+              // the knob that resizes the panel the knob is on — see
+              // StepSlider.settleOnRelease
+              settleOnRelease
               onPick={(scale) => {
                 setUiScale(scale);
                 saveUiScale(scale); // remembered across sessions
