@@ -81,9 +81,9 @@ export const STATUS_MARKS_DEFAULT: StatusMode = "always";
  * no entry in the record (grantRunReward). That is the whole reason the
  * dials can be handed over: a run whose difficulty, swarm and rules are
  * all chosen is not a measurement of anything, so it must not be able to
- * level a save. It is also where the SANDBOX lives now (MechSwarm.tsx,
- * Ctrl+Shift+S) — free building and every pace, in the one mode where
- * that cannot be converted into progress.
+ * level a save. (The SANDBOX — MechSwarm.tsx, Ctrl+Shift+S: free
+ * building and every pace — is a separate debug door and opens on either
+ * mode.)
  */
 export type GameMode = "regular" | "custom";
 

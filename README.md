@@ -235,10 +235,10 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `components/LevelEditorView.tsx`, `MapEditorView.tsx`, `BalanceView.tsx` —
   the admin authoring surfaces
 
-There is no Sandbox tab any more: **custom mode** on the deploy screen is
-that door (see *Two modes* below), and Ctrl+Shift+S inside a custom run is
-the rest of what the sandbox was — whole card unlocked, nothing charged,
-every pace offered.
+There is no Sandbox tab any more: **custom mode** on the deploy screen
+hands over the dials (see *Two modes* below), and Ctrl+Shift+S inside any
+run is the rest of what the sandbox was — whole card unlocked, nothing
+charged, every pace offered.
 
 In dev builds the running `Game` instance is exposed as `window.__mechswarm`
 for console poking, and the ladder's tuning surface as `window.__ladder`
@@ -277,7 +277,7 @@ setting, defaulting to 150% — lives on the Controls tab of Settings, saved
 with the rest of the preferences. There is no edge panning.
 
 There is **no pace strip on a campaign run**: the multipliers belong to
-the sandbox — Ctrl+Shift+S inside a custom run — and space pauses.
+the sandbox — Ctrl+Shift+S inside a run — and space pauses.
 
 Settings is five tabs — **Game** (the save), **Video**, **Interface**,
 **Controls**, **Info**. **The Interface tab** holds the UI-size slider and
@@ -308,12 +308,11 @@ them in advance is a menu a player re-rolls by touching a macro.
 
 **Custom is the sandbox.** It hands over every dial, ignores every track
 lock, and banks nothing — which is precisely what makes the dials safe to
-hand over: a run built to be won cannot be turned into levels. It is also
-where the old admin **Sandbox** tab went. Inside a custom run
-**Ctrl+Shift+S** opens the rest of it — the whole tech tree, free
-placement, every game speed — and that key is **refused on a regular
-deploy**, because there it would be the conversion the no-XP rule exists
-to prevent.
+hand over: a run built to be won cannot be turned into levels. The old
+admin **Sandbox** tab is a key now: inside any run, regular or custom,
+**Ctrl+Shift+S** opens the whole tech tree, free placement and every game
+speed. It is a debug door, not a mode — a regular run still settles the
+way it was deployed.
 
 Mutators can only be named where the difficulty rolls any at all (Nemesis
 +1 and up); ticking rules at Incursion would be a difficulty the ladder

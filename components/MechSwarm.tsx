@@ -1640,20 +1640,18 @@ export default function MechSwarm() {
   /**
    * ...AND WHICH MODE IT WAS DEPLOYED IN. Separate from `mode` above,
    * which is the MENU's setting and is free to move while a run is on:
-   * what a finished run pays is decided by the mode it was started in,
-   * and so is whether the sandbox door (Ctrl+Shift+S) opens for it.
+   * what a finished run pays is decided by the mode it was started in.
    */
   const [runMode, setRunMode] = useState<GameMode>(GAME_MODE_DEFAULT);
   // the selector draws map previews, so the documents load with the menu —
   // Game.create re-fetches later, keeping in-game state just as fresh
   const [mapsReady, setMapsReady] = useState(false);
-  // SANDBOX MODE, hidden until Ctrl+Shift+S ON A CUSTOM RUN (see the key
-  // handler below for why it is refused on a regular one): widens the
-  // pace strip to every SPEEDS multiplier AND lifts the stage gate and
-  // the price of every placement (Game.setTech(null)), so a run can be
-  // staged for filming. Leaving it drops back to whatever the save
-  // allows — a sandbox-only pace steps down to the fastest speed the
-  // save owns (see the effect below)
+  // SANDBOX MODE, hidden until Ctrl+Shift+S on any run: widens the pace
+  // strip to every SPEEDS multiplier AND lifts the stage gate and the
+  // price of every placement (Game.setTech(null)), so a run can be staged
+  // for filming. Leaving it drops back to whatever the save allows — a
+  // sandbox-only pace steps down to the fastest speed the save owns (see
+  // the effect below)
   const [admin, setAdmin] = useState(false);
   // the campaign save (bank, cleared levels, tech nodes) — localStorage,
   // so it loads in an effect; null only for the first client frame
@@ -1877,20 +1875,16 @@ export default function MechSwarm() {
   }, [uiScale]);
 
   /**
-   * THE SANDBOX DOOR, and it only opens on a CUSTOM run.
+   * THE SANDBOX DOOR, and it opens on any run, regular or custom.
    *
-   * There is no Sandbox tab on the admin page any more — custom mode is
-   * the sandbox: pick the map, the difficulty, the swarm and the rules,
-   * deploy, and press this for the rest of it (the whole tech tree, every
-   * placement free, every pace). The two halves belong together because
-   * ONE of them is what makes the other safe to hand out: a custom run
-   * banks no XP and records no clear (grantRunReward), so a run built to
-   * be won cannot be converted into progress. Letting this key open on a
-   * regular deploy would be exactly that conversion, which is why it is
-   * refused rather than merely discouraged.
+   * There is no Sandbox tab on the admin page any more: deploy whatever
+   * run you like and press this for what the tab was (the whole tech
+   * tree, every placement free, every pace). It is a debug tool, not a
+   * mode — a regular run toggled into it still settles the way it was
+   * deployed (grantRunReward), and that is the player's own business.
    */
   useEffect(() => {
-    if (screen !== "game" || runMode !== "custom") return;
+    if (screen !== "game") return;
     const onKey = (e: KeyboardEvent): void => {
       // ctrl OR cmd, same as AdminShortcut — Ctrl+Shift+S is the pair that
       // arrives on every platform (Cmd+Shift+S is the browser's save dialog)
@@ -1900,7 +1894,7 @@ export default function MechSwarm() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [screen, runMode]);
+  }, [screen]);
 
   // a run already in progress picks the mode up immediately
   useEffect(() => {
@@ -3464,9 +3458,8 @@ export default function MechSwarm() {
         {hud?.menuOpen && !hud.lost && !hud.won && !pauseSettings && (
           <div className="ms-screen absolute inset-0 flex items-center justify-center">
             <div className="ui-zoom ms-pane flex max-h-[calc(100vh-2rem)] w-[30rem] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 overflow-y-auto p-6">
-              {/* the sandbox door is Ctrl+Shift+S ON A CUSTOM RUN, and
-                  nowhere else; the row below says when it is open, and is
-                  also what closes it */}
+              {/* the sandbox door is Ctrl+Shift+S on any run; the row
+                  below says when it is open, and is also what closes it */}
               <h2 className="ms-strip -mx-6 -mt-6 mb-1 self-stretch font-display text-lg font-bold uppercase text-[#FFD37F]">
                 Paused
               </h2>

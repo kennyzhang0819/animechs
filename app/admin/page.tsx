@@ -142,12 +142,12 @@ function AdminInner() {
   // the tab lives in the URL like the editors do, so a reload lands back
   // where you were mid-tune
   const raw = params.get("tab");
-  // THE SANDBOX TAB IS GONE and its door is the game's own CUSTOM mode
-  // now: pick the map, the difficulty, the factions and the rules on the
-  // deploy screen, deploy, and press Ctrl+Shift+S for the rest of what
-  // the sandbox was (whole tech tree, free placement, every pace). A
-  // bookmarked ?tab=sandbox lands on the content tab rather than on
-  // nothing.
+  // THE SANDBOX TAB IS GONE and its door is in the game now: pick the
+  // map, the difficulty, the factions and the rules on the deploy screen
+  // (custom mode hands over every dial), deploy, and press Ctrl+Shift+S
+  // on any run for the rest of what the sandbox was (whole tech tree,
+  // free placement, every pace). A bookmarked ?tab=sandbox lands on the
+  // content tab rather than on nothing.
   const tab = raw === "balance" || raw === "rarities" ? raw : "content";
   const [maps, setMaps] = useState<MapData[]>([]);
   const [open, setOpen] = useState<MapData | null>(null);
