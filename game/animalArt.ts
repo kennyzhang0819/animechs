@@ -699,7 +699,7 @@ export const spiderSmall = (T: SpiderTier): number => (T.t >= 4 ? 127 : 63);
 // pectoral wings that beat slowly, the cephalic fins out front as a pair
 // of steel horns, and the tail a steel harpoon — the family's straight
 // round, drawn onto the animal that carries one. Teal sits on the harpoon's
-// barb and a seam down the spine. The rig is the bat's: body and one wing
+// barb and a seam down the spine; the wings are bare skin. The rig is the bat's: body and one wing
 // mirrored to both sides (FLYER_PARTS), on a slow fold. Hulls go through
 // the same single-quad draw path as flyers, so the wings ride it as-is.
 const TEAL: Tone = ["#0f8a78", "#4dffe0", "#b0fff4"];
@@ -726,7 +726,6 @@ function mantaWing(g: Pen, H: H, T: StoopTier, cx: number, cy: number, s: number
   // the leading edge, a lighter fold of skin; steel along it from T4
   if (t >= 4) H.mech(g, { poly: H.P([[X(0.12), Y(-0.25)], [X(0.55), Y(-0.42)], [X(1.0), Y(-0.15)], [X(0.94), Y(-0.1)], [X(0.55), Y(-0.34)], [X(0.16), Y(-0.19)]]) }, false);
   else g.over((q) => q.poly(H.P([[X(0.12), Y(-0.25)], [X(0.55), Y(-0.42)], [X(1.0), Y(-0.15)], [X(0.94), Y(-0.1)], [X(0.55), Y(-0.34)], [X(0.16), Y(-0.19)]]), SKIN[2]));
-  if (t >= 3) g.box(H.p(X(0.5) - Math.max(1, W * 0.02)), H.p(Y(-0.3)), H.p(X(0.5) + Math.max(1, W * 0.02)), H.p(Y(0.3)), TEAL[1]);
 }
 /** the harpoon's reach past the body, W units, and the barb's half width */
 const harpoon = (t: number): { tip: number; barb: number } => ({ tip: t >= 5 ? 1.0 : t >= 3 ? 0.92 : 0.85, barb: t >= 5 ? 0.11 : t >= 3 ? 0.08 : 0.06 });
