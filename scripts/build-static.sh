@@ -53,8 +53,18 @@ find "$STAGE/.next" -mindepth 1 -maxdepth 1 ! -name cache -exec rm -rf {} +
 
 # The mirror: everything the build reads, nothing it generates. tar rather
 # than rsync because Git Bash ships the one and not the other.
+# .next-* GOES TOO, AND THAT ONE IS LOAD-BEARING. `npm run dev` builds
+# into a directory per port (.next-3000, .next-3001 — desktop-dev.mjs
+# sets NEXT_DIST_DIR), tsconfig.json names those directories in its
+# `include`, and Next writes a generated type per route into each one.
+# Copying them into the stage hands the export a type file importing
+# app/api/balance/route.js — which the line below deletes on purpose — so
+# the build dies on a dangling import that has nothing to do with the
+# game. `--exclude=./.next` does NOT cover them: it is a literal path,
+# not a prefix. QUOTED, so the shell leaves the glob for tar.
 tar -cf - \
-  --exclude=./node_modules --exclude=./.git --exclude=./.next --exclude=./out \
+  --exclude=./node_modules --exclude=./.git --exclude=./.next --exclude='./.next-*' \
+  --exclude=./out \
   --exclude=./desktop --exclude=./.playtest --exclude=./.claude \
   --exclude=./.static-stage --exclude=./.api-stash \
   . | tar -xf - -C "$STAGE"
