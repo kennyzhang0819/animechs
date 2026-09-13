@@ -1,7 +1,6 @@
 import { UNIT_SPRITE } from "./constants";
 import {
   floorCanvas,
-  FLOOR_VARIANTS,
   propCanvas,
   type PropKind,
   wallCanvas,
@@ -23,289 +22,298 @@ import {
   toCanvasRect,
 } from "./animalArt";
 
-// The sheet began as a 1024 square and grew as the roster outgrew it. Every
-// cell keeps its original PIXEL coordinates and every UV is derived from
-// them by uv() below, so a growth step only rescales an axis — no existing
-// cell moves. It grew downward first, one 1024-tall band at a time: y=1024
-// took the legged crawlers and the flyers, y=2048 and y=3072 the T4 line,
-// which needs two bands because every one of its parts rides a 256px cell.
-//
-// The T5 line grew it SIDEWAYS instead. Another downward band would have
-// made 6144 the sheet's longest side, and a WebGL2 context only has to
-// guarantee MAX_TEXTURE_SIZE 2048 — every device that runs the game today
-// already clears 4096, so widening keeps the longest side exactly where it
-// has been while opening a fresh 1024x4096 column at x=1024 for reign,
-// corvus, toxopid and eclipse — and, under them, the bullet regions.
-//
-// HOW TO ADD A CELL. The sheet is hand-packed and eighty percent full, so
-// "looks free in the file" is not a test — a rect can be empty in every
-// comment near it and still sit on a row some helper paints. The test is
-// the registry, and the way to use it is:
-//
-//   1. `npm run atlas:check` prints the FREE rectangles, largest first.
-//      Take one. (`--map` draws the whole sheet at 32px a character.)
-//   2. Declare the cell with uv() — or e2(), or one of the block helpers
-//      below, all of which are uv() underneath. NEVER build a UVRect by
-//      dividing pixels by ATLAS_W/H yourself: a rect that skips uv() is
-//      not in the registry, and the next session will park on it.
-//   3. Draw INTO that cell and nowhere else. The packed sheet audits
-//      itself (auditPaintedCells): any opaque texel outside a registered
-//      cell throws in dev and warns in a shipped build.
-//   4. `npm run atlas:check` again (it is part of `npm run typecheck`):
-//      it must pass, and your rect must be gone from the FREE list.
+/**
+ * THE SHEET IS PACKED AT LOAD. Nothing in this file names a pixel
+ * coordinate: a cell is asked for by size — `reserve(name, w, h)` — and
+ * the packer below hands back the UV rect of a rectangle nothing else
+ * owns. Where a cell lands is the packer's business and changes whenever
+ * the roster does; what a cell holds, how big it is and what it is
+ * called are the only things anyone declares.
+ *
+ * The sheet used to be laid out by hand, every cell a pair of pixel
+ * coordinates typed into this file, and the layout's one invariant — no
+ * two cells overlap — was a thing you checked by reading comments. It
+ * was also the thing that broke: a cell parked on "the free block right
+ * of the environment band" was inside the band, on the large walls and
+ * the edge fades, and the hills went blotchy. A packer cannot do that:
+ * it only ever chooses from space it has not given out. Three things are
+ * guaranteed by construction rather than by care —
+ *
+ *   - no two cells share a texel: a placed rect is cut out of the free
+ *     list before the next request is served;
+ *   - nothing is painted outside its cell: every draw goes through
+ *     drawCell / paintCell, which CLIP to the cell before touching the
+ *     canvas, and the raw context is never handed out;
+ *   - nothing samples a neighbour: every cell is placed with a gutter
+ *     wide enough that a mip-3 texel at its edge reads only its own
+ *     transparent margin (MIP_MARGIN), sized from the art it declares.
+ *
+ * The sheet is 2048x4096. A WebGL2 context only has to guarantee
+ * MAX_TEXTURE_SIZE 2048 and every device that runs the game clears 4096,
+ * so 4096 is the longest side allowed. If the roster outgrows it, the
+ * packer throws at import with the name of the cell that did not fit,
+ * and the one thing to change is ATLAS_W: every UV is a fraction of the
+ * sheet, so a wider sheet moves nothing anyone can see.
+ */
 const ATLAS_W = 2048;
 const ATLAS_H = 4096;
-/** left edge of the T5 column — every cell below x=1024 predates it */
-const T5 = 1024;
 const TAU = Math.PI * 2;
 
 export type UVRect = readonly [number, number, number, number];
 
 /**
- * EVERY CELL uv() HAS EVER HANDED OUT, in pixels, in the order the file
- * declares them. It exists for one check — assertCellsDisjoint below —
- * and the reason it is collected HERE rather than by a script that reads
- * the file is that this is the only place a cell can come from: there is
- * no other way to name a rectangle on the sheet, so a registry filled by
- * uv() itself cannot fall behind the layout.
+ * Transparent px between a cell's edge and anything painted beside it.
  *
- * The rect recorded is the FULL cell, inset and all. An inset is a
- * sampling margin taken INSIDE the cell (see the water tiles): it
- * says where the renderer may read, not how much room the cell owns, and
- * treating an inset as free space is exactly how a neighbour ends up half
- * a pixel inside it.
+ * The sheet is sampled through mipmaps down to TEXTURE_MAX_LEVEL 3, where
+ * a texel is eight sheet pixels wide, and a LINEAR read at a cell's edge
+ * blends the texel under it with the next one over: up to twelve pixels
+ * past the edge, on a cell that is not eight-aligned. Two cells that both
+ * keep their paint eight px inside their own borders are sixteen apart,
+ * so neither read reaches the other's art. A cell whose art comes closer
+ * to its edge than that — a floor tile painted corner to corner, a bullet
+ * whose region has to be exactly its source — is placed with the
+ * difference as a gutter, which is what `Fit.art` is for.
  */
-export interface AtlasCell { x: number; y: number; w: number; h: number }
-const CELLS: AtlasCell[] = [];
-/** the registry, read-only, for scripts/atlas-check.mjs */
-export const atlasCells = (): readonly AtlasCell[] => CELLS;
-export const ATLAS_SIZE = { w: ATLAS_W, h: ATLAS_H } as const;
-
-const uv = (x: number, y: number, w: number, h: number, inset = 0): UVRect => {
-  CELLS.push({ x, y, w, h });
-  return [
-    (x + inset) / ATLAS_W,
-    (y + inset) / ATLAS_H,
-    (x + w - inset) / ATLAS_W,
-    (y + h - inset) / ATLAS_H,
-  ];
-};
+const MIP_MARGIN = 8;
 
 /**
- * THE ONE INVARIANT A HAND-PACKED SHEET HAS: no two cells may overlap.
+ * How a cell will be used, which is what sets its gutter and how the pack
+ * pass draws into it.
  *
- * The layout is authored — every cell is a pair of pixel coordinates typed
- * into this file — so nothing stops a new sprite being parked on top of an
- * old one. Nothing announces it either: the two draws simply land on the
- * same texels, and what the player sees is a sliver of the wrong sprite
- * down the edge of the right one, on whichever of the two happens to be
- * drawn second. That is a bug you find by squinting at the game, which is
- * to say one you do not find.
- *
- * So it is asserted instead, over the registry above, at the top of the
- * pack. Two hundred-odd cells is a few thousand comparisons on a sheet
- * that takes hundreds of milliseconds to draw — the cost is not worth
- * measuring, and it runs in every build rather than in dev only, because
- * a sheet that packs wrong is broken art either way and the message is
- * the only thing that tells anyone WHICH two cells did it.
- *
- * IDENTICAL rects are allowed: two names for one cell is aliasing, not a
- * clash (the water tiles are addressed under several floor kinds). Only a
- * PARTIAL overlap is the mistake.
+ *   inset    px cropped from every side of the cell in the UV handed out —
+ *            a sampling margin INSIDE the cell for tiles drawn edge to
+ *            edge (see UV_FLOORS). The cell still owns the whole rect.
+ *   art      the size the source is drawn at, centred in the cell, in
+ *            sheet px. Absent, the source is stretched to FILL the cell
+ *            (a 32px tile at 2x into a 64px cell). Present, the source is
+ *            drawn at that size and must be that size (drawCell checks),
+ *            because the gutter was sized from it.
+ *   upright  drawn as authored. Absent, the art is turned a quarter turn
+ *            clockwise on its way in, so Mindustry's up-facing sprites
+ *            face +x, the heading the renderer calls rotation 0.
  */
-export function assertCellsDisjoint(): void {
-  const hit: string[] = [];
-  for (let i = 0; i < CELLS.length; i++) {
-    const a = CELLS[i];
-    for (let j = i + 1; j < CELLS.length; j++) {
-      const b = CELLS[j];
-      if (a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h) continue;
-      if (a.x + a.w <= b.x || b.x + b.w <= a.x) continue;
-      if (a.y + a.h <= b.y || b.y + b.h <= a.y) continue;
-      hit.push(`${a.x},${a.y} ${a.w}x${a.h} overlaps ${b.x},${b.y} ${b.w}x${b.h}`);
+interface Fit {
+  inset?: number;
+  art?: number | readonly [number, number];
+  upright?: boolean;
+}
+
+interface Cell {
+  name: string;
+  /** the cell's own rect, gutter excluded */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  inset: number;
+  art: readonly [number, number] | null;
+  upright: boolean;
+}
+
+/** every cell on the sheet, keyed by the UV rect handed out for it — the
+ *  UV IS the handle, so a draw call names its cell by the same constant
+ *  the renderer samples it through */
+const CELLS = new Map<UVRect, Cell>();
+/** set once the sheet is packed: a cell reserved after that would never
+ *  be drawn or uploaded, so asking for one is a bug */
+let sealed = false;
+
+/**
+ * THE PACKER: MaxRects with best-short-side-fit, the standard for
+ * sheets like this one. The free space is kept as a list of maximal
+ * empty rectangles; a request takes the top-left corner of whichever
+ * free rect leaves the smallest leftover on its tighter side, and every
+ * free rect the placement cuts through is split into the pieces around
+ * it. Deterministic for a given sequence of requests, which is what a
+ * module's top-level declarations are.
+ */
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+const FREE: Rect[] = [{ x: 0, y: 0, w: ATLAS_W, h: ATLAS_H }];
+const contains = (a: Rect, b: Rect): boolean =>
+  a.x <= b.x && a.y <= b.y && a.x + a.w >= b.x + b.w && a.y + a.h >= b.y + b.h;
+
+function place(name: string, w: number, h: number): Rect {
+  let best = -1, bs = Infinity, bl = Infinity;
+  for (let i = 0; i < FREE.length; i++) {
+    const f = FREE[i];
+    if (f.w < w || f.h < h) continue;
+    const s = Math.min(f.w - w, f.h - h), l = Math.max(f.w - w, f.h - h);
+    if (s < bs || (s === bs && l < bl)) {
+      best = i;
+      bs = s;
+      bl = l;
     }
   }
-  if (hit.length) throw new Error(`atlas cells overlap (game/atlas.ts):\n  ${hit.join("\n  ")}`);
+  if (best < 0)
+    throw new Error(`atlas is full: no room for ${name} (${w}x${h} with its gutter) — raise ATLAS_W in game/atlas.ts`);
+  const r: Rect = { x: FREE[best].x, y: FREE[best].y, w, h };
+  const next: Rect[] = [];
+  for (const f of FREE) {
+    if (r.x >= f.x + f.w || r.x + r.w <= f.x || r.y >= f.y + f.h || r.y + r.h <= f.y) {
+      next.push(f);
+      continue;
+    }
+    if (r.x > f.x) next.push({ x: f.x, y: f.y, w: r.x - f.x, h: f.h });
+    if (r.x + r.w < f.x + f.w) next.push({ x: r.x + r.w, y: f.y, w: f.x + f.w - (r.x + r.w), h: f.h });
+    if (r.y > f.y) next.push({ x: f.x, y: f.y, w: f.w, h: r.y - f.y });
+    if (r.y + r.h < f.y + f.h) next.push({ x: f.x, y: r.y + r.h, w: f.w, h: f.y + f.h - (r.y + r.h) });
+  }
+  FREE.length = 0;
+  for (let i = 0; i < next.length; i++) {
+    const a = next[i];
+    let kept = true;
+    for (let j = 0; j < next.length && kept; j++) {
+      if (j === i) continue;
+      const b = next[j];
+      // a rect inside another is redundant; of two identical ones the
+      // first survives
+      if (contains(b, a) && !(contains(a, b) && j > i)) kept = false;
+    }
+    if (kept) FREE.push(a);
+  }
+  return r;
 }
 
 /**
- * THE SECOND ENVIRONMENT BAND — 1024x896 in the atlas's bottom-right
- * corner, and every piece of terrain that arrived after the first two
- * campaign maps lives in it.
- *
- * The first band is row 0 and the gutters around it, and it is FULL: the
- * original five floor families, three wall families and their edge fades
- * took every 64px cell that row had. A sixth family cannot be squeezed in
- * beside them, and scattering one across whatever gutter cells happen to
- * be free (which is how darksand's edge fade ended up on the y=704 row) is
- * how a layout stops being readable.
- *
- * So the new families take a block instead. A floor family is FIVE
- * sprites at once — three tile variants, a 192px generated edge fade, and
- * usually a wall pair with 2x2 "-large" art — and keeping all of them in
- * one rectangle is what lets a family be added by reading one comment
- * rather than five. The block is laid out in rows, dy by dy, below.
- *
- * Everything here is addressed through `e2`, so the whole band can be
- * MOVED by changing one pair of numbers — which matters, because this is
- * the last big empty rectangle a 2048x4096 sheet has.
+ * A CELL ON THE SHEET, `w` x `h` sheet px, as the UV rect the renderer
+ * samples it through. The only way to get room on the sheet.
  */
-const ENV2_X = 1024;
-const ENV2_Y = 3200;
-const e2 = (dx: number, dy: number, w: number, h: number, inset = 0): UVRect =>
-  uv(ENV2_X + dx, ENV2_Y + dy, w, h, inset);
+function reserve(name: string, w: number, h: number, fit: Fit = {}): UVRect {
+  if (sealed) throw new Error(`atlas cell ${name} reserved after the sheet was packed`);
+  if (!Number.isInteger(w) || !Number.isInteger(h) || w <= 0 || h <= 0)
+    throw new Error(`atlas cell ${name}: a cell is a whole number of px, not ${w}x${h}`);
+  const inset = fit.inset ?? 0;
+  const art: Cell["art"] =
+    fit.art === undefined ? null : typeof fit.art === "number" ? [fit.art, fit.art] : [fit.art[0], fit.art[1]];
+  // how far the paint keeps from the edge: a fill covers the cell, so
+  // nothing; art centred in a bigger cell, half the difference
+  const margin = art ? Math.min((w - art[0]) / 2, (h - art[1]) / 2) : 0;
+  const pad = Math.max(0, Math.ceil(MIP_MARGIN - margin));
+  const at = place(name, w + pad * 2, h + pad * 2);
+  const cell: Cell = { name, x: at.x + pad, y: at.y + pad, w, h, inset, art, upright: fit.upright === true };
+  const uv: UVRect = [
+    (cell.x + inset) / ATLAS_W,
+    (cell.y + inset) / ATLAS_H,
+    (cell.x + w - inset) / ATLAS_W,
+    (cell.y + h - inset) / ATLAS_H,
+  ];
+  CELLS.set(uv, cell);
+  return uv;
+}
 
+const cellOf = (uv: UVRect): Cell => {
+  const cell = CELLS.get(uv);
+  if (!cell) throw new Error("not a cell on this sheet: every UV a draw names must come from reserve()");
+  return cell;
+};
+
+// The shapes a cell comes in, so a declaration reads as what the cell
+// holds rather than as a set of options:
+/** a tile drawn edge to edge, as authored, sampled `inset` px in */
+const tile = (name: string, size: number, inset: number): UVRect =>
+  reserve(name, size, size, { inset, upright: true });
+/** a piece of art at native size, centred, turned to face +x */
+const sprite = (name: string, cell: number, art: number | readonly [number, number]): UVRect =>
+  reserve(name, cell, cell, { art });
+/** the same, kept as authored — a knee cap is drawn unrotated */
+const upright = (name: string, cell: number, art: number | readonly [number, number]): UVRect =>
+  reserve(name, cell, cell, { art, upright: true });
+/** a turret top: fills its cell (the renderer maps the whole cell onto a
+ *  size*CELL quad, so the cell must hug the art) and faces +x */
+const top = (name: string, size: number): UVRect => reserve(name, size, size, {});
+/** a block that never turns, filling its cell as authored: a turret
+ *  base, a leg segment stretched corner to corner, a beam strip */
+const flat = (name: string, w: number, h = w): UVRect => reserve(name, w, h, { upright: true });
+
+// ---------------------------------------------------------------------
+// THE FLOORS
+// ---------------------------------------------------------------------
+
+/** px cropped from every side of a 64px land-floor cell — see UV_FLOORS */
+const FLOOR_INSET = 8;
 /**
- * The two water cells, on the free stretch under the naval band. Named up
- * here because UV_FLOORS repeats each of them three times — see its note.
- *
- * THESE ARE THE ONLY FLOOR CELLS PACKED 3x3 RATHER THAN ONCE, and the ring
- * around each is not padding: water is the one floor drawn through a
- * shader that SAMPLES OFF THE TILE. Mindustry's water.frag displaces its
- * read horizontally by up to a world unit per row (the swell), which on a
- * plain 64px cell would reach into whatever sprite is packed next door and
- * smear it across the sea. Tiling the same 32px source nine times and
- * handing the renderer the CENTRE cell means a displaced read lands on
- * more water — a whole tile's worth of headroom in every direction, eight
- * times the largest displacement the shader can ask for — so the swell is
- * seamless and no neighbour can bleed in.
- *
- * No inset either, for the same reason: an inset crops the tile, and a
- * cropped tile does not line up with the copies around it.
+ * A water block is 3x3 tiles, and the ring round the middle is not
+ * padding: water is the one floor drawn through a shader that SAMPLES OFF
+ * THE TILE. Mindustry's water.frag displaces its read horizontally by up
+ * to a world unit per row (the swell), which on a plain 64px cell would
+ * reach into whatever is packed next door and smear it across the sea.
+ * Tiling the same 32px source nine times and handing the renderer the
+ * CENTRE tile — the block inset by one tile — means a displaced read
+ * lands on more water: a whole tile of headroom in every direction, eight
+ * times the largest displacement the shader can ask for.
  */
 const WATER_TILE = 192;
-const WATER_SHALLOW_XY = [T5 + 800, 2304] as const;
-const WATER_DEEP_XY = [T5 + 800, 2496] as const;
-// the SPORE waters, on the second environment band's bottom row — same 3x3
-// packing and the same reason for it
-const WATER_TAINTED_XY = [ENV2_X + 576, ENV2_Y + 640] as const;
-const WATER_DEEP_TAINTED_XY = [ENV2_X + 768, ENV2_Y + 640] as const;
+
 /**
- * The centre tile of a water block, as the UV — and the WHOLE 3x3 block as
- * the cell the layout owns. Those are two different rectangles, and only
- * one of them is what a neighbour has to keep clear of: the renderer reads
- * 64px out of the middle, but all 192 are painted, and the eight tiles
- * round the middle are the headroom the swell samples into. A drill parked
- * on the outer ring is a drill in the sea whether or not any UV names it,
- * so the registry is told about the block.
+ * THE FLOOR GROUPS, in table order. A floor index is baked into every
+ * map document on disk, so this list is APPENDED to and never reordered:
+ * the FLOOR_* constants below are its positions times three.
+ *
+ * Every group is three wide, because the renderer reads a floor's blend
+ * group as `(index / 3) | 0`. A land family paints three variants; the
+ * waters ship as one tile and salt as one (the maps on disk were drawn
+ * with one), and those groups repeat their single cell three times so
+ * the arithmetic holds and a hand-edited document cannot index past the
+ * table.
  */
-const waterCentre = (xy: readonly [number, number]): UVRect => {
-  const rect = uv(xy[0] + 64, xy[1] + 64, 64, 64);
-  const own = CELLS[CELLS.length - 1];
-  own.x = xy[0];
-  own.y = xy[1];
-  own.w = WATER_TILE;
-  own.h = WATER_TILE;
-  return rect;
-};
-const WATER_SHALLOW_UV = waterCentre(WATER_SHALLOW_XY);
-const WATER_DEEP_UV = waterCentre(WATER_DEEP_XY);
-const WATER_TAINTED_UV = waterCentre(WATER_TAINTED_XY);
-const WATER_DEEP_TAINTED_UV = waterCentre(WATER_DEEP_TAINTED_XY);
+type WaterKey = "shallowWater" | "deepWater" | "taintedWater" | "deepTaintedWater";
+const FLOOR_GROUPS: readonly ({ kind: FloorKind; slots: number } | { water: WaterKey })[] = [
+  { kind: "grass", slots: 3 },
+  { kind: "stone", slots: 3 },
+  { kind: "dirt", slots: 3 },
+  { kind: "sand", slots: 3 },
+  { kind: "darksand", slots: 3 },
+  { water: "shallowWater" },
+  { water: "deepWater" },
+  // the second batch: Mindustry's "moss" IS the purple spore growth, not
+  // a green one; the two moss families and the spore waters are one
+  // palette, which is what makes them a biome rather than extra tiles
+  { kind: "moss", slots: 3 },
+  { kind: "sporeMoss", slots: 3 },
+  { kind: "mud", slots: 3 },
+  { kind: "shale", slots: 3 },
+  { kind: "snow", slots: 3 },
+  { kind: "salt", slots: 1 },
+  { kind: "ice", slots: 3 },
+  { kind: "basalt", slots: 3 },
+  { water: "taintedWater" },
+  { water: "deepTaintedWater" },
+];
+/** each group's painted cells: one per variant, or the one water block */
+const FLOOR_CELLS: readonly (readonly UVRect[])[] = FLOOR_GROUPS.map((g) =>
+  "water" in g
+    ? [reserve(`floor-${g.water}`, WATER_TILE, WATER_TILE, { inset: 64, upright: true })]
+    : Array.from({ length: g.slots }, (_, s) => tile(`floor-${g.kind}-${s}`, 64, FLOOR_INSET)),
+);
+/**
+ * THE LAND FLOORS ARE INSET BY 8. The texture is sampled through mipmaps,
+ * so a floor drawn small — the whole map in frame — reads texels that
+ * straddle the cell's border; Mindustry's speckled floors hid that in
+ * their own noise, a flat tile shows it as a hairline along every row.
+ * Eight px keeps the sample inside its own cell down to the 8px mip. The
+ * painted tiles keep their marks off the outer two logical pixels
+ * (tiles.ts), so the crop removes plain ground and nothing else.
+ */
+export const UV_FLOORS: readonly UVRect[] = FLOOR_CELLS.flatMap((cells) =>
+  [0, 1, 2].map((s) => cells[Math.min(s, cells.length - 1)]),
+);
 /**
  * UV distance of ONE MINDUSTRY WORLD UNIT along x on a water cell — what
  * the water shader multiplies its displacement by. A tile is 64 atlas px
  * and 8 world units across, so this is an eighth of a cell.
  */
 export const WATER_UV_UNIT = 64 / 8 / ATLAS_W;
-/** px cropped from every side of a 64px land-floor cell — see UV_FLOORS */
-const FLOOR_INSET = 8;
-
-// row 0: 64px cells — grass floors, stone walls, fx
-// indices into UV_FLOORS: 0-2 grass, 3-5 stone, 6-8 dirt, 9-11 sand,
-// 12-14 darksand (the desert pair rides row 0's free tail; x512 stays
-// empty to keep clear space beside the ring cell at 448), 15-17 shallow
-// water, 18-20 deep water — the two water groups on their own 3x3 cells
-// under the naval band (see the WATER_TILE note).
-//
-// THE WATER GROUPS ARE THREE ENTRIES POINTING AT ONE ATLAS CELL EACH, and
-// that is deliberate rather than lazy. The renderer reads a floor's blend
-// group as `(index / 3) | 0`, so a group is three wide whether or not the
-// floor has three variants — and Mindustry ships water as a single tile,
-// not as the numbered triples every land floor has. Sharing the rect keeps
-// the group arithmetic honest without packing the same 32px sprite three
-// times: the palette only ever paints the first index of each pair, and the
-// other two exist so a hand-edited document cannot index past the table.
-//
-// THE LAND FLOORS ARE INSET BY 8, NOT 2. The cells are packed edge to edge
-// and the texture is sampled through mipmaps, so a floor drawn small — the
-// whole map in frame — reads texels that straddle the cell's border and
-// carry a stripe of whatever is packed next door. Mindustry's speckled
-// floors hid that in their own noise; a flat tile shows it as a hairline
-// along every row. Eight px keeps the sample inside its own cell down to
-// the 8px mip, which is smaller than the map ever draws. The painted tiles
-// keep their marks off the outer two logical pixels (tiles.ts) so the crop
-// removes plain ground and nothing else
-export const UV_FLOORS: readonly UVRect[] = [
-  uv(0, 0, 64, 64, FLOOR_INSET),
-  uv(64, 0, 64, 64, FLOOR_INSET),
-  uv(128, 0, 64, 64, FLOOR_INSET),
-  uv(64, 64, 64, 64, FLOOR_INSET),
-  uv(128, 64, 64, 64, FLOOR_INSET),
-  uv(192, 64, 64, 64, FLOOR_INSET),
-  uv(256, 64, 64, 64, FLOOR_INSET),
-  uv(320, 64, 64, 64, FLOOR_INSET),
-  uv(384, 64, 64, 64, FLOOR_INSET),
-  uv(576, 0, 64, 64, FLOOR_INSET),
-  uv(640, 0, 64, 64, FLOOR_INSET),
-  uv(704, 0, 64, 64, FLOOR_INSET),
-  uv(768, 0, 64, 64, FLOOR_INSET),
-  uv(832, 0, 64, 64, FLOOR_INSET),
-  uv(896, 0, 64, 64, FLOOR_INSET),
-  WATER_SHALLOW_UV,
-  WATER_SHALLOW_UV,
-  WATER_SHALLOW_UV,
-  WATER_DEEP_UV,
-  WATER_DEEP_UV,
-  WATER_DEEP_UV,
-  // ---- the second environment band's floors, groups 7-16 ----
-  // Appended, never inserted: a floor index is written into every map
-  // document on disk, so the only safe place for a new family is past the
-  // end. That is also why the water groups are no longer the tail of the
-  // table and `isWaterFloor` is no longer "index >= 15" — see
-  // WATER_FLOOR_GROUPS below.
-  e2(0, 0, 64, 64, FLOOR_INSET), // moss
-  e2(64, 0, 64, 64, FLOOR_INSET),
-  e2(128, 0, 64, 64, FLOOR_INSET),
-  e2(192, 0, 64, 64, FLOOR_INSET), // spore moss
-  e2(256, 0, 64, 64, FLOOR_INSET),
-  e2(320, 0, 64, 64, FLOOR_INSET),
-  e2(384, 0, 64, 64, FLOOR_INSET), // mud
-  e2(448, 0, 64, 64, FLOOR_INSET),
-  e2(512, 0, 64, 64, FLOOR_INSET),
-  e2(576, 0, 64, 64, FLOOR_INSET), // shale
-  e2(640, 0, 64, 64, FLOOR_INSET),
-  e2(704, 0, 64, 64, FLOOR_INSET),
-  e2(768, 0, 64, 64, FLOOR_INSET), // snow
-  e2(832, 0, 64, 64, FLOOR_INSET),
-  e2(896, 0, 64, 64, FLOOR_INSET),
-  // salt shipped as ONE tile, like the waters, and its three entries still
-  // share one cell — the painted set has two salts, but the second would
-  // need a cell this row does not have, and one salt is what the maps on
-  // disk were drawn with
-  e2(960, 0, 64, 64, FLOOR_INSET),
-  e2(960, 0, 64, 64, FLOOR_INSET),
-  e2(960, 0, 64, 64, FLOOR_INSET),
-  e2(0, 64, 64, 64, FLOOR_INSET), // ice
-  e2(64, 64, 64, 64, FLOOR_INSET),
-  e2(128, 64, 64, 64, FLOOR_INSET),
-  e2(192, 64, 64, 64, FLOOR_INSET), // basalt
-  e2(256, 64, 64, 64, FLOOR_INSET),
-  e2(320, 64, 64, 64, FLOOR_INSET),
-  // the spore waters, one tile each like the clear pair
-  WATER_TAINTED_UV,
-  WATER_TAINTED_UV,
-  WATER_TAINTED_UV,
-  WATER_DEEP_TAINTED_UV,
-  WATER_DEEP_TAINTED_UV,
-  WATER_DEEP_TAINTED_UV,
-];
 
 /** first index of each water group — what the palette and the map
  *  generators paint, and what `(i / 3) | 0` turns into GROUP_WATER_* */
 export const FLOOR_SHALLOW_WATER = 15;
 export const FLOOR_DEEP_WATER = 18;
-// first index of each second-band group, in table order
+// first index of each second-batch group, in table order
 export const FLOOR_MOSS = 21;
 export const FLOOR_SPORE_MOSS = 24;
 export const FLOOR_MUD = 27;
@@ -345,32 +353,30 @@ export const SHALLOW_FOR_DEEP: Readonly<Record<number, number>> = {
   [FLOOR_DEEP_WATER]: FLOOR_SHALLOW_WATER,
   [FLOOR_DEEP_TAINTED_WATER]: FLOOR_TAINTED_WATER,
 };
-// per-group floor edge fades (Mindustry's generated <floor>-edge sprites):
-// three 192px blocks at y=768 for grass/stone/dirt, each a 3x3 of 64px
-// sub-cells in image space. A tile bordered by a higher-priority floor gets
-// that floor's sub-cell (col 1-dx, row 1-dy) overlaid, so the neighbor's
-// texture fades across the tile seam exactly like Floor.drawEdges
-//
-// THE FADES ARE INSET ON THE BLOCK'S OUTER EDGES, and this is the hairline
-// round every tile that the flat floors made visible. A fade sub-cell is
-// drawn over a whole tile, so its outer edge lands on the tile's FAR
-// border, and with no inset the sampler there reads whatever the atlas
-// packs beside the 192px block. Mindustry's own blocks had empty space
-// round them, and empty is transparent, which under premultiplied alpha
-// contributes nothing; the second band packs its fades edge to edge with
-// each other and, for salt, with the deep spore water, whose dark purple
-// then leaked into a one-pixel line down the side of every sand tile that
-// touched a flat. The same inset the floors have (FLOOR_INSET) on the
-// outer sides only: those crop the transparent tail of the fade, which is
-// nothing lost, while the inner seams between sub-cells and the side that
-// meets the centre stay as they are, so the fade still reaches the shared
-// border at full strength.
+
+// ---------------------------------------------------------------------
+// THE FLOOR EDGE FADES
+// ---------------------------------------------------------------------
+
+/**
+ * Per-group floor edge fades (Mindustry's generated <floor>-edge sprites):
+ * a 192px block per land family, a 3x3 of 64px sub-cells in image space.
+ * A tile bordered by a higher-priority floor gets that floor's sub-cell
+ * (col 1-dx, row 1-dy) overlaid, so the neighbour's texture fades across
+ * the tile seam exactly like Floor.drawEdges.
+ *
+ * THE FADES ARE INSET ON THE BLOCK'S OUTER EDGES ONLY. A fade sub-cell is
+ * drawn over a whole tile, so its outer edge lands on the tile's FAR
+ * border, where the sampler would otherwise read the gutter. The outer
+ * sides take the floors' inset, which crops the transparent tail of the
+ * fade and nothing else; the inner seams between sub-cells and the side
+ * that meets the centre stay as they are, so the fade still reaches the
+ * shared border at full strength.
+ */
 const EDGE_INSET = FLOOR_INSET;
-// the block is REGISTERED as one 192px cell (uv's side effect) even though
-// the UVs handed out are its nine sub-cells: the sub-cells are addressed
-// separately, but the room is owned as a whole
-const edgeBlock = (bx: number, by: number): ReadonlyArray<readonly UVRect[]> =>
-  (uv(bx, by, 192, 192), [0, 1, 2]).map((ry) =>
+const edgeQuads = (uv: UVRect): ReadonlyArray<readonly UVRect[]> => {
+  const { x: bx, y: by } = cellOf(uv);
+  return [0, 1, 2].map((ry) =>
     [0, 1, 2].map((rx): UVRect => [
       (bx + rx * 64 + (rx === 0 ? EDGE_INSET : 0)) / ATLAS_W,
       (by + ry * 64 + (ry === 0 ? EDGE_INSET : 0)) / ATLAS_H,
@@ -378,88 +384,56 @@ const edgeBlock = (bx: number, by: number): ReadonlyArray<readonly UVRect[]> =>
       (by + ry * 64 + 64 - (ry === 2 ? EDGE_INSET : 0)) / ATLAS_H,
     ]),
   );
-export const UV_FLOOR_EDGES: ReadonlyArray<ReadonlyArray<readonly UVRect[]>> = [
-  edgeBlock(16, 768), // grass
-  edgeBlock(272, 768), // stone (baked but never overlays — lowest priority)
-  edgeBlock(528, 768), // dirt
-  // sand: no edge art baked — its only inferior floor (stone) shares no
-  // map with it yet, so the renderer never overlays it; stone's block
-  // stands in to keep the group indices aligned
-  edgeBlock(272, 768),
-  // darksand: no contiguous 192px block is left in the atlas, so its nine
-  // sub-cells ride the y=704 gutter row, row-major from x=416. Each one
-  // sits beside a DIFFERENT sub-cell's opaque inner side there, so these
-  // are inset on all four sides — the crop on the inner side takes a few
-  // px of full-strength fade, which the stretch puts back at the border
-  [0, 1, 2].map((ry) => [0, 1, 2].map((rx) => uv(416 + (ry * 3 + rx) * 64, 704, 64, 64, EDGE_INSET))),
-  // the water groups never overlay anything — they sit at the BOTTOM of the
-  // blend order (GROUP_PRI in renderer.ts), which is what makes the land
-  // fade into the shoreline rather than the other way round. No edge art is
-  // baked for them; stone's block stands in to keep the indices aligned,
-  // exactly as it does for sand
-  edgeBlock(272, 768), // shallow water (never drawn)
-  edgeBlock(272, 768), // deep water (never drawn)
-  // the second band's land families each carry their own baked fade, on
-  // the two 192px rows at the bottom of the block
-  edgeBlock(ENV2_X + 0, ENV2_Y + 448), // moss
-  edgeBlock(ENV2_X + 192, ENV2_Y + 448), // spore moss
-  edgeBlock(ENV2_X + 384, ENV2_Y + 448), // mud
-  edgeBlock(ENV2_X + 576, ENV2_Y + 448), // shale
-  edgeBlock(ENV2_X + 768, ENV2_Y + 448), // snow
-  edgeBlock(ENV2_X + 384, ENV2_Y + 640), // salt
-  edgeBlock(ENV2_X + 0, ENV2_Y + 640), // ice
-  edgeBlock(ENV2_X + 192, ENV2_Y + 640), // basalt
-  edgeBlock(272, 768), // shallow spore water (never drawn)
-  edgeBlock(272, 768), // deep spore water (never drawn)
+};
+/**
+ * Which land family each group's fade is generated from, in FLOOR_GROUPS
+ * order. null is a group with no fade art: the waters, which sit at the
+ * BOTTOM of the blend order (GROUP_PRI in renderer.ts) and never overlay
+ * anything, and sand, whose only inferior floor (stone) shares no map
+ * with it yet. Those take stone's block as a stand-in to keep the group
+ * indices aligned — stone is the lowest land priority and its fade is
+ * never drawn either.
+ */
+const EDGE_KINDS: readonly (FloorKind | null)[] = [
+  "grass", "stone", "dirt", null, "darksand", null, null,
+  "moss", "sporeMoss", "mud", "shale", "snow", "salt", "ice", "basalt", null, null,
 ];
+const EDGE_CELLS: readonly (UVRect | null)[] = EDGE_KINDS.map((k) =>
+  k ? reserve(`edge-${k}`, 192, 192, { upright: true }) : null,
+);
+const STONE_EDGE = EDGE_CELLS[1]!;
+export const UV_FLOOR_EDGES: ReadonlyArray<ReadonlyArray<readonly UVRect[]>> = EDGE_CELLS.map((c) =>
+  edgeQuads(c ?? STONE_EDGE),
+);
+
+// ---------------------------------------------------------------------
+// THE WALLS
+// ---------------------------------------------------------------------
+
 /**
  * px cropped from every side of a 64px wall cell — the floors' rule
- * (FLOOR_INSET), for the same reason. The sheet is sampled through
- * mipmaps, and a wall drawn small reads texels that straddle the cell's
- * border and carry whatever is packed beside it: another family's tone,
- * or the empty (premultiplied black) space the second band's rows leave
- * under and beside their rock. Two px kept the sample inside the cell at
- * mip 1 and no further, which showed as a dark hairline round every tile
- * the moment the map was zoomed out. Eight keeps it inside down to the
- * 8px mip on a 64-aligned cell. The painted walls keep their one pebble
- * four logical px off the rim (tiles.ts), so the crop takes plain band.
+ * (FLOOR_INSET), for the same reason: a wall drawn small reads texels
+ * that straddle the cell's border. Eight keeps it inside down to the 8px
+ * mip. The painted walls keep their one pebble four logical px off the
+ * rim (tiles.ts), so the crop takes plain band.
  */
 const WALL_INSET = 8;
-// 0-1 stone-wall, 2-3 dirt-wall, 5-6 carbon-wall (the darker rock).
-// Indices 4 and 7 are the two SENTINELS — WALL_PINE and WALL_DEEP — whose
-// slots here are never-drawn placeholders, since everything tests those
-// values explicitly and draws the cell's floor (plus, for a pine, its prop)
-// instead of a wall sprite
-export const UV_WALLS: readonly UVRect[] = [
-  uv(192, 0, 64, 64, WALL_INSET),
-  uv(256, 0, 64, 64, WALL_INSET),
-  uv(448, 64, 64, 64, WALL_INSET),
-  uv(0, 128, 64, 64, WALL_INSET),
-  uv(192, 0, 64, 64, WALL_INSET), // WALL_PINE placeholder
-  uv(320, 0, 64, 64, WALL_INSET),
-  uv(384, 0, 64, 64, WALL_INSET),
-  uv(192, 0, 64, 64, WALL_INSET), // WALL_DEEP placeholder
-  // ---- the second environment band's rock, families 3-10 ----
-  // Past the two sentinels, so nothing here needs a special case: every
-  // one of these is ordinary buildable rock (isBuildableWall names only
-  // the sentinels, and both of them are behind us)
-  e2(384, 64, 64, 64, WALL_INSET), // spore wall
-  e2(448, 64, 64, 64, WALL_INSET),
-  e2(512, 64, 64, 64, WALL_INSET), // shale wall
-  e2(576, 64, 64, 64, WALL_INSET),
-  e2(640, 64, 64, 64, WALL_INSET), // snow wall
-  e2(704, 64, 64, 64, WALL_INSET),
-  e2(768, 64, 64, 64, WALL_INSET), // ice wall
-  e2(832, 64, 64, 64, WALL_INSET),
-  e2(896, 64, 64, 64, WALL_INSET), // salt wall
-  e2(960, 64, 64, 64, WALL_INSET),
-  e2(0, 128, 64, 64, WALL_INSET), // sand wall
-  e2(64, 128, 64, 64, WALL_INSET),
-  e2(128, 128, 64, 64, WALL_INSET), // dune wall
-  e2(192, 128, 64, 64, WALL_INSET),
-  e2(256, 128, 64, 64, WALL_INSET), // dacite wall
-  e2(320, 128, 64, 64, WALL_INSET),
+/**
+ * The wall families in UV_WALLS order, two variants each. The two nulls
+ * are the SENTINELS — WALL_PINE at 4 and WALL_DEEP at 7 — whose slots are
+ * never-drawn placeholders (stone's first cell), since everything tests
+ * those values explicitly and draws the cell's floor (plus, for a pine,
+ * its prop) instead of a wall sprite. Past them every family is ordinary
+ * buildable rock (isBuildableWall names only the sentinels).
+ */
+const WALL_KINDS_IN_ORDER: readonly (WallKind | null)[] = [
+  "stone", "dirt", null, "dark", null,
+  "spore", "shale", "snow", "ice", "salt", "sand", "dune", "dacite",
 ];
+const WALL_CELLS: readonly (readonly UVRect[] | null)[] = WALL_KINDS_IN_ORDER.map((k) =>
+  k ? Array.from({ length: WALL_VARIANTS }, (_, v) => tile(`wall-${k}-${v}`, 64, WALL_INSET)) : null,
+);
+export const UV_WALLS: readonly UVRect[] = WALL_CELLS.flatMap((cells) => cells ?? [WALL_CELLS[0]![0]]);
 // which wall family each UV_WALLS index belongs to (0 stone, 1 dirt,
 // 2 dark rock, then the second band's eight; -1 the pine and deep-water
 // sentinels) — StaticWall's large-draw rule works per block type, so 2x2
@@ -477,20 +451,22 @@ export const WALL_SALT = 16;
 export const WALL_SAND = 18;
 export const WALL_DUNE = 20;
 export const WALL_DACITE = 22;
-// Mindustry's <wall>-large art: one 2x2-tile sprite per family, split into
-// per-tile quadrant UVs [row][col] in screen space (y down). Families
-// without baked large art (dirt) draw per-tile variants everywhere.
-//
-// THE INSET IS ON THE BLOCK'S OUTER EDGES ONLY. The four quadrants are one
-// continuous painting, so a texel straddling the seam between two of them
-// averages art that belongs on both sides — that is what a seamless block
-// looks like through a mipmap. Insetting the inner edges as well would
-// skip a strip of the painting at every seam and break the bands that
-// run corner to corner across the whole block.
-// registered as one 128px cell, like the edge fades: the quadrants are
-// addressed apart, the room is owned whole
-const largeQuads = (x: number, y: number): ReadonlyArray<readonly UVRect[]> =>
-  (uv(x, y, 128, 128), [0, 1]).map((row) =>
+/**
+ * Mindustry's <wall>-large art: one 2x2-tile block per family, split
+ * into per-tile quadrant UVs [row][col] in screen space (y down). null
+ * is a family without large art (dirt: fringe slopes, aligned 2x2 blocks
+ * are rare), which draws per-tile variants everywhere.
+ *
+ * THE INSET IS ON THE BLOCK'S OUTER EDGES ONLY. The four quadrants are
+ * one continuous painting, so a texel straddling the seam between two of
+ * them averages art that belongs on both sides — that is what a seamless
+ * block looks like through a mipmap. Insetting the inner edges as well
+ * would skip a strip of the painting at every seam and break the bands
+ * that run corner to corner across the whole block.
+ */
+const largeQuads = (uv: UVRect): ReadonlyArray<readonly UVRect[]> => {
+  const { x, y } = cellOf(uv);
+  return [0, 1].map((row) =>
     [0, 1].map((col): UVRect => [
       (x + col * 64 + (col === 0 ? WALL_INSET : 0)) / ATLAS_W,
       (y + row * 64 + (row === 0 ? WALL_INSET : 0)) / ATLAS_H,
@@ -498,39 +474,98 @@ const largeQuads = (x: number, y: number): ReadonlyArray<readonly UVRect[]> =>
       (y + row * 64 + 64 - (row === 1 ? WALL_INSET : 0)) / ATLAS_H,
     ]),
   );
-export const UV_WALL_LARGE: ReadonlyArray<ReadonlyArray<readonly UVRect[]> | null> = [
-  largeQuads(736, 768), // stone-wall-large
-  null, // dirt: fringe slopes, aligned 2x2 blocks are rare — not baked
-  largeQuads(864, 768), // carbon-wall-large
-  // the second band's eight, all on one 128px row of the block
-  largeQuads(ENV2_X + 0, ENV2_Y + 224), // spore
-  largeQuads(ENV2_X + 128, ENV2_Y + 224), // shale
-  largeQuads(ENV2_X + 256, ENV2_Y + 224), // snow
-  largeQuads(ENV2_X + 384, ENV2_Y + 224), // ice
-  largeQuads(ENV2_X + 512, ENV2_Y + 224), // salt
-  largeQuads(ENV2_X + 640, ENV2_Y + 224), // sand
-  largeQuads(ENV2_X + 768, ENV2_Y + 224), // dune
-  largeQuads(ENV2_X + 896, ENV2_Y + 224), // dacite
+};
+/** the families with large art, in WALL_GROUP order */
+const LARGE_KINDS: readonly (WallKind | null)[] = [
+  "stone", null, "dark", "spore", "shale", "snow", "ice", "salt", "sand", "dune", "dacite",
 ];
-// flare lives on a gutter row (see the mech-part note below) — its old cell
-// at (384,0) had dirt within a mip-3 texel below and the ring to its right
-export const UV_FLARE = uv(32, 704, 64, 64);
-// horizon (72px) and zenith (112px) outgrow the 64px flyer cell, so they take
-// 128px cells at the head of the new y=1024 band. Both keep well past the 4px
-// mip-3 margin even after the 3px outline dilation (zenith, the tighter of
-// the two, still clears 5px)
-export const UV_HORIZON = uv(0, 1024, 128, 128);
-export const UV_ZENITH = uv(128, 1024, 128, 128);
-// scorch's turret top rides the same fresh band. The cell must hug the art
-// EXACTLY like duo's and hail's do (64px art, 64px cell): the renderer maps
-// the whole cell onto a size*CELL quad, so a 64px sprite parked inside a
-// 128px cell would draw at half scale beside its size-1 neighbours. The
-// mip-3 margin comes from the empty band around it, not from cell padding
-export const UV_SCORCH = uv(288, 1056, 64, 64);
+const LARGE_CELLS: readonly (UVRect | null)[] = LARGE_KINDS.map((k) =>
+  k ? reserve(`wall-${k}-large`, 128, 128, { upright: true }) : null,
+);
+export const UV_WALL_LARGE: ReadonlyArray<ReadonlyArray<readonly UVRect[]> | null> = LARGE_CELLS.map((c) =>
+  c ? largeQuads(c) : null,
+);
+
+// ---------------------------------------------------------------------
+// THE PROPS
+// ---------------------------------------------------------------------
+
+/**
+ * px cropped from every side of a prop cell. A prop is a shape on a
+ * transparent ground and its cell is cut to its art with nothing round
+ * it, so the quad's edge sampled half a texel of whatever was packed
+ * beside it. Four px is enough for the mips a prop is drawn at, and every
+ * painted prop keeps its shape well clear of the rim (the tightest, a
+ * pine's canopy, stops six px short of a 96px cell).
+ */
+const PROP_INSET = 4;
+/** a prop's cell is its 48/40/32px art at 2x, and nothing more: the
+ *  renderer maps the whole cell onto a DECOR_TILES-sized quad */
+const prop = (kind: PropKind, cell: number): UVRect => tile(`prop-${kind}`, cell, PROP_INSET);
+/**
+ * THE FOREST KINDS, indexed by a pine prop's `kind`.
+ *
+ * A pine used to be the one prop with no variation at all — WALL_PINE
+ * meant "the pine", and Prop.kind was documented as unused on one. It is
+ * the index into this table now, so a map can be forested in the tree that
+ * belongs to its biome; kind 0 is the original, so every pine already on
+ * disk keeps drawing exactly what it drew.
+ */
+const PINE_KINDS: readonly PropKind[] = ["pine", "sporePine", "snowPine"];
+export const UV_PINES: readonly UVRect[] = PINE_KINDS.map((k) => prop(k, 96));
+export const UV_PINE = UV_PINES[0];
+/**
+ * Ground clutter, indexed by a decor prop's `kind`, with the cell each
+ * takes: its source at 2x. DECOR_TILES below is the other half of that:
+ * how many TILES across each one is at native scale.
+ */
+const DECOR_KINDS: readonly (readonly [PropKind, number])[] = [
+  ["boulder0", 96],
+  ["boulder1", 96],
+  ["shrubs", 64],
+  ["sporeCluster0", 80],
+  ["sporeCluster1", 80],
+  ["sporeCluster2", 80],
+  ["purBush", 64],
+  ["shaleBoulder0", 64],
+  ["shaleBoulder1", 64],
+  ["snowBoulder0", 96],
+  ["snowBoulder1", 96],
+  ["shrubs2", 64],
+  ["sandBoulder0", 64],
+  ["sandBoulder1", 64],
+];
+export const UV_DECOR: readonly UVRect[] = DECOR_KINDS.map(([k, cell]) => prop(k, cell));
+/**
+ * How wide each decor sprite is IN TILES at Mindustry's own scale — a
+ * 32px prop covers one 32px tile, a 48px boulder overhangs to 1.5, a 40px
+ * spore cluster to 1.25. Multiply by CELL for the world size to draw it
+ * at. This was a conditional on the shrub's index while there were three
+ * props and two sizes between them; a table is what stops the fourth size
+ * from having to be another branch.
+ */
+export const DECOR_TILES: readonly number[] = [
+  1.5, 1.5, 1, 1.25, 1.25, 1.25, 1, 1, 1, 1.5, 1.5, 1, 1, 1,
+];
+
+// ---------------------------------------------------------------------
+// STRUCTURES, EFFECTS AND THE ODD SHAPES
+// ---------------------------------------------------------------------
+
+// mechanical spawn-pad tile — currently unused: drop zones are shown as
+// overlay circles, and no terrain pass paints spawn cells any more
+export const UV_SPAWN = tile("spawn-pad", 64, 2);
+// a stroked ring, procedural
+export const UV_RING = reserve("ring", 64, 64, { art: 54, upright: true });
+// a plain opaque texel, for geometry the renderer strokes itself:
+// Lines.circle draws a constant-width ring, which a scaled ring SPRITE
+// cannot do (its band fattens with the radius). Inset well past the mip-3
+// footprint so every sampled level stays pure white
+export const UV_SOLID = reserve("solid", 32, 32, { inset: 8, upright: true });
 // a plain filled white circle: the particle Mindustry's Fill.circle draws
 // by the dozen in every flame effect. UV_SOLID cannot stand in for it — a
 // square particle reads as a pixel cloud, not a tongue of fire
-export const UV_DISC = uv(384, 1024, 64, 64);
+export const UV_DISC = reserve("disc", 64, 64, { art: 54, upright: true });
 /**
  * A BIG smooth disc, 256px, for the shield domes (the Shield Towers
  * mutator) — the same shape as UV_DISC and nothing like the same
@@ -549,240 +584,72 @@ export const UV_DISC = uv(384, 1024, 64, 64);
  * shield shader's edge detect sees is a clean alpha ramp rather than a
  * hard step — which is what the rim is traced around.
  */
-export const UV_DISC_BIG = uv(1472, 2944, 256, 256);
-// mechanical spawn-pad tile — currently unused: drop zones are shown as
-// overlay circles, and no terrain pass paints spawn cells any more
-export const UV_SPAWN = uv(0, 192, 64, 64, 2);
-export const UV_RING = uv(448, 0, 64, 64);
-// a plain opaque texel, for geometry the renderer strokes itself: Lines.circle
-// draws a constant-width ring, which a scaled ring SPRITE cannot do (its band
-// fattens with the radius). It sits in the 64px gutter BETWEEN the grass and
-// stone floor-edge blocks — those blocks run x=16..208 and x=272..464 down
-// the whole y=768..960 band, and most of their art is transparent, so an
-// empty-looking hole in there is still spoken for. Inset well past the mip-3
-// footprint so every sampled level stays pure white
-export const UV_SOLID = uv(224, 928, 32, 32, 8);
-// row 2: 128px cells — turret base, turret top, the player's base
-export const UV_TOWER_BASE = uv(64, 128, 128, 128);
-export const UV_TURRET = uv(192, 128, 128, 128);
-export const UV_BASE = uv(320, 128, 160, 160);
-// row 4 (y=384): scatter turret top
-export const UV_SCATTER = uv(0, 384, 128, 128);
-// fuse rides at native 96px (like block-3): stretching the 96px source to
-// a 128 cell was a 1.33x non-integer upscale that shredded its antialiasing
-export const UV_FUSE = uv(208, 400, 96, 96);
-export const UV_TOWER_BASE3 = uv(384, 384, 96, 96); // block-3 at native 96px
-// duo turret top and its 1x1 base, tucked under the tri cell
-export const UV_DUO = uv(128, 448, 64, 64);
-export const UV_TOWER_BASE1 = uv(320, 448, 64, 64);
-// hail turret top, riding the gutter row beside the flare (128px pitch,
-// see the mech-part note)
-export const UV_HAIL = uv(160, 704, 64, 64);
-// row at y=576: mech part cells — leg, chassis, body, gun per ground
-// kind, each source centered at native size in a 64px cell, facing +x.
-// Unit cells ride a 128px pitch so everything within a mip-3 texel (4px,
-// TEXTURE_MAX_LEVEL=3) of each cell border is transparent: flush-packed
-// cells bled their neighbors' pixels into the quad edges as a faint line
-// under LINEAR_MIPMAP_LINEAR when zoomed out. Keep >=4px of transparent
-// margin (or a gutter) around anything drawn as a rotating quad
-export const UV_DAGGER_LEG = uv(32, 576, 64, 64);
-export const UV_DAGGER_BASE = uv(160, 576, 64, 64);
-export const UV_DAGGER_BODY = uv(288, 576, 64, 64);
-export const UV_LARGE_WEAPON = uv(416, 576, 64, 64);
-export const UV_MACE_LEG = uv(544, 576, 64, 64);
-export const UV_MACE_BASE = uv(672, 576, 64, 64);
-export const UV_MACE_BODY = uv(800, 576, 64, 64);
-export const UV_FLAMETHROWER = uv(928, 576, 64, 64);
-// row at y=960: the same eight part cells, but as solid #565666 silhouettes
-// dilated by the official 3px outline radius. pushMech lays these under the
-// whole walking assembly so one rim traces the unit's outer silhouette —
-// per-part baked outlines drew a line at every seam of the animated mech
-export const UV_DAGGER_LEG_SIL = uv(32, 960, 64, 64);
-export const UV_DAGGER_BASE_SIL = uv(160, 960, 64, 64);
-export const UV_DAGGER_BODY_SIL = uv(288, 960, 64, 64);
-export const UV_LARGE_WEAPON_SIL = uv(416, 960, 64, 64);
-export const UV_MACE_LEG_SIL = uv(544, 960, 64, 64);
-export const UV_MACE_BASE_SIL = uv(672, 960, 64, 64);
-export const UV_MACE_BODY_SIL = uv(800, 960, 64, 64);
-export const UV_FLAMETHROWER_SIL = uv(928, 960, 64, 64);
-// fortress parts ride 128px cells — the T3 art outgrows the 64px cells
-// above (body 100x80, leg 80x60 at native scale). The art row fills the
-// free strip right of block-3 at y=384; the silhouette row sits in the
-// free space right of the base at y=128. Cells are 128px wide so even the
-// 3px-dilated silhouettes keep >=4px of transparent margin (see the
-// mip-bleed note on the mech row)
-export const UV_FORTRESS_LEG = uv(512, 384, 128, 128);
-export const UV_FORTRESS_BASE = uv(640, 384, 128, 128);
-export const UV_FORTRESS_BODY = uv(768, 384, 128, 128);
-export const UV_ARTILLERY = uv(896, 384, 128, 128);
-export const UV_FORTRESS_LEG_SIL = uv(512, 128, 128, 128);
-export const UV_FORTRESS_BASE_SIL = uv(640, 128, 128, 128);
-export const UV_FORTRESS_BODY_SIL = uv(768, 128, 128, 128);
-export const UV_ARTILLERY_SIL = uv(896, 128, 128, 128);
-// crawler parts: 64px cells flush-packed at y=288, a 32px gutter above the
-// fortress art strip. The 48px sources keep >=5px transparent margins even
-// silhouette-dilated, so unlike the full-bleed mace cells these don't need
-// the 128px pitch
-// the support line (nova T1, pulsar T2) rides the two free full-width rows
-// at y=512 and y=640, same 128px pitch as the mech strip above: art in the
-// left four cells, silhouettes in the right four. Every part clears the 4px
-// mip-3 margin even after the silhouette's 3px dilation — pulsar's 68x58
-// body and 64px leg overhang their cells only with transparent padding
-export const UV_NOVA_LEG = uv(32, 512, 64, 64);
-export const UV_NOVA_BASE = uv(160, 512, 64, 64);
-export const UV_NOVA_BODY = uv(288, 512, 64, 64);
-export const UV_HEAL_WEAPON = uv(416, 512, 64, 64);
-export const UV_NOVA_LEG_SIL = uv(544, 512, 64, 64);
-export const UV_NOVA_BASE_SIL = uv(672, 512, 64, 64);
-export const UV_NOVA_BODY_SIL = uv(800, 512, 64, 64);
-export const UV_HEAL_WEAPON_SIL = uv(928, 512, 64, 64);
-export const UV_PULSAR_LEG = uv(32, 640, 64, 64);
-export const UV_PULSAR_BASE = uv(160, 640, 64, 64);
-export const UV_PULSAR_BODY = uv(288, 640, 64, 64);
-export const UV_HEAL_SHOTGUN = uv(416, 640, 64, 64);
-export const UV_PULSAR_LEG_SIL = uv(544, 640, 64, 64);
-export const UV_PULSAR_BASE_SIL = uv(672, 640, 64, 64);
-export const UV_PULSAR_BODY_SIL = uv(800, 640, 64, 64);
-export const UV_HEAL_SHOTGUN_SIL = uv(928, 640, 64, 64);
+export const UV_DISC_BIG = reserve("disc-big", 256, 256, { art: 248, upright: true });
+// white isosceles triangle, base at -x edge, apex at +x — tinted at draw
+// time for shrapnel rays (Drawf.tri)
+export const UV_TRI = reserve("tri", 64, 64, { inset: 2, upright: true });
+
+// THE TURRET TOPS each hug their art exactly: the renderer maps the whole
+// cell onto a size*CELL quad, so a sprite parked inside a larger cell
+// would draw small. Mindustry block art is 32px a tile, so a size-1 top
+// is a 32px source at 2x, a size-2 top 64px at 2x, and the size-3 and
+// size-4 tops (96 and 128) stay NATIVE — anything but an integer upscale
+// shreds their antialiasing. The bases are the same at each size.
+export const UV_TOWER_BASE = flat("tower-base-2", 128);
+export const UV_TURRET = top("salvo", 128);
+export const UV_SCATTER = top("scatter", 128);
+export const UV_FUSE = top("fuse", 96);
+export const UV_TOWER_BASE3 = flat("tower-base-3", 96);
+export const UV_DUO = top("duo", 64);
+export const UV_TOWER_BASE1 = flat("tower-base-1", 64);
+export const UV_HAIL = top("hail", 64);
+export const UV_SCORCH = top("scorch", 64);
+export const UV_ARC = top("arc", 64);
+export const UV_LANCER = top("lancer", 128);
+export const UV_PARALLAX = top("parallax", 128);
+export const UV_RIPPLE = top("ripple", 96);
+export const UV_WAVE = top("wave", 128);
+export const UV_TSUNAMI = top("tsunami", 96);
+export const UV_SWARMER = top("swarmer", 128);
+export const UV_CYCLONE = top("cyclone", 96);
+export const UV_SPECTRE = top("spectre", 128);
+export const UV_MELTDOWN = top("meltdown", 128);
+export const UV_FORESHADOW = top("foreshadow", 128);
+export const UV_TOWER_BASE4 = flat("tower-base-4", 128);
 /**
- * The support line's T3 outgrows those 64px cells: every quasar part ships
- * on an 80x80 source (its leg alone reaches 35px off centre, past the 32px
- * a 64 cell can hold), so the line's last row takes the fortress treatment
- * — 128px cells on the free full-width band at y=1664, art in the left four
- * and silhouettes in the right four. Double the cell with double the sprite
- * box keeps world px per native px identical to the rest of the roster.
+ * The blocks that never turn keep the heading they were drawn at: the
+ * shield tower (the Shield Towers mutator, Mindustry's force projector,
+ * 96px of 3x3 block art) and the support pair, the mender a 32px source
+ * at 2x, the projector a 64px one at 2x.
  */
-export const UV_QUASAR_LEG = uv(0, 1664, 128, 128);
-export const UV_QUASAR_BASE = uv(128, 1664, 128, 128);
-export const UV_QUASAR_BODY = uv(256, 1664, 128, 128);
-export const UV_BEAM_WEAPON = uv(384, 1664, 128, 128);
-export const UV_QUASAR_LEG_SIL = uv(512, 1664, 128, 128);
-export const UV_QUASAR_BASE_SIL = uv(640, 1664, 128, 128);
-export const UV_QUASAR_BODY_SIL = uv(768, 1664, 128, 128);
-export const UV_BEAM_WEAPON_SIL = uv(896, 1664, 128, 128);
+export const UV_SHIELD_TOWER = flat("shield-tower", 96);
+export const UV_MEND_PROJECTOR = flat("mend-projector", 128);
+export const UV_MENDER = flat("mender", 64);
 /**
- * The T4 line rides the fresh 1024-tall band at y=2048, on 256px cells:
- * scepter's hull alone is a 170x140 source, half again as wide as the
- * 128px cells the T3s sit in. Every part shares the one cell size because
- * a mech draws all of its quads at MechArt.sprite, and 256px at the
- * roster's usual 0.625 world px per native px is UNIT_SPRITE * 4.
+ * Parallax's beam, the two regions Drawf.laser stretches between the
+ * turret and its target. The line is packed ROTATED — its 4x48 source runs
+ * along the beam, and pushSeg maps a region's WIDTH along the line it is
+ * stretched down.
  *
- * Art and silhouette sit side by side, two cells to a part.
+ * Both cells hug the OPAQUE art, not the source rect, and that is not
+ * tidiness: Arc's packer trims a sprite's transparent border and Mindustry
+ * then draws the trimmed region, so `parallax-laser` is really 4x24 and
+ * `parallax-laser-end` really 32x32. Taking the source rects instead put a
+ * quarter of transparent film on each end of a STRETCHED beam — the line
+ * drew at half length, floating between the turret and its target — and
+ * made the end glow, whose size Drawf.laser reads off the region itself,
+ * less than half of what it should be. The pack pass draws the full
+ * source centred on the cell and the clip takes the film off.
  */
-export const UV_SCEPTER_BODY = uv(0, 2048, 256, 256);
-export const UV_SCEPTER_BODY_SIL = uv(256, 2048, 256, 256);
-export const UV_SCEPTER_LEG = uv(512, 2048, 256, 256);
-export const UV_SCEPTER_LEG_SIL = uv(768, 2048, 256, 256);
-export const UV_SCEPTER_BASE = uv(0, 2304, 256, 256);
-export const UV_SCEPTER_BASE_SIL = uv(256, 2304, 256, 256);
-export const UV_SCEPTER_WEAPON = uv(512, 2304, 256, 256);
-export const UV_SCEPTER_WEAPON_SIL = uv(768, 2304, 256, 256);
-export const UV_SCEPTER_MOUNT = uv(0, 2560, 256, 256);
-export const UV_SCEPTER_MOUNT_SIL = uv(256, 2560, 256, 256);
-/**
- * arkyid's small parts share the free right half of the scepter mount's
- * row: foot and base-joint on 128px cells (their 70px sources keep a wide
- * margin there), and the two leg SEGMENTS below them on the exact rects
- * their art occupies — a stretched segment samples its cell corner to
- * corner, so its UV has to be the art and nothing else.
- */
-export const UV_ARKYID_FOOT = uv(512, 2560, 128, 128);
-export const UV_ARKYID_FOOT_SIL = uv(640, 2560, 128, 128);
-export const UV_ARKYID_JOINT_BASE = uv(768, 2560, 128, 128);
-export const UV_ARKYID_JOINT_BASE_SIL = uv(896, 2560, 128, 128);
-export const UV_ARKYID_LEG = uv(528, 2704, 56, 56);
-export const UV_ARKYID_LEG_BASE = uv(640, 2700, 104, 64);
-/**
- * The second T4 band, y=3072: vela and arkyid's big parts, plus antumbra.
- * Same 256px cells and same art-then-silhouette pairing as the scepter's
- * band above it — see that note for why the T4s need cells this size.
- *
- * antumbra takes a whole cell to itself: a flyer is one sprite with no
- * silhouette under-layer (see UNIT_ART), but at 216x240 native only
- * eclipse, in the T5 column, is a bigger single piece of art.
- */
-export const UV_VELA_BODY = uv(0, 3072, 256, 256);
-export const UV_VELA_BODY_SIL = uv(256, 3072, 256, 256);
-export const UV_VELA_LEG = uv(512, 3072, 256, 256);
-export const UV_VELA_LEG_SIL = uv(768, 3072, 256, 256);
-export const UV_VELA_BASE = uv(0, 3328, 256, 256);
-export const UV_VELA_BASE_SIL = uv(256, 3328, 256, 256);
-export const UV_REPAIR_BEAM = uv(512, 3328, 256, 256);
-export const UV_REPAIR_BEAM_SIL = uv(768, 3328, 256, 256);
-export const UV_ARKYID_BODY = uv(0, 3584, 256, 256);
-export const UV_ARKYID_BODY_SIL = uv(256, 3584, 256, 256);
-export const UV_ARKYID_WEAPON = uv(512, 3584, 256, 256);
-export const UV_ARKYID_WEAPON_SIL = uv(768, 3584, 256, 256);
-export const UV_ARKYID_MOUNT = uv(0, 3840, 256, 256);
-export const UV_ARKYID_MOUNT_SIL = uv(256, 3840, 256, 256);
-export const UV_ANTUMBRA = uv(512, 3840, 256, 256);
-// disrupt: the boss flyer, 243x243 of Erekir art in the last free 256px
-// cell of the pre-T5 sheet, beside antumbra on the bottom band
-export const UV_DISRUPT = uv(768, 3840, 256, 256);
+export const UV_PARALLAX_LASER = reserve("parallax-laser", 24, 4, { art: [24, 4] });
+export const UV_PARALLAX_LASER_END = sprite("parallax-laser-end", 32, 32);
+// the player's base, the core nucleus at native 160px
+export const UV_BASE = flat("base", 160);
 
 /**
- * THE T5 COLUMN (x=1024..2048). Four units, laid out top down: reign's
- * mech parts on two 256px rows, then corvus's and toxopid's hulls, then
- * one 128px row of the small legged parts they share the shape of, the
- * bare leg-segment rects, and eclipse alone in a 384px cell.
- *
- * Cell sizes follow the same rule as every band before it — the cell is
- * what sets the world scale, so a 256px cell draws at UNIT_SPRITE * 4 and
- * keeps the sheet's constant 0.625 world px per native px. Nothing here is
- * scaled to fit; the art sits at native size inside a cell chosen to clear
- * the 4px mip-3 margin even after a silhouette's 3px dilation.
- */
-export const UV_REIGN_BODY = uv(T5, 0, 256, 256);
-export const UV_REIGN_BODY_SIL = uv(T5 + 256, 0, 256, 256);
-export const UV_REIGN_BASE = uv(T5 + 512, 0, 256, 256);
-export const UV_REIGN_BASE_SIL = uv(T5 + 768, 0, 256, 256);
-export const UV_REIGN_LEG = uv(T5, 256, 256, 256);
-export const UV_REIGN_LEG_SIL = uv(T5 + 256, 256, 256, 256);
-export const UV_REIGN_WEAPON = uv(T5 + 512, 256, 256, 256);
-export const UV_REIGN_WEAPON_SIL = uv(T5 + 768, 256, 256, 256);
-
-export const UV_CORVUS_BODY = uv(T5, 512, 256, 256);
-export const UV_CORVUS_BODY_SIL = uv(T5 + 256, 512, 256, 256);
-export const UV_CORVUS_BASE = uv(T5 + 512, 512, 256, 256);
-export const UV_CORVUS_BASE_SIL = uv(T5 + 768, 512, 256, 256);
-
-export const UV_TOXOPID_BODY = uv(T5, 768, 256, 256);
-export const UV_TOXOPID_BODY_SIL = uv(T5 + 256, 768, 256, 256);
-export const UV_TOXOPID_CANNON = uv(T5 + 512, 768, 256, 256);
-export const UV_TOXOPID_CANNON_SIL = uv(T5 + 768, 768, 256, 256);
-
-// the small legged parts on one shared 128px row: corvus brings a knee cap
-// (jointRegion) as well as a shoulder plate, toxopid — like the arkyid —
-// brings only the plate and leaves its elbow as the bare segment overlap
-export const UV_CORVUS_JOINT = uv(T5, 1024, 128, 128);
-export const UV_CORVUS_JOINT_SIL = uv(T5 + 128, 1024, 128, 128);
-export const UV_CORVUS_JOINT_BASE = uv(T5 + 256, 1024, 128, 128);
-export const UV_CORVUS_JOINT_BASE_SIL = uv(T5 + 384, 1024, 128, 128);
-export const UV_CORVUS_FOOT = uv(T5 + 512, 1024, 128, 128);
-export const UV_CORVUS_FOOT_SIL = uv(T5 + 640, 1024, 128, 128);
-export const UV_TOXOPID_JOINT_BASE = uv(T5 + 768, 1024, 128, 128);
-export const UV_TOXOPID_JOINT_BASE_SIL = uv(T5 + 896, 1024, 128, 128);
-export const UV_TOXOPID_FOOT = uv(T5, 1152, 128, 128);
-export const UV_TOXOPID_FOOT_SIL = uv(T5 + 128, 1152, 128, 128);
-
-// leg SEGMENTS: the cell is the art's exact rect, because a segment is
-// stretched corner to corner between its endpoints rather than drawn into
-// a quad (see pushSeg). Their strokes are the rect's height — Mindustry's
-// Lines.stroke(legRegion.height) — so the cell may not carry any padding
-export const UV_CORVUS_LEG = uv(T5, 1312, 30, 68);
-export const UV_CORVUS_LEG_BASE = uv(T5 + 96, 1312, 30, 64);
-export const UV_TOXOPID_LEG = uv(T5 + 192, 1312, 150, 72);
-export const UV_TOXOPID_LEG_BASE = uv(T5 + 416, 1312, 270, 64);
-
-// eclipse: 320x321 of art, the largest single piece on the sheet, in the
-// only 384px cell there is. A 256 cell would have had to scale it down and
-// broken the constant native-px-to-world-px the whole atlas rests on
-export const UV_ECLIPSE = uv(T5, 1408, 384, 384);
-
-/**
- * The two bullet regions, and the two shell regions, on the free band under
- * eclipse. Every one is packed WHITE and at its exact source size, which is
- * the only way BasicBulletType.draw comes out right.
+ * The bullet regions and the shell regions. Every one is packed WHITE and
+ * at its exact source size, which is the only way BasicBulletType.draw
+ * comes out right.
  *
  * White, because an ammo type is a pair of colours over one pair of shapes:
  * duo's copper pellet, salvo's thorium round and scatter's flak shell are
@@ -797,22 +664,20 @@ export const UV_ECLIPSE = uv(T5, 1408, 384, 384);
  * exactly that ratio.
  *
  * The `-back` sprite is the longer of each pair: 40px of art in bullet's
- * 52 against the inner region's 28, and 32 of shell's 36 against 20. Drawn into the
- * same box it therefore sticks out fore and aft, which is the rim you see
- * on every Mindustry shot. Both face +x, like all the other rotated art.
+ * 52 against the inner region's 28, and 32 of shell's 36 against 20. Drawn
+ * into the same box it therefore sticks out fore and aft, which is the
+ * rim you see on every Mindustry shot. Both face +x, like all the other
+ * rotated art.
  */
-export const UV_BULLET = uv(T5, 1792, 52, 52);
-export const UV_BULLET_BACK = uv(T5 + 64, 1792, 52, 52);
-export const UV_SHELL = uv(T5 + 128, 1792, 36, 36);
-export const UV_SHELL_BACK = uv(T5 + 176, 1792, 36, 36);
-// the third pair: swarmer's warhead. 36x36 like the shell, and the same
-// rule — white, source size, facing +x
-export const UV_MISSILE = uv(T5 + 224, 1792, 36, 36);
-export const UV_MISSILE_BACK = uv(T5 + 272, 1792, 36, 36);
+export const UV_BULLET = sprite("bullet", 52, 52);
+export const UV_BULLET_BACK = sprite("bullet-back", 52, 52);
+export const UV_SHELL = sprite("shell", 36, 36);
+export const UV_SHELL_BACK = sprite("shell-back", 36, 36);
+// the third pair: swarmer's warhead. 36x36 like the shell, and the same rule
+export const UV_MISSILE = sprite("missile", 36, 36);
+export const UV_MISSILE_BACK = sprite("missile-back", 36, 36);
 /**
- * THE SWARM'S OWN BULLET SPRITES, on the rest of the same band (x=1344..,
- * y=1792..1920, the free stretch between the turrets' pairs and the naval
- * hulls). The same rule as the three pairs above — white, source size,
+ * THE SWARM'S OWN BULLET SPRITES, on the same rule — white, source size,
  * facing +x, the `-back` beside its front:
  *
  *   - circle-bullet (48): navanax's emp round;
@@ -826,278 +691,252 @@ export const UV_MISSILE_BACK = uv(T5 + 272, 1792, 36, 36);
  *     so it is packed unrotated and stretched along the line), the cap a
  *     soft disc laid on each end.
  */
-export const UV_CIRCLE_BULLET = uv(T5 + 336, 1792, 48, 48);
-export const UV_CIRCLE_BULLET_BACK = uv(T5 + 392, 1792, 48, 48);
-export const UV_MINE_BULLET = uv(T5 + 448, 1792, 64, 64);
-export const UV_MINE_BULLET_BACK = uv(T5 + 520, 1792, 64, 64);
-export const UV_MISSILE_LARGE = uv(T5 + 592, 1792, 56, 56);
-export const UV_MISSILE_LARGE_BACK = uv(T5 + 656, 1792, 56, 56);
-export const UV_DISRUPT_MISSILE = uv(T5 + 720, 1792, 64, 64);
-export const UV_LASER_END = uv(T5 + 800, 1792, 72, 72);
-export const UV_LASER = uv(T5 + 896, 1814, 4, 48);
-// the second row of the band, under the small ones: nothing yet
+export const UV_CIRCLE_BULLET = sprite("circle-bullet", 48, 48);
+export const UV_CIRCLE_BULLET_BACK = sprite("circle-bullet-back", 48, 48);
+export const UV_MINE_BULLET = sprite("mine-bullet", 64, 64);
+export const UV_MINE_BULLET_BACK = sprite("mine-bullet-back", 64, 64);
+export const UV_MISSILE_LARGE = sprite("missile-large", 56, 56);
+export const UV_MISSILE_LARGE_BACK = sprite("missile-large-back", 56, 56);
+export const UV_DISRUPT_MISSILE = sprite("disrupt-missile", 64, [39, 60]);
+export const UV_LASER_END = flat("laser-end", 72);
+export const UV_LASER = flat("laser", 4, 48);
+
+// ---------------------------------------------------------------------
+// THE UNITS
+// ---------------------------------------------------------------------
+//
+// Every part rides at native size in a cell that sets its world scale:
+// the renderer draws a mech's quads at MechArt.sprite, which is the cell
+// size times the sheet's constant 0.625 world px per native px, so a 64px
+// cell draws at UNIT_SPRITE, a 128 at UNIT_SPRITE * 2 and a 256 at
+// UNIT_SPRITE * 4. A part takes the smallest cell that holds its art, and
+// every part of one unit takes the same size because the unit draws them
+// all at one scale. A `-sil` cell is the same part as a solid #565666
+// silhouette: pushMech lays these under the whole walking assembly so one
+// rim traces the unit's outer silhouette, where per-part baked outlines
+// drew a line at every seam of the animated mech.
+//
+// A leg SEGMENT breaks the rule on purpose: it is stretched corner to
+// corner between two moving points (Mindustry Lines.line), so its cell is
+// the art's exact rect — any padding would be stretched with it — and its
+// stroke is the rect's height (Lines.stroke(legRegion.height)).
+
+// the ground line
+export const UV_DAGGER_LEG = sprite("dagger-leg", 64, 48);
+export const UV_DAGGER_BASE = sprite("dagger-base", 64, 48);
+export const UV_DAGGER_BODY = sprite("dagger", 64, 48);
+export const UV_LARGE_WEAPON = sprite("large-weapon", 64, 48);
+export const UV_MACE_LEG = sprite("mace-leg", 64, 64);
+export const UV_MACE_BASE = sprite("mace-base", 64, 64);
+export const UV_MACE_BODY = sprite("mace", 64, 64);
+export const UV_FLAMETHROWER = sprite("flamethrower", 64, [48, 56]);
+export const UV_DAGGER_LEG_SIL = sprite("dagger-leg-sil", 64, 48);
+export const UV_DAGGER_BASE_SIL = sprite("dagger-base-sil", 64, 48);
+export const UV_DAGGER_BODY_SIL = sprite("dagger-sil", 64, 48);
+export const UV_LARGE_WEAPON_SIL = sprite("large-weapon-sil", 64, 48);
+export const UV_MACE_LEG_SIL = sprite("mace-leg-sil", 64, 64);
+export const UV_MACE_BASE_SIL = sprite("mace-base-sil", 64, 64);
+export const UV_MACE_BODY_SIL = sprite("mace-sil", 64, 64);
+export const UV_FLAMETHROWER_SIL = sprite("flamethrower-sil", 64, [48, 56]);
+// the T3 outgrows 64px cells (body 100x80, leg 80x60 at native scale)
+export const UV_FORTRESS_LEG = sprite("fortress-leg", 128, [80, 60]);
+export const UV_FORTRESS_BASE = sprite("fortress-base", 128, 64);
+export const UV_FORTRESS_BODY = sprite("fortress", 128, [100, 80]);
+export const UV_ARTILLERY = sprite("artillery", 128, [48, 56]);
+export const UV_FORTRESS_LEG_SIL = sprite("fortress-leg-sil", 128, [80, 60]);
+export const UV_FORTRESS_BASE_SIL = sprite("fortress-base-sil", 128, 64);
+export const UV_FORTRESS_BODY_SIL = sprite("fortress-sil", 128, [100, 80]);
+export const UV_ARTILLERY_SIL = sprite("artillery-sil", 128, [48, 56]);
+/**
+ * The T4: scepter's hull alone is a 170x140 source, half again as wide as
+ * the 128px cells the T3s sit in, so the whole line rides 256px cells.
+ */
+export const UV_SCEPTER_BODY = sprite("scepter", 256, [170, 140]);
+export const UV_SCEPTER_BODY_SIL = sprite("scepter-sil", 256, [170, 140]);
+export const UV_SCEPTER_LEG = sprite("scepter-leg", 256, 128);
+export const UV_SCEPTER_LEG_SIL = sprite("scepter-leg-sil", 256, 128);
+export const UV_SCEPTER_BASE = sprite("scepter-base", 256, 128);
+export const UV_SCEPTER_BASE_SIL = sprite("scepter-base-sil", 256, 128);
+export const UV_SCEPTER_WEAPON = sprite("scepter-weapon", 256, [56, 102]);
+export const UV_SCEPTER_WEAPON_SIL = sprite("scepter-weapon-sil", 256, [56, 102]);
+export const UV_SCEPTER_MOUNT = sprite("scepter-mount", 256, 48);
+export const UV_SCEPTER_MOUNT_SIL = sprite("scepter-mount-sil", 256, 48);
+// the T5: the same four-part mech, one tier heavier
+export const UV_REIGN_BODY = sprite("reign", 256, [214, 140]);
+export const UV_REIGN_BODY_SIL = sprite("reign-sil", 256, [214, 140]);
+export const UV_REIGN_BASE = sprite("reign-base", 256, [152, 124]);
+export const UV_REIGN_BASE_SIL = sprite("reign-base-sil", 256, [152, 124]);
+export const UV_REIGN_LEG = sprite("reign-leg", 256, [152, 124]);
+export const UV_REIGN_LEG_SIL = sprite("reign-leg-sil", 256, [152, 124]);
+export const UV_REIGN_WEAPON = sprite("reign-weapon", 256, [83, 138]);
+export const UV_REIGN_WEAPON_SIL = sprite("reign-weapon-sil", 256, [83, 138]);
+
+// the crawler line: the T1 a mech, the rest legged
+export const UV_CRAWLER_LEG = sprite("crawler-leg", 64, 48);
+export const UV_CRAWLER_BASE = sprite("crawler-base", 64, 48);
+export const UV_CRAWLER_BODY = sprite("crawler", 64, 48);
+export const UV_CRAWLER_LEG_SIL = sprite("crawler-leg-sil", 64, 48);
+export const UV_CRAWLER_BASE_SIL = sprite("crawler-base-sil", 64, 48);
+export const UV_CRAWLER_BODY_SIL = sprite("crawler-sil", 64, 48);
+/**
+ * The legged T2 and T3: body, mount plate and guns face +x on 128px
+ * cells, feet the same on 64px ones. A JOINT is drawn with no rotation at
+ * all in Mindustry, so its cell is packed upright. The segment sprites
+ * fill their source rect edge to edge, so they get no silhouette: the
+ * dilation an outline pass would add is clipped away at the rect, exactly
+ * as in Mindustry's own packer, and the leg art carries its dark edging
+ * hand-drawn anyway.
+ */
+export const UV_ATRAX_BODY = sprite("atrax", 128, [88, 64]);
+export const UV_ATRAX_BASE = sprite("atrax-base", 128, 64);
+export const UV_ATRAX_WEAPON = sprite("atrax-weapon", 128, [48, 56]);
+export const UV_ATRAX_BODY_SIL = sprite("atrax-sil", 128, [88, 64]);
+export const UV_ATRAX_BASE_SIL = sprite("atrax-base-sil", 128, 64);
+export const UV_ATRAX_WEAPON_SIL = sprite("atrax-weapon-sil", 128, [48, 56]);
+export const UV_ATRAX_JOINT = upright("atrax-joint", 64, 26);
+export const UV_ATRAX_FOOT = sprite("atrax-foot", 64, 40);
+export const UV_ATRAX_JOINT_SIL = upright("atrax-joint-sil", 64, 26);
+export const UV_ATRAX_FOOT_SIL = sprite("atrax-foot-sil", 64, 40);
+export const UV_ATRAX_LEG = flat("atrax-leg", 36, 26);
+export const UV_ATRAX_LEG_BASE = flat("atrax-leg-base", 36, 26);
+export const UV_SPIROCT_BODY = sprite("spiroct", 128, [94, 75]);
+export const UV_SPIROCT_WEAPON = sprite("spiroct-weapon", 128, [48, 56]);
+export const UV_SPIROCT_MOUNT = sprite("spiroct-mount", 128, 48);
+export const UV_SPIROCT_BODY_SIL = sprite("spiroct-sil", 128, [94, 75]);
+export const UV_SPIROCT_WEAPON_SIL = sprite("spiroct-weapon-sil", 128, [48, 56]);
+export const UV_SPIROCT_MOUNT_SIL = sprite("spiroct-mount-sil", 128, 48);
+export const UV_SPIROCT_JOINT = upright("spiroct-joint", 64, 32);
+export const UV_SPIROCT_FOOT = sprite("spiroct-foot", 64, 46);
+export const UV_SPIROCT_JOINT_SIL = upright("spiroct-joint-sil", 64, 32);
+export const UV_SPIROCT_FOOT_SIL = sprite("spiroct-foot-sil", 64, 46);
+export const UV_SPIROCT_LEG = flat("spiroct-leg", 48, 34);
+export const UV_SPIROCT_LEG_BASE = flat("spiroct-leg-base", 48, 34);
+/**
+ * The T4: hull and guns on 256px cells — the sap gun is the spiroct's own
+ * weapon sprite packed a second time, because a legged unit draws every
+ * gun at its own LegArt.sprite and arkyid's is 256. Its feet and shoulder
+ * plates ride 128px cells (their 70px sources keep a wide margin there),
+ * and its two leg segments the exact rects their art occupies.
+ */
+export const UV_ARKYID_BODY = sprite("arkyid", 256, 128);
+export const UV_ARKYID_BODY_SIL = sprite("arkyid-sil", 256, 128);
+export const UV_ARKYID_WEAPON = sprite("arkyid-weapon", 256, [48, 56]);
+export const UV_ARKYID_WEAPON_SIL = sprite("arkyid-weapon-sil", 256, [48, 56]);
+export const UV_ARKYID_MOUNT = sprite("arkyid-mount", 256, [70, 97]);
+export const UV_ARKYID_MOUNT_SIL = sprite("arkyid-mount-sil", 256, [70, 97]);
+export const UV_ARKYID_FOOT = sprite("arkyid-foot", 128, 70);
+export const UV_ARKYID_FOOT_SIL = sprite("arkyid-foot-sil", 128, 70);
+export const UV_ARKYID_JOINT_BASE = sprite("arkyid-joint-base", 128, 70);
+export const UV_ARKYID_JOINT_BASE_SIL = sprite("arkyid-joint-base-sil", 128, 70);
+export const UV_ARKYID_LEG = flat("arkyid-leg", 56, 56);
+export const UV_ARKYID_LEG_BASE = flat("arkyid-leg-base", 104, 64);
+// the T5: the arkyid's frame with two more legs, and the one centred
+// cannon. toxopid's lower segment is 270px of art for a 150px upper one:
+// legExtension 20 runs it back over its own knee
+export const UV_TOXOPID_BODY = sprite("toxopid", 256, [160, 190]);
+export const UV_TOXOPID_BODY_SIL = sprite("toxopid-sil", 256, [160, 190]);
+export const UV_TOXOPID_CANNON = sprite("toxopid-cannon", 256, [206, 220]);
+export const UV_TOXOPID_CANNON_SIL = sprite("toxopid-cannon-sil", 256, [206, 220]);
+export const UV_TOXOPID_JOINT_BASE = sprite("toxopid-joint-base", 128, 70);
+export const UV_TOXOPID_JOINT_BASE_SIL = sprite("toxopid-joint-base-sil", 128, 70);
+export const UV_TOXOPID_FOOT = sprite("toxopid-foot", 128, 90);
+export const UV_TOXOPID_FOOT_SIL = sprite("toxopid-foot-sil", 128, 90);
+export const UV_TOXOPID_LEG = flat("toxopid-leg", 150, 72);
+export const UV_TOXOPID_LEG_BASE = flat("toxopid-leg-base", 270, 64);
+
+// the support line: T1 and T2 on 64px cells. pulsar's 68x58 body and
+// 64px leg overhang their cells with transparent padding only, which the
+// clip takes off
+export const UV_NOVA_LEG = sprite("nova-leg", 64, 48);
+export const UV_NOVA_BASE = sprite("nova-base", 64, 48);
+export const UV_NOVA_BODY = sprite("nova", 64, 56);
+export const UV_HEAL_WEAPON = sprite("heal-weapon", 64, 48);
+export const UV_NOVA_LEG_SIL = sprite("nova-leg-sil", 64, 48);
+export const UV_NOVA_BASE_SIL = sprite("nova-base-sil", 64, 48);
+export const UV_NOVA_BODY_SIL = sprite("nova-sil", 64, 56);
+export const UV_HEAL_WEAPON_SIL = sprite("heal-weapon-sil", 64, 48);
+export const UV_PULSAR_LEG = sprite("pulsar-leg", 64, 64);
+export const UV_PULSAR_BASE = sprite("pulsar-base", 64, 48);
+export const UV_PULSAR_BODY = sprite("pulsar", 64, [68, 58]);
+export const UV_HEAL_SHOTGUN = sprite("heal-shotgun", 64, 50);
+export const UV_PULSAR_LEG_SIL = sprite("pulsar-leg-sil", 64, 64);
+export const UV_PULSAR_BASE_SIL = sprite("pulsar-base-sil", 64, 48);
+export const UV_PULSAR_BODY_SIL = sprite("pulsar-sil", 64, [68, 58]);
+export const UV_HEAL_SHOTGUN_SIL = sprite("heal-shotgun-sil", 64, 50);
+// the T3 outgrows those: every quasar part ships on an 80x80 source (its
+// leg alone reaches 35px off centre, past the 32px a 64 cell can hold)
+export const UV_QUASAR_LEG = sprite("quasar-leg", 128, 80);
+export const UV_QUASAR_BASE = sprite("quasar-base", 128, 80);
+export const UV_QUASAR_BODY = sprite("quasar", 128, 80);
+export const UV_BEAM_WEAPON = sprite("beam-weapon", 128, 80);
+export const UV_QUASAR_LEG_SIL = sprite("quasar-leg-sil", 128, 80);
+export const UV_QUASAR_BASE_SIL = sprite("quasar-base-sil", 128, 80);
+export const UV_QUASAR_BODY_SIL = sprite("quasar-sil", 128, 80);
+export const UV_BEAM_WEAPON_SIL = sprite("beam-weapon-sil", 128, 80);
+// the T4. Its main gun has NO sprite (see the MECH_ART note) — the pair
+// of repair-beam pods is all there is to bolt on
+export const UV_VELA_BODY = sprite("vela", 256, [170, 140]);
+export const UV_VELA_BODY_SIL = sprite("vela-sil", 256, [170, 140]);
+export const UV_VELA_LEG = sprite("vela-leg", 256, 128);
+export const UV_VELA_LEG_SIL = sprite("vela-leg-sil", 256, 128);
+export const UV_VELA_BASE = sprite("vela-base", 256, 128);
+export const UV_VELA_BASE_SIL = sprite("vela-base-sil", 256, 128);
+export const UV_REPAIR_BEAM = sprite("repair-beam", 256, 48);
+export const UV_REPAIR_BEAM_SIL = sprite("repair-beam-sil", 256, 48);
+/**
+ * The T5, the only legged unit wearing the full set of leg parts: a mount
+ * plate like the atrax, a knee cap like the atrax and spiroct, AND a
+ * shoulder plate like the arkyid and toxopid. Four legs of 14 world units
+ * on mounts 11 out: almost the whole span is the mount offset, so the
+ * segments are stubby and very broad — a 68px stroke on a 30px segment.
+ */
+export const UV_CORVUS_BODY = sprite("corvus", 256, [214, 140]);
+export const UV_CORVUS_BODY_SIL = sprite("corvus-sil", 256, [214, 140]);
+export const UV_CORVUS_BASE = sprite("corvus-base", 256, [152, 124]);
+export const UV_CORVUS_BASE_SIL = sprite("corvus-base-sil", 256, [152, 124]);
+export const UV_CORVUS_JOINT = upright("corvus-joint", 128, 60);
+export const UV_CORVUS_JOINT_SIL = upright("corvus-joint-sil", 128, 60);
+export const UV_CORVUS_JOINT_BASE = sprite("corvus-joint-base", 128, 70);
+export const UV_CORVUS_JOINT_BASE_SIL = sprite("corvus-joint-base-sil", 128, 70);
+export const UV_CORVUS_FOOT = sprite("corvus-foot", 128, 90);
+export const UV_CORVUS_FOOT_SIL = sprite("corvus-foot-sil", 128, 90);
+export const UV_CORVUS_LEG = flat("corvus-leg", 30, 68);
+export const UV_CORVUS_LEG_BASE = flat("corvus-leg-base", 30, 64);
 
 /**
- * THE NAVAL BAND (x=1024, y=1920..2688) — the ten hulls of the two water
- * trees, on the free stretch of the T5 column between the bullet regions
- * and the turret tops.
- *
- * A naval tank is drawn exactly like a flyer: ONE quad, outlined at pack time,
- * turned to the heading the sim gave it. It has no legs to plant and no
- * chassis to slide, so there is nothing to assemble and nothing to
- * silhouette under — which is why this band is half the size the legged
- * T4 bands are for the same number of units. What a hull does have instead
- * is its wake, and that is geometry the renderer strokes from the solid
- * texel (see WakeSpec) rather than art on this sheet.
- *
- * Three cell sizes, chosen the usual way — the cell sets the world scale,
- * so each is the smallest power-of-two step that clears the art plus the
- * 4px mip-3 margin, and every one keeps the sheet's constant 0.625 world
- * px per native px.
+ * THE FLYERS: a flying unit is one sprite — no legs, no chassis, no
+ * silhouette under-layer — outlined at pack time and turned to the
+ * heading the sim gave it. flare's 48px art rides a 64 cell at dagger
+ * scale; horizon (72) and zenith (112) take 128s; antumbra at 216x240 and
+ * the disrupt boss at 243x243 take 256s; eclipse, 320x321, the largest
+ * single piece of art on the sheet, the only 384.
  */
-export const UV_RISSO = uv(T5, 1920, 128, 128);
-export const UV_MINKE = uv(T5 + 128, 1920, 128, 128);
-export const UV_RETUSA = uv(T5 + 256, 1920, 128, 128);
-export const UV_OXYNOE = uv(T5 + 384, 1920, 128, 128);
-export const UV_BRYDE = uv(T5, 2048, 256, 256);
-export const UV_CYERCE = uv(T5 + 256, 2048, 256, 256);
-export const UV_SEI = uv(T5 + 512, 2048, 256, 256);
-export const UV_AEGIRES = uv(T5 + 768, 2048, 256, 256);
-// the two T5 hulls take 384px cells, the size eclipse needed: omura is
-// 264x351 of art and navanax 258x366, and a 256 cell would have had to
-// scale them down and broken the constant native-px-to-world-px
-export const UV_OMURA = uv(T5, 2304, 384, 384);
-export const UV_NAVANAX = uv(T5 + 384, 2304, 384, 384);
+export const UV_FLARE = sprite("flare", 64, 48);
+export const UV_HORIZON = sprite("horizon", 128, 72);
+export const UV_ZENITH = sprite("zenith", 128, 112);
+export const UV_ANTUMBRA = sprite("antumbra", 256, [216, 240]);
+export const UV_DISRUPT = sprite("disrupt", 256, 243);
+export const UV_ECLIPSE = sprite("eclipse", 384, [320, 321]);
 
 /**
- * The early and mid turret tops, on the free band at y=2816. Each cell
- * hugs its art exactly, like every other turret top: the renderer maps the
- * whole cell onto a size*CELL quad, so a sprite parked inside a larger cell
- * would draw small. Mindustry block art is 32px a tile, so arc (size 1) is
- * a 32px source at 2x, lancer and parallax (size 2) are 64px at 2x, and
- * ripple takes the fuse treatment — 96px at NATIVE, because 96 into a 128
- * cell is the 1.33x upscale that shredded fuse's antialiasing.
+ * THE NAVAL HULLS — the ten of the two water trees. A naval tank is drawn
+ * exactly like a flyer: ONE quad, outlined at pack time, turned to the
+ * heading the sim gave it. What a hull has instead of parts is its wake,
+ * and that is geometry the renderer strokes from the solid texel (see
+ * WakeSpec) rather than art on this sheet. Three cell sizes, chosen the
+ * usual way: the two T5 hulls are 264x351 and 258x366 of art, and a 256
+ * cell would have had to scale them down.
  */
-export const UV_ARC = uv(0, 2816, 64, 64);
-export const UV_LANCER = uv(128, 2816, 128, 128);
-export const UV_PARALLAX = uv(320, 2816, 128, 128);
-export const UV_RIPPLE = uv(512, 2816, 96, 96);
-/**
- * The support pair, in the free corner at the right-hand end of the turret
- * band. Neither block turns, so neither is drawn facing +x (see the pack
- * pass) — the art sits exactly as Mindustry authored it, the way the shield
- * tower's does. Mender is a 32px source at 2x like arc's, the projector a
- * 64px one at 2x like lancer's.
- */
-export const UV_MEND_PROJECTOR = uv(1888, 2816, 128, 128);
-export const UV_MENDER = uv(1888, 2944, 64, 64);
-/**
- * Parallax's beam, the two regions Drawf.laser stretches between the
- * turret and its target. The line is packed ROTATED — its 4x48 source runs
- * along the beam, and pushSeg maps a region's WIDTH along the line it is
- * stretched down.
- *
- * Both cells hug the OPAQUE art, not the source rect, and that is not
- * tidiness: Arc's packer trims a sprite's transparent border and Mindustry
- * then draws the trimmed region, so `parallax-laser` is really 4x24 and
- * `parallax-laser-end` really 32x32. Taking the source rects instead put a
- * quarter of transparent film on each end of a STRETCHED beam — the line
- * drew at half length, floating between the turret and its target — and
- * made the end glow, whose size Drawf.laser reads off the region itself,
- * less than half of what it should be.
- */
-export const UV_PARALLAX_LASER = uv(772, 2860, 24, 4);
-export const UV_PARALLAX_LASER_END = uv(668, 2844, 32, 32);
-/**
- * The liquid turrets, on the free stretch of the same band between the
- * parallax beam cells and swarmer. Each is COMPOSITED AT PACK TIME — the
- * outlined turret, its `-liquid` window tinted water and drawn full (these
- * turrets consume nothing here), and the white `-top` gleam over it — so
- * the renderer draws one quad like any other top. Wave's 64px source
- * upscales 2x like lancer's; tsunami's 96 stays native like cyclone's.
- */
-export const UV_WAVE = uv(832, 2816, 128, 128);
-export const UV_TSUNAMI = uv(992, 2816, 96, 96);
-
-/**
- * The late turret tops, on the free right half of the
- * atlas. Same rule as every other top — the cell hugs the art exactly,
- * because the renderer maps the whole cell onto a size*CELL quad.
- *
- * Mindustry block art is 32px a tile, so swarmer (size 2) is a 64px source
- * upscaled 2x, and cyclone (3) and the three size-4 tops are already 96 and
- * 128 and stay NATIVE — the same reasoning that keeps fuse and ripple
- * native, since anything but an integer upscale shreds their antialiasing.
- *
- * The 4x4 turret base rides with them: spectre, meltdown and foreshadow are
- * the first size-4 blocks in the game, so block-4 had never been packed.
- */
-export const UV_SWARMER = uv(1152, 2816, 128, 128);
-export const UV_CYCLONE = uv(1312, 2816, 96, 96);
-export const UV_SPECTRE = uv(1440, 2816, 128, 128);
-export const UV_MELTDOWN = uv(1600, 2816, 128, 128);
-export const UV_FORESHADOW = uv(1760, 2816, 128, 128);
-export const UV_TOWER_BASE4 = uv(1152, 2976, 128, 128);
-
-/**
- * The shield tower (the Shield Towers mutator, mutation.ts): Mindustry's
- * force projector, 96px of 3x3 block art at native scale, on the free
- * stretch right of block-4. It never rotates — the renderer draws it
- * axis-aligned over its footprint like a tower base — and it is outlined
- * like every other block so it reads as a built thing, not floor decor.
- */
-export const UV_SHIELD_TOWER = uv(1312, 2976, 96, 96);
-
-
-export const UV_CRAWLER_LEG = uv(448, 288, 64, 64);
-export const UV_CRAWLER_BASE = uv(512, 288, 64, 64);
-export const UV_CRAWLER_BODY = uv(576, 288, 64, 64);
-export const UV_CRAWLER_LEG_SIL = uv(640, 288, 64, 64);
-export const UV_CRAWLER_BASE_SIL = uv(704, 288, 64, 64);
-export const UV_CRAWLER_BODY_SIL = uv(768, 288, 64, 64);
-// white isosceles triangle, base at -x edge, apex at +x — tinted at draw
-// time for shrapnel rays (Drawf.tri)
-export const UV_TRI = uv(320, 384, 64, 64, 2);
-// row 3: 96px prop cells — overhanging 48px sources at 2x
-/**
- * px cropped from every side of a prop cell. A prop is a shape on a
- * transparent ground, and its cell is cut to its art with nothing round
- * it, so the quad's edge sampled the atlas cell packed NEXT to it — the
- * large wall blocks above the second band's boulders, the turret sprites
- * under the first row's — and half a texel of that arrived along one side
- * of every prop as a faint edge. Four px is enough for the mips a prop is
- * drawn at, and every painted prop keeps its shape well clear of the rim
- * (the tightest, a pine's canopy, stops six px short of a 96px cell).
- */
-const PROP_INSET = 4;
-export const UV_PINE = uv(0, 288, 96, 96, PROP_INSET);
-/**
- * THE FOREST KINDS, indexed by a pine prop's `kind`.
- *
- * A pine used to be the one prop with no variation at all — WALL_PINE
- * meant "the pine", and Prop.kind was documented as unused on one. It is
- * the index into this table now, so a map can be forested in the tree that
- * belongs to its biome; kind 0 is the original, so every pine already on
- * disk keeps drawing exactly what it drew.
- */
-export const UV_PINES: readonly UVRect[] = [
-  UV_PINE,
-  e2(384, 128, 96, 96, PROP_INSET), // spore pine
-  e2(480, 128, 96, 96, PROP_INSET), // snow pine
-];
-/**
- * Ground clutter, indexed by a decor prop's `kind`. Each cell is its
- * source at 2x and NOTHING MORE — the renderer maps the whole cell onto a
- * size x size quad, so a 40px sprite parked in a 96px cell would draw at
- * two thirds scale beside its neighbours. DECOR_TILES below is the other
- * half of that: how many TILES across each one is at native scale.
- */
-export const UV_DECOR: readonly UVRect[] = [
-  uv(96, 288, 96, 96, PROP_INSET), // boulder1
-  uv(192, 288, 96, 96, PROP_INSET), // boulder2
-  uv(288, 288, 64, 64, PROP_INSET), // shrubs1
-  e2(576, 128, 80, 80, PROP_INSET), // spore cluster 1
-  e2(656, 128, 80, 80, PROP_INSET), // spore cluster 2
-  e2(736, 128, 80, 80, PROP_INSET), // spore cluster 3
-  e2(816, 128, 64, 64, PROP_INSET), // purple bush
-  e2(880, 128, 64, 64, PROP_INSET), // shale boulder 1
-  e2(944, 128, 64, 64, PROP_INSET), // shale boulder 2
-  e2(0, 352, 96, 96, PROP_INSET), // snow boulder 1
-  e2(96, 352, 96, 96, PROP_INSET), // snow boulder 2
-  e2(192, 352, 64, 64, PROP_INSET), // shrubs2
-  e2(256, 352, 64, 64, PROP_INSET), // sand boulder 1
-  e2(320, 352, 64, 64, PROP_INSET), // sand boulder 2
-];
-/**
- * How wide each decor sprite is IN TILES at Mindustry's own scale — a
- * 32px prop covers one 32px tile, a 48px boulder overhangs to 1.5, a 40px
- * spore cluster to 1.25. Multiply by CELL for the world size to draw it
- * at. This was a conditional on the shrub's index while there were three
- * props and two sizes between them; a table is what stops the fourth size
- * from having to be another branch.
- */
-export const DECOR_TILES: readonly number[] = [
-  1.5, 1.5, 1, 1.25, 1.25, 1.25, 1, 1, 1, 1.5, 1.5, 1, 1, 1,
-];
-
-/**
- * The crawler line's T2 and T3 are LEG units, not mechs: their parts ride
- * the empty 1024-wide band below y=1152 (the flyer band's tail), art and
- * silhouettes side by side on 128px cells like every other unit strip.
- *
- * Two cells break the 128px-cell rule on purpose. A leg SEGMENT is drawn
- * as a stretched quad between two moving points (Mindustry Lines.line), so
- * the atlas cell has to be the art's exact rect — any padding would be
- * stretched along with it. Both segment sprites fill their source rect
- * edge to edge, so they also get no silhouette: the dilation an outline
- * pass would add is clipped away at the rect, exactly as in Mindustry's
- * own packer, and the leg art carries its dark edging hand-drawn anyway.
- */
-export const UV_ATRAX_BODY = uv(0, 1152, 128, 128);
-export const UV_ATRAX_BASE = uv(128, 1152, 128, 128);
-export const UV_ATRAX_WEAPON = uv(256, 1152, 128, 128);
-export const UV_ATRAX_BODY_SIL = uv(384, 1152, 128, 128);
-export const UV_ATRAX_BASE_SIL = uv(512, 1152, 128, 128);
-export const UV_ATRAX_WEAPON_SIL = uv(640, 1152, 128, 128);
-export const UV_ATRAX_JOINT = uv(768, 1152, 64, 64);
-export const UV_ATRAX_FOOT = uv(896, 1152, 64, 64);
-export const UV_ATRAX_JOINT_SIL = uv(0, 1280, 64, 64);
-export const UV_ATRAX_FOOT_SIL = uv(128, 1280, 64, 64);
-export const UV_ATRAX_LEG = uv(272, 1296, 36, 26);
-export const UV_ATRAX_LEG_BASE = uv(336, 1296, 36, 26);
-export const UV_SPIROCT_BODY = uv(0, 1408, 128, 128);
-export const UV_SPIROCT_WEAPON = uv(128, 1408, 128, 128);
-export const UV_SPIROCT_MOUNT = uv(256, 1408, 128, 128);
-export const UV_SPIROCT_BODY_SIL = uv(384, 1408, 128, 128);
-export const UV_SPIROCT_WEAPON_SIL = uv(512, 1408, 128, 128);
-export const UV_SPIROCT_MOUNT_SIL = uv(640, 1408, 128, 128);
-export const UV_SPIROCT_JOINT = uv(768, 1408, 64, 64);
-export const UV_SPIROCT_FOOT = uv(896, 1408, 64, 64);
-export const UV_SPIROCT_JOINT_SIL = uv(0, 1536, 64, 64);
-export const UV_SPIROCT_FOOT_SIL = uv(128, 1536, 64, 64);
-export const UV_SPIROCT_LEG = uv(272, 1552, 48, 34);
-export const UV_SPIROCT_LEG_BASE = uv(352, 1552, 48, 34);
-
-/**
- * THE TEAM CELLS' THREE BLOCKS — the one part of the sheet that is not
- * hand-laid.
- *
- * Every body on the roster carries a `-cell`, the window on its hull that
- * is painted in its owner's colour (constants.ts TEAM_CRUX_RGB /
- * TEAM_SHARDED_RGB), and the cell is DRAWN over the body rather than baked
- * into it, because both teams walk the same sprites. That means a cell of
- * its own on the sheet for each of the thirty-odd bodies — and a cell that
- * is nearly all transparency, since the art is a few hundred pixels
- * rattling around a canvas the size of the hull.
- *
- * Hand-laying thirty rects that are only known once the art has been
- * cropped is how a layout stops being a layout, so the three rectangles
- * below are declared here and packTeamCells shelf-packs the CROPPED cells
- * into them at pack time, tallest first. The blocks are registered with
- * uv() like any other cell, so the sheet's disjointness check holds them
- * to the same rule as everything else; what happens INSIDE them is the
- * packer's business and cannot land on anyone.
- *
- * THEY WERE PICKED OFF THE PAINTED SHEET, NOT OFF THE REGISTRY. A few
- * things here are drawn wider than the cell they are addressed through —
- * the second environment band's large walls are the worst of them — so a
- * rectangle that no declared cell touches can still be full of art. These
- * three are the largest that are empty by BOTH tests, and the fit is
- * close: the packer throws rather than overlap anything if the art grows.
- */
-const TEAM_CELL_BLOCKS: readonly { x: number; y: number; w: number; h: number }[] = [
-  // the six giants — the T4 and T5 flyers and the big hulls — two rows deep
-  { x: 1408, y: 1376, w: 640, h: 416 },
-  // the tall middle: omura, toxopid, corvus and reign
-  { x: 1536, y: 1864, w: 512, h: 184 },
-  // and one long shelf for everything shorter than a T4, which is the
-  // other twenty-one bodies in a single row
-  { x: 744, y: 2688, w: 1304, h: 128 },
-];
-TEAM_CELL_BLOCKS.forEach((b) => uv(b.x, b.y, b.w, b.h));
-/** transparent margin round every packed cell — the sheet's mip-3 texel is
- *  4px, so this keeps a shrunken read well inside its own cell */
-const TEAM_CELL_PAD = 8;
+export const UV_RISSO = sprite("risso", 128, [70, 78]);
+export const UV_MINKE = sprite("minke", 128, [88, 101]);
+export const UV_RETUSA = sprite("retusa", 128, [70, 78]);
+export const UV_OXYNOE = sprite("oxynoe", 128, [88, 101]);
+export const UV_BRYDE = sprite("bryde", 256, 140);
+export const UV_CYERCE = sprite("cyerce", 256, 140);
+export const UV_SEI = sprite("sei", 256, [198, 228]);
+export const UV_AEGIRES = sprite("aegires", 256, [218, 241]);
+export const UV_OMURA = sprite("omura", 384, [264, 351]);
+export const UV_NAVANAX = sprite("navanax", 384, [258, 366]);
 
 /**
  * WHERE A BODY'S TEAM CELL RIDES ON ITS BODY QUAD, filled in at pack time
@@ -1591,47 +1430,39 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
 
 // ---- THE ANIMAL ART (game/animalFlag.ts, game/animalArt.ts) ------------
 //
-// The cells the trial needs beyond the ones the two lines already own,
-// on a 1024x256 strip that `npm run atlas:check` reported free (left of
-// the T5 column, under the T4 flyers' row). Everything else the animals
-// draw into is a cell the stock art owns (nova's leg/base/body, corvus's
-// caps and feet, the flyers' single cells) and is cleared and redrawn at
-// pack time — see packAnimalArt.
-//
-// They were first parked at 1408,3456, "the free block right of the second
-// environment band" — which is INSIDE the band, on its large-wall and
-// edge-fade rows, and the hills went blotchy and the terrain borders
-// fringed. The registry did not catch it because those two rows were
-// handed out by helpers that skipped uv(); they no longer skip it. Take
-// a rect from the check's FREE list, never from a reading of the file.
-const AN_X = 0, AN_Y = 1792;
+// The cells the trial needs beyond the ones the two lines already own.
+// Everything else the animals draw into is a cell the stock art owns
+// (nova's leg/base/body, corvus's caps and feet, the flyers' single
+// cells) and is cleared and redrawn at pack time — see packAnimalArt.
+// The animal art is generated, so its size is not declared: these cells
+// take the full gutter and the pack pass draws whatever size comes out.
 /** vela's legged parts, the ones its mech rig never had */
-export const UV_VELA_FOOT = uv(AN_X, AN_Y, 128, 128);
-export const UV_VELA_FOOT_SIL = uv(AN_X + 128, AN_Y, 128, 128);
-export const UV_VELA_JOINT = uv(AN_X + 256, AN_Y, 128, 128);
-export const UV_VELA_JOINT_SIL = uv(AN_X + 384, AN_Y, 128, 128);
-export const UV_VELA_JOINT_BASE = uv(AN_X + 512, AN_Y, 128, 128);
-export const UV_VELA_JOINT_BASE_SIL = uv(AN_X + 640, AN_Y, 128, 128);
-/** the stag's leg segments on exact rects: thigh then shin, T4 then T5,
- *  stacked in one 64px column. A stretched segment samples its rect
- *  corner to corner, mount on the left, so the height IS the stroke */
+export const UV_VELA_FOOT = sprite("vela-foot", 128, 128);
+export const UV_VELA_FOOT_SIL = sprite("vela-foot-sil", 128, 128);
+export const UV_VELA_JOINT = upright("vela-joint", 128, 128);
+export const UV_VELA_JOINT_SIL = upright("vela-joint-sil", 128, 128);
+export const UV_VELA_JOINT_BASE = sprite("vela-joint-base", 128, 128);
+export const UV_VELA_JOINT_BASE_SIL = sprite("vela-joint-base-sil", 128, 128);
+/** the stag's leg segments on exact rects: thigh then shin, T4 then T5.
+ *  A stretched segment samples its rect corner to corner, mount on the
+ *  left, so the height IS the stroke */
 const HART_SEG4 = hartSeg(HART_TIERS[3]), HART_SEG5 = hartSeg(HART_TIERS[4]);
-export const UV_VELA_LEG_SEG = uv(AN_X, AN_Y + 128, 64, HART_SEG4.th);
-export const UV_VELA_LEG_BASE_SEG = uv(AN_X, AN_Y + 152, 64, HART_SEG4.sh);
-export const UV_CORVUS_LEG_SEG = uv(AN_X, AN_Y + 176, 64, HART_SEG5.th);
-export const UV_CORVUS_LEG_BASE_SEG = uv(AN_X, AN_Y + 208, 64, HART_SEG5.sh);
+export const UV_VELA_LEG_SEG = flat("vela-leg-seg", 64, HART_SEG4.th);
+export const UV_VELA_LEG_BASE_SEG = flat("vela-leg-base-seg", 64, HART_SEG4.sh);
+export const UV_CORVUS_LEG_SEG = flat("corvus-leg-seg", 64, HART_SEG5.th);
+export const UV_CORVUS_LEG_BASE_SEG = flat("corvus-leg-base-seg", 64, HART_SEG5.sh);
 /** the bats' bodies and wings, apart; the composed sprite goes in each
  *  flyer's own cell */
-export const UV_STOOP5_BODY = uv(AN_X + 768, AN_Y, 128, 128);
-export const UV_STOOP5_WING = uv(AN_X + 896, AN_Y, 128, 128);
-export const UV_STOOP4_BODY = uv(AN_X + 64, AN_Y + 128, 64, 64);
-export const UV_STOOP4_WING = uv(AN_X + 128, AN_Y + 128, 64, 64);
-export const UV_STOOP3_BODY = uv(AN_X + 64, AN_Y + 192, 64, 64);
-export const UV_STOOP3_WING = uv(AN_X + 128, AN_Y + 192, 64, 64);
-export const UV_STOOP1_BODY = uv(AN_X + 192, AN_Y + 128, 64, 64);
-export const UV_STOOP1_WING = uv(AN_X + 256, AN_Y + 128, 64, 64);
-export const UV_STOOP2_BODY = uv(AN_X + 192, AN_Y + 192, 64, 64);
-export const UV_STOOP2_WING = uv(AN_X + 256, AN_Y + 192, 64, 64);
+export const UV_STOOP5_BODY = sprite("stoop5-body", 128, 128);
+export const UV_STOOP5_WING = sprite("stoop5-wing", 128, 128);
+export const UV_STOOP4_BODY = sprite("stoop4-body", 64, 64);
+export const UV_STOOP4_WING = sprite("stoop4-wing", 64, 64);
+export const UV_STOOP3_BODY = sprite("stoop3-body", 64, 64);
+export const UV_STOOP3_WING = sprite("stoop3-wing", 64, 64);
+export const UV_STOOP1_BODY = sprite("stoop1-body", 64, 64);
+export const UV_STOOP1_WING = sprite("stoop1-wing", 64, 64);
+export const UV_STOOP2_BODY = sprite("stoop2-body", 64, 64);
+export const UV_STOOP2_WING = sprite("stoop2-wing", 64, 64);
 
 /**
  * A flyer drawn in parts: a body quad and one wing quad mirrored to both
@@ -1724,84 +1555,6 @@ if (ANIMAL_ART) {
     legStroke: HART_SEG5.th * PX,
     legBaseStroke: HART_SEG5.sh * PX,
   };
-}
-
-/**
- * THE ANIMAL ART INTO THE SHEET, after every stock cell is drawn: each
- * part cleared and redrawn at native size, through the same antialias and
- * silhouette passes as the sprite files, and each body's team cell
- * requeued off the animal's own glow. Nothing under public/ is touched;
- * with the switch off this is never called and the sheet is the stock one.
- */
-function packAnimalArt(
-  c: CanvasRenderingContext2D,
-  teamCell: (kind: UnitKind, body: HTMLCanvasElement, cell: HTMLCanvasElement, bodyUV: UVRect, w: number, h?: number) => void,
-  dropCell: (kind: UnitKind) => void,
-): void {
-  const rectOf = (u: UVRect) => {
-    const x = Math.round(u[0] * ATLAS_W), y = Math.round(u[1] * ATLAS_H);
-    const w = Math.round((u[2] - u[0]) * ATLAS_W), h = Math.round((u[3] - u[1]) * ATLAS_H);
-    return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
-  };
-  const clear = (u: UVRect): void => { const r = rectOf(u); c.clearRect(r.x, r.y, r.w, r.h); };
-  // a part into its cell, centred at native size and facing +x like every
-  // unit sprite; a knee cap is packed upright because it is drawn unrotated
-  const part = (u: UVRect, art: HTMLCanvasElement, sil = false, upright = false): void => {
-    clear(u);
-    const r = rectOf(u);
-    const src = sil ? silhouetted(art) : antialiased(art);
-    if (upright) c.drawImage(src, Math.round(r.cx - art.width / 2), Math.round(r.cy - art.height / 2));
-    else drawFacingRight(c, src, r.cx, r.cy, art.width, art.height);
-  };
-  // a stretched segment on its exact rect
-  const seg = (u: UVRect, art: HTMLCanvasElement): void => { clear(u); const r = rectOf(u); c.drawImage(antialiased(art), r.x, r.y, r.w, r.h); };
-
-  // ---- Starhart ----
-  const mechCells = [
-    { kind: "nova" as const, body: UV_NOVA_BODY, base: UV_NOVA_BASE, leg: UV_NOVA_LEG, sil: { body: UV_NOVA_BODY_SIL, base: UV_NOVA_BASE_SIL, leg: UV_NOVA_LEG_SIL } },
-    { kind: "pulsar" as const, body: UV_PULSAR_BODY, base: UV_PULSAR_BASE, leg: UV_PULSAR_LEG, sil: { body: UV_PULSAR_BODY_SIL, base: UV_PULSAR_BASE_SIL, leg: UV_PULSAR_LEG_SIL } },
-    { kind: "quasar" as const, body: UV_QUASAR_BODY, base: UV_QUASAR_BASE, leg: UV_QUASAR_LEG, sil: { body: UV_QUASAR_BODY_SIL, base: UV_QUASAR_BASE_SIL, leg: UV_QUASAR_LEG_SIL } },
-  ];
-  mechCells.forEach((cells, i) => {
-    const T = HART_TIERS[i];
-    const a = hartMech(T);
-    const body = toCanvas(a.body), base = toCanvas(a.base), leg = toCanvas(a.leg);
-    part(cells.body, body); part(cells.base, base); part(cells.leg, leg);
-    part(cells.sil.body, body, true); part(cells.sil.base, base, true); part(cells.sil.leg, leg, true);
-    dropCell(cells.kind);
-    teamCell(cells.kind, body, toCanvas(a.cell), cells.body, T.n);
-  });
-  const legCells = [
-    { kind: "vela" as const, body: UV_VELA_BODY, base: UV_VELA_BASE, joint: UV_VELA_JOINT, baseJoint: UV_VELA_JOINT_BASE, foot: UV_VELA_FOOT, leg: UV_VELA_LEG_SEG, legBase: UV_VELA_LEG_BASE_SEG,
-      sil: { body: UV_VELA_BODY_SIL, base: UV_VELA_BASE_SIL, joint: UV_VELA_JOINT_SIL, baseJoint: UV_VELA_JOINT_BASE_SIL, foot: UV_VELA_FOOT_SIL } },
-    { kind: "corvus" as const, body: UV_CORVUS_BODY, base: UV_CORVUS_BASE, joint: UV_CORVUS_JOINT, baseJoint: UV_CORVUS_JOINT_BASE, foot: UV_CORVUS_FOOT, leg: UV_CORVUS_LEG_SEG, legBase: UV_CORVUS_LEG_BASE_SEG,
-      sil: { body: UV_CORVUS_BODY_SIL, base: UV_CORVUS_BASE_SIL, joint: UV_CORVUS_JOINT_SIL, baseJoint: UV_CORVUS_JOINT_BASE_SIL, foot: UV_CORVUS_FOOT_SIL } },
-  ];
-  legCells.forEach((cells, i) => {
-    const T = HART_TIERS[3 + i];
-    const a = hartLegged(T);
-    const body = toCanvas(a.body), base = toCanvas(a.base);
-    const foot = toCanvas(a.foot), joint = toCanvas(a.joint), baseJoint = toCanvas(a.baseJoint);
-    part(cells.body, body); part(cells.base, base); part(cells.foot, foot); part(cells.joint, joint, false, true); part(cells.baseJoint, baseJoint);
-    part(cells.sil.body, body, true); part(cells.sil.base, base, true); part(cells.sil.foot, foot, true); part(cells.sil.joint, joint, true, true); part(cells.sil.baseJoint, baseJoint, true);
-    seg(cells.leg, toCanvasRect(a.leg.px, a.leg.w, a.leg.h));
-    seg(cells.legBase, toCanvasRect(a.legBase.px, a.legBase.w, a.legBase.h));
-    dropCell(cells.kind);
-    teamCell(cells.kind, body, toCanvas(a.cell), cells.body, T.n);
-  });
-
-  // ---- Stoop ----
-  const fullCells: readonly UVRect[] = [UV_FLARE, UV_HORIZON, UV_ZENITH, UV_ANTUMBRA, UV_ECLIPSE];
-  STOOP_TIERS.forEach((T, i) => {
-    const a = stoop(T);
-    const full = toCanvas(a.full);
-    part(fullCells[i], full);
-    const [bodyUV, wingUV] = STOOP_CELLS[i];
-    part(bodyUV, toCanvas(a.body));
-    part(wingUV, toCanvas(a.wing));
-    dropCell(STOOP_KINDS[i]);
-    teamCell(STOOP_KINDS[i], full, toCanvas(a.cell), fullCells[i], T.n);
-  });
 }
 
 const ENV = "/mindustry/sprites/blocks/environment";
@@ -2442,34 +2195,159 @@ export async function unitIcon(
   return out.toDataURL();
 }
 
+// ---------------------------------------------------------------------
+// DRAWING INTO A CELL — the only way paint reaches the sheet
+// ---------------------------------------------------------------------
+
 /**
- * Mindustry sprites face up; our shader treats rotation 0 as facing +x.
- * Pre-rotate 90° clockwise at composite time so runtime rotation stays a
- * single angle.
+ * A source into its cell, the way the cell was declared: stretched to
+ * fill it, or at its native size centred in it; as authored, or turned
+ * a quarter turn clockwise so Mindustry's up-facing sprites face +x.
+ * The context is CLIPPED to the cell first, so nothing a draw does can
+ * land on a neighbour — an overhang (pulsar's 68px body in a 64 cell,
+ * the film round a trimmed beam sprite) is simply cut off.
+ *
+ * `size` overrides the native size for art whose extent the cell does
+ * not declare: the generated animal parts, and the two beam sprites
+ * whose cells hug the opaque region of a larger source. Without it, a
+ * native-size cell checks that the source IS the size it declared,
+ * because the gutter was sized from that declaration.
  */
-function drawFacingRight(
-  c: CanvasRenderingContext2D,
-  src: CanvasImageSource,
-  cx: number,
-  cy: number,
-  w: number,
-  h = w,
-): void {
+function drawCell(c: CanvasRenderingContext2D, uv: UVRect, src: Src, size?: readonly [number, number]): void {
+  const cell = cellOf(uv);
+  let w: number, h: number;
+  if (size) [w, h] = size;
+  else if (cell.art) {
+    w = srcW(src);
+    h = srcH(src);
+    if (w !== cell.art[0] || h !== cell.art[1])
+      throw new Error(`atlas cell ${cell.name} declares ${cell.art[0]}x${cell.art[1]} art and was handed ${w}x${h}`);
+  } else {
+    w = cell.w;
+    h = cell.h;
+  }
   c.save();
-  c.translate(cx, cy);
-  c.rotate(Math.PI / 2);
+  c.beginPath();
+  c.rect(cell.x, cell.y, cell.w, cell.h);
+  c.clip();
+  c.translate(cell.x + cell.w / 2, cell.y + cell.h / 2);
+  if (!cell.upright) c.rotate(Math.PI / 2);
   c.drawImage(src, -w / 2, -h / 2, w, h);
   c.restore();
 }
 
 /**
+ * Procedural paint into a cell: the callback gets the context clipped to
+ * the cell with the origin at the cell's top-left corner, and the cell's
+ * size and inset to draw against.
+ */
+function paintCell(
+  c: CanvasRenderingContext2D,
+  uv: UVRect,
+  fn: (c: CanvasRenderingContext2D, cell: { w: number; h: number; inset: number }) => void,
+): void {
+  const cell = cellOf(uv);
+  c.save();
+  c.beginPath();
+  c.rect(cell.x, cell.y, cell.w, cell.h);
+  c.clip();
+  c.translate(cell.x, cell.y);
+  fn(c, { w: cell.w, h: cell.h, inset: cell.inset });
+  c.restore();
+}
+
+/** a cell back to transparent, for art packed over stock art */
+function clearCell(c: CanvasRenderingContext2D, uv: UVRect): void {
+  const cell = cellOf(uv);
+  c.clearRect(cell.x, cell.y, cell.w, cell.h);
+}
+
+/**
+ * THE ANIMAL ART INTO THE SHEET, after every stock cell is drawn: each
+ * part cleared and redrawn at native size, through the same antialias and
+ * silhouette passes as the sprite files, and each body's team cell
+ * requeued off the animal's own glow. Nothing under public/ is touched;
+ * with the switch off this is never called and the sheet is the stock one.
+ */
+function packAnimalArt(
+  c: CanvasRenderingContext2D,
+  teamCell: (kind: UnitKind, body: HTMLCanvasElement, cell: HTMLCanvasElement, bodyUV: UVRect, w: number, h?: number) => void,
+  dropCell: (kind: UnitKind) => void,
+): void {
+  // a part into its cell at native size, the way the cell is declared
+  // (a knee cap's cell is upright, because it is drawn unrotated)
+  const part = (u: UVRect, art: HTMLCanvasElement, sil = false): void => {
+    clearCell(c, u);
+    drawCell(c, u, sil ? silhouetted(art) : antialiased(art), [art.width, art.height]);
+  };
+  // a stretched segment on its exact rect
+  const seg = (u: UVRect, art: HTMLCanvasElement): void => {
+    clearCell(c, u);
+    drawCell(c, u, antialiased(art));
+  };
+
+  // ---- Starhart ----
+  const mechCells = [
+    { kind: "nova" as const, body: UV_NOVA_BODY, base: UV_NOVA_BASE, leg: UV_NOVA_LEG, sil: { body: UV_NOVA_BODY_SIL, base: UV_NOVA_BASE_SIL, leg: UV_NOVA_LEG_SIL } },
+    { kind: "pulsar" as const, body: UV_PULSAR_BODY, base: UV_PULSAR_BASE, leg: UV_PULSAR_LEG, sil: { body: UV_PULSAR_BODY_SIL, base: UV_PULSAR_BASE_SIL, leg: UV_PULSAR_LEG_SIL } },
+    { kind: "quasar" as const, body: UV_QUASAR_BODY, base: UV_QUASAR_BASE, leg: UV_QUASAR_LEG, sil: { body: UV_QUASAR_BODY_SIL, base: UV_QUASAR_BASE_SIL, leg: UV_QUASAR_LEG_SIL } },
+  ];
+  mechCells.forEach((cells, i) => {
+    const T = HART_TIERS[i];
+    const a = hartMech(T);
+    const body = toCanvas(a.body), base = toCanvas(a.base), leg = toCanvas(a.leg);
+    part(cells.body, body); part(cells.base, base); part(cells.leg, leg);
+    part(cells.sil.body, body, true); part(cells.sil.base, base, true); part(cells.sil.leg, leg, true);
+    dropCell(cells.kind);
+    teamCell(cells.kind, body, toCanvas(a.cell), cells.body, T.n);
+  });
+  const legCells = [
+    { kind: "vela" as const, body: UV_VELA_BODY, base: UV_VELA_BASE, joint: UV_VELA_JOINT, baseJoint: UV_VELA_JOINT_BASE, foot: UV_VELA_FOOT, leg: UV_VELA_LEG_SEG, legBase: UV_VELA_LEG_BASE_SEG,
+      sil: { body: UV_VELA_BODY_SIL, base: UV_VELA_BASE_SIL, joint: UV_VELA_JOINT_SIL, baseJoint: UV_VELA_JOINT_BASE_SIL, foot: UV_VELA_FOOT_SIL } },
+    { kind: "corvus" as const, body: UV_CORVUS_BODY, base: UV_CORVUS_BASE, joint: UV_CORVUS_JOINT, baseJoint: UV_CORVUS_JOINT_BASE, foot: UV_CORVUS_FOOT, leg: UV_CORVUS_LEG_SEG, legBase: UV_CORVUS_LEG_BASE_SEG,
+      sil: { body: UV_CORVUS_BODY_SIL, base: UV_CORVUS_BASE_SIL, joint: UV_CORVUS_JOINT_SIL, baseJoint: UV_CORVUS_JOINT_BASE_SIL, foot: UV_CORVUS_FOOT_SIL } },
+  ];
+  legCells.forEach((cells, i) => {
+    const T = HART_TIERS[3 + i];
+    const a = hartLegged(T);
+    const body = toCanvas(a.body), base = toCanvas(a.base);
+    const foot = toCanvas(a.foot), joint = toCanvas(a.joint), baseJoint = toCanvas(a.baseJoint);
+    part(cells.body, body); part(cells.base, base); part(cells.foot, foot); part(cells.joint, joint); part(cells.baseJoint, baseJoint);
+    part(cells.sil.body, body, true); part(cells.sil.base, base, true); part(cells.sil.foot, foot, true); part(cells.sil.joint, joint, true); part(cells.sil.baseJoint, baseJoint, true);
+    seg(cells.leg, toCanvasRect(a.leg.px, a.leg.w, a.leg.h));
+    seg(cells.legBase, toCanvasRect(a.legBase.px, a.legBase.w, a.legBase.h));
+    dropCell(cells.kind);
+    teamCell(cells.kind, body, toCanvas(a.cell), cells.body, T.n);
+  });
+
+  // ---- Stoop ----
+  const fullCells: readonly UVRect[] = [UV_FLARE, UV_HORIZON, UV_ZENITH, UV_ANTUMBRA, UV_ECLIPSE];
+  STOOP_TIERS.forEach((T, i) => {
+    const a = stoop(T);
+    const full = toCanvas(a.full);
+    part(fullCells[i], full);
+    const [bodyUV, wingUV] = STOOP_CELLS[i];
+    part(bodyUV, toCanvas(a.body));
+    part(wingUV, toCanvas(a.wing));
+    dropCell(STOOP_KINDS[i]);
+    teamCell(STOOP_KINDS[i], full, toCanvas(a.cell), fullCells[i], T.n);
+  });
+}
+
+/** transparent margin round every packed team cell — the sheet's mip-3
+ *  texel is eight px, so this keeps a shrunken read inside its own cell */
+const TEAM_CELL_PAD = 8;
+
+/**
  * Composites the Mindustry sprites (GPL-3.0, github.com/Anuken/Mindustry)
  * into the game's single texture atlas. Swap any region — or the whole
  * source set — for custom art without touching the render pipeline.
+ *
+ * Every draw names the cell it goes into and nothing else: where that
+ * cell is was the packer's decision (see reserve), and drawCell clips to
+ * it. There is no coordinate in this function.
  */
 async function packAtlas(): Promise<HTMLCanvasElement> {
-  // before a single texel is drawn: the layout has to be a layout
-  assertCellsDisjoint();
   const img = await loadImages();
   const a = document.createElement("canvas");
   a.width = ATLAS_W;
@@ -2478,18 +2356,22 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   if (!c) throw new Error("2d context unavailable for atlas build");
   c.imageSmoothingEnabled = false; // integer upscales keep the pixel art crisp
 
+  const draw = (uv: UVRect, src: Src, size?: readonly [number, number]): void => drawCell(c, uv, src, size);
+  const outlinedUnit = (src: HTMLImageElement): HTMLCanvasElement =>
+    antialiased(outlined(src, UNIT_OUTLINE, UNIT_OUTLINE_R));
+  const outlinedBlock = (src: HTMLImageElement): HTMLCanvasElement =>
+    antialiased(outlined(src, BLOCK_OUTLINE, BLOCK_OUTLINE_R));
+
   /**
    * A BODY'S TEAM CELL, taken off the same pair of sprites the hull is
-   * drawn from and queued for the blocks above (TEAM_CELL_BLOCKS).
+   * drawn from and queued for packing last.
    *
    * `bodyUV` is the cell the hull itself is packed into and `w`/`h` the
-   * size it is drawn at inside it — the same two numbers handed to
-   * drawFacingRight one line above every call — because the cell has to
-   * come out on the hull's own scale and be reported as a fraction of the
-   * hull's quad. Nothing is drawn here: the art is cropped to what it
-   * actually covers and the placement left to packTeamCells, which packs
-   * the tallest first and would waste half a block taking them in the
-   * order the sheet happens to draw its units in.
+   * size it is drawn at inside it, because the cell has to come out on
+   * the hull's own scale and be reported as a fraction of the hull's
+   * quad. Nothing is drawn here: the art is cropped to what it actually
+   * covers and the placement left to packTeamCells, once every body is
+   * known — the animal trial requeues the ones it redraws.
    */
   const cellJobs: {
     kind: UnitKind;
@@ -2521,119 +2403,70 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
       srcH: srcH(body),
       sx: w / srcW(body),
       sy: h / srcH(body),
-      cellW: Math.round((bodyUV[2] - bodyUV[0]) * ATLAS_W),
-      cellH: Math.round((bodyUV[3] - bodyUV[1]) * ATLAS_H),
+      cellW: cellOf(bodyUV).w,
+      cellH: cellOf(bodyUV).h,
     });
   };
 
   /**
-   * The queued cells into the two blocks, and UNIT_CELL filled in.
+   * The queued cells onto the sheet, and UNIT_CELL filled in.
    *
-   * Every cell is drawn through drawFacingRight's own turn, like the hull
-   * it belongs to, so the two sit in the sheet on the same axes and the
+   * A team cell is the one thing whose size is only known once the art
+   * has been cropped, which is why it is reserved HERE rather than with
+   * the rest of the sheet — the packer does not mind when it is asked.
+   * Every cell is drawn through the same quarter turn as the hull it
+   * belongs to, so the two sit in the sheet on the same axes and the
    * renderer can put one over the other with the body's rotation and
    * nothing else. A crop's offset from the hull's centre goes round the
-   * same quarter turn (the sprite's +x is the sheet's +x, its +y the
-   * sheet's +y), which is what `dx`/`dy` are.
-   *
-   * A shelf packer, tallest first: rows across a block, a new row when the
-   * next cell will not fit, the next block when the rows run out. Thirty
-   * cells is not worth a better one, and running out of room is a build
-   * error rather than a silently overlapped sheet.
+   * same turn (the sprite's +x is the sheet's +x, its +y the sheet's +y),
+   * which is what `dx`/`dy` are.
    */
   const packTeamCells = (): void => {
-    let bi = 0;
-    let bx = TEAM_CELL_BLOCKS[0].x, by = TEAM_CELL_BLOCKS[0].y, rowH = 0;
-    for (const j of [...cellJobs].sort((a, b) => b.crop.w * b.sx - a.crop.w * a.sx)) {
+    for (const j of cellJobs) {
       // the crop at the scale the hull is drawn at, in the sprite's frame
       const lw = j.crop.w * j.sx, lh = j.crop.h * j.sy;
       // ...and on the sheet, where the quarter turn swaps the two axes
       const pw = Math.ceil(lh) + TEAM_CELL_PAD * 2, ph = Math.ceil(lw) + TEAM_CELL_PAD * 2;
-      let block = TEAM_CELL_BLOCKS[bi];
-      if (bx + pw > block.x + block.w) {
-        bx = block.x;
-        by += rowH;
-        rowH = 0;
-      }
-      if (by + ph > block.y + block.h) {
-        if (++bi >= TEAM_CELL_BLOCKS.length)
-          throw new Error("the team cells outgrew their blocks (game/atlas.ts)");
-        block = TEAM_CELL_BLOCKS[bi];
-        bx = block.x;
-        by = block.y;
-        rowH = 0;
-      }
-      c.save();
-      c.translate(bx + pw / 2, by + ph / 2);
-      c.rotate(Math.PI / 2);
-      c.drawImage(j.art, j.crop.x, j.crop.y, j.crop.w, j.crop.h, -lw / 2, -lh / 2, lw, lh);
-      c.restore();
+      const uv = reserve(`${j.kind}-cell`, pw, ph, { art: [pw - TEAM_CELL_PAD * 2, ph - TEAM_CELL_PAD * 2] });
+      paintCell(c, uv, (cc, cell) => {
+        cc.translate(cell.w / 2, cell.h / 2);
+        cc.rotate(Math.PI / 2);
+        cc.drawImage(j.art, j.crop.x, j.crop.y, j.crop.w, j.crop.h, -lw / 2, -lh / 2, lw, lh);
+      });
       // the crop's centre off the hull's, in the sprite's frame and then
       // on the sheet's axes — the same turn the art just went through
       const ox = (j.crop.x + j.crop.w / 2 - j.srcW / 2) * j.sx;
       const oy = (j.crop.y + j.crop.h / 2 - j.srcH / 2) * j.sy;
       UNIT_CELL[j.kind] = {
-        uv: [bx / ATLAS_W, by / ATLAS_H, (bx + pw) / ATLAS_W, (by + ph) / ATLAS_H],
+        uv,
         w: pw / j.cellW,
         h: ph / j.cellH,
         dx: -oy / j.cellW,
         dy: ox / j.cellH,
       };
-      bx += pw;
-      rowH = Math.max(rowH, ph);
     }
   };
 
+  // ---------- the terrain ----------
   // THE LAND FLOORS: painted, not loaded (game/tiles.ts). Each floor has
   // two paintings — one with a single mark on it, one plain — and three
   // slots, because every table downstream is three wide. The plain one
   // takes TWO of the three, so a mark lands on one cell in three: any
   // denser and the ground reads as a field of dots. They are 32px like
   // the sprites they replaced and ride the same antialias pass into the
-  // same 64px cells
+  // same 64px cells.
+  //
+  // WATER: each 32px source tiled 3x3 at NATIVE size and antialiased ONCE
+  // over the whole block, not once per copy. That ordering is the
+  // difference between a sea and a chessboard: Pixmaps.antialias clips at
+  // its input's edge, so nine separately-AA'd tiles carry nine sets of
+  // clipped borders and the 64px grid of them is plainly visible across
+  // open water. Tiled first, every interior seam has its true neighbour to
+  // average against and disappears. The centre 64 is the tile a floor
+  // quad draws; the ring is the headroom the shader displaces into
   const floor = (kind: FloorKind, slot: number): HTMLCanvasElement =>
     floorCanvas(kind, slot === 0 ? 0 : 1);
-  c.drawImage(antialiased(floor("grass", 0)), 0, 0, 64, 64);
-  c.drawImage(antialiased(floor("grass", 1)), 64, 0, 64, 64);
-  c.drawImage(antialiased(floor("grass", 2)), 128, 0, 64, 64);
-  // THE WALLS ARE PAINTED TOO (game/tiles.ts): two blocks a family, and a
-  // 2×2 block where the family has a large cell. They ride the same
-  // antialias pass the floors do
-  const wall = (kind: WallKind, slot: number): HTMLCanvasElement =>
-    wallCanvas(kind, slot % WALL_VARIANTS);
-  const wallLarge = (kind: WallKind): HTMLCanvasElement => wallCanvas(kind, 0, 2);
-  c.drawImage(antialiased(wall("stone", 0)), 192, 0, 64, 64);
-  c.drawImage(antialiased(wall("stone", 1)), 256, 0, 64, 64);
-  c.drawImage(antialiased(floor("stone", 0)), 64, 64, 64, 64);
-  c.drawImage(antialiased(floor("stone", 1)), 128, 64, 64, 64);
-  c.drawImage(antialiased(floor("stone", 2)), 192, 64, 64, 64);
-  c.drawImage(antialiased(floor("dirt", 0)), 256, 64, 64, 64);
-  c.drawImage(antialiased(floor("dirt", 1)), 320, 64, 64, 64);
-  c.drawImage(antialiased(floor("dirt", 2)), 384, 64, 64, 64);
-  c.drawImage(antialiased(wall("dirt", 0)), 448, 64, 64, 64);
-  c.drawImage(antialiased(wall("dirt", 1)), 0, 128, 64, 64);
-  c.drawImage(antialiased(wall("dark", 0)), 320, 0, 64, 64);
-  c.drawImage(antialiased(wall("dark", 1)), 384, 0, 64, 64);
-  // desert floors on row 0's free tail (see the UV_FLOORS note)
-  c.drawImage(antialiased(floor("sand", 0)), 576, 0, 64, 64);
-  c.drawImage(antialiased(floor("sand", 1)), 640, 0, 64, 64);
-  c.drawImage(antialiased(floor("sand", 2)), 704, 0, 64, 64);
-  c.drawImage(antialiased(floor("darksand", 0)), 768, 0, 64, 64);
-  c.drawImage(antialiased(floor("darksand", 1)), 832, 0, 64, 64);
-  c.drawImage(antialiased(floor("darksand", 2)), 896, 0, 64, 64);
-  // water: each 32px source antialiased once, then blitted 3x3 at the same
-  // 2x tile scale into its own 192px cell. The centre 64 is the tile a
-  // floor quad draws; the ring is the headroom the water shader displaces
-  // into (see the WATER_TILE note)
-  //
-  // The tiling happens at NATIVE size and the antialias pass runs ONCE over
-  // the whole block, not once per copy. That ordering is the difference
-  // between a sea and a chessboard: Pixmaps.antialias clips at its input's
-  // edge, so nine separately-AA'd tiles carry nine sets of clipped borders
-  // and the 64px grid of them is plainly visible across open water. Tiled
-  // first, every interior seam has its true neighbour to average against
-  // and disappears
-  const waterCell = (src: HTMLImageElement, [wx, wy]: readonly [number, number]): void => {
+  const waterBlock = (src: HTMLImageElement): HTMLCanvasElement => {
     const reps = WATER_TILE / 64;
     const block = document.createElement("canvas");
     block.width = block.height = 32 * reps;
@@ -2642,15 +2475,13 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
     bc.imageSmoothingEnabled = false;
     for (let ry = 0; ry < reps; ry++)
       for (let rx = 0; rx < reps; rx++) bc.drawImage(src, rx * 32, ry * 32, 32, 32);
-    c.drawImage(antialiased(block), wx, wy, WATER_TILE, WATER_TILE);
+    return antialiased(block);
   };
-  waterCell(img.shallowWater, WATER_SHALLOW_XY);
-  waterCell(img.deepWater, WATER_DEEP_XY);
-  // 2x2-tile "-large" wall art: 64px sources at the same 2x tile scale,
-  // in the free block right of the dirt edge fades
-  c.drawImage(antialiased(wallLarge("stone")), 736, 768, 128, 128);
-  c.drawImage(antialiased(wallLarge("dark")), 864, 768, 128, 128);
-  c.drawImage(antialiased(img.spawnPad), 0, 192, 64, 64);
+  FLOOR_GROUPS.forEach((g, i) => {
+    const cells = FLOOR_CELLS[i];
+    if ("water" in g) draw(cells[0], waterBlock(img[g.water]));
+    else cells.forEach((cell, slot) => draw(cell, antialiased(floor(g.kind, slot))));
+  });
 
   // floor edge fades, generated exactly like the game's sprite packer
   // (tools Generators.java "edge stencils"): the floor texture tiled 3x3 at
@@ -2670,519 +2501,276 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
     ec.drawImage(img.edgeStencil, 0, 0);
     return e;
   };
-  // the pack task antialiases generated edges like everything else
-  c.drawImage(antialiased(makeEdge(floor("grass", 0))), 16, 768, 192, 192);
-  c.drawImage(antialiased(makeEdge(floor("stone", 0))), 272, 768, 192, 192);
-  c.drawImage(antialiased(makeEdge(floor("dirt", 0))), 528, 768, 192, 192);
-  // darksand's edge fade, sliced into its nine scattered cells (see the
-  // UV_FLOOR_EDGES note) — AA'd whole first, exactly once, like the blocks
-  const dsEdge = antialiased(makeEdge(floor("darksand", 0)));
-  for (let ry = 0; ry < 3; ry++)
-    for (let rx = 0; rx < 3; rx++)
-      c.drawImage(dsEdge, rx * 32, ry * 32, 32, 32, 416 + (ry * 3 + rx) * 64, 704, 64, 64);
-
-  // THE PROPS ARE PAINTED TOO (game/tiles.ts): each at its native size,
-  // 2x into a cell cut to it, through the same antialias pass
-  const prop = (kind: PropKind, dx: number, dy: number, cell: number): void =>
-    c.drawImage(antialiased(propCanvas(kind)), dx, dy, cell, cell);
-  prop("pine", 0, 288, 96);
-  prop("boulder0", 96, 288, 96);
-  prop("boulder1", 192, 288, 96);
-  prop("shrubs", 288, 288, 64);
-
-  // ---------- the second environment band ----------
-  // Same rules as row 0, one block over: 32px floor and wall sources at 2x
-  // into 64px cells, 64px "-large" art at 2x into 128px cells, props at 2x
-  // into cells cut to their own art, and a generated edge fade per land
-  // family. The only reason it is written as loops rather than as the
-  // hand-placed calls above is that there are eight families of each and a
-  // list is the honest way to say so
-  const at2 = (key: SpriteKey, dx: number, dy: number, cell: number): void =>
-    c.drawImage(antialiased(img[key]), ENV2_X + dx, ENV2_Y + dy, cell, cell);
-  // the band's land floors, painted like row 0's: three slots a family,
-  // the third turned (see `floor` above); salt has the one cell
-  const floors2: FloorKind[] = ["moss", "sporeMoss", "mud", "shale", "snow"];
-  floors2.forEach((k, i) => {
-    for (let slot = 0; slot < 3; slot++)
-      c.drawImage(antialiased(floor(k, slot)), ENV2_X + (i * 3 + slot) * 64, ENV2_Y, 64, 64);
+  EDGE_KINDS.forEach((k, i) => {
+    if (k) draw(EDGE_CELLS[i]!, antialiased(makeEdge(floor(k, 0))));
   });
-  c.drawImage(antialiased(floor("salt", 0)), ENV2_X + 960, ENV2_Y, 64, 64);
-  (["ice", "basalt"] as FloorKind[]).forEach((k, i) => {
-    for (let slot = 0; slot < 3; slot++)
-      c.drawImage(antialiased(floor(k, slot)), ENV2_X + (i * 3 + slot) * 64, ENV2_Y + 64, 64, 64);
+
+  // THE WALLS ARE PAINTED TOO (game/tiles.ts): two blocks a family, and a
+  // 2×2 block where the family has a large cell, through the same
+  // antialias pass the floors take
+  WALL_KINDS_IN_ORDER.forEach((k, i) => {
+    if (k) WALL_CELLS[i]!.forEach((cell, v) => draw(cell, antialiased(wallCanvas(k, v % WALL_VARIANTS))));
   });
-  // the band's walls, painted: a pair a family in UV_WALLS order, and the
-  // 2×2 blocks on their own row in UV_WALL_LARGE order
-  const rowB: WallKind[] = ["spore", "shale", "snow", "ice", "salt"];
-  rowB.forEach((k, i) => {
-    for (let v = 0; v < 2; v++)
-      c.drawImage(antialiased(wall(k, v)), ENV2_X + (6 + i * 2 + v) * 64, ENV2_Y + 64, 64, 64);
+  LARGE_KINDS.forEach((k, i) => {
+    if (k) draw(LARGE_CELLS[i]!, antialiased(wallCanvas(k, 0, 2)));
   });
-  const rowC: WallKind[] = ["sand", "dune", "dacite"];
-  rowC.forEach((k, i) => {
-    for (let v = 0; v < 2; v++)
-      c.drawImage(antialiased(wall(k, v)), ENV2_X + (i * 2 + v) * 64, ENV2_Y + 128, 64, 64);
-  });
-  const larges: WallKind[] = ["spore", "shale", "snow", "ice", "salt", "sand", "dune", "dacite"];
-  larges.forEach((k, i) =>
-    c.drawImage(antialiased(wallLarge(k)), ENV2_X + i * 128, ENV2_Y + 224, 128, 128),
-  );
-  // the band's props, painted, each in a cell cut to its own size at 2x
-  const prop2 = (kind: PropKind, dx: number, dy: number, cell: number): void =>
-    prop(kind, ENV2_X + dx, ENV2_Y + dy, cell);
-  prop2("sporePine", 384, 128, 96);
-  prop2("snowPine", 480, 128, 96);
-  prop2("sporeCluster0", 576, 128, 80);
-  prop2("sporeCluster1", 656, 128, 80);
-  prop2("sporeCluster2", 736, 128, 80);
-  prop2("purBush", 816, 128, 64);
-  prop2("shaleBoulder0", 880, 128, 64);
-  prop2("shaleBoulder1", 944, 128, 64);
-  prop2("snowBoulder0", 0, 352, 96);
-  prop2("snowBoulder1", 96, 352, 96);
-  prop2("shrubs2", 192, 352, 64);
-  prop2("sandBoulder0", 256, 352, 64);
-  prop2("sandBoulder1", 320, 352, 64);
-  // one generated edge fade per land family, in UV_FLOOR_EDGES order
-  const edges: FloorKind[] = ["moss", "sporeMoss", "mud", "shale", "snow"];
-  edges.forEach((k, i) =>
-    c.drawImage(antialiased(makeEdge(floor(k, 0))), ENV2_X + i * 192, ENV2_Y + 448, 192, 192),
-  );
-  const edges2: FloorKind[] = ["ice", "basalt", "salt"];
-  edges2.forEach((k, i) =>
-    c.drawImage(antialiased(makeEdge(floor(k, 0))), ENV2_X + i * 192, ENV2_Y + 640, 192, 192),
-  );
-  waterCell(img.taintedWater, WATER_TAINTED_XY);
-  waterCell(img.deepTaintedWater, WATER_DEEP_TAINTED_XY);
 
-  // mech parts (row y=576, 128px pitch — see the UV block note): each
-  // source centered at native size in its own 64px cell so the renderer can
-  // animate legs, chassis, guns and body as separate quads. The leg sprite
-  // is pre-offset to one side — the renderer mirrors it for the other leg
-  drawFacingRight(c, antialiased(img.daggerLeg), 64, 608, 48);
-  drawFacingRight(c, antialiased(img.daggerBase), 192, 608, 48);
-  drawFacingRight(c, antialiased(img.dagger), 320, 608, 48);
-  teamCell("dagger", img.dagger, img.powerCell, UV_DAGGER_BODY, 48);
-  drawFacingRight(c, antialiased(img.largeWeapon), 448, 608, 48);
-  drawFacingRight(c, antialiased(img.maceLeg), 576, 608, 64);
-  drawFacingRight(c, antialiased(img.maceBase), 704, 608, 64);
-  drawFacingRight(c, antialiased(img.mace), 832, 608, 64);
-  teamCell("mace", img.mace, img.maceCell, UV_MACE_BODY, 64);
-  // flamethrower is 48x56 — rotate it to face +x by hand
-  c.save();
-  c.translate(960, 608);
-  c.rotate(Math.PI / 2);
-  c.drawImage(antialiased(img.flamethrower), -24, -28, 48, 56);
-  c.restore();
+  // THE PROPS ARE PAINTED TOO (game/tiles.ts): each at its native size, 2x
+  // into a cell cut to it, through the same antialias pass
+  PINE_KINDS.forEach((k, i) => draw(UV_PINES[i], antialiased(propCanvas(k))));
+  DECOR_KINDS.forEach(([k], i) => draw(UV_DECOR[i], antialiased(propCanvas(k))));
+  draw(UV_SPAWN, antialiased(img.spawnPad));
 
-  // fortress parts at native size in their 128px cells (see the UV note)
-  drawFacingRight(c, antialiased(img.fortressLeg), 576, 448, 80, 60);
-  drawFacingRight(c, antialiased(img.fortressBase), 704, 448, 64);
-  drawFacingRight(c, antialiased(img.fortress), 832, 448, 100, 80);
-  teamCell("fortress", img.fortress, img.fortressCell, UV_FORTRESS_BODY, 100, 80);
-  drawFacingRight(c, antialiased(img.artillery), 960, 448, 48, 56);
-
-  // support line: each part at native size in its own cell, art left of the
-  // silhouettes on the same row (see the UV note)
-  drawFacingRight(c, antialiased(img.novaLeg), 64, 544, 48);
-  drawFacingRight(c, antialiased(img.novaBase), 192, 544, 48);
-  drawFacingRight(c, antialiased(img.nova), 320, 544, 56);
-  teamCell("nova", img.nova, img.novaCell, UV_NOVA_BODY, 56);
-  drawFacingRight(c, antialiased(img.healWeapon), 448, 544, 48);
-  drawFacingRight(c, silhouetted(img.novaLeg), 576, 544, 48);
-  drawFacingRight(c, silhouetted(img.novaBase), 704, 544, 48);
-  drawFacingRight(c, silhouetted(img.nova), 832, 544, 56);
-  drawFacingRight(c, silhouetted(img.healWeapon), 960, 544, 48);
-  drawFacingRight(c, antialiased(img.pulsarLeg), 64, 672, 64);
-  drawFacingRight(c, antialiased(img.pulsarBase), 192, 672, 48);
-  drawFacingRight(c, antialiased(img.pulsar), 320, 672, 68, 58);
-  teamCell("pulsar", img.pulsar, img.pulsarCell, UV_PULSAR_BODY, 68, 58);
-  drawFacingRight(c, antialiased(img.healShotgun), 448, 672, 50);
-  drawFacingRight(c, silhouetted(img.pulsarLeg), 576, 672, 64);
-  drawFacingRight(c, silhouetted(img.pulsarBase), 704, 672, 48);
-  drawFacingRight(c, silhouetted(img.pulsar), 832, 672, 68, 58);
-  drawFacingRight(c, silhouetted(img.healShotgun), 960, 672, 50);
-  // quasar's four parts on the 128px row (see the UV note): each 80x80
-  // source at native size, so it keeps the 0.625 world-px-per-native-px
-  // every other unit draws at
-  drawFacingRight(c, antialiased(img.quasarLeg), 64, 1728, 80);
-  drawFacingRight(c, antialiased(img.quasarBase), 192, 1728, 80);
-  drawFacingRight(c, antialiased(img.quasar), 320, 1728, 80);
-  teamCell("quasar", img.quasar, img.quasarCell, UV_QUASAR_BODY, 80);
-  drawFacingRight(c, antialiased(img.beamWeapon), 448, 1728, 80);
-  drawFacingRight(c, silhouetted(img.quasarLeg), 576, 1728, 80);
-  drawFacingRight(c, silhouetted(img.quasarBase), 704, 1728, 80);
-  drawFacingRight(c, silhouetted(img.quasar), 832, 1728, 80);
-  drawFacingRight(c, silhouetted(img.beamWeapon), 960, 1728, 80);
-
-  // scepter parts on the T4 band's 256px cells (see the UV note): each
-  // source at native size, so it keeps the 0.625 world px per native px
-  // every other unit draws at
-  drawFacingRight(c, antialiased(img.scepter), 128, 2176, 170, 140);
-  teamCell("scepter", img.scepter, img.scepterCell, UV_SCEPTER_BODY, 170, 140);
-  drawFacingRight(c, silhouetted(img.scepter), 384, 2176, 170, 140);
-  drawFacingRight(c, antialiased(img.scepterLeg), 640, 2176, 128);
-  drawFacingRight(c, silhouetted(img.scepterLeg), 896, 2176, 128);
-  drawFacingRight(c, antialiased(img.scepterBase), 128, 2432, 128);
-  drawFacingRight(c, silhouetted(img.scepterBase), 384, 2432, 128);
-  drawFacingRight(c, antialiased(img.scepterWeapon), 640, 2432, 56, 102);
-  drawFacingRight(c, silhouetted(img.scepterWeapon), 896, 2432, 56, 102);
-  drawFacingRight(c, antialiased(img.scepterMount), 128, 2688, 48);
-  drawFacingRight(c, silhouetted(img.scepterMount), 384, 2688, 48);
-
-  // vela's parts on the second T4 band, same 256px cells and same native
-  // scale. Its main gun has no sprite (see the MECH_ART note) — the pair
-  // of repair-beam pods is all there is to bolt on
-  drawFacingRight(c, antialiased(img.vela), 128, 3200, 170, 140);
-  teamCell("vela", img.vela, img.velaCell, UV_VELA_BODY, 170, 140);
-  drawFacingRight(c, silhouetted(img.vela), 384, 3200, 170, 140);
-  drawFacingRight(c, antialiased(img.velaLeg), 640, 3200, 128);
-  drawFacingRight(c, silhouetted(img.velaLeg), 896, 3200, 128);
-  drawFacingRight(c, antialiased(img.velaBase), 128, 3456, 128);
-  drawFacingRight(c, silhouetted(img.velaBase), 384, 3456, 128);
-  drawFacingRight(c, antialiased(img.repairBeam), 640, 3456, 48);
-  drawFacingRight(c, silhouetted(img.repairBeam), 896, 3456, 48);
-
-  // arkyid: hull and guns on 256px cells, the sap gun being the spiroct's
-  // own weapon sprite again — packed a second time here because a legged
-  // unit draws every gun at its own LegArt.sprite, and arkyid's is 256
-  drawFacingRight(c, antialiased(img.arkyid), 128, 3712, 128);
-  teamCell("arkyid", img.arkyid, img.arkyidCell, UV_ARKYID_BODY, 128);
-  drawFacingRight(c, silhouetted(img.arkyid), 384, 3712, 128);
-  drawFacingRight(c, antialiased(img.spiroctWeapon), 640, 3712, 48, 56);
-  drawFacingRight(c, silhouetted(img.spiroctWeapon), 896, 3712, 48, 56);
-  drawFacingRight(c, antialiased(img.purpleMount), 128, 3968, 70, 97);
-  drawFacingRight(c, silhouetted(img.purpleMount), 384, 3968, 70, 97);
-  // arkyid's feet and shoulder plates on 128px cells, and the two leg
-  // SEGMENTS on the exact rects their UVs name — a stretched segment
-  // samples its cell corner to corner (see the UV note). The base joint
-  // turns with the unit, unlike a knee cap, so it is packed facing +x
-  drawFacingRight(c, antialiased(img.arkyidFoot), 576, 2624, 70);
-  drawFacingRight(c, silhouetted(img.arkyidFoot), 704, 2624, 70);
-  drawFacingRight(c, antialiased(img.arkyidJointBase), 832, 2624, 70);
-  drawFacingRight(c, silhouetted(img.arkyidJointBase), 960, 2624, 70);
-  c.drawImage(antialiased(img.arkyidLeg), 528, 2704, 56, 56);
-  c.drawImage(antialiased(img.arkyidLegBase), 640, 2700, 104, 64);
-
-  // antumbra: the same single-sprite treatment as every other flyer, at
-  // native size in a 256px cell — at 216x240 only eclipse is bigger, and
-  // it leaves only an 8px margin across its own cell
-  drawFacingRight(
-    c, antialiased(outlined(img.antumbra, UNIT_OUTLINE, UNIT_OUTLINE_R)),
-    640, 3968, 216, 240,
-  );
-  teamCell("antumbra", img.antumbra, img.antumbraCell, UV_ANTUMBRA, 216, 240);
-
-  // disrupt: the boss, same single-quad flyer treatment as antumbra, at
-  // native 243x243 in the cell beside it
-  drawFacingRight(
-    c, antialiased(outlined(img.disrupt, UNIT_OUTLINE, UNIT_OUTLINE_R)),
-    896, 3968, 243, 243,
-  );
-  teamCell("disrupt", img.disrupt, img.disruptCell, UV_DISRUPT, 243, 243);
-
-  // ---- the T5 column (x=1024) ----
-  // reign: a mech like the scepter, so the same four parts on 256px cells.
-  // reign-weapon is Weapon(x=21.5, y=1, top=false) — a gun slung under
-  // each side of a chassis wide enough to carry it
-  drawFacingRight(c, antialiased(img.reign), T5 + 128, 128, 214, 140);
-  teamCell("reign", img.reign, img.reignCell, UV_REIGN_BODY, 214, 140);
-  drawFacingRight(c, silhouetted(img.reign), T5 + 384, 128, 214, 140);
-  drawFacingRight(c, antialiased(img.reignBase), T5 + 640, 128, 152, 124);
-  drawFacingRight(c, silhouetted(img.reignBase), T5 + 896, 128, 152, 124);
-  drawFacingRight(c, antialiased(img.reignLeg), T5 + 128, 384, 152, 124);
-  drawFacingRight(c, silhouetted(img.reignLeg), T5 + 384, 384, 152, 124);
-  drawFacingRight(c, antialiased(img.reignWeapon), T5 + 640, 384, 83, 138);
-  drawFacingRight(c, silhouetted(img.reignWeapon), T5 + 896, 384, 83, 138);
-
-  // corvus: hull and the plate its four legs mount to. It has NO gun cell
-  // — Mindustry's Weapon("corvus-weapon") names a region that does not
-  // exist in the sprite set (only a -heat overlay does), and Weapon.draw
-  // skips a region it cannot find, so the charged laser you see in game is
-  // painted into the hull itself. Same as the vela one tier below it
-  drawFacingRight(c, antialiased(img.corvus), T5 + 128, 640, 214, 140);
-  teamCell("corvus", img.corvus, img.corvusCell, UV_CORVUS_BODY, 214, 140);
-  drawFacingRight(c, silhouetted(img.corvus), T5 + 384, 640, 214, 140);
-  drawFacingRight(c, antialiased(img.corvusBase), T5 + 640, 640, 152, 124);
-  drawFacingRight(c, silhouetted(img.corvusBase), T5 + 896, 640, 152, 124);
-
-  // toxopid: hull and the one centered cannon (mirror=false, x=0, y=-14).
-  // Its other weapon is the large purple mount the arkyid already carries,
-  // packed once at UV_ARKYID_MOUNT and shared — both units draw their guns
-  // at the same 256px cell scale, so the cell is reusable as it stands
-  drawFacingRight(c, antialiased(img.toxopid), T5 + 128, 896, 160, 190);
-  teamCell("toxopid", img.toxopid, img.toxopidCell, UV_TOXOPID_BODY, 160, 190);
-  drawFacingRight(c, silhouetted(img.toxopid), T5 + 384, 896, 160, 190);
-  drawFacingRight(c, antialiased(img.toxopidCannon), T5 + 640, 896, 206, 220);
-  drawFacingRight(c, silhouetted(img.toxopidCannon), T5 + 896, 896, 206, 220);
-
-  // the small legged parts. A JOINT is drawn with no rotation at all in
-  // Mindustry, so its cell is packed upright; a base joint turns with the
-  // unit and a foot turns with its leg, so both are packed facing +x
-  c.drawImage(antialiased(img.corvusJoint), T5 + 58, 1058, 60, 60);
-  c.drawImage(silhouetted(img.corvusJoint), T5 + 186, 1058, 60, 60);
-  drawFacingRight(c, antialiased(img.corvusJointBase), T5 + 320, 1088, 70);
-  drawFacingRight(c, silhouetted(img.corvusJointBase), T5 + 448, 1088, 70);
-  drawFacingRight(c, antialiased(img.corvusFoot), T5 + 576, 1088, 90);
-  drawFacingRight(c, silhouetted(img.corvusFoot), T5 + 704, 1088, 90);
-  drawFacingRight(c, antialiased(img.toxopidJointBase), T5 + 832, 1088, 70);
-  drawFacingRight(c, silhouetted(img.toxopidJointBase), T5 + 960, 1088, 70);
-  drawFacingRight(c, antialiased(img.toxopidFoot), T5 + 64, 1216, 90);
-  drawFacingRight(c, silhouetted(img.toxopidFoot), T5 + 192, 1216, 90);
-
-  // the four leg segments on the exact rects their UVs name. toxopid's
-  // lower segment is 270px of art for a 150px upper one: legExtension 20
-  // runs it back over its own knee, and the length it covers is the
-  // segment plus that overhang
-  c.drawImage(antialiased(img.corvusLeg), T5, 1312, 30, 68);
-  c.drawImage(antialiased(img.corvusLegBase), T5 + 96, 1312, 30, 64);
-  c.drawImage(antialiased(img.toxopidLeg), T5 + 192, 1312, 150, 72);
-  c.drawImage(antialiased(img.toxopidLegBase), T5 + 416, 1312, 270, 64);
-
-  // eclipse: one outlined quad like every flyer, at native size in the
-  // sheet's only 384px cell
-  drawFacingRight(
-    c, antialiased(outlined(img.eclipse, UNIT_OUTLINE, UNIT_OUTLINE_R)),
-    T5 + 192, 1600, 320, 321,
-  );
-  teamCell("eclipse", img.eclipse, img.eclipseCell, UV_ECLIPSE, 320, 321);
-
-  // the naval band: every hull outlined and antialiased like a flyer, at
-  // native size in the cell its UV names (see the UV_RISSO note)
-  const hull = (
-    kind: UnitKind, src: HTMLImageElement, cell: HTMLImageElement, bodyUV: UVRect,
-    cx: number, cy: number, w: number, h: number,
-  ): void => {
-    drawFacingRight(c, antialiased(outlined(src, UNIT_OUTLINE, UNIT_OUTLINE_R)), cx, cy, w, h);
-    teamCell(kind, src, cell, bodyUV, w, h);
+  // ---------- the units ----------
+  // Every part is drawn at its native size into the cell declared for
+  // it, facing +x; the silhouette cells get the same part through
+  // silhouetted() instead of antialiased(). The leg sprite of a mech is
+  // pre-offset to one side — the renderer mirrors it for the other leg.
+  const parts = (pairs: readonly (readonly [UVRect, UVRect, HTMLImageElement])[]): void => {
+    for (const [art, sil, src] of pairs) {
+      draw(art, antialiased(src));
+      draw(sil, silhouetted(src));
+    }
   };
-  hull("risso", img.risso, img.rissoCell, UV_RISSO, T5 + 64, 1984, 70, 78);
-  hull("minke", img.minke, img.minkeCell, UV_MINKE, T5 + 192, 1984, 88, 101);
-  hull("retusa", img.retusa, img.retusaCell, UV_RETUSA, T5 + 320, 1984, 70, 78);
-  hull("oxynoe", img.oxynoe, img.oxynoeCell, UV_OXYNOE, T5 + 448, 1984, 88, 101);
-  hull("bryde", img.bryde, img.brydeCell, UV_BRYDE, T5 + 128, 2176, 140, 140);
-  hull("cyerce", img.cyerce, img.cyerceCell, UV_CYERCE, T5 + 384, 2176, 140, 140);
-  hull("sei", img.sei, img.seiCell, UV_SEI, T5 + 640, 2176, 198, 228);
-  hull("aegires", img.aegires, img.aegiresCell, UV_AEGIRES, T5 + 896, 2176, 218, 241);
-  hull("omura", img.omura, img.omuraCell, UV_OMURA, T5 + 192, 2496, 264, 351);
-  hull("navanax", img.navanax, img.navanaxCell, UV_NAVANAX, T5 + 576, 2496, 258, 366);
 
-  // crawler parts: art then silhouettes, one flush 64px run (see UV note)
-  drawFacingRight(c, antialiased(img.crawlerLeg), 480, 320, 48);
-  drawFacingRight(c, antialiased(img.crawlerBase), 544, 320, 48);
-  drawFacingRight(c, antialiased(img.crawler), 608, 320, 48);
+  // the ground line
+  parts([
+    [UV_DAGGER_LEG, UV_DAGGER_LEG_SIL, img.daggerLeg],
+    [UV_DAGGER_BASE, UV_DAGGER_BASE_SIL, img.daggerBase],
+    [UV_DAGGER_BODY, UV_DAGGER_BODY_SIL, img.dagger],
+    [UV_LARGE_WEAPON, UV_LARGE_WEAPON_SIL, img.largeWeapon],
+    [UV_MACE_LEG, UV_MACE_LEG_SIL, img.maceLeg],
+    [UV_MACE_BASE, UV_MACE_BASE_SIL, img.maceBase],
+    [UV_MACE_BODY, UV_MACE_BODY_SIL, img.mace],
+    [UV_FLAMETHROWER, UV_FLAMETHROWER_SIL, img.flamethrower],
+    [UV_FORTRESS_LEG, UV_FORTRESS_LEG_SIL, img.fortressLeg],
+    [UV_FORTRESS_BASE, UV_FORTRESS_BASE_SIL, img.fortressBase],
+    [UV_FORTRESS_BODY, UV_FORTRESS_BODY_SIL, img.fortress],
+    [UV_ARTILLERY, UV_ARTILLERY_SIL, img.artillery],
+    [UV_SCEPTER_BODY, UV_SCEPTER_BODY_SIL, img.scepter],
+    [UV_SCEPTER_LEG, UV_SCEPTER_LEG_SIL, img.scepterLeg],
+    [UV_SCEPTER_BASE, UV_SCEPTER_BASE_SIL, img.scepterBase],
+    [UV_SCEPTER_WEAPON, UV_SCEPTER_WEAPON_SIL, img.scepterWeapon],
+    [UV_SCEPTER_MOUNT, UV_SCEPTER_MOUNT_SIL, img.scepterMount],
+    [UV_REIGN_BODY, UV_REIGN_BODY_SIL, img.reign],
+    [UV_REIGN_BASE, UV_REIGN_BASE_SIL, img.reignBase],
+    [UV_REIGN_LEG, UV_REIGN_LEG_SIL, img.reignLeg],
+    [UV_REIGN_WEAPON, UV_REIGN_WEAPON_SIL, img.reignWeapon],
+  ]);
+  teamCell("dagger", img.dagger, img.powerCell, UV_DAGGER_BODY, 48);
+  teamCell("mace", img.mace, img.maceCell, UV_MACE_BODY, 64);
+  teamCell("fortress", img.fortress, img.fortressCell, UV_FORTRESS_BODY, 100, 80);
+  teamCell("scepter", img.scepter, img.scepterCell, UV_SCEPTER_BODY, 170, 140);
+  teamCell("reign", img.reign, img.reignCell, UV_REIGN_BODY, 214, 140);
+
+  // the crawler line. The legged units' segments are drawn unrotated at
+  // native size onto rects that ARE the art (see the UV note), and a
+  // knee cap is packed upright because it is drawn unrotated
+  parts([
+    [UV_CRAWLER_LEG, UV_CRAWLER_LEG_SIL, img.crawlerLeg],
+    [UV_CRAWLER_BASE, UV_CRAWLER_BASE_SIL, img.crawlerBase],
+    [UV_CRAWLER_BODY, UV_CRAWLER_BODY_SIL, img.crawler],
+    [UV_ATRAX_BODY, UV_ATRAX_BODY_SIL, img.atrax],
+    [UV_ATRAX_BASE, UV_ATRAX_BASE_SIL, img.atraxBase],
+    [UV_ATRAX_WEAPON, UV_ATRAX_WEAPON_SIL, img.atraxWeapon],
+    [UV_ATRAX_JOINT, UV_ATRAX_JOINT_SIL, img.atraxJoint],
+    [UV_ATRAX_FOOT, UV_ATRAX_FOOT_SIL, img.atraxFoot],
+    [UV_SPIROCT_BODY, UV_SPIROCT_BODY_SIL, img.spiroct],
+    [UV_SPIROCT_WEAPON, UV_SPIROCT_WEAPON_SIL, img.spiroctWeapon],
+    [UV_SPIROCT_MOUNT, UV_SPIROCT_MOUNT_SIL, img.spiroctMount],
+    [UV_SPIROCT_JOINT, UV_SPIROCT_JOINT_SIL, img.spiroctJoint],
+    [UV_SPIROCT_FOOT, UV_SPIROCT_FOOT_SIL, img.spiroctFoot],
+    [UV_ARKYID_BODY, UV_ARKYID_BODY_SIL, img.arkyid],
+    [UV_ARKYID_WEAPON, UV_ARKYID_WEAPON_SIL, img.spiroctWeapon],
+    [UV_ARKYID_MOUNT, UV_ARKYID_MOUNT_SIL, img.purpleMount],
+    [UV_ARKYID_FOOT, UV_ARKYID_FOOT_SIL, img.arkyidFoot],
+    [UV_ARKYID_JOINT_BASE, UV_ARKYID_JOINT_BASE_SIL, img.arkyidJointBase],
+    [UV_TOXOPID_BODY, UV_TOXOPID_BODY_SIL, img.toxopid],
+    [UV_TOXOPID_CANNON, UV_TOXOPID_CANNON_SIL, img.toxopidCannon],
+    [UV_TOXOPID_JOINT_BASE, UV_TOXOPID_JOINT_BASE_SIL, img.toxopidJointBase],
+    [UV_TOXOPID_FOOT, UV_TOXOPID_FOOT_SIL, img.toxopidFoot],
+  ]);
+  draw(UV_ATRAX_LEG, antialiased(img.atraxLeg));
+  draw(UV_ATRAX_LEG_BASE, antialiased(img.atraxLegBase));
+  draw(UV_SPIROCT_LEG, antialiased(img.spiroctLeg));
+  draw(UV_SPIROCT_LEG_BASE, antialiased(img.spiroctLegBase));
+  draw(UV_ARKYID_LEG, antialiased(img.arkyidLeg));
+  draw(UV_ARKYID_LEG_BASE, antialiased(img.arkyidLegBase));
+  draw(UV_TOXOPID_LEG, antialiased(img.toxopidLeg));
+  draw(UV_TOXOPID_LEG_BASE, antialiased(img.toxopidLegBase));
   teamCell("crawler", img.crawler, img.crawlerCell, UV_CRAWLER_BODY, 48);
-  drawFacingRight(c, silhouetted(img.crawlerLeg), 672, 320, 48);
-  drawFacingRight(c, silhouetted(img.crawlerBase), 736, 320, 48);
-  drawFacingRight(c, silhouetted(img.crawler), 800, 320, 48);
-
-  // the legged crawler line (see the UV note): body, mount plate and guns
-  // face +x on 128px cells, feet the same on 64px ones. A JOINT is drawn
-  // with no rotation at all in Mindustry, so its cell is packed upright.
-  drawFacingRight(c, antialiased(img.atrax), 64, 1216, 88, 64);
   teamCell("atrax", img.atrax, img.atraxCell, UV_ATRAX_BODY, 88, 64);
-  drawFacingRight(c, antialiased(img.atraxBase), 192, 1216, 64);
-  drawFacingRight(c, antialiased(img.atraxWeapon), 320, 1216, 48, 56);
-  drawFacingRight(c, silhouetted(img.atrax), 448, 1216, 88, 64);
-  drawFacingRight(c, silhouetted(img.atraxBase), 576, 1216, 64);
-  drawFacingRight(c, silhouetted(img.atraxWeapon), 704, 1216, 48, 56);
-  c.drawImage(antialiased(img.atraxJoint), 787, 1171, 26, 26);
-  drawFacingRight(c, antialiased(img.atraxFoot), 928, 1184, 40);
-  c.drawImage(silhouetted(img.atraxJoint), 19, 1299, 26, 26);
-  drawFacingRight(c, silhouetted(img.atraxFoot), 160, 1312, 40);
-  // segments: the cell IS the art, so these are drawn unrotated, at native
-  // size, exactly on the rect their UVs name
-  c.drawImage(antialiased(img.atraxLeg), 272, 1296, 36, 26);
-  c.drawImage(antialiased(img.atraxLegBase), 336, 1296, 36, 26);
-
-  drawFacingRight(c, antialiased(img.spiroct), 64, 1472, 94, 75);
   teamCell("spiroct", img.spiroct, img.spiroctCell, UV_SPIROCT_BODY, 94, 75);
-  drawFacingRight(c, antialiased(img.spiroctWeapon), 192, 1472, 48, 56);
-  drawFacingRight(c, antialiased(img.spiroctMount), 320, 1472, 48);
-  drawFacingRight(c, silhouetted(img.spiroct), 448, 1472, 94, 75);
-  drawFacingRight(c, silhouetted(img.spiroctWeapon), 576, 1472, 48, 56);
-  drawFacingRight(c, silhouetted(img.spiroctMount), 704, 1472, 48);
-  c.drawImage(antialiased(img.spiroctJoint), 784, 1424, 32, 32);
-  drawFacingRight(c, antialiased(img.spiroctFoot), 928, 1440, 46);
-  c.drawImage(silhouetted(img.spiroctJoint), 16, 1552, 32, 32);
-  drawFacingRight(c, silhouetted(img.spiroctFoot), 160, 1568, 46);
-  c.drawImage(antialiased(img.spiroctLeg), 272, 1552, 48, 34);
-  c.drawImage(antialiased(img.spiroctLegBase), 352, 1552, 48, 34);
+  teamCell("arkyid", img.arkyid, img.arkyidCell, UV_ARKYID_BODY, 128);
+  teamCell("toxopid", img.toxopid, img.toxopidCell, UV_TOXOPID_BODY, 160, 190);
 
-  // silhouette row (y=960): each part again as a solid dilated shape — the
-  // under-layer pushMech uses for the unit's single outer rim
-  drawFacingRight(c, silhouetted(img.daggerLeg), 64, 992, 48);
-  drawFacingRight(c, silhouetted(img.daggerBase), 192, 992, 48);
-  drawFacingRight(c, silhouetted(img.dagger), 320, 992, 48);
-  drawFacingRight(c, silhouetted(img.largeWeapon), 448, 992, 48);
-  drawFacingRight(c, silhouetted(img.maceLeg), 576, 992, 64);
-  drawFacingRight(c, silhouetted(img.maceBase), 704, 992, 64);
-  drawFacingRight(c, silhouetted(img.mace), 832, 992, 64);
-  c.save();
-  c.translate(960, 992);
-  c.rotate(Math.PI / 2);
-  c.drawImage(silhouetted(img.flamethrower), -24, -28, 48, 56);
-  c.restore();
-  drawFacingRight(c, silhouetted(img.fortressLeg), 576, 192, 80, 60);
-  drawFacingRight(c, silhouetted(img.fortressBase), 704, 192, 64);
-  drawFacingRight(c, silhouetted(img.fortress), 832, 192, 100, 80);
-  drawFacingRight(c, silhouetted(img.artillery), 960, 192, 48, 56);
+  // the support line
+  parts([
+    [UV_NOVA_LEG, UV_NOVA_LEG_SIL, img.novaLeg],
+    [UV_NOVA_BASE, UV_NOVA_BASE_SIL, img.novaBase],
+    [UV_NOVA_BODY, UV_NOVA_BODY_SIL, img.nova],
+    [UV_HEAL_WEAPON, UV_HEAL_WEAPON_SIL, img.healWeapon],
+    [UV_PULSAR_LEG, UV_PULSAR_LEG_SIL, img.pulsarLeg],
+    [UV_PULSAR_BASE, UV_PULSAR_BASE_SIL, img.pulsarBase],
+    [UV_PULSAR_BODY, UV_PULSAR_BODY_SIL, img.pulsar],
+    [UV_HEAL_SHOTGUN, UV_HEAL_SHOTGUN_SIL, img.healShotgun],
+    [UV_QUASAR_LEG, UV_QUASAR_LEG_SIL, img.quasarLeg],
+    [UV_QUASAR_BASE, UV_QUASAR_BASE_SIL, img.quasarBase],
+    [UV_QUASAR_BODY, UV_QUASAR_BODY_SIL, img.quasar],
+    [UV_BEAM_WEAPON, UV_BEAM_WEAPON_SIL, img.beamWeapon],
+    [UV_VELA_BODY, UV_VELA_BODY_SIL, img.vela],
+    [UV_VELA_LEG, UV_VELA_LEG_SIL, img.velaLeg],
+    [UV_VELA_BASE, UV_VELA_BASE_SIL, img.velaBase],
+    [UV_REPAIR_BEAM, UV_REPAIR_BEAM_SIL, img.repairBeam],
+    [UV_CORVUS_BODY, UV_CORVUS_BODY_SIL, img.corvus],
+    [UV_CORVUS_BASE, UV_CORVUS_BASE_SIL, img.corvusBase],
+    [UV_CORVUS_JOINT, UV_CORVUS_JOINT_SIL, img.corvusJoint],
+    [UV_CORVUS_JOINT_BASE, UV_CORVUS_JOINT_BASE_SIL, img.corvusJointBase],
+    [UV_CORVUS_FOOT, UV_CORVUS_FOOT_SIL, img.corvusFoot],
+  ]);
+  draw(UV_CORVUS_LEG, antialiased(img.corvusLeg));
+  draw(UV_CORVUS_LEG_BASE, antialiased(img.corvusLegBase));
+  teamCell("nova", img.nova, img.novaCell, UV_NOVA_BODY, 56);
+  teamCell("pulsar", img.pulsar, img.pulsarCell, UV_PULSAR_BODY, 68, 58);
+  teamCell("quasar", img.quasar, img.quasarCell, UV_QUASAR_BODY, 80);
+  teamCell("vela", img.vela, img.velaCell, UV_VELA_BODY, 170, 140);
+  teamCell("corvus", img.corvus, img.corvusCell, UV_CORVUS_BODY, 214, 140);
 
-  // flare: a flying unit is one sprite — no legs, no chassis
-  const flare = document.createElement("canvas");
-  flare.width = flare.height = 64;
-  const fc = flare.getContext("2d");
-  if (!fc) throw new Error("2d context unavailable");
-  fc.imageSmoothingEnabled = false;
-  fc.drawImage(antialiased(outlined(img.flare, UNIT_OUTLINE, UNIT_OUTLINE_R)), 8, 8, 48, 48);
-  drawFacingRight(c, flare, 64, 736, 64);
-  // the hull is inset in its cell rather than filling it, and the cell
-  // rides the hull: 48px of art on the 64px quad, centred like the rest
-  teamCell("flare", img.flare, img.powerCell, UV_FLARE, 48);
+  // the flyers and the naval hulls: one outlined quad each. The flare
+  // and the dagger have no cell art of their own and fall back to
+  // power-cell, exactly as UnitType.load does
+  const hull = (kind: UnitKind, src: HTMLImageElement, cell: HTMLImageElement, uv: UVRect): void => {
+    draw(uv, outlinedUnit(src));
+    teamCell(kind, src, cell, uv, srcW(src), srcH(src));
+  };
+  hull("flare", img.flare, img.powerCell, UV_FLARE);
+  hull("horizon", img.horizon, img.horizonCell, UV_HORIZON);
+  hull("zenith", img.zenith, img.zenithCell, UV_ZENITH);
+  hull("antumbra", img.antumbra, img.antumbraCell, UV_ANTUMBRA);
+  hull("disrupt", img.disrupt, img.disruptCell, UV_DISRUPT);
+  hull("eclipse", img.eclipse, img.eclipseCell, UV_ECLIPSE);
+  hull("risso", img.risso, img.rissoCell, UV_RISSO);
+  hull("minke", img.minke, img.minkeCell, UV_MINKE);
+  hull("retusa", img.retusa, img.retusaCell, UV_RETUSA);
+  hull("oxynoe", img.oxynoe, img.oxynoeCell, UV_OXYNOE);
+  hull("bryde", img.bryde, img.brydeCell, UV_BRYDE);
+  hull("cyerce", img.cyerce, img.cyerceCell, UV_CYERCE);
+  hull("sei", img.sei, img.seiCell, UV_SEI);
+  hull("aegires", img.aegires, img.aegiresCell, UV_AEGIRES);
+  hull("omura", img.omura, img.omuraCell, UV_OMURA);
+  hull("navanax", img.navanax, img.navanaxCell, UV_NAVANAX);
 
-  // horizon and zenith: same single-sprite treatment as flare, at native
-  // size in their own 128px cells
-  drawFacingRight(
-    c, antialiased(outlined(img.horizon, UNIT_OUTLINE, UNIT_OUTLINE_R)), 64, 1088, 72,
-  );
-  teamCell("horizon", img.horizon, img.horizonCell, UV_HORIZON, 72);
-  drawFacingRight(
-    c, antialiased(outlined(img.zenith, UNIT_OUTLINE, UNIT_OUTLINE_R)), 192, 1088, 112,
-  );
-  teamCell("zenith", img.zenith, img.zenithCell, UV_ZENITH, 112);
-
-  // the six bullet regions, white and at source size, facing +x. See the
-  // UV_BULLET note: the renderer lays the -back region under the inner one on
-  // one rect and tints each with the firing ammo's own colour, exactly as
-  // BasicBulletType.draw does
-  drawFacingRight(c, antialiased(img.bullet), T5 + 26, 1818, 52);
-  drawFacingRight(c, antialiased(img.bulletBack), T5 + 90, 1818, 52);
-  drawFacingRight(c, antialiased(img.shell), T5 + 146, 1810, 36);
-  drawFacingRight(c, antialiased(img.shellBack), T5 + 194, 1810, 36);
-  drawFacingRight(c, antialiased(img.missile), T5 + 242, 1810, 36);
-  drawFacingRight(c, antialiased(img.missileBack), T5 + 290, 1810, 36);
-  // the swarm's own (see UV_CIRCLE_BULLET): fronts and backs at source size
-  drawFacingRight(c, antialiased(img.circleBullet), T5 + 360, 1816, 48);
-  drawFacingRight(c, antialiased(img.circleBulletBack), T5 + 416, 1816, 48);
-  drawFacingRight(c, antialiased(img.mineBullet), T5 + 480, 1824, 64);
-  drawFacingRight(c, antialiased(img.mineBulletBack), T5 + 552, 1824, 64);
-  drawFacingRight(c, antialiased(img.missileLarge), T5 + 620, 1820, 56);
-  drawFacingRight(c, antialiased(img.missileLargeBack), T5 + 684, 1820, 56);
-  // the disrupt missile is a unit: outlined like one, at native 39x60 in
-  // the middle of its 64 cell
-  drawFacingRight(
-    c, antialiased(outlined(img.disruptMissile, "#2d2f39", UNIT_OUTLINE_R)), T5 + 752, 1824, 39, 60,
-  );
+  // ---------- the bullets ----------
+  // white and at source size, facing +x. See the UV_BULLET note: the
+  // renderer lays the -back region under the inner one on one rect and
+  // tints each with the firing ammo's own colour, as BasicBulletType.draw
+  // does
+  draw(UV_BULLET, antialiased(img.bullet));
+  draw(UV_BULLET_BACK, antialiased(img.bulletBack));
+  draw(UV_SHELL, antialiased(img.shell));
+  draw(UV_SHELL_BACK, antialiased(img.shellBack));
+  draw(UV_MISSILE, antialiased(img.missile));
+  draw(UV_MISSILE_BACK, antialiased(img.missileBack));
+  draw(UV_CIRCLE_BULLET, antialiased(img.circleBullet));
+  draw(UV_CIRCLE_BULLET_BACK, antialiased(img.circleBulletBack));
+  draw(UV_MINE_BULLET, antialiased(img.mineBullet));
+  draw(UV_MINE_BULLET_BACK, antialiased(img.mineBulletBack));
+  draw(UV_MISSILE_LARGE, antialiased(img.missileLarge));
+  draw(UV_MISSILE_LARGE_BACK, antialiased(img.missileLargeBack));
+  // the disrupt missile is a unit: outlined like one
+  draw(UV_DISRUPT_MISSILE, antialiased(outlined(img.disruptMissile, "#2d2f39", UNIT_OUTLINE_R)));
   // the sap beam's cap, unrotated — a disc — and its 4x48 cross-section
-  // strip exactly on the rect its UV names
-  c.drawImage(antialiased(img.laserEnd), T5 + 800, 1792, 72, 72);
-  c.drawImage(antialiased(img.laser), T5 + 896, 1814, 4, 48);
+  // strip exactly on its rect
+  draw(UV_LASER_END, antialiased(img.laserEnd));
+  draw(UV_LASER, antialiased(img.laser));
 
-  // ring (448,0) — procedural
-  c.strokeStyle = "#ffffff";
-  c.lineWidth = 5;
-  c.beginPath();
-  c.arc(480, 32, 22, 0, TAU);
-  c.stroke();
+  // ---------- the procedural shapes ----------
+  paintCell(c, UV_RING, (cc, cell) => {
+    cc.strokeStyle = "#ffffff";
+    cc.lineWidth = 5;
+    cc.beginPath();
+    cc.arc(cell.w / 2, cell.h / 2, 22, 0, TAU);
+    cc.stroke();
+  });
+  // the stroke source for procedural lines: pure white to the cell's edge
+  paintCell(c, UV_SOLID, (cc, cell) => {
+    cc.fillStyle = "#ffffff";
+    cc.fillRect(0, 0, cell.w, cell.h);
+  });
+  // the flame particle disc, and the shield domes' disc at 256 — each
+  // kept a few px inside its cell so the antialiased rim sits clear of
+  // the edge (see UV_DISC_BIG)
+  paintCell(c, UV_DISC, (cc, cell) => {
+    cc.fillStyle = "#ffffff";
+    cc.beginPath();
+    cc.arc(cell.w / 2, cell.h / 2, 27, 0, TAU);
+    cc.fill();
+  });
+  paintCell(c, UV_DISC_BIG, (cc, cell) => {
+    cc.fillStyle = "#ffffff";
+    cc.beginPath();
+    cc.arc(cell.w / 2, cell.h / 2, 124, 0, TAU);
+    cc.fill();
+  });
+  // the shrapnel triangle: white, base on the left edge, apex right; the
+  // renderer stretches and tints it into Drawf.tri shapes. Drawn to the
+  // cell's inset EXACTLY, corner to corner, rather than sitting a pixel
+  // inside it: laying these edge to edge puts neighbouring triangles
+  // slope against slope, and a slope even a texel short leaves a seam
+  // down every one of those joins; a texel proud leaves a doubled-alpha
+  // one instead
+  paintCell(c, UV_TRI, (cc, cell) => {
+    const i = cell.inset;
+    cc.fillStyle = "#ffffff";
+    cc.beginPath();
+    cc.moveTo(i, i);
+    cc.lineTo(i, cell.h - i);
+    cc.lineTo(cell.w - i, cell.h / 2);
+    cc.closePath();
+    cc.fill();
+  });
 
-  // solid texel (224,928) — the stroke source for procedural lines
-  c.fillStyle = "#ffffff";
-  c.fillRect(224, 928, 32, 32);
+  // ---------- the structures ----------
+  // turret tops: each preview or head outlined like every block, facing
+  // +x, filling its cell (see the UV note on the tops); the bases at
+  // their own size, as authored
+  draw(UV_TOWER_BASE, antialiased(img.towerBase));
+  draw(UV_TOWER_BASE1, antialiased(img.towerBase1));
+  draw(UV_TOWER_BASE3, antialiased(img.towerBase3));
+  draw(UV_TOWER_BASE4, antialiased(img.towerBase4));
+  draw(UV_TURRET, outlinedBlock(img.salvoPreview));
+  draw(UV_SCATTER, outlinedBlock(img.scatterPreview));
+  draw(UV_HAIL, outlinedBlock(img.hail));
+  draw(UV_FUSE, outlinedBlock(img.fuse));
+  draw(UV_SCORCH, outlinedBlock(img.scorch));
+  draw(UV_DUO, outlinedBlock(img.duoPreview));
+  draw(UV_ARC, outlinedBlock(img.arc));
+  draw(UV_LANCER, outlinedBlock(img.lancer));
+  draw(UV_PARALLAX, outlinedBlock(img.parallax));
+  draw(UV_RIPPLE, outlinedBlock(img.ripple));
+  draw(UV_SWARMER, outlinedBlock(img.swarmer));
+  // cyclone's own art is the bare head; its three barrels are separate
+  // sprites the preview already has assembled underneath
+  draw(UV_CYCLONE, outlinedBlock(img.cyclonePreview));
+  draw(UV_SPECTRE, outlinedBlock(img.spectre));
+  draw(UV_MELTDOWN, outlinedBlock(img.meltdown));
+  draw(UV_FORESHADOW, outlinedBlock(img.foreshadow));
+  // the liquid turrets, composited flat (see liquidTurret)
+  draw(UV_WAVE, antialiased(liquidTurret(img.wave, img.waveLiquid, img.waveTop)));
+  draw(UV_TSUNAMI, antialiased(liquidTurret(img.tsunami, img.tsunamiLiquid, img.tsunamiTop)));
+  // parallax's beam: the end glow and the line, each the full source
+  // centred on the cell that hugs its opaque part (see the UV note), the
+  // line turned so its length runs along the +x axis pushSeg stretches
+  draw(UV_PARALLAX_LASER_END, antialiased(img.parallaxLaserEnd), [72, 72]);
+  draw(UV_PARALLAX_LASER, antialiased(img.parallaxLaser), [4, 48]);
+  // the blocks that never turn, outlined and as authored
+  draw(UV_SHIELD_TOWER, outlinedBlock(img.shieldTower));
+  draw(UV_MEND_PROJECTOR, antialiased(mendBlock(img.mendProjector, img.mendProjectorTop)));
+  draw(UV_MENDER, antialiased(mendBlock(img.mender, img.menderTop)));
 
-  // flame particle disc (384,1024) — procedural, inset well past the 4px
-  // mip-3 footprint so the cell's rim never bleeds into its neighbours
-  c.fillStyle = "#ffffff";
-  c.beginPath();
-  c.arc(416, 1056, 27, 0, TAU);
-  c.fill();
-
-  // the shield domes' disc (1472,2944) — the same shape at 256px, with a
-  // 4px inset so the antialiased rim keeps clear of the cell edge and no
-  // mip level can drag a neighbour into it (see UV_DISC_BIG)
-  c.fillStyle = "#ffffff";
-  c.beginPath();
-  c.arc(1600, 3072, 124, 0, TAU);
-  c.fill();
-
-  // turret base: 64px block-2 upscaled 2x into a 128px cell
-  c.drawImage(antialiased(img.towerBase), 64, 128, 128, 128);
-
-  // salvo top: the preview sprite is the fully assembled turret — face right
-  c.imageSmoothingEnabled = false;
-  drawFacingRight(c, antialiased(outlined(img.salvoPreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 256, 192, 128);
-
-  // scatter top, same treatment
-  drawFacingRight(c, antialiased(outlined(img.scatterPreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 64, 448, 128);
-
-  // hail top: the bare turret head (no preview exists — the renderer draws
-  // the block-1 base underneath anyway), 32px source upscaled 2x
-  drawFacingRight(c, antialiased(outlined(img.hail, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 192, 736, 64);
-
-  // fuse top: size-3 turret art, facing +x like the others
-  drawFacingRight(c, antialiased(outlined(img.fuse, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 256, 448, 96);
-  // 3x3 turret base at native 96px
-  c.drawImage(antialiased(img.towerBase3), 384, 384, 96, 96);
-
-  // scorch top: 32px source upscaled 2x, filling its 64px cell like duo's
-  drawFacingRight(c, antialiased(outlined(img.scorch, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 320, 1088, 64);
-
-  // the early and mid turret tops (see the UV note): arc, lancer and
-  // parallax upscale 2x like duo's, ripple stays native like fuse's
-  drawFacingRight(c, antialiased(outlined(img.arc, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 32, 2848, 64);
-  drawFacingRight(c, antialiased(outlined(img.lancer, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 192, 2880, 128);
-  drawFacingRight(c, antialiased(outlined(img.parallax, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 384, 2880, 128);
-  drawFacingRight(c, antialiased(outlined(img.ripple, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 560, 2864, 96);
-  // parallax's beam: the end glow at native size, and the line rotated so
-  // its length runs along the +x axis pushSeg stretches
-  drawFacingRight(c, antialiased(img.parallaxLaserEnd), 684, 2860, 72);
-  drawFacingRight(c, antialiased(img.parallaxLaser), 784, 2862, 4, 48);
-  // the liquid turrets, composited flat (see liquidTurret and the UV note):
-  // wave's 64px source at 2x like lancer's, tsunami's 96 native like
-  // cyclone's
-  drawFacingRight(c, antialiased(liquidTurret(img.wave, img.waveLiquid, img.waveTop)), 896, 2880, 128);
-  drawFacingRight(c, antialiased(liquidTurret(img.tsunami, img.tsunamiLiquid, img.tsunamiTop)), 1040, 2864, 96);
-
-  // the late tops (see the UV note): swarmer upscales
-  // 2x like lancer's, and cyclone and the three size-4 heads stay native
-  drawFacingRight(c, antialiased(outlined(img.swarmer, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1216, 2880, 128);
-  drawFacingRight(c, antialiased(outlined(img.cyclonePreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1360, 2864, 96);
-  drawFacingRight(c, antialiased(outlined(img.spectre, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1504, 2880, 128);
-  drawFacingRight(c, antialiased(outlined(img.meltdown, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1664, 2880, 128);
-  drawFacingRight(c, antialiased(outlined(img.foreshadow, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1824, 2880, 128);
-  // ...and the 4x4 base under the last three, at native 128px like block-3
-  c.drawImage(antialiased(img.towerBase4), 1152, 2976, 128, 128);
-  // the shield tower beside it, native 96px, outlined like the blocks —
-  // NOT drawFacingRight: the structure never rotates, so its art stays
-  // exactly as authored
-  c.drawImage(antialiased(outlined(img.shieldTower, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1312, 2976, 96, 96);
-  // the support pair, on the shield tower's rule for the same reason: a
-  // block that never turns keeps the heading it was drawn at
-  c.drawImage(antialiased(mendBlock(img.mendProjector, img.mendProjectorTop)), 1888, 2816, 128, 128);
-  c.drawImage(antialiased(mendBlock(img.mender, img.menderTop)), 1888, 2944, 64, 64);
-
-  // duo top and 1x1 base: 32px sources upscaled 2x into 64px cells
-  drawFacingRight(c, antialiased(outlined(img.duoPreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 160, 480, 64);
-  c.drawImage(antialiased(img.towerBase1), 320, 448, 64, 64);
-
-  // shrapnel triangle (320,384): white, base on the left edge, apex right;
-  // the renderer stretches and tints it into Drawf.tri shapes.
-  //
-  // Drawn to the cell's 2px UV inset EXACTLY, corner to corner, rather than
-  // sitting a pixel inside it. Laying these edge to edge puts neighbouring
-  // triangles slope against slope, and a slope even a texel short leaves a
-  // seam down every one of those joins; a texel proud leaves a
-  // doubled-alpha one instead.
-  c.fillStyle = "#ffffff";
-  c.beginPath();
-  c.moveTo(322, 386);
-  c.lineTo(322, 446);
-  c.lineTo(382, 416);
-  c.closePath();
-  c.fill();
-
-  // the base building at native 160px: the block, then the team overlay tinted
-  // sharded-yellow the way Mindustry composites team regions
-  c.drawImage(antialiased(img.base), 320, 128, 160, 160);
+  // the base building at native 160px: the block, then the team overlay
+  // tinted sharded-yellow the way Mindustry composites team regions
+  draw(UV_BASE, antialiased(img.base));
   const baseTeam = antialiased(img.baseTeam);
   const team = document.createElement("canvas");
   team.width = team.height = 160;
@@ -3194,7 +2782,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   tc.fillRect(0, 0, 160, 160);
   tc.globalCompositeOperation = "destination-in";
   tc.drawImage(baseTeam, 0, 0, 160, 160);
-  c.drawImage(team, 320, 128);
+  draw(UV_BASE, team);
 
   // the animal trial goes over the stock cells it replaces, once they are
   // all drawn and before the team cells are packed, since it requeues its own
@@ -3205,54 +2793,12 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
     });
   }
 
-  // last, because it is the only thing on the sheet whose rects are
-  // decided rather than typed: every body's team cell, cropped and
-  // shelf-packed into the two blocks kept for them
+  // last, because it is the only thing on the sheet whose cells are cut
+  // to art that had to be drawn first: every body's team cell
   packTeamCells();
+  sealed = true;
 
-  auditPaintedCells(c);
   return a;
-}
-
-/**
- * THE OTHER HALF OF THE LAYOUT CHECK: assertCellsDisjoint proves no two
- * REGISTERED cells overlap; this proves nothing was PAINTED outside one.
- * A draw call takes pixel coordinates, not a cell, so a sprite drawn at
- * the wrong place (or wider than the cell it is addressed through) is
- * invisible to the registry — and it is exactly such a draw that a later
- * cell then gets parked on top of, because the registry said the room was
- * free. Every opaque texel must lie inside some registered cell.
- *
- * Reported per 32px tile, as a bounding box a session can read against
- * atlas.ts. A dev build throws; a shipped one only warns, because stray
- * art is a blemish and a thrown atlas is a black screen.
- */
-function auditPaintedCells(c: CanvasRenderingContext2D): void {
-  const T = 32, GW = ATLAS_W / T, GH = ATLAS_H / T;
-  const owned = new Uint8Array(GW * GH);
-  for (const cell of CELLS)
-    for (let gy = Math.floor(cell.y / T); gy < Math.ceil((cell.y + cell.h) / T); gy++)
-      for (let gx = Math.floor(cell.x / T); gx < Math.ceil((cell.x + cell.w) / T); gx++)
-        owned[gy * GW + gx] = 1;
-  const stray: { x: number; y: number }[] = [];
-  const data = c.getImageData(0, 0, ATLAS_W, ATLAS_H).data;
-  for (let gy = 0; gy < GH; gy++)
-    for (let gx = 0; gx < GW; gx++) {
-      if (owned[gy * GW + gx]) continue;
-      let hit = false;
-      for (let y = gy * T; y < gy * T + T && !hit; y++)
-        for (let x = gx * T; x < gx * T + T; x++)
-          if (data[(y * ATLAS_W + x) * 4 + 3] !== 0) { hit = true; break; }
-      if (hit) stray.push({ x: gx * T, y: gy * T });
-    }
-  if (!stray.length) return;
-  const xs = stray.map((s) => s.x), ys = stray.map((s) => s.y);
-  const msg =
-    `atlas art outside every registered cell (game/atlas.ts): ${stray.length} 32px tile(s) ` +
-    `within ${Math.min(...xs)},${Math.min(...ys)} .. ${Math.max(...xs) + T},${Math.max(...ys) + T}; ` +
-    `first at ${stray.slice(0, 6).map((s) => `${s.x},${s.y}`).join(" ")}`;
-  if (process.env.NODE_ENV !== "production") throw new Error(msg);
-  console.warn(msg);
 }
 
 /**
