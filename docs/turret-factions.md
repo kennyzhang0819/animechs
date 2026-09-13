@@ -86,6 +86,21 @@ Triplet, Bellow, Kiln, Sluice, Halo, Quiver, Broadside, Bombard,
 Floodgate, Grindstone, Crucible, Furnace, Railspike) are captions only;
 the stock kind stays the key everywhere in the code.
 
+### Three silhouettes a kind
+
+`mill-<kind>.png` is the A set; `mill-<kind>-b.png` and `mill-<kind>-c.png`
+are two more silhouettes for every kind, same plating and accent,
+different construction, so the roster can be picked head by head. In
+broad strokes: the B set leans round (turntables, drums, a tank with the
+nozzle on top, a round gatling salvo, a tesla dome), the C set leans
+angular (hex plates, prisms, a wedge mortar, a boxy salvo with a wide
+magazine, a coilgun on a round base). All fifty-one render through the
+same one-pixel check with none flagged. Two more things it taught: a
+pod or pipe that crosses the turntable's rim must cover the rim for
+every row it spans (the rim's inner edge emerging from under a vertical
+edge is a one-pixel step), and a coil or collar laid across a round
+base has to start above where the base's interior first appears.
+
 ## Shipping it
 
 A faction is a skin over the one roster, never a second roster: the sim,
