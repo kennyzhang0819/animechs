@@ -91,6 +91,24 @@ plates, corner bolts, seams that run down the middle of every head.
 - *Verdict:* the right SECOND faction. It is the "keep the high tech"
   option made original, and factions later need one of these anyway.
 
+
+### Foundry, five ways
+
+The high-tech direction holds five materials without changing a role
+cue. Each is a complete faction on its own; the concept sprites are
+`docs/turret-concepts/{foundry,boiler,blackline,ceramic,scrap}-*.png`.
+
+| variant | plate language | palette | note |
+| --- | --- | --- | --- |
+| Mill (`foundry`) | octagonal bolted plates, a copper seam | gunmetal ramp, copper `#e07a3f` | the safe fallback; the most Mindustry-adjacent |
+| Boiler | cylinders from above, rivet runs, a gauge, a steam stack | iron `#3a3a42/#6a6a74`, brass `#c8973a`, ivory | round against a hard-edged swarm: the strongest silhouette. Brass stays on fittings |
+| Blackline | chevron wedges, one cyan light line down the spine | three near-blacks, a pale core plate, strip `#9fe8ff` | the pale core plate is not optional: it is what the hurt and conquest tints read through |
+| Ceramic | rounded pale plates, capsule barrels, dark slots | shade/plate/white, signal orange `#ff6a2a` | tints best of the five; needs a darker ramp on ice and salt floors |
+| Scrapyard | welded patches, a weld seam, hazard paint on tips and rims | rust `#8a4a2a`, iron, weathered plate, hazard `#e6c34a` | the run is paid for in scrap and the turrets look like what they cost; hazard yellow stays on stripes |
+
+*Verdict:* Boiler or Scrapyard. Boiler for the silhouette, Scrapyard for
+the fiction.
+
 ### Verdance — plants; the head turns toward the swarm like a heliotrope
 
 Bark (`#5a3d26`), leaf ramp (`#2f6b3a / #5aa84a / #a6de7c`), blossom coral
