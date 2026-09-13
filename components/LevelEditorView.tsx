@@ -9,6 +9,7 @@ import {
   levelDocOf,
   missionText,
   saveLevel,
+  unitName,
   waveGroups,
   WAVE_RELEASE_SECONDS,
   type LevelSpec,
@@ -17,6 +18,7 @@ import {
   type WaveUnits,
 } from "@/game/levels";
 import { waveGuide, type WaveRow } from "@/game/ladder";
+import { unitIconOf, useUnitIcons } from "./unitIcons";
 import {
   drawThumb,
   loadMap,
@@ -29,7 +31,10 @@ import type { ZoneKind } from "@/game/constants";
 
 /* eslint-disable @next/next/no-img-element -- raw pixel sprites, no optimization wanted */
 
-const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
+/** the fallback only: the roster draws off the PACKED sheet
+ *  (components/unitIcons.ts), because the four animal families have no
+ *  sprite file — their art is generated at load */
+const stockSprite = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
 
 /** health runs to nine figures at the top rung; a table cell wants
  * three characters and a suffix, not 20,276,477 */
@@ -192,6 +197,12 @@ export default function LevelEditorView({
   const [saving, setSaving] = useState(false);
   // why the last save was refused — null when the last attempt succeeded
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // the whole roster's portraits, carved off the packed sheet once for the
+  // page — every wave card's slots read them out of the same cache
+  // (components/unitIcons.ts), and until they land the slots draw the
+  // stock sprite file
+  useUnitIcons(UNIT_KINDS);
 
   // reloading a different level through the same mounted component has to
   // reset the buffer — an unsaved edit must not ride silently into another
@@ -752,13 +763,13 @@ function UnitSlot({
       <button
         onClick={() => onChange(on ? 0 : 10)}
         disabled={disabled}
-        title={`${kind} — T${UNIT_STATS[kind].tier}${on && !disabled ? " — click to clear" : ""}`}
-        aria-label={on ? `Clear ${kind}` : `Add ${kind}`}
+        title={`${unitName(kind)} — T${UNIT_STATS[kind].tier}${on && !disabled ? " — click to clear" : ""}`}
+        aria-label={on ? `Clear ${unitName(kind)}` : `Add ${unitName(kind)}`}
         className="shrink-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] disabled:cursor-default"
       >
         <img
-          src={unitIcon(kind)}
-          alt={kind}
+          src={unitIconOf(kind) ?? stockSprite(kind)}
+          alt={unitName(kind)}
           className={`h-5 w-5 object-contain [image-rendering:pixelated] ${on ? "" : "opacity-25"}`}
         />
       </button>
@@ -768,7 +779,7 @@ function UnitSlot({
         width="w-full min-w-0"
         blankZero
         disabled={disabled}
-        label={`${kind} count`}
+        label={`${unitName(kind)} count`}
       />
     </span>
   );

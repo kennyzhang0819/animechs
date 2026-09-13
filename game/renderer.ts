@@ -105,10 +105,9 @@ const ROWS = ROWS_IMPORT;
 const TOWERS = TOWERS_IMPORT;
 const W = W_IMPORT;
 import {
-  FAMILY_ACCENT,
-  familyOf,
   UNIT_KINDS,
   UNIT_STATS,
+  unitAccent,
   type ForceFieldSpec,
   type LegSpec,
   type WakeSpec,
@@ -523,10 +522,7 @@ const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
 /** THE HIGHLIGHT each kind wears (levels.ts FAMILY_ACCENT): its family's
  *  hue on its cell, its engines, its halo and its bubble — the boss, in no
  *  family, keeps the swarm's crux red */
-const KIND_ACCENT: readonly RGB[] = UNIT_KINDS.map((k) => {
-  const f = familyOf(k);
-  return f ? FAMILY_ACCENT[f] : TEAM_CRUX_RGB;
-});
+const KIND_ACCENT: readonly RGB[] = UNIT_KINDS.map(unitAccent);
 /** the engines a flyer burns (UNIT_ENGINES), null for anything that has none */
 const KIND_ENGINES = UNIT_KINDS.map((k) => UNIT_ENGINES[k] ?? null);
 /** the flyers drawn as a body and two beating wings (FLYER_PARTS), null

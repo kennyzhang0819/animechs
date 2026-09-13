@@ -26,6 +26,7 @@ import { loadBalanceDoc } from "./balance";
 import {
   loadLevelDocs,
   UNIT_KINDS,
+  unitName,
   type LevelSpec,
   type Mission,
   type TowerKind,
@@ -2102,9 +2103,11 @@ export class Game {
         n: 1,
         kind: null,
         unit: UNIT_KINDS[sim.ukind[ui]],
-        // the kind IS the name — the roster is Mindustry's and every one
-        // of them is called what it is called (levels.ts UNIT_KINDS)
-        name: UNIT_KINDS[sim.ukind[ui]],
+        // THE NAME, NOT THE ID (levels.ts UNIT_NAMES). The kind keys the
+        // sim's arrays and the sprite files; what a body is CALLED is the
+        // animal its family draws as, and the panel is the one place a
+        // player ever reads it
+        name: unitName(UNIT_KINDS[sim.ukind[ui]]),
         hp: Math.ceil(sim.uhp[ui]),
         hpMax: Math.ceil(sim.uhpmax[ui]),
         statuses: unitStatusChips(sim, ui),

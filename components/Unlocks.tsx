@@ -143,9 +143,16 @@ const SCALE = TILE_PX / CHIP_PX;
  * grey, which threw away the one thing the border is for — the board
  * teaches the bands, and it cannot teach them on half a shelf.
  *
- * The fade is on the CONTENT rather than the wrapper, so the card it
+ * FRAME AND FACE GO DOWN TOGETHER. The fade sat on the face alone for a
+ * while, which left a locked tile wearing a lit border round a ghost —
+ * it read as a drawing that had failed to load rather than as a thing
+ * that is not open yet. The chip fades whole. The hue survives it: the
+ * colour loses strength against the ground without being replaced, which
+ * is the whole point of not painting it grey.
+ *
+ * It is the CHIP that fades and not this wrapper, so the card the tile
  * opens reads at full strength either way — the colour in the card's
- * corner is the real one on a locked tile too.
+ * corner is the real one on a locked tile, and so is the focus ring.
  */
 function Tile({
   name,
@@ -185,7 +192,9 @@ function Tile({
           ui-zoom and throw the hover card's anchor arithmetic off
           (HoverCard.tsx divides by --ui-scale exactly once) */}
       <div
-        className="ms-tile flex items-center justify-center overflow-hidden"
+        className={`ms-tile flex items-center justify-center overflow-hidden ${
+          lit ? "" : "opacity-40"
+        }`}
         style={{
           ...tile(color),
           width: CHIP_PX,
@@ -193,9 +202,9 @@ function Tile({
           transform: `scale(${SCALE})`,
         }}
       >
-        {/* the fade is on the FACE, not the frame: a locked purple is
-            still legibly a purple (the note above) */}
-        <span className={`flex items-center justify-center ${lit ? "" : "opacity-40"}`}>{face}</span>
+        {/* frame and face fade together, and the hue rides through it: a
+            locked purple is still legibly a purple (the note above) */}
+        <span className="flex items-center justify-center">{face}</span>
       </div>
       <HoverCard tip={tip} title={name} tag={tag} color={color} align="center">
         {children}
