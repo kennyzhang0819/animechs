@@ -4,7 +4,8 @@ This is the direction the enemy art settled on after the animal trial
 (`game/animalArt.ts`, behind `ANIMAL_ART` in `game/animalFlag.ts`), written
 down so the next family is drawn to the same rules without re-running the
 trial. The Starhart stags and the Stoop bats are the reference
-implementation; the pixel engine and the house rules they obey are in
+implementation, and the Ironhide rhinos and Spitter frogs were drawn to
+this page; the pixel engine and the house rules they obey are in
 `game/pixelArt.ts`, and the packing in `game/atlas.ts`.
 
 ## 1. The style
@@ -133,6 +134,26 @@ Stoop, the bat (Skyfall bombers' cells):
 | T3 | zenith | 128 | 1.5 | 120 | 70 | 25 |
 | T4 | antumbra | 256 | 1.4 | 224 | 150 | 57.5 |
 | T5 | eclipse | 384 | 1.6 | 384 | 200 | 72.5 |
+
+Ironhide, the rhino (ground mechs' cells; mech rig to T3, four legs from T4):
+
+| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
+| --- | --- | --- | --- | --- | --- | --- |
+| T1 | dagger | 64 | 1.5 | 60 | 30 | 10 |
+| T2 | mace | 64 | 1.6 | 64 | 40 | 12.5 |
+| T3 | fortress | 128 | 1.4 | 112 | 62 | 16.25 |
+| T4 | scepter | 256 | 1.6 | 256 | 106 | 27.5 |
+| T5 | reign | 256 | 2.0 | 320 | 134 | 37.5 |
+
+Spitter, the dart frog (venom spitters' cells; mech rig at T1, four legs from T2):
+
+| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
+| --- | --- | --- | --- | --- | --- | --- |
+| T1 | crawler | 64 | 1.5 | 60 | 30 | 10 |
+| T2 | atrax | 128 | 1.1 | 88 | 55 | 16.25 |
+| T3 | spiroct | 128 | 1.4 | 112 | 59 | 18.75 |
+| T4 | arkyid | 256 | 1.6 | 256 | 80 | 28.75 |
+| T5 | toxopid | 256 | 2.0 | 320 | 119 | 32.5 |
 
 The T4 and T5 stags also get longer legs than the stock walkers
 (`LegSpec.length` 26 and 38 Mindustry units against the stock corvus's

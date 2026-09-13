@@ -1,7 +1,8 @@
 /**
- * ANIMAL ART: the Starhart (stag) and Stoop (bat) families, generated as
- * pixel art at load and packed over the Starlight mechs' and Skyfall
- * bombers' atlas cells (atlas.ts packAnimalArt) while game/animalFlag.ts
+ * ANIMAL ART: the Starhart (stag), Stoop (bat), Ironhide (rhino) and
+ * Spitter (dart frog) families, generated as pixel art at load and packed
+ * over the Starlight mechs', Skyfall bombers', ground mechs' and venom
+ * spitters' atlas cells (atlas.ts packAnimalArt) while game/animalFlag.ts
  * ANIMAL_ART is on.
  *
  * The style these follow and the rule for how big a tier draws are in
@@ -31,6 +32,11 @@
  * its root and folding toward it on a sine (renderer.ts, FLYER_PARTS in
  * atlas.ts). The composed sprite is packed too, for the icon, the spawn
  * effect and the cloak ghost.
+ *
+ * Ironhide follows the stag's split exactly: mech rig to T3, four legs
+ * from T4. Spitter's T1 is a mech (the crawler's rig) and T2 up are
+ * legged, as the venom line already was — four legs at every tier, kept
+ * short on the T2 and T3 so the frog stays tucked until the T4.
  */
 
 // ── the engine: a square grid of colour strings ────────────────────────
@@ -453,3 +459,245 @@ export function stoop(T: StoopTier): StoopArt {
   const cell = cellOf(n, (g, H) => g.disc(H.p(c), H.p(c + 0.08 * W), H.p(Math.max(2, Math.round(stoopCharge(T)))), WHITE));
   return { full, body, wing, cell };
 }
+
+// ── shared by the two ground families that followed ────────────────────
+export interface Tier {
+  t: number;
+  /** the body grid, and the radius unit everything is drawn against */
+  n: number; R: number;
+  /** the world-quad overshoot past the cell's nominal size (see HartTier) */
+  scale: number;
+}
+export interface Rect { px: Ink[]; w: number; h: number }
+export interface MechParts { body: Art; base: Art; leg: Art; cell: Art; stride: number }
+export interface LegParts {
+  body: Art; base: Art; cell: Art;
+  /** on the small grid: foot (drawn pointing up, packed facing +x), knee cap, shoulder cap */
+  foot: Art; joint: Art; baseJoint: Art; small: number;
+  /** the two stretched segments, mount on the left, as exact rects */
+  leg: Rect; legBase: Rect;
+}
+/** a stretched segment: a flat band of the family's hide, lit along its top */
+const segmentArt = (w: number, h: number, t: Tone): Rect => {
+  const px: Ink[] = new Array<Ink>(w * h).fill(null);
+  const lite = Math.max(2, Math.round(h * 0.3)), dark = Math.max(2, Math.round(h * 0.25));
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) px[y * w + x] = y < lite ? t[2] : y >= h - dark ? t[0] : t[1];
+  return { px, w, h };
+};
+/** the caps and segments every legged tier needs, on the small grid; the
+ *  foot is the family's own */
+const legRig = (
+  small: number, tone: Tone, seg: { th: number; sh: number }, kr: number, sr: number,
+  foot: (g: Pen, H: H, sc: number) => void,
+): Pick<LegParts, "foot" | "joint" | "baseJoint" | "small" | "leg" | "legBase"> => {
+  const sc = (small - 1) / 2;
+  return {
+    foot: draw(small, (g, H) => foot(g, H, sc), false),
+    joint: draw(small, (g, H) => H.cap(g, sc, sc, Math.max(2, Math.round(kr)), tone), false),
+    baseJoint: draw(small, (g, H) => H.cap(g, sc, sc, Math.max(2, Math.round(sr)), tone), false),
+    small,
+    leg: segmentArt(64, seg.th, tone),
+    legBase: segmentArt(64, seg.sh, tone),
+  };
+};
+/** toes fanned from a point: `degs` clockwise from straight up */
+const toes = (g: Pen, H: H, x: number, y: number, degs: readonly number[], len: number, w: number, t: Tone): void => {
+  w = Math.max(2, Math.round(w));
+  for (const d of degs) {
+    const a = ((d - 90) * Math.PI) / 180; const tx = x + Math.cos(a) * len, ty = y + Math.sin(a) * len;
+    H.seg(g, x, y, tx, ty, w, t); H.cap(g, tx, ty, Math.max(2, Math.round(w / 2)), t);
+  }
+};
+
+// ── IRONHIDE ─────────────────────────────────────────────────────────────
+//
+// The rhino. A wall of back and a horn that is a gun barrel: the family's
+// straight round comes out of the one thing a rhino points at you. The
+// plating is a saddle of steel down the spine that grows tier by tier —
+// strakes down the flanks at T3, pauldrons and stacks at T4, a crest over
+// the head at T5 — and the accent is crimson: the muzzle, the spine, the
+// pauldron lights. T1-T3 ride the mech rig (hooves under a body that keeps
+// its legs in), T4 and T5 the legged rig on four stout legs.
+const CRIM: Tone = ["#8c1c3a", "#ff4d6d", "#ff9ab0"];
+const RHINO: Tone = ["#3e3a3c", "#66605f", "#8e8684"];
+/** grids fill the ground mechs' cells (64/64/128/256/256) */
+export const RHINO_TIERS: readonly Tier[] = [
+  { t: 1, n: 63, R: 16, scale: 1.5 },
+  { t: 2, n: 63, R: 16, scale: 1.6 },
+  { t: 3, n: 127, R: 32, scale: 1.4 },
+  { t: 4, n: 255, R: 64, scale: 1.6 },
+  { t: 5, n: 255, R: 64, scale: 2.0 },
+];
+const hornWidth = (t: number): number => (t >= 5 ? 0.16 : t >= 3 ? 0.13 : 0.1);
+/** the crimson: drawn last on the body, and alone (in white) for the team cell */
+function rhinoAccent(g: Pen, H: H, T: Tier): void {
+  const { n, R, t } = T; const c = (n - 1) / 2;
+  const X = (v: number) => c + v * R, Y = (v: number) => c + v * R;
+  const hw = hornWidth(t);
+  g.box(H.p(X(-hw)), H.p(Y(-1.92)), H.p(X(hw)), H.p(Y(-1.8)), CRIM[1]);
+  g.box(H.p(X(-0.05)), H.p(Y(-0.45)), H.p(X(0.05)), H.p(Y(0.65)), CRIM[1]);
+  if (t >= 4) for (const s of [-1, 1]) g.disc(H.p(X(s * 0.62)), H.p(Y(-0.5)), H.p(R * 0.09), CRIM[1]);
+  if (t >= 5) g.disc(H.p(c), H.p(Y(-0.9)), H.p(R * 0.1), CRIM[1]);
+}
+/** the rhino's body: everything but the legs */
+function rhinoBody(g: Pen, H: H, T: Tier): void {
+  const { n, R, t } = T; const c = (n - 1) / 2; const o = RHINO;
+  const X = (v: number) => c + v * R, Y = (v: number) => c + v * R;
+  const px = (v: number) => Math.max(2, Math.round(v * R));
+  // the barrel of the body, with the two skin folds a rhino carries behind the shoulder and before the hip
+  H.org(g, el(H, c, Y(0.2), R * (t >= 5 ? 0.98 : 0.92), R * 1.0), o, false);
+  g.over((q) => { for (const y of [-0.25, 0.45]) q.box(H.p(X(-1)), H.p(Y(y)), H.p(X(1)), H.p(Y(y) + px(0.05)), o[0]); });
+  // the head: a wedge off the shoulders, a snout, two ears
+  H.org(g, { poly: H.P([[X(-0.6), Y(-0.6)], [X(0.6), Y(-0.6)], [X(0.34), Y(-1.35)], [X(-0.34), Y(-1.35)]]) }, o, false);
+  H.org(g, { disc: [c, Y(-1.3), R * 0.3] }, o, false);
+  for (const s of [-1, 1]) { H.org(g, { disc: [X(s * 0.42), Y(-0.85), R * 0.14] }, o, false); g.disc(H.p(X(s * 0.42)), H.p(Y(-0.85)), H.p(R * 0.06), o[0]); }
+  // the horn is the gun: a barrel off the snout, the second stub behind it from the T3, a muzzle collar at T5
+  const hw = hornWidth(t);
+  H.pipe(g, X(-hw), Y(-1.9), X(hw), Y(-1.2));
+  if (t >= 3) H.pipe(g, X(-hw * 0.7), Y(-1.12), X(hw * 0.7), Y(-0.85));
+  if (t >= 5) g.ring(H.p(c), H.p(Y(-1.72)), H.p(R * 0.21), Math.max(2, Math.round(R * 0.05)), ST.lite);
+  // steel: the saddle from T2, flank strakes and vents from T3, pauldrons and stacks from T4, the crest at T5
+  if (t >= 2) H.hull(g, { poly: H.R(X(-0.4), Y(-0.55), X(0.4), Y(0.8)) });
+  if (t >= 3) {
+    for (const s of [-1, 1]) H.mech(g, { poly: H.P([[X(s * 0.45), Y(-0.45)], [X(s * 0.88), Y(-0.3)], [X(s * 0.9), Y(0.55)], [X(s * 0.45), Y(0.7)]]) });
+    H.vents(g, c - 5, Y(-0.42), 3, px(0.2));
+  }
+  if (t >= 4) {
+    for (const s of [-1, 1]) H.mech(g, { disc: [X(s * 0.62), Y(-0.5), R * 0.24] });
+    stacks(g, H, t >= 5 ? [X(-0.22), X(0.22)] : [c], Y(0.85), Y(1.2), px(0.16));
+  }
+  if (t >= 5) H.mech(g, { poly: H.P([[X(-0.5), Y(-0.65)], [X(0.5), Y(-0.65)], [X(0.28), Y(-1.2)], [X(-0.28), Y(-1.2)]]) }, false);
+  if (t >= 2) H.pipe(g, X(-0.06), Y(1.15), X(0.06), Y(1.38));
+  rhinoAccent(g, H, T);
+}
+/** T1-T3: body, base and the near-side hoof pair as the mech rig's leg */
+export function rhinoMech(T: Tier): MechParts {
+  const { n, R } = T; const c = (n - 1) / 2;
+  const body = draw(n, (g, H) => rhinoBody(g, H, T));
+  const base = draw(n, (g, H) => H.org(g, el(H, c, c + R * 0.2, R * 0.84, R * 0.92), [RHINO[0], RHINO[0], RHINO[1]], false));
+  // the hooves sit at the body's edge, so a sliver of each shows past it and shuffles
+  const leg = draw(n, (g, H) => stubs(g, H, [[c + R * 0.92, c - R * 0.55], [c + R * 0.92, c + R * 0.5]], Math.max(4, R * 0.3), Math.max(6, R * 0.45), RHINO), false);
+  const cell = cellOf(n, (g, H) => rhinoAccent(g, H, T));
+  return { body, base, leg, cell, stride: [0, 3, 3.5, 4.5][T.t] };
+}
+/** T4-T5: body and base, plus the legged rig's caps, hoof and segments */
+export function rhinoLegged(T: Tier): LegParts {
+  const { n, R } = T; const c = (n - 1) / 2;
+  const body = draw(n, (g, H) => rhinoBody(g, H, T));
+  const base = draw(n, (g, H) => H.org(g, el(H, c, c + R * 0.2, R * 0.7, R * 0.8), [RHINO[0], RHINO[0], RHINO[1]], false));
+  const cell = cellOf(n, (g, H) => rhinoAccent(g, H, T));
+  const hw = Math.round(R * 0.3), hh = Math.round(R * 0.26);
+  const rig = legRig(rhinoSmall(T), RHINO, rhinoSeg(T), R * 0.2, R * 0.26, (g, H, sc) => {
+    g.box(H.p(sc - hw / 2), H.p(sc - hh / 2), H.p(sc + hw / 2), H.p(sc + hh / 2), RHINO[0]);
+    g.box(H.p(sc - hw / 2), H.p(sc - hh / 2), H.p(sc + hw / 2), H.p(sc - hh / 2 + Math.max(2, hh * 0.35)), ST.deep);
+  });
+  return { body, base, cell, ...rig };
+}
+/** the grid the T4's and T5's caps and hoof are drawn on: the cell they pack into */
+export const rhinoSmall = (T: Tier): number => (T.t >= 5 ? 127 : 63);
+/** thigh and shin heights (native px across the leg): stout, a rhino's */
+export const rhinoSeg = (T: Tier): { th: number; sh: number } => ({
+  th: Math.max(8, Math.round(T.R * 0.36)),
+  sh: Math.max(6, Math.round(T.R * 0.28)),
+});
+
+// ── SPITTER ──────────────────────────────────────────────────────────────
+//
+// The dart frog. Poison on the skin, so the acid is worn as spots; the
+// throat sac is the orb before it is thrown, and the mouth is the barrel.
+// The T1 keeps its legs folded in a Z beside the body and shuffles its
+// toes on the mech rig; T2 up ride the legged rig on four legs, tucked
+// close on the small tiers and planted well out on the T4 and T5, with a
+// webbed foot at the end of each. Steel comes late: a harness at T3,
+// pauldrons and stacks at T4, a collar round the barrel at T5.
+const ACID: Tone = ["#5c8a12", "#d4ff3a", "#eeffa0"];
+const FROG: Tone = ["#1e2a3a", "#2e4a6a", "#4a7aa0"];
+/** grids fill the venom spitters' cells (64/128/128/256/256) */
+export const FROG_TIERS: readonly Tier[] = [
+  { t: 1, n: 63, R: 19, scale: 1.5 },
+  { t: 2, n: 127, R: 43, scale: 1.1 },
+  { t: 3, n: 127, R: 43, scale: 1.4 },
+  { t: 4, n: 255, R: 87, scale: 1.6 },
+  { t: 5, n: 255, R: 87, scale: 2.0 },
+];
+const barrelWidth = (t: number): number => (t >= 5 ? 0.16 : t >= 3 ? 0.12 : 0.09);
+/** the acid: spots, the throat sac, the barrel's mouth — last on the body, alone for the cell */
+function frogAccent(g: Pen, H: H, T: Tier): void {
+  const { n, R, t } = T; const c = (n - 1) / 2;
+  const X = (v: number) => c + v * R, Y = (v: number) => c + v * R;
+  const spots: (readonly [number, number, number])[] = [[-0.5, 0.15, 0.12], [0.5, 0.15, 0.12], [-0.4, 0.68, 0.11], [0.4, 0.68, 0.11]];
+  if (t < 3) spots.push([0, 0.38, 0.15]);
+  if (t >= 2) spots.push([-0.22, -0.55, 0.08], [0.22, -0.55, 0.08]);
+  if (t >= 3) spots.push([-0.62, 0.45, 0.08], [0.62, 0.45, 0.08], [0, 1.02, 0.08]);
+  for (const [x, y, r] of spots) g.disc(H.p(X(x)), H.p(Y(y)), H.p(R * r), ACID[1]);
+  // the throat sac, filling tier by tier
+  if (t >= 2) {
+    const sr = R * [0, 0, 0.14, 0.17, 0.2, 0.26][t];
+    g.disc(H.p(c), H.p(Y(-0.3)), H.p(sr), ACID[1]);
+    g.disc(H.p(c), H.p(Y(-0.3) - sr * 0.35), H.p(sr * 0.4), ACID[2]);
+    if (t >= 5) g.ring(H.p(c), H.p(Y(-0.3)), H.p(sr + Math.max(3, R * 0.04)), Math.max(2, Math.round(R * 0.025)), ACID[2]);
+  }
+  const bw = barrelWidth(t);
+  g.box(H.p(X(-bw)), H.p(Y(-1.47)), H.p(X(bw)), H.p(Y(-1.37)), ACID[1]);
+}
+/** the frog's body; `folded` draws the legs in against it (the T1, whose feet are the mech rig's) */
+function frogBody(g: Pen, H: H, T: Tier, folded: boolean): void {
+  const { n, R, t } = T; const c = (n - 1) / 2; const o = FROG;
+  const X = (v: number) => c + v * R, Y = (v: number) => c + v * R;
+  const px = (v: number) => Math.max(2, Math.round(v * R));
+  if (folded) for (const s of [-1, 1]) {
+    limb(g, H, [[X(s * 0.6), Y(0.55)], [X(s * 1.2), Y(0.2)], [X(s * 1.25), Y(1.0)]], R * 0.26, o);
+    limb(g, H, [[X(s * 0.55), Y(-0.25)], [X(s * 1.0), Y(-0.35)], [X(s * 1.1), Y(0.2)]], R * 0.18, o);
+  }
+  H.org(g, el(H, c, Y(0.25), R * 0.85, R * 0.9), o);
+  H.org(g, { disc: [c, Y(-0.7), R * 0.6] }, o, false);
+  for (const s of [-1, 1]) { H.org(g, { disc: [X(s * 0.45), Y(-1.0), R * 0.25] }, o, false); g.disc(H.p(X(s * 0.45)), H.p(Y(-1.0)), H.p(R * 0.11), o[0]); }
+  // steel: a harness from T3, pauldrons, vents and stacks from T4, the collar at T5
+  if (t >= 3) H.hull(g, { poly: H.R(X(-0.28), Y(-0.05), X(0.28), Y(0.75)) });
+  if (t >= 4) {
+    for (const s of [-1, 1]) H.mech(g, { disc: [X(s * 0.55), Y(-0.32), R * 0.19] });
+    H.vents(g, c - 5, Y(0.08), 3, px(0.15));
+    stacks(g, H, t >= 5 ? [X(-0.2), X(0.2)] : [c], Y(0.82), Y(1.12), px(0.12));
+  }
+  if (t >= 5) H.mech(g, { poly: H.P([[X(-0.35), Y(-0.55)], [X(0.35), Y(-0.55)], [X(0.25), Y(-1.15)], [X(-0.25), Y(-1.15)]]) }, false);
+  // the mouth is the spitter
+  const bw = barrelWidth(t);
+  H.pipe(g, X(-bw), Y(-1.45), X(bw), Y(-1.05));
+  frogAccent(g, H, T);
+}
+/** T1: body with its legs folded in, base, and the near-side toes as the mech rig's leg */
+export function frogMech(T: Tier): MechParts {
+  const { n, R } = T; const c = (n - 1) / 2;
+  const X = (v: number) => c + v * R, Y = (v: number) => c + v * R;
+  const body = draw(n, (g, H) => frogBody(g, H, T, true));
+  const base = draw(n, (g, H) => H.org(g, el(H, c, c + R * 0.25, R * 0.75, R * 0.8), [FROG[0], FROG[0], FROG[1]], false));
+  const leg = draw(n, (g, H) => {
+    toes(g, H, X(1.25), Y(1.0), [120, 150, 180], R * 0.3, R * 0.1, FROG); H.cap(g, X(1.25), Y(1.0), Math.max(2, Math.round(R * 0.13)), FROG);
+    toes(g, H, X(1.1), Y(0.2), [30, 70, 110], R * 0.22, R * 0.08, FROG); H.cap(g, X(1.1), Y(0.2), Math.max(2, Math.round(R * 0.09)), FROG);
+  }, false);
+  const cell = cellOf(n, (g, H) => frogAccent(g, H, T));
+  return { body, base, leg, cell, stride: 2 };
+}
+/** T2-T5: body and base, plus the legged rig's caps, webbed foot and segments */
+export function frogLegged(T: Tier): LegParts {
+  const { n, R } = T; const c = (n - 1) / 2;
+  const body = draw(n, (g, H) => frogBody(g, H, T, false));
+  const base = draw(n, (g, H) => H.org(g, el(H, c, c + R * 0.25, R * 0.7, R * 0.75), [FROG[0], FROG[0], FROG[1]], false));
+  const cell = cellOf(n, (g, H) => frogAccent(g, H, T));
+  const rig = legRig(frogSmall(T), FROG, frogSeg(T), R * 0.14, R * 0.2, (g, H, sc) => {
+    // a webbed foot: three toes fanned up from the ankle, the web between them
+    const L = Math.max(6, R * 0.28);
+    const tip = (d: number): Pt => [sc + Math.sin((d * Math.PI) / 180) * L, sc - Math.cos((d * Math.PI) / 180) * L];
+    g.poly(H.P([[sc, sc], tip(-38), tip(0), tip(38)]), FROG[0]);
+    toes(g, H, sc, sc, [-38, 0, 38], L, R * 0.08, FROG);
+    H.cap(g, sc, sc, Math.max(2, Math.round(R * 0.09)), FROG);
+  });
+  return { body, base, cell, ...rig };
+}
+/** the grid the caps and foot are drawn on: the cell they pack into */
+export const frogSmall = (T: Tier): number => (T.t >= 4 ? 127 : 63);
+/** thigh and shin heights (native px across the leg): a frog's, slim */
+export const frogSeg = (T: Tier): { th: number; sh: number } => ({
+  th: Math.max(6, Math.round(T.R * 0.22)),
+  sh: Math.max(5, Math.round(T.R * 0.15)),
+});

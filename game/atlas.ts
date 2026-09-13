@@ -11,15 +11,25 @@ import {
 import type { UnitKind } from "./levels";
 import { ANIMAL_ART } from "./animalFlag";
 import {
+  FROG_TIERS,
   HART_TIERS,
+  RHINO_TIERS,
   STOOP_TIERS,
+  frogLegged,
+  frogMech,
+  frogSeg,
   hartLegged,
   hartMech,
   hartSeg,
+  rhinoLegged,
+  rhinoMech,
+  rhinoSeg,
   stoop,
   stoopGeom,
   toCanvas,
   toCanvasRect,
+  type LegParts,
+  type MechParts,
 } from "./animalArt";
 
 /**
@@ -1465,6 +1475,42 @@ export const UV_STOOP1_BODY = sprite("stoop1-body", 64, 64);
 export const UV_STOOP1_WING = sprite("stoop1-wing", 64, 64);
 export const UV_STOOP2_BODY = sprite("stoop2-body", 64, 64);
 export const UV_STOOP2_WING = sprite("stoop2-wing", 64, 64);
+/** the rhino's T4 and T5 leave the mech rig for the legged one: caps, hoof
+ *  and segments of their own, on 64 cells for the T4 and 128 for the T5;
+ *  the body and base go on in the scepter's and reign's own cells */
+export const UV_SCEPTER_FOOT = sprite("scepter-foot", 64, 64);
+export const UV_SCEPTER_JOINT = upright("scepter-joint", 64, 64);
+export const UV_SCEPTER_JOINT_BASE = sprite("scepter-joint-base", 64, 64);
+export const UV_SCEPTER_FOOT_SIL = sprite("scepter-foot-sil", 64, 64);
+export const UV_SCEPTER_JOINT_SIL = upright("scepter-joint-sil", 64, 64);
+export const UV_SCEPTER_JOINT_BASE_SIL = sprite("scepter-joint-base-sil", 64, 64);
+export const UV_REIGN_FOOT = sprite("reign-foot", 128, 128);
+export const UV_REIGN_JOINT = upright("reign-joint", 128, 128);
+export const UV_REIGN_JOINT_BASE = sprite("reign-joint-base", 128, 128);
+export const UV_REIGN_FOOT_SIL = sprite("reign-foot-sil", 128, 128);
+export const UV_REIGN_JOINT_SIL = upright("reign-joint-sil", 128, 128);
+export const UV_REIGN_JOINT_BASE_SIL = sprite("reign-joint-base-sil", 128, 128);
+const RHINO_SEG4 = rhinoSeg(RHINO_TIERS[3]), RHINO_SEG5 = rhinoSeg(RHINO_TIERS[4]);
+export const UV_SCEPTER_LEG_SEG = flat("scepter-leg-seg", 64, RHINO_SEG4.th);
+export const UV_SCEPTER_LEG_BASE_SEG = flat("scepter-leg-base-seg", 64, RHINO_SEG4.sh);
+export const UV_REIGN_LEG_SEG = flat("reign-leg-seg", 64, RHINO_SEG5.th);
+export const UV_REIGN_LEG_BASE_SEG = flat("reign-leg-base-seg", 64, RHINO_SEG5.sh);
+/** the frog's knees on the two big tiers (the arkyid and toxopid ship
+ *  none), and every legged tier's segments; the rest of its parts go on
+ *  in the venom line's own cells */
+export const UV_ARKYID_JOINT = upright("arkyid-joint", 128, 128);
+export const UV_ARKYID_JOINT_SIL = upright("arkyid-joint-sil", 128, 128);
+export const UV_TOXOPID_JOINT = upright("toxopid-joint", 128, 128);
+export const UV_TOXOPID_JOINT_SIL = upright("toxopid-joint-sil", 128, 128);
+const FROG_SEG = FROG_TIERS.map((T) => frogSeg(T));
+export const UV_ATRAX_LEG_SEG = flat("atrax-leg-seg", 64, FROG_SEG[1].th);
+export const UV_ATRAX_LEG_BASE_SEG = flat("atrax-leg-base-seg", 64, FROG_SEG[1].sh);
+export const UV_SPIROCT_LEG_SEG = flat("spiroct-leg-seg", 64, FROG_SEG[2].th);
+export const UV_SPIROCT_LEG_BASE_SEG = flat("spiroct-leg-base-seg", 64, FROG_SEG[2].sh);
+export const UV_ARKYID_LEG_SEG = flat("arkyid-leg-seg", 64, FROG_SEG[3].th);
+export const UV_ARKYID_LEG_BASE_SEG = flat("arkyid-leg-base-seg", 64, FROG_SEG[3].sh);
+export const UV_TOXOPID_LEG_SEG = flat("toxopid-leg-seg", 64, FROG_SEG[4].th);
+export const UV_TOXOPID_LEG_BASE_SEG = flat("toxopid-leg-base-seg", 64, FROG_SEG[4].sh);
 
 /**
  * A flyer drawn in parts: a body quad and one wing quad mirrored to both
@@ -1574,6 +1620,104 @@ if (ANIMAL_ART) {
     sprite: UNIT_SPRITE * 4 * S5,
     small: UNIT_SPRITE * 2 * S5,
   };
+
+  // ---- Ironhide ----
+  // the rhino's T1-T3 keep the ground mechs' rig and cells, guns off (the
+  // horn is the barrel, drawn into the body), on a heavier shuffle
+  const rhinoMechArt = (k: UnitKind, i: number): MechArt => {
+    const T = RHINO_TIERS[i];
+    UNIT_ART[k] = { uv: UNIT_ART[k].uv, sprite: UNIT_ART[k].sprite * T.scale };
+    return { ...MECH_ART[k]!, guns: [], stride: [0, 3, 3.5, 4.5][T.t] * MU, sprite: MECH_ART[k]!.sprite * T.scale };
+  };
+  MECH_ART.dagger = rhinoMechArt("dagger", 0);
+  MECH_ART.mace = rhinoMechArt("mace", 1);
+  MECH_ART.fortress = rhinoMechArt("fortress", 2);
+  // the T4 and T5 leave the mech rig for four stout planted legs
+  delete MECH_ART.scepter;
+  delete MECH_ART.reign;
+  const R4 = RHINO_TIERS[3].scale, R5 = RHINO_TIERS[4].scale;
+  UNIT_ART.scepter = { uv: UNIT_ART.scepter.uv, sprite: UNIT_ART.scepter.sprite * R4 };
+  UNIT_ART.reign = { uv: UNIT_ART.reign.uv, sprite: UNIT_ART.reign.sprite * R5 };
+  LEG_ART.scepter = {
+    body: UV_SCEPTER_BODY,
+    base: UV_SCEPTER_BASE,
+    joint: UV_SCEPTER_JOINT,
+    baseJoint: UV_SCEPTER_JOINT_BASE,
+    foot: UV_SCEPTER_FOOT,
+    leg: UV_SCEPTER_LEG_SEG,
+    legBase: UV_SCEPTER_LEG_BASE_SEG,
+    legStroke: RHINO_SEG4.th * PX * R4,
+    legBaseStroke: RHINO_SEG4.sh * PX * R4,
+    guns: [],
+    sprite: UNIT_SPRITE * 4 * R4,
+    small: UNIT_SPRITE * R4,
+    sil: {
+      body: UV_SCEPTER_BODY_SIL,
+      base: UV_SCEPTER_BASE_SIL,
+      joint: UV_SCEPTER_JOINT_SIL,
+      baseJoint: UV_SCEPTER_JOINT_BASE_SIL,
+      foot: UV_SCEPTER_FOOT_SIL,
+    },
+  };
+  LEG_ART.reign = {
+    body: UV_REIGN_BODY,
+    base: UV_REIGN_BASE,
+    joint: UV_REIGN_JOINT,
+    baseJoint: UV_REIGN_JOINT_BASE,
+    foot: UV_REIGN_FOOT,
+    leg: UV_REIGN_LEG_SEG,
+    legBase: UV_REIGN_LEG_BASE_SEG,
+    legStroke: RHINO_SEG5.th * PX * R5,
+    legBaseStroke: RHINO_SEG5.sh * PX * R5,
+    guns: [],
+    sprite: UNIT_SPRITE * 4 * R5,
+    small: UNIT_SPRITE * 2 * R5,
+    sil: {
+      body: UV_REIGN_BODY_SIL,
+      base: UV_REIGN_BASE_SIL,
+      joint: UV_REIGN_JOINT_SIL,
+      baseJoint: UV_REIGN_JOINT_BASE_SIL,
+      foot: UV_REIGN_FOOT_SIL,
+    },
+  };
+
+  // ---- Spitter ----
+  // the frog's T1 keeps the crawler's mech rig and cells, its toes on a
+  // short shuffle; T2 up ride the venom line's legged rig on four legs,
+  // guns off (the mouth is the barrel), with segments of their own and,
+  // on the two big tiers, a knee the stock rig never had
+  const F1 = FROG_TIERS[0].scale;
+  UNIT_ART.crawler = { uv: UNIT_ART.crawler.uv, sprite: UNIT_ART.crawler.sprite * F1 };
+  MECH_ART.crawler = { ...MECH_ART.crawler!, guns: [], stride: 2 * MU, sprite: MECH_ART.crawler!.sprite * F1 };
+  const frogLegArt = (k: UnitKind, i: number, parts: Omit<LegArt, "legStroke" | "legBaseStroke" | "guns" | "sprite" | "small">, big: boolean): void => {
+    const T = FROG_TIERS[i];
+    const cellScale = big ? 4 : 2;
+    UNIT_ART[k] = { uv: UNIT_ART[k].uv, sprite: UNIT_ART[k].sprite * T.scale };
+    LEG_ART[k] = {
+      ...parts,
+      legStroke: FROG_SEG[i].th * PX * T.scale,
+      legBaseStroke: FROG_SEG[i].sh * PX * T.scale,
+      guns: [],
+      sprite: UNIT_SPRITE * cellScale * T.scale,
+      small: UNIT_SPRITE * (cellScale / 2) * T.scale,
+    };
+  };
+  frogLegArt("atrax", 1, {
+    body: UV_ATRAX_BODY, base: UV_ATRAX_BASE, joint: UV_ATRAX_JOINT, foot: UV_ATRAX_FOOT, leg: UV_ATRAX_LEG_SEG, legBase: UV_ATRAX_LEG_BASE_SEG,
+    sil: { body: UV_ATRAX_BODY_SIL, base: UV_ATRAX_BASE_SIL, joint: UV_ATRAX_JOINT_SIL, foot: UV_ATRAX_FOOT_SIL },
+  }, false);
+  frogLegArt("spiroct", 2, {
+    body: UV_SPIROCT_BODY, joint: UV_SPIROCT_JOINT, foot: UV_SPIROCT_FOOT, leg: UV_SPIROCT_LEG_SEG, legBase: UV_SPIROCT_LEG_BASE_SEG,
+    sil: { body: UV_SPIROCT_BODY_SIL, joint: UV_SPIROCT_JOINT_SIL, foot: UV_SPIROCT_FOOT_SIL },
+  }, false);
+  frogLegArt("arkyid", 3, {
+    body: UV_ARKYID_BODY, joint: UV_ARKYID_JOINT, baseJoint: UV_ARKYID_JOINT_BASE, foot: UV_ARKYID_FOOT, leg: UV_ARKYID_LEG_SEG, legBase: UV_ARKYID_LEG_BASE_SEG,
+    sil: { body: UV_ARKYID_BODY_SIL, joint: UV_ARKYID_JOINT_SIL, baseJoint: UV_ARKYID_JOINT_BASE_SIL, foot: UV_ARKYID_FOOT_SIL },
+  }, true);
+  frogLegArt("toxopid", 4, {
+    body: UV_TOXOPID_BODY, joint: UV_TOXOPID_JOINT, baseJoint: UV_TOXOPID_JOINT_BASE, foot: UV_TOXOPID_FOOT, leg: UV_TOXOPID_LEG_SEG, legBase: UV_TOXOPID_LEG_BASE_SEG,
+    sil: { body: UV_TOXOPID_BODY_SIL, joint: UV_TOXOPID_JOINT_SIL, baseJoint: UV_TOXOPID_JOINT_BASE_SIL, foot: UV_TOXOPID_FOOT_SIL },
+  }, true);
 }
 
 const ENV = "/mindustry/sprites/blocks/environment";
@@ -2338,6 +2482,63 @@ function packAnimalArt(
     dropCell(cells.kind);
     teamCell(cells.kind, body, toCanvas(a.cell), cells.body, T.n);
   });
+
+  // ---- Ironhide and Spitter ----
+  // the same two rigs, packed by one pair of helpers: a mech tier is body,
+  // base and the near-side legs; a legged tier is body, foot, the caps and
+  // segments it has cells for, and a base where the stock rig kept one
+  interface MechCells { kind: UnitKind; body: UVRect; base: UVRect; leg: UVRect; sil: { body: UVRect; base: UVRect; leg: UVRect } }
+  interface LegCells {
+    kind: UnitKind; body: UVRect; base?: UVRect; joint?: UVRect; baseJoint?: UVRect; foot: UVRect; leg: UVRect; legBase: UVRect;
+    sil: { body: UVRect; base?: UVRect; joint?: UVRect; baseJoint?: UVRect; foot: UVRect };
+  }
+  const packMech = (cells: MechCells, a: MechParts, n: number): void => {
+    const body = toCanvas(a.body), base = toCanvas(a.base), leg = toCanvas(a.leg);
+    part(cells.body, body); part(cells.base, base); part(cells.leg, leg);
+    part(cells.sil.body, body, true); part(cells.sil.base, base, true); part(cells.sil.leg, leg, true);
+    dropCell(cells.kind);
+    teamCell(cells.kind, body, toCanvas(a.cell), cells.body, n);
+  };
+  const packLegged = (cells: LegCells, a: LegParts, n: number): void => {
+    const body = toCanvas(a.body), foot = toCanvas(a.foot);
+    part(cells.body, body); part(cells.sil.body, body, true);
+    part(cells.foot, foot); part(cells.sil.foot, foot, true);
+    if (cells.base && cells.sil.base) { const base = toCanvas(a.base); part(cells.base, base); part(cells.sil.base, base, true); }
+    if (cells.joint && cells.sil.joint) { const joint = toCanvas(a.joint); part(cells.joint, joint); part(cells.sil.joint, joint, true); }
+    if (cells.baseJoint && cells.sil.baseJoint) { const bj = toCanvas(a.baseJoint); part(cells.baseJoint, bj); part(cells.sil.baseJoint, bj, true); }
+    seg(cells.leg, toCanvasRect(a.leg.px, a.leg.w, a.leg.h));
+    seg(cells.legBase, toCanvasRect(a.legBase.px, a.legBase.w, a.legBase.h));
+    dropCell(cells.kind);
+    teamCell(cells.kind, body, toCanvas(a.cell), cells.body, n);
+  };
+  const rhinoMechCells: readonly MechCells[] = [
+    { kind: "dagger", body: UV_DAGGER_BODY, base: UV_DAGGER_BASE, leg: UV_DAGGER_LEG, sil: { body: UV_DAGGER_BODY_SIL, base: UV_DAGGER_BASE_SIL, leg: UV_DAGGER_LEG_SIL } },
+    { kind: "mace", body: UV_MACE_BODY, base: UV_MACE_BASE, leg: UV_MACE_LEG, sil: { body: UV_MACE_BODY_SIL, base: UV_MACE_BASE_SIL, leg: UV_MACE_LEG_SIL } },
+    { kind: "fortress", body: UV_FORTRESS_BODY, base: UV_FORTRESS_BASE, leg: UV_FORTRESS_LEG, sil: { body: UV_FORTRESS_BODY_SIL, base: UV_FORTRESS_BASE_SIL, leg: UV_FORTRESS_LEG_SIL } },
+  ];
+  rhinoMechCells.forEach((cells, i) => packMech(cells, rhinoMech(RHINO_TIERS[i]), RHINO_TIERS[i].n));
+  const rhinoLegCells: readonly LegCells[] = [
+    { kind: "scepter", body: UV_SCEPTER_BODY, base: UV_SCEPTER_BASE, joint: UV_SCEPTER_JOINT, baseJoint: UV_SCEPTER_JOINT_BASE, foot: UV_SCEPTER_FOOT, leg: UV_SCEPTER_LEG_SEG, legBase: UV_SCEPTER_LEG_BASE_SEG,
+      sil: { body: UV_SCEPTER_BODY_SIL, base: UV_SCEPTER_BASE_SIL, joint: UV_SCEPTER_JOINT_SIL, baseJoint: UV_SCEPTER_JOINT_BASE_SIL, foot: UV_SCEPTER_FOOT_SIL } },
+    { kind: "reign", body: UV_REIGN_BODY, base: UV_REIGN_BASE, joint: UV_REIGN_JOINT, baseJoint: UV_REIGN_JOINT_BASE, foot: UV_REIGN_FOOT, leg: UV_REIGN_LEG_SEG, legBase: UV_REIGN_LEG_BASE_SEG,
+      sil: { body: UV_REIGN_BODY_SIL, base: UV_REIGN_BASE_SIL, joint: UV_REIGN_JOINT_SIL, baseJoint: UV_REIGN_JOINT_BASE_SIL, foot: UV_REIGN_FOOT_SIL } },
+  ];
+  rhinoLegCells.forEach((cells, i) => packLegged(cells, rhinoLegged(RHINO_TIERS[3 + i]), RHINO_TIERS[3 + i].n));
+  packMech(
+    { kind: "crawler", body: UV_CRAWLER_BODY, base: UV_CRAWLER_BASE, leg: UV_CRAWLER_LEG, sil: { body: UV_CRAWLER_BODY_SIL, base: UV_CRAWLER_BASE_SIL, leg: UV_CRAWLER_LEG_SIL } },
+    frogMech(FROG_TIERS[0]), FROG_TIERS[0].n,
+  );
+  const frogLegCells: readonly LegCells[] = [
+    { kind: "atrax", body: UV_ATRAX_BODY, base: UV_ATRAX_BASE, joint: UV_ATRAX_JOINT, foot: UV_ATRAX_FOOT, leg: UV_ATRAX_LEG_SEG, legBase: UV_ATRAX_LEG_BASE_SEG,
+      sil: { body: UV_ATRAX_BODY_SIL, base: UV_ATRAX_BASE_SIL, joint: UV_ATRAX_JOINT_SIL, foot: UV_ATRAX_FOOT_SIL } },
+    { kind: "spiroct", body: UV_SPIROCT_BODY, joint: UV_SPIROCT_JOINT, foot: UV_SPIROCT_FOOT, leg: UV_SPIROCT_LEG_SEG, legBase: UV_SPIROCT_LEG_BASE_SEG,
+      sil: { body: UV_SPIROCT_BODY_SIL, joint: UV_SPIROCT_JOINT_SIL, foot: UV_SPIROCT_FOOT_SIL } },
+    { kind: "arkyid", body: UV_ARKYID_BODY, joint: UV_ARKYID_JOINT, baseJoint: UV_ARKYID_JOINT_BASE, foot: UV_ARKYID_FOOT, leg: UV_ARKYID_LEG_SEG, legBase: UV_ARKYID_LEG_BASE_SEG,
+      sil: { body: UV_ARKYID_BODY_SIL, joint: UV_ARKYID_JOINT_SIL, baseJoint: UV_ARKYID_JOINT_BASE_SIL, foot: UV_ARKYID_FOOT_SIL } },
+    { kind: "toxopid", body: UV_TOXOPID_BODY, joint: UV_TOXOPID_JOINT, baseJoint: UV_TOXOPID_JOINT_BASE, foot: UV_TOXOPID_FOOT, leg: UV_TOXOPID_LEG_SEG, legBase: UV_TOXOPID_LEG_BASE_SEG,
+      sil: { body: UV_TOXOPID_BODY_SIL, joint: UV_TOXOPID_JOINT_SIL, baseJoint: UV_TOXOPID_JOINT_BASE_SIL, foot: UV_TOXOPID_FOOT_SIL } },
+  ];
+  frogLegCells.forEach((cells, i) => packLegged(cells, frogLegged(FROG_TIERS[1 + i]), FROG_TIERS[1 + i].n));
 
   // ---- Stoop ----
   const fullCells: readonly UVRect[] = [UV_FLARE, UV_HORIZON, UV_ZENITH, UV_ANTUMBRA, UV_ECLIPSE];

@@ -593,6 +593,24 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 4,
     rotateSpeed: 2.1,
     shieldField: { amount: 25, max: 250, reload: 1, range: 7.5 * CELL },
+    // THE ANIMAL TRIAL (animalFlag.ts): the Ironhide T4 is a rhino on
+    // four stout planted legs (LEG_ART.scepter in atlas.ts), short for
+    // its bulk so the feet stay close under a body that is mostly back
+    ...(ANIMAL_ART
+      ? {
+          legs: legs({
+            count: 4,
+            length: 22 * MU,
+            forwardScl: 0.7,
+            moveSpace: 1.3,
+            baseOffset: 9 * MU,
+            lengthScl: 0.9,
+            speed: 0.14,
+            elevation: 0.25,
+            ripple: 2,
+          }),
+        }
+      : {}),
   },
   // reign: the ground line's T5 and the heaviest thing in the game —
   // 24000 hp, a 3.75x3.75-block hitbox, 0.4 px/tick = 3 tiles/s. Note it
@@ -623,6 +641,23 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     // the reign survives on thirty armour and twenty-four thousand health,
     // and what it adds to the line is the thing it is already best at.
     armorField: { amount: 12, reload: 2, range: 9 * CELL },
+    // THE ANIMAL TRIAL (animalFlag.ts): the Ironhide T5, the same four
+    // legs at the reign's weight and reach (LEG_ART.reign in atlas.ts)
+    ...(ANIMAL_ART
+      ? {
+          legs: legs({
+            count: 4,
+            length: 32 * MU,
+            forwardScl: 0.7,
+            moveSpace: 1.4,
+            baseOffset: 12 * MU,
+            lengthScl: 0.9,
+            speed: 0.13,
+            elevation: 0.35,
+            ripple: 3,
+          }),
+        }
+      : {}),
   },
   // crawler: 150 hp, no armor, 1x1-block hitbox, 7.5 tiles/s — twice the
   // ground line's pace, and the fastest walker in the game.
@@ -660,7 +695,13 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     // weight. Every leg on this tree is cut to roughly a third of what
     // Mindustry gives it and the elevation with it, so the body sits down
     // on its feet and scuttles instead of striding.
-    legs: legs({ count: 4, length: 5 * MU, forwardScl: 0.6, moveSpace: 1.1, elevation: 0.12 }),
+    //
+    // THE ANIMAL TRIAL (animalFlag.ts): as the Spitter T2 the four legs
+    // are a frog's, tucked close — a little longer than the stock atrax's
+    // on mounts a little further out, so the knees show past the body
+    legs: ANIMAL_ART
+      ? legs({ count: 4, length: 10 * MU, forwardScl: 0.6, moveSpace: 1.1, baseOffset: 3 * MU, elevation: 0.12 })
+      : legs({ count: 4, length: 5 * MU, forwardScl: 0.6, moveSpace: 1.1, elevation: 0.12 }),
   },
   // spiroct: the line's T3 — 1000 hp, armor 9, a 1.875x1.875-block hitbox,
   // 0.54 px/tick = 4.05 tiles/s, the slowest thing on the field. Six legs
@@ -680,14 +721,18 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     // sooner. A third of again on everything within ten tiles, itself
     // included, and it is the only speed buff in the game.
     hasteField: { mult: 1.35, reload: 2, range: 10 * CELL },
-    legs: legs({
-      count: 6,
-      length: 6.5 * MU,
-      forwardScl: 0.8,
-      moveSpace: 1.1,
-      baseOffset: 1.5 * MU,
-      elevation: 0.15,
-    }),
+    // THE ANIMAL TRIAL (animalFlag.ts): the Spitter T3 is a frog, four
+    // legs still tucked, not the six the spiroct walks on
+    legs: ANIMAL_ART
+      ? legs({ count: 4, length: 12 * MU, forwardScl: 0.65, moveSpace: 1.1, baseOffset: 4 * MU, elevation: 0.15 })
+      : legs({
+          count: 6,
+          length: 6.5 * MU,
+          forwardScl: 0.8,
+          moveSpace: 1.1,
+          baseOffset: 1.5 * MU,
+          elevation: 0.15,
+        }),
   },
   // arkyid: the crawler line's T4 — 8000 hp, armor 14, a 2.875x2.875-block
   // hitbox, 0.62 px/tick = 4.65 tiles/s. Eight times the spiroct's health
@@ -715,17 +760,31 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 4,
     drag: 0.1,
     rotateSpeed: 2.7,
-    legs: legs({
-      count: 6,
-      length: 11 * MU,
-      pairOffset: 3 * MU,
-      baseOffset: 5 * MU,
-      extension: -6 * MU,
-      lengthScl: 0.96,
-      speed: 0.2,
-      elevation: 0.25,
-      ripple: 2,
-    }),
+    // THE ANIMAL TRIAL (animalFlag.ts): the Spitter T4 is the tier the
+    // frog's stance opens — four long legs planted well out
+    legs: ANIMAL_ART
+      ? legs({
+          count: 4,
+          length: 30 * MU,
+          forwardScl: 0.7,
+          moveSpace: 1.3,
+          baseOffset: 9 * MU,
+          lengthScl: 0.9,
+          speed: 0.18,
+          elevation: 0.3,
+          ripple: 2,
+        })
+      : legs({
+          count: 6,
+          length: 11 * MU,
+          pairOffset: 3 * MU,
+          baseOffset: 5 * MU,
+          extension: -6 * MU,
+          lengthScl: 0.96,
+          speed: 0.2,
+          elevation: 0.25,
+          ripple: 2,
+        }),
   },
   // toxopid: the crawler line's T5 — 22000 hp, armor 22, a 3.25x3.25-block
   // hitbox, and 0.5 px/tick = 3.75 tiles/s, which is exactly the dagger's
@@ -753,18 +812,32 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 5,
     drag: 0.1,
     rotateSpeed: 1.9,
-    legs: legs({
-      count: 8,
-      length: 20 * MU,
-      moveSpace: 0.8,
-      pairOffset: 3 * MU,
-      extension: -8 * MU,
-      baseOffset: 5 * MU,
-      lengthScl: 0.93,
-      speed: 0.19,
-      elevation: 0.3,
-      ripple: 3,
-    }),
+    // THE ANIMAL TRIAL (animalFlag.ts): the Spitter T5, the frog's four
+    // legs at the toxopid's reach
+    legs: ANIMAL_ART
+      ? legs({
+          count: 4,
+          length: 40 * MU,
+          forwardScl: 0.7,
+          moveSpace: 1.4,
+          baseOffset: 12 * MU,
+          lengthScl: 0.9,
+          speed: 0.16,
+          elevation: 0.4,
+          ripple: 3,
+        })
+      : legs({
+          count: 8,
+          length: 20 * MU,
+          moveSpace: 0.8,
+          pairOffset: 3 * MU,
+          extension: -8 * MU,
+          baseOffset: 5 * MU,
+          lengthScl: 0.93,
+          speed: 0.19,
+          elevation: 0.3,
+          ripple: 3,
+        }),
   },
   // flare: 70 hp, no armor, 1.125-block hitbox, 15 tiles/s (upstream 20.25).
   // The fastest thing in the sky still, but the whole line was brought down
