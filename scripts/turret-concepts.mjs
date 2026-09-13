@@ -166,6 +166,221 @@ const foundry = {
   },
 };
 
+
+// ── FOUNDRY VARIANTS: the same high-tech set in five materials ───────────
+// Mill (the one above): octagonal bolted plates, gunmetal and copper.
+// Boiler: iron and brass, round boilers, rivets, steam. Blackline: stealth
+// wedges with light strips. Ceramic: pale lab plates with a signal stripe.
+// Scrapyard: welded patches, rust and hazard paint — the currency is scrap.
+
+const BOILER = { iron: "#3a3a42", ironMid: "#6a6a74", ironLite: "#9c9ca8", brass: "#c8973a", brassLite: "#eccb7a", ivory: "#efe7d2" };
+const boiler = {
+  head1(p) {
+    const C = BOILER;
+    p.disc(0.5, 0.62, 0.36, C.iron);                     // round boiler
+    p.disc(0.5, 0.62, 0.3, C.ironMid);
+    p.box(0.46, 0.36, 0.5, 0.9, C.brass);                // brass seam
+    p.box(0.2, 0.06, 0.32, 0.48, C.brass);               // brass barrel
+    p.box(0.2, 0.06, 0.32, 0.14, C.brassLite);
+    p.box(0.1, 0.5, 0.16, 0.56, C.ironLite); p.box(0.1, 0.7, 0.16, 0.76, C.ironLite); // rivets
+  },
+  head2(p) {
+    const C = BOILER;
+    p.disc(0.5, 0.56, 0.4, C.iron);
+    p.disc(0.5, 0.56, 0.34, C.ironMid);
+    p.box(0.46, 0.18, 0.5, 0.94, C.brass);
+    p.box(0.3, 0.06, 0.46, 0.4, C.brass);                // wide brass emitter
+    p.box(0.3, 0.06, 0.46, 0.12, C.ivory);
+    p.disc(0.22, 0.66, 0.1, C.brass); p.disc(0.22, 0.66, 0.06, C.ivory); // gauge
+    p.box(0.08, 0.36, 0.14, 0.42, C.ironLite); p.box(0.08, 0.82, 0.14, 0.88, C.ironLite);
+    p.box(0.02, 0.5, 0.1, 0.72, C.ironMid);               // steam vent
+  },
+  head3(p) {
+    const C = BOILER;
+    p.disc(0.5, 0.56, 0.44, C.iron);
+    p.disc(0.5, 0.56, 0.38, C.ironMid);
+    p.box(0.46, 0.1, 0.5, 0.98, C.brass);
+    for (const [x, y] of [[0.3, 0.36], [0.28, 0.62]]) { p.ring(x, y, 0.1, 3, C.brass); p.disc(x, y, 0.06, C.iron); }
+    p.box(0.06, 0.8, 0.5, 0.9, C.iron);
+    for (const x of [0.12, 0.2, 0.28, 0.36]) p.box(x, 0.83, x + 0.04, 0.87, C.brassLite); // rivet run at the back
+    p.disc(0.14, 0.5, 0.06, C.brassLite);                // valve wheel
+  },
+  head4(p) {
+    const C = BOILER;
+    p.disc(0.5, 0.62, 0.42, C.iron);
+    p.disc(0.5, 0.62, 0.36, C.ironMid);
+    p.box(0.44, 0.3, 0.5, 0.98, C.brass);
+    p.box(0.18, 0.02, 0.34, 0.6, C.brass);               // twin brass barrels
+    p.box(0.18, 0.02, 0.34, 0.1, C.brassLite);
+    p.box(0.24, 0.14, 0.28, 0.54, C.iron);
+    p.disc(0.5, 0.68, 0.12, C.brass); p.disc(0.5, 0.68, 0.07, C.ivory); // the great gauge
+    p.box(0.02, 0.44, 0.1, 0.8, C.ironMid); p.box(0.04, 0.5, 0.08, 0.74, C.ironLite); // steam stack
+    for (const y of [0.4, 0.56, 0.72, 0.88]) p.box(0.14, y, 0.18, y + 0.04, C.brassLite);
+  },
+  base(p) {
+    const C = BOILER;
+    p.box(0.02, 0.02, 0.5, 0.98, C.iron);
+    p.box(0.08, 0.08, 0.5, 0.92, C.ironMid);
+    for (const [x, y] of [[0.1, 0.1], [0.1, 0.86]]) p.box(x, y, x + 0.05, y + 0.05, C.brass);
+    p.box(0.44, 0.08, 0.5, 0.92, C.iron);
+  },
+};
+
+const BLACKLINE = { black: "#1f2128", dark: "#33363f", mid: "#4a4e5a", lite: "#8d92a3", strip: "#9fe8ff", white: "#f4f8ff" };
+const blackline = {
+  head1(p) {
+    const C = BLACKLINE;
+    p.poly([[0.5, 0.2], [0.14, 0.34], [0.08, 0.94], [0.5, 0.94]], C.dark);
+    p.poly([[0.5, 0.28], [0.2, 0.4], [0.16, 0.88], [0.5, 0.88]], C.mid);
+    p.box(0.2, 0.04, 0.3, 0.48, C.lite);                 // barrel
+    p.box(0.2, 0.04, 0.3, 0.1, C.black);
+    p.box(0.46, 0.3, 0.5, 0.88, C.strip);                // the light line
+  },
+  head2(p) {
+    const C = BLACKLINE;
+    p.poly([[0.5, 0.06], [0.2, 0.26], [0.1, 0.94], [0.5, 0.94]], C.dark);
+    p.poly([[0.5, 0.14], [0.26, 0.32], [0.18, 0.88], [0.5, 0.88]], C.mid);
+    p.poly([[0.5, 0.26], [0.36, 0.34], [0.34, 0.8], [0.5, 0.8]], C.lite);  // pale core plate
+    p.box(0.46, 0.12, 0.5, 0.9, C.strip);
+    p.box(0.3, 0.16, 0.46, 0.24, C.white);               // emitter slot
+    p.box(0.04, 0.44, 0.12, 0.84, C.black); p.box(0.06, 0.5, 0.1, 0.78, C.strip); // flank strip
+  },
+  head3(p) {
+    const C = BLACKLINE;
+    p.poly([[0.5, 0.08], [0.16, 0.18], [0.06, 0.5], [0.12, 0.94], [0.5, 0.94]], C.dark);
+    p.poly([[0.5, 0.16], [0.22, 0.26], [0.14, 0.5], [0.2, 0.88], [0.5, 0.88]], C.mid);
+    p.box(0.46, 0.08, 0.5, 0.94, C.strip);
+    for (const [x, y] of [[0.3, 0.36], [0.28, 0.62]]) { p.ring(x, y, 0.1, 3, C.lite); p.disc(x, y, 0.06, C.black); }
+    p.box(0.1, 0.82, 0.5, 0.9, C.black);
+    p.box(0.14, 0.84, 0.44, 0.88, C.strip);              // rear light bar
+  },
+  head4(p) {
+    const C = BLACKLINE;
+    p.poly([[0.5, 0.3], [0.16, 0.38], [0.06, 0.6], [0.1, 0.96], [0.5, 0.96]], C.dark);
+    p.poly([[0.5, 0.38], [0.22, 0.44], [0.14, 0.62], [0.18, 0.9], [0.5, 0.9]], C.mid);
+    p.poly([[0.5, 0.5], [0.34, 0.54], [0.3, 0.86], [0.5, 0.86]], C.lite);
+    p.box(0.2, 0.02, 0.34, 0.56, C.lite);                // long barrels
+    p.box(0.2, 0.02, 0.34, 0.1, C.black);
+    p.box(0.25, 0.14, 0.29, 0.5, C.strip);               // lit groove down the barrel
+    p.box(0.46, 0.36, 0.5, 0.92, C.strip);
+    p.box(0.02, 0.62, 0.1, 0.9, C.black); p.box(0.04, 0.66, 0.08, 0.86, C.strip);
+  },
+  base(p) {
+    const C = BLACKLINE;
+    p.box(0.02, 0.02, 0.5, 0.98, C.black);
+    p.box(0.08, 0.08, 0.5, 0.92, C.dark);
+    p.poly([[0.08, 0.08], [0.2, 0.08], [0.08, 0.2]], C.strip);
+    p.poly([[0.08, 0.92], [0.2, 0.92], [0.08, 0.8]], C.strip);
+  },
+};
+
+const CERAMIC = { shade: "#8c8b88", plate: "#c9c7c0", white: "#e8e6e0", slot: "#2a2b31", signal: "#ff6a2a" };
+const ceramic = {
+  head1(p) {
+    const C = CERAMIC;
+    p.disc(0.5, 0.64, 0.34, C.shade);
+    p.disc(0.5, 0.64, 0.28, C.plate);
+    p.box(0.46, 0.4, 0.5, 0.9, C.white);
+    p.disc(0.26, 0.3, 0.09, C.plate); p.box(0.17, 0.3, 0.35, 0.6, C.plate); // capsule barrel
+    p.box(0.22, 0.06, 0.3, 0.3, C.white); p.box(0.22, 0.06, 0.3, 0.12, C.slot);
+    p.box(0.1, 0.74, 0.5, 0.8, C.signal);                // signal band at the back
+  },
+  head2(p) {
+    const C = CERAMIC;
+    p.disc(0.5, 0.54, 0.4, C.shade);
+    p.disc(0.5, 0.54, 0.34, C.plate);
+    p.box(0.46, 0.16, 0.5, 0.92, C.white);
+    p.box(0.26, 0.06, 0.46, 0.42, C.white);              // the emitter block
+    p.box(0.3, 0.1, 0.46, 0.2, C.slot);
+    p.box(0.3, 0.12, 0.46, 0.16, C.signal);              // the lit slot
+    p.box(0.06, 0.5, 0.16, 0.78, C.plate); p.box(0.08, 0.54, 0.14, 0.74, C.signal); // side capacitor
+  },
+  head3(p) {
+    const C = CERAMIC;
+    p.disc(0.5, 0.56, 0.44, C.shade);
+    p.disc(0.5, 0.56, 0.38, C.plate);
+    p.box(0.46, 0.12, 0.5, 0.96, C.white);
+    for (const [x, y] of [[0.3, 0.36], [0.28, 0.62]]) { p.ring(x, y, 0.1, 3, C.white); p.disc(x, y, 0.06, C.slot); }
+    p.box(0.1, 0.82, 0.5, 0.9, C.plate);
+    p.box(0.1, 0.84, 0.5, 0.88, C.signal);
+    p.box(0.12, 0.44, 0.18, 0.56, C.signal);             // flank marking
+  },
+  head4(p) {
+    const C = CERAMIC;
+    p.disc(0.5, 0.64, 0.4, C.shade);
+    p.box(0.1, 0.4, 0.5, 0.64, C.shade);
+    p.disc(0.5, 0.64, 0.34, C.plate); p.box(0.16, 0.46, 0.5, 0.64, C.plate);
+    p.box(0.46, 0.36, 0.5, 0.96, C.white);
+    p.disc(0.27, 0.12, 0.09, C.white); p.box(0.18, 0.12, 0.36, 0.58, C.white); // capsule barrels
+    p.box(0.23, 0.02, 0.31, 0.12, C.slot);
+    p.box(0.25, 0.2, 0.29, 0.52, C.signal);              // signal stripe down the barrel
+    p.box(0.04, 0.5, 0.12, 0.9, C.plate); p.box(0.06, 0.56, 0.1, 0.84, C.slot);
+    p.disc(0.5, 0.74, 0.1, C.slot); p.disc(0.5, 0.74, 0.05, C.signal); // core
+  },
+  base(p) {
+    const C = CERAMIC;
+    p.box(0.02, 0.02, 0.5, 0.98, C.shade);
+    p.box(0.08, 0.08, 0.5, 0.92, C.plate);
+    p.box(0.08, 0.08, 0.5, 0.13, C.white);
+    p.box(0.08, 0.87, 0.5, 0.92, C.white);
+  },
+};
+
+const SCRAP = { rust: "#8a4a2a", rustLite: "#b8703f", iron: "#5b5b63", plate: "#9a958c", hazard: "#e6c34a", weld: "#2b2b31" };
+const scrap = {
+  head1(p) {
+    const C = SCRAP;
+    p.box(0.08, 0.34, 0.5, 0.96, C.iron);
+    p.box(0.14, 0.4, 0.5, 0.9, C.plate);
+    p.box(0.3, 0.6, 0.5, 0.9, C.rust);                   // a rusted patch, bolted on
+    p.box(0.44, 0.4, 0.5, 0.9, C.weld);                  // weld seam
+    p.box(0.18, 0.04, 0.32, 0.5, C.iron);                // barrel
+    p.box(0.18, 0.04, 0.32, 0.12, C.hazard);             // hazard tip
+    p.box(0.16, 0.46, 0.2, 0.5, C.weld); p.box(0.16, 0.8, 0.2, 0.84, C.weld); // bolts
+  },
+  head2(p) {
+    const C = SCRAP;
+    p.poly([[0.5, 0.08], [0.18, 0.3], [0.1, 0.94], [0.5, 0.94]], C.iron);
+    p.poly([[0.5, 0.16], [0.24, 0.36], [0.18, 0.88], [0.5, 0.88]], C.plate);
+    p.poly([[0.5, 0.5], [0.3, 0.56], [0.26, 0.88], [0.5, 0.88]], C.rust); // patch
+    p.box(0.44, 0.14, 0.5, 0.9, C.weld);
+    p.box(0.3, 0.18, 0.5, 0.3, C.hazard);                // the emitter, hazard-painted
+    p.box(0.02, 0.4, 0.14, 0.8, C.rustLite);             // a salvaged capacitor
+    p.box(0.04, 0.44, 0.12, 0.76, C.iron);
+    p.box(0.2, 0.4, 0.24, 0.44, C.weld); p.box(0.2, 0.8, 0.24, 0.84, C.weld);
+  },
+  head3(p) {
+    const C = SCRAP;
+    p.disc(0.5, 0.56, 0.44, C.iron);
+    p.disc(0.5, 0.56, 0.36, C.plate);
+    p.poly([[0.5, 0.2], [0.14, 0.5], [0.5, 0.92]], C.rust); // a rusted quarter plate
+    p.box(0.46, 0.1, 0.5, 0.98, C.weld);
+    for (const [x, y] of [[0.3, 0.36], [0.28, 0.62]]) { p.ring(x, y, 0.1, 3, C.iron); p.disc(x, y, 0.06, C.weld); }
+    p.box(0.08, 0.8, 0.5, 0.9, C.iron);
+    for (let i = 0; i < 4; i++) p.box(0.1 + i * 0.1, 0.82, 0.15 + i * 0.1, 0.88, C.hazard); // hazard stripes at the back
+  },
+  head4(p) {
+    const C = SCRAP;
+    p.box(0.1, 0.4, 0.5, 0.96, C.iron);
+    p.box(0.16, 0.46, 0.5, 0.9, C.plate);
+    p.box(0.16, 0.66, 0.36, 0.9, C.rust);                // welded patch
+    p.box(0.34, 0.46, 0.5, 0.64, C.rustLite);            // and another
+    p.box(0.45, 0.42, 0.5, 0.96, C.weld);
+    p.box(0.18, 0.02, 0.36, 0.56, C.iron);               // twin barrels
+    p.box(0.18, 0.02, 0.36, 0.1, C.weld);
+    p.box(0.22, 0.12, 0.32, 0.2, C.hazard); p.box(0.22, 0.26, 0.32, 0.34, C.hazard); // painted bands down the barrel
+    p.box(0.02, 0.5, 0.12, 0.9, C.rustLite); p.box(0.04, 0.54, 0.1, 0.86, C.iron); // bolted-on rail
+    for (const y of [0.5, 0.7, 0.86]) p.box(0.17, y, 0.21, y + 0.04, C.weld);
+  },
+  base(p) {
+    const C = SCRAP;
+    p.box(0.02, 0.02, 0.5, 0.98, C.iron);
+    p.box(0.08, 0.08, 0.5, 0.92, C.plate);
+    p.box(0.08, 0.5, 0.3, 0.92, C.rust);                 // a rusted quarter
+    p.box(0.08, 0.08, 0.12, 0.92, C.hazard); p.dither(0.08, 0.08, 0.12, 0.92, C.weld); // hazard edge
+  },
+};
+
 // ── VERDANCE: plants; the head turns toward the swarm like a heliotrope ─
 const verdance = {
   // 1x1 pepperpod: two seed pods on a leaf whorl
@@ -343,7 +558,7 @@ const reliquary = {
 // ── render ────────────────────────────────────────────────────────────
 const OUT = "docs/turret-concepts";
 mkdirSync(OUT, { recursive: true });
-const FACTIONS = { foundry, verdance, hive, reliquary };
+const FACTIONS = { foundry, verdance, hive, reliquary, boiler, blackline, ceramic, scrap };
 const SIZES = [1, 2, 3, 4];
 const OUTLINE = "#404049";
 for (const [name, f] of Object.entries(FACTIONS)) {
