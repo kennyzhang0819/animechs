@@ -1,9 +1,8 @@
 /**
- * ANIMAL ART: the Starhart (stag), Stoop (bat), Ironhide (rhino) and
- * Weaver (spider) families, generated as pixel art at load and packed
- * over the Starlight mechs', Skyfall bombers', ground mechs' and venom
- * spitters' atlas cells (atlas.ts packAnimalArt) while game/animalFlag.ts
- * ANIMAL_ART is on.
+ * ANIMAL ART: the Starhart (stag), Stoop (bat), Ironhide (rhino), Weaver
+ * (spider), Skate (manta) and Livewire (eel) families, generated as pixel
+ * art at load and packed over the six stock families' atlas cells
+ * (atlas.ts packAnimalArt) while game/animalFlag.ts ANIMAL_ART is on.
  *
  * The style these follow and the rule for how big a tier draws are in
  * docs/unit-art.md; read it before adding a family.
@@ -37,6 +36,12 @@
  * from T4. Weaver is legged at every tier, the T1 included — a spider's
  * legs ARE its silhouette, so the one animal that gets its legs out at
  * every size is the one whose body is nothing without them.
+ *
+ * Skate rides the bat's parts rig on the water: hulls go through the same
+ * draw path as flyers, so a manta beats its wings the way a bat does,
+ * slower. Livewire is the WORM RIG, new with it: a head, a chain of body
+ * segments the sim drags behind it, and a tail (levels.ts SegmentSpec,
+ * Sim.updateSegments, Renderer.pushSegments).
  */
 
 // ── the engine: a square grid of colour strings ────────────────────────
@@ -687,3 +692,165 @@ export function spiderLegged(T: SpiderTier): LegParts {
 }
 /** the grid the caps and foot are drawn on: the cell they pack into */
 export const spiderSmall = (T: SpiderTier): number => (T.t >= 4 ? 127 : 63);
+
+// ── SKATE ────────────────────────────────────────────────────────────────
+//
+// The manta, for the harpoon fleet: a lozenge of a body between two broad
+// pectoral wings that beat slowly, the cephalic fins out front as a pair
+// of steel horns, and the tail a steel harpoon — the family's straight
+// round, drawn onto the animal that carries one. Teal sits on the harpoon's
+// barb and a seam down the spine. The rig is the bat's: body and one wing
+// mirrored to both sides (FLYER_PARTS), on a slow fold. Hulls go through
+// the same single-quad draw path as flyers, so the wings ride it as-is.
+const TEAL: Tone = ["#0f8a78", "#4dffe0", "#b0fff4"];
+const SKIN: Tone = ["#22303a", "#3a5060", "#5c7e90"];
+/** the same shape of tier as the bat's, on the naval line's cells
+ *  (128/128/256/256/384) */
+export const MANTA_TIERS: readonly StoopTier[] = [
+  { t: 1, n: 127, W: 56, nb: 63, nw: 63, fold: 0.22, sweep: 0.08, rate: 0.9, scale: 1.2 },
+  { t: 2, n: 127, W: 60, nb: 63, nw: 63, fold: 0.22, sweep: 0.08, rate: 0.8, scale: 1.3 },
+  { t: 3, n: 255, W: 115, nb: 127, nw: 127, fold: 0.2, sweep: 0.07, rate: 0.65, scale: 1.1 },
+  { t: 4, n: 255, W: 120, nb: 127, nw: 127, fold: 0.18, sweep: 0.06, rate: 0.5, scale: 1.5 },
+  { t: 5, n: 383, W: 180, nb: 191, nw: 191, fold: 0.16, sweep: 0.05, rate: 0.4, scale: 1.7 },
+];
+/** the wing's extent in the body frame, W units: it is what sizes the wing cell */
+const MWING_X0 = 0.12, MWING_X1 = 1.0, MWING_Y0 = -0.42, MWING_Y1 = 0.45;
+const MWING_ROOT = { x: 0.12, y: -0.05 } as const;
+const MWING: readonly Pt[] = [[0.12, -0.25], [0.55, -0.42], [1.0, -0.15], [0.85, 0.2], [0.45, 0.45], [0.15, 0.35]];
+
+/** one wing (the right one), drawn about an origin (cx, cy) on the grid */
+function mantaWing(g: Pen, H: H, T: StoopTier, cx: number, cy: number, s: number): void {
+  const { W, t } = T; const X = (v: number) => cx + s * v * W, Y = (v: number) => cy + v * W;
+  const P = MWING.map(([x, y]) => [X(x), Y(y)] as const);
+  H.org(g, { poly: H.P(P) }, SKIN);
+  // the leading edge, a lighter fold of skin; steel along it from T4
+  if (t >= 4) H.mech(g, { poly: H.P([[X(0.12), Y(-0.25)], [X(0.55), Y(-0.42)], [X(1.0), Y(-0.15)], [X(0.94), Y(-0.1)], [X(0.55), Y(-0.34)], [X(0.16), Y(-0.19)]]) }, false);
+  else g.over((q) => q.poly(H.P([[X(0.12), Y(-0.25)], [X(0.55), Y(-0.42)], [X(1.0), Y(-0.15)], [X(0.94), Y(-0.1)], [X(0.55), Y(-0.34)], [X(0.16), Y(-0.19)]]), SKIN[2]));
+  if (t >= 3) g.box(H.p(X(0.5) - Math.max(1, W * 0.02)), H.p(Y(-0.3)), H.p(X(0.5) + Math.max(1, W * 0.02)), H.p(Y(0.3)), TEAL[1]);
+}
+/** the harpoon's reach past the body, W units, and the barb's half width */
+const harpoon = (t: number): { tip: number; barb: number } => ({ tip: t >= 5 ? 1.0 : t >= 3 ? 0.92 : 0.85, barb: t >= 5 ? 0.11 : t >= 3 ? 0.08 : 0.06 });
+/** the teal: barb and spine — last on the body, alone (in white) for the cell */
+function mantaAccent(g: Pen, H: H, T: StoopTier, cx: number, cy: number): void {
+  const { W, t } = T; const X = (v: number) => cx + v * W, Y = (v: number) => cy + v * W;
+  const { tip, barb } = harpoon(t);
+  g.poly(H.P([[X(-barb), Y(tip - 0.16)], [X(barb), Y(tip - 0.16)], [X(0), Y(tip)]]), TEAL[1]);
+  if (t >= 2) g.box(H.p(X(-0.025)), H.p(Y(-0.3)), H.p(X(0.025)), H.p(Y(0.35)), TEAL[1]);
+}
+/** the body: lozenge, horns, eyes, the harpoon tail, steel on the back */
+function mantaBody(g: Pen, H: H, T: StoopTier, cx: number, cy: number): void {
+  const { W, t } = T; const o = SKIN; const X = (v: number) => cx + v * W, Y = (v: number) => cy + v * W;
+  const px = (v: number) => Math.max(2, Math.round(v * W));
+  // the harpoon first, under the body: a steel shaft and a barbed head
+  const { tip, barb } = harpoon(t);
+  H.pipe(g, X(-0.03), Y(0.3), X(0.03), Y(tip - 0.1));
+  H.mech(g, { poly: H.P([[X(-barb), Y(tip - 0.2)], [X(barb), Y(tip - 0.2)], [X(0), Y(tip)]]) }, false);
+  if (t >= 4) for (const s of [-1, 1]) H.mech(g, { poly: H.P([[X(s * 0.03), Y(tip - 0.32)], [X(s * (barb + 0.04)), Y(tip - 0.22)], [X(s * 0.03), Y(tip - 0.2)]]) }, false);
+  // the body, a lozenge; the horns forward of it
+  H.org(g, { poly: H.P([[X(0), Y(-0.58)], [X(0.16), Y(-0.4)], [X(0.19), Y(-0.05)], [X(0.15), Y(0.35)], [X(0), Y(0.5)], [X(-0.15), Y(0.35)], [X(-0.19), Y(-0.05)], [X(-0.16), Y(-0.4)]]) }, o);
+  for (const s of [-1, 1]) H.mech(g, { poly: H.rot(X(s * 0.1), Y(-0.62), px(0.05), px(0.26), s * -12) }, false);
+  for (const s of [-1, 1]) g.box(H.p(X(s * 0.11) - px(0.02)), H.p(Y(-0.45)), H.p(X(s * 0.11) + px(0.02)), H.p(Y(-0.45) + px(0.035)), o[0]);
+  // steel down the back from T3, stacks at the hips from T4, a collar at T5
+  if (t >= 3) H.hull(g, { poly: H.R(X(-0.09), Y(-0.25), X(0.09), Y(0.3)) });
+  if (t >= 4) stacks(g, H, [X(-0.1), X(0.1)], Y(0.3), Y(0.5), px(0.05));
+  if (t >= 5) H.mech(g, { poly: H.R(X(-0.14), Y(-0.38), X(0.14), Y(-0.28)) }, false);
+  mantaAccent(g, H, T, cx, cy);
+}
+/** where the wing cell sits on its root — pure numbers, no canvas */
+export function mantaGeom(T: StoopTier): StoopGeom {
+  const { W, nw } = T;
+  const ox = (nw - (MWING_X1 - MWING_X0) * W) / 2 - MWING_X0 * W, oy = (nw - (MWING_Y1 - MWING_Y0) * W) / 2 - MWING_Y0 * W;
+  const rootPx = ox + MWING_ROOT.x * W, rootPy = oy + MWING_ROOT.y * W;
+  return { rootX: MWING_ROOT.x * W, rootY: -MWING_ROOT.y * W, wingX: nw / 2 - rootPx, wingY: -(nw / 2 - rootPy) };
+}
+export function manta(T: StoopTier): StoopArt {
+  const { n, nb, nw, W } = T; const c = (n - 1) / 2;
+  const full = draw(n, (g, H) => { mantaWing(g, H, T, c, c, -1); mantaWing(g, H, T, c, c, 1); mantaBody(g, H, T, c, c); });
+  const cb = (nb - 1) / 2;
+  const body = draw(nb, (g, H) => mantaBody(g, H, T, cb, cb));
+  const ox = (nw - (MWING_X1 - MWING_X0) * W) / 2 - MWING_X0 * W, oy = (nw - (MWING_Y1 - MWING_Y0) * W) / 2 - MWING_Y0 * W;
+  const wing = draw(nw, (g, H) => mantaWing(g, H, T, ox, oy, 1), false);
+  const cell = cellOf(n, (g, H) => mantaAccent(g, H, T, c, c));
+  return { full, body, wing, cell };
+}
+
+// ── LIVEWIRE ─────────────────────────────────────────────────────────────
+//
+// The electric eel, for the wraith fleet, and the first body on the roster
+// with no legs and no wings: a head, a chain of body segments the sim
+// drags behind it (levels.ts SegmentSpec, Sim.updateSegments) and a tail
+// fin, each its own sprite, the renderer laying them along the chain with
+// a swimming wave (SEGMENT_ART in atlas.ts). The machine is a steel jaw,
+// armour rings on the segments from T3 and a dorsal plate from T4; the
+// violet is the electric organ, a line down the spine of every part. This
+// is the worm rig: a centipede is the same chain with legs drawn on.
+const VOLT: Tone = ["#5a35b8", "#b48cff", "#dcc8ff"];
+const EEL: Tone = ["#262a38", "#454c66", "#69728e"];
+export interface EelTier {
+  t: number;
+  /** the head, body-segment and tail grids (each in a cell one wider) */
+  nh: number; ns: number; nt: number;
+  /** how many segments trail the head, and the chain spacing between
+   *  them in native px (the slab is drawn longer than that, so the joints
+   *  stay covered as the chain bends) */
+  count: number; spacing: number;
+  /** the swimming wave: lateral amplitude at the tail in native px,
+   *  cycles per second, and the phase lag per segment (rad) */
+  amp: number; rate: number; phase: number;
+}
+/** no overshoot on this one: the head cell is drawn full, and the length
+ *  comes from the chain — five to thirty-odd tiles nose to tail */
+export const EEL_TIERS: readonly EelTier[] = [
+  { t: 1, nh: 47, ns: 35, nt: 35, count: 4, spacing: 25, amp: 4, rate: 1.4, phase: 0.9 },
+  { t: 2, nh: 71, ns: 51, nt: 51, count: 5, spacing: 36, amp: 6, rate: 1.1, phase: 0.9 },
+  { t: 3, nh: 95, ns: 71, nt: 71, count: 7, spacing: 51, amp: 9, rate: 0.9, phase: 0.85 },
+  { t: 4, nh: 127, ns: 99, nt: 99, count: 7, spacing: 71, amp: 13, rate: 0.7, phase: 0.8 },
+  { t: 5, nh: 183, ns: 139, nt: 139, count: 7, spacing: 99, amp: 18, rate: 0.55, phase: 0.75 },
+];
+/** the violet line down the head — last on the head, alone (in white) for the cell */
+function eelAccent(g: Pen, H: H, T: EelTier): void {
+  const { nh, t } = T; const X = (v: number) => v * nh, Y = (v: number) => v * nh;
+  const hw = Math.max(1, 0.04 * nh);
+  g.box(H.p(X(0.5) - hw), H.p(Y(0.38)), H.p(X(0.5) + hw), H.p(Y(1)), VOLT[1]);
+  if (t >= 4) for (const s of [-1, 1]) g.box(H.p(X(0.5 + s * 0.3) - hw), H.p(Y(0.05)), H.p(X(0.5 + s * 0.3) + hw), H.p(Y(0.2)), VOLT[1]);
+}
+/** the head: a blunt wedge widening off the neck, eyes, a steel jaw */
+function eelHead(g: Pen, H: H, T: EelTier): void {
+  const { nh, t } = T; const o = EEL; const X = (v: number) => v * nh, Y = (v: number) => v * nh;
+  const px = (v: number) => Math.max(2, Math.round(v * nh));
+  H.org(g, { poly: H.P([[X(0.5), Y(0)], [X(0.72), Y(0.1)], [X(0.86), Y(0.32)], [X(0.84), Y(0.6)], [X(0.81), Y(1)], [X(0.19), Y(1)], [X(0.16), Y(0.6)], [X(0.14), Y(0.32)], [X(0.28), Y(0.1)]]) }, o, false);
+  for (const s of [-1, 1]) g.box(H.p(X(0.5 + s * 0.24) - px(0.04)), H.p(Y(0.3)), H.p(X(0.5 + s * 0.24) + px(0.04)), H.p(Y(0.3) + px(0.08)), o[0]);
+  // the jaw: a steel plate over the snout from T2, a visor over the eyes from T4, electrodes forward at T5
+  if (t >= 2) H.mech(g, { poly: H.P([[X(0.5), Y(0.02)], [X(0.68), Y(0.1)], [X(0.7), Y(0.22)], [X(0.3), Y(0.22)], [X(0.32), Y(0.1)]]) }, false);
+  if (t >= 4) H.mech(g, { poly: H.R(X(0.2), Y(0.42), X(0.8), Y(0.5)) }, false);
+  if (t >= 5) for (const s of [-1, 1]) H.mech(g, { poly: H.rot(X(0.5 + s * 0.3), Y(0.08), px(0.08), px(0.22), s * 15) }, false);
+  eelAccent(g, H, T);
+}
+/** one body segment: a slab as long as the grid and 0.8 of it wide, the
+ *  spine down the middle, the electric line either side; steel rings from
+ *  T3, a dorsal plate from T4 */
+function eelSegment(g: Pen, H: H, T: EelTier): void {
+  const { ns, t } = T; const o = EEL; const X = (v: number) => v * ns, Y = (v: number) => v * ns;
+  const px = (v: number) => Math.max(2, Math.round(v * ns));
+  H.org(g, { poly: H.P([[X(0.16), Y(0)], [X(0.84), Y(0)], [X(0.9), Y(0.15)], [X(0.9), Y(0.85)], [X(0.84), Y(1)], [X(0.16), Y(1)], [X(0.1), Y(0.85)], [X(0.1), Y(0.15)]]) }, o, false);
+  g.over((q) => q.box(H.p(X(0.5) - px(0.1)), H.p(Y(0)), H.p(X(0.5) + px(0.1)), H.p(Y(1)), o[2]));
+  for (const s of [-1, 1]) g.box(H.p(X(0.5 + s * 0.27) - px(0.03)), H.p(Y(0)), H.p(X(0.5 + s * 0.27) + px(0.03)), H.p(Y(1)), VOLT[1]);
+  if (t >= 3) H.mech(g, { poly: H.R(X(0.1), Y(0.08), X(0.9), Y(0.22)) }, false);
+  if (t >= 4) H.mech(g, { poly: H.R(X(0.5) - px(0.06), Y(0.3), X(0.5) + px(0.06), Y(0.9)) }, false);
+}
+/** the tail: a fin flaring past the neck's width and tapering to a point */
+function eelTail(g: Pen, H: H, T: EelTier): void {
+  const { nt } = T; const o = EEL; const X = (v: number) => v * nt, Y = (v: number) => v * nt;
+  const px = (v: number) => Math.max(2, Math.round(v * nt));
+  H.org(g, { poly: H.P([[X(0.16), Y(0)], [X(0.84), Y(0)], [X(0.96), Y(0.4)], [X(0.62), Y(0.88)], [X(0.5), Y(1)], [X(0.38), Y(0.88)], [X(0.04), Y(0.4)]]) }, o, false);
+  g.over((q) => { q.box(H.p(X(0.5) - px(0.06)), H.p(Y(0)), H.p(X(0.5) + px(0.06)), H.p(Y(0.95)), o[2]); });
+  for (const s of [-1, 1]) g.box(H.p(X(0.5 + s * 0.27) - px(0.03)), H.p(Y(0)), H.p(X(0.5 + s * 0.27) + px(0.03)), H.p(Y(0.45)), VOLT[1]);
+}
+export interface EelArt { head: Art; body: Art; tail: Art; cell: Art }
+export function eel(T: EelTier): EelArt {
+  const head = draw(T.nh, (g, H) => eelHead(g, H, T));
+  const body = draw(T.ns, (g, H) => eelSegment(g, H, T));
+  const tail = draw(T.nt, (g, H) => eelTail(g, H, T));
+  const cell = cellOf(T.nh, (g, H) => eelAccent(g, H, T));
+  return { head, body, tail, cell };
+}

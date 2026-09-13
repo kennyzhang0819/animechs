@@ -11,13 +11,18 @@ import {
 import type { UnitKind } from "./levels";
 import { ANIMAL_ART } from "./animalFlag";
 import {
+  EEL_TIERS,
   HART_TIERS,
+  MANTA_TIERS,
   RHINO_TIERS,
   SPIDER_TIERS,
   STOOP_TIERS,
+  eel,
   hartLegged,
   hartMech,
   hartSeg,
+  manta,
+  mantaGeom,
   rhinoLegged,
   rhinoMech,
   rhinoSeg,
@@ -1515,6 +1520,26 @@ export const UV_ARKYID_LEG_SEG = flat("arkyid-leg-seg", 64, SPIDER_TIERS[3].stro
 export const UV_ARKYID_LEG_BASE_SEG = flat("arkyid-leg-base-seg", 64, SPIDER_TIERS[3].stroke);
 export const UV_TOXOPID_LEG_SEG = flat("toxopid-leg-seg", 64, SPIDER_TIERS[4].stroke);
 export const UV_TOXOPID_LEG_BASE_SEG = flat("toxopid-leg-base-seg", 64, SPIDER_TIERS[4].stroke);
+/** the mantas' bodies and wings, apart, on the same cell sizes as the
+ *  bats' (MANTA_TIERS nb/nw); the composed sprite goes in each hull's own cell */
+export const UV_MANTA1_BODY = sprite("manta1-body", 64, 64);
+export const UV_MANTA1_WING = sprite("manta1-wing", 64, 64);
+export const UV_MANTA2_BODY = sprite("manta2-body", 64, 64);
+export const UV_MANTA2_WING = sprite("manta2-wing", 64, 64);
+export const UV_MANTA3_BODY = sprite("manta3-body", 128, 128);
+export const UV_MANTA3_WING = sprite("manta3-wing", 128, 128);
+export const UV_MANTA4_BODY = sprite("manta4-body", 128, 128);
+export const UV_MANTA4_WING = sprite("manta4-wing", 128, 128);
+export const UV_MANTA5_BODY = sprite("manta5-body", 192, 192);
+export const UV_MANTA5_WING = sprite("manta5-wing", 192, 192);
+/** the eels' head, body segment and tail, each on a cell one px wider
+ *  than its grid (EEL_TIERS nh/ns/nt): the head cell is the hull's icon
+ *  and team cell, the stock hull cell stays as it was */
+const eelCells = (i: number) => {
+  const T = EEL_TIERS[i];
+  return [sprite(`eel${T.t}-head`, T.nh + 1, T.nh + 1), sprite(`eel${T.t}-body`, T.ns + 1, T.ns + 1), sprite(`eel${T.t}-tail`, T.nt + 1, T.nt + 1)] as const;
+};
+export const UV_EEL_CELLS: readonly (readonly [UVRect, UVRect, UVRect])[] = [eelCells(0), eelCells(1), eelCells(2), eelCells(3), eelCells(4)];
 
 /**
  * A flyer drawn in parts: a body quad and one wing quad mirrored to both
@@ -1540,6 +1565,37 @@ export interface FlyerParts {
 }
 /** the flyers that draw in parts — empty unless the animal art is on */
 export const FLYER_PARTS: Partial<Record<UnitKind, FlyerParts>> = {};
+
+/**
+ * THE WORM RIG'S SPRITES (levels.ts SegmentSpec, Sim.usegX): a head on the
+ * hull's own position, one body sprite on every segment of the chain and
+ * a tail past the last one, each drawn along the chain's direction there.
+ * Sizes are world px; the wave is the swim the renderer adds on top of
+ * the chain — lateral amplitude at the tail (world px), cycles a second,
+ * and the phase lag per segment.
+ */
+export interface SegmentArt {
+  head: UVRect;
+  body: UVRect;
+  tail: UVRect;
+  headSprite: number;
+  bodySprite: number;
+  tailSprite: number;
+  amp: number;
+  rate: number;
+  phase: number;
+}
+/** the segmented kinds — empty unless the animal art is on */
+export const SEGMENT_ART: Partial<Record<UnitKind, SegmentArt>> = {};
+const MANTA_KINDS: readonly UnitKind[] = ["risso", "minke", "bryde", "sei", "omura"];
+const MANTA_CELLS: readonly (readonly [UVRect, UVRect])[] = [
+  [UV_MANTA1_BODY, UV_MANTA1_WING],
+  [UV_MANTA2_BODY, UV_MANTA2_WING],
+  [UV_MANTA3_BODY, UV_MANTA3_WING],
+  [UV_MANTA4_BODY, UV_MANTA4_WING],
+  [UV_MANTA5_BODY, UV_MANTA5_WING],
+];
+const EEL_KINDS: readonly UnitKind[] = ["retusa", "oxynoe", "cyerce", "aegires", "navanax"];
 const STOOP_KINDS: readonly UnitKind[] = ["flare", "horizon", "zenith", "antumbra", "eclipse"];
 const STOOP_CELLS: readonly (readonly [UVRect, UVRect])[] = [
   [UV_STOOP1_BODY, UV_STOOP1_WING],
@@ -1720,6 +1776,51 @@ if (ANIMAL_ART) {
     body: UV_ARKYID_BODY, joint: UV_ARKYID_JOINT, baseJoint: UV_ARKYID_JOINT_BASE, foot: UV_ARKYID_FOOT, leg: UV_ARKYID_LEG_SEG, legBase: UV_ARKYID_LEG_BASE_SEG,
     sil: { body: UV_ARKYID_BODY_SIL, joint: UV_ARKYID_JOINT_SIL, baseJoint: UV_ARKYID_JOINT_BASE_SIL, foot: UV_ARKYID_FOOT_SIL },
   }, 4);
+  // ---- Skate ----
+  // the manta rides the bat's parts rig on the harpoon fleet's cells; the
+  // engines go (a manta has no jets), the wake stays
+  MANTA_TIERS.forEach((T, i) => {
+    const g = mantaGeom(T);
+    const [body, wing] = MANTA_CELLS[i];
+    const k = MANTA_KINDS[i];
+    const sc = PX * T.scale;
+    UNIT_ART[k] = { uv: UNIT_ART[k].uv, sprite: UNIT_ART[k].sprite * T.scale };
+    FLYER_PARTS[k] = {
+      body,
+      wing,
+      sprite: cellPx(body) * sc,
+      wingSprite: cellPx(wing) * sc,
+      rootX: g.rootX * sc,
+      rootY: g.rootY * sc,
+      wingX: g.wingX * sc,
+      wingY: g.wingY * sc,
+      fold: T.fold,
+      sweep: T.sweep,
+      rate: T.rate,
+    };
+    delete UNIT_ENGINES[k];
+  });
+  // ---- Livewire ----
+  // the eel is the worm rig: its icon and team cell move to the head
+  // cell, the chain's sprites are its own, no overshoot (the length is
+  // the chain's), and no engines
+  EEL_TIERS.forEach((T, i) => {
+    const [head, body, tail] = UV_EEL_CELLS[i];
+    const k = EEL_KINDS[i];
+    UNIT_ART[k] = { uv: head, sprite: cellPx(head) * PX };
+    SEGMENT_ART[k] = {
+      head,
+      body,
+      tail,
+      headSprite: cellPx(head) * PX,
+      bodySprite: cellPx(body) * PX,
+      tailSprite: cellPx(tail) * PX,
+      amp: T.amp * PX,
+      rate: T.rate,
+      phase: T.phase,
+    };
+    delete UNIT_ENGINES[k];
+  });
   spiderLegArt("toxopid", 4, {
     body: UV_TOXOPID_BODY, joint: UV_TOXOPID_JOINT, baseJoint: UV_TOXOPID_JOINT_BASE, foot: UV_TOXOPID_FOOT, leg: UV_TOXOPID_LEG_SEG, legBase: UV_TOXOPID_LEG_BASE_SEG,
     sil: { body: UV_TOXOPID_BODY_SIL, joint: UV_TOXOPID_JOINT_SIL, baseJoint: UV_TOXOPID_JOINT_BASE_SIL, foot: UV_TOXOPID_FOOT_SIL },
@@ -2543,6 +2644,30 @@ function packAnimalArt(
       sil: { body: UV_TOXOPID_BODY_SIL, joint: UV_TOXOPID_JOINT_SIL, baseJoint: UV_TOXOPID_JOINT_BASE_SIL, foot: UV_TOXOPID_FOOT_SIL } },
   ];
   spiderLegCells.forEach((cells, i) => packLegged(cells, spiderLegged(SPIDER_TIERS[i]), SPIDER_TIERS[i].n));
+
+  // ---- Skate ----
+  const hullCells: readonly UVRect[] = [UV_RISSO, UV_MINKE, UV_BRYDE, UV_SEI, UV_OMURA];
+  MANTA_TIERS.forEach((T, i) => {
+    const a = manta(T);
+    const full = toCanvas(a.full);
+    part(hullCells[i], full);
+    const [bodyUV, wingUV] = MANTA_CELLS[i];
+    part(bodyUV, toCanvas(a.body));
+    part(wingUV, toCanvas(a.wing));
+    dropCell(MANTA_KINDS[i]);
+    teamCell(MANTA_KINDS[i], full, toCanvas(a.cell), hullCells[i], T.n);
+  });
+  // ---- Livewire ----
+  EEL_TIERS.forEach((T, i) => {
+    const a = eel(T);
+    const [headUV, bodyUV, tailUV] = UV_EEL_CELLS[i];
+    const head = toCanvas(a.head);
+    part(headUV, head);
+    part(bodyUV, toCanvas(a.body));
+    part(tailUV, toCanvas(a.tail));
+    dropCell(EEL_KINDS[i]);
+    teamCell(EEL_KINDS[i], head, toCanvas(a.cell), headUV, T.nh);
+  });
 
   // ---- Stoop ----
   const fullCells: readonly UVRect[] = [UV_FLARE, UV_HORIZON, UV_ZENITH, UV_ANTUMBRA, UV_ECLIPSE];

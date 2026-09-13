@@ -81,6 +81,7 @@ import {
   WAVE_GAP_OPENING,
   WAVE_RELEASE_SECONDS,
   type LegSpec,
+  type SegmentSpec,
   type LevelSpec,
   type UnitKind,
   waveSpawnRate,
@@ -624,6 +625,8 @@ const KIND_LAND_SPEED = Float32Array.from(
 /** the gait of every legged kind, indexed like UNIT_KINDS — null for the
  * mechs and flyers, whose animation is one sliding pair of leg sprites */
 const KIND_LEGS = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
+/** the worm rig of every segmented kind (levels.ts SegmentSpec), null for the rest */
+const KIND_SEGS = UNIT_KINDS.map((k) => UNIT_STATS[k].segments ?? null);
 /** the wake of every naval kind, indexed like UNIT_KINDS — null for
  *  everything that is not a hull */
 const KIND_WAKE = UNIT_KINDS.map((k) => UNIT_STATS[k].wake ?? null);
@@ -658,6 +661,8 @@ export const MAX_LEGS = Math.max(1, ...KIND_LEGS.map((l) => l?.count ?? 0));
 // register a landing, and it would simply stop throwing dust. Widen
 // ulegMove to a Uint16Array if a unit ever needs more.
 if (MAX_LEGS > 8) throw new Error(`MAX_LEGS ${MAX_LEGS} > 8: widen Sim.ulegMove past Uint8Array`);
+/** longest chain on the roster: the stride of the per-segment arrays */
+export const MAX_SEGS = Math.max(1, ...KIND_SEGS.map((s) => s?.count ?? 0));
 const TAU = Math.PI * 2;
 
 /**
@@ -1133,6 +1138,11 @@ export class Sim {
    * the direction of travel, so feet land ahead of a walking body */
   readonly ulegOX = new Float32Array(MAX_UNITS);
   readonly ulegOY = new Float32Array(MAX_UNITS);
+  /** THE WORM RIG'S CHAIN (levels.ts SegmentSpec): every segment's world
+   *  position, MAX_SEGS per unit, dragged behind the head by
+   *  updateSegments and read back by Renderer.pushSegments */
+  readonly usegX = new Float32Array(MAX_UNITS * MAX_SEGS);
+  readonly usegY = new Float32Array(MAX_UNITS * MAX_SEGS);
   // --- naval hulls (UnitStats.wake) ---
   // The path the hull has taken, WAKE_PTS world points per unit, oldest
   // first: the wake is drawn along it. Like a leg's foot these are world
@@ -4880,6 +4890,7 @@ export class Sim {
       this.ubrot[i] = a0;
       this.urot[i] = a0;
       if (stats.legs) this.resetLegs(i, stats.legs);
+      if (stats.segments) this.resetSegments(i, stats.segments);
       // a hull arrives with no wake at all: one point under it, and the
       // trail grows out behind as it sails. Mindustry's Trail.clear on add
       // does the same thing, and it is what stops a fresh boat from being
@@ -5681,6 +5692,14 @@ export class Sim {
       this.ulegOX[i] = this.ulegOX[n];
       this.ulegOY[i] = this.ulegOY[n];
     }
+    // the chain too: world positions, so they travel with the head
+    if (KIND_SEGS[this.ukind[i]]) {
+      const a = i * MAX_SEGS, b = n * MAX_SEGS;
+      for (let k = 0; k < MAX_SEGS; k++) {
+        this.usegX[a + k] = this.usegX[b + k];
+        this.usegY[a + k] = this.usegY[b + k];
+      }
+    }
     // and the moved hull's wake, for the same reason its feet move
     if (KIND_WAKE[this.ukind[i]]) {
       const a = i * WAKE_PTS, b = n * WAKE_PTS;
@@ -5699,6 +5718,38 @@ export class Sim {
    * gait clock starts at a random point — a wave of them steps out of
    * phase instead of marching like a chorus line.
    */
+  /** lay the chain out straight behind the head, along the way it faces */
+  private resetSegments(i: number, S: SegmentSpec): void {
+    const off = i * MAX_SEGS;
+    const cx = Math.cos(this.urot[i]), sy = Math.sin(this.urot[i]);
+    for (let k = 0; k < S.count; k++) {
+      this.usegX[off + k] = this.upx[i] - cx * S.spacing * (k + 1);
+      this.usegY[off + k] = this.upy[i] - sy * S.spacing * (k + 1);
+    }
+  }
+  /**
+   * One tick of the chain: each segment is pulled to exactly `spacing`
+   * behind the point ahead of it whenever it has fallen further, and left
+   * where it is otherwise — so the body follows the head's path, bunches
+   * a little when the head turns back on it, and never stretches.
+   */
+  private updateSegments(i: number, S: SegmentSpec): void {
+    const off = i * MAX_SEGS;
+    let lx = this.upx[i], ly = this.upy[i];
+    for (let k = 0; k < S.count; k++) {
+      const p = off + k;
+      const dx = lx - this.usegX[p], dy = ly - this.usegY[p];
+      const d = Math.hypot(dx, dy);
+      if (d > S.spacing) {
+        const f = S.spacing / d;
+        this.usegX[p] = lx - dx * f;
+        this.usegY[p] = ly - dy * f;
+      }
+      lx = this.usegX[p];
+      ly = this.usegY[p];
+    }
+  }
+
   private resetLegs(i: number, L: LegSpec): void {
     const off = i * MAX_LEGS;
     const x = this.upx[i], y = this.upy[i], rot = this.ubrot[i];
@@ -6370,6 +6421,8 @@ export class Sim {
       // unit still runs the pass — its feet ease back under it
       const gait = KIND_LEGS[ukind[i]];
       if (gait) this.updateLegs(i, gait, mdx, mdy, len, dt);
+      const chain = KIND_SEGS[ukind[i]];
+      if (chain) this.updateSegments(i, chain);
       if (nav) this.updateWake(i, dt, water[ci] !== 0);
     }
   }

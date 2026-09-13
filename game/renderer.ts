@@ -37,6 +37,8 @@ import {
   UV_LASER_END,
   UNIT_ENGINES,
   type UnitEngine,
+  SEGMENT_ART,
+  type SegmentArt,
   UV_HAIL,
   UV_DISC,
   UV_DUO,
@@ -111,6 +113,7 @@ import {
   UNIT_STATS,
   type ForceFieldSpec,
   type LegSpec,
+  type SegmentSpec,
   type WakeSpec,
 } from "./levels";
 import {
@@ -120,7 +123,7 @@ import {
   SHIELD_TOWER_COL,
   SHIELD_TOWER_SIZE,
 } from "./mutation";
-import { MAX_LEGS, MUZZLE_FLASH_LIFE, WAKE_PTS, type Sim } from "./sim";
+import { MAX_LEGS, MAX_SEGS, MUZZLE_FLASH_LIFE, WAKE_PTS, type Sim } from "./sim";
 import {
   BEAM_STYLES,
   EXPLOSION_STYLES,
@@ -532,6 +535,10 @@ const KIND_ENGINES = UNIT_KINDS.map((k) => UNIT_ENGINES[k] ?? null);
 /** the flyers drawn as a body and two beating wings (FLYER_PARTS), null
  *  for the single-quad ones — empty unless the animal art trial is on */
 const KIND_FLYER: readonly (FlyerParts | null)[] = UNIT_KINDS.map((k) => FLYER_PARTS[k] ?? null);
+/** the segmented kinds (SEGMENT_ART) and the chain each drags (SegmentSpec) —
+ *  the worm rig; empty unless the animal art trial is on */
+const KIND_SEG_ART: readonly (SegmentArt | null)[] = UNIT_KINDS.map((k) => SEGMENT_ART[k] ?? null);
+const KIND_SEGS: readonly (SegmentSpec | null)[] = UNIT_KINDS.map((k) => UNIT_STATS[k].segments ?? null);
 /** the held beam or charged shot each kind carries (UNIT_HELD), null for the rest */
 const KIND_HELD = UNIT_KINDS.map((k) => UNIT_HELD[k]);
 /** the kinds whose weapon is an energy field: the orbit is drawn round them always */
@@ -2264,7 +2271,13 @@ export class Renderer {
         // hulls cloak (the Wraith fleet); a mech or a walker that took the
         // trait would need the same on its own draw path
         const fp = KIND_FLYER[k];
-        if (ucloakT[i] > 0) {
+        const segArt = KIND_SEG_ART[k], chain = KIND_SEGS[k];
+        if (segArt && chain) {
+          // THE WORM RIG: tail, then every segment back to front, then the
+          // head — a cloaked one is the same chain as a ghost, no cell
+          const ghost = ucloakT[i] > 0;
+          this.pushSegments(dyn, segArt, chain, sim, i, tint, ghost ? 0.2 : 1, ghost ? null : cell, this.cellTint);
+        } else if (ucloakT[i] > 0) {
           this.push(dyn, upx[i], upy[i], usz, usz, urot[i], KIND_UV[k], tint[0], tint[1], tint[2], 0.2);
         } else if (fp) {
           // A FLYER IN PARTS (atlas.ts FLYER_PARTS): the wings first,
@@ -4047,6 +4060,51 @@ export class Renderer {
         fp.wingSprite, fp.wingSprite * span * side, wr, fp.wing, tint[0], tint[1], tint[2], 1,
       );
     }
+  }
+
+  /**
+   * The worm rig (SEGMENT_ART, Sim.usegX): the chain the sim dragged
+   * behind the head, drawn from the tail forward so the head lands on top.
+   * Each segment's quad faces the point ahead of it, and swims: a sine on
+   * sim time, lagging one phase step per segment down the chain and
+   * growing toward the tail, laid across the chain's direction — the wave
+   * an eel's body carries backward. The seed is the spawn-time walk
+   * offset, so a shoal does not swim in step.
+   */
+  private pushSegments(
+    dyn: Batch,
+    art: SegmentArt,
+    S: SegmentSpec,
+    sim: Sim,
+    i: number,
+    tint: readonly [number, number, number],
+    alpha: number,
+    cell: CellArt | null,
+    cellCol: RGB,
+  ): void {
+    const { usegX, usegY, upx, upy, urot, uwalk } = sim;
+    const n = S.count, off = i * MAX_SEGS;
+    const t = sim.time * art.rate * Math.PI * 2 + uwalk[i];
+    for (let k = n - 1; k >= 0; k--) {
+      const sx = usegX[off + k], sy = usegY[off + k];
+      const lx = k === 0 ? upx[i] : usegX[off + k - 1];
+      const ly = k === 0 ? upy[i] : usegY[off + k - 1];
+      const ang = Math.atan2(ly - sy, lx - sx);
+      const nx = -Math.sin(ang), ny = Math.cos(ang);
+      const w = Math.sin(t - k * art.phase) * art.amp * ((k + 1) / n);
+      if (k === n - 1) {
+        // the tail fin, past the last segment on its own heading
+        const w2 = Math.sin(t - (k + 1) * art.phase) * art.amp;
+        const back = S.spacing * 0.9;
+        this.push(
+          dyn, sx - Math.cos(ang) * back + nx * w2, sy - Math.sin(ang) * back + ny * w2,
+          art.tailSprite, art.tailSprite, ang, art.tail, tint[0], tint[1], tint[2], alpha,
+        );
+      }
+      this.push(dyn, sx + nx * w, sy + ny * w, art.bodySprite, art.bodySprite, ang, art.body, tint[0], tint[1], tint[2], alpha);
+    }
+    this.push(dyn, upx[i], upy[i], art.headSprite, art.headSprite, urot[i], art.head, tint[0], tint[1], tint[2], alpha);
+    if (cell) this.pushCell(dyn, cell, upx[i], upy[i], art.headSprite, urot[i], cellCol);
   }
 
   private pushEngines(
