@@ -4,7 +4,7 @@ This is the direction the enemy art settled on after the animal trial
 (`game/animalArt.ts`, behind `ANIMAL_ART` in `game/animalFlag.ts`), written
 down so the next family is drawn to the same rules without re-running the
 trial. The Starhart stags and the Stoop bats are the reference
-implementation, and the Ironhide rhinos and Spitter frogs were drawn to
+implementation, and the Ironhide rhinos and Weaver spiders were drawn to
 this page; the pixel engine and the house rules they obey are in
 `game/pixelArt.ts`, and the packing in `game/atlas.ts`.
 
@@ -20,7 +20,7 @@ the other way round.
 
 - **One animal per family, one gimmick per family, unchanged.** The
   families are renamed for the animal, the gimmick stays what it was:
-  Ironhides (rhino) are the ground mechs, Spitters (dart frog) the venom
+  Ironhides (rhino) are the ground mechs, Weavers (spider) the venom
   spitters, Starhart (stag) the starlight mechs, Stoop (bat) the skyfall
   bombers, Tuskers (narwhal) the harpoon fleet, Livewires (electric eel)
   the wraith fleet. The family accent colours in `PAL` (`game/constants.ts`)
@@ -36,7 +36,9 @@ the other way round.
   stance out, and those two are the only ones that ride the legged rig
   with real planted legs. This is the single most important rule in this
   file. A spread stance at T2 reads as a bug, and the whole family reads
-  as bugs after it.
+  as bugs after it. The one exception is the family that IS a bug: the
+  Weaver spider is legged at every tier, because a spider's legs are its
+  silhouette and a spider with them tucked is a bead.
 - **Flat plates, no outlines, nothing thinner than two pixels.** The
   Mindustry rules from `game/pixelArt.ts`: four or five butted colours,
   no dark contour, no bevel. The atlas adds the rim itself (`outlined()`,
@@ -145,7 +147,7 @@ Ironhide, the rhino (ground mechs' cells; mech rig to T3, four legs from T4):
 | T4 | scepter | 256 | 1.6 | 256 | 106 | 27.5 |
 | T5 | reign | 256 | 2.0 | 320 | 134 | 37.5 |
 
-Spitter, the dart frog (venom spitters' cells; mech rig at T1, four legs from T2):
+Weaver, the spider (venom spitters' cells; legged rig at every tier, six legs on the T1 and eight above):
 
 | tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -154,6 +156,11 @@ Spitter, the dart frog (venom spitters' cells; mech rig at T1, four legs from T2
 | T3 | spiroct | 128 | 1.4 | 112 | 59 | 18.75 |
 | T4 | arkyid | 256 | 1.6 | 256 | 80 | 28.75 |
 | T5 | toxopid | 256 | 2.0 | 320 | 119 | 32.5 |
+
+The spider's legs are the size that matters for that family: leg length
+runs 12, 18, 26, 50 and 60 Mindustry units up the ladder against the
+stock line's 5 to 20, so the widow spans some twenty tiles foot to foot
+on a body drawn at sixteen.
 
 The T4 and T5 stags also get longer legs than the stock walkers
 (`LegSpec.length` 26 and 38 Mindustry units against the stock corvus's

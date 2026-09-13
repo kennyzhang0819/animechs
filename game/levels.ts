@@ -668,7 +668,17 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // spitter stops refreshing the clock it just started. So the T1 lives,
   // keeps its pace, and spits — one orb every three seconds, and every orb
   // lands the rot.
-  crawler: { hp: 150, speed: 7.5 * CELL, armor: 0, radius: UR, tier: 1 },
+  crawler: {
+    hp: 150,
+    speed: 7.5 * CELL,
+    armor: 0,
+    radius: UR,
+    tier: 1,
+    // THE ANIMAL TRIAL (animalFlag.ts): the Weaver T1 is a mite on six
+    // legs (LEG_ART.crawler in atlas.ts); off the trial it has no gait and
+    // scuttles as the crawler mech it always was
+    ...(ANIMAL_ART ? { legs: legs({ count: 6, length: 12 * MU, forwardScl: 0.6, moveSpace: 1.1, baseOffset: 2 * MU, elevation: 0.12 }) } : {}),
+  },
   // atrax: the venom line's T2 — 600 hp, armor 2, a 1.625x1.625-block
   // hitbox, 5.5 tiles/s. It is the crawler's VOLUME tier and nothing else:
   // the same orb, the same rot, four times the health and four barrels.
@@ -696,11 +706,10 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     // Mindustry gives it and the elevation with it, so the body sits down
     // on its feet and scuttles instead of striding.
     //
-    // THE ANIMAL TRIAL (animalFlag.ts): as the Spitter T2 the four legs
-    // are a frog's, tucked close — a little longer than the stock atrax's
-    // on mounts a little further out, so the knees show past the body
+    // THE ANIMAL TRIAL (animalFlag.ts): as the Weaver T2 the legs are a
+    // spider's — eight of them, well past the body, the silhouette itself
     legs: ANIMAL_ART
-      ? legs({ count: 4, length: 10 * MU, forwardScl: 0.6, moveSpace: 1.1, baseOffset: 3 * MU, elevation: 0.12 })
+      ? legs({ count: 8, length: 18 * MU, forwardScl: 0.6, moveSpace: 1.1, baseOffset: 3 * MU, lengthScl: 0.9, elevation: 0.15 })
       : legs({ count: 4, length: 5 * MU, forwardScl: 0.6, moveSpace: 1.1, elevation: 0.12 }),
   },
   // spiroct: the line's T3 — 1000 hp, armor 9, a 1.875x1.875-block hitbox,
@@ -721,10 +730,10 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     // sooner. A third of again on everything within ten tiles, itself
     // included, and it is the only speed buff in the game.
     hasteField: { mult: 1.35, reload: 2, range: 10 * CELL },
-    // THE ANIMAL TRIAL (animalFlag.ts): the Spitter T3 is a frog, four
-    // legs still tucked, not the six the spiroct walks on
+    // THE ANIMAL TRIAL (animalFlag.ts): the Weaver T3, a tarantula on
+    // eight legs, longer again
     legs: ANIMAL_ART
-      ? legs({ count: 4, length: 12 * MU, forwardScl: 0.65, moveSpace: 1.1, baseOffset: 4 * MU, elevation: 0.15 })
+      ? legs({ count: 8, length: 26 * MU, forwardScl: 0.65, moveSpace: 1.1, baseOffset: 4 * MU, lengthScl: 0.9, elevation: 0.2 })
       : legs({
           count: 6,
           length: 6.5 * MU,
@@ -760,17 +769,17 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 4,
     drag: 0.1,
     rotateSpeed: 2.7,
-    // THE ANIMAL TRIAL (animalFlag.ts): the Spitter T4 is the tier the
-    // frog's stance opens — four long legs planted well out
+    // THE ANIMAL TRIAL (animalFlag.ts): the Weaver T4, a huntsman — eight
+    // legs at twice the stock reach, staggered leg by leg
     legs: ANIMAL_ART
       ? legs({
-          count: 4,
-          length: 30 * MU,
-          forwardScl: 0.7,
-          moveSpace: 1.3,
-          baseOffset: 9 * MU,
+          count: 8,
+          length: 50 * MU,
+          pairOffset: 3 * MU,
+          moveSpace: 1.2,
+          baseOffset: 8 * MU,
           lengthScl: 0.9,
-          speed: 0.18,
+          speed: 0.2,
           elevation: 0.3,
           ripple: 2,
         })
@@ -812,17 +821,17 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 5,
     drag: 0.1,
     rotateSpeed: 1.9,
-    // THE ANIMAL TRIAL (animalFlag.ts): the Spitter T5, the frog's four
-    // legs at the toxopid's reach
+    // THE ANIMAL TRIAL (animalFlag.ts): the Weaver T5, the widow — the
+    // longest legs on the field, three times the toxopid's own
     legs: ANIMAL_ART
       ? legs({
-          count: 4,
-          length: 40 * MU,
-          forwardScl: 0.7,
-          moveSpace: 1.4,
+          count: 8,
+          length: 60 * MU,
+          pairOffset: 3 * MU,
+          moveSpace: 1.0,
           baseOffset: 12 * MU,
           lengthScl: 0.9,
-          speed: 0.16,
+          speed: 0.18,
           elevation: 0.4,
           ripple: 3,
         })

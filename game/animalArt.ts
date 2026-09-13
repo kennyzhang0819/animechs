@@ -1,6 +1,6 @@
 /**
  * ANIMAL ART: the Starhart (stag), Stoop (bat), Ironhide (rhino) and
- * Spitter (dart frog) families, generated as pixel art at load and packed
+ * Weaver (spider) families, generated as pixel art at load and packed
  * over the Starlight mechs', Skyfall bombers', ground mechs' and venom
  * spitters' atlas cells (atlas.ts packAnimalArt) while game/animalFlag.ts
  * ANIMAL_ART is on.
@@ -34,9 +34,9 @@
  * effect and the cloak ghost.
  *
  * Ironhide follows the stag's split exactly: mech rig to T3, four legs
- * from T4. Spitter's T1 is a mech (the crawler's rig) and T2 up are
- * legged, as the venom line already was — four legs at every tier, kept
- * short on the T2 and T3 so the frog stays tucked until the T4.
+ * from T4. Weaver is legged at every tier, the T1 included — a spider's
+ * legs ARE its silhouette, so the one animal that gets its legs out at
+ * every size is the one whose body is nothing without them.
  */
 
 // ── the engine: a square grid of colour strings ────────────────────────
@@ -506,14 +506,6 @@ const legRig = (
     legBase: segmentArt(64, seg.sh, tone),
   };
 };
-/** toes fanned from a point: `degs` clockwise from straight up */
-const toes = (g: Pen, H: H, x: number, y: number, degs: readonly number[], len: number, w: number, t: Tone): void => {
-  w = Math.max(2, Math.round(w));
-  for (const d of degs) {
-    const a = ((d - 90) * Math.PI) / 180; const tx = x + Math.cos(a) * len, ty = y + Math.sin(a) * len;
-    H.seg(g, x, y, tx, ty, w, t); H.cap(g, tx, ty, Math.max(2, Math.round(w / 2)), t);
-  }
-};
 
 // ── IRONHIDE ─────────────────────────────────────────────────────────────
 //
@@ -607,109 +599,82 @@ export const rhinoSeg = (T: Tier): { th: number; sh: number } => ({
   sh: Math.max(6, Math.round(T.R * 0.28)),
 });
 
-// ── SPITTER ──────────────────────────────────────────────────────────────
+// ── WEAVER ───────────────────────────────────────────────────────────────
 //
-// The dart frog. Poison on the skin, so the acid is worn as spots; the
-// throat sac is the orb before it is thrown, and the mouth is the barrel.
-// The T1 keeps its legs folded in a Z beside the body and shuffles its
-// toes on the mech rig; T2 up ride the legged rig on four legs, tucked
-// close on the small tiers and planted well out on the T4 and T5, with a
-// webbed foot at the end of each. Steel comes late: a harness at T3,
-// pauldrons and stacks at T4, a collar round the barrel at T5.
+// The spider: a soft body on steel legs. The machine is the legs at every
+// tier — thin pistons with steel knee caps and feet, on shoulder caps of
+// the body's own hide — the fangs from T3, a waist clamp and a spinneret
+// stack from T4. Six legs on the mite, eight from the spider up, all on
+// the legged rig, the T1 included. The acid is one mark on the abdomen: a
+// diamond that grows with the tier and opens into an hourglass on the
+// widow.
 const ACID: Tone = ["#5c8a12", "#d4ff3a", "#eeffa0"];
-const FROG: Tone = ["#1e2a3a", "#2e4a6a", "#4a7aa0"];
+const SPIDER: Tone = ["#3a2a3a", "#5c3f5c", "#8a6488"];
+export interface SpiderTier {
+  t: number;
+  /** the body grid and the design scale drawn on it (the body is drawn in
+   *  design units around the centre, so one shape serves every tier) */
+  n: number; S: number;
+  /** the leg stroke, native px across the segment on this tier's grid */
+  stroke: number;
+  /** the world-quad overshoot past the cell's nominal size (see HartTier) */
+  scale: number;
+}
 /** grids fill the venom spitters' cells (64/128/128/256/256) */
-export const FROG_TIERS: readonly Tier[] = [
-  { t: 1, n: 63, R: 19, scale: 1.5 },
-  { t: 2, n: 127, R: 43, scale: 1.1 },
-  { t: 3, n: 127, R: 43, scale: 1.4 },
-  { t: 4, n: 255, R: 87, scale: 1.6 },
-  { t: 5, n: 255, R: 87, scale: 2.0 },
+export const SPIDER_TIERS: readonly SpiderTier[] = [
+  { t: 1, n: 63, S: 2.4, stroke: 5, scale: 1.5 },
+  { t: 2, n: 127, S: 2.5, stroke: 7, scale: 1.1 },
+  { t: 3, n: 127, S: 2.6, stroke: 9, scale: 1.4 },
+  { t: 4, n: 255, S: 4.0, stroke: 15, scale: 1.6 },
+  { t: 5, n: 255, S: 4.2, stroke: 20, scale: 2.0 },
 ];
-const barrelWidth = (t: number): number => (t >= 5 ? 0.16 : t >= 3 ? 0.12 : 0.09);
-/** the acid: spots, the throat sac, the barrel's mouth — last on the body, alone for the cell */
-function frogAccent(g: Pen, H: H, T: Tier): void {
-  const { n, R, t } = T; const c = (n - 1) / 2;
-  const X = (v: number) => c + v * R, Y = (v: number) => c + v * R;
-  // the spots come with age: one pair on a T1, and only the T5 wears the
-  // whole spread across its back
-  const spots: (readonly [number, number, number])[] =
-    t === 1 ? [[-0.45, 0.35, 0.14], [0.45, 0.35, 0.14]]
-    : t === 2 ? [[-0.45, 0.28, 0.13], [0.45, 0.28, 0.13], [0, 0.78, 0.13]]
-    : [[-0.5, 0.2, 0.12], [0.5, 0.2, 0.12], [-0.4, 0.7, 0.11], [0.4, 0.7, 0.11]];
-  if (t >= 4) spots.push([-0.22, -0.55, 0.08], [0.22, -0.55, 0.08]);
-  if (t >= 5) spots.push([-0.62, 0.45, 0.08], [0.62, 0.45, 0.08], [0, 1.02, 0.08]);
-  for (const [x, y, r] of spots) g.disc(H.p(X(x)), H.p(Y(y)), H.p(R * r), ACID[1]);
-  // the throat sac, filling tier by tier
-  if (t >= 2) {
-    const sr = R * [0, 0, 0.14, 0.17, 0.2, 0.26][t];
-    // the T5's halo is a solid disc under the sac, not a ring beside it:
-    // two rasterised circles never meet without a hairline between them
-    if (t >= 5) g.disc(H.p(c), H.p(Y(-0.3)), H.p(sr + Math.max(3, R * 0.04)), ACID[2]);
-    g.disc(H.p(c), H.p(Y(-0.3)), H.p(sr), ACID[1]);
-    g.disc(H.p(c), H.p(Y(-0.3) - sr * 0.35), H.p(sr * 0.4), ACID[2]);
-  }
-  const bw = barrelWidth(t);
-  g.box(H.p(X(-bw)), H.p(Y(-1.47)), H.p(X(bw)), H.p(Y(-1.37)), ACID[1]);
+/** the abdomen's centre and radius, design units */
+const abdomen = (t: number): { cy: number; R: number } => (t === 1 ? { cy: 4, R: 8 } : { cy: 8, R: 12 + (t - 2) * 1.5 });
+/** the acid mark on the abdomen — last on the body, alone (in white) for the cell */
+function spiderMark(g: Pen, H: H, T: SpiderTier): void {
+  const { n, S, t } = T; const c = (n - 1) / 2;
+  const X = (v: number) => c + v * S, Y = (v: number) => c + v * S;
+  const { cy, R } = abdomen(t); const k = [0, 0.45, 0.5, 0.55, 0.62, 0.72][t];
+  const hw = R * k * 0.8, hh = R * k;
+  if (t >= 5) {
+    g.poly(H.P([[X(-hw), Y(cy - hh)], [X(hw), Y(cy - hh)], [X(0), Y(cy)]]), ACID[1]);
+    g.poly(H.P([[X(-hw), Y(cy + hh)], [X(hw), Y(cy + hh)], [X(0), Y(cy)]]), ACID[1]);
+  } else g.poly(H.P([[X(0), Y(cy - hh)], [X(hw), Y(cy)], [X(0), Y(cy + hh)], [X(-hw), Y(cy)]]), ACID[1]);
 }
-/** the frog's body; `folded` draws the legs in against it (the T1, whose feet are the mech rig's) */
-function frogBody(g: Pen, H: H, T: Tier, folded: boolean): void {
-  const { n, R, t } = T; const c = (n - 1) / 2; const o = FROG;
-  const X = (v: number) => c + v * R, Y = (v: number) => c + v * R;
-  const px = (v: number) => Math.max(2, Math.round(v * R));
-  if (folded) for (const s of [-1, 1]) {
-    limb(g, H, [[X(s * 0.6), Y(0.55)], [X(s * 1.2), Y(0.2)], [X(s * 1.25), Y(1.0)]], R * 0.26, o);
-    limb(g, H, [[X(s * 0.55), Y(-0.25)], [X(s * 1.0), Y(-0.35)], [X(s * 1.1), Y(0.2)]], R * 0.18, o);
+/** the spider's body: abdomen, cephalothorax, eyes, pedipalps, fangs, the steel at the waist and the rear */
+function spiderBody(g: Pen, H: H, T: SpiderTier): void {
+  const { n, S, t } = T; const c = (n - 1) / 2; const o = SPIDER;
+  const X = (v: number) => c + v * S, Y = (v: number) => c + v * S, r = (v: number) => Math.max(2, Math.round(v * S));
+  const disc = (x: number, y: number, rr: number): Shape => ({ disc: [X(x), Y(y), r(rr)] });
+  const eyes = (xs: readonly number[], y: number, s = 2): void => {
+    for (const x of xs) for (const sg of [-1, 1]) g.box(H.p(X(sg * x) - r(s) / 2), H.p(Y(y)), H.p(X(sg * x) + r(s) / 2), H.p(Y(y) + r(s)), o[0]);
+  };
+  const { cy, R } = abdomen(t);
+  if (t === 1) { H.org(g, disc(0, cy, R), o); H.org(g, disc(0, -6, 5), o, false); eyes([2], -9); spiderMark(g, H, T); return; }
+  H.org(g, disc(0, cy, R), o);
+  H.org(g, disc(0, -8, 8 + (t - 2)), o, false);
+  eyes([2, 5], -13 - (t - 2)); eyes([1.5], -11 - (t - 2));
+  if (t >= 3) for (const sg of [-1, 1]) H.org(g, { poly: H.rot(X(sg * 4), Y(-15 - (t - 2)), r(2.5), r(7), sg * 40) }, o, false);
+  if (t >= 4) H.pipe(g, X(-7), Y(-1), X(7), Y(2));
+  if (t >= 4) H.pipe(g, X(-2), Y(17 + (t - 2) * 1.5), X(2), Y(24 + (t - 2) * 1.5));
+  if (t >= 3) for (const s of [-1, 1]) {
+    const L = 9 + (t - 3) * 2, a = (s * 25 * Math.PI) / 180, x0 = s * 5, y0 = -12 - (t - 2);
+    H.seg(g, X(x0), Y(y0), X(x0 + Math.sin(a) * L), Y(y0 - Math.cos(a) * L), r(3 + (t - 3)), STL);
+    if (t === 5) H.seg(g, X(s * 8), Y(-16), X(s * 8 + Math.sin(a) * 8), Y(-16 - Math.cos(a) * 8), r(4), STL);
   }
-  H.org(g, el(H, c, Y(0.25), R * 0.85, R * 0.9), o);
-  H.org(g, { disc: [c, Y(-0.7), R * 0.6] }, o, false);
-  for (const s of [-1, 1]) { H.org(g, { disc: [X(s * 0.45), Y(-1.0), R * 0.25] }, o, false); g.disc(H.p(X(s * 0.45)), H.p(Y(-1.0)), H.p(R * 0.11), o[0]); }
-  // steel: a harness from T3, pauldrons, vents and stacks from T4, the collar at T5
-  if (t >= 3) H.hull(g, { poly: H.R(X(-0.28), Y(-0.05), X(0.28), Y(0.75)) });
-  if (t >= 4) {
-    for (const s of [-1, 1]) H.mech(g, { disc: [X(s * 0.55), Y(-0.32), R * 0.19] });
-    H.vents(g, c - 5, Y(0.08), 3, px(0.15));
-    stacks(g, H, t >= 5 ? [X(-0.2), X(0.2)] : [c], Y(0.82), Y(1.12), px(0.12));
-  }
-  if (t >= 5) H.mech(g, { poly: H.P([[X(-0.35), Y(-0.55)], [X(0.35), Y(-0.55)], [X(0.25), Y(-1.15)], [X(-0.25), Y(-1.15)]]) }, false);
-  // the mouth is the spitter
-  const bw = barrelWidth(t);
-  H.pipe(g, X(-bw), Y(-1.45), X(bw), Y(-1.05));
-  frogAccent(g, H, T);
+  spiderMark(g, H, T);
 }
-/** T1: body with its legs folded in, base, and the near-side toes as the mech rig's leg */
-export function frogMech(T: Tier): MechParts {
-  const { n, R } = T; const c = (n - 1) / 2;
-  const X = (v: number) => c + v * R, Y = (v: number) => c + v * R;
-  const body = draw(n, (g, H) => frogBody(g, H, T, true));
-  const base = draw(n, (g, H) => H.org(g, el(H, c, c + R * 0.25, R * 0.75, R * 0.8), [FROG[0], FROG[0], FROG[1]], false));
-  const leg = draw(n, (g, H) => {
-    toes(g, H, X(1.25), Y(1.0), [120, 150, 180], R * 0.3, R * 0.1, FROG); H.cap(g, X(1.25), Y(1.0), Math.max(2, Math.round(R * 0.13)), FROG);
-    toes(g, H, X(1.1), Y(0.2), [30, 70, 110], R * 0.22, R * 0.08, FROG); H.cap(g, X(1.1), Y(0.2), Math.max(2, Math.round(R * 0.09)), FROG);
-  }, false);
-  const cell = cellOf(n, (g, H) => frogAccent(g, H, T));
-  return { body, base, leg, cell, stride: 2 };
-}
-/** T2-T5: body and base, plus the legged rig's caps, webbed foot and segments */
-export function frogLegged(T: Tier): LegParts {
-  const { n, R } = T; const c = (n - 1) / 2;
-  const body = draw(n, (g, H) => frogBody(g, H, T, false));
-  const base = draw(n, (g, H) => H.org(g, el(H, c, c + R * 0.25, R * 0.7, R * 0.75), [FROG[0], FROG[0], FROG[1]], false));
-  const cell = cellOf(n, (g, H) => frogAccent(g, H, T));
-  const rig = legRig(frogSmall(T), FROG, frogSeg(T), R * 0.14, R * 0.2, (g, H, sc) => {
-    // a webbed foot: three toes fanned up from the ankle, the web between them
-    const L = Math.max(6, R * 0.28);
-    const tip = (d: number): Pt => [sc + Math.sin((d * Math.PI) / 180) * L, sc - Math.cos((d * Math.PI) / 180) * L];
-    g.poly(H.P([[sc, sc], tip(-38), tip(0), tip(38)]), FROG[0]);
-    toes(g, H, sc, sc, [-38, 0, 38], L, R * 0.08, FROG);
-    H.cap(g, sc, sc, Math.max(2, Math.round(R * 0.09)), FROG);
-  });
-  return { body, base, cell, ...rig };
+/** every tier: body and base, plus the legged rig's steel caps, foot and segments */
+export function spiderLegged(T: SpiderTier): LegParts {
+  const { n, S, stroke } = T; const c = (n - 1) / 2;
+  const body = draw(n, (g, H) => spiderBody(g, H, T));
+  const base = draw(n, (g, H) => H.org(g, { disc: [c, c, Math.max(4, Math.round(S * (T.t === 1 ? 5 : 6)))] }, [SPIDER[0], SPIDER[0], SPIDER[1]], false));
+  const cell = cellOf(n, (g, H) => spiderMark(g, H, T));
+  const small = spiderSmall(T); const sc = (small - 1) / 2;
+  const rig = legRig(small, STL, { th: stroke, sh: stroke }, stroke * 0.5, stroke * 0.7, (g, H) => H.cap(g, sc, sc, Math.max(2, Math.round(stroke * 0.7)), STL));
+  // the shoulder cap is the body's own hide, over the steel it mounts
+  const baseJoint = draw(small, (g, H) => H.cap(g, sc, sc, Math.max(2, Math.round(stroke * 0.7)), SPIDER), false);
+  return { body, base, cell, ...rig, baseJoint };
 }
 /** the grid the caps and foot are drawn on: the cell they pack into */
-export const frogSmall = (T: Tier): number => (T.t >= 4 ? 127 : 63);
-/** thigh and shin heights (native px across the leg): a frog's, slim */
-export const frogSeg = (T: Tier): { th: number; sh: number } => ({
-  th: Math.max(6, Math.round(T.R * 0.22)),
-  sh: Math.max(5, Math.round(T.R * 0.15)),
-});
+export const spiderSmall = (T: SpiderTier): number => (T.t >= 4 ? 127 : 63);
