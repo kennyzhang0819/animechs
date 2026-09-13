@@ -165,7 +165,11 @@ stale tab or a cached bundle looks exactly like a fix not working.
   terrain art, painted at load on a 16-pixel grid; `npm run gen:tiles`
   writes the palette's PNGs into `public/tiles/`
 - `game/atlas.ts` — the sprite atlas, composited at load time from
-  Mindustry sprites in `public/mindustry/` plus procedural regions
+  Mindustry sprites in `public/mindustry/` plus procedural regions. The
+  sheet is hand-packed, so **before adding a cell run `npm run atlas:check`**
+  and take a rectangle from its FREE list; declare it through `uv()`;
+  run the check again. It runs under `npm run typecheck` too, and the
+  packed sheet audits itself at load for art drawn outside a cell
 - `game/renderer.ts` — WebGL2 instanced sprites: static terrain, shadow
   and wall batches, one dynamic batch in painter's order, and a shield
   pass. Water is a batch and a program of its own — Mindustry's

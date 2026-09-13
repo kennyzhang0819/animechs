@@ -7,7 +7,7 @@
     "dev:web": "node scripts/desktop-dev.mjs --no-shell",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && npm run atlas:check",
     "gen:tiles": "node --experimental-strip-types scripts/gen-tiles.mjs",
     "playtest": "node scripts/playtest.mjs",
     "build:static": "bash scripts/build-static.sh",
@@ -15,7 +15,8 @@
     "desktop:pack": "npm run build:static && npm --prefix desktop run pack",
     "desktop:pack:steam": "npm run build:static && npm --prefix desktop run pack:steam",
     "desktop:test": "npm --prefix desktop test",
-    "dev:hot": "next dev --turbopack"
+    "dev:hot": "next dev --turbopack",
+    "atlas:check": "node --experimental-transform-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/atlas-check.mjs"
   },
   "dependencies": {
     "next": "^15.5.0",

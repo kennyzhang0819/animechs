@@ -36,6 +36,23 @@ import {
 // already clears 4096, so widening keeps the longest side exactly where it
 // has been while opening a fresh 1024x4096 column at x=1024 for reign,
 // corvus, toxopid and eclipse — and, under them, the bullet regions.
+//
+// HOW TO ADD A CELL. The sheet is hand-packed and eighty percent full, so
+// "looks free in the file" is not a test — a rect can be empty in every
+// comment near it and still sit on a row some helper paints. The test is
+// the registry, and the way to use it is:
+//
+//   1. `npm run atlas:check` prints the FREE rectangles, largest first.
+//      Take one. (`--map` draws the whole sheet at 32px a character.)
+//   2. Declare the cell with uv() — or e2(), or one of the block helpers
+//      below, all of which are uv() underneath. NEVER build a UVRect by
+//      dividing pixels by ATLAS_W/H yourself: a rect that skips uv() is
+//      not in the registry, and the next session will park on it.
+//   3. Draw INTO that cell and nowhere else. The packed sheet audits
+//      itself (auditPaintedCells): any opaque texel outside a registered
+//      cell throws in dev and warns in a shipped build.
+//   4. `npm run atlas:check` again (it is part of `npm run typecheck`):
+//      it must pass, and your rect must be gone from the FREE list.
 const ATLAS_W = 2048;
 const ATLAS_H = 4096;
 /** left edge of the T5 column — every cell below x=1024 predates it */
@@ -58,7 +75,11 @@ export type UVRect = readonly [number, number, number, number];
  * treating an inset as free space is exactly how a neighbour ends up half
  * a pixel inside it.
  */
-const CELLS: { x: number; y: number; w: number; h: number }[] = [];
+export interface AtlasCell { x: number; y: number; w: number; h: number }
+const CELLS: AtlasCell[] = [];
+/** the registry, read-only, for scripts/atlas-check.mjs */
+export const atlasCells = (): readonly AtlasCell[] => CELLS;
+export const ATLAS_SIZE = { w: ATLAS_W, h: ATLAS_H } as const;
 
 const uv = (x: number, y: number, w: number, h: number, inset = 0): UVRect => {
   CELLS.push({ x, y, w, h });
@@ -92,7 +113,7 @@ const uv = (x: number, y: number, w: number, h: number, inset = 0): UVRect => {
  * clash (the water tiles are addressed under several floor kinds). Only a
  * PARTIAL overlap is the mistake.
  */
-function assertCellsDisjoint(): void {
+export function assertCellsDisjoint(): void {
   const hit: string[] = [];
   for (let i = 0; i < CELLS.length; i++) {
     const a = CELLS[i];
@@ -345,8 +366,11 @@ export const SHALLOW_FOR_DEEP: Readonly<Record<number, number>> = {
 // meets the centre stay as they are, so the fade still reaches the shared
 // border at full strength.
 const EDGE_INSET = FLOOR_INSET;
+// the block is REGISTERED as one 192px cell (uv's side effect) even though
+// the UVs handed out are its nine sub-cells: the sub-cells are addressed
+// separately, but the room is owned as a whole
 const edgeBlock = (bx: number, by: number): ReadonlyArray<readonly UVRect[]> =>
-  [0, 1, 2].map((ry) =>
+  (uv(bx, by, 192, 192), [0, 1, 2]).map((ry) =>
     [0, 1, 2].map((rx): UVRect => [
       (bx + rx * 64 + (rx === 0 ? EDGE_INSET : 0)) / ATLAS_W,
       (by + ry * 64 + (ry === 0 ? EDGE_INSET : 0)) / ATLAS_H,
@@ -463,8 +487,10 @@ export const WALL_DACITE = 22;
 // looks like through a mipmap. Insetting the inner edges as well would
 // skip a strip of the painting at every seam and break the bands that
 // run corner to corner across the whole block.
+// registered as one 128px cell, like the edge fades: the quadrants are
+// addressed apart, the room is owned whole
 const largeQuads = (x: number, y: number): ReadonlyArray<readonly UVRect[]> =>
-  [0, 1].map((row) =>
+  (uv(x, y, 128, 128), [0, 1]).map((row) =>
     [0, 1].map((col): UVRect => [
       (x + col * 64 + (col === 0 ? WALL_INSET : 0)) / ATLAS_W,
       (y + row * 64 + (row === 0 ? WALL_INSET : 0)) / ATLAS_H,
@@ -1566,38 +1592,46 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
 // ---- THE ANIMAL ART (game/animalFlag.ts, game/animalArt.ts) ------------
 //
 // The cells the trial needs beyond the ones the two lines already own,
-// on the free block right of the second environment band. Everything
-// else the animals draw into is a cell the stock art owns (nova's
-// leg/base/body, corvus's caps and feet, the flyers' single cells) and is
-// cleared and redrawn at pack time — see packAnimalArt.
-const AN_X = 1408, AN_Y = 3456;
+// on a 1024x256 strip that `npm run atlas:check` reported free (left of
+// the T5 column, under the T4 flyers' row). Everything else the animals
+// draw into is a cell the stock art owns (nova's leg/base/body, corvus's
+// caps and feet, the flyers' single cells) and is cleared and redrawn at
+// pack time — see packAnimalArt.
+//
+// They were first parked at 1408,3456, "the free block right of the second
+// environment band" — which is INSIDE the band, on its large-wall and
+// edge-fade rows, and the hills went blotchy and the terrain borders
+// fringed. The registry did not catch it because those two rows were
+// handed out by helpers that skipped uv(); they no longer skip it. Take
+// a rect from the check's FREE list, never from a reading of the file.
+const AN_X = 0, AN_Y = 1792;
 /** vela's legged parts, the ones its mech rig never had */
 export const UV_VELA_FOOT = uv(AN_X, AN_Y, 128, 128);
 export const UV_VELA_FOOT_SIL = uv(AN_X + 128, AN_Y, 128, 128);
 export const UV_VELA_JOINT = uv(AN_X + 256, AN_Y, 128, 128);
 export const UV_VELA_JOINT_SIL = uv(AN_X + 384, AN_Y, 128, 128);
 export const UV_VELA_JOINT_BASE = uv(AN_X + 512, AN_Y, 128, 128);
-export const UV_VELA_JOINT_BASE_SIL = uv(AN_X, AN_Y + 128, 128, 128);
-/** the stag's leg segments on exact rects: thigh then shin, T4 then T5.
- *  A stretched segment samples its rect corner to corner, mount on the
- *  left, so the height IS the stroke */
+export const UV_VELA_JOINT_BASE_SIL = uv(AN_X + 640, AN_Y, 128, 128);
+/** the stag's leg segments on exact rects: thigh then shin, T4 then T5,
+ *  stacked in one 64px column. A stretched segment samples its rect
+ *  corner to corner, mount on the left, so the height IS the stroke */
 const HART_SEG4 = hartSeg(HART_TIERS[3]), HART_SEG5 = hartSeg(HART_TIERS[4]);
-export const UV_VELA_LEG_SEG = uv(AN_X + 128, AN_Y + 128, 64, HART_SEG4.th);
-export const UV_VELA_LEG_BASE_SEG = uv(AN_X + 128, AN_Y + 152, 64, HART_SEG4.sh);
-export const UV_CORVUS_LEG_SEG = uv(AN_X + 128, AN_Y + 176, 64, HART_SEG5.th);
-export const UV_CORVUS_LEG_BASE_SEG = uv(AN_X + 128, AN_Y + 208, 64, HART_SEG5.sh);
+export const UV_VELA_LEG_SEG = uv(AN_X, AN_Y + 128, 64, HART_SEG4.th);
+export const UV_VELA_LEG_BASE_SEG = uv(AN_X, AN_Y + 152, 64, HART_SEG4.sh);
+export const UV_CORVUS_LEG_SEG = uv(AN_X, AN_Y + 176, 64, HART_SEG5.th);
+export const UV_CORVUS_LEG_BASE_SEG = uv(AN_X, AN_Y + 208, 64, HART_SEG5.sh);
 /** the bats' bodies and wings, apart; the composed sprite goes in each
  *  flyer's own cell */
-export const UV_STOOP5_BODY = uv(AN_X + 256, AN_Y + 128, 128, 128);
-export const UV_STOOP5_WING = uv(AN_X + 384, AN_Y + 128, 128, 128);
-export const UV_STOOP4_BODY = uv(AN_X + 512, AN_Y + 128, 64, 64);
-export const UV_STOOP4_WING = uv(AN_X + 576, AN_Y + 128, 64, 64);
-export const UV_STOOP3_BODY = uv(AN_X + 512, AN_Y + 192, 64, 64);
-export const UV_STOOP3_WING = uv(AN_X + 576, AN_Y + 192, 64, 64);
-export const UV_STOOP1_BODY = uv(AN_X, AN_Y + 256, 64, 64);
-export const UV_STOOP1_WING = uv(AN_X + 64, AN_Y + 256, 64, 64);
-export const UV_STOOP2_BODY = uv(AN_X + 128, AN_Y + 256, 64, 64);
-export const UV_STOOP2_WING = uv(AN_X + 192, AN_Y + 256, 64, 64);
+export const UV_STOOP5_BODY = uv(AN_X + 768, AN_Y, 128, 128);
+export const UV_STOOP5_WING = uv(AN_X + 896, AN_Y, 128, 128);
+export const UV_STOOP4_BODY = uv(AN_X + 64, AN_Y + 128, 64, 64);
+export const UV_STOOP4_WING = uv(AN_X + 128, AN_Y + 128, 64, 64);
+export const UV_STOOP3_BODY = uv(AN_X + 64, AN_Y + 192, 64, 64);
+export const UV_STOOP3_WING = uv(AN_X + 128, AN_Y + 192, 64, 64);
+export const UV_STOOP1_BODY = uv(AN_X + 192, AN_Y + 128, 64, 64);
+export const UV_STOOP1_WING = uv(AN_X + 256, AN_Y + 128, 64, 64);
+export const UV_STOOP2_BODY = uv(AN_X + 192, AN_Y + 192, 64, 64);
+export const UV_STOOP2_WING = uv(AN_X + 256, AN_Y + 192, 64, 64);
 
 /**
  * A flyer drawn in parts: a body quad and one wing quad mirrored to both
@@ -3176,7 +3210,49 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // shelf-packed into the two blocks kept for them
   packTeamCells();
 
+  auditPaintedCells(c);
   return a;
+}
+
+/**
+ * THE OTHER HALF OF THE LAYOUT CHECK: assertCellsDisjoint proves no two
+ * REGISTERED cells overlap; this proves nothing was PAINTED outside one.
+ * A draw call takes pixel coordinates, not a cell, so a sprite drawn at
+ * the wrong place (or wider than the cell it is addressed through) is
+ * invisible to the registry — and it is exactly such a draw that a later
+ * cell then gets parked on top of, because the registry said the room was
+ * free. Every opaque texel must lie inside some registered cell.
+ *
+ * Reported per 32px tile, as a bounding box a session can read against
+ * atlas.ts. A dev build throws; a shipped one only warns, because stray
+ * art is a blemish and a thrown atlas is a black screen.
+ */
+function auditPaintedCells(c: CanvasRenderingContext2D): void {
+  const T = 32, GW = ATLAS_W / T, GH = ATLAS_H / T;
+  const owned = new Uint8Array(GW * GH);
+  for (const cell of CELLS)
+    for (let gy = Math.floor(cell.y / T); gy < Math.ceil((cell.y + cell.h) / T); gy++)
+      for (let gx = Math.floor(cell.x / T); gx < Math.ceil((cell.x + cell.w) / T); gx++)
+        owned[gy * GW + gx] = 1;
+  const stray: { x: number; y: number }[] = [];
+  const data = c.getImageData(0, 0, ATLAS_W, ATLAS_H).data;
+  for (let gy = 0; gy < GH; gy++)
+    for (let gx = 0; gx < GW; gx++) {
+      if (owned[gy * GW + gx]) continue;
+      let hit = false;
+      for (let y = gy * T; y < gy * T + T && !hit; y++)
+        for (let x = gx * T; x < gx * T + T; x++)
+          if (data[(y * ATLAS_W + x) * 4 + 3] !== 0) { hit = true; break; }
+      if (hit) stray.push({ x: gx * T, y: gy * T });
+    }
+  if (!stray.length) return;
+  const xs = stray.map((s) => s.x), ys = stray.map((s) => s.y);
+  const msg =
+    `atlas art outside every registered cell (game/atlas.ts): ${stray.length} 32px tile(s) ` +
+    `within ${Math.min(...xs)},${Math.min(...ys)} .. ${Math.max(...xs) + T},${Math.max(...ys) + T}; ` +
+    `first at ${stray.slice(0, 6).map((s) => `${s.x},${s.y}`).join(" ")}`;
+  if (process.env.NODE_ENV !== "production") throw new Error(msg);
+  console.warn(msg);
 }
 
 /**
