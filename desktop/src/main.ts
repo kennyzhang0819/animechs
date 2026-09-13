@@ -55,12 +55,26 @@ const ORIGIN = DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN;
 
 // one data directory whatever the package is called: %APPDATA%/Animechs,
 // ~/.config/Animechs, ~/Library/Application Support/Animechs
-app.setPath("userData", path.join(app.getPath("appData"), "Animechs"));
+//
+// UNLESS THE LAUNCH ASKED FOR SOMEWHERE ELSE. Chromium's own
+// --user-data-dir switch is how the smoke test gets a throwaway
+// directory, and it is the only way that works on every platform:
+// Electron reads XDG_CONFIG_HOME on Linux but IGNORES the APPDATA
+// environment variable on Windows, so a test that sets env alone is
+// silently pointed at the player's real save. setPath would overrule the
+// switch, so when it is present we leave the path Chromium already
+// resolved from it well alone.
+const OWN_DATA_DIR = process.argv.some((a) => a.startsWith("--user-data-dir="));
+if (!OWN_DATA_DIR) {
+  app.setPath("userData", path.join(app.getPath("appData"), "Animechs"));
+}
 const userData = app.getPath("userData");
 // the game was called MechSwarm until the animal mechs: a shell that ran
 // under the old name left its save and window state one directory over,
-// so carry the whole directory across the first time the new name boots
-adoptFormerDataDir(app.getPath("appData"), userData);
+// so carry those files across the first time the new name boots. Skipped
+// for a launch pointed at its own directory — that is a test or a second
+// profile, and neither wants somebody else's campaign appearing in it
+if (!OWN_DATA_DIR) adoptFormerDataDir(app.getPath("appData"), userData);
 
 function adoptFormerDataDir(appData: string, target: string): void {
   const former = path.join(appData, "MechSwarm");

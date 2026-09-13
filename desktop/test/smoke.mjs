@@ -17,8 +17,15 @@ if (!process.env.SMOKE_EXECUTABLE && !process.env.SMOKE_DEV_URL && !fs.existsSyn
   process.exit(1);
 }
 
-// an appData of our own, so the test never touches a real save
+// A DATA DIRECTORY OF OUR OWN, so the test never touches a real save.
+// It is handed over as Chromium's --user-data-dir switch, which is the
+// only way that holds on every platform: the env vars below do it on
+// Linux, but Electron IGNORES APPDATA on Windows and resolves the real
+// Roaming folder, so a test that set env alone would write into the
+// player's own %APPDATA%\Animechs\saves and then clear it. main.ts
+// leaves its own setPath alone when the switch is present.
 const appData = fs.mkdtempSync(path.join(os.tmpdir(), "animechs-smoke-"));
+const userData = path.join(appData, "Animechs");
 // SMOKE_EXECUTABLE=release/linux-unpacked/animechs runs the same checks
 // against a packed build instead of dist/ + ../out; SMOKE_DEV_URL=
 // http://localhost:3000 runs them against a Next dev server through the
@@ -34,6 +41,7 @@ const app = await electron.launch({
   args: [
     ...(packed ? [] : [root]),
     ...(devUrl ? [`--dev-url=${devUrl}`] : []),
+    `--user-data-dir=${userData}`,
     "--no-sandbox",
     "--use-gl=angle",
     "--use-angle=swiftshader",
@@ -123,11 +131,11 @@ try {
     return new Promise((r) => setTimeout(() => r(s.read()), 300));
   });
   check("save round-trips through the file", roundTrip === '{"smoke":1}', String(roundTrip));
-  const saved = fs.existsSync(path.join(appData, "Animechs", "saves", "progress.json"));
+  const saved = fs.existsSync(path.join(userData, "saves", "progress.json"));
   check("save file is under Animechs/saves", saved);
   await page.evaluate(() => window.animechsDesktop.saves.clear());
   await new Promise((r) => setTimeout(r, 300));
-  check("clear removes it", !fs.existsSync(path.join(appData, "Animechs", "saves", "progress.json")));
+  check("clear removes it", !fs.existsSync(path.join(userData, "saves", "progress.json")));
 
   const traversal = await page.evaluate(async () => (await fetch("/../package.json")).status);
   check("no path traversal", traversal === 404, `status ${traversal}`);
