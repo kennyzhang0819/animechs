@@ -21,7 +21,7 @@ export default function GlobalError({
   return (
     <html lang="en">
       <head>
-        <title>MechSwarm</title>
+        <title>Animechs</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
       <body style={{ margin: 0, background: "#0B0B0D" }}>

@@ -8,7 +8,7 @@ import { createPortal } from "react-dom";
  * THE HOVER CARD — one tooltip for every chip, tile and face in the game:
  * a bordered black card with a title, an optional tag in the corner, and
  * a sentence. The track's reward chips (Progress), the codex tiles
- * (MutationTree) and the deploy screen's mutator faces (MechSwarm) all
+ * (MutationTree) and the deploy screen's mutator faces (Animechs) all
  * open this one.
  *
  * IT IS PORTALLED ONTO THE BODY AND PINNED BY THE ANCHOR'S SCREEN

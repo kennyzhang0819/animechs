@@ -20,7 +20,9 @@
  * disk — the run still plays, nothing sticks.
  */
 
-const KEY = "mechswarm.progress.v1";
+const KEY = "animechs.progress.v1";
+/** the same slot under the name the game had before the animal mechs */
+const FORMER_KEY = "mechswarm.progress.v1";
 
 /**
  * HOW THE WINDOW FILLS A SCREEN — the Video tab's three choices, applied
@@ -82,13 +84,13 @@ export interface DesktopBridge {
 
 declare global {
   interface Window {
-    mechswarmDesktop?: DesktopBridge;
+    animechsDesktop?: DesktopBridge;
   }
 }
 
 /** the desktop bridge, when this is the desktop build */
 export function desktop(): DesktopBridge | undefined {
-  return typeof window === "undefined" ? undefined : window.mechswarmDesktop;
+  return typeof window === "undefined" ? undefined : window.animechsDesktop;
 }
 
 /**
@@ -119,7 +121,16 @@ export function readSave(): string | null {
   try {
     const d = desktop();
     if (d) return d.saves.read();
-    return localStorage.getItem(KEY);
+    const json = localStorage.getItem(KEY);
+    if (json !== null) return json;
+    // a tab that has a campaign under the old name keeps it: move the
+    // slot across on the first read, so the next write lands in one place
+    const former = localStorage.getItem(FORMER_KEY);
+    if (former !== null) {
+      localStorage.setItem(KEY, former);
+      localStorage.removeItem(FORMER_KEY);
+    }
+    return former;
   } catch {
     return null;
   }
@@ -139,7 +150,10 @@ export function clearSave(): void {
   try {
     const d = desktop();
     if (d) d.saves.clear();
-    else localStorage.removeItem(KEY);
+    else {
+      localStorage.removeItem(KEY);
+      localStorage.removeItem(FORMER_KEY);
+    }
   } catch {
     // ignore — same storage caveat as writeSave
   }

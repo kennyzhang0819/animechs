@@ -81,7 +81,7 @@ export const STATUS_MARKS_DEFAULT: StatusMode = "always";
  * no entry in the record (grantRunReward). That is the whole reason the
  * dials can be handed over: a run whose difficulty, swarm and rules are
  * all chosen is not a measurement of anything, so it must not be able to
- * level a save. (The SANDBOX — MechSwarm.tsx, Ctrl+Shift+S: free
+ * level a save. (The SANDBOX — Animechs.tsx, Ctrl+Shift+S: free
  * building and every pace — is a separate debug door and opens on either
  * mode.)
  */
@@ -145,7 +145,7 @@ export interface Progress {
    * simply not read in regular mode — where the map is always rolled, so
    * `map` is remembered through a regular run rather than wiped by one.
    * The one place the modes disagree is reach: regular clamps a
-   * difficulty the track has not opened back down (MechSwarm.tsx), so
+   * difficulty the track has not opened back down (Animechs.tsx), so
    * flipping to regular can lower a rung custom was standing on.
    */
   difficulty?: number;

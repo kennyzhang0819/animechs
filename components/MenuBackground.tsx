@@ -213,7 +213,7 @@ export default function MenuBackground({
    * Called ONCE, when the first shot is up and all the way out of its
    * black — the moment the ground behind the menu is a picture of the
    * country rather than a rectangle of nothing. The boot screen over the
-   * whole page (MechSwarm) hangs on this, so it is also called when there
+   * whole page (Animechs) hangs on this, so it is also called when there
    * is never going to be a picture at all (no WebGL2, a sheet that would
    * not pack): a front of house nobody can uncover is worse than a black
    * one.
@@ -316,7 +316,7 @@ export default function MenuBackground({
       }
 
       // the official map documents are fetched by the shell around this
-      // (MechSwarm), so the first shot is taken the frame they land
+      // (Animechs), so the first shot is taken the frame they land
       if (!shot) {
         if (!loadMap(MENU_MAPS[order[0]])) return;
         nextShot();

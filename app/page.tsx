@@ -1,5 +1,5 @@
-import MechSwarm from "@/components/MechSwarm";
+import Animechs from "@/components/Animechs";
 
 export default function Home() {
-  return <MechSwarm />;
+  return <Animechs />;
 }

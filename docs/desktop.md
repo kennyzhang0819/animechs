@@ -65,7 +65,7 @@ by design; the admin page is compiled out of a production bundle too.
 | `desktop/src/serve.ts` | serves `out/` on **`app://game/`**. The game fetches by absolute path — `/levels/…`, `/maps/…`, `/_next/static/…` — which `file://` cannot resolve, so the export gets a scheme with a root. `/admin` → `admin.html`, Next-style; nothing outside `out/` is ever served |
 | `desktop/src/saves.ts` | the save file: `progress.json` under the data directory, written atomically with a `.bak` of the previous save |
 | `desktop/src/steam.ts` | Steamworks, off until there is an app id |
-| `desktop/src/preload.ts` | **the bridge**: `window.mechswarmDesktop` — `saves.read/write/clear`, `display.get/setMode/setMonitor/onChange`, `steam.available`, `steam.unlockAchievement`, `platform`. Sandboxed and context-isolated; the page never sees Node |
+| `desktop/src/preload.ts` | **the bridge**: `window.animechsDesktop` — `saves.read/write/clear`, `display.get/setMode/setMonitor/onChange`, `steam.available`, `steam.unlockAchievement`, `platform`. Sandboxed and context-isolated; the page never sees Node |
 | `desktop/electron-builder.yml` | the pack: `dist/` in the asar, `out/` as `resources/game`, steamworks.js unpacked beside its redistributable |
 | `desktop/test/smoke.mjs` | the smoke test |
 
@@ -116,18 +116,18 @@ all. That was the whole of why the monitor picker did not move the game.
 
 ## Where the data lives
 
-The data directory is `MechSwarm` under the OS's application-data root,
+The data directory is `Animechs` under the OS's application-data root,
 whatever the package is called:
 
 | OS | saves |
 |---|---|
-| Windows | `%APPDATA%\MechSwarm\saves\progress.json` |
-| macOS | `~/Library/Application Support/MechSwarm/saves/progress.json` |
-| Linux, Steam Deck | `~/.config/MechSwarm/saves/progress.json` |
+| Windows | `%APPDATA%\Animechs\saves\progress.json` |
+| macOS | `~/Library/Application Support/Animechs/saves/progress.json` |
+| Linux, Steam Deck | `~/.config/Animechs/saves/progress.json` |
 
 **Steam Cloud needs no code.** On the partner site, set Auto-Cloud roots
 on those three paths (`WinAppDataRoaming`, `MacAppSupport`, `LinuxHome`
-+ `.config`, each with subdirectory `MechSwarm/saves`) and Steam syncs
++ `.config`, each with subdirectory `Animechs/saves`) and Steam syncs
 the file. `window.json` beside it — the window's size, its display mode
 and its monitor — is deliberately not synced.
 
@@ -165,8 +165,8 @@ client signed in.
 `desktop/release/linux-unpacked/` — one depot each, uploaded as they are
 with SteamPipe (`steamcmd` + a depot build script pointing at the
 directory). Installers are deliberately not built: Steam is the
-installer. Launch options on the partner site: `MechSwarm.exe` for
-Windows, `mechswarm` for Linux.
+installer. Launch options on the partner site: `Animechs.exe` for
+Windows, `animechs` for Linux.
 
 **Steam Deck** runs the Linux depot natively — no Proton. Chromium's
 WebGL2 is fine on its GPU. What Deck *verification* also wants is not in
@@ -183,7 +183,7 @@ and needs signing and notarization before Gatekeeper lets it run; the
 ```bash
 npm run build:static
 cd desktop && npm test                      # against dist/ + ../out
-SMOKE_EXECUTABLE=release/linux-unpacked/mechswarm npm test   # against a packed build
+SMOKE_EXECUTABLE=release/linux-unpacked/animechs npm test   # against a packed build
 SMOKE_DEV_URL=http://localhost:3000 npm test                  # through --dev-url, server running
 ```
 

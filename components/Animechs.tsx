@@ -1535,7 +1535,7 @@ const DISPLAY_MODES: ReadonlyArray<{ mode: DisplayMode; label: string }> = [
   { mode: "fullscreen", label: "Fullscreen" },
 ];
 
-export default function MechSwarm() {
+export default function Animechs() {
   const glRef = useRef<HTMLCanvasElement>(null);
   const uiRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef<Game | null>(null);
@@ -2056,12 +2056,12 @@ export default function MechSwarm() {
         // that door is gone with the tab (custom mode replaced it, and a
         // mode picked on the deploy screen has no query string to carry
         // a flag on). On a dev build the running Game is
-        // `window.__mechswarm`, so the same test is __mechswarm.diagnose()
+        // `window.__animechs`, so the same test is __animechs.diagnose()
         // at whatever moment of a run is worth measuring — which is more
         // than the fixed 2.5s mark ever gave.
         if (ADMIN_ENABLED) {
           const w = window as unknown as Record<string, unknown>;
-          w.__mechswarm = g;
+          w.__animechs = g;
           // the ladder's number guide, next to the running game.
           // `__ladder.audit()` is one row a rung, `.waves()` one row a
           // wave, and `.spec(n)` is what to hand `sim.loadLevel` to watch a
@@ -2142,7 +2142,7 @@ export default function MechSwarm() {
       // drop the debug global too — a stale pointer to a destroyed Game
       // makes console probing silently act on the wrong instance
       const w = window as unknown as Record<string, unknown>;
-      if (w.__mechswarm === game) delete w.__mechswarm;
+      if (w.__animechs === game) delete w.__animechs;
     };
   }, [screen, level, runRandom, runMode]);
 
@@ -2712,12 +2712,12 @@ export default function MechSwarm() {
                   {/* the display face (Chakra Petch) is the techy one — the
                       body face is what makes the working UI read as terminal
                       text, and a title set in it read as more of the same.
-                      The name is one word: it is the COLOUR that splits MECH
-                      from SWARM, not a space or a line break. */}
+                      The name is one word: it is the COLOUR that splits ANI
+                      from MECHS, not a space or a line break. */}
                   <h1 className="font-display text-5xl font-bold uppercase tracking-[0.02em] [text-shadow:4px_4px_0_#000] sm:text-6xl">
-                    <span className="text-[#EDEDEF]">Mech</span>
+                    <span className="text-[#EDEDEF]">Ani</span>
                     <span className="text-[#FFD37F]">
-                      Swarm
+                      mechs
                     </span>
                   </h1>
                 </div>

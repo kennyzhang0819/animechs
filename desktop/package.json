@@ -1,9 +1,9 @@
 {
-  "name": "mechswarm-desktop",
-  "productName": "MechSwarm",
+  "name": "animechs-desktop",
+  "productName": "Animechs",
   "version": "0.1.0",
   "private": true,
-  "description": "The desktop shell around MechSwarm's static bundle: Electron, a file-backed save, Steamworks.",
+  "description": "The desktop shell around the Animechs static bundle: Electron, a file-backed save, Steamworks.",
   "main": "dist/main.js",
   "scripts": {
     "compile": "tsc -p tsconfig.json",

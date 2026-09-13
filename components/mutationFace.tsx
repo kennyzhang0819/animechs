@@ -36,7 +36,7 @@ export const MUT_LIT = "#FF8ACB";
  * to be a single path tinted by how dear the rule was, because the tint
  * was one of the things answering "how bad is this". Every screen that
  * draws a face already answers it another way: the deploy chip borders
- * itself in the band (DealRuleCell, MechSwarm), and the track and the
+ * itself in the band (DealRuleCell, Animechs), and the track and the
  * unlocks board both hand the band to the hover card as its corner word
  * (rewardLook, Progress) — which is the only place either of them ever
  * showed it, since a mutator chip wears the codex's pink on both.

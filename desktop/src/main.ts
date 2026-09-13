@@ -53,10 +53,43 @@ function devUrl(): string | null {
 const DEV_URL = devUrl();
 const ORIGIN = DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN;
 
-// one data directory whatever the package is called: %APPDATA%/MechSwarm,
-// ~/.config/MechSwarm, ~/Library/Application Support/MechSwarm
-app.setPath("userData", path.join(app.getPath("appData"), "MechSwarm"));
+// one data directory whatever the package is called: %APPDATA%/Animechs,
+// ~/.config/Animechs, ~/Library/Application Support/Animechs
+app.setPath("userData", path.join(app.getPath("appData"), "Animechs"));
 const userData = app.getPath("userData");
+// the game was called MechSwarm until the animal mechs: a shell that ran
+// under the old name left its save and window state one directory over,
+// so carry the whole directory across the first time the new name boots
+adoptFormerDataDir(app.getPath("appData"), userData);
+
+function adoptFormerDataDir(appData: string, target: string): void {
+  const former = path.join(appData, "MechSwarm");
+  // ONLY OUR OWN THREE FILES MOVE. The rest of a userData directory
+  // belongs to Chromium — caches, cookies, GPU blobs, a lock file it
+  // still holds open — and it is both large and rebuilt on first boot,
+  // so copying the directory whole would drag a stale profile across and
+  // could fail halfway through on a file that will not open.
+  const mine = [path.join("saves", "progress.json"), path.join("saves", "progress.bak.json"), "window.json"];
+  // the save is the test, not the directory: Electron makes an empty
+  // userData of its own, and copying over a campaign already played
+  // under the new name would be the one unrecoverable mistake here
+  const save = (dir: string): string => path.join(dir, "saves", "progress.json");
+  try {
+    if (fs.existsSync(save(target)) || !fs.existsSync(save(former))) return;
+    for (const rel of mine) {
+      const from = path.join(former, rel);
+      if (!fs.existsSync(from)) continue;
+      const to = path.join(target, rel);
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      // COPIED, NEVER MOVED: the old directory stays exactly as it was,
+      // so a player who reinstalls the previous build still has it
+      fs.copyFileSync(from, to);
+    }
+  } catch {
+    // a locked or unreadable old directory is not worth failing a boot
+    // over — the player starts fresh instead of not starting at all
+  }
+}
 
 registerAppScheme();
 const steam = initSteam();
@@ -108,7 +141,7 @@ function createShell(): Shell {
   const win = new Shell({
     preload: path.join(__dirname, "preload.js"),
     background: BACKGROUND,
-    title: "MechSwarm",
+    title: "Animechs",
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
     state: loadWindowState(userData),
@@ -148,7 +181,7 @@ void app.whenReady().then(() => {
   const root = bundleDir();
   if (!DEV_URL && !fs.existsSync(path.join(root, "index.html"))) {
     dialog.showErrorBox(
-      "MechSwarm",
+      "Animechs",
       `No game bundle at ${root}.\n\nRun \`npm run build:static\` at the repository root first.`,
     );
     app.exit(1);

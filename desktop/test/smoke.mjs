@@ -18,8 +18,8 @@ if (!process.env.SMOKE_EXECUTABLE && !process.env.SMOKE_DEV_URL && !fs.existsSyn
 }
 
 // an appData of our own, so the test never touches a real save
-const appData = fs.mkdtempSync(path.join(os.tmpdir(), "mechswarm-smoke-"));
-// SMOKE_EXECUTABLE=release/linux-unpacked/mechswarm runs the same checks
+const appData = fs.mkdtempSync(path.join(os.tmpdir(), "animechs-smoke-"));
+// SMOKE_EXECUTABLE=release/linux-unpacked/animechs runs the same checks
 // against a packed build instead of dist/ + ../out; SMOKE_DEV_URL=
 // http://localhost:3000 runs them against a Next dev server through the
 // shell's --dev-url mode (start the server first).
@@ -56,18 +56,18 @@ try {
 
   const probe = await page.evaluate(async () => {
     const res = await fetch("/levels/index.json");
-    const b = typeof window.mechswarmDesktop;
+    const b = typeof window.animechsDesktop;
     return {
       title: document.title,
       canvases: document.querySelectorAll("canvas").length,
       webgl2: !!document.createElement("canvas").getContext("webgl2"),
       levelsFetch: res.status,
       bridge: b,
-      platform: window.mechswarmDesktop?.platform,
-      steam: window.mechswarmDesktop?.steam.available,
+      platform: window.animechsDesktop?.platform,
+      steam: window.animechsDesktop?.steam.available,
     };
   });
-  check("title", probe.title === "MechSwarm", probe.title);
+  check("title", probe.title === "Animechs", probe.title);
   check("canvas mounted", probe.canvases > 0, `${probe.canvases} canvases`);
   check("WebGL2 context", probe.webgl2);
   check("absolute fetch resolves", probe.levelsFetch === 200, `status ${probe.levelsFetch}`);
@@ -79,7 +79,7 @@ try {
   // (desktop/src/display.ts)
   const before = await page.evaluate(() => {
     window.__smokeAlive = true; // a reload would lose this
-    return window.mechswarmDesktop.display?.get() ?? null;
+    return window.animechsDesktop.display?.get() ?? null;
   });
   check("display state on the bridge", !!before && Array.isArray(before.displays), JSON.stringify(before));
   check("opens windowed", before?.mode === "windowed", String(before?.mode));
@@ -89,7 +89,7 @@ try {
     page.evaluate(
       (m) =>
         new Promise((resolve) => {
-          const d = window.mechswarmDesktop.display;
+          const d = window.animechsDesktop.display;
           const off = d.onChange((s) => {
             if (s.mode !== m) return;
             off();
@@ -118,16 +118,16 @@ try {
   check("still the same page", (await page.evaluate(() => window.__smokeAlive)) === true);
 
   const roundTrip = await page.evaluate(() => {
-    const s = window.mechswarmDesktop.saves;
+    const s = window.animechsDesktop.saves;
     s.write('{"smoke":1}');
     return new Promise((r) => setTimeout(() => r(s.read()), 300));
   });
   check("save round-trips through the file", roundTrip === '{"smoke":1}', String(roundTrip));
-  const saved = fs.existsSync(path.join(appData, "MechSwarm", "saves", "progress.json"));
-  check("save file is under MechSwarm/saves", saved);
-  await page.evaluate(() => window.mechswarmDesktop.saves.clear());
+  const saved = fs.existsSync(path.join(appData, "Animechs", "saves", "progress.json"));
+  check("save file is under Animechs/saves", saved);
+  await page.evaluate(() => window.animechsDesktop.saves.clear());
   await new Promise((r) => setTimeout(r, 300));
-  check("clear removes it", !fs.existsSync(path.join(appData, "MechSwarm", "saves", "progress.json")));
+  check("clear removes it", !fs.existsSync(path.join(appData, "Animechs", "saves", "progress.json")));
 
   const traversal = await page.evaluate(async () => (await fetch("/../package.json")).status);
   check("no path traversal", traversal === 404, `status ${traversal}`);

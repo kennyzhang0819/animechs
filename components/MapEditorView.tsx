@@ -24,7 +24,7 @@ const LAYER_ROWS: ReadonlyArray<[keyof TerrainLayers, string]> = [
   ["base", "Base"],
 ];
 
-const POS_KEY = "mechswarm.editor.panels.v1";
+const POS_KEY = "animechs.editor.panels.v1";
 
 /** remember one panel's position and minimised state */
 function persist(id: string, state: { x: number; y: number; open: boolean }): void {
@@ -243,7 +243,7 @@ export default function MapEditorView({
         editor = ed;
         editorRef.current = ed;
         if (ADMIN_ENABLED) {
-          (window as unknown as Record<string, unknown>).__swarmeditor = ed;
+          (window as unknown as Record<string, unknown>).__animechseditor = ed;
         }
       })
       .catch((err: unknown) => {
@@ -260,7 +260,7 @@ export default function MapEditorView({
       editor?.destroy();
       editorRef.current = null;
       const w = window as unknown as Record<string, unknown>;
-      if (w.__swarmeditor === editor) delete w.__swarmeditor;
+      if (w.__animechseditor === editor) delete w.__animechseditor;
     };
   }, [map]);
 

@@ -39,7 +39,7 @@ export { upgradedTower, NO_UPGRADES, type UpgradeContext, type UpgradePoints };
  *
  * IT IS THE FREE BOARD'S DOOR ONLY. A charged run does not pick turrets
  * off a shelf any more: it buys them as cards off the deal (rarity.ts) and
- * the corner holds two buttons instead (components/MechSwarm.tsx). The
+ * the corner holds two buttons instead (components/Animechs.tsx). The
  * grid stays for the sandbox and the editors, where the whole roster is
  * open, nothing is charged and a specific turret has to be reachable on
  * purpose — which is the one thing a random deal cannot do, and exactly

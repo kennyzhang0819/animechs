@@ -3,7 +3,7 @@ import { TOWER_KINDS, type TowerKind } from "./types";
 /**
  * RARITY — what a turret is worth to draw, and the colour it is drawn in.
  *
- * The build card is gone (components/MechSwarm.tsx): a turret is not
+ * The build card is gone (components/Animechs.tsx): a turret is not
  * picked off a shelf any more, it is DEALT. The player pays a flat fee
  * (TURRET_ROLL_PRICE in economy.ts), the deal rolls a rarity against the
  * weights below and then a turret uniformly inside it, and what comes out

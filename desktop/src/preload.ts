@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 /**
  * THE BRIDGE — the whole of what the game can reach from the shell,
- * placed on window.mechswarmDesktop. game/storage.ts reads it for the
+ * placed on window.animechsDesktop. game/storage.ts reads it for the
  * save and the Video tab of Settings for the display; nothing else in the
  * game knows it is on a desktop.
  *
@@ -48,4 +48,4 @@ const bridge = {
   },
 };
 
-contextBridge.exposeInMainWorld("mechswarmDesktop", bridge);
+contextBridge.exposeInMainWorld("animechsDesktop", bridge);

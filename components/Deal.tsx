@@ -384,7 +384,7 @@ function TurretCard({
  * THE SQUARE, and the one card standing over it.
  *
  * FOUR BUTTONS IN A 2x2, in a pane the size of the minimap's (13rem
- * inside a p-1 frame, which is what components/MechSwarm.tsx gives the
+ * inside a p-1 frame, which is what components/Animechs.tsx gives the
  * map on the other side). The two bottom corners are a matched pair now,
  * and each button is a big square target rather than a strip of text —
  * which is what a control pressed a hundred times a run, mid-wave,

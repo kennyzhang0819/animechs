@@ -1,4 +1,4 @@
-# MechSwarm
+# Animechs
 
 A tower-defense swarm game in Mindustry's clothes: fifty waves of up to
 twenty thousand bodies, flow-field pathfinding for the whole horde, WebGL2
@@ -201,7 +201,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   row said neither. Each chip is on its band's ground with a glyph drawn
   rather than sprited; a mod's card carries its odds and its stack total, a
   relic's says it is simply on
-- `components/MechSwarm.tsx` — React shell: HUD (scrap, XP), difficulty
+- `components/Animechs.tsx` — React shell: HUD (scrap, XP), difficulty
   picker, the corner (the deal above, or — on a free board — StarCraft's
   command card, a fixed grid the size of the minimap, `BUILD_SLOTS`, one
   turret a slot with its key on it; the keys read row by row, Q E R T,
@@ -244,7 +244,7 @@ hands over the dials (see *Two modes* below), and Ctrl+Shift+S inside any
 run is the rest of what the sandbox was — whole card unlocked, nothing
 charged, every pace offered.
 
-In dev builds the running `Game` instance is exposed as `window.__mechswarm`
+In dev builds the running `Game` instance is exposed as `window.__animechs`
 for console poking, and the ladder's tuning surface as `window.__ladder`
 (`.spec(n)` for a rung's playable spec, `.budget(n)` for what the
 arithmetic says it costs, `.stages()` for the stage table, `.grind()` to

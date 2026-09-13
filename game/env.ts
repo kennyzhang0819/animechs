@@ -1,7 +1,7 @@
 /**
  * Whether the admin tools — the /admin page (map, level and balance
  * editors), the Ctrl+Shift+M shortcut that opens it, the three API routes
- * they save through, the window.__mechswarm / __swarmeditor debug handles
+ * they save through, the window.__animechs / __animechseditor debug handles
  * and the dev unlock (progress.ts) — exist in this build.
  *
  * ONE SWITCH, READ EVERYWHERE. They are development tools that write files

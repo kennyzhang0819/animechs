@@ -82,7 +82,7 @@ export const ROSTER_TOP = 20;
 /**
  * THE LEVEL THE MUTATOR PHASE OPENS, and the one gate on the ladder: the
  * difficulties that roll rules (Nemesis +1 and up) are shut until a save
- * has rules to roll. THIS NUMBER IS LOAD-BEARING — MechSwarm.tsx prints it
+ * has rules to roll. THIS NUMBER IS LOAD-BEARING — Animechs.tsx prints it
  * at a player looking at a locked difficulty — and it is the one thing on
  * the track that is not free to move.
  */

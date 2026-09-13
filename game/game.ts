@@ -861,7 +861,7 @@ export class Game {
   private modDraws = 0;
   /**
    * HOW MANY STRUCTURES THIS RUN HAS PLACED, only ever going up. The card
-   * layer (MechSwarm) owns the deal, and it has no other way to learn that
+   * layer (Animechs) owns the deal, and it has no other way to learn that
    * the card in hand actually LANDED: it watches this number across the
    * HUD poll and retires the card when it moves. A counter rather than a
    * callback because the HUD is already a poll, and a placement that

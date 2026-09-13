@@ -2173,7 +2173,7 @@ export const WORLDS: LevelSpec[] = [
  * Its `script` is EMPTY until loadLevelDocs() has run. Nothing reads the
  * script at module load (the sim takes WORLDS[0] as a default parameter,
  * evaluated per construction), and all three entry points — Game.create,
- * MechSwarm and the admin page — await loadLevelDocs() before a run or an
+ * Animechs and the admin page — await loadLevelDocs() before a run or an
  * audit can start, so by the time anything asks, the document is on.
  */
 export const WORLD = WORLDS[0];

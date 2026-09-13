@@ -693,7 +693,7 @@
   /* How big the in-game HUD draws, as one multiplier. The panels were
      sized on a desktop, so the default is 1; the player sets their own in
      Settings → Interface (Progress.uiScale, applied onto the root by
-     MechSwarm). Panels opt in with .ui-zoom; `zoom` is used rather than
+     Animechs). Panels opt in with .ui-zoom; `zoom` is used rather than
      transform because it reflows layout, so a scaled panel keeps its
      anchor edge and its neighbours instead of overlapping them. */
   --ui-scale: 1;
@@ -722,7 +722,7 @@ body {
 /* Nothing in the app is a text gesture. Every screen is made of things you
    press — nodes, level cards, HUD buttons — and a mouse drag's blue
    highlight reads as the UI glitching rather than as an offer. The canvas
-   already opted out (MechSwarm); this is the same rule for every other
+   already opted out (Animechs); this is the same rule for every other
    screen — a drag on the admin dashboard is a slider sweep, not a
    selection.
 

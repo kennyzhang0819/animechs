@@ -3,8 +3,8 @@
 # unpacked directory per OS under release/ — which is exactly what SteamPipe
 # uploads as a depot. Installers are deliberately not built: Steam is the
 # installer.
-appId: com.mechswarm.game
-productName: MechSwarm
+appId: com.animechs.game
+productName: Animechs
 directories:
   output: release
 files:
@@ -26,7 +26,7 @@ win:
 linux:
   target: dir
   category: Game
-  executableName: mechswarm
+  executableName: animechs
   extraFiles:
     - from: node_modules/steamworks.js/dist/linux64/libsteam_api.so
       to: .

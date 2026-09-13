@@ -28,7 +28,7 @@ const body = Jersey_20({
 });
 
 export const metadata: Metadata = {
-  title: "MechSwarm",
+  title: "Animechs",
   description:
     "Incremental swarm defense: every run banks resources toward a tech tree of towers and placements, across a campaign of worlds — thousands of units on a WebGL flow field.",
 };
