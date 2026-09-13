@@ -109,6 +109,41 @@ cue. Each is a complete faction on its own; the concept sprites are
 *Verdict:* Boiler or Scrapyard. Boiler for the silhouette, Scrapyard for
 the fiction.
 
+
+## 3a. The first faction: Foundry, the roster
+
+The decision taken: Foundry in Mill's plating is faction one. What a
+faction adds on top of the four-head concepts is the rule for the other
+thirteen, and it is two rules:
+
+- **One shape a role.** No head is another head at a different size.
+  The duo is two barrels; the hail is one fat mortar mouth on a
+  turntable; the scorch a flat flared nozzle with a tank behind; the arc
+  a coil and a prong with no barrel; the salvo three barrels in a row
+  over a magazine; the scatter a bell that flares forward; the lancer a
+  wedge with capacitors; the wave a tank with a water window and one
+  nozzle; the parallax a dish on a yoke; the swarmer a box of missile
+  cells; the fuse a broadside of three wide short tubes; the ripple four
+  ringed mouths; the tsunami the great tank with twin nozzles; the
+  cyclone a rotary cluster on a drum; the spectre long twin barrels with
+  radiator rails; the meltdown one lens and three capacitor banks; the
+  foreshadow a single rail with accelerator rings.
+- **One accent per ammo, seven in all**, and the accent is the colour of
+  the thing thrown, never of the rarity: copper `#e07a3f` for a bullet
+  (duo, salvo, spectre), olive `#a8b04a` for a shell (hail, ripple),
+  ember `#ec7458` for flame (scorch, fuse), ice `#a9d8ff` for a beam
+  (arc, lancer, meltdown, foreshadow), water `#5c6dbb` (wave, tsunami),
+  mint `#8fe0b8` for a field (parallax), salmon `#f595be` for a missile
+  or flak (scatter, swarmer, cyclone). A player learns seven colours and
+  reads a formation's job across the map.
+
+The seventeen are `docs/turret-concepts/mill-<kind>.png`, on Mill's four
+base plates; the accent table is in `roster.json` beside them. The
+proposed names (Pinion, Lobber, Torch, Sparker, Triplet, Bellow, Kiln,
+Sluice, Halo, Quiver, Broadside, Bombard, Floodgate, Grindstone,
+Crucible, Furnace, Railspike) are captions only; the stock kind stays the
+key everywhere in the code.
+
 ### Verdance — plants; the head turns toward the swarm like a heliotrope
 
 Bark (`#5a3d26`), leaf ramp (`#2f6b3a / #5aa84a / #a6de7c`), blossom coral

@@ -381,6 +381,150 @@ const scrap = {
   },
 };
 
+
+// ── FOUNDRY, THE ROSTER: seventeen heads on Mill's plating ──────────────
+// One faction. Every head shares the gunmetal ramp and the bolted-plate
+// language; what differs is the SHAPE (one silhouette a role) and the
+// ACCENT, which is the colour of what the turret throws — copper for a
+// bullet, olive for a shell, ember for flame, ice for a beam, water for
+// water, mint for a field, salmon for a missile or flak. The accent is
+// the thing's colour, never the rarity's (pixelArt.ts rule 4).
+const STEEL = { deep: "#2c2d38", dark: "#4d4e58", mid: "#7b7b7b", lite: "#c1c3d4", white: "#f4f4f4" };
+const ACCENT = {
+  bullet: "#e07a3f",   // copper
+  shell: "#a8b04a",    // olive brass
+  flame: "#ec7458",    // ember
+  beam: "#a9d8ff",     // lancer laser
+  water: "#5c6dbb",    // Liquids.water
+  field: "#8fe0b8",    // mint
+  missile: "#f595be",  // thorium pink
+};
+const mill = {
+  // 1x1 ────────────────────────────────────────────────────────────
+  duo(p, A) {                                            // twin short barrels
+    p.box(0.06, 0.32, 0.5, 0.96, STEEL.dark); p.box(0.12, 0.4, 0.5, 0.9, STEEL.mid);
+    p.box(0.44, 0.42, 0.5, 0.9, A);
+    p.box(0.2, 0.05, 0.34, 0.5, STEEL.lite); p.box(0.2, 0.05, 0.34, 0.14, STEEL.deep);
+    p.box(0.06, 0.82, 0.5, 0.96, STEEL.deep);
+  },
+  hail(p, A) {                                           // one fat mortar mouth on a turntable
+    p.disc(0.5, 0.56, 0.42, STEEL.dark); p.disc(0.5, 0.56, 0.34, STEEL.mid);
+    p.ring(0.5, 0.44, 0.2, 3, STEEL.lite); p.disc(0.5, 0.44, 0.13, STEEL.deep);
+    p.box(0.46, 0.66, 0.5, 0.94, A);
+    p.box(0.1, 0.84, 0.5, 0.94, STEEL.deep);
+  },
+  scorch(p, A) {                                         // squat, a wide flat nozzle, a tank behind
+    p.box(0.1, 0.36, 0.5, 0.9, STEEL.dark); p.box(0.16, 0.42, 0.5, 0.84, STEEL.mid);
+    p.poly([[0.5, 0.06], [0.18, 0.1], [0.28, 0.42], [0.5, 0.42]], STEEL.lite);   // flared nozzle
+    p.box(0.3, 0.12, 0.5, 0.22, A);
+    p.disc(0.5, 0.74, 0.16, STEEL.deep); p.disc(0.5, 0.74, 0.1, A);            // fuel tank
+  },
+  arc(p, A) {                                            // a coil and a fork, no barrel
+    p.disc(0.5, 0.6, 0.36, STEEL.dark); p.ring(0.5, 0.6, 0.3, 3, STEEL.mid); p.disc(0.5, 0.6, 0.16, STEEL.deep);
+    p.disc(0.5, 0.6, 0.08, A);
+    p.box(0.24, 0.04, 0.34, 0.4, STEEL.lite); p.box(0.24, 0.04, 0.34, 0.12, A);   // the prong
+  },
+  // 2x2 ────────────────────────────────────────────────────────────
+  salvo(p, A) {                                          // three barrels in a row, a magazine behind
+    p.box(0.1, 0.36, 0.5, 0.94, STEEL.dark); p.box(0.16, 0.42, 0.5, 0.88, STEEL.mid);
+    p.box(0.16, 0.7, 0.5, 0.86, STEEL.deep); p.box(0.2, 0.74, 0.5, 0.82, A);    // magazine
+    for (const x of [0.2, 0.44]) { p.box(x, 0.06, x + 0.1, 0.5, STEEL.lite); p.box(x, 0.06, x + 0.1, 0.14, STEEL.deep); }
+    p.box(0.44, 0.06, 0.5, 0.14, STEEL.deep);
+  },
+  scatter(p, A) {                                        // a bell that flares forward
+    p.disc(0.5, 0.62, 0.34, STEEL.dark); p.disc(0.5, 0.62, 0.28, STEEL.mid);
+    p.poly([[0.5, 0.04], [0.14, 0.08], [0.3, 0.5], [0.5, 0.5]], STEEL.lite);      // the flare
+    p.poly([[0.5, 0.12], [0.24, 0.14], [0.36, 0.44], [0.5, 0.44]], STEEL.dark);
+    p.box(0.44, 0.14, 0.5, 0.44, A);
+    p.box(0.08, 0.7, 0.5, 0.8, STEEL.deep); p.box(0.12, 0.72, 0.5, 0.78, A);
+  },
+  lancer(p, A) {                                         // a wedge, capacitors on the flanks
+    p.poly([[0.5, 0.08], [0.2, 0.3], [0.12, 0.92], [0.5, 0.92]], STEEL.dark);
+    p.poly([[0.5, 0.16], [0.26, 0.34], [0.2, 0.86], [0.5, 0.86]], STEEL.mid);
+    p.box(0.44, 0.14, 0.5, 0.9, A);
+    p.box(0.02, 0.4, 0.14, 0.8, STEEL.deep); p.box(0.04, 0.44, 0.12, 0.76, A);
+    p.box(0.36, 0.18, 0.5, 0.3, STEEL.white); p.box(0.3, 0.7, 0.5, 0.82, STEEL.deep);
+  },
+  wave(p, A) {                                           // a tank with a window and a nozzle
+    p.disc(0.5, 0.6, 0.38, STEEL.dark); p.disc(0.5, 0.6, 0.32, STEEL.mid);
+    p.disc(0.5, 0.64, 0.2, A);                           // the water window
+    p.disc(0.5, 0.64, 0.2, null); p.disc(0.5, 0.64, 0.2, A); p.over(o => o.disc(0.42, 0.56, 0.06, "#8aa3f4"));
+    p.box(0.42, 0.04, 0.5, 0.36, STEEL.lite); p.box(0.42, 0.04, 0.5, 0.12, STEEL.deep);   // nozzle
+    p.box(0.08, 0.5, 0.16, 0.7, STEEL.deep);
+  },
+  parallax(p, A) {                                       // a dish on a yoke, no barrel
+    p.box(0.1, 0.7, 0.5, 0.94, STEEL.dark); p.box(0.16, 0.76, 0.5, 0.88, STEEL.mid);   // the yoke
+    p.ring(0.5, 0.42, 0.36, 4, STEEL.lite); p.ring(0.5, 0.42, 0.28, 3, STEEL.dark);
+    p.disc(0.5, 0.42, 0.22, STEEL.mid); p.disc(0.5, 0.42, 0.1, A);
+    p.box(0.46, 0.04, 0.5, 0.28, A);                     // the feed horn, forward
+  },
+  swarmer(p, A) {                                        // a box of missile cells
+    p.box(0.08, 0.2, 0.5, 0.94, STEEL.dark); p.box(0.14, 0.26, 0.5, 0.88, STEEL.mid);
+    for (const y of [0.3, 0.48]) for (const x of [0.18, 0.36]) { p.box(x, y, x + 0.12, y + 0.12, STEEL.deep); p.box(x + 0.03, y + 0.03, x + 0.09, y + 0.09, A); }
+    p.box(0.14, 0.7, 0.5, 0.88, STEEL.deep); p.box(0.46, 0.7, 0.5, 0.88, A);
+  },
+  // 3x3 ────────────────────────────────────────────────────────────
+  fuse(p, A) {                                           // a broadside: three wide short tubes
+    p.box(0.08, 0.36, 0.5, 0.94, STEEL.dark); p.box(0.14, 0.42, 0.5, 0.88, STEEL.mid);
+    p.poly([[0.5, 0.42], [0.1, 0.42], [0.14, 0.1], [0.5, 0.1]], STEEL.dark);
+    for (const x of [0.14, 0.36]) { p.box(x, 0.12, x + 0.16, 0.42, STEEL.lite); p.box(x, 0.12, x + 0.16, 0.18, A); }
+    p.box(0.44, 0.44, 0.5, 0.88, A);
+    p.box(0.14, 0.76, 0.5, 0.88, STEEL.deep);
+  },
+  ripple(p, A) {                                         // four ringed mouths
+    p.disc(0.5, 0.55, 0.42, STEEL.dark); p.disc(0.5, 0.55, 0.36, STEEL.mid);
+    p.box(0.46, 0.14, 0.5, 0.96, STEEL.dark);
+    for (const [x, y] of [[0.3, 0.34], [0.3, 0.6]]) { p.ring(x, y, 0.1, 3, STEEL.lite); p.disc(x, y, 0.06, STEEL.deep); }
+    p.box(0.1, 0.8, 0.5, 0.9, STEEL.deep); p.box(0.42, 0.06, 0.5, 0.22, A);
+  },
+  tsunami(p, A) {                                        // a great tank, twin nozzles
+    p.disc(0.5, 0.6, 0.42, STEEL.dark); p.disc(0.5, 0.6, 0.36, STEEL.mid);
+    p.disc(0.5, 0.64, 0.24, A); p.over(o => o.disc(0.4, 0.54, 0.07, "#8aa3f4"));
+    p.box(0.26, 0.04, 0.36, 0.34, STEEL.lite); p.box(0.26, 0.04, 0.36, 0.12, STEEL.deep);
+    p.box(0.46, 0.06, 0.5, 0.36, STEEL.deep);
+    p.box(0.04, 0.5, 0.12, 0.74, STEEL.deep); p.box(0.1, 0.86, 0.5, 0.94, STEEL.deep);
+  },
+  cyclone(p, A) {                                        // a rotary: three barrels in a cluster, a drum behind
+    p.disc(0.5, 0.64, 0.34, STEEL.dark); p.disc(0.5, 0.64, 0.28, STEEL.mid);      // the drum
+    p.ring(0.5, 0.64, 0.28, 3, A);
+    p.box(0.3, 0.06, 0.38, 0.5, STEEL.lite); p.box(0.3, 0.06, 0.38, 0.12, STEEL.deep);
+    p.box(0.44, 0.02, 0.5, 0.46, STEEL.lite); p.box(0.44, 0.02, 0.5, 0.08, STEEL.deep);
+    p.box(0.28, 0.42, 0.5, 0.5, STEEL.deep);             // the barrel clamp
+    p.box(0.1, 0.84, 0.5, 0.94, STEEL.deep);
+  },
+  // 4x4 ────────────────────────────────────────────────────────────
+  spectre(p, A) {                                        // long twin barrels, radiator rails
+    p.box(0.14, 0.4, 0.5, 0.94, STEEL.dark); p.box(0.2, 0.46, 0.5, 0.88, STEEL.mid);
+    p.box(0.45, 0.42, 0.5, 0.94, A);
+    p.box(0.2, 0.02, 0.38, 0.56, STEEL.lite); p.box(0.2, 0.02, 0.38, 0.1, STEEL.deep); p.box(0.26, 0.12, 0.32, 0.46, STEEL.dark);
+    p.box(0.04, 0.46, 0.14, 0.9, STEEL.deep); p.box(0.06, 0.5, 0.12, 0.86, A);
+    p.box(0.28, 0.62, 0.5, 0.86, STEEL.deep); p.box(0.44, 0.66, 0.5, 0.82, STEEL.white);
+  },
+  meltdown(p, A) {                                       // one great emitter, three capacitor banks, no barrel
+    p.poly([[0.5, 0.04], [0.2, 0.2], [0.08, 0.94], [0.5, 0.94]], STEEL.dark);
+    p.poly([[0.5, 0.12], [0.26, 0.26], [0.16, 0.88], [0.5, 0.88]], STEEL.mid);
+    p.ring(0.5, 0.34, 0.2, 4, STEEL.lite); p.disc(0.5, 0.34, 0.14, A); p.disc(0.5, 0.34, 0.06, STEEL.white);   // the lens
+    p.box(0.46, 0.56, 0.5, 0.88, A);
+    for (const y of [0.4, 0.58, 0.76]) { p.box(0.02, y, 0.14, y + 0.12, STEEL.deep); p.box(0.04, y + 0.03, 0.12, y + 0.09, A); }
+    p.box(0.2, 0.6, 0.42, 0.84, STEEL.deep);
+  },
+  foreshadow(p, A) {                                     // one rail, accelerator rings along it
+    p.box(0.16, 0.5, 0.5, 0.96, STEEL.dark); p.box(0.22, 0.56, 0.5, 0.9, STEEL.mid);
+    p.box(0.38, 0.0, 0.5, 0.64, STEEL.lite); p.box(0.44, 0.02, 0.5, 0.6, STEEL.dark);      // the rail
+    for (const y of [0.08, 0.22, 0.36, 0.5]) p.box(0.32, y, 0.5, y + 0.06, A);              // the rings
+    p.box(0.04, 0.6, 0.16, 0.92, STEEL.deep); p.box(0.06, 0.64, 0.14, 0.88, STEEL.lite);   // stabiliser
+    p.box(0.28, 0.66, 0.5, 0.84, STEEL.deep); p.box(0.44, 0.7, 0.5, 0.8, A);
+  },
+};
+/** the roster: size in cells, the accent group, a name in our own words */
+const ROSTER = {
+  duo: [1, "bullet", "Pinion"], hail: [1, "shell", "Lobber"], scorch: [1, "flame", "Torch"], arc: [1, "beam", "Sparker"],
+  salvo: [2, "bullet", "Triplet"], scatter: [2, "missile", "Bellow"], lancer: [2, "beam", "Kiln"], wave: [2, "water", "Sluice"],
+  parallax: [2, "field", "Halo"], swarmer: [2, "missile", "Quiver"],
+  fuse: [3, "flame", "Broadside"], ripple: [3, "shell", "Bombard"], tsunami: [3, "water", "Floodgate"], cyclone: [3, "missile", "Grindstone"],
+  spectre: [4, "bullet", "Crucible"], meltdown: [4, "beam", "Furnace"], foreshadow: [4, "beam", "Railspike"],
+};
+
 // ── VERDANCE: plants; the head turns toward the swarm like a heliotrope ─
 const verdance = {
   // 1x1 pepperpod: two seed pods on a leaf whorl
@@ -570,4 +714,10 @@ for (const [name, f] of Object.entries(FACTIONS)) {
     writeFileSync(`${OUT}/${name}-base-${s}.png`, png(base.px, n, n));
   }
 }
+for (const [kind, [size, group]] of Object.entries(ROSTER)) {
+  const n = 32 * size;
+  const g = grid(n); mill[kind](g.pen, ACCENT[group]); mirror(g.px, n);
+  writeFileSync(`${OUT}/mill-${kind}.png`, png(outline(g.px, n, OUTLINE), n, n));
+}
+writeFileSync(`${OUT}/roster.json`, JSON.stringify({ roster: ROSTER, accent: ACCENT }, null, 2));
 console.log(`wrote ${Object.keys(FACTIONS).length * SIZES.length * 2} sprites to ${OUT}/`);

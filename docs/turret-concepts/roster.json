@@ -1,0 +1,98 @@
+{
+  "roster": {
+    "duo": [
+      1,
+      "bullet",
+      "Pinion"
+    ],
+    "hail": [
+      1,
+      "shell",
+      "Lobber"
+    ],
+    "scorch": [
+      1,
+      "flame",
+      "Torch"
+    ],
+    "arc": [
+      1,
+      "beam",
+      "Sparker"
+    ],
+    "salvo": [
+      2,
+      "bullet",
+      "Triplet"
+    ],
+    "scatter": [
+      2,
+      "missile",
+      "Bellow"
+    ],
+    "lancer": [
+      2,
+      "beam",
+      "Kiln"
+    ],
+    "wave": [
+      2,
+      "water",
+      "Sluice"
+    ],
+    "parallax": [
+      2,
+      "field",
+      "Halo"
+    ],
+    "swarmer": [
+      2,
+      "missile",
+      "Quiver"
+    ],
+    "fuse": [
+      3,
+      "flame",
+      "Broadside"
+    ],
+    "ripple": [
+      3,
+      "shell",
+      "Bombard"
+    ],
+    "tsunami": [
+      3,
+      "water",
+      "Floodgate"
+    ],
+    "cyclone": [
+      3,
+      "missile",
+      "Grindstone"
+    ],
+    "spectre": [
+      4,
+      "bullet",
+      "Crucible"
+    ],
+    "meltdown": [
+      4,
+      "beam",
+      "Furnace"
+    ],
+    "foreshadow": [
+      4,
+      "beam",
+      "Railspike"
+    ]
+  },
+  "accent": {
+    "bullet": "#e07a3f",
+    "shell": "#a8b04a",
+    "flame": "#ec7458",
+    "beam": "#a9d8ff",
+    "water": "#5c6dbb",
+    "field": "#8fe0b8",
+    "missile": "#f595be"
+  }
+}
