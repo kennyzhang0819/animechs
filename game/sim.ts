@@ -815,6 +815,19 @@ export class Sim {
   readonly upy = new Float32Array(MAX_UNITS);
   readonly uvx = new Float32Array(MAX_UNITS);
   readonly uvy = new Float32Array(MAX_UNITS);
+  /**
+   * WHERE THE BODY IS TRYING TO GO, smoothed: the drive plus the slow
+   * steering (drift, probes, centring), through the same first-order
+   * filter uvx rides on, and what the facing is aimed at (updateUnits).
+   * It is a separate vector from uvx because the steering forces are
+   * deliberately NOT part of the filtered drive — they must land on the
+   * position the tick they fire, or a wall probe would arrive late — but
+   * several of them carry white noise tick to tick (the drift bias's
+   * random increment, a probe switching on and off at a pixel edge), and
+   * a body aimed straight at the sum shivers on it
+   */
+  readonly uaimx = new Float32Array(MAX_UNITS);
+  readonly uaimy = new Float32Array(MAX_UNITS);
   readonly uhp = new Float32Array(MAX_UNITS);
   readonly uhpmax = new Float32Array(MAX_UNITS);
   readonly uspd = new Float32Array(MAX_UNITS);
@@ -4743,6 +4756,8 @@ export class Sim {
       this.upy[i] = y;
       this.uvx[i] = 0;
       this.uvy[i] = 0;
+      this.uaimx[i] = 0;
+      this.uaimy[i] = 0;
       this.uhp[i] = hp;
       this.uhpmax[i] = hp;
       // SPEEDY (mutation.ts) is a stat, not a status: the doubling lands
@@ -5585,6 +5600,8 @@ export class Sim {
     this.upy[i] = this.upy[n];
     this.uvx[i] = this.uvx[n];
     this.uvy[i] = this.uvy[n];
+    this.uaimx[i] = this.uaimx[n];
+    this.uaimy[i] = this.uaimy[n];
     this.uhp[i] = this.uhp[n];
     this.uhpmax[i] = this.uhpmax[n];
     this.uspd[i] = this.uspd[n];
@@ -6032,7 +6049,7 @@ export class Sim {
 
   private updateUnits(dt: number): void {
     const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, ulat, phx, phy, field, flowTmp } = this;
-    const { upullx, upully, uspawn, uwet, uwetSlow } = this;
+    const { upullx, upully, uspawn, uwet, uwetSlow, uaimx, uaimy } = this;
     // the water mask, for the naval tanks' pace ashore (NAVAL_LAND_SPEED)
     const water = this.waterCells;
     const steer = Math.min(1, dt * 8);
@@ -6136,6 +6153,9 @@ export class Sim {
       // into rock
       const shx = phx[i] - upx[i], shy = phy[i] - upy[i];
       let fx = 0, fy = 0;
+      // ...and the doorway jitter, kept apart from the rest of the steering
+      // because the FACING below must not see it (see aimX)
+      let jx = 0, jy = 0;
 
       // HAS THIS BODY ANYWHERE TO BE? A zero heading is a unit with no
       // route at all — the player's army standing where it was left, a
@@ -6192,8 +6212,8 @@ export class Sim {
         // dissolve where there is no flow to be balanced against, and the
         // push is the whole of what a standing unit's shiver was
         if (driving) {
-          fx += (Math.random() - 0.5) * 14;
-          fy += (Math.random() - 0.5) * 14;
+          jx = (Math.random() - 0.5) * 14;
+          jy = (Math.random() - 0.5) * 14;
         }
 
         // lane centering: lean up the clearance gradient so the band the
@@ -6235,6 +6255,18 @@ export class Sim {
       // the unit's own drive (flow + terrain steering) never exceeds its
       // stat speed; the physics shove then rides on top uncapped
       let mvx = uvx[i] + fx, mvy = uvy[i] + fy;
+      // WHERE THE BODY IS TRYING TO GO, which is what it faces (further
+      // down): the drive and the slow steering, before the jitter and
+      // before the crowd shove. Both of those are fresh noise every tick —
+      // the jitter by construction, the shove because a pile resolves a
+      // different neighbour first each frame — and a body aimed at the
+      // step it actually took swivels on them every frame, up to the whole
+      // of its turn rate. Mindustry aims at `vel` and lets its physics
+      // move the position underneath, and this is the same split. A flyer
+      // never had either force on it, which is why the air never shook
+      let aimX = mvx, aimY = mvy;
+      mvx += jx;
+      mvy += jy;
       const ml = Math.sqrt(mvx * mvx + mvy * mvy);
       if (ml > spd) {
         mvx = (mvx / ml) * spd;
@@ -6277,6 +6309,7 @@ export class Sim {
           nx = upx[i];
           uvy[i] += Math.sign(uvy[i] || flowTmp.y || 1) * Math.abs(uvx[i]) * 0.6;
           uvx[i] = 0;
+          aimX = 0; // face along the wall, not into it
         }
       }
       let ny = upy[i] + dyT;
@@ -6291,35 +6324,48 @@ export class Sim {
           ny = upy[i];
           uvx[i] += Math.sign(uvx[i] || flowTmp.x || 1) * Math.abs(uvy[i]) * 0.6;
           uvy[i] = 0;
+          aimY = 0;
         }
       }
       upx[i] = clamp(nx, WALL_R, W - WALL_R);
       upy[i] = clamp(ny, WALL_R, H - WALL_R);
 
-      // animation state from what actually happened this frame: legs cycle
-      // with distance covered; the body turns toward travel at its steady
-      // rate while the chassis (Mindustry baseRotation) only turns as fast
-      // as the unit is really moving — shoved units swivel feet-last
-      // ...and a step too small to be a step does not steer anything. What
-      // is left under a standing body — a decaying drive, a neighbour's
-      // shove — is a direction that flips frame to frame, and a body that
-      // re-aims at it swivels on the spot however still it actually is. The
-      // deadzone is a fraction of the stride this unit's own pace would
-      // make, so it scales with a slowed or a hurried unit rather than
-      // being a pixel count that means different things to different kinds
+      // animation state. THE FACING is where the drive is pointed (aimX,
+      // above): the body turns toward it at its steady rate, and the
+      // chassis (Mindustry baseRotation) toward the same bearing but only
+      // as fast as the unit is REALLY moving — shoved units swivel
+      // feet-last, and a unit held still by a crowd keeps its feet where
+      // they were. The legs and the walk cycle read what actually happened
+      // this frame, since a footfall belongs where the foot landed.
+      // ...and a drive too small to be a drive does not steer anything:
+      // what is left under a body with nowhere to go is a velocity
+      // bleeding off, and while its direction is stable the threshold
+      // keeps the last few thousandths of a pixel from aiming anybody. The
+      // deadzone is a fraction of this unit's own pace, so it scales with
+      // a slowed or a hurried unit rather than being a pixel count that
+      // means different things to different kinds
       const mdx = upx[i] - x0, mdy = upy[i] - y0;
       const len = Math.sqrt(mdx * mdx + mdy * mdy);
       const stride = uspd[i] * dt;
-      if (len > Math.max(1e-4, stride * TURN_DEAD)) {
-        const ang = Math.atan2(mdy, mdx);
+      // the aim through the drive's own filter (see uaimx): the drift's
+      // random increment and a probe's on/off are white noise on top of a
+      // bearing that is otherwise steady, and this takes them out at the
+      // same time constant the velocity turns on, so the body comes round
+      // a corner exactly as fast as the motion does
+      uaimx[i] += (aimX - uaimx[i]) * steer;
+      uaimy[i] += (aimY - uaimy[i]) * steer;
+      const ax = uaimx[i], ay = uaimy[i];
+      const aimL = Math.sqrt(ax * ax + ay * ay);
+      if (aimL > Math.max(1e-4, uspd[i] * TURN_DEAD)) {
+        const ang = Math.atan2(ay, ax);
         const trot = KIND_ROT[ukind[i]] * dt;
         urot[i] += clamp(Sim.angleDiff(urot[i], ang), -trot, trot);
-        if (!fly) {
-          uwalk[i] += len;
+        if (!fly && len > 1e-4) {
           const cap = ROT_SPD * Math.min(1, len / stride) * dt;
           ubrot[i] += clamp(Sim.angleDiff(ubrot[i], ang), -cap, cap);
         }
       }
+      if (!fly && len > Math.max(1e-4, stride * TURN_DEAD)) uwalk[i] += len;
       // legs walk on the chassis angle this frame settled on. A standing
       // unit still runs the pass — its feet ease back under it
       const gait = KIND_LEGS[ukind[i]];
