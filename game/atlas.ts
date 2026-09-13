@@ -1436,13 +1436,14 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
 // cells) and is cleared and redrawn at pack time — see packAnimalArt.
 // The animal art is generated, so its size is not declared: these cells
 // take the full gutter and the pack pass draws whatever size comes out.
-/** vela's legged parts, the ones its mech rig never had */
-export const UV_VELA_FOOT = sprite("vela-foot", 128, 128);
-export const UV_VELA_FOOT_SIL = sprite("vela-foot-sil", 128, 128);
-export const UV_VELA_JOINT = upright("vela-joint", 128, 128);
-export const UV_VELA_JOINT_SIL = upright("vela-joint-sil", 128, 128);
-export const UV_VELA_JOINT_BASE = sprite("vela-joint-base", 128, 128);
-export const UV_VELA_JOINT_BASE_SIL = sprite("vela-joint-base-sil", 128, 128);
+/** vela's legged parts, the ones its mech rig never had: caps and a hoof
+ *  small enough for 64px cells (hartSmall) */
+export const UV_VELA_FOOT = sprite("vela-foot", 64, 64);
+export const UV_VELA_FOOT_SIL = sprite("vela-foot-sil", 64, 64);
+export const UV_VELA_JOINT = upright("vela-joint", 64, 64);
+export const UV_VELA_JOINT_SIL = upright("vela-joint-sil", 64, 64);
+export const UV_VELA_JOINT_BASE = sprite("vela-joint-base", 64, 64);
+export const UV_VELA_JOINT_BASE_SIL = sprite("vela-joint-base-sil", 64, 64);
 /** the stag's leg segments on exact rects: thigh then shin, T4 then T5.
  *  A stretched segment samples its rect corner to corner, mount on the
  *  left, so the height IS the stroke */
@@ -1452,13 +1453,14 @@ export const UV_VELA_LEG_BASE_SEG = flat("vela-leg-base-seg", 64, HART_SEG4.sh);
 export const UV_CORVUS_LEG_SEG = flat("corvus-leg-seg", 64, HART_SEG5.th);
 export const UV_CORVUS_LEG_BASE_SEG = flat("corvus-leg-base-seg", 64, HART_SEG5.sh);
 /** the bats' bodies and wings, apart; the composed sprite goes in each
- *  flyer's own cell */
-export const UV_STOOP5_BODY = sprite("stoop5-body", 128, 128);
-export const UV_STOOP5_WING = sprite("stoop5-wing", 128, 128);
-export const UV_STOOP4_BODY = sprite("stoop4-body", 64, 64);
-export const UV_STOOP4_WING = sprite("stoop4-wing", 64, 64);
-export const UV_STOOP3_BODY = sprite("stoop3-body", 64, 64);
-export const UV_STOOP3_WING = sprite("stoop3-wing", 64, 64);
+ *  flyer's own cell. 64px cells for the two small tiers, 128 for the
+ *  middle two, 192 for the T5 (STOOP_TIERS nb/nw) */
+export const UV_STOOP5_BODY = sprite("stoop5-body", 192, 192);
+export const UV_STOOP5_WING = sprite("stoop5-wing", 192, 192);
+export const UV_STOOP4_BODY = sprite("stoop4-body", 128, 128);
+export const UV_STOOP4_WING = sprite("stoop4-wing", 128, 128);
+export const UV_STOOP3_BODY = sprite("stoop3-body", 128, 128);
+export const UV_STOOP3_WING = sprite("stoop3-wing", 128, 128);
 export const UV_STOOP1_BODY = sprite("stoop1-body", 64, 64);
 export const UV_STOOP1_WING = sprite("stoop1-wing", 64, 64);
 export const UV_STOOP2_BODY = sprite("stoop2-body", 64, 64);
@@ -1503,30 +1505,45 @@ if (ANIMAL_ART) {
   STOOP_TIERS.forEach((T, i) => {
     const g = stoopGeom(T);
     const [body, wing] = STOOP_CELLS[i];
-    FLYER_PARTS[STOOP_KINDS[i]] = {
+    const k = STOOP_KINDS[i];
+    // the quad overshoots its cell's nominal world size by the tier's
+    // scale — the composed sprite, the body and the wings all together,
+    // so the parts land where the icon says they are
+    const sc = PX * T.scale;
+    UNIT_ART[k] = { uv: UNIT_ART[k].uv, sprite: UNIT_ART[k].sprite * T.scale };
+    FLYER_PARTS[k] = {
       body,
       wing,
-      sprite: cellPx(body) * PX,
-      wingSprite: cellPx(wing) * PX,
-      rootX: g.rootX * PX,
-      rootY: g.rootY * PX,
-      wingX: g.wingX * PX,
-      wingY: g.wingY * PX,
+      sprite: cellPx(body) * sc,
+      wingSprite: cellPx(wing) * sc,
+      rootX: g.rootX * sc,
+      rootY: g.rootY * sc,
+      wingX: g.wingX * sc,
+      wingY: g.wingY * sc,
       fold: T.fold,
       sweep: T.sweep,
       rate: T.rate,
     };
   });
   // the stag's T1-T3 keep the mech rig and its cells; the guns go (the
-  // beams are drawn live off the held weapon, never off a sprite) and the
-  // hooves shuffle a shorter stride than a dagger's
+  // beams are drawn live off the held weapon, never off a sprite), the
+  // hooves shuffle a shorter stride than a dagger's, and the quad
+  // overshoots by the tier's scale
   const hartStride = (t: number): number => [0, 2.5, 3, 4][t] * MU;
-  MECH_ART.nova = { ...MECH_ART.nova!, guns: [], stride: hartStride(1) };
-  MECH_ART.pulsar = { ...MECH_ART.pulsar!, guns: [], stride: hartStride(2) };
-  MECH_ART.quasar = { ...MECH_ART.quasar!, guns: [], stride: hartStride(3) };
+  const hartMechArt = (k: UnitKind, i: number): MechArt => {
+    const T = HART_TIERS[i];
+    UNIT_ART[k] = { uv: UNIT_ART[k].uv, sprite: UNIT_ART[k].sprite * T.scale };
+    return { ...MECH_ART[k]!, guns: [], stride: hartStride(T.t), sprite: MECH_ART[k]!.sprite * T.scale };
+  };
+  MECH_ART.nova = hartMechArt("nova", 0);
+  MECH_ART.pulsar = hartMechArt("pulsar", 1);
+  MECH_ART.quasar = hartMechArt("quasar", 2);
   // the T4 leaves the mech rig for the legged one, on the cells above; the
   // T5 was legged already and keeps its own caps and feet
   delete MECH_ART.vela;
+  const S4 = HART_TIERS[3].scale, S5 = HART_TIERS[4].scale;
+  UNIT_ART.vela = { uv: UNIT_ART.vela.uv, sprite: UNIT_ART.vela.sprite * S4 };
+  UNIT_ART.corvus = { uv: UNIT_ART.corvus.uv, sprite: UNIT_ART.corvus.sprite * S5 };
   LEG_ART.vela = {
     body: UV_VELA_BODY,
     base: UV_VELA_BASE,
@@ -1535,11 +1552,11 @@ if (ANIMAL_ART) {
     foot: UV_VELA_FOOT,
     leg: UV_VELA_LEG_SEG,
     legBase: UV_VELA_LEG_BASE_SEG,
-    legStroke: HART_SEG4.th * PX,
-    legBaseStroke: HART_SEG4.sh * PX,
+    legStroke: HART_SEG4.th * PX * S4,
+    legBaseStroke: HART_SEG4.sh * PX * S4,
     guns: [],
-    sprite: UNIT_SPRITE * 4,
-    small: UNIT_SPRITE * 2,
+    sprite: UNIT_SPRITE * 4 * S4,
+    small: UNIT_SPRITE * S4,
     sil: {
       body: UV_VELA_BODY_SIL,
       base: UV_VELA_BASE_SIL,
@@ -1552,8 +1569,10 @@ if (ANIMAL_ART) {
     ...LEG_ART.corvus!,
     leg: UV_CORVUS_LEG_SEG,
     legBase: UV_CORVUS_LEG_BASE_SEG,
-    legStroke: HART_SEG5.th * PX,
-    legBaseStroke: HART_SEG5.sh * PX,
+    legStroke: HART_SEG5.th * PX * S5,
+    legBaseStroke: HART_SEG5.sh * PX * S5,
+    sprite: UNIT_SPRITE * 4 * S5,
+    small: UNIT_SPRITE * 2 * S5,
   };
 }
 

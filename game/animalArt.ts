@@ -262,25 +262,28 @@ const cellOf = (n: number, fn: (g: Pen, H: H) => void): Art => {
 export interface HartTier {
   /** the body grid, and the radius scale everything is drawn against */
   n: number; R: number; t: number; spread: number;
+  /** how far past its cell's nominal world size the quad is drawn: the
+   *  big tiers OVERSHOOT on purpose, so a T4 arriving reads as trouble */
+  scale: number;
 }
-/** T1-T3 on the mech rig, T4-T5 on the legged rig. Grids are the cell
- *  sizes the Starlight mechs already own (64/64/128/256/256) less margin */
+/** T1-T3 on the mech rig, T4-T5 on the legged rig. Grids fill the cell
+ *  sizes the Starlight mechs already own (64/64/128/256/256) */
 export const HART_TIERS: readonly HartTier[] = [
-  { t: 1, n: 49, R: 14, spread: 0.1 },
-  { t: 2, n: 57, R: 15, spread: 0.15 },
-  { t: 3, n: 97, R: 26, spread: 0.3 },
-  { t: 4, n: 161, R: 40, spread: 0.75 },
-  { t: 5, n: 209, R: 52, spread: 1.0 },
+  { t: 1, n: 63, R: 18, spread: 0.1, scale: 1.5 },
+  { t: 2, n: 63, R: 16, spread: 0.15, scale: 1.5 },
+  { t: 3, n: 127, R: 34, spread: 0.3, scale: 1.4 },
+  { t: 4, n: 255, R: 62, spread: 0.75, scale: 1.6 },
+  { t: 5, n: 255, R: 62, spread: 1.0, scale: 2.0 },
 ];
 
 /** the antler geometry, shared by the body and its cell: [x0,y0,x1,y1] in R
  *  units for each tine, and the glow points */
 function antlers(t: number): { beam: [number, number, number, number]; tines: [number, number, number, number][] } {
-  const beam: [number, number, number, number] = [0.2, -1.2, t >= 4 ? 0.75 : 0.5, t >= 4 ? -1.75 : -1.65];
+  const beam: [number, number, number, number] = [0.2, -1.2, t >= 5 ? 1.0 : t >= 4 ? 0.85 : 0.5, t >= 5 ? -1.85 : t >= 4 ? -1.78 : -1.65];
   const tines: [number, number, number, number][] =
     t <= 2 ? [] : t === 3 ? [[0.32, -1.32, 0.38, -1.62]]
-    : t === 4 ? [[0.32, -1.32, 0.32, -1.68], [0.5, -1.5, 0.55, -1.85], [0.85, -1.5, 0.95, -1.7]]
-    : [[0.3, -1.3, 0.28, -1.72], [0.48, -1.48, 0.5, -1.88], [0.66, -1.66, 0.75, -1.92], [0.85, -1.5, 0.98, -1.75], [0.9, -1.4, 1.02, -1.55]];
+    : t === 4 ? [[0.32, -1.32, 0.3, -1.72], [0.52, -1.5, 0.55, -1.92], [0.72, -1.66, 0.8, -1.92], [0.95, -1.55, 1.08, -1.75]]
+    : [[0.3, -1.3, 0.26, -1.75], [0.48, -1.5, 0.5, -1.95], [0.66, -1.68, 0.72, -1.95], [0.84, -1.78, 0.95, -1.95], [1.0, -1.6, 1.15, -1.8], [1.05, -1.45, 1.2, -1.6]];
   return { beam, tines };
 }
 function hartGlows(t: number, R: number, c: number): { x: number; y: number; r: number }[] {
@@ -296,7 +299,7 @@ function hartGlows(t: number, R: number, c: number): { x: number; y: number; r: 
 function hartBody(g: Pen, H: H, T: HartTier): void {
   const { n, R, t } = T; const c = (n - 1) / 2, o = HIDE;
   const X = (v: number) => c + v * R, Y = (v: number) => c + v * R;
-  H.org(g, el(H, c, Y(0.4), R * 0.52, R * 0.95), o);
+  H.org(g, el(H, c, Y(0.4), R * 0.76, R * 0.98), o);
   g.over((q) => q.box(H.p(X(-0.06)), H.p(Y(-0.4)), H.p(X(0.06) + 1), H.p(Y(1.25)), o[2]));
   if (t === 1) g.over((q) => { for (const [x, y] of [[-0.25, 0.2], [0.25, 0.2], [-0.3, 0.7], [0.3, 0.7], [-0.18, 1.0], [0.18, 1.0]]) q.disc(H.p(X(x)), H.p(Y(y)), H.p(Math.max(1.5, R * 0.09)), o[2]); });
   H.org(g, { poly: H.R(X(-0.17), Y(-1.0), X(0.17) + 1, Y(-0.3)) }, o, false);
@@ -310,16 +313,16 @@ function hartBody(g: Pen, H: H, T: HartTier): void {
     const { beam, tines } = antlers(t);
     for (const s of [-1, 1]) {
       limb(g, H, [[X(s * beam[0]), Y(beam[1])], [X(s * beam[2]), Y(beam[3])]], tw, STL);
-      if (t >= 4) H.mech(g, { poly: H.P([[X(s * 0.3), Y(-1.28)], [X(s * 0.72), Y(-1.72)], [X(s * 0.85), Y(-1.5)], [X(s * 0.6), Y(-1.2)]]) }, false);
+      if (t >= 4) H.mech(g, { poly: H.P([[X(s * 0.3), Y(-1.28)], [X(s * 0.75), Y(-1.76)], [X(s * (t >= 5 ? 1.02 : 0.9)), Y(-1.55)], [X(s * 0.62), Y(-1.2)]]) }, false);
       for (const [x0, y0, x1, y1] of tines) limb(g, H, [[X(s * x0), Y(y0)], [X(s * x1), Y(y1)]], tw * 0.8, STL);
     }
   }
   if (t >= 5) H.mech(g, { disc: [c, Y(-1.3), R * 0.2] }, false);
   for (const q of hartGlows(t, R, c)) glow(g, H, q.x, q.y, q.r, STAR);
   // steel on the back
-  if (t >= 2) H.hull(g, { poly: H.R(X(-0.24), Y(-0.05), X(0.24) + 1, Y(0.95)) });
+  if (t >= 2) H.hull(g, { poly: H.R(X(-0.34), Y(-0.05), X(0.34) + 1, Y(1.05)) });
   if (t >= 3) g.ring(H.p(c), H.p(Y(0.55)), H.p(Math.max(4, R * 0.16)), Math.max(2, Math.round(R * 0.05)), STAR[1]);
-  if (t >= 4) { H.vents(g, X(-0.11), Y(0.1), 3, Math.max(4, R * 0.22)); stacks(g, H, t >= 5 ? [X(-0.14), X(0.14)] : [c], Y(1.2), Y(1.6), Math.max(4, Math.round(R * 0.14))); }
+  if (t >= 4) { H.vents(g, X(-0.11), Y(0.1), 3, Math.max(4, R * 0.22)); stacks(g, H, t >= 5 ? [X(-0.18), X(0.18)] : [c], Y(1.2), Y(1.6), Math.max(4, Math.round(R * 0.16))); }
 }
 
 export interface HartMechArt { body: Art; base: Art; leg: Art; cell: Art; stride: number }
@@ -336,9 +339,9 @@ export function hartMech(T: HartTier): HartMechArt {
   const { n, R } = T; const c = (n - 1) / 2;
   const body = draw(n, (g, H) => hartBody(g, H, T));
   // the belly, under the body: only its rim ever shows
-  const base = draw(n, (g, H) => H.org(g, el(H, c, c + R * 0.4, R * 0.46, R * 0.85), [HIDE[0], HIDE[0], HIDE[1]], false));
+  const base = draw(n, (g, H) => H.org(g, el(H, c, c + R * 0.4, R * 0.66, R * 0.88), [HIDE[0], HIDE[0], HIDE[1]], false));
   // the two near-side hooves (right side; the renderer mirrors the far side)
-  const leg = draw(n, (g, H) => stubs(g, H, [[c + R * 0.42, c - R * 0.25], [c + R * 0.42, c + R * 1.0]], Math.max(4, R * 0.22), Math.max(6, R * 0.35), HIDE), false);
+  const leg = draw(n, (g, H) => stubs(g, H, [[c + R * 0.64, c - R * 0.3], [c + R * 0.64, c + R * 1.0]], Math.max(4, R * 0.26), Math.max(6, R * 0.4), HIDE), false);
   const cell = cellOf(n, (g, H) => { for (const q of hartGlows(T.t, R, c)) g.disc(H.p(q.x), H.p(q.y), H.p(Math.max(2, Math.round(q.r))), WHITE); });
   return { body, base, leg, cell, stride: [0, 2.5, 3, 4][T.t] };
 }
@@ -347,9 +350,9 @@ export function hartMech(T: HartTier): HartMechArt {
 export function hartLegged(T: HartTier): HartLegArt {
   const { n, R } = T; const c = (n - 1) / 2;
   const body = draw(n, (g, H) => hartBody(g, H, T));
-  const base = draw(n, (g, H) => H.org(g, { disc: [c, c + R * 0.35, R * 0.5] }, [HIDE[0], HIDE[0], HIDE[1]], false));
+  const base = draw(n, (g, H) => H.org(g, { disc: [c, c + R * 0.35, R * 0.6] }, [HIDE[0], HIDE[0], HIDE[1]], false));
   const cell = cellOf(n, (g, H) => { for (const q of hartGlows(T.t, R, c)) g.disc(H.p(q.x), H.p(q.y), H.p(Math.max(2, Math.round(q.r))), WHITE); });
-  const small = T.t >= 5 ? 128 : 128; const sc = (small - 1) / 2;
+  const small = hartSmall(T); const sc = (small - 1) / 2;
   const kr = Math.round(R * 0.12), sr = Math.round(R * 0.17), hw = Math.round(R * 0.24), hh = Math.round(R * 0.22);
   const foot = draw(small, (g, H) => { g.box(H.p(sc - hw / 2), H.p(sc - hh / 2), H.p(sc + hw / 2), H.p(sc + hh / 2), HIDE[0]); g.box(H.p(sc - hw / 2), H.p(sc - hh / 2), H.p(sc + hw / 2), H.p(sc - hh / 2 + Math.max(2, hh * 0.35)), ST.deep); }, false);
   const joint = draw(small, (g, H) => H.cap(g, sc, sc, kr, HIDE), false);
@@ -364,6 +367,8 @@ export function hartLegged(T: HartTier): HartLegArt {
   const { th, sh } = hartSeg(T);
   return { body, base, cell, foot, joint, baseJoint, small, leg: segment(64, th), legBase: segment(64, sh) };
 }
+/** the grid the T4's and T5's caps and hoof are drawn on: the cell they pack into */
+export const hartSmall = (T: HartTier): number => (T.t >= 5 ? 127 : 63);
 /** the thigh and shin heights (native px across the leg) a tier's segments
  *  are drawn at — the atlas needs them for the cells before any art exists */
 export const hartSeg = (T: HartTier): { th: number; sh: number } => ({
@@ -381,13 +386,15 @@ export interface StoopTier {
   /** how far the wing folds toward its root (0..1 of its span), the sweep
    *  it adds at the root (rad), and the flap rate (Hz) */
   fold: number; sweep: number; rate: number;
+  /** the world-quad overshoot past the cell's nominal size (see HartTier) */
+  scale: number;
 }
 export const STOOP_TIERS: readonly StoopTier[] = [
-  { t: 1, n: 49, W: 22, nb: 49, nw: 49, fold: 0.32, sweep: 0.16, rate: 5 },
-  { t: 2, n: 65, W: 30, nb: 49, nw: 49, fold: 0.32, sweep: 0.15, rate: 4 },
-  { t: 3, n: 97, W: 46, nb: 57, nw: 57, fold: 0.3, sweep: 0.13, rate: 3 },
-  { t: 4, n: 129, W: 62, nb: 57, nw: 61, fold: 0.28, sweep: 0.11, rate: 2 },
-  { t: 5, n: 177, W: 86, nb: 97, nw: 97, fold: 0.25, sweep: 0.09, rate: 1.4 },
+  { t: 1, n: 63, W: 28, nb: 63, nw: 63, fold: 0.32, sweep: 0.16, rate: 5, scale: 1.4 },
+  { t: 2, n: 127, W: 58, nb: 63, nw: 63, fold: 0.32, sweep: 0.15, rate: 4, scale: 1.2 },
+  { t: 3, n: 127, W: 60, nb: 127, nw: 127, fold: 0.3, sweep: 0.13, rate: 3, scale: 1.5 },
+  { t: 4, n: 255, W: 120, nb: 127, nw: 127, fold: 0.28, sweep: 0.11, rate: 2, scale: 1.4 },
+  { t: 5, n: 383, W: 180, nb: 191, nw: 191, fold: 0.25, sweep: 0.09, rate: 1.4, scale: 1.6 },
 ];
 /** the wing's root, in the body frame, in W units: sideways and up */
 const WING_ROOT = { x: 0.13, y: -0.1 } as const;

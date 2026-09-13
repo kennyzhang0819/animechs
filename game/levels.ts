@@ -875,13 +875,13 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
       ? {
           legs: legs({
             count: 4,
-            length: 16 * MU,
+            length: 26 * MU,
             forwardScl: 0.7,
             moveSpace: 1.3,
-            baseOffset: 5 * MU,
+            baseOffset: 8 * MU,
             lengthScl: 0.9,
             speed: 0.15,
-            elevation: 0.2,
+            elevation: 0.3,
             ripple: 2,
           }),
         }
@@ -919,14 +919,14 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     legs: ANIMAL_ART
       ? legs({
           count: 4,
-          length: 20 * MU,
+          length: 38 * MU,
           forwardScl: 0.7,
           moveSpace: 1.4,
-          baseOffset: 6 * MU,
+          baseOffset: 11 * MU,
           lengthScl: 0.9,
           speed: 0.15,
-          elevation: 0.25,
-          ripple: 2,
+          elevation: 0.4,
+          ripple: 3,
         })
       : legs({
           count: 4,
