@@ -631,10 +631,14 @@ const barrelWidth = (t: number): number => (t >= 5 ? 0.16 : t >= 3 ? 0.12 : 0.09
 function frogAccent(g: Pen, H: H, T: Tier): void {
   const { n, R, t } = T; const c = (n - 1) / 2;
   const X = (v: number) => c + v * R, Y = (v: number) => c + v * R;
-  const spots: (readonly [number, number, number])[] = [[-0.5, 0.15, 0.12], [0.5, 0.15, 0.12], [-0.4, 0.68, 0.11], [0.4, 0.68, 0.11]];
-  if (t < 3) spots.push([0, 0.38, 0.15]);
-  if (t >= 2) spots.push([-0.22, -0.55, 0.08], [0.22, -0.55, 0.08]);
-  if (t >= 3) spots.push([-0.62, 0.45, 0.08], [0.62, 0.45, 0.08], [0, 1.02, 0.08]);
+  // the spots come with age: one pair on a T1, and only the T5 wears the
+  // whole spread across its back
+  const spots: (readonly [number, number, number])[] =
+    t === 1 ? [[-0.45, 0.35, 0.14], [0.45, 0.35, 0.14]]
+    : t === 2 ? [[-0.45, 0.28, 0.13], [0.45, 0.28, 0.13], [0, 0.78, 0.13]]
+    : [[-0.5, 0.2, 0.12], [0.5, 0.2, 0.12], [-0.4, 0.7, 0.11], [0.4, 0.7, 0.11]];
+  if (t >= 4) spots.push([-0.22, -0.55, 0.08], [0.22, -0.55, 0.08]);
+  if (t >= 5) spots.push([-0.62, 0.45, 0.08], [0.62, 0.45, 0.08], [0, 1.02, 0.08]);
   for (const [x, y, r] of spots) g.disc(H.p(X(x)), H.p(Y(y)), H.p(R * r), ACID[1]);
   // the throat sac, filling tier by tier
   if (t >= 2) {
