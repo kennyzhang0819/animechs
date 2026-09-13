@@ -4,6 +4,9 @@
  * bombers' atlas cells (atlas.ts packAnimalArt) while game/animalFlag.ts
  * ANIMAL_ART is on.
  *
+ * The style these follow and the rule for how big a tier draws are in
+ * docs/unit-art.md; read it before adding a family.
+ *
  * Every drawing here comes out FACING UP on a square grid, exactly like a
  * Mindustry sprite file, and is handed to the same drawFacingRight /
  * antialiased / silhouetted passes the stock art goes through. The rules
