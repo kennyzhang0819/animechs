@@ -1,4 +1,5 @@
 import { CELL, HP0, PAL, UNIT_SPEED, UR, type MoveLayer } from "./constants";
+import { ANIMAL_ART } from "./animalFlag";
 import { explain, type RGB, type SaveResult } from "./types";
 import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // type only — mutation.ts must never depend on the campaign, and this
@@ -866,6 +867,25 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     immunities: ["burning"],
     repairField: { amount: 40, reload: 2, range: 9 * CELL },
     shieldField: { amount: 30, max: 300, reload: 2, range: 9 * CELL },
+    // THE ANIMAL TRIAL (animalFlag.ts): the Starhart T4 is the tier the
+    // stag's stance opens, so it leaves the mech rig for four planted legs
+    // (LEG_ART.vela in atlas.ts carries the art). Off the trial it has no
+    // gait and walks as the vela mech it always was
+    ...(ANIMAL_ART
+      ? {
+          legs: legs({
+            count: 4,
+            length: 16 * MU,
+            forwardScl: 0.7,
+            moveSpace: 1.3,
+            baseOffset: 5 * MU,
+            lengthScl: 0.9,
+            speed: 0.15,
+            elevation: 0.2,
+            ripple: 2,
+          }),
+        }
+      : {}),
   },
   // corvus: the support line's T5 — 18000 hp, armor 14, a 3.625x3.625-block
   // hitbox, and 0.3 px/tick = 2.25 tiles/s, the slowest thing in the game.
@@ -893,14 +913,29 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 1.5,
     repairField: { amount: 80, reload: 2, range: 11 * CELL },
     shieldField: { amount: 50, max: 500, reload: 2, range: 11 * CELL },
-    legs: legs({
-      count: 4,
-      length: 14 * MU,
-      forwardScl: 0.58,
-      moveSpace: 1.5,
-      baseOffset: 11 * MU,
-      elevation: 0.2,
-    }),
+    // THE ANIMAL TRIAL (animalFlag.ts): as the Starhart T5 the four legs
+    // are a stag's — longer, on closer mounts, planted well out from a
+    // body that no longer overhangs them
+    legs: ANIMAL_ART
+      ? legs({
+          count: 4,
+          length: 20 * MU,
+          forwardScl: 0.7,
+          moveSpace: 1.4,
+          baseOffset: 6 * MU,
+          lengthScl: 0.9,
+          speed: 0.15,
+          elevation: 0.25,
+          ripple: 2,
+        })
+      : legs({
+          count: 4,
+          length: 14 * MU,
+          forwardScl: 0.58,
+          moveSpace: 1.5,
+          baseOffset: 11 * MU,
+          elevation: 0.2,
+        }),
   },
   // ---- THE SKY GUNSHIPS' PACE ----
   //

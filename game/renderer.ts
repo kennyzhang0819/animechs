@@ -1,8 +1,10 @@
 import { FLOOR_STYLE, type FloorKind } from "./tiles";
 import {
+  FLYER_PARTS,
   LEG_ART,
   MECH_ART,
   type CellArt,
+  type FlyerParts,
   type LegArt,
   type LegGun,
   type MechArt,
@@ -527,6 +529,9 @@ const KIND_ACCENT: readonly RGB[] = UNIT_KINDS.map((k) => {
 });
 /** the engines a flyer burns (UNIT_ENGINES), null for anything that has none */
 const KIND_ENGINES = UNIT_KINDS.map((k) => UNIT_ENGINES[k] ?? null);
+/** the flyers drawn as a body and two beating wings (FLYER_PARTS), null
+ *  for the single-quad ones — empty unless the animal art trial is on */
+const KIND_FLYER: readonly (FlyerParts | null)[] = UNIT_KINDS.map((k) => FLYER_PARTS[k] ?? null);
 /** the held beam or charged shot each kind carries (UNIT_HELD), null for the rest */
 const KIND_HELD = UNIT_KINDS.map((k) => UNIT_HELD[k]);
 /** the kinds whose weapon is an energy field: the orbit is drawn round them always */
@@ -2258,8 +2263,20 @@ export class Renderer {
         // that something is there and nothing to aim at. Only the plain
         // hulls cloak (the Wraith fleet); a mech or a walker that took the
         // trait would need the same on its own draw path
+        const fp = KIND_FLYER[k];
         if (ucloakT[i] > 0) {
           this.push(dyn, upx[i], upy[i], usz, usz, urot[i], KIND_UV[k], tint[0], tint[1], tint[2], 0.2);
+        } else if (fp) {
+          // A FLYER IN PARTS (atlas.ts FLYER_PARTS): the wings first,
+          // under the body, each on its own root. A beat is a sine on sim
+          // time, offset per body by its spawn-time walk seed so a flight
+          // does not flap in step; at the top of it the wing folds toward
+          // its root — the quad across the heading shrinks about the
+          // root, which from above is what a downstroke looks like — and
+          // sweeps a little forward at the same time
+          this.pushWings(dyn, fp, upx[i], upy[i], urot[i], sim.time, uwalk[i], tint);
+          this.push(dyn, upx[i], upy[i], fp.sprite, fp.sprite, urot[i], fp.body, tint[0], tint[1], tint[2], 1);
+          if (cell) this.pushCell(dyn, cell, upx[i], upy[i], usz, urot[i], this.cellTint);
         } else {
           this.push(dyn, upx[i], upy[i], usz, usz, urot[i], KIND_UV[k], tint[0], tint[1], tint[2], 1);
           if (cell) this.pushCell(dyn, cell, upx[i], upy[i], usz, urot[i], this.cellTint);
@@ -3993,6 +4010,43 @@ export class Renderer {
       b, x + c * dx - s * dy, y + s * dx + c * dy,
       cell.w * size, cell.h * size, rot, cell.uv, col[0], col[1], col[2], alpha,
     );
+  }
+
+  /**
+   * Two wings off one sprite, mirrored (a negative quad height, like a
+   * mech's off-side leg), each pivoting on its root. `fold` scales the
+   * quad ACROSS the heading — the axis the sprite's span lies along once
+   * it is packed facing +x — and the centre offset with it, so the root
+   * stays put and the tip comes in; `sweep` turns the whole quad about
+   * the root. Both ride one sine of sim time.
+   */
+  private pushWings(
+    dyn: Batch,
+    fp: FlyerParts,
+    ux: number,
+    uy: number,
+    rot: number,
+    time: number,
+    seed: number,
+    tint: readonly [number, number, number],
+  ): void {
+    const beat = 0.5 + 0.5 * Math.sin(time * fp.rate * Math.PI * 2 + seed);
+    const span = 1 - fp.fold * beat;
+    const sweep = fp.sweep * (beat - 0.5) * 2;
+    const cr = Math.cos(rot), sr = Math.sin(rot);
+    for (let side = -1; side <= 1; side += 2) {
+      // the root, in the world: forward by rootY, out by rootX on this side
+      const rx = ux + cr * fp.rootY - sr * fp.rootX * side;
+      const ry = uy + sr * fp.rootY + cr * fp.rootX * side;
+      // the wing's own heading: the body's, swept forward at the root
+      const wr = rot - sweep * side;
+      const cw = Math.cos(wr), sw = Math.sin(wr);
+      const fwd = fp.wingY, out = fp.wingX * span * side;
+      this.push(
+        dyn, rx + cw * fwd - sw * out, ry + sw * fwd + cw * out,
+        fp.wingSprite, fp.wingSprite * span * side, wr, fp.wing, tint[0], tint[1], tint[2], 1,
+      );
+    }
   }
 
   private pushEngines(

@@ -10,6 +10,18 @@ import {
   type WallKind,
 } from "./tiles";
 import type { UnitKind } from "./levels";
+import { ANIMAL_ART } from "./animalFlag";
+import {
+  HART_TIERS,
+  STOOP_TIERS,
+  hartLegged,
+  hartMech,
+  hartSeg,
+  stoop,
+  stoopGeom,
+  toCanvas,
+  toCanvasRect,
+} from "./animalArt";
 
 // The sheet began as a 1024 square and grew as the roster outgrew it. Every
 // cell keeps its original PIXEL coordinates and every UV is derived from
@@ -1551,6 +1563,213 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
   },
 };
 
+// ---- THE ANIMAL ART (game/animalFlag.ts, game/animalArt.ts) ------------
+//
+// The cells the trial needs beyond the ones the two lines already own,
+// on the free block right of the second environment band. Everything
+// else the animals draw into is a cell the stock art owns (nova's
+// leg/base/body, corvus's caps and feet, the flyers' single cells) and is
+// cleared and redrawn at pack time — see packAnimalArt.
+const AN_X = 1408, AN_Y = 3456;
+/** vela's legged parts, the ones its mech rig never had */
+export const UV_VELA_FOOT = uv(AN_X, AN_Y, 128, 128);
+export const UV_VELA_FOOT_SIL = uv(AN_X + 128, AN_Y, 128, 128);
+export const UV_VELA_JOINT = uv(AN_X + 256, AN_Y, 128, 128);
+export const UV_VELA_JOINT_SIL = uv(AN_X + 384, AN_Y, 128, 128);
+export const UV_VELA_JOINT_BASE = uv(AN_X + 512, AN_Y, 128, 128);
+export const UV_VELA_JOINT_BASE_SIL = uv(AN_X, AN_Y + 128, 128, 128);
+/** the stag's leg segments on exact rects: thigh then shin, T4 then T5.
+ *  A stretched segment samples its rect corner to corner, mount on the
+ *  left, so the height IS the stroke */
+const HART_SEG4 = hartSeg(HART_TIERS[3]), HART_SEG5 = hartSeg(HART_TIERS[4]);
+export const UV_VELA_LEG_SEG = uv(AN_X + 128, AN_Y + 128, 64, HART_SEG4.th);
+export const UV_VELA_LEG_BASE_SEG = uv(AN_X + 128, AN_Y + 152, 64, HART_SEG4.sh);
+export const UV_CORVUS_LEG_SEG = uv(AN_X + 128, AN_Y + 176, 64, HART_SEG5.th);
+export const UV_CORVUS_LEG_BASE_SEG = uv(AN_X + 128, AN_Y + 208, 64, HART_SEG5.sh);
+/** the bats' bodies and wings, apart; the composed sprite goes in each
+ *  flyer's own cell */
+export const UV_STOOP5_BODY = uv(AN_X + 256, AN_Y + 128, 128, 128);
+export const UV_STOOP5_WING = uv(AN_X + 384, AN_Y + 128, 128, 128);
+export const UV_STOOP4_BODY = uv(AN_X + 512, AN_Y + 128, 64, 64);
+export const UV_STOOP4_WING = uv(AN_X + 576, AN_Y + 128, 64, 64);
+export const UV_STOOP3_BODY = uv(AN_X + 512, AN_Y + 192, 64, 64);
+export const UV_STOOP3_WING = uv(AN_X + 576, AN_Y + 192, 64, 64);
+export const UV_STOOP1_BODY = uv(AN_X, AN_Y + 256, 64, 64);
+export const UV_STOOP1_WING = uv(AN_X + 64, AN_Y + 256, 64, 64);
+export const UV_STOOP2_BODY = uv(AN_X + 128, AN_Y + 256, 64, 64);
+export const UV_STOOP2_WING = uv(AN_X + 192, AN_Y + 256, 64, 64);
+
+/**
+ * A flyer drawn in parts: a body quad and one wing quad mirrored to both
+ * sides, each pivoting on its root and folding toward it (renderer.ts).
+ * Offsets are world px in the unit's frame: `rootX` sideways off the
+ * body's centre (mirrored), `rootY` forward; `wingX`/`wingY` the wing
+ * cell's centre off its root, sideways along the span and forward.
+ */
+export interface FlyerParts {
+  body: UVRect;
+  wing: UVRect;
+  sprite: number;
+  wingSprite: number;
+  rootX: number;
+  rootY: number;
+  wingX: number;
+  wingY: number;
+  /** how far the wing folds toward its root at the top of a beat, as a
+   *  fraction of its span; the sweep it adds at the root, rad; beats a second */
+  fold: number;
+  sweep: number;
+  rate: number;
+}
+/** the flyers that draw in parts — empty unless the animal art is on */
+export const FLYER_PARTS: Partial<Record<UnitKind, FlyerParts>> = {};
+const STOOP_KINDS: readonly UnitKind[] = ["flare", "horizon", "zenith", "antumbra", "eclipse"];
+const STOOP_CELLS: readonly (readonly [UVRect, UVRect])[] = [
+  [UV_STOOP1_BODY, UV_STOOP1_WING],
+  [UV_STOOP2_BODY, UV_STOOP2_WING],
+  [UV_STOOP3_BODY, UV_STOOP3_WING],
+  [UV_STOOP4_BODY, UV_STOOP4_WING],
+  [UV_STOOP5_BODY, UV_STOOP5_WING],
+];
+/** a cell's edge in atlas px (every animal cell is packed with no inset) */
+const cellPx = (u: UVRect): number => Math.round((u[2] - u[0]) * ATLAS_W);
+
+if (ANIMAL_ART) {
+  STOOP_TIERS.forEach((T, i) => {
+    const g = stoopGeom(T);
+    const [body, wing] = STOOP_CELLS[i];
+    FLYER_PARTS[STOOP_KINDS[i]] = {
+      body,
+      wing,
+      sprite: cellPx(body) * PX,
+      wingSprite: cellPx(wing) * PX,
+      rootX: g.rootX * PX,
+      rootY: g.rootY * PX,
+      wingX: g.wingX * PX,
+      wingY: g.wingY * PX,
+      fold: T.fold,
+      sweep: T.sweep,
+      rate: T.rate,
+    };
+  });
+  // the stag's T1-T3 keep the mech rig and its cells; the guns go (the
+  // beams are drawn live off the held weapon, never off a sprite) and the
+  // hooves shuffle a shorter stride than a dagger's
+  const hartStride = (t: number): number => [0, 2.5, 3, 4][t] * MU;
+  MECH_ART.nova = { ...MECH_ART.nova!, guns: [], stride: hartStride(1) };
+  MECH_ART.pulsar = { ...MECH_ART.pulsar!, guns: [], stride: hartStride(2) };
+  MECH_ART.quasar = { ...MECH_ART.quasar!, guns: [], stride: hartStride(3) };
+  // the T4 leaves the mech rig for the legged one, on the cells above; the
+  // T5 was legged already and keeps its own caps and feet
+  delete MECH_ART.vela;
+  LEG_ART.vela = {
+    body: UV_VELA_BODY,
+    base: UV_VELA_BASE,
+    joint: UV_VELA_JOINT,
+    baseJoint: UV_VELA_JOINT_BASE,
+    foot: UV_VELA_FOOT,
+    leg: UV_VELA_LEG_SEG,
+    legBase: UV_VELA_LEG_BASE_SEG,
+    legStroke: HART_SEG4.th * PX,
+    legBaseStroke: HART_SEG4.sh * PX,
+    guns: [],
+    sprite: UNIT_SPRITE * 4,
+    small: UNIT_SPRITE * 2,
+    sil: {
+      body: UV_VELA_BODY_SIL,
+      base: UV_VELA_BASE_SIL,
+      joint: UV_VELA_JOINT_SIL,
+      baseJoint: UV_VELA_JOINT_BASE_SIL,
+      foot: UV_VELA_FOOT_SIL,
+    },
+  };
+  LEG_ART.corvus = {
+    ...LEG_ART.corvus!,
+    leg: UV_CORVUS_LEG_SEG,
+    legBase: UV_CORVUS_LEG_BASE_SEG,
+    legStroke: HART_SEG5.th * PX,
+    legBaseStroke: HART_SEG5.sh * PX,
+  };
+}
+
+/**
+ * THE ANIMAL ART INTO THE SHEET, after every stock cell is drawn: each
+ * part cleared and redrawn at native size, through the same antialias and
+ * silhouette passes as the sprite files, and each body's team cell
+ * requeued off the animal's own glow. Nothing under public/ is touched;
+ * with the switch off this is never called and the sheet is the stock one.
+ */
+function packAnimalArt(
+  c: CanvasRenderingContext2D,
+  teamCell: (kind: UnitKind, body: HTMLCanvasElement, cell: HTMLCanvasElement, bodyUV: UVRect, w: number, h?: number) => void,
+  dropCell: (kind: UnitKind) => void,
+): void {
+  const rectOf = (u: UVRect) => {
+    const x = Math.round(u[0] * ATLAS_W), y = Math.round(u[1] * ATLAS_H);
+    const w = Math.round((u[2] - u[0]) * ATLAS_W), h = Math.round((u[3] - u[1]) * ATLAS_H);
+    return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
+  };
+  const clear = (u: UVRect): void => { const r = rectOf(u); c.clearRect(r.x, r.y, r.w, r.h); };
+  // a part into its cell, centred at native size and facing +x like every
+  // unit sprite; a knee cap is packed upright because it is drawn unrotated
+  const part = (u: UVRect, art: HTMLCanvasElement, sil = false, upright = false): void => {
+    clear(u);
+    const r = rectOf(u);
+    const src = sil ? silhouetted(art) : antialiased(art);
+    if (upright) c.drawImage(src, Math.round(r.cx - art.width / 2), Math.round(r.cy - art.height / 2));
+    else drawFacingRight(c, src, r.cx, r.cy, art.width, art.height);
+  };
+  // a stretched segment on its exact rect
+  const seg = (u: UVRect, art: HTMLCanvasElement): void => { clear(u); const r = rectOf(u); c.drawImage(antialiased(art), r.x, r.y, r.w, r.h); };
+
+  // ---- Starhart ----
+  const mechCells = [
+    { kind: "nova" as const, body: UV_NOVA_BODY, base: UV_NOVA_BASE, leg: UV_NOVA_LEG, sil: { body: UV_NOVA_BODY_SIL, base: UV_NOVA_BASE_SIL, leg: UV_NOVA_LEG_SIL } },
+    { kind: "pulsar" as const, body: UV_PULSAR_BODY, base: UV_PULSAR_BASE, leg: UV_PULSAR_LEG, sil: { body: UV_PULSAR_BODY_SIL, base: UV_PULSAR_BASE_SIL, leg: UV_PULSAR_LEG_SIL } },
+    { kind: "quasar" as const, body: UV_QUASAR_BODY, base: UV_QUASAR_BASE, leg: UV_QUASAR_LEG, sil: { body: UV_QUASAR_BODY_SIL, base: UV_QUASAR_BASE_SIL, leg: UV_QUASAR_LEG_SIL } },
+  ];
+  mechCells.forEach((cells, i) => {
+    const T = HART_TIERS[i];
+    const a = hartMech(T);
+    const body = toCanvas(a.body), base = toCanvas(a.base), leg = toCanvas(a.leg);
+    part(cells.body, body); part(cells.base, base); part(cells.leg, leg);
+    part(cells.sil.body, body, true); part(cells.sil.base, base, true); part(cells.sil.leg, leg, true);
+    dropCell(cells.kind);
+    teamCell(cells.kind, body, toCanvas(a.cell), cells.body, T.n);
+  });
+  const legCells = [
+    { kind: "vela" as const, body: UV_VELA_BODY, base: UV_VELA_BASE, joint: UV_VELA_JOINT, baseJoint: UV_VELA_JOINT_BASE, foot: UV_VELA_FOOT, leg: UV_VELA_LEG_SEG, legBase: UV_VELA_LEG_BASE_SEG,
+      sil: { body: UV_VELA_BODY_SIL, base: UV_VELA_BASE_SIL, joint: UV_VELA_JOINT_SIL, baseJoint: UV_VELA_JOINT_BASE_SIL, foot: UV_VELA_FOOT_SIL } },
+    { kind: "corvus" as const, body: UV_CORVUS_BODY, base: UV_CORVUS_BASE, joint: UV_CORVUS_JOINT, baseJoint: UV_CORVUS_JOINT_BASE, foot: UV_CORVUS_FOOT, leg: UV_CORVUS_LEG_SEG, legBase: UV_CORVUS_LEG_BASE_SEG,
+      sil: { body: UV_CORVUS_BODY_SIL, base: UV_CORVUS_BASE_SIL, joint: UV_CORVUS_JOINT_SIL, baseJoint: UV_CORVUS_JOINT_BASE_SIL, foot: UV_CORVUS_FOOT_SIL } },
+  ];
+  legCells.forEach((cells, i) => {
+    const T = HART_TIERS[3 + i];
+    const a = hartLegged(T);
+    const body = toCanvas(a.body), base = toCanvas(a.base);
+    const foot = toCanvas(a.foot), joint = toCanvas(a.joint), baseJoint = toCanvas(a.baseJoint);
+    part(cells.body, body); part(cells.base, base); part(cells.foot, foot); part(cells.joint, joint, false, true); part(cells.baseJoint, baseJoint);
+    part(cells.sil.body, body, true); part(cells.sil.base, base, true); part(cells.sil.foot, foot, true); part(cells.sil.joint, joint, true, true); part(cells.sil.baseJoint, baseJoint, true);
+    seg(cells.leg, toCanvasRect(a.leg.px, a.leg.w, a.leg.h));
+    seg(cells.legBase, toCanvasRect(a.legBase.px, a.legBase.w, a.legBase.h));
+    dropCell(cells.kind);
+    teamCell(cells.kind, body, toCanvas(a.cell), cells.body, T.n);
+  });
+
+  // ---- Stoop ----
+  const fullCells: readonly UVRect[] = [UV_FLARE, UV_HORIZON, UV_ZENITH, UV_ANTUMBRA, UV_ECLIPSE];
+  STOOP_TIERS.forEach((T, i) => {
+    const a = stoop(T);
+    const full = toCanvas(a.full);
+    part(fullCells[i], full);
+    const [bodyUV, wingUV] = STOOP_CELLS[i];
+    part(bodyUV, toCanvas(a.body));
+    part(wingUV, toCanvas(a.wing));
+    dropCell(STOOP_KINDS[i]);
+    teamCell(STOOP_KINDS[i], full, toCanvas(a.cell), fullCells[i], T.n);
+  });
+}
+
 const ENV = "/mindustry/sprites/blocks/environment";
 // THE LAND FLOORS ARE NOT IN THIS TABLE. They are the game's own art,
 // painted at load from game/tiles.ts (see packAtlas) rather than loaded
@@ -1885,15 +2104,20 @@ function outlined(src: HTMLImageElement | HTMLCanvasElement, color: string, radi
  * the renderer's multiply IS Draw.color; the same tint carries the health
  * greying (HP_TINT) the baked cell used to get from the body under it.
  */
-function cellArt(body: HTMLImageElement, cell: HTMLImageElement): HTMLCanvasElement {
-  const w = body.naturalWidth, h = body.naturalHeight;
+/** a source's pixel size, sprite file or drawn canvas alike */
+type Src = HTMLImageElement | HTMLCanvasElement;
+const srcW = (s: Src): number => (s instanceof HTMLImageElement ? s.naturalWidth : s.width);
+const srcH = (s: Src): number => (s instanceof HTMLImageElement ? s.naturalHeight : s.height);
+
+function cellArt(body: Src, cell: Src): HTMLCanvasElement {
+  const w = srcW(body), h = srcH(body);
   const cv = document.createElement("canvas");
   cv.width = w;
   cv.height = h;
   const cc = cv.getContext("2d");
   if (!cc) throw new Error("2d context unavailable for team cell");
   cc.imageSmoothingEnabled = false;
-  cc.drawImage(cell, Math.round((w - cell.naturalWidth) / 2), Math.round((h - cell.naturalHeight) / 2));
+  cc.drawImage(cell, Math.round((w - srcW(cell)) / 2), Math.round((h - srcH(cell)) / 2));
   return cv;
 }
 
@@ -1922,7 +2146,7 @@ function opaqueBounds(src: HTMLCanvasElement): { x: number; y: number; w: number
  * (see pushMech), the union of these reads as a single rim around the
  * unit's outer silhouette, with no line at any part seam.
  */
-function silhouetted(src: HTMLImageElement): HTMLCanvasElement {
+function silhouetted(src: Src): HTMLCanvasElement {
   const cv = outlined(src, UNIT_OUTLINE, UNIT_OUTLINE_R);
   const cc = cv.getContext("2d");
   if (!cc) throw new Error("2d context unavailable for silhouette");
@@ -2246,8 +2470,8 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   }[] = [];
   const teamCell = (
     kind: UnitKind,
-    body: HTMLImageElement,
-    cell: HTMLImageElement,
+    body: Src,
+    cell: Src,
     bodyUV: UVRect,
     w: number,
     h = w,
@@ -2259,10 +2483,10 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
       kind,
       art,
       crop,
-      srcW: body.naturalWidth,
-      srcH: body.naturalHeight,
-      sx: w / body.naturalWidth,
-      sy: h / body.naturalHeight,
+      srcW: srcW(body),
+      srcH: srcH(body),
+      sx: w / srcW(body),
+      sy: h / srcH(body),
       cellW: Math.round((bodyUV[2] - bodyUV[0]) * ATLAS_W),
       cellH: Math.round((bodyUV[3] - bodyUV[1]) * ATLAS_H),
     });
@@ -2937,6 +3161,15 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   tc.globalCompositeOperation = "destination-in";
   tc.drawImage(baseTeam, 0, 0, 160, 160);
   c.drawImage(team, 320, 128);
+
+  // the animal trial goes over the stock cells it replaces, once they are
+  // all drawn and before the team cells are packed, since it requeues its own
+  if (ANIMAL_ART) {
+    packAnimalArt(c, teamCell, (kind) => {
+      const i = cellJobs.findIndex((j) => j.kind === kind);
+      if (i >= 0) cellJobs.splice(i, 1);
+    });
+  }
 
   // last, because it is the only thing on the sheet whose rects are
   // decided rather than typed: every body's team cell, cropped and
