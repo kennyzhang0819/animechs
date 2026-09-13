@@ -4,8 +4,8 @@ This is the direction the enemy art settled on after the animal trial
 (`game/animalArt.ts`, behind `ANIMAL_ART` in `game/animalFlag.ts`), written
 down so the next family is drawn to the same rules without re-running the
 trial. The Starhart stags and the Stoop bats are the reference
-implementation, and the Ironhide rhinos and Weaver spiders were drawn to
-this page; the pixel engine and the house rules they obey are in
+implementation, and the Ironhide rhinos, Weaver spiders, Skate mantas
+and Livewire eels were drawn to this page; the pixel engine and the house rules they obey are in
 `game/pixelArt.ts`, and the packing in `game/atlas.ts`.
 
 ## 1. The style
@@ -22,7 +22,7 @@ the other way round.
   families are renamed for the animal, the gimmick stays what it was:
   Ironhides (rhino) are the ground mechs, Weavers (spider) the venom
   spitters, Starhart (stag) the starlight mechs, Stoop (bat) the skyfall
-  bombers, Tuskers (narwhal) the harpoon fleet, Livewires (electric eel)
+  bombers, Skates (manta) the harpoon fleet, Livewires (electric eel)
   the wraith fleet. The family accent colours in `PAL` (`game/constants.ts`)
   carry across: the stag's glows are star-gold, the bat's charge is
   magenta.
@@ -63,6 +63,10 @@ the other way round.
   symmetrical body is a face, and the eye finds it instantly. Segment
   along the spine; put the horizontal breaks only where the animal really
   has one (the bat's head against its shoulders).
+- **No eyes.** A pair of dark dots on a top-down body reads as dirt at
+  field zoom and as a cartoon up close. The head is a shape: a wedge, a
+  snout, a jaw plate, horns. The spiders and eels shipped with eyes once
+  and lost them; do not put them back on the next animal.
 - **Symmetric by construction.** Draw the left half, mirror it
   (`symmetrize`). Hand-mirrored art drifts by a pixel and the drift is
   visible at every scale.
@@ -74,10 +78,13 @@ the other way round.
 - **Animate with the rigs that exist.** Mech rig for T1 to T3 (one hoof
   sprite mirrored and slid by the walk cycle), legged rig for T4 and T5
   (sim-planted IK legs stroked between mount, knee and foot, with a
-  shoulder cap and knee cap), and for flyers a body plus one mirrored
-  wing that folds toward its root on a sine (`pushWings`,
-  `FLYER_PARTS`). A new family should need a new drawing, not a new
-  renderer path.
+  shoulder cap and knee cap), for flyers and hulls a body plus one
+  mirrored wing that folds toward its root on a sine (`pushWings`,
+  `FLYER_PARTS`), and for anything long and legless the worm rig: a
+  chain of segments the sim drags behind the head, each drawn along the
+  chain with a swimming wave (`SegmentSpec`, `SEGMENT_ART`,
+  `pushSegments`). A new family should need a new drawing, not a new
+  renderer path; a centipede is the worm rig with legs drawn on.
 - **Stock art is never deleted.** `public/mindustry/` is untouched. A
   trial family draws into its own cells and is packed OVER the stock
   family's cells in `packAnimalArt` while the flag is on. Turn the flag
@@ -172,6 +179,31 @@ Weaver, the spider (venom spitters' cells; legged rig at every tier, six legs on
 | T3 | spiroct | elite | 128 | 1.4 | 112 | 59 | 18.75 |
 | T4 | arkyid | champion | 256 | 1.6 | 256 | 80 | 28.75 |
 | T5 | toxopid | apex | 256 | 2.0 | 320 | 119 | 32.5 |
+
+Skate, the manta (harpoon fleet's cells; body and two beating wings, as the bat):
+
+| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
+| --- | --- | --- | --- | --- | --- | --- |
+| T1 | risso | 128 | 1.2 | 96 | 49 | 12.5 |
+| T2 | minke | 128 | 1.3 | 104 | 63 | 16.25 |
+| T3 | bryde | 256 | 1.1 | 176 | 88 | 25 |
+| T4 | sei | 256 | 1.5 | 240 | 143 | 48.75 |
+| T5 | omura | 384 | 1.7 | 408 | 219 | 72.5 |
+
+Livewire, the eel (wraith fleet; the worm rig, no overshoot). Its size is
+the chain's, not a quad's: head, then `count` segments at `spacing`, then
+the tail. Head and segment cells are sized to the art, one px over the grid.
+
+| tier | kind | head cell | segment cell | count | spacing, world px | nose to tail, tiles |
+| --- | --- | --- | --- | --- | --- | --- |
+| T1 | retusa | 48 | 36 | 4 | 16 | 5 |
+| T2 | oxynoe | 72 | 52 | 5 | 23 | 8 |
+| T3 | cyerce | 96 | 72 | 7 | 32 | 14 |
+| T4 | aegires | 128 | 100 | 7 | 44 | 19 |
+| T5 | navanax | 184 | 140 | 7 | 62 | 27 |
+
+The eel's icon is its head cell, so it reads small on a card next to a
+manta's; that is the price of the chain and was accepted.
 
 The spider's legs are the size that matters for that family: leg length
 runs 12, 18, 26, 50 and 60 Mindustry units up the ladder against the
