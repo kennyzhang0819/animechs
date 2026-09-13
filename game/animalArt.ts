@@ -13,7 +13,9 @@
  * are game/pixelArt.ts's: flat plates, nothing thinner than two pixels,
  * no outline, plating that runs down rather than across (a horizontal cut
  * on a symmetrical body is a face). Every body is left-right symmetric by
- * construction: the left half is drawn and mirrored.
+ * construction: the left half is drawn and mirrored. NO EYES: a pair of
+ * dark dots on a top-down body reads as dirt at field zoom and as a
+ * cartoon up close, so no animal here gets any — the head is a shape.
  *
  * WHAT EACH FAMILY IS BUILT FOR
  *
@@ -654,20 +656,16 @@ function spiderMark(g: Pen, H: H, T: SpiderTier): void {
   const hw = Math.max(1, 0.06 * k);
   g.box(H.p(X(-hw)), H.p(Y(cy - 0.6 * k)), H.p(X(hw)), H.p(Y(cy + 0.65 * k)), ACID[1]);
 }
-/** the spider's body: abdomen, cephalothorax, eyes, pedipalps, fangs, the steel at the waist and the rear */
+/** the spider's body: abdomen, cephalothorax, pedipalps, fangs, the steel at the waist and the rear */
 function spiderBody(g: Pen, H: H, T: SpiderTier): void {
   const { n, S, t } = T; const c = (n - 1) / 2; const o = SPIDER;
   const X = (v: number) => c + v * S, Y = (v: number) => c + v * S, r = (v: number) => Math.max(2, Math.round(v * S));
   const disc = (x: number, y: number, rr: number): Shape => ({ disc: [X(x), Y(y), r(rr)] });
-  const eyes = (xs: readonly number[], y: number, s = 2): void => {
-    for (const x of xs) for (const sg of [-1, 1]) g.box(H.p(X(sg * x) - r(s) / 2), H.p(Y(y)), H.p(X(sg * x) + r(s) / 2), H.p(Y(y) + r(s)), o[0]);
-  };
   const { cy, R } = abdomen(t);
-  if (t === 1) { H.org(g, disc(0, cy, R), o); spiderPlate(g, H, T); H.org(g, disc(0, -6, 5), o, false); eyes([2], -9); spiderMark(g, H, T); return; }
+  if (t === 1) { H.org(g, disc(0, cy, R), o); spiderPlate(g, H, T); H.org(g, disc(0, -6, 5), o, false); spiderMark(g, H, T); return; }
   H.org(g, disc(0, cy, R), o);
   spiderPlate(g, H, T);
   H.org(g, disc(0, -8, 8 + (t - 2)), o, false);
-  eyes([2, 5], -13 - (t - 2)); eyes([1.5], -11 - (t - 2));
   if (t >= 3) for (const sg of [-1, 1]) H.org(g, { poly: H.rot(X(sg * 4), Y(-15 - (t - 2)), r(2.5), r(7), sg * 40) }, o, false);
   if (t >= 4) H.pipe(g, X(-7), Y(-1), X(7), Y(2));
   if (t >= 4) H.pipe(g, X(-2), Y(17 + (t - 2) * 1.5), X(2), Y(24 + (t - 2) * 1.5));
@@ -736,7 +734,7 @@ function mantaAccent(g: Pen, H: H, T: StoopTier, cx: number, cy: number): void {
   g.poly(H.P([[X(-barb), Y(tip - 0.16)], [X(barb), Y(tip - 0.16)], [X(0), Y(tip)]]), TEAL[1]);
   if (t >= 2) g.box(H.p(X(-0.025)), H.p(Y(-0.3)), H.p(X(0.025)), H.p(Y(0.35)), TEAL[1]);
 }
-/** the body: lozenge, horns, eyes, the harpoon tail, steel on the back */
+/** the body: lozenge, horns, the harpoon tail, steel on the back */
 function mantaBody(g: Pen, H: H, T: StoopTier, cx: number, cy: number): void {
   const { W, t } = T; const o = SKIN; const X = (v: number) => cx + v * W, Y = (v: number) => cy + v * W;
   const px = (v: number) => Math.max(2, Math.round(v * W));
@@ -748,7 +746,6 @@ function mantaBody(g: Pen, H: H, T: StoopTier, cx: number, cy: number): void {
   // the body, a lozenge; the horns forward of it
   H.org(g, { poly: H.P([[X(0), Y(-0.58)], [X(0.16), Y(-0.4)], [X(0.19), Y(-0.05)], [X(0.15), Y(0.35)], [X(0), Y(0.5)], [X(-0.15), Y(0.35)], [X(-0.19), Y(-0.05)], [X(-0.16), Y(-0.4)]]) }, o);
   for (const s of [-1, 1]) H.mech(g, { poly: H.rot(X(s * 0.1), Y(-0.62), px(0.05), px(0.26), s * -12) }, false);
-  for (const s of [-1, 1]) g.box(H.p(X(s * 0.11) - px(0.02)), H.p(Y(-0.45)), H.p(X(s * 0.11) + px(0.02)), H.p(Y(-0.45) + px(0.035)), o[0]);
   // steel down the back from T3, stacks at the hips from T4, a collar at T5
   if (t >= 3) H.hull(g, { poly: H.R(X(-0.09), Y(-0.25), X(0.09), Y(0.3)) });
   if (t >= 4) stacks(g, H, [X(-0.1), X(0.1)], Y(0.3), Y(0.5), px(0.05));
@@ -813,13 +810,12 @@ function eelAccent(g: Pen, H: H, T: EelTier): void {
   g.box(H.p(X(0.5) - hw), H.p(Y(0.38)), H.p(X(0.5) + hw), H.p(Y(1)), VOLT[1]);
   if (t >= 4) for (const s of [-1, 1]) g.box(H.p(X(0.5 + s * 0.3) - hw), H.p(Y(0.05)), H.p(X(0.5 + s * 0.3) + hw), H.p(Y(0.2)), VOLT[1]);
 }
-/** the head: a blunt wedge widening off the neck, eyes, a steel jaw */
+/** the head: a blunt wedge widening off the neck, a steel jaw */
 function eelHead(g: Pen, H: H, T: EelTier): void {
   const { nh, t } = T; const o = EEL; const X = (v: number) => v * nh, Y = (v: number) => v * nh;
   const px = (v: number) => Math.max(2, Math.round(v * nh));
   H.org(g, { poly: H.P([[X(0.5), Y(0)], [X(0.72), Y(0.1)], [X(0.86), Y(0.32)], [X(0.84), Y(0.6)], [X(0.81), Y(1)], [X(0.19), Y(1)], [X(0.16), Y(0.6)], [X(0.14), Y(0.32)], [X(0.28), Y(0.1)]]) }, o, false);
-  for (const s of [-1, 1]) g.box(H.p(X(0.5 + s * 0.24) - px(0.04)), H.p(Y(0.3)), H.p(X(0.5 + s * 0.24) + px(0.04)), H.p(Y(0.3) + px(0.08)), o[0]);
-  // the jaw: a steel plate over the snout from T2, a visor over the eyes from T4, electrodes forward at T5
+  // the jaw: a steel plate over the snout from T2, a visor band from T4, electrodes forward at T5
   if (t >= 2) H.mech(g, { poly: H.P([[X(0.5), Y(0.02)], [X(0.68), Y(0.1)], [X(0.7), Y(0.22)], [X(0.3), Y(0.22)], [X(0.32), Y(0.1)]]) }, false);
   if (t >= 4) H.mech(g, { poly: H.R(X(0.2), Y(0.42), X(0.8), Y(0.5)) }, false);
   if (t >= 5) for (const s of [-1, 1]) H.mech(g, { poly: H.rot(X(0.5 + s * 0.3), Y(0.08), px(0.08), px(0.22), s * 15) }, false);

@@ -47,6 +47,10 @@ the other way round.
   symmetrical body is a face, and the eye finds it instantly. Segment
   along the spine; put the horizontal breaks only where the animal really
   has one (the bat's head against its shoulders).
+- **No eyes.** A pair of dark dots on a top-down body reads as dirt at
+  field zoom and as a cartoon up close. The head is a shape: a wedge, a
+  snout, a jaw plate, horns. The spiders and eels shipped with eyes once
+  and lost them; do not put them back on the next animal.
 - **Symmetric by construction.** Draw the left half, mirror it
   (`symmetrize`). Hand-mirrored art drifts by a pixel and the drift is
   visible at every scale.
