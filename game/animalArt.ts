@@ -605,9 +605,9 @@ export const rhinoSeg = (T: Tier): { th: number; sh: number } => ({
 // tier — thin pistons with steel knee caps and feet, on shoulder caps of
 // the body's own hide — the fangs from T3, a waist clamp and a spinneret
 // stack from T4. Six legs on the mite, eight from the spider up, all on
-// the legged rig, the T1 included. The acid is one mark on the abdomen: a
-// diamond that grows with the tier and opens into an hourglass on the
-// widow.
+// the legged rig, the T1 included. The abdomen wears a steel plate,
+// strakes running down, with one seam of acid down its centre line: that
+// seam is the whole of the family colour on the body.
 const ACID: Tone = ["#5c8a12", "#d4ff3a", "#eeffa0"];
 const SPIDER: Tone = ["#3a2a3a", "#5c3f5c", "#8a6488"];
 export interface SpiderTier {
@@ -630,16 +630,24 @@ export const SPIDER_TIERS: readonly SpiderTier[] = [
 ];
 /** the abdomen's centre and radius, design units */
 const abdomen = (t: number): { cy: number; R: number } => (t === 1 ? { cy: 4, R: 8 } : { cy: 8, R: 12 + (t - 2) * 1.5 });
-/** the acid mark on the abdomen — last on the body, alone (in white) for the cell */
+/** the plate on the abdomen: a chamfered slab of steel, its strakes
+ *  running down, sized to the tier */
+function spiderPlate(g: Pen, H: H, T: SpiderTier): void {
+  const { n, S, t } = T; const c = (n - 1) / 2;
+  const X = (v: number) => c + v * S, Y = (v: number) => c + v * S;
+  const { cy, R } = abdomen(t); const k = [0, 0.8, 0.85, 0.9, 1, 1][t] * R;
+  H.hull(g, { poly: H.P([
+    [X(-0.4 * k), Y(cy - 0.75 * k)], [X(0.4 * k), Y(cy - 0.75 * k)], [X(0.6 * k), Y(cy - 0.3 * k)], [X(0.6 * k), Y(cy + 0.45 * k)],
+    [X(0.35 * k), Y(cy + 0.8 * k)], [X(-0.35 * k), Y(cy + 0.8 * k)], [X(-0.6 * k), Y(cy + 0.45 * k)], [X(-0.6 * k), Y(cy - 0.3 * k)],
+  ]) });
+}
+/** the acid seam down the plate — last on the body, alone (in white) for the cell */
 function spiderMark(g: Pen, H: H, T: SpiderTier): void {
   const { n, S, t } = T; const c = (n - 1) / 2;
   const X = (v: number) => c + v * S, Y = (v: number) => c + v * S;
-  const { cy, R } = abdomen(t); const k = [0, 0.45, 0.5, 0.55, 0.62, 0.72][t];
-  const hw = R * k * 0.8, hh = R * k;
-  if (t >= 5) {
-    g.poly(H.P([[X(-hw), Y(cy - hh)], [X(hw), Y(cy - hh)], [X(0), Y(cy)]]), ACID[1]);
-    g.poly(H.P([[X(-hw), Y(cy + hh)], [X(hw), Y(cy + hh)], [X(0), Y(cy)]]), ACID[1]);
-  } else g.poly(H.P([[X(0), Y(cy - hh)], [X(hw), Y(cy)], [X(0), Y(cy + hh)], [X(-hw), Y(cy)]]), ACID[1]);
+  const { cy, R } = abdomen(t); const k = [0, 0.8, 0.85, 0.9, 1, 1][t] * R;
+  const hw = Math.max(1, 0.06 * k);
+  g.box(H.p(X(-hw)), H.p(Y(cy - 0.6 * k)), H.p(X(hw)), H.p(Y(cy + 0.65 * k)), ACID[1]);
 }
 /** the spider's body: abdomen, cephalothorax, eyes, pedipalps, fangs, the steel at the waist and the rear */
 function spiderBody(g: Pen, H: H, T: SpiderTier): void {
@@ -650,8 +658,9 @@ function spiderBody(g: Pen, H: H, T: SpiderTier): void {
     for (const x of xs) for (const sg of [-1, 1]) g.box(H.p(X(sg * x) - r(s) / 2), H.p(Y(y)), H.p(X(sg * x) + r(s) / 2), H.p(Y(y) + r(s)), o[0]);
   };
   const { cy, R } = abdomen(t);
-  if (t === 1) { H.org(g, disc(0, cy, R), o); H.org(g, disc(0, -6, 5), o, false); eyes([2], -9); spiderMark(g, H, T); return; }
+  if (t === 1) { H.org(g, disc(0, cy, R), o); spiderPlate(g, H, T); H.org(g, disc(0, -6, 5), o, false); eyes([2], -9); spiderMark(g, H, T); return; }
   H.org(g, disc(0, cy, R), o);
+  spiderPlate(g, H, T);
   H.org(g, disc(0, -8, 8 + (t - 2)), o, false);
   eyes([2, 5], -13 - (t - 2)); eyes([1.5], -11 - (t - 2));
   if (t >= 3) for (const sg of [-1, 1]) H.org(g, { poly: H.rot(X(sg * 4), Y(-15 - (t - 2)), r(2.5), r(7), sg * 40) }, o, false);
