@@ -87,12 +87,33 @@
     ]
   },
   "accent": {
-    "bullet": "#e07a3f",
-    "shell": "#a8b04a",
-    "flame": "#ec7458",
-    "beam": "#a9d8ff",
-    "water": "#5c6dbb",
-    "field": "#8fe0b8",
-    "missile": "#f595be"
+    "bullet": [
+      "#8f665b",
+      "#c9a58f"
+    ],
+    "shell": [
+      "#d99f6b",
+      "#f3e979"
+    ],
+    "flame": [
+      "#ec7458",
+      "#ff9c5a"
+    ],
+    "beam": [
+      "#6974c4",
+      "#8aa3f4"
+    ],
+    "water": [
+      "#3f4c96",
+      "#5c6dbb"
+    ],
+    "field": [
+      "#4fa88a",
+      "#8fe0b8"
+    ],
+    "missile": [
+      "#da6b68",
+      "#feb380"
+    ]
   }
 }
