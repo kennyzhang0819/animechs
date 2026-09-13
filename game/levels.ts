@@ -765,13 +765,16 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
       ripple: 3,
     }),
   },
-  // flare: 70 hp, no armor, 1.125-block hitbox, 2.7 px/tick = 20.25 tiles/s.
+  // flare: 70 hp, no armor, 1.125-block hitbox, 15 tiles/s (upstream 20.25).
+  // The fastest thing in the sky still, but the whole line was brought down
+  // to a pace the guns can track — a flare used to cross the flak before a
+  // scatter finished a burst.
   // THE T1 IS THE FAMILY IN MINIATURE (the Skyfall bombers): no gun, a
   // charge that goes off on the turret it dives at — or wherever it is
   // shot down — for 150 over three and a half tiles
   flare: {
     hp: 70,
-    speed: 20.25 * CELL,
+    speed: 15 * CELL,
     armor: 0,
     radius: UR * 1.125,
     tier: 1,
@@ -901,23 +904,28 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   },
   // ---- THE SKY GUNSHIPS' PACE ----
   //
-  // THE LINE STAYS FAST. Mindustry's air tree trades its speed away as it
-  // climbs — flare 20.25 tiles/s, horizon 12.4, zenith 12.75, antumbra 6,
-  // eclipse 4.05 — so its T5 crossed a field of scatter at walking pace and
-  // the family's own premise (arrive before the guns can answer) was gone
-  // by its fourth body. Every tier here is quicker than any walker: the
-  // flare keeps its 20.25, and the rest are re-cut so the T5 still flies at
-  // more than a crawler runs. What the family asks a board for is guns that
-  // reach the sky AND answer fast, at every tier and not just the first.
+  // THE LIGHT TIERS ARE FAST AND THE HEAVY ONES ARE NOT. Mindustry's own
+  // air tree trades its speed away as it climbs — flare 20.25 tiles/s,
+  // horizon 12.4, zenith 12.75, antumbra 6, eclipse 4.05 — and the shape of
+  // that is right even where the numbers are not. The line reads 15, 10,
+  // 10, 5, 4 here: the T1 and T2 still arrive faster than anything on the
+  // ground, the T3 holds the T2's pace on two and a half times the bulk,
+  // and the T4 and T5 are deliberately heavy — a hull that takes a patch
+  // when it lands is a hull the board should see coming. The flare's old
+  // 20.25 was the other end of the problem from the eclipse's 4.05: it
+  // crossed the flak faster than a scatter finished a burst, so the guns
+  // never got their answer either. What the family asks a board for is
+  // guns that reach the sky and answer fast — and now it gives them the
+  // time to, at the tiers where the damage actually is.
 
-  // horizon: the T2 — 340 hp, armor 3, 1.375x1.375-block hitbox, 15 tiles/s
+  // horizon: the T2 — 340 hp, armor 3, 1.375x1.375-block hitbox, 10 tiles/s
   // (upstream 12.375). Slower than a flare but four times the health, and
   // armour 3 blunts the scatter flak that shreds the T1
   // The charge is the bomber's whole reason: 550 over five tiles, which
   // is the old bomb rack's whole rain delivered in one arrival
   horizon: {
     hp: 340,
-    speed: 15 * CELL,
+    speed: 10 * CELL,
     armor: 3,
     radius: UR * 1.375,
     tier: 2,
@@ -927,14 +935,14 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     payload: { splash: 550, radius: 40 * MU },
   },
   // zenith: the T3 — 700 hp, armor 5, a 2.5x2.5-block hitbox that makes it
-  // the widest thing in the sky below the T4/T5 hulls, at 13.5 tiles/s
-  // (upstream 12.75). THE AFTERBURNER (hasteField): everything within nine
+  // the widest thing in the sky below the T4/T5 hulls, at 10 tiles/s
+  // (upstream 12.75) — the horizon's pace on two and a half times its bulk. THE AFTERBURNER (hasteField): everything within nine
   // tiles of it flies four tenths faster — a flight of bombers crossing
   // the flak spends that much less time in it, which for a body whose
   // job is to arrive is the whole game. Its own charge is a horizon's
   zenith: {
     hp: 700,
-    speed: 13.5 * CELL,
+    speed: 10 * CELL,
     armor: 5,
     radius: UR * 2.5,
     tier: 3,
@@ -945,9 +953,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   },
   // antumbra: the air line's T4 — 7200 hp, armor 17, and a 5.75x5.75-block
   // hitbox, more than twice the zenith across; only the eclipse's 7.25
-  // outspans it. 10.5 tiles/s (upstream 6, which gave up more speed than
-  // any other upgrade took): quicker than every walker still, and slower
-  // than the zenith it replaces only by a fifth
+  // outspans it. 5 tiles/s (upstream 6): the heavy tiers are where the sky
+  // slows down — still quicker than most walkers, and half the zenith it
+  // replaces, so the board gets time to answer the hull that matters
   //
   // rotateSpeed 1.9 against the stock 5 is what sells the weight: a flyer
   // holds its heading through its own drift, and this one visibly swings
@@ -965,7 +973,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // promise the old 300-over-three-tiles never came close to keeping
   antumbra: {
     hp: 7200,
-    speed: 10.5 * CELL,
+    speed: 5 * CELL,
     armor: 17,
     radius: UR * 5.75,
     tier: 4,
@@ -987,9 +995,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   //
   // The air line's whole premise is arriving before the guns can answer,
   // and upstream is where that premise was abandoned: 0.54 px/tick = 4.05
-  // tiles/s, a fifth of the flare's 20.25, slower than most of the GROUND
-  // roster. It flies at 9 here — faster than a crawler runs — so the
-  // heaviest thing in the sky still arrives like the sky does. rotateSpeed
+  // tiles/s, slower than most of the GROUND roster. It flies at 4 here —
+  // barely above that, and the slowest thing in the sky bar the boss: the
+  // heaviest hull on the roster is one the player watches come. rotateSpeed
   // 1 is the slowest turn of anything that moves here: it cannot answer a
   // flank, and it does not need to, because its broadside is a cone
   //
@@ -1005,7 +1013,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // a turret cannot be somewhere else
   eclipse: {
     hp: 22000,
-    speed: 9 * CELL,
+    speed: 4 * CELL,
     armor: 22,
     radius: UR * 7.25,
     tier: 5,
