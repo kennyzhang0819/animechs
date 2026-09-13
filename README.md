@@ -170,6 +170,10 @@ stale tab or a cached bundle looks exactly like a fix not working.
   (or `sprite()`, `tile()`, `top()`, `flat()`, which are `reserve()`
   with a shape) and drawn into with `drawCell`, which clips to it. No
   pixel coordinate is ever typed, so cells cannot overlap
+- `game/animalArt.ts` — the enemy families as animals, generated pixel
+  art packed over the stock cells while `ANIMAL_ART`
+  (`game/animalFlag.ts`) is on. The style, the sizing rule and how to
+  add a family are in [docs/unit-art.md](docs/unit-art.md)
 - `game/renderer.ts` — WebGL2 instanced sprites: static terrain, shadow
   and wall batches, one dynamic batch in painter's order, and a shield
   pass. Water is a batch and a program of its own — Mindustry's
