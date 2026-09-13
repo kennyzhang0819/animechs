@@ -64,9 +64,12 @@ function grid(n: number): { px: Ink[]; pen: Pen } {
   };
   const pen: Pen = {
     box(x0, y0, x1, y1, c) { for (let y = u(y0); y < u(y1); y++) for (let x = u(x0); x < u(x1); x++) set(x, y, c); },
+    // a circle of radius r + 1/2 about the pixel's centre: its poles come
+    // out as short flat runs, never the lone pixel a radius-r circle
+    // leaves sticking out at the top, bottom and sides
     disc(cx, cy, r, c) {
-      const [cxp, cyp, pr] = [u(cx), u(cy), u(r)];
-      for (let y = -pr; y <= pr; y++) { const half = Math.floor(Math.sqrt(pr * pr - y * y + 0.25)); for (let x = -half; x <= half; x++) set(cxp + x, cyp + y, c); }
+      const [cxp, cyp, pr] = [u(cx), u(cy), u(r)]; const rr = (pr + 0.5) * (pr + 0.5);
+      for (let y = -pr; y <= pr; y++) { const half = Math.floor(Math.sqrt(rr - y * y)); for (let x = -half; x <= half; x++) set(cxp + x, cyp + y, c); }
     },
     ring(cx, cy, r, w, c) {
       const [cxp, cyp, pr] = [u(cx), u(cy), u(r)]; const inner = pr - w;
@@ -428,8 +431,11 @@ function stoopBody(g: Pen, H: H, T: StoopTier, cx: number, cy: number): void {
   if (t >= 2) H.hull(g, { poly: H.R(X(-0.08), Y(-0.08), X(0.08) + 1, Y(0.24)) });
   if (t >= 3) stacks(g, H, [X(-0.06), X(0.06)], Y(0.26), Y(0.42), Math.max(3, Math.round(W * 0.05)));
   if (t >= 4) { H.mech(g, { disc: [cx, Y(-0.26), W * 0.06] }, false); glow(g, H, cx, Y(-0.26), W * 0.035, MAG); }
-  const cr = stoopCharge(T); glow(g, H, cx, Y(0.08), cr, MAG);
-  if (t >= 5) g.ring(H.p(cx), H.p(Y(0.08)), H.p(cr + Math.max(3, W * 0.03)), Math.max(2, Math.round(W * 0.02)), MAG[2]);
+  // the T5's halo goes down first as a solid disc and the charge over it,
+  // so the two edges never leave a hairline of fur between them
+  const cr = stoopCharge(T);
+  if (t >= 5) g.disc(H.p(cx), H.p(Y(0.08)), H.p(cr + Math.max(3, W * 0.03)), MAG[2]);
+  glow(g, H, cx, Y(0.08), cr, MAG);
 }
 const stoopCharge = (T: StoopTier): number => T.W * [0, 0.05, 0.07, 0.08, 0.09, 0.16][T.t];
 
@@ -633,9 +639,11 @@ function frogAccent(g: Pen, H: H, T: Tier): void {
   // the throat sac, filling tier by tier
   if (t >= 2) {
     const sr = R * [0, 0, 0.14, 0.17, 0.2, 0.26][t];
+    // the T5's halo is a solid disc under the sac, not a ring beside it:
+    // two rasterised circles never meet without a hairline between them
+    if (t >= 5) g.disc(H.p(c), H.p(Y(-0.3)), H.p(sr + Math.max(3, R * 0.04)), ACID[2]);
     g.disc(H.p(c), H.p(Y(-0.3)), H.p(sr), ACID[1]);
     g.disc(H.p(c), H.p(Y(-0.3) - sr * 0.35), H.p(sr * 0.4), ACID[2]);
-    if (t >= 5) g.ring(H.p(c), H.p(Y(-0.3)), H.p(sr + Math.max(3, R * 0.04)), Math.max(2, Math.round(R * 0.025)), ACID[2]);
   }
   const bw = barrelWidth(t);
   g.box(H.p(X(-bw)), H.p(Y(-1.47)), H.p(X(bw)), H.p(Y(-1.37)), ACID[1]);
