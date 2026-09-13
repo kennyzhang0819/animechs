@@ -16,6 +16,7 @@ import {
   UV_FLOORS,
   UV_PINE,
   UV_PINES,
+  UV_SPAWN,
   UV_RING,
   UV_FUSE,
   UV_SCATTER,
@@ -134,6 +135,7 @@ import {
   type ShotRegion,
 } from "./weapons";
 import { isWaterFloor, showsFloorCell, WALL_DEEP, type Terrain } from "./terrain";
+import { SPAWN_STYLE } from "./maps";
 import {
   FxKind,
   type Effect,
@@ -1577,10 +1579,11 @@ export class Renderer {
    * rebuild the static tile batch — call on init and whenever the map
    * changes.
    *
-   * Drop zones are NOT painted here, in the editor or in the game: a tinted
-   * pad hides the floor an author is trying to see, and the zone's real
-   * shape is already drawn as its circle in the editor overlay. `layers`
-   * still gates the zones' reachability there — see MapEditor.drawOverlay.
+   * THE SPAWN LAYER IS PAINTED HERE, in the editor and in the game alike:
+   * a pad tile on every cell of Terrain.spawn, tinted (see pass 3). It is
+   * a painted layer now rather than a circle on an overlay, so it belongs
+   * in the batch with the rest of the ground — and `layers.spawn` hides it
+   * for an author who wants to see the floor underneath.
    */
   rebuildTerrain(src: { terrain: Terrain }, layers: TerrainLayers = ALL_LAYERS): void {
     const gl = this.gl;
@@ -1735,10 +1738,32 @@ export class Renderer {
     dq.n = 0;
     this.push(dq, W / 2, H / 2, W, H, 0, [0, 0, 1, 1], 0, 0, 0, 1);
 
-    // pass 3: wall sprites over their (shadow-darkened) cells, then the
-    // editor's spawn overlay and the props
+    // pass 3: the spawn pads, then the wall sprites over their
+    // (shadow-darkened) cells, then the props
     const w = this.walls;
     w.n = 0;
+    // THE SPAWN LAYER, one pad tile a painted cell (Terrain.spawn).
+    //
+    // It is drawn HERE — over the floors and over the hills' rim shadow,
+    // under the props — because a pad is something laid ON the ground, and
+    // because this batch is the one drawn after the water: a pad on a
+    // shallow shoreline has to sit on top of the sea rather than under it.
+    //
+    // Every cell is one quad in a STATIC batch, so a map with a couple of
+    // thousand pads pays for them when the terrain is built and nothing per
+    // frame. The tint is the layer's one colour (SPAWN_STYLE), multiplied
+    // over the pad sprite's own grey-pink, and the alpha lets the floor
+    // beneath read through: what the pads mark is ground, still.
+    if (layers.spawn) {
+      const [sr, sg, sb] = SPAWN_STYLE.tint;
+      for (let y = 0; y < mapRows; y++)
+        for (let x = 0; x < mapCols; x++) {
+          const i = y * COLS + x;
+          if (!T.spawn[i]) continue;
+          this.push(w, (x + 0.5) * CELL, (y + 0.5) * CELL, CELL, CELL, 0, UV_SPAWN,
+            sr, sg, sb, SPAWN_STYLE.alpha);
+        }
+    }
     // StaticWall.drawBase's large rule: a wall cell's 2x2-ALIGNED block
     // (rx = x & ~1) that is entirely one wall family has a seeded 50%
     // chance to render as the four quadrants of that family's -large art;

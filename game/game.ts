@@ -6,7 +6,7 @@ import {
   OFFICIAL_MAPS,
   paintThumb,
   refreshMap,
-  zoneStyle,
+  SPAWN_STYLE,
 } from "./maps";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { TOWER_ICONS, towerBaseIcon } from "./towerIcons";
@@ -675,6 +675,15 @@ export class Game {
    * rebuild once.
    */
   private soakLayer: HTMLCanvasElement | null = null;
+  /**
+   * THE SPAWN LAYER'S EDGE as one path, for the route overlay — built on
+   * demand, dropped with the map, exactly like the soak layer above.
+   *
+   * A path rather than a walk over the cells because the overlay is drawn
+   * every frame it is up and the layer is thousands of tiles: the cells are
+   * visited once, per map, and the stroke afterwards is one canvas call.
+   */
+  private spawnOutline: Path2D | null = null;
   // the same hover in world px: the placement ghost wants the grid cell, but
   // the demolish highlight has to ask the sim what is actually under there
   private hoverX = -1;
@@ -816,7 +825,8 @@ export class Game {
   private readonly keysDown = new Set<string>();
   private paused = false;
   /**
-   * The route overlay: drop zones, and the lines flyers fly out of them.
+   * The route overlay: the spawn layer's edge, and the lines flyers fly
+   * out of its mouths.
    * OFF by default — it is an answer to "where is that coming from", not
    * something to leave on top of the field all game.
    */
@@ -2225,7 +2235,7 @@ export class Game {
     return placed;
   }
 
-  /** show or hide the drop zones and the air routes out of them */
+  /** show or hide the spawn layer's outline and the air routes off it */
   toggleRoutes(): void {
     this.showRoutes = !this.showRoutes;
   }
@@ -2239,6 +2249,7 @@ export class Game {
     this.lastDraw = null;
     this.modDraws = 0;
     this.soakLayer = null; // a new level is a new coastline
+    this.spawnOutline = null; // ...and new mouths
     this.mmBase = null; // ...and a new ground under the minimap
     this.menuOpen = false;
     this.fitToMap();
@@ -2430,6 +2441,28 @@ export class Game {
    * (mutationFace.tsx) — a player who has read the card should recognise
    * the colour on the ground without being told twice.
    */
+  /**
+   * The OUTLINE of the painted spawn layer: every edge a spawn cell shares
+   * with a cell that is not one. Interior edges are left out, so a solid
+   * mouth is drawn as its own silhouette rather than as a grid of boxes.
+   */
+  private buildSpawnOutline(): Path2D {
+    const p = new Path2D();
+    const spawn = this.sim.terrain.spawn;
+    const at = (x: number, y: number): number =>
+      x < 0 || y < 0 || x >= COLS || y >= ROWS ? 0 : spawn[y * COLS + x];
+    for (let y = 0; y < ROWS; y++)
+      for (let x = 0; x < COLS; x++) {
+        if (!spawn[y * COLS + x]) continue;
+        const x0 = x * CELL, y0 = y * CELL;
+        if (!at(x, y - 1)) { p.moveTo(x0, y0); p.lineTo(x0 + CELL, y0); }
+        if (!at(x, y + 1)) { p.moveTo(x0, y0 + CELL); p.lineTo(x0 + CELL, y0 + CELL); }
+        if (!at(x - 1, y)) { p.moveTo(x0, y0); p.lineTo(x0, y0 + CELL); }
+        if (!at(x + 1, y)) { p.moveTo(x0 + CELL, y0); p.lineTo(x0 + CELL, y0 + CELL); }
+      }
+    return p;
+  }
+
   private buildSoakLayer(): HTMLCanvasElement | null {
     const mask = this.sim.waterloggedMask();
     if (!mask) return null;
@@ -2974,14 +3007,12 @@ export class Game {
       }
     }
 
-    // ROUTES, under everything else so a selection ring still reads on top.
-    // Drop zones are rings rather than discs: the ground inside one is
-    // ordinary floor a player may want to look at and build near
+    // ROUTES, under everything else so a selection ring still reads on top
     if (this.showRoutes) {
+      const col = SPAWN_STYLE.css;
       for (const r of this.sim.airRoutes()) {
         const p = r.pts;
         if (p.length < 4) continue;
-        const col = zoneStyle(r.zone).css;
         c.strokeStyle = col;
         c.globalAlpha = 0.5;
         c.lineWidth = 2;
@@ -3006,14 +3037,18 @@ export class Game {
         c.fillStyle = col;
         c.fill();
       }
-      for (const z of this.sim.terrain.spawns) {
-        c.strokeStyle = zoneStyle(z.zone).css;
-        c.globalAlpha = 0.9;
-        c.lineWidth = 2;
-        c.beginPath();
-        c.arc(z.x * CELL, z.y * CELL, z.r * CELL, 0, Math.PI * 2);
-        c.stroke();
-      }
+      // THE SPAWN TILES THEMSELVES, outlined rather than filled: the pads
+      // are already painted on the terrain (Renderer.rebuildTerrain), and
+      // what the overlay adds is the EDGE of each mouth — the shape a
+      // player is reading when they ask where the swarm comes from.
+      //
+      // Built once per terrain into a Path2D and stroked from there: a map
+      // may paint thousands of tiles, and walking them per frame is the one
+      // thing this overlay must not do.
+      c.strokeStyle = col;
+      c.globalAlpha = 0.9;
+      c.lineWidth = 2;
+      c.stroke(this.spawnOutline ?? (this.spawnOutline = this.buildSpawnOutline()));
       c.globalAlpha = 1;
     }
 

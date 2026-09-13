@@ -1,14 +1,4 @@
-import {
-  BASE,
-  COLS,
-  LAYER_BIT,
-  NCELLS,
-  MOVE_LAYERS,
-  ROWS,
-  ZONE_KINDS,
-  type MoveLayer,
-  type ZoneKind,
-} from "./constants";
+import { BASE, COLS, NCELLS, ROWS } from "./constants";
 
 /**
  * The grid width every map was authored at before the board grew. Documents
@@ -16,7 +6,7 @@ import {
  * Never change it — it is a fact about files already on disk.
  */
 export const LEGACY_COLS = 128;
-import { isWaterFloor, WALL_DEEP, WALL_PINE, type Prop, type Terrain } from "./terrain";
+import { canHoldSpawn, WALL_DEEP, WALL_PINE, type Prop, type Terrain } from "./terrain";
 import {
   FLOOR_BASALT,
   FLOOR_DEEP_TAINTED_WATER,
@@ -70,18 +60,32 @@ export interface MapData {
   wall: number[]; // NCELLS, UV_WALLS index or WALL_PINE where blocked
   blocked: number[]; // NCELLS, 0/1
   /**
-   * Enemy drop zones, Mindustry-style: a spawn area is a CIRCLE, and every
-   * tile inside it that the zone's own layer can stand on is somewhere the
-   * swarm can enter. Each circle names the LAYER it feeds (see SpawnCircle),
-   * so a map may carry as many ground, air and water zones as it likes and
-   * nothing in a level script has to name any of them.
+   * WHERE THE SWARM COMES IN: spawn tiles, painted cell by cell, as a
+   * sorted list of cell indices at this document's own stride (`w`).
+   *
+   * ONE LAYER, NO KINDS. A spawn tile is a spawn tile — the unit picks its
+   * own out of them (see Sim.padMaskFor): a hull prefers the wet ones, a
+   * walker and a flyer take the dry ones. That is what replaced the four
+   * kinds of drop zone circle, which made an author say three times, in
+   * three colours, what the units already know about themselves.
+   *
+   * A LIST RATHER THAN A CELL-PER-ENTRY LAYER because it is sparse: a
+   * well-painted map is a few thousand tiles out of 262,144, and the other
+   * layers are dense enough to be worth their full length. It is also why
+   * the ONLY invariant is kept here rather than trusted: a spawn tile is
+   * open ground (see spawnTilesOf) — nothing enters on a hill.
+   */
+  spawnTiles?: number[];
+  /**
+   * LEGACY, read but never written: drop zone CIRCLES, each naming the
+   * layer it fed. Every document the map generator writes still carries
+   * these (scripts/maps), and spawnTilesOf burns them down to tiles on
+   * load — the union of all of them, clipped to open ground.
    */
   spawns?: SpawnCircle[];
   /**
-   * LEGACY, read but never written: spawn pads painted cell by cell, NCELLS
-   * of region ids. Documents saved before drop zones existed carry this,
-   * and the loader fits circles over it (see fitSpawnCircles) so there is
-   * exactly one spawn representation at runtime
+   * LEGACY, read but never written: spawn pads as NCELLS of region ids,
+   * from before drop zones existed. Any non-zero cell is a spawn tile.
    */
   spawn?: number[];
   pines: Prop[];
@@ -194,10 +198,14 @@ export type PaintKind =
   | "erase";
 
 /**
- * One enemy drop zone: Mindustry marks a spawn with a tile and draws
- * state.rules.dropZoneRadius around it, and the swarm arrives inside that
- * ring. Ours is the same idea with the radius authored per circle, so a
- * mouth can be widened without repainting anything.
+ * LEGACY, read and never written: one drop zone circle, as every document
+ * the map generator writes still carries them (scripts/maps/*.mjs).
+ *
+ * `zone` was WHAT ENTERS HERE — one movement layer, or the boss door — and
+ * nothing reads it any more: spawnTilesOf takes the union of every circle
+ * on the map and clips it to open ground, so a map authored in circles
+ * plays as the same tiles a hand-painted one would have. Older documents
+ * carry a numeric `region` in its place, which is read the same way.
  */
 export interface SpawnCircle {
   /** centre in cells — cell centres land on the .5, like the editor cursor */
@@ -205,19 +213,9 @@ export interface SpawnCircle {
   y: number;
   /** radius in cells */
   r: number;
-  /**
-   * WHAT ENTERS HERE: one movement layer, or the boss door. This replaced
-   * the numeric `region`, and with it the whole business of a wave group
-   * naming a number the map had to match — see MOVE_LAYERS in constants.ts.
-   * A document written before the split carries `region` instead, which
-   * spawnCirclesOf migrates.
-   */
-  zone: ZoneKind;
+  zone?: string;
+  region?: number;
 }
-
-/** the radius a freshly placed drop zone gets, and the range the editor offers */
-export const SPAWN_RADII: readonly number[] = [4, 6, 8, 10, 14, 18];
-export const SPAWN_RADIUS_DEFAULT = 8;
 
 /**
  * One paintable entry: a set of interchangeable variants. With randomize ON
@@ -238,91 +236,39 @@ export interface PaletteSet {
   noRandom?: boolean;
 }
 
-export interface ZoneStyle {
-  /** multiplies the pad sprite in the editor's terrain pass */
-  tint: readonly [number, number, number];
-  /** the picker's swatch and every zone outline */
-  css: string;
-  /** the darker fill thumbnails paint with */
-  tone: string;
-}
-
 /**
- * THE PAD SPRITE'S OWN COLOUR. Every tint below is `wanted / this`, which
- * is how a single grey-pink pad sprite comes out in four different colours.
- */
-const PAD_RGB = [0.878, 0.459, 0.498] as const;
-
-/**
- * ONE COLOUR PER ZONE KIND, and no generator behind it any more.
+ * THE SPAWN LAYER'S COLOUR — one of them, because there is one layer.
  *
- * The regions this replaced had an unbounded count, so their colours had to
- * be GENERATED — four hand-picked ones and a golden-angle hue walk for the
- * rest, which meant a map's fifth zone got whatever colour the sequence
- * happened to land on and two distant regions could still collide. There
- * are exactly four kinds now and they never grow, so all four are chosen by
- * eye and a colour means the same thing on every map ever authored: green
- * is where the walkers come in, amber is the air, blue is the water.
+ * Four kinds of drop zone needed four colours and a paragraph explaining
+ * which meant what; a spawn tile means "the swarm comes in here" and
+ * nothing else, so it gets the one colour that says so. A hot red-orange:
+ * it has to read over grass, over sand and over water without being
+ * mistaken for any of them, and it is the swarm's own colour everywhere
+ * else in the game.
  *
- * Blue for water risks reading against the water floors themselves, which
- * is why it is a lighter, harder cyan-blue than any tile — a zone ring is
- * drawn as a stroke over the ground, so it only has to beat the ground it
- * sits on rather than stand alone. Boss keeps the ladder's top-rung purple
- * (rungColor): it is not a movement layer and should not read as one.
+ * `tint` is `wanted / PAD_RGB` — every quad drawn through the atlas
+ * multiplies its sprite (the fragment stage is `texel * tint`), so a tint
+ * over 1 is how a DARK sprite is brought up to a colour rather than merely
+ * shaded towards it. PAD_RGB is the pad tile's MEAN colour, sampled off
+ * the sprite: a near-neutral grey at a third brightness, which is why the
+ * red channel has to be nearly tripled. (It used to be the sprite's
+ * brightest PIXEL, which is a pink highlight covering a few texels — tint
+ * it that way and the pad comes out the colour of the rock it is on.)
  */
-export const ZONE_STYLES: Readonly<Record<ZoneKind, ZoneStyle>> = {
-  ground: {
-    tint: [0.482 / PAD_RGB[0], 0.898 / PAD_RGB[1], 0.541 / PAD_RGB[2]],
-    css: "#7BE58A",
-    tone: "#407748",
-  },
-  air: {
-    tint: [1.0 / PAD_RGB[0], 0.788 / PAD_RGB[1], 0.42 / PAD_RGB[2]],
-    css: "#FFC96B",
-    tone: "#856938",
-  },
-  water: {
-    tint: [0.31 / PAD_RGB[0], 0.69 / PAD_RGB[1], 0.91 / PAD_RGB[2]],
-    css: "#4FB0E8",
-    tone: "#295C79",
-  },
-  boss: {
-    tint: [0.627 / PAD_RGB[0], 0.353 / PAD_RGB[1], 0.898 / PAD_RGB[2]],
-    css: "#A05AE5",
-    tone: "#532F77",
-  },
-};
-
-/** what a zone kind is called wherever one is shown to an author */
-export const ZONE_LABELS: Readonly<Record<ZoneKind, string>> = {
-  ground: "Ground",
-  air: "Air",
-  water: "Water",
-  boss: "Boss",
-};
-
-/** the display style of a zone kind — the one place a zone's colour lives */
-export const zoneStyle = (zone: ZoneKind): ZoneStyle => ZONE_STYLES[zone];
-
-/**
- * The movement layer a zone kind feeds, for the three that are layers.
- * A boss zone has no layer of its own: the boss brings its own.
- */
-export const zoneLayer = (zone: ZoneKind): MoveLayer | null =>
-  zone === "boss" ? null : zone;
-
-/**
- * The region id a pre-layer document's zone becomes a zone KIND from.
- *
- * 255 was the boss door. Every other number was an ordinary wave region,
- * and the honest reading of one is "both the walkers and the flyers came
- * in here", because that is exactly what the old code did with it — the
- * same circle was rasterized into the ground mask and the air mask. One
- * circle can only carry one kind now, so a legacy zone becomes a GROUND
- * zone and spawnCirclesOf adds an air twin beside it; nothing that used to
- * enter a map stops being able to.
- */
-const LEGACY_BOSS_REGION = 255;
+const PAD_RGB = [0.335, 0.317, 0.355] as const;
+const SPAWN_RGB = [0.902, 0.325, 0.259] as const;
+export const SPAWN_STYLE = {
+  /** multiplies the pad sprite in the terrain pass */
+  tint: [
+    SPAWN_RGB[0] / PAD_RGB[0],
+    SPAWN_RGB[1] / PAD_RGB[1],
+    SPAWN_RGB[2] / PAD_RGB[2],
+  ] as readonly [number, number, number],
+  /** how far the pad lets the floor beneath it show through */
+  alpha: 0.82,
+  /** the picker's swatch, and the overlay the route view draws */
+  css: "#E65342",
+} as const;
 
 const ENV = "/mindustry/sprites/blocks/environment";
 
@@ -437,18 +383,17 @@ export const PALETTE: readonly PaletteSet[] = [
     icons: [propIcon("snowBoulder0"), propIcon("snowBoulder1")] },
   { id: "sand-boulder", label: "Sand boulder", kind: "decor", variants: [12, 13],
     icons: [propIcon("sandBoulder0"), propIcon("sandBoulder1")] },
-  // DROP ZONES: a data layer — no pad tile is painted anywhere; the editor
-  // shows each zone as its circle overlay over the floor.
+  // SPAWN TILES: ONE brush, painted like a floor — the brush size and the
+  // round/square shape are the ordinary ones, so a mouth is a stroke and a
+  // shoreline of doors is a drag along it.
   //
-  // THE VARIANT INDEXES ZONE_KINDS, so the four swatches ARE the four kinds
-  // and there is no fifth. This used to be an open-ended list of region
-  // numbers whose swatch count grew on demand; what a map actually needs is
-  // a fixed vocabulary — walkers here, flyers there, hulls in the channel —
-  // and a closed set is what lets every colour mean the same thing on
-  // every map (see ZONE_STYLES).
-  { id: "spawn", label: "Drop zone", kind: "spawn",
-    variants: ZONE_KINDS.map((_, i) => i), noRandom: true,
-    icons: ZONE_KINDS.map(() => `${ENV}/dark-panel-2.png`) },
+  // It used to be four swatches (walkers here, flyers there, hulls in the
+  // channel) placing circles, which asked an author to sort the swarm by
+  // layer on the map when a unit already knows its own layer. One swatch:
+  // the tiles say where the swarm may come in, the units say which of them
+  // they can use (Sim.padMaskFor).
+  { id: "spawn", label: "Spawn tiles", kind: "spawn", variants: [0], noRandom: true,
+    icons: [`${ENV}/dark-panel-2.png`] },
   // the base: a map has exactly one, so placing it MOVES it. The click
   // clears the ground it lands on, since a walled base is unreachable
   { id: "base", label: "Base", kind: "base", variants: [0], noRandom: true,
@@ -518,129 +463,85 @@ export function paletteSections(): { label: string; sets: PaletteSet[] }[] {
 // ---------- terrain <-> map ----------
 
 /**
- * Burn the drop zones into the per-cell region layer everything downstream
- * reads: the flow field's entry points, the sim's pad picker, the editor's
- * tint. A cell belongs to a circle when its CENTRE falls inside, and —
- * when `blocked` is given — only when it is open ground: a drop zone laid
- * over rock simply has fewer tiles in it, which is what lets a circle
- * overhang a corridor wall without spawning a WALKER inside the mountain.
- * Later circles win where they overlap, so the last one placed is the one
- * you see.
+ * THE SPAWN LAYER A DOCUMENT MEANS, as one cell-per-byte mask: 1 where the
+ * swarm may come in, 0 everywhere else. The one place a map's spawn layer
+ * is read, whatever shape it was saved in.
  *
- * Pass `null` for the AIR mask: a flyer ignores terrain, so a zone painted
- * entirely over hills is a perfectly good air door — the sim rasterizes
- * both layers and flyers enter by the terrain-blind one (see
- * Flowfield.rebuildWalk).
+ * A painted document (`spawnTiles`) is the plain case. A document from the
+ * generator carries CIRCLES instead (`spawns`), and they are burned down
+ * here: the union of every one of them, of whatever kind, because the four
+ * kinds of circle were never anything a unit needed told — a hull picks
+ * the wet tiles out of the layer on its own (Sim.padMaskFor). The oldest
+ * documents carry a per-cell region layer, and any non-zero cell in it is
+ * a spawn tile.
+ *
+ * NOTHING ENTERS ON A HILL. Every path is clipped by clampSpawn, here,
+ * once — that is the invariant the whole system rests on (the flyers'
+ * doors used to be terrain-blind, which is what let a zone painted over a
+ * massif drop flyers inside the rock), and clipping it at the read means a
+ * hand-edited document cannot get around it either.
  */
-export function rasterizeSpawns(
-  circles: readonly SpawnCircle[],
-  terrain: { blocked: Uint8Array; floor: Uint8Array } | null,
-): Uint8Array {
+export function spawnTilesOf(m: MapData, blocked: Uint8Array, wall: Uint8Array): Uint8Array {
   const spawn = new Uint8Array(NCELLS);
-  for (const c of circles) {
-    const bit = LAYER_BIT[c.zone];
-    const r2 = c.r * c.r;
-    const x0 = Math.max(0, Math.floor(c.x - c.r)), x1 = Math.min(COLS - 1, Math.ceil(c.x + c.r));
-    const y0 = Math.max(0, Math.floor(c.y - c.r)), y1 = Math.min(ROWS - 1, Math.ceil(c.y + c.r));
-    for (let y = y0; y <= y1; y++)
-      for (let x = x0; x <= x1; x++) {
-        const i = y * COLS + x;
-        const dx = x + 0.5 - c.x, dy = y + 0.5 - c.y;
-        if (dx * dx + dy * dy > r2) continue;
-        // EACH LAYER FILTERS ITS OWN CELLS, which is what replaced the pair
-        // of rasterizations this used to need (one terrain-aware for the
-        // walkers, one terrain-blind for the flyers). A walker needs open
-        // ground, a hull needs water, and a flyer needs nothing at all — so
-        // a single circle can be a legal air door over a mountain and an
-        // illegal ground door on the same tile, which is exactly right.
-        // A boss zone is left unfiltered here and narrowed by the boss's
-        // own layer when it spawns.
-        if (terrain) {
-          if (c.zone === "ground" && terrain.blocked[i]) continue;
-          if (c.zone === "water" && !isWaterFloor(terrain.floor[i])) continue;
-        }
-        spawn[i] |= bit;
-      }
+  const w = m.w ?? LEGACY_COLS;
+  if (m.spawnTiles) {
+    for (const src of m.spawnTiles) {
+      const x = src % w, y = (src / w) | 0;
+      if (x >= COLS || y >= ROWS) continue;
+      spawn[y * COLS + x] = 1;
+    }
+  } else if (m.spawns) {
+    for (const c of m.spawns) paintCircle(spawn, c);
+  } else if (m.spawn) {
+    const lifted = lift(m.spawn, 0, w);
+    for (let i = 0; i < NCELLS; i++) if (lifted[i]) spawn[i] = 1;
+  } else {
+    // pre-spawn-layer maps came in on the open cells of the western strip
+    for (let y = 1; y < ROWS - 1; y++)
+      for (let x = 0; x < 6; x++) spawn[y * COLS + x] = 1;
   }
+  clampSpawn(spawn, blocked, wall);
   return spawn;
 }
 
-/**
- * Fit drop zones over a legacy painted spawn layer, one circle per region:
- * centred on the region's cells and grown until it covers every last one,
- * so nothing that used to be a spawn stops being one. The circle picks up
- * some neighbouring floor the brush never painted — that is the point of
- * the shape, and the radius is editable afterwards.
- */
-export function fitSpawnCircles(spawn: Uint8Array): SpawnCircle[] {
-  const byRegion = new Map<number, number[]>();
-  for (let i = 0; i < spawn.length; i++) {
-    const r = spawn[i];
-    if (!r) continue;
-    const cells = byRegion.get(r);
-    if (cells) cells.push(i);
-    else byRegion.set(r, [i]);
-  }
-  const out: SpawnCircle[] = [];
-  for (const [region, cells] of [...byRegion].sort((a, b) => a[0] - b[0])) {
-    let sx = 0, sy = 0;
-    for (const i of cells) {
-      sx += (i % COLS) + 0.5;
-      sy += ((i / COLS) | 0) + 0.5;
+/** one legacy circle's cells: a cell is in when its CENTRE is */
+function paintCircle(spawn: Uint8Array, c: SpawnCircle): void {
+  const r2 = c.r * c.r;
+  const x0 = Math.max(0, Math.floor(c.x - c.r)), x1 = Math.min(COLS - 1, Math.ceil(c.x + c.r));
+  const y0 = Math.max(0, Math.floor(c.y - c.r)), y1 = Math.min(ROWS - 1, Math.ceil(c.y + c.r));
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++) {
+      const dx = x + 0.5 - c.x, dy = y + 0.5 - c.y;
+      if (dx * dx + dy * dy <= r2) spawn[y * COLS + x] = 1;
     }
-    const cx = Math.round(sx / cells.length - 0.5) + 0.5;
-    const cy = Math.round(sy / cells.length - 0.5) + 0.5;
-    let r = 0;
-    for (const i of cells)
-      r = Math.max(r, Math.hypot((i % COLS) + 0.5 - cx, ((i / COLS) | 0) + 0.5 - cy));
-    const circle = { x: cx, y: cy, r: Math.max(1, Math.ceil(r)) };
-    if (region === LEGACY_BOSS_REGION) out.push({ ...circle, zone: "boss" });
-    else out.push({ ...circle, zone: "ground" }, { ...circle, zone: "air" });
-  }
-  return out;
 }
 
 /**
- * A document's drop zones, whatever shape it was saved in — and the one
- * place a pre-layer document is translated.
+ * THE INVARIANT: a spawn tile stands where something can stand — open
+ * ground or deep water (terrain.ts canHoldSpawn). Rock and forest take
+ * their tiles back, in place.
  *
- * A zone that already names its layer passes straight through. One carrying
- * the old numeric `region` becomes a GROUND zone plus an AIR twin at the
- * same place, because that is precisely what the old code did with it: the
- * same circle was rasterized into the ground mask and again into the
- * terrain-blind air mask. Region 255 was the boss door and becomes one.
+ * Run wherever either layer moves — the loader, and every editor stroke
+ * that raises rock (MapEditor.paintCell). A pad under a hill is not a door
+ * the swarm cannot use, it is a door that would drop a body INSIDE the
+ * hill, since nothing about a flyer stops it standing there.
  */
-export function spawnCirclesOf(m: MapData, blocked: Uint8Array): SpawnCircle[] {
-  if (m.spawns) {
-    const out: SpawnCircle[] = [];
-    for (const c of m.spawns) {
-      const legacy = c as SpawnCircle & { region?: number };
-      if (legacy.zone && ZONE_KINDS.includes(legacy.zone)) {
-        out.push({ x: c.x, y: c.y, r: c.r, zone: legacy.zone });
-      } else if (legacy.region === LEGACY_BOSS_REGION) {
-        out.push({ x: c.x, y: c.y, r: c.r, zone: "boss" });
-      } else {
-        out.push({ x: c.x, y: c.y, r: c.r, zone: "ground" });
-        out.push({ x: c.x, y: c.y, r: c.r, zone: "air" });
-      }
-    }
-    return out;
-  }
-  return fitSpawnCircles(m.spawn ? lift(m.spawn, 0, m.w ?? LEGACY_COLS) : legacySpawn(blocked));
+export function clampSpawn(spawn: Uint8Array, blocked: Uint8Array, wall: Uint8Array): void {
+  for (let i = 0; i < spawn.length; i++)
+    if (spawn[i] && !canHoldSpawn(blocked[i], wall[i])) spawn[i] = 0;
 }
 
 /**
- * WHICH ZONE KINDS A MAP ACTUALLY CARRIES — what the editors report, and
- * what replaced spawnRegionIds.
+ * The spawn layer as a document writes it: the indices of its set cells,
+ * ascending, clipped to the rows actually being saved.
  *
- * The function it replaced fed a "which region does this wave enter from"
- * picker in the level editor. There is no such picker any more: a unit's
- * layer decides its door, so the only question left is whether the map has
- * a door of each kind at all, which is a warning rather than a choice.
+ * Sparse on purpose — see MapData.spawnTiles. Ascending because a diff of
+ * two saves of the same map should read as the cells that changed rather
+ * than as a reshuffle.
  */
-export function zoneKindsOf(m: MapData, blocked: Uint8Array): Set<ZoneKind> {
-  const out = new Set<ZoneKind>();
-  for (const c of spawnCirclesOf(m, blocked)) out.add(c.zone);
+export function spawnTileList(spawn: Uint8Array, cells: number): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < cells; i++) if (spawn[i]) out.push(i);
   return out;
 }
 
@@ -715,24 +616,15 @@ export function mapFromTerrain(
     floor: Array.from(t.floor.subarray(0, n)),
     wall: Array.from(t.wall.subarray(0, n)),
     blocked: Array.from(t.blocked.subarray(0, n)),
-    // drop zones are authored, not painted: the per-cell layer is derived
-    // from them on load, so writing it back out would be writing a cache
-    spawns: t.spawns.map((c) => ({ ...c })),
+    // the painted spawn layer, as the cells that are set (spawnTileList).
+    // A map saved from the editor stops carrying the generator's circles:
+    // the tiles ARE the layer now, and a document holding both would have
+    // two answers to one question (spawnTilesOf reads the tiles first)
+    spawnTiles: spawnTileList(t.spawn, n),
     pines: t.pines.map((p) => ({ ...p })),
     decor: t.decor.map((p) => ({ ...p })),
     valleyY: Array.from(t.valleyY).map((v) => Math.round(v * 100) / 100),
   };
-}
-
-/** pre-spawn-layer maps spawned on the open cells of the western strip */
-function legacySpawn(blocked: Uint8Array): Uint8Array {
-  const spawn = new Uint8Array(NCELLS);
-  for (let y = 1; y < ROWS - 1; y++)
-    for (let x = 0; x < 6; x++) {
-      const i = y * COLS + x;
-      if (!blocked[i]) spawn[i] = 1;
-    }
-  return spawn;
 }
 
 /**
@@ -760,17 +652,15 @@ export function terrainFromMap(m: MapData): Terrain {
   const sw = m.w ?? LEGACY_COLS;
   const blocked = lift(m.blocked, 1, sw);
   const floor = lift(m.floor, 3, sw);
+  const wall = lift(m.wall, 5, sw);
   // `core` is the field's old name — see MapData.core
   const at = m.base ?? m.core;
   const base = { x: at?.x ?? BASE.x, y: at?.y ?? BASE.y, size: BASE.size };
-  const spawns = spawnCirclesOf(m, blocked);
   return {
     floor,
-    wall: lift(m.wall, 5, sw),
+    wall,
     blocked,
-    // no ore on a document that never had any: the map plays on the core's pay
-    spawns,
-    spawn: rasterizeSpawns(spawns, { blocked, floor }),
+    spawn: spawnTilesOf(m, blocked, wall),
     pines: m.pines.map((p) => ({ ...p })),
     decor: m.decor.map((p) => ({ ...p })),
     // only a kind the roster knows, on a whole cell: a hand-edited

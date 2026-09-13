@@ -1,14 +1,11 @@
 import {
-  ALL_MOVE_BITS,
   CORE_HP,
   INF,
-  LAYER_BIT,
   MOVE_LAYERS,
   NAVAL_LAND_SPEED,
   NAVAL_WATER_SPEED,
   NCELLS,
   type MoveLayer,
-  type ZoneKind,
   BURN_DPS as BURN_DPS_IMPORT,
   BURN_FX_CHANCE as BURN_FX_CHANCE_IMPORT,
   AURA_LINGER,
@@ -150,7 +147,7 @@ import {
   VOLATILE_DMG,
   VOLATILE_RADIUS,
 } from "./mutation";
-import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap, type SpawnCircle } from "./maps";
+import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
 import {
   applyTurretMods,
@@ -181,7 +178,7 @@ import {
   type RelicsHeld,
 } from "./relics";
 import { RICH_SCRAP, SCRAP_START, sellValue } from "./economy";
-import { airWalkMask, isBuildableWall, isWaterFloor, navalWalkMask, WALL_DEEP, type Terrain } from "./terrain";
+import { airWalkMask, isBuildableWall, isWaterFloor, navalWalkMask, type Terrain } from "./terrain";
 import {
   BOMBLET_LOOK,
   MAX_WEAPONS,
@@ -553,6 +550,8 @@ const BOSS_KINDS = KIND_BOSS.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
 /** the pad list a brood spawn is handed — it picks its own spot, so there
  *  are no doors to draw from and nothing to allocate per body */
 const EMPTY_PADS: readonly number[] = [];
+/** how many spawn mouths the route overlay draws a line from (Sim.spawnMouths) */
+const MAX_MOUTHS = 12;
 /**
  * MITOSIS (mutation.ts): the tier-1 kinds a death may break into, grouped
  * by the movement layer they travel on — ground gets dagger, crawler and
@@ -1561,26 +1560,23 @@ export class Sim {
    */
   readonly navalField = new FlowField();
   /**
-   * The air layer's doors: every cell an air zone covers, rock included.
+   * The air layer's doors: the spawn tiles a flyer may use (padMaskFor).
    * Flyers keep their pads here rather than in `airField.spawnPts` because
-   * a door is not a route — nothing about the terrain constrains where a
-   * flyer may be DROPPED, and a pad on a peak is a perfectly good one. The
-   * field below decides where it goes from there, not whether it may land.
+   * a door is not a route — what stops a flyer flying is nothing, so the
+   * field below decides where it goes from a tile, not whether it may land
+   * on one.
    */
   private airPads: number[] = [];
   /**
    * ...and the part of that list that is OPEN SKY: a pad the air field has
-   * a heading at. A drop zone is rasterized terrain-blind, so a circle
-   * painted over the rim or across a massif has cells buried in rock, and a
-   * flyer entering on one would fly the fallback straight line out of the
-   * mountain before its route ever began. Entering on the open part of the
-   * same circle puts it on its road at once — which is what the other two
-   * layers already do (FlowField.spawnPts drops a pad that cannot reach a
-   * goal). A zone with NO open cell keeps every cell it has: a door that
-   * only opens inside a peak is still a door.
+   * a heading at. Spawn tiles are open ground by construction (maps.ts
+   * clampSpawn), so this is rarely smaller — what it still catches is a
+   * pocket of tiles ringed by rock, which would drop a flyer with no route
+   * out of it and leave it flying the fallback straight line. A layer with
+   * NO open pad keeps every pad it has: a door that only opens inside a
+   * pocket is still a door.
    */
   private airOpen: number[] = [];
-  private bossAirOpen: number[] = [];
   /**
    * THE FLYERS' FIELD — the third of the three, over airWalkMask: hills
    * are its walls, and nothing else on the map is. A flyer used to hold
@@ -1608,14 +1604,6 @@ export class Sim {
   private hills: Uint8Array = new Uint8Array(NCELLS);
   /** the player's BUILDINGS currently selected — a gathered row to sell or inspect */
   private readonly selStructs = new Set<Structure>();
-  /**
-   * The boss door's cells, split by the layer that may use them: a boss
-   * zone is terrain-blind like an air zone, but a WALKING boss still has to
-   * land on ground it can stand on, so the filtering happens per layer here
-   * rather than in the rasterizer.
-   */
-  private bossPads: Record<MoveLayer, number[]> = { ground: [], air: [], water: [] };
-
   // seal-test cache: hover asks canPlace every frame, and the test costs two
   // flow-field recomputes — remember the verdict for the last cell asked
   /**
@@ -1657,8 +1645,6 @@ export class Sim {
    * however long the route behind it takes to catch up.
    */
   private unstickPending = false;
-  /** the ground drop zones, as a mask — nothing may be built on one */
-  private groundPads: Uint8Array = new Uint8Array(NCELLS);
 
   /** a Sim is always born on a level — building a default world and then
    * calling loadLevel solved the flow field twice and threw the first away */
@@ -1759,16 +1745,21 @@ export class Sim {
     for (let y = b.y; y < b.y + b.size; y++)
       for (let x = b.x; x < b.x + b.size; x++) this.cellTower[y * COLS + x] = this.core;
     this.buildPads();
-    // the walkers' field: rock and structures block it, it enters by the
-    // ground zones, and it aims at the core (coreGoal)
-    this.groundPads = this.padMaskFor("ground");
+    // a new map is a new set of mouths, and a new pad list for the hulls
+    // to be cut from (waterPads)
+    this.mouths = null;
+    this.routes = null;
+    this.navalPadsFrom = null;
     // a new map is a new board: nothing is pending on it
     this.fieldDirty = false;
     this.navalDirty = false;
     this.unstickPending = false;
     this.fieldQuiet = 0;
     this.fieldStale = 0;
-    this.field.rebuildWalk(this.footprints(), this.terrain.blocked, this.groundPads, this.coreGoal());
+    // the walkers' field: rock and structures block it, it enters on the
+    // dry spawn tiles, and it aims at the core (coreGoal)
+    this.field.rebuildWalk(this.footprints(), this.terrain.blocked,
+      this.padMaskFor("ground"), this.coreGoal());
     // THE NAVAL TANKS' FIELD. It used to be the mirror image of the
     // walkers' — dry land its wall, the water nearest the core its goal,
     // and no field at all on a map with no sea. It is a SUPERSET of the
@@ -1793,11 +1784,10 @@ export class Sim {
     // rather than in buildPads: a pad is open sky only once there is a
     // field to ask
     this.airOpen = this.openSky(this.airPads);
-    this.bossAirOpen = this.openSky(this.bossPads.air);
     // fail LOUDLY on a broken map: with zero doors nothing ever spawns and
     // a wave script stalls forever, which reads as a scheduler bug
     if (this.airPads.length === 0 && this.field.spawnPts.length === 0)
-      throw new Error('map "' + doc.id + '" has no drop zones — paint some in the editor');
+      throw new Error('map "' + doc.id + '" has no spawn tiles — paint some in the editor');
     // a core sitting on rock is always an authoring slip (a map that moved
     // its base without carving the basin, say) and it reads as "the waves
     // never finish" rather than as a broken map — so say it out loud
@@ -1820,22 +1810,21 @@ export class Sim {
       ["air", this.airPads.length],
       ["water", this.navalField.spawnPts.length],
     ];
-    // ...and an AIR door with no open sky in it. Not broken — a flyer
-    // entering inside a peak still gets out, it just flies the fallback
-    // straight line to do it, which is the one case where the swarm's route
-    // is not the route the overlay and the map imply. Worth saying: moving
-    // the circle a few cells off the rim is all it takes.
+    // ...and an AIR door with no open sky in it. Not broken — a flyer in a
+    // rock pocket still gets out, it just flies the fallback straight line
+    // to do it, which is the one case where the swarm's route is not the
+    // route the overlay and the map imply.
     if (this.airPads.length > 0 && this.airOpen.length === 0 && this.scriptSends("air"))
       console.warn(
         'map "' + doc.id +
-          '": every air drop zone is buried in rock — flyers will enter inside it and fly straight out' +
-          " before they pick up a route. Move the circles onto open sky.",
+          '": every spawn tile is walled in — flyers will enter inside the pocket and fly straight out' +
+          " before they pick up a route. Paint some tiles on open ground.",
       );
     for (const [layer, pads] of doors)
       if (pads === 0 && this.scriptSends(layer))
         console.warn(
           'map "' + doc.id + '" has no ' + layer +
-            " drop zone that reaches an exit, but its script sends " + layer + " units",
+            " spawn tile that reaches an exit, but its script sends " + layer + " units",
         );
     this.stageScript();
     this.aliveByKind.fill(0);
@@ -1966,67 +1955,87 @@ export class Sim {
   }
 
   /**
-   * THE DOORS ONE LAYER MAY ENTER BY, as a mask a FlowField can take.
+   * THE SPAWN TILES ONE LAYER MAY ENTER ON, as a mask a FlowField takes.
    *
-   * A layer's own zones — and THE NAVAL LAYER ALSO TAKES THE GROUND'S: an
-   * amphibious tank drives out of a ground door as readily as it swims out
-   * of a water one, so a map with its sea in one corner and its doors on
-   * the road still sends its tanks up the road.
+   * The map paints ONE spawn layer and the layer sorts itself out of it:
    *
-   * Every layer then falls back to every non-boss zone the map paints when
-   * its own come to nothing. THAT IS WHAT MAKES EVERY FAMILY LANDABLE ON
-   * EVERY MAP: a map with no water zone still lands naval tanks, one with
-   * no air zone still lands flyers. The field filters the mask against its
-   * own passability and its own reachability afterwards
-   * (FlowField.spawnPts), so a fallback pad the layer cannot actually use
-   * is dropped rather than stranding whatever enters on it. The boss door
-   * stays out of the fallback — it is a door held back from the ordinary
-   * swarm, and a fallback that swallowed it would hand it to everything.
+   *  - a WALKER or a FLYER takes the DRY tiles. Sending them in over the
+   *    water was never what a shoreline of pads meant — the wet tiles are
+   *    the channel, and a walker wading out of one enters the map already
+   *    in the sea.
+   *  - a HULL takes them all, and PREFERS the wet ones once the field has
+   *    said which of them it can actually sail from (navalWaterPads). It
+   *    is amphibious, so a beach is a door it can use; the water is just
+   *    the door it would rather have.
+   *
+   * Each falls back to the whole layer when its own share is empty, so a
+   * map painted entirely on its shallows still lands walkers and a map
+   * with no water at all still lands hulls. THAT IS WHAT MAKES EVERY
+   * FAMILY LANDABLE ON EVERY MAP. The field filters the mask against its
+   * own passability and reachability afterwards (FlowField.spawnPts), so a
+   * fallback tile the layer cannot actually use is dropped rather than
+   * stranding whatever entered on it.
    */
   private padMaskFor(layer: MoveLayer): Uint8Array {
     const src = this.terrain.spawn;
-    const bits = layer === "water" ? LAYER_BIT.water | LAYER_BIT.ground : LAYER_BIT[layer];
+    const { floor } = this.terrain;
     const out = new Uint8Array(NCELLS);
+    if (layer === "water") {
+      out.set(src);
+      return out;
+    }
     let any = false;
     for (let i = 0; i < NCELLS; i++)
-      if (src[i] & bits) {
+      if (src[i] && !isWaterFloor(floor[i])) {
         out[i] = 1;
         any = true;
       }
-    if (!any) for (let i = 0; i < NCELLS; i++) if (src[i] & ALL_MOVE_BITS) out[i] = 1;
+    if (!any) out.set(src);
     return out;
   }
 
   /**
-   * The pad lists the two field-less cases need: the flyers' doors, and the
-   * boss's door split by layer.
+   * THE HULLS' PREFERRED DOORS: the wet ones among the naval field's, cut
+   * from the pad list the field just published.
    *
-   * The air doors come through padMaskFor, so they take the same fallback
-   * every layer does — a map with no air zone lands its flyers on whatever
-   * doors it does paint rather than sending nothing at all.
+   * Derived rather than masked because the preference has to survive the
+   * field's own filtering: a mask of "water tiles only" would leave a map
+   * whose channel is walled off from the core with no naval door at all,
+   * where this leaves it with the dry ones the field did accept.
    *
-   * A boss zone is rasterized terrain-blind, so a walking boss's pads are
-   * filtered here against the ground it would have to stand on, and a naval
-   * one's against the ground plus the deep water: the same set its field is
-   * solved over (navalWalkMask), which is what stops a naval boss being the
-   * one body on the map that still needs a sea. Doing it per layer rather
-   * than in the rasterizer is what lets ONE boss zone serve whatever kind
-   * of boss a map fields.
+   * Kept BY THE IDENTITY of the list it was cut from. FlowField.publish
+   * swaps a fresh array in on every solve, so the check is a pointer
+   * compare per spawn and the walk happens once per re-route — which is
+   * the difference between a wave of five thousand costing one pass over
+   * a couple of thousand pads and costing five thousand of them.
+   */
+  private navalWaterPads: number[] = [];
+  private navalPadsFrom: readonly number[] | null = null;
+
+  private waterPads(): number[] {
+    const pads = this.navalField.spawnPts;
+    if (this.navalPadsFrom === pads) return this.navalWaterPads;
+    const { floor } = this.terrain;
+    const wet: number[] = [];
+    for (const i of pads) if (isWaterFloor(floor[i])) wet.push(i);
+    this.navalPadsFrom = pads;
+    this.navalWaterPads = wet;
+    return wet;
+  }
+
+  /**
+   * THE FLYERS' DOORS, the one pad list no field builds: a flyer is
+   * stopped by nothing, so its doors are simply the spawn tiles its mask
+   * offers (padMaskFor — the dry ones, with the whole layer as fallback).
+   *
+   * The boss lists that used to sit beside it are gone with the boss zone:
+   * a map paints one kind of spawn tile, so a boss comes in on its own
+   * layer's tiles like every other body.
    */
   private buildPads(): void {
-    const spawn = this.terrain.spawn;
-    const { blocked, wall } = this.terrain;
     const air = this.padMaskFor("air");
     this.airPads = [];
-    this.bossPads = { ground: [], air: [], water: [] };
-    for (let i = 0; i < NCELLS; i++) {
-      if (air[i]) this.airPads.push(i);
-      if (spawn[i] & LAYER_BIT.boss) {
-        this.bossPads.air.push(i);
-        if (!blocked[i]) this.bossPads.ground.push(i);
-        if (!blocked[i] || wall[i] === WALL_DEEP) this.bossPads.water.push(i);
-      }
-    }
+    for (let i = 0; i < NCELLS; i++) if (air[i]) this.airPads.push(i);
   }
 
   /** the cells of an air pad list the air field actually has a road from */
@@ -2058,62 +2067,95 @@ export class Sim {
   }
 
   /**
-   * THE LINES FLYERS ACTUALLY FLY, one polyline per drop zone — what the
-   * route overlay draws. It is the air field walked from the zone's centre,
+   * THE LINES FLYERS ACTUALLY FLY, one polyline per MOUTH — what the route
+   * overlay draws. Each is the air field walked from the mouth's middle,
    * the same way a flyer walks it, so the curve on screen bends round the
    * same mountains the swarm will.
    *
-   * It was one straight segment while a flyer flew one straight line, and
-   * the whole point of drawing it was that the line was the truth. The
-   * flyers route now (airField), so the truth is a route.
+   * A MOUTH IS A PATCH OF SPAWN TILES, not a tile (spawnMouths). One line a
+   * tile would be two thousand curves over the map and not one of them
+   * readable; the patch is the thing a player recognises as "where they
+   * come in", and its middle is the middle of the fan the patch throws.
    *
-   * Traced from each zone's CENTRE. A flyer entering at the rim starts on a
-   * neighbouring streamline and arrives by a slightly different road, so
-   * this is the middle of a fan rather than a rail.
+   * ONLY WHAT ACTUALLY FLIES GETS A LINE. Walkers and hulls read fields
+   * the terrain itself already shows the shape of.
    */
-  airRoutes(): { pts: number[]; zone: ZoneKind }[] {
-    // ONLY WHAT ACTUALLY FLIES GETS A LINE. Walkers and hulls read fields
-    // the terrain itself already shows the shape of, and a drawn route per
-    // zone would be three quarters redundant overlay.
-    //
-    // A boss zone earns a line only if this level's boss flies. Nothing
-    // about the zone says which — a boss zone is rasterized terrain-blind
-    // precisely so one door can serve whatever kind of boss a map fields —
-    // so the script is what settles it.
-    const flying = (z: ZoneKind) => z === "air" || (z === "boss" && this.bossFlies());
-    return this.terrain.spawns
-      .filter((z) => flying(z.zone))
-      .map((z) => {
-        const from = this.airDoor(z);
-        return { pts: this.airTrace(from.x, from.y), zone: z.zone };
-      });
+  airRoutes(): { pts: number[] }[] {
+    // TRACED ONCE PER MAP. The air field is solved at load and never again
+    // — no building changes it (see airField) — and the mouths and the
+    // goal are fixed with it, so every frame of the overlay would retrace
+    // the same curves. reset() drops this with the rest of the map.
+    if (this.routes) return this.routes;
+    this.routes = this.spawnMouths().map((i) => {
+      const x = ((i % COLS) + 0.5) * CELL, y = (((i / COLS) | 0) + 0.5) * CELL;
+      return { pts: this.airTrace(x, y) };
+    });
+    return this.routes;
   }
+  private routes: { pts: number[] }[] | null = null;
 
   /**
-   * Where a zone's flyers actually come out, in world px: its centre when
-   * that is open sky, and otherwise the open cell of the circle nearest to
-   * it. A door painted across a massif or over the map's rock rim has its
-   * middle buried, and spawnPads hands those flyers the open part of the
-   * circle (airOpen) — so tracing the overlay from the buried centre would
-   * draw a road out of a mountain nothing takes.
+   * THE MAP'S MOUTHS: one representative cell per connected patch of
+   * flyer-usable spawn tiles, biggest patch first, capped at MAX_MOUTHS.
+   *
+   * Solved once per map — the overlay asks for it every frame it is up,
+   * and a flood fill over a quarter of a million cells is not a per-frame
+   * cost. The representative is the patch cell nearest its own centroid,
+   * so a crescent painted round a headland is marked ON the paint rather
+   * than in the bay it curls around.
+   *
+   * The cap is an overlay decision and nothing else: a map may paint as
+   * many patches as it likes and the swarm uses every one of them. Past a
+   * dozen curves the picture stops being information.
    */
-  private airDoor(z: SpawnCircle): { x: number; y: number } {
-    const cx = z.x * CELL, cy = z.y * CELL;
-    const gi = clamp(z.y | 0, 0, ROWS - 1) * COLS + clamp(z.x | 0, 0, COLS - 1);
-    if (!this.airField.walk[gi]) return { x: cx, y: cy };
-    const pads = z.zone === "boss" ? this.bossAirOpen : this.airOpen;
-    const r2 = (z.r + 1) * (z.r + 1);
-    let bx = cx, by = cy, best = Infinity;
-    for (const i of pads) {
-      const x = (i % COLS) + 0.5, y = ((i / COLS) | 0) + 0.5;
-      const d = (x - z.x) * (x - z.x) + (y - z.y) * (y - z.y);
-      if (d > r2 || d >= best) continue;
-      best = d;
-      bx = x * CELL;
-      by = y * CELL;
+  private spawnMouths(): number[] {
+    if (this.mouths) return this.mouths;
+    const pad = new Uint8Array(NCELLS);
+    for (const i of this.airPads) pad[i] = 1;
+    const seen = new Uint8Array(NCELLS);
+    const stack: number[] = [];
+    const patches: { cells: number[]; sx: number; sy: number }[] = [];
+    for (const start of this.airPads) {
+      if (seen[start]) continue;
+      seen[start] = 1;
+      stack.length = 0;
+      stack.push(start);
+      const cells: number[] = [];
+      let sx = 0, sy = 0;
+      while (stack.length > 0) {
+        const i = stack.pop() as number;
+        const x = i % COLS, y = (i / COLS) | 0;
+        cells.push(i);
+        sx += x;
+        sy += y;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+            const j = ny * COLS + nx;
+            if (pad[j] && !seen[j]) {
+              seen[j] = 1;
+              stack.push(j);
+            }
+          }
+      }
+      patches.push({ cells, sx, sy });
     }
-    return { x: bx, y: by };
+    patches.sort((p, q) => q.cells.length - p.cells.length);
+    this.mouths = patches.slice(0, MAX_MOUTHS).map(({ cells, sx, sy }) => {
+      const cx = sx / cells.length, cy = sy / cells.length;
+      let best = Infinity, at = cells[0];
+      for (const i of cells) {
+        const dx = (i % COLS) - cx, dy = ((i / COLS) | 0) - cy;
+        const d = dx * dx + dy * dy;
+        if (d < best) { best = d; at = i; }
+      }
+      return at;
+    });
+    return this.mouths;
   }
+  /** spawnMouths' answer for the terrain currently loaded — null until asked */
+  private mouths: number[] | null = null;
 
   /**
    * One flyer's road from a point to the core, as flat x,y pairs: step
@@ -2141,20 +2183,6 @@ export class Sim {
       pts.push(x, y);
     }
     return pts;
-  }
-
-  /** does this level's script send a boss that flies? */
-  private bossFlies(): boolean {
-    for (const step of this.level.script) {
-      if (!("wave" in step)) continue;
-      for (const g of waveGroups(step.wave))
-        for (let k = 0; k < g.counts.length; k++) {
-          if (g.counts[k] <= 0) continue;
-          const s = UNIT_STATS[UNIT_KINDS[k]];
-          if (s.boss && s.flying) return true;
-        }
-    }
-    return false;
   }
 
   /** the goal cell nearest a point, in world px — a flyer's destination */
@@ -4258,13 +4286,13 @@ export class Sim {
     // GROUND LEVEL ONLY. A structure stands on open ground, in the swarm's
     // way, where it is a wall as well as a gun — never on a hill, a forest
     // or deep water (every blocked cell), never on another structure — the
-    // core included — never on a drop zone (a corked door spawns nothing).
+    // core included — never on a spawn tile (a corked door spawns nothing).
     // Shallow water is ground, as it is in Mindustry: a naval map's
     // shallows are most of the floor it has
     for (let y = gy; y < gy + sz; y++)
       for (let x = gx; x < gx + sz; x++) {
         const i = y * COLS + x;
-        if (blocked[i] || isGoal[i] || this.groundPads[i] || this.cellTower[i]) return false;
+        if (blocked[i] || isGoal[i] || this.terrain.spawn[i] || this.cellTower[i]) return false;
       }
     // a LIVE shield tower owns its ground: it rose on free rock and holds
     // it, so nothing builds inside its footprint until it is dead
@@ -4668,23 +4696,34 @@ export class Sim {
   }
 
   /**
-   * The doors one movement layer may enter by — and, for a boss, the boss
-   * door instead when the map paints one.
+   * THE SPAWN TILES ONE MOVEMENT LAYER ENTERS ON — a plain array, picked
+   * from at random, and the whole of what a spawn costs to place.
    *
-   * This is where the region system used to live: a wave group named a
-   * number, the pads were looked up by that number, and an unknown number
-   * fell back to "anywhere". A unit's LAYER answers the same question
-   * without anyone authoring anything, so the only special case left is the
-   * boss, which is not a layer but a door reserved from the ordinary swarm.
+   * Every list here is BUILT WHEN THE MAP OR THE ROUTES CHANGE and read
+   * straight: no filtering, no allocation, no scan of the map per body. A
+   * map with two thousand painted tiles and a script sending five thousand
+   * units therefore pays for two thousand cells once per re-route and one
+   * array index per arrival (see spawnUnit).
+   *
+   *  - AIR: its own tiles, narrowed to the ones the air field has a
+   *    heading at, with the unnarrowed list as the fallback.
+   *  - WATER: the wet tiles the naval field accepted, else the dry ones it
+   *    accepted, else the walkers' — a hull is amphibious, so the last
+   *    fallback is a real door and not a compromise.
+   *  - GROUND: the walkers' field's own, which is the mask already
+   *    filtered for passability and for reaching an exit.
+   *
+   * A boss has no special door any more: the boss zone went with the other
+   * three kinds, so a boss comes in on its layer's tiles like every other
+   * body. Hold one back by painting its tiles somewhere only it can use.
    */
-  private spawnPads(layer: MoveLayer, boss: boolean): number[] {
-    // A BOSS IGNORES ITS LAYER'S ZONES when the map paints a boss door —
-    // that is the door's whole meaning. A map WITHOUT one leaves the boss
-    // on its layer's own zones rather than falling back to "anywhere".
-    if (boss && this.bossPads[layer].length > 0)
-      return layer === "air" && this.bossAirOpen.length > 0 ? this.bossAirOpen : this.bossPads[layer];
+  private spawnPads(layer: MoveLayer): number[] {
     if (layer === "air") return this.airOpen.length > 0 ? this.airOpen : this.airPads;
-    if (layer === "water") return this.navalField.spawnPts;
+    if (layer === "water") {
+      const wet = this.waterPads();
+      if (wet.length > 0) return wet;
+      return this.navalField.spawnPts.length > 0 ? this.navalField.spawnPts : this.field.spawnPts;
+    }
     return this.field.spawnPts;
   }
 
@@ -4712,7 +4751,7 @@ export class Sim {
     const stats = UNIT_STATS[kind];
     const fly = !!stats.flying;
     const layer = this.layerOf(kind);
-    const pads = brood ? EMPTY_PADS : this.spawnPads(layer, !!stats.boss);
+    const pads = brood ? EMPTY_PADS : this.spawnPads(layer);
     if (this.n >= MAX_UNITS || (!brood && pads.length === 0)) return false;
     const r = stats.radius;
     // the drop-zone test is the same broad-phase query the physics pass

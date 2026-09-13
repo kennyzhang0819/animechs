@@ -560,8 +560,8 @@ export const DECOR_TILES: readonly number[] = [
 // STRUCTURES, EFFECTS AND THE ODD SHAPES
 // ---------------------------------------------------------------------
 
-// mechanical spawn-pad tile — currently unused: drop zones are shown as
-// overlay circles, and no terrain pass paints spawn cells any more
+// mechanical spawn-pad tile: one of these is drawn on every painted spawn
+// cell, tinted by SPAWN_STYLE (Renderer.rebuildTerrain)
 export const UV_SPAWN = tile("spawn-pad", 64, 2);
 // a stroked ring, procedural
 export const UV_RING = reserve("ring", 64, 64, { art: 54, upright: true });

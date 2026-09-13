@@ -39,7 +39,7 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 ## Doors and the core
 
 - The map is sealed: every rim cell is rock. The swarm's only destination is the core.
-- Spawns are per layer and independent. Boss zones are terrain-blind.
+- The map paints ONE spawn layer, and a spawn tile is open ground. Each movement layer picks its own tiles out of it (`Sim.padMaskFor`): walkers and flyers take the dry ones, hulls take any and prefer the wet ones. A generator's per-layer circles are a spec convenience — they are unioned into that one layer on load.
 - Every ground zone reaches the core on foot; every water zone reaches the core over the naval mask (rock only), and no pond lies nearer the core than the sea.
 - No gate is a short cut: walks to the core within 50% of each other.
 - The funnel holds: wall it and no ground zone reaches the core.
