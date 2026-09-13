@@ -93,6 +93,18 @@ try {
   check("opens windowed", before?.mode === "windowed", String(before?.mode));
   check("a monitor is listed", (before?.displays.length ?? 0) > 0 && before.displays.some((d) => d.id === before.displayId));
 
+  // TWENTY SECONDS, AND IT IS NOT GENEROSITY. A mode change re-parents
+  // the running game into a window of the other kind (display.ts
+  // rebuild), which makes Chromium tear down and rebuild the compositor
+  // surface — and the page on it is a WebGL2 canvas that has to restore
+  // its context behind that. The main process notifies immediately; it is
+  // the RENDERER that cannot get to the message until it is done, so how
+  // long this takes scales with the monitor. Measured over twelve swaps
+  // on a 2560x1440 screen: 1.7s to 5.1s, two of them past the 5s this
+  // used to allow. That is what made the check fail on a second monitor
+  // and pass on a small primary — a real transition timed out, not a
+  // broken one. The window itself has already changed; only word of it
+  // is late.
   const swap = async (mode) =>
     page.evaluate(
       (m) =>
@@ -107,7 +119,7 @@ try {
           setTimeout(() => {
             off();
             resolve(null);
-          }, 5000);
+          }, 20000);
         }),
       mode,
     );
