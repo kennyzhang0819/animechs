@@ -22,8 +22,27 @@ than assumed:
   `#8f665b` left and `#c9a58f` right, the lancer's `#6974c4` and
   `#8aa3f4`. A part is drawn once in a material and the shade is applied
   after, so the shape is symmetric by construction and the shade never is.
-- **Cuts are at 45 degrees or straight, nothing thinner than two pixels.**
-  The script counts lone pixels after every render and prints them.
+- **Cuts are at 45 degrees or straight, nothing thinner than two pixels,
+  and every head is authored in pixels on its own grid.** A clearance of
+  two pixels has to be two pixels; rounding a unit fraction is how a
+  one-pixel sliver gets in. The script checks every render for a pixel
+  whose same-colour neighbours all lie on one line through it (a lone
+  pixel or a one-pixel stroke, straight or diagonal) and prints where;
+  the roster renders with none. What the check taught: a circle drawn
+  near a 45-degree chamfer runs parallel to it and leaves a one-pixel
+  diagonal between them (so the arc and the swarmer carry no bevel band);
+  two circles with different centres leave a crescent (so a window is
+  concentric with its tank); and any feature centred on the sprite's
+  midline has to be at least four pixels wide, because the shade split
+  cuts it in two.
+- **A head is built from parts, not shapes.** A chamfered plate with a
+  bevel band along its chamfers, drawn in the reversed shade; barrels
+  with a wider muzzle brake, a bore, shroud bands and an accent collar at
+  the root; magazines with the rounds showing; vents as stacked bars;
+  studs as small diamonds; capacitor banks with charge bands; a raised
+  breech between the barrels of the heavies. Where the stock sprites put
+  their form is in how many plates butt against each other, never in more
+  colours: a 3x3 or 4x4 stock top is five colours.
 - **A turret is two sprites**: the base plate that never turns, and the
   head the renderer spins to face its target (`top()` in `game/atlas.ts`),
   32 px a tile: 32, 64, 96, 128 for a 1x1 to a 4x4. A head must have a
