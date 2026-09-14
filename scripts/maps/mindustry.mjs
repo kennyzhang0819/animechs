@@ -57,7 +57,7 @@ import { clearance, disc, discOffsets, flood, png, rng, widestRoute } from "./ge
  * is also COLS and ROWS in constants.ts), and every spec is scaled onto
  * it on the way in (scaleSpec): coordinates and radii doubled, and the
  * routes, links, chokes and rooms opened wider again on top of that
- * (WIDEN, ROOM_WIDEN), because a corridor a reign can thread is not yet a
+ * (WIDEN, ROOM_WIDEN), because a corridor an ironhide5 can thread is not yet a
  * corridor two armies can fight in.
  */
 export const SIZE = 512;
@@ -193,9 +193,9 @@ const CELL = 20; // world px per cell (game/constants.ts)
 const CORE = 5; // the core's edge, in cells (BASE.size)
 
 /**
- * THE MINIMUM THROUGH GAP, on land and at sea. A reign is UR*3.75 across
+ * THE MINIMUM THROUGH GAP, on land and at sea. An ironhide5 is UR*3.75 across
  * its radius — just under two cells — so a four-cell gap fits it and a
- * five is the floor; an omura is UR*7.25, a shade over seven cells, so
+ * five is the floor; a skate5 is UR*7.25, a shade over seven cells, so
  * eleven at sea. Both are the disc the opening in step 6 is done with.
  */
 export const GAP_GROUND = 5;

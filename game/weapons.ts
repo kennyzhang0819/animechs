@@ -32,11 +32,11 @@ import { FxKind, type RGB } from "./types";
  *   - THE LOOK — the bullet's sprite, size, shrink and colours, a beam's
  *     palette and width, a sap's colour, what lands where the shot hits —
  *     is read off UnitTypes.java (master, 2026) and the bullet classes
- *     under entities/bullet, 1:1. A dagger's round is bulletYellow, not
+ *     under entities/bullet, 1:1. An ironhide1's round is bulletYellow, not
  *     copper: units fire BasicBulletType's own defaults, and only turret
- *     ammo recolours them. An arkyid's shell is 19 units of sapBullet
- *     purple; a quasar's beam is Pal.heal with a 45-degree side flare;
- *     the omura's rail is orangeSpark. These are the game's own art and
+ *     ammo recolours them. A weaver4's shell is 19 units of sapBullet
+ *     purple; a starhart3's beam is Pal.heal with a 45-degree side stoop1;
+ *     the skate5's rail is orangeSpark. These are the game's own art and
  *     nothing here is free to differ from it.
  *
  *   - THE BITE — reload, damage, splash, range — was written from memory
@@ -80,7 +80,7 @@ export type WeaponFx =
   | "sap" // instant thin beam (the spider line)
   | "shrapnel" // instant serrated ray (ShrapnelBulletType)
   | "bomb" // dropped where the unit is: a fused shot that bursts there
-  | "rail" // instant, very long, the omura's railgun
+  | "rail" // instant, very long, the skate5's railgun
   | "field" // EnergyFieldAbility: every structure in reach, at once
   | "scatter" // THE SKY'S SHOTGUN: instant, every structure in a cone off the muzzle, no round drawn
   | "arc"; // THE AEGIS ARC: instant chain lightning, the target and then its neighbours in turn
@@ -97,7 +97,7 @@ export type ShotRegion =
   | "missile-large"
   | "circle-bullet"
   | "mine-bullet"
-  | "disrupt-missile"
+  | "boss-missile"
   | "orb";
 
 /**
@@ -145,7 +145,7 @@ export interface ShotLook {
 /**
  * LaserBulletType.draw's parameters: `colors` (r, g, b, alpha per pass,
  * each pass half the width of the last), the beam width and the side
- * flares off the muzzle. Style 0 is lancer's — the turret's beam and the
+ * runts off the muzzle. Style 0 is lancer's — the turret's beam and the
  * class default.
  */
 export interface LaserStyle {
@@ -237,7 +237,7 @@ export interface UnitWeapon {
   /**
    * A held beam (ContinuousLaserBulletType): once it fires it deals
    * `damage` every `interval` seconds for `duration` seconds, then the
-   * reload runs. Vela and corvus-class weapons.
+   * reload runs. Starhart4 and starhart5-class weapons.
    */
   beam?: { duration: number; interval: number };
   /**
@@ -248,8 +248,8 @@ export interface UnitWeapon {
    */
   charge?: number;
   /** the unit dies firing it: the splash is centred on itself. NOTHING
-   *  CARRIES IT ANY MORE — the crawler's charge was the venom line's old
-   *  opening tier and the rework took it off (see the crawler row below).
+   *  CARRIES IT ANY MORE — the weaver1's charge was the venom line's old
+   *  opening tier and the rework took it off (see the weaver1 row below).
    *  The mechanism stays because it is one branch in updateUnitWeapons and
    *  a family built around contact is a family this game should be able to
    *  field again */
@@ -277,13 +277,13 @@ export interface UnitWeapon {
    *
    * IT IS THE TIER LADDER THAT DOES NOT MOVE THE NUMBER. `rate x chance` is
    * the same expected rot as a smaller rate landing every time, so the odds
-   * buy no scaling of their own — what they buy is a way to say "a toxopid
-   * poisons every time and a crawler one time in four" while both still
+   * buy no scaling of their own — what they buy is a way to say "a weaver5
+   * poisons every time and a weaver1 one time in four" while both still
    * read as the same status doing the same thing. A player learns one rule
    * and then learns which bodies are reliable.
    *
    * AND IT IS WHY A BURST COMES OUT SPECKLED. The roll is per structure, so
-   * an arkyid's bomb rots most of a patch and not all of it — the same
+   * a weaver4's bomb rots most of a patch and not all of it — the same
    * charm the turret attributes have (mods.ts), on the other side of the
    * field. A crowd large enough averages it away, which is exactly when
    * volume is supposed to take over.
@@ -298,7 +298,7 @@ export interface UnitWeapon {
    * full length through whatever it hit and only ever damaged the first
    * thing; here the drawing and the damage agree. The corridor is the
    * style's own width (LaserStyle.width, BeamStyle.width for a held beam),
-   * so the corvus's 75-wide beam takes a whole patch and the nova's thin
+   * so the starhart5's 75-wide beam takes a whole patch and the starhart1's thin
    * one takes the row it points down. A held beam with this bites every
    * structure under it every interval.
    */
@@ -307,7 +307,7 @@ export interface UnitWeapon {
    * fx "scatter": the CONE — half-angle in radians either side of the aim.
    * Every structure whose footprint edge is within `range` and inside the
    * wedge is hit for `damage`, falling to `falloff` of it at full reach;
-   * `maxTargets` caps how many, nearest first. PI is a ring: the horizon's
+   * `maxTargets` caps how many, nearest first. PI is a ring: the stoop2's
    * blast straight down under it.
    */
   cone?: number;
@@ -337,8 +337,8 @@ export interface UnitWeapon {
    */
   short?: number;
   /** ...and the odds a connection takes, rolled PER STRUCTURE, the same
-   *  ladder poisonChance is: a retusa shorts one gun in five it touches, a
-   *  navanax every one */
+   *  ladder poisonChance is: a livewire1 shorts one gun in five it touches, a
+   *  livewire5 every one */
   shortChance?: number;
   /** fx "scatter": the colour the fan is drawn in, and the sparks on what
    *  it struck. The sky's own orange unless set */
@@ -349,7 +349,7 @@ export interface UnitWeapon {
   // ---- THE LOOK, per fx kind ------------------------------------------
   /** bullet / missile / shell / bomb: the sprite in flight */
   look?: ShotLook;
-  /** laser: LaserBulletType's palette and flares */
+  /** laser: LaserBulletType's palette and runts */
   laser?: LaserStyle;
   /** laser with `beam`: the held beam's washes */
   beamStyle?: BeamStyle;
@@ -357,8 +357,8 @@ export interface UnitWeapon {
   shrapnel?: ShrapnelStyle;
   /** lightning: Lightning.create's colour and node count (length + rand) */
   bolt?: { color: RGB; length: number; lengthRand: number; inaccuracy: number };
-  /** flame: false is Fx.shootSmallFlame (mace), true the plasma variant
-   *  (oxynoe: white through Pal.heal to grey, and Fx.hitFlamePlasma) */
+  /** flame: false is Fx.shootSmallFlame (ironhide2), true the plasma variant
+   *  (livewire2: white through Pal.heal to grey, and Fx.hitFlamePlasma) */
   plasma?: boolean;
   /** field: EnergyFieldAbility.color, for the chain and the orbit */
   fieldColor?: RGB;
@@ -448,8 +448,8 @@ export const LANCER_LASER = laserStyle({
   sideLength: 29,
   lifetime: t(16),
 });
-/** quasar's beam-weapon: the family's star-gold, a wide 45-degree side flare */
-const QUASAR_LASER = laserStyle({
+/** starhart3's beam-weapon: the family's star-gold, a wide 45-degree side stoop1 */
+const STARHART3_LASER = laserStyle({
   colors: [[PAL.starDark, 0.4], [PAL.star, 1], [WHITE, 1]],
   width: 9,
   sideAngle: 45 * DEG,
@@ -457,8 +457,8 @@ const QUASAR_LASER = laserStyle({
   sideLength: 30,
   lifetime: t(16),
 });
-/** corvus-weapon: the same gold, 75 wide, no side flare, 65 ticks */
-const CORVUS_LASER = laserStyle({
+/** starhart5-weapon: the same gold, 75 wide, no side stoop1, 65 ticks */
+const STARHART5_LASER = laserStyle({
   colors: [[PAL.starDark, 0.4], [PAL.star, 1], [WHITE, 1]],
   width: 75,
   sideAngle: 15 * DEG,
@@ -466,12 +466,12 @@ const CORVUS_LASER = laserStyle({
   sideLength: 0,
   lifetime: t(65),
 });
-/** THE STARLIGHT MECHS' THIN BEAMS (weapons "nova-lance", "pulsar-fan"):
- *  quasar's palette on a line a fraction of its width, with the same
- *  45-degree flare cut down to match. Style 0 is lancer's and the two
+/** THE STARLIGHT MECHS' THIN BEAMS (weapons "starhart1-lance", "starhart2-fan"):
+ *  starhart3's palette on a line a fraction of its width, with the same
+ *  45-degree stoop1 cut down to match. Style 0 is lancer's and the two
  *  green ones above are Mindustry's own; these two are this game's, so
  *  the family's opening tiers fire the family's light */
-const NOVA_LASER = laserStyle({
+const STARHART1_LASER = laserStyle({
   colors: [[PAL.starDark, 0.4], [PAL.star, 1], [WHITE, 1]],
   width: 4,
   sideAngle: 45 * DEG,
@@ -479,7 +479,7 @@ const NOVA_LASER = laserStyle({
   sideLength: 6,
   lifetime: t(12),
 });
-const PULSAR_LASER = laserStyle({
+const STARHART2_LASER = laserStyle({
   colors: [[PAL.starDark, 0.4], [PAL.star, 1], [WHITE, 1]],
   width: 3,
   sideAngle: 45 * DEG,
@@ -510,17 +510,17 @@ export const MELTDOWN_BEAM = beamStyle({
   ],
   width: 9,
 });
-/** the star-gold at .2, .5, then the bright face and white — vela's beam,
+/** the star-gold at .2, .5, then the bright face and white — starhart4's beam,
  *  the four washes of ContinuousLaserBulletType in the family's hue */
-const VELA_BEAM = beamStyle({
+const STARHART4_BEAM = beamStyle({
   colors: [[PAL.starDark, 0.2], [PAL.starDark, 0.5], [PAL.star, 1], [WHITE, 1]],
   width: 9,
 });
 /** fuse's ray — style 0, the geometry constants.ts already carries */
 export const FUSE_SHRAPNEL = shrapnelStyle({ ...SHRAPNEL });
-/** the disrupt missile's shootOnDeath burst: Pal.sap x 1.8 wave, suppress smoke and sparks */
+/** the boss missile's shootOnDeath burst: Pal.sap x 1.8 wave, suppress smoke and sparks */
 const sapBright: RGB = [Math.min(1, PAL.sap[0] * 1.8), Math.min(1, PAL.sap[1] * 1.8), Math.min(1, PAL.sap[2] * 1.8)];
-const DISRUPT_EXPLOSION = explosionStyle({
+const BOSS_EXPLOSION = explosionStyle({
   lifetime: t(50),
   waveColor: sapBright,
   waveLife: 12,
@@ -571,7 +571,7 @@ const basic = (width: number, height: number, o: Partial<ShotLook> = {}): ShotLo
  * purple ball read as a THING at a glance rather than as a coloured dot.
  *
  * `size` is the diameter in world units, and it is the whole tier ladder of
- * the family's look: a crawler's spit is 7 across, a toxopid's bomb 22.
+ * the family's look: a weaver1's spit is 7 across, a weaver5's bomb 22.
  */
 const venomOrb = (size: number, o: { trail?: boolean } = {}): ShotLook => ({
   region: "orb",
@@ -591,7 +591,7 @@ const venomOrb = (size: number, o: { trail?: boolean } = {}): ShotLook => ({
     ? {
         trail: { size: u(size * 0.35), mult: 1, color: PAL.venomDark },
         // A THROWN BOMB FLIES OVER WHAT IS IN FRONT OF IT. It is the one
-        // unblockable shot left in these two families — the fortress's
+        // unblockable shot left in these two families — the ironhide3's
         // siege round was made flat and blockable in the same pass, and
         // this is the deliberate other side of that: the ground mechs are
         // answered by putting something in the way, and the venom line is
@@ -605,10 +605,10 @@ const venomOrb = (size: number, o: { trail?: boolean } = {}): ShotLook => ({
 
 /**
  * Bullets.standardCopper: BasicBulletType(2.5, 9), lifetime 60 — THE BITE
- * ONLY. The round itself is not drawn any more: the tier-1 guns (dagger,
- * risso) fire as a "gun", an instant hit with the round's own muzzle
+ * ONLY. The round itself is not drawn any more: the tier-1 guns (ironhide1,
+ * skate1) fire as a "gun", an instant hit with the round's own muzzle
  * splash (Fx.shootSmall and its smoke, in the round's lightOrange) and
- * nothing crossing the field. Forty daggers' worth of yellow rounds was
+ * nothing crossing the field. Forty runts' worth of yellow rounds was
  * the busiest thing on the screen in the opening waves and said nothing
  * a flash at the muzzle does not; the reload, damage and range are the
  * same numbers they were.
@@ -628,9 +628,9 @@ const copper = (name: string, reload: number, mounts: number, damage = 9): UnitW
 
 /**
  * THE SKYFALL BOMBERS' CHARGES (levels.ts UnitStats.payload), drawn by the
- * sim when a bomber goes off: the bomblets an antumbra scatters — small
+ * sim when a bomber goes off: the bomblets a stoop4 scatters — small
  * shells in the sky's orange, fused, bursting where they stop — and the
- * eclipse's armed nuke, a fat orange orb sitting where the hull fell
+ * stoop5's armed nuke, a fat orange orb sitting where the hull fell
  * until its fuse runs out. Both are BombBulletType's shape: dropped, not
  * fired, collides = false.
  */
@@ -663,7 +663,7 @@ export const NUKE_LOOK: ShotLook = {
 };
 
 export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
-  // ---- the dagger line --------------------------------------------------
+  // ---- the ironhide1 line --------------------------------------------------
   //
   // ONE WEAPON CLASS ACROSS FIVE TIERS: a round that goes where it is
   // pointed. No arc, no beam, no flame. What a tier buys is CALIBRE — 18,
@@ -673,16 +673,16 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // large-weapon: BasicBulletType 7x9, mirrored pair. Mindustry fires it
   // every 13 ticks for 9; this one fires every 26 for 18. HALF THE RATE AND
   // TWICE THE BITE is the same paper damage and a different weapon: a
-  // slower, heavier round is one that gets through plating, and the dagger
+  // slower, heavier round is one that gets through plating, and the ironhide1
   // is the tier a player first learns that armour is a flat shave off each
   // HIT rather than a share of the damage
-  dagger: [copper("large-weapon", 26, 2, 18)],
-  // THE MACE IS RANGED NOW. It used to carry Mindustry's flamethrower — 74
+  ironhide1: [copper("large-weapon", 26, 2, 18)],
+  // THE IRONHIDE2 IS RANGED NOW. It used to carry Mindustry's flamethrower — 74
   // damage at four tiles, which meant the T2 of a straight-bullet family
   // had to be standing on the turret to do anything at all, and read as a
   // different family every time it arrived. It carries a short, fast
   // carbine instead: the line's quickest round, at the line's shortest
-  // reach, so the mace is still the tier that wants to be close and is no
+  // reach, so the ironhide2 is still the tier that wants to be close and is no
   // longer the tier that is useless until it gets there.
   //
   // THE RATE IS SET AGAINST WHAT THE FLAME WAS WORTH. Upstream's
@@ -692,22 +692,22 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // of the ground line (the headless bot lived twenty waves longer for it).
   // A 26-damage round every seven ticks off the same pair is a little over
   // half the flame's output, which is where a T2 belongs next to the
-  // fortress's 55 and the scepter's 70: the calibre ladder is kept, and the
-  // mace stays the family's FAST gun rather than its big one.
-  mace: [
+  // ironhide3's 55 and the ironhide4's 70: the calibre ladder is kept, and the
+  // ironhide2 stays the family's FAST gun rather than its big one.
+  ironhide2: [
     {
-      name: "mace-carbine", reload: t(7), mounts: 2, damage: 26, range: rng(4, 22), speed: spd(4), fx: "bullet",
+      name: "ironhide2-carbine", reload: t(7), mounts: 2, damage: 26, range: rng(4, 22), speed: spd(4), fx: "bullet",
       look: basic(6, 9, { shoot: FxKind.ShootSmall, smoke: FxKind.SmokeSmall }),
     },
   ],
-  // THE FORTRESS SHOOTS FLAT AND THE SHELL EXPLODES WHERE IT LANDS. Upstream
+  // THE IRONHIDE3 SHOOTS FLAT AND THE SHELL EXPLODES WHERE IT LANDS. Upstream
   // this is an ArtilleryBulletType — a lobbed shell that ignores everything
   // in flight and blasts on arrival. It is a direct round here: it flies the
   // line of sight, it hits the FIRST thing it reaches, and it bursts there
   // for 80 in a 35-unit radius.
   //
   // THAT IS A REAL CHANGE AND IT IS THE POINT OF THE TIER. An arcing shell
-  // cannot be blocked, so the fortress used to be the one body in the family
+  // cannot be blocked, so the ironhide3 used to be the one body in the family
   // that did not care what the player built in front of it. Flat fire can
   // be blocked, which puts it back inside the rule the rest of the line
   // plays by — and makes the front rank of a patch the thing that eats the
@@ -715,12 +715,12 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // thirty tiles) — the change is the trajectory, not the distance.
   //
   // AND IT IS STILL THE SLOW ONE. Five eighths of a second off a mirrored
-  // pair against the mace's fifteenth: the same 135 damage a round arriving
+  // pair against the ironhide2's fifteenth: the same 135 damage a round arriving
   // at a third of the rate, which is the tier reading as artillery without
   // being artillery
-  fortress: [
+  ironhide3: [
     {
-      name: "fortress-siege", reload: t(75), mounts: 2, damage: 55, splash: 80, splashRadius: u(35),
+      name: "ironhide3-siege", reload: t(75), mounts: 2, damage: 55, splash: 80, splashRadius: u(35),
       range: rng(5, 48), speed: spd(5), fx: "bullet",
       look: basic(10, 14, {
         shoot: FxKind.ShootBig, smoke: FxKind.SmokeBig,
@@ -728,27 +728,27 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
       }),
     },
   ],
-  // scepter-weapon: BasicBulletType(8, 70) 11x20, shrinkX 0.4 / shrinkY 0,
-  // Fx.shootBig, Fx.blastExplosion — plus two scepter-mount pairs firing a
+  // ironhide4-weapon: BasicBulletType(8, 70) 11x20, shrinkX 0.4 / shrinkY 0,
+  // Fx.shootBig, Fx.blastExplosion — plus two ironhide4-mount pairs firing a
   // 4.5x35 sliver (shrinkX 0.6, shrinkY 0, Interp.slope). Straight bullets
   // already, and left alone: the tier's contribution is the shield field it
   // walks under (levels.ts), not the gun
-  scepter: [
+  ironhide4: [
     {
-      name: "scepter-weapon", reload: t(60), mounts: 2, damage: 70, range: rng(7, 25), speed: spd(7), fx: "bullet",
+      name: "ironhide4-weapon", reload: t(60), mounts: 2, damage: 70, range: rng(7, 25), speed: spd(7), fx: "bullet",
       look: basic(11, 20, { shrinkX: 0.4, shrinkY: 0, shoot: FxKind.ShootBig, hit: FxKind.BlastExplosion }),
     },
     {
-      name: "scepter-mount", reload: t(13), mounts: 4, damage: 20, range: rng(3, 50), speed: spd(3), fx: "bullet",
+      name: "ironhide4-mount", reload: t(13), mounts: 4, damage: 20, range: rng(3, 50), speed: spd(3), fx: "bullet",
       look: basic(4.5, 35, { shrinkX: 0.6, shrinkY: 0, slope: true, hitColor: PAL.mechDark }),
     },
   ],
-  // reign-weapon: BasicBulletType(13, 80) 14x33, Fx.shootBig,
+  // ironhide5-weapon: BasicBulletType(13, 80) 14x33, Fx.shootBig,
   // Fx.blastExplosion. The heaviest round in the family, on the tier that
   // hands its plating to everything around it (levels.ts armorField)
-  reign: [
+  ironhide5: [
     {
-      name: "reign-weapon", reload: t(25), mounts: 2, damage: 80, range: rng(13, 24), speed: spd(13), fx: "bullet",
+      name: "ironhide5-weapon", reload: t(25), mounts: 2, damage: 80, range: rng(13, 24), speed: spd(13), fx: "bullet",
       look: basic(14, 33, { shoot: FxKind.ShootBig, hit: FxKind.BlastExplosion }),
     },
   ],
@@ -771,7 +771,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // and how much of a patch it lands on.
   //
   // IT USED TO CLIMB FROM SIX TO TEN ACROSS FIVE TIERS and that was the
-  // whole ladder — a toxopid's bomb, the family's flagship weapon, put
+  // whole ladder — a weaver5's bomb, the family's flagship weapon, put
   // ten health a second on a building, which against a late-run turret
   // carrying Giant and Bulwark (mods.ts) was minutes of rot for a boss
   // that lives seconds. A hundred points of chip on a ten-thousand-health
@@ -790,10 +790,10 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // punch it down — a patch under venom fire loses health with nothing
   // visibly shooting it, which is the whole feel of the family.
   //
-  // NO SUICIDE CHARGE. The crawler's contact bomb is gone: a status that
+  // NO SUICIDE CHARGE. The weaver1's contact bomb is gone: a status that
   // works over six seconds cannot have its opening tier delete itself on
   // arrival, because a dead spitter is one that never refreshes the clock.
-  crawler: [
+  weaver1: [
     {
       name: "venom-spit", reload: t(180), mounts: 1, damage: 25, range: rng(6, 16), speed: spd(6),
       fx: "bullet", poison: 12, poisonChance: 0.4, look: venomOrb(7),
@@ -802,7 +802,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // FOUR BARRELS, AND THE FIRST ORB THAT BURSTS. A mirrored bank fires once
   // per reload divided by its mount count (updateUnitWeapons), so four
   // barrels is four times the APPLICATIONS rather than four shots at once —
-  // which is what an atrax is for now that the rot bleeds back down
+  // which is what a weaver2 is for now that the rot bleeds back down
   // (constants.ts POISON_DECAY): volume is the only thing that holds a
   // stack up, so four barrels on one body is four bodies' worth of rot.
   //
@@ -812,22 +812,22 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // card that puts down a thirty-six turret block meant the family's own
   // area weapons rotted a corner of one patch. The family's ladder
   // used to be three tiers of single-target pea-shooters and then two tiers
-  // of area bombardment, a fortyfold step between the spiroct and the
-  // arkyid; it reads as one idea growing now: a ball, a small burst, a
+  // of area bombardment, a fortyfold step between the weaver3 and the
+  // weaver4; it reads as one idea growing now: a ball, a small burst, a
   // bigger burst, a thrown bomb, a barrage. The rot rides the burst, so
   // what a tier really buys is HOW MUCH OF A PATCH one orb rots at once.
-  atrax: [
+  weaver2: [
     {
       name: "venom-spit", reload: t(180), mounts: 4, damage: 8, splash: 30, splashRadius: u(28),
       range: rng(6, 18), speed: spd(6), fx: "bullet", poison: 15, poisonChance: 0.5, look: venomOrb(7),
     },
   ],
   // THE PACE TIER. Its gun is the family's standard orb at a middling rate;
-  // what the spiroct is FOR is the haste field it walks under (levels.ts
+  // what the weaver3 is FOR is the haste field it walks under (levels.ts
   // hasteField) — a third again on everything within ten tiles. It is the
   // only tier on the tree that hands something out, and what it hands out
   // is more applications inside the same six seconds
-  spiroct: [
+  weaver3: [
     {
       name: "venom-spit", reload: t(120), mounts: 2, damage: 10, splash: 40, splashRadius: u(36),
       range: rng(6, 20), speed: spd(6), fx: "bullet", poison: 30, poisonChance: 0.7, look: venomOrb(9),
@@ -839,7 +839,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // every structure inside it. A patch is four to thirty-six turrets
   // standing in a block — this is the tier that rots the whole block
   // instead of a corner of it, and it does it from six tiles out
-  arkyid: [
+  weaver4: [
     {
       name: "venom-spit", reload: t(90), mounts: 4, damage: 10, range: rng(6, 20), speed: spd(6),
       fx: "bullet", poison: 25, poisonChance: 0.8, look: venomOrb(8),
@@ -850,13 +850,13 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
       look: venomOrb(18, { trail: true }),
     },
   ],
-  // THE BOMB, FAST. The toxopid drops the single-target spit altogether and
+  // THE BOMB, FAST. The weaver5 drops the single-target spit altogether and
   // throws nothing but area rot — three mounts on a one-second cycle, each
-  // one an arkyid's bomb with more reach behind it. It is the same weapon
+  // one a weaver4's bomb with more reach behind it. It is the same weapon
   // the tier below introduces, arriving often enough that a patch is never
   // out from under it, which is what a T5 of this family should be: not a
   // new idea, the family's idea at a rate nothing answers casually
-  toxopid: [
+  weaver5: [
     {
       name: "venom-bomb", reload: t(180), mounts: 3, damage: 18, splash: 160, splashRadius: u(136),
       range: rng(4, 62), speed: spd(4), fx: "shell", poison: 150, poisonChance: 1,
@@ -875,11 +875,11 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // from the first body now, and a player who sees a green line across a
   // patch knows every turret on that line just paid for it.
   //
-  // WHAT A TIER BUYS IS LENGTH AND WIDTH. A nova's lance is a thin line
-  // seven tiles long that takes the row it points down; a corvus's is a
+  // WHAT A TIER BUYS IS LENGTH AND WIDTH. A starhart1's lance is a thin line
+  // seven tiles long that takes the row it points down; a starhart5's is a
   // fifty-seven-tile beam nine cells wide that takes the patch. The
-  // damage ladder is Mindustry's own where it had one — quasar 45, vela 35
-  // a bite, corvus 560 — and the two new guns at the bottom are set so the
+  // damage ladder is Mindustry's own where it had one — starhart3 45, starhart4 35
+  // a bite, starhart5 560 — and the two new guns at the bottom are set so the
   // line's T1 and T2 bite a single turret about as hard as the bolt and the
   // arcs they replace did, and a row of them harder.
   //
@@ -889,55 +889,55 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // the swarm, and a Starlight wave is answered by killing the carriers
   // before the wall of green reaches the guns.
   //
-  // nova-lance: a thin heal-green beam, nineteen tiles — the bolt's own
+  // starhart1-lance: a thin heal-green beam, nineteen tiles — the bolt's own
   // reach (5.2 x 30) — on a mirrored pair. Replaces the
   // LaserBoltBulletType(5.2, 13) that flew, on the same 30-tick cycle
   // upstream gives the heal-weapon: a beam that lands the moment it fires
   // and keeps going
-  nova: [
+  starhart1: [
     {
-      name: "nova-lance", reload: t(30), mounts: 2, damage: 14, range: u(150), speed: 0, fx: "laser",
-      pierce: true, laser: NOVA_LASER, shoot: FxKind.ShootHeal,
+      name: "starhart1-lance", reload: t(30), mounts: 2, damage: 14, range: u(150), speed: 0, fx: "laser",
+      pierce: true, laser: STARHART1_LASER, shoot: FxKind.ShootHeal,
     },
   ],
-  // pulsar-fan: THREE thin beams a volley, twelve degrees apart, each its
+  // starhart2-fan: THREE thin beams a volley, twelve degrees apart, each its
   // own piercing line. Replaces the heal-shotgun-weapon's three lightning
   // bolts (buildingDamage 0.25 — under four a bolt) with three lasers that
   // do seven each and go through; the fan is the shotgun read as light
-  pulsar: [
+  starhart2: [
     {
-      name: "pulsar-fan", reload: t(36), mounts: 2, shots: 3, spread: 12 * DEG, damage: 8, range: u(90), speed: 0,
-      fx: "laser", pierce: true, laser: PULSAR_LASER, shoot: FxKind.ShootHeal,
+      name: "starhart2-fan", reload: t(36), mounts: 2, shots: 3, spread: 12 * DEG, damage: 8, range: u(90), speed: 0,
+      fx: "laser", pierce: true, laser: STARHART2_LASER, shoot: FxKind.ShootHeal,
     },
   ],
   // beam-weapon: reload 55, LaserBulletType damage 45 in Pal.heal, length
   // 150 (row 135), sideAngle 45 / sideWidth 1 / sideLength 70 — the one
   // tier that was already a laser, and pierces now like the rest
-  quasar: [
+  starhart3: [
     {
       name: "beam-weapon", reload: t(55), mounts: 2, damage: 45, range: u(135), speed: 0, fx: "laser",
-      pierce: true, laser: QUASAR_LASER, shoot: FxKind.HitLancer,
+      pierce: true, laser: STARHART3_LASER, shoot: FxKind.HitLancer,
     },
   ],
-  // vela-weapon: ContinuousLaserBulletType(35) length 180, lifetime 160,
+  // starhart4-weapon: ContinuousLaserBulletType(35) length 180, lifetime 160,
   // reload 155 with a 40-tick charge (Fx.greenLaserChargeSmall) — the four
   // heal washes, Fx.hitMeltHeal where it rests. A held beam that pierces
   // bites everything under it every five ticks for as long as it burns
-  vela: [
+  starhart4: [
     {
-      name: "vela-weapon", reload: t(155 + 40), mounts: 1, damage: 35, range: u(180), speed: 0, fx: "laser",
-      pierce: true, beam: { duration: t(160), interval: t(5) }, charge: t(40), beamStyle: VELA_BEAM,
+      name: "starhart4-weapon", reload: t(155 + 40), mounts: 1, damage: 35, range: u(180), speed: 0, fx: "laser",
+      pierce: true, beam: { duration: t(160), interval: t(5) }, charge: t(40), beamStyle: STARHART4_BEAM,
     },
   ],
-  // corvus-weapon: reload 350 with an 80-tick charge (Fx.greenLaserCharge),
+  // starhart5-weapon: reload 350 with an 80-tick charge (Fx.greenLaserCharge),
   // LaserBulletType damage 560, length 460, width 75, 65 ticks on screen.
   // THE LONG LASER: fifty-seven tiles, nine cells wide, and every
   // structure inside that corridor takes the 560 — a T5 that answers a
   // patch by drawing a line through it
-  corvus: [
+  starhart5: [
     {
-      name: "corvus-weapon", reload: t(350 + 80), mounts: 1, damage: 560, range: u(460), speed: 0, fx: "laser",
-      pierce: true, laser: CORVUS_LASER, charge: t(80), shoot: FxKind.HitLancer,
+      name: "starhart5-weapon", reload: t(350 + 80), mounts: 1, damage: 560, range: u(460), speed: 0, fx: "laser",
+      pierce: true, laser: STARHART5_LASER, charge: t(80), shoot: FxKind.HitLancer,
     },
   ],
 
@@ -957,31 +957,31 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // brings is a charge that goes off on your turrets whether it arrives
   // or is stopped — so an AA line over the guns it protects is an AA line
   // that detonates bombers over them, and the answer is REACH: kill them
-  // over nothing. Its carriers are the zenith (afterburner: the flight
-  // moves faster round it) and the antumbra (a jam over the guns under
-  // it). The eclipse carries the small nuke.
+  // over nothing. Its carriers are the stoop3 (afterburner: the flight
+  // moves faster round it) and the stoop4 (a jam over the guns under
+  // it). The stoop5 carries the small nuke.
   //
-  // THE SEEK REACH IS THE LADDER: a flare dives at what is under it, an
-  // eclipse picks its target from twenty tiles out.
-  flare: [{ name: "flare-charge", reload: t(6), mounts: 1, damage: 0, range: u(56), speed: 0, fx: "bomb", suicide: true }],
-  horizon: [{ name: "horizon-charge", reload: t(6), mounts: 1, damage: 0, range: u(72), speed: 0, fx: "bomb", suicide: true }],
-  zenith: [{ name: "zenith-charge", reload: t(6), mounts: 1, damage: 0, range: u(96), speed: 0, fx: "bomb", suicide: true }],
-  antumbra: [{ name: "antumbra-charge", reload: t(6), mounts: 1, damage: 0, range: u(120), speed: 0, fx: "bomb", suicide: true }],
-  eclipse: [{ name: "eclipse-nuke", reload: t(6), mounts: 1, damage: 0, range: u(160), speed: 0, fx: "bomb", suicide: true }],
-  // disrupt-weapon: three disrupt-missile UNITS a volley (shoot.shots 3,
+  // THE SEEK REACH IS THE LADDER: a stoop1 dives at what is under it, an
+  // stoop5 picks its target from twenty tiles out.
+  stoop1: [{ name: "stoop1-charge", reload: t(6), mounts: 1, damage: 0, range: u(56), speed: 0, fx: "bomb", suicide: true }],
+  stoop2: [{ name: "stoop2-charge", reload: t(6), mounts: 1, damage: 0, range: u(72), speed: 0, fx: "bomb", suicide: true }],
+  stoop3: [{ name: "stoop3-charge", reload: t(6), mounts: 1, damage: 0, range: u(96), speed: 0, fx: "bomb", suicide: true }],
+  stoop4: [{ name: "stoop4-charge", reload: t(6), mounts: 1, damage: 0, range: u(120), speed: 0, fx: "bomb", suicide: true }],
+  stoop5: [{ name: "stoop5-nuke", reload: t(6), mounts: 1, damage: 0, range: u(160), speed: 0, fx: "bomb", suicide: true }],
+  // boss-weapon: three boss-missile UNITS a volley (shoot.shots 3,
   // inaccuracy 28), each its own sprite with a sapBulletBack engine, going
   // off as ExplosionBulletType(140, 25) in Pal.sap x 1.8 and Pal.suppress,
   // Fx.sparkShoot + shootSmokeTitan off the rail. upstream: speed 4.6,
   // splash 140 in 25. THE BOSS IS IN NO FAMILY and keeps its missiles
-  disrupt: [
+  boss: [
     {
-      name: "disrupt-weapon", reload: t(70), mounts: 2, damage: 30, splash: 80, splashRadius: u(35),
+      name: "boss-weapon", reload: t(70), mounts: 2, damage: 30, splash: 80, splashRadius: u(35),
       range: rng(3.7, 60), speed: spd(3.7), fx: "missile",
       look: {
-        region: "disrupt-missile", width: u(39 / 4), height: u(60 / 4), shrinkX: 0, shrinkY: 0,
+        region: "boss-missile", width: u(39 / 4), height: u(60 / 4), shrinkX: 0, shrinkY: 0,
         back: WHITE, front: WHITE, hitColor: PAL.suppress,
         shoot: FxKind.SparkShoot, smoke: FxKind.SmokeBig2,
-        hit: FxKind.Explosion, hitStyle: DISRUPT_EXPLOSION.id,
+        hit: FxKind.Explosion, hitStyle: BOSS_EXPLOSION.id,
         puff: { chance: 0.5, size: u(3), color: PAL.sapBulletBack },
       },
     },
@@ -992,9 +992,9 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // ONE HARPOON ACROSS FIVE TIERS: every gun on this tree is a RAIL (fx
   // "rail") — an instant line the length of its reach, in the fleet's
   // teal (railColor), that hits what it was aimed at and nothing
-  // else, except the omura's, which PIERCES everything on the line. And
-  // every tier has INSANE REACH: a risso harpoons from FIFTY tiles, past
-  // every gun on the board but the foreshadow (sixty-two), and an omura
+  // else, except the skate5's, which PIERCES everything on the line. And
+  // every tier has INSANE REACH: a skate1 harpoons from FIFTY tiles, past
+  // every gun on the board but the foreshadow (sixty-two), and a skate5
   // from NINETY, past that too. The line used to be copper, flak,
   // missiles and artillery at the walkers' reaches; it is the SNIPER
   // family now — and the reach has to clear the long guns, or it is a
@@ -1005,32 +1005,32 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // hull that crawls ashore (levels.ts NAVAL_PACE, NAVAL_LAND_SPEED) and
   // GROWS THE LONGER IT LIVES (levels.ts veteran: every hit here is
   // multiplied by the hull's age, to triple). The rows below are LIGHT —
-  // a fresh risso's harpoon is a tenth of the old copper pair — because a
+  // a fresh skate1's harpoon is a tenth of the old copper pair — because a
   // fleet that has been alive eighty seconds hits three times as hard and
   // is still out of reach. The answer is a gun that reaches out
   // (ripple, spectre, foreshadow) and kills them YOUNG, and the spotter
-  // (bryde) and the drill (sei) are the hulls to kill first.
-  risso: [
-    { name: "risso-harpoon", reload: t(90), mounts: 1, damage: 20, range: u(400), speed: 0, fx: "rail", railColor: PAL.harpoon },
+  // (skate3) and the drill (skate4) are the hulls to kill first.
+  skate1: [
+    { name: "skate1-harpoon", reload: t(90), mounts: 1, damage: 20, range: u(400), speed: 0, fx: "rail", railColor: PAL.harpoon },
   ],
-  minke: [
-    { name: "minke-harpoon", reload: t(75), mounts: 2, damage: 36, range: u(440), speed: 0, fx: "rail", railColor: PAL.harpoon },
+  skate2: [
+    { name: "skate2-harpoon", reload: t(75), mounts: 2, damage: 36, range: u(440), speed: 0, fx: "rail", railColor: PAL.harpoon },
   ],
   // THE SPOTTER (levels.ts spotterField) — its own harpoon is the
   // middling one; what it does is make every hull round it reach half
   // again as far
-  bryde: [
-    { name: "bryde-harpoon", reload: t(75), mounts: 1, damage: 90, range: u(480), speed: 0, fx: "rail", railColor: PAL.harpoon },
+  skate3: [
+    { name: "skate3-harpoon", reload: t(75), mounts: 1, damage: 90, range: u(480), speed: 0, fx: "rail", railColor: PAL.harpoon },
   ],
   // THE DRILL (levels.ts drillField): the hulls round it age twice as fast
-  sei: [
-    { name: "sei-harpoon", reload: t(60), mounts: 2, damage: 160, range: u(560), speed: 0, fx: "rail", railColor: PAL.harpoon },
+  skate4: [
+    { name: "skate4-harpoon", reload: t(60), mounts: 2, damage: 160, range: u(560), speed: 0, fx: "rail", railColor: PAL.harpoon },
   ],
-  // omura-cannon, as upstream has it: RailBulletType, and it goes THROUGH
+  // skate5-cannon, as upstream has it: RailBulletType, and it goes THROUGH
   // — every structure on its eighty-tile line takes the hit
   // (UnitWeapon.pierce). upstream damage 1250, length 500
-  omura: [
-    { name: "omura-cannon", reload: t(120), mounts: 1, damage: 900, range: u(720), speed: 0, fx: "rail", pierce: true, railColor: PAL.harpoon },
+  skate5: [
+    { name: "skate5-cannon", reload: t(120), mounts: 1, damage: 900, range: u(720), speed: 0, fx: "rail", pierce: true, railColor: PAL.harpoon },
   ],
 
   // ---- THE WRAITH FLEET -----------------------------------------------
@@ -1053,21 +1053,21 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   //
   // THE CHAIN'S REACH is a patch neighbour — three to four tiles — so an
   // arc on a lone duo is one hit and an arc on a wall of them is the wall.
-  retusa: [
+  livewire1: [
     {
-      name: "retusa-arc", reload: t(40), mounts: 2, damage: 20, range: u(110), speed: 0, fx: "arc",
+      name: "livewire1-arc", reload: t(40), mounts: 2, damage: 20, range: u(110), speed: 0, fx: "arc",
       arc: { jumps: 1, reach: u(28), decay: 0.7, color: PAL.wraith }, short: 0.6, shortChance: 0.12,
     },
   ],
-  oxynoe: [
+  livewire2: [
     {
-      name: "oxynoe-arc", reload: t(12), mounts: 2, damage: 12, range: u(60), speed: 0, fx: "arc",
+      name: "livewire2-arc", reload: t(12), mounts: 2, damage: 12, range: u(60), speed: 0, fx: "arc",
       arc: { jumps: 2, reach: u(24), decay: 0.6, color: PAL.wraith }, short: 0.4, shortChance: 0.06,
     },
   ],
-  cyerce: [
+  livewire3: [
     {
-      name: "cyerce-arc", reload: t(50), mounts: 2, damage: 60, range: u(140), speed: 0, fx: "arc",
+      name: "livewire3-arc", reload: t(50), mounts: 2, damage: 60, range: u(140), speed: 0, fx: "arc",
       arc: { jumps: 4, reach: u(30), decay: 0.75, color: PAL.wraith }, short: 0.7, shortChance: 0.15,
     },
   ],
@@ -1075,7 +1075,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // — twenty-two tiles — every 65 ticks, a Fx.chainLightning to each, in
   // the family's violet and with a SHORT rolled on every one of them. The
   // family's area tier and its healer at once (levels.ts energyField)
-  aegires: [
+  livewire4: [
     {
       name: "energy-field", reload: t(65), mounts: 1, damage: 80, range: u(180), speed: 0, fx: "field",
       maxTargets: 25, fieldColor: PAL.wraith, short: 1, shortChance: 0.35,
@@ -1085,9 +1085,9 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // a one-second short on every other thing it touches — upstream's
   // EmpBulletType (damage 110, splash 110 in 100) read as a chain instead
   // of a burst. The flagship, and its cloak veils the fleet (levels.ts)
-  navanax: [
+  livewire5: [
     {
-      name: "navanax-emp", reload: t(120), mounts: 2, damage: 300, range: u(260), speed: 0, fx: "arc",
+      name: "livewire5-emp", reload: t(120), mounts: 2, damage: 300, range: u(260), speed: 0, fx: "arc",
       arc: { jumps: 6, reach: u(36), decay: 0.8, color: PAL.wraith }, short: 1, shortChance: 0.5,
     },
   ],

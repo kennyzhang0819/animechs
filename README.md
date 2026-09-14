@@ -45,8 +45,8 @@ stale tab or a cached bundle looks exactly like a fix not working.
   script itself (50 waves, a 15-second gap — `WAVE_GAP_DEFAULT`) lives in
   `public/levels/campaign.json`, loaded by `loadLevelDocs()`. Six unit
   families, each one idea at five sizes: ground mechs, venom spitters,
-  starlight mechs, skyfall bombers and the two **naval** lines (the harpoon
-  fleet, the wraith fleet), which travel on the amphibious water layer. The **family roll**
+  Starhart stags, Stoop bats and the two **naval** lines (the Skate
+  mantas, the Livewire eels), which travel on the amphibious water layer. The **family roll**
   (`rollFamilies`, `transformScript`) is what makes one run's swarm differ
   from the next's; `unitDrop` is what a kill pays
 - `game/economy.ts` — **the economy**: scrap (in-run money — a kill drops
@@ -362,7 +362,7 @@ authored at level 0. Difficulty is rules, not hit points.
 **A wave lands every fifteen seconds** (`waveGap`, `WAVE_GAP_DEFAULT`),
 from the first second of the run, each stronger than the last: a few
 dozen Ironhide runts on wave 1, the first elites by wave 10, waves in the
-thousands by the forties, and the Disrupt as the boss that closes the
+thousands by the forties, and the Boss as the boss that closes the
 script. The gap is shorter than a wave takes to walk the lane, so the
 waves overlap and the field is a tide rather than a series of fights —
 which is the whole reason the sim is built for 10,000 to 15,000 bodies at
@@ -893,7 +893,7 @@ tier for tier (`rollFamilies`, `transformScript` in levels.ts). In custom
 mode the hand is named instead, in whole or in part, and whatever is left
 unnamed is still rolled. Forty of the first ground body in the
 script are forty of whichever family took the first slot. The boss
-(Disrupt) is in no family and is never swapped.
+(Boss) is in no family and is never swapped.
 
 | family | animal | one body | layer | one look | one mechanic |
 |---|---|---|---|---|---|
@@ -901,40 +901,35 @@ script are forty of whichever family took the first slot. The boss
 | Weavers | spider | Weaver | ground | **acid** orbs | rot, which ignores plating |
 | Starhart | stag | Starhart | ground | **star-gold** lasers | every laser pierces; heals and shields |
 | Stoop | bat | Stoop | air | **magenta** charges; no gun, the body is the bomb | goes off on contact or on death; the T5 is a nuke |
-| Harpoon fleet | — | Harpoon | water | **teal** harpoon rails | insane reach, a crawl, and the longer alive the harder it hits |
-| Wraith fleet | — | Wraith | water | **violet** arcs that short a gun | blinks forward when hit; the top tiers cloak |
+| Skates | manta | Skate | water | **teal** harpoon rails | insane reach, a crawl, and the longer alive the harder it hits |
+| Livewires | eel | Livewire | water | **violet** arcs that short a gun | blinks forward when hit; the top tiers cloak |
 
-**A body is its family and how far up it stands.** There are no twenty
-proper nouns: a family comes in five ranks, the same five for every line
-(`UNIT_RANKS` in levels.ts), so the whole roster is six words and these —
+**A body is its family and how far up it stands.** There are no proper
+nouns on the roster. A family comes in five ranks, the same five for
+every line (`UNIT_RANKS` in levels.ts), so the whole swarm is six words
+and these —
 
 > **runt · brute · elite · champion · apex**
 
 — and a body is `Ironhide (runt)` through `Ironhide (apex)`. It is the
 same animal at five sizes, which is the rule the art is drawn to
 (`docs/unit-art.md`), and it means a player who has met one family can
-read every other family's ladder on sight. The four families with animal
-art are named for the animal (`game/animalArt.ts`, behind `ANIMAL_ART` in
-`game/animalFlag.ts`); the two fleets are still Mindustry's whales and
-sea slugs on screen and keep their weapon's name until their animals —
-the Tuskers (narwhal) and the Livewires (electric eel) — are drawn.
+read every other family's ladder on sight. The boss is in no family and
+is called Boss.
 
-**A NAME IS NOT AN ID.** What the CODE calls a body never changed. The
-kind is still `dagger`, `nova`, `flare`, and it keys the sim's arrays, the
-sprite files under `public/mindustry` and every wave in
-`public/levels/campaign.json` — nothing on disk moved. `UNIT_NAMES` and
-`FAMILY_NAMES` in levels.ts are the one place the two columns meet, and
-both follow the art switch: turn `ANIMAL_ART` off and the swarm is
-Mindustry's again, names included.
+**The id is the family and the tier, and nothing else.** `UnitKind` runs
+`ironhide1` … `ironhide5`, `weaver1` … `livewire5`, plus `boss` — so the
+kind a wave is authored in (`public/levels/campaign.json`), the key in
+the sim's arrays and the name on screen are all the same fact said three
+ways, and no upstream unit name survives anywhere in the codebase.
+`UNIT_NAMES` and `FAMILY_NAMES` in levels.ts are where the id becomes the
+name, and both follow `ANIMAL_ART`: turn the switch off and the sprites
+and the names are Mindustry's again together.
 
-| family | runt | brute | elite | champion | apex |
-|---|---|---|---|---|---|
-| Ironhide | `dagger` | `mace` | `fortress` | `scepter` | `reign` |
-| Weaver | `crawler` | `atrax` | `spiroct` | `arkyid` | `toxopid` |
-| Starhart | `nova` | `pulsar` | `quasar` | `vela` | `corvus` |
-| Stoop | `flare` | `horizon` | `zenith` | `antumbra` | `eclipse` |
-| Harpoon | `risso` | `minke` | `bryde` | `sei` | `omura` |
-| Wraith | `retusa` | `oxynoe` | `cyerce` | `aegires` | `navanax` |
+The one place upstream's vocabulary is still written down is the sprite
+paths in `game/atlas.ts` — `/mindustry/sprites/units/dagger.png` and the
+rest — because those are the actual filenames under `public/`, which the
+animal art packs OVER rather than replaces.
 
 **One hue a family, worn everywhere the family shows** (`PAL.mech` and the
 rest in constants.ts, `FAMILY_ACCENT` in levels.ts): the highlight on the
@@ -964,7 +959,7 @@ weapon in the line is a round that goes where it is pointed: no arc, no
 beam, no flame. What a tier buys is **calibre** — 18, 26, 55, 70, 80 a
 round — which is the same thing the line's own armour asks the player for,
 read from the other side. The **brute** carries a fast short carbine where
-Mindustry gives its mace a flamethrower, so the T2 of a bullet family is no
+Mindustry gives its ironhide2 a flamethrower, so the T2 of a bullet family is no
 longer useless until it is standing on the turret. The **elite** fires
 its siege shell **flat** rather than lobbing it, at exactly its upstream
 reach (30 tiles) — so it can be blocked, which puts it back inside the rule
@@ -1069,7 +1064,7 @@ and then takes 4,000 off everything within eleven tiles.
 *What it poses:* an AA line over the guns it protects detonates bombers
 over them. The answer is reach: kill them over nothing.
 
-**Harpoon fleet — snipers that grow old.** Every gun on the fleet is a
+**Skates — snipers that grow old.** Every gun on the fleet is a
 **rail** (`fx: "rail"`, in the fleet's teal) from **beyond the
 board's reach**: fifty tiles on the runt, ninety on the apex, past the
 foreshadow's sixty-two — and the apex's **pierces** everything on its
@@ -1086,7 +1081,7 @@ two and a half times as fast).
 is getting stronger. The answer is the long guns, and killing them young —
 the spotter and the drill first.
 
-**Wraith fleet — arcs that short the guns, off hulls that cannot be
+**Livewires — arcs that short the guns, off hulls that cannot be
 held.** Every weapon is **chain lightning** in the wraiths' violet (`PAL.wraith`,
 fx `arc`): the target first, then the nearest structure the last one
 struck can reach, hop after hop — and every structure it connects with

@@ -127,8 +127,8 @@ on this game's document shape:
    width toward the funnel point. A noise map is open in too many places
    for "wall the mouth and nothing reaches the core" to come true by
    luck; the ring makes it true by construction.
-7. **The minimum gap.** The biggest walker (a reign) is four cells across
-   and the biggest hull (an omura) seven, so every THROUGH gap is at least
+7. **The minimum gap.** The biggest walker (an ironhide5) is four cells across
+   and the biggest hull (a skate5) seven, so every THROUGH gap is at least
    `GAP_GROUND` (5) on land and `GAP_WATER` (11) at sea: a morphological
    opening by that disc silts every thinner gap shut. The notches the
    opening would also have filled — most of what makes an edge ragged —
@@ -286,6 +286,12 @@ falls back to the whole layer when its share is empty, so no map locks a
 faction out. A spawn tile is open ground, always: nothing enters on a hill,
 and the loader clips the layer against `blocked` to make sure of it. A boss
 has no door of its own — hold one back by painting tiles only it can use.
+
+The red pads are an AUTHORING mark. They are drawn in the map editor and
+nowhere else: a match builds its terrain with `GAME_LAYERS` (spawn off),
+and a player reads the mouths from the routes overlay, which outlines the
+same cells on demand. Paint as many tiles as the map wants — none of it
+lands on the board a player looks at.
 
 The atlas indices a generator paints with are COPIED into
 `mindustry.mjs` rather than imported, because the generator is plain node

@@ -7,7 +7,7 @@ roll** the deploy makes: the script is authored in three unit families
 rolls three families from the six and deals them into the slots, tier for
 tier (`rollFamilies`, `transformScript` in `game/levels.ts`). Forty
 runts in the script are forty of whichever family took the first slot.
-The boss (Disrupt) is in no family and is never swapped. The deal is shown
+The boss (Boss) is in no family and is never swapped. The deal is shown
 on the field in the bottom-right corner.
 
 ## The documents
@@ -64,9 +64,9 @@ Rules of thumb for the counts:
 - **A wave's keys are IDS, not names.** A body is called after its family
   and how far up it stands — `Ironhide (runt)` to `Ironhide (apex)`,
   five ranks shared by every family (levels.ts `UNIT_RANKS`) — but the
-  document holds the KIND: `dagger`, `nova`, `flare`, what the sim and the
+  document holds the KIND: `ironhide1`, `starhart1`, `stoop1`, what the sim and the
   sprite files use. A wave of forty runts of the first ground family is
-  `{ "dagger": 40 }`, and the editor prints the name beside the picture.
+  `{ "ironhide1": 40 }`, and the editor prints the name beside the picture.
 - **Naval waves want water, and play without it.** The ten hulls travel
   the amphibious layer: half again their stat afloat and a third down on
   it ashore (`NAVAL_WATER_SPEED`, `NAVAL_LAND_SPEED`), so a naval family

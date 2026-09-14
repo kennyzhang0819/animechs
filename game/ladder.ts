@@ -813,7 +813,7 @@ export function check(spec: LevelSpec = WORLD): LadderIssue[] {
   // to add up to: a run sends exactly SCRIPT_BODIES bodies, so "how far did
   // the swarm get" is the same question on every map and the drop table
   // (economy.ts) prices a known quantity of salvage. Pad or trim the
-  // cheapest kind in the waves that already field it — a dagger either way
+  // cheapest kind in the waves that already field it — an ironhide1 either way
   const bodies = waveGuide(spec).reduce((a, r) => a + r.units, 0);
   if (bodies !== SCRIPT_BODIES)
     out.push({

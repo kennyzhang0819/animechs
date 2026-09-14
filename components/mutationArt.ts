@@ -46,7 +46,7 @@ const FACES: Record<string, (g: Pen) => void> = {
    * A gunmetal bunker under a green field arc. A DOME ON A PLINTH IS A
    * T-SHIRT — wide shoulders over a narrow body is a shirt before it is a
    * tower, at any size. What the rule draws is a shield arching OVER
-   * something, so the dome is a hollow arc and the tower flares.
+   * something, so the dome is a hollow arc and the tower runts.
    */
   shieldTowers: (g) => {
     g.ring(0.5, 0.52, 0.42, 2, PAL.heal);

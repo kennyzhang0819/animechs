@@ -33,7 +33,7 @@ import {
   UV_MINE_BULLET_BACK,
   UV_MISSILE_LARGE,
   UV_MISSILE_LARGE_BACK,
-  UV_DISRUPT_MISSILE,
+  UV_BOSS_MISSILE,
   UV_LASER,
   UV_LASER_END,
   UNIT_ENGINES,
@@ -235,7 +235,7 @@ const PAL_LANCER = PAL.lancerLaser;
 /**
  * The region pair behind each of the swarm's ShotLook sprites (weapons.ts):
  * `-back` first, front over it, exactly as BULLET_REGIONS does for the
- * turrets. The disrupt missile is a unit's own coloured art and has no
+ * turrets. The boss missile is a unit's own coloured art and has no
  * back; an orb is no sprite at all (LiquidBulletType.draw is a disc).
  */
 const SHOT_REGIONS: Record<Exclude<ShotRegion, "orb">, readonly [UVRect | null, UVRect]> = {
@@ -245,7 +245,7 @@ const SHOT_REGIONS: Record<Exclude<ShotRegion, "orb">, readonly [UVRect | null, 
   "missile-large": [UV_MISSILE_LARGE_BACK, UV_MISSILE_LARGE],
   "circle-bullet": [UV_CIRCLE_BULLET_BACK, UV_CIRCLE_BULLET],
   "mine-bullet": [UV_MINE_BULLET_BACK, UV_MINE_BULLET],
-  "disrupt-missile": [null, UV_DISRUPT_MISSILE],
+  "boss-missile": [null, UV_BOSS_MISSILE],
 };
 
 /** Pal.lightFlame #ffdd55, Pal.darkFlame #db401c, and Arc's Color.gray */
@@ -315,11 +315,15 @@ const ABSIN = (x: number, scl: number, mag: number): number =>
  * ContinuousLaserBulletType.colors ride the BeamStyle (weapons.ts) — the
  * two outer washes carry their alpha (0x55 and 0xaa on meltdown's); they
  * are meant to be seen THROUGH, which is what layers the beam rather than
- * stacking four bars. backLength and frontLength, the two flame fronts'
- * reach, are the class's and shared by every beam.
+ * stacking four bars.
+ *
+ * Upstream's backLength and frontLength are NOT here: a 35-unit nose on
+ * the inner passes and a stubbier one on the outer wash stacked four
+ * points of different length down one bearing, and what that drew was a
+ * christmas tree. Every cap is a half circle on its own pass's stroke now
+ * (Renderer.drawBeam), so the beam ends in a DOME and the layering is
+ * read across the width, which is the only place it was ever meant to be.
  */
-const CL_BACK = 7 * (CELL / 8);
-const CL_FRONT = 35 * (CELL / 8);
 const SPREAD_120 = (120 * Math.PI) / 180;
 let rngState = 1;
 const rngSeed = (seed: number): void => {
@@ -506,7 +510,7 @@ const KIND_UV = UNIT_KINDS.map((k) => UNIT_ART[k].uv);
 const KIND_SPRITE = UNIT_KINDS.map((k) => UNIT_ART[k].sprite);
 const KIND_FLYING = UNIT_KINDS.map((k) => !!UNIT_STATS[k].flying);
 const KIND_MECH = UNIT_KINDS.map((k) => MECH_ART[k] ?? null);
-// the legged pair (atrax, spiroct): part art and the gait that moves it
+// the legged pair (weaver2, weaver3): part art and the gait that moves it
 const KIND_LEG = UNIT_KINDS.map((k) => LEG_ART[k] ?? null);
 const KIND_GAIT = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
 /** each leg's fixed slice of the mount ring as a unit vector — the frame's
@@ -647,6 +651,19 @@ export const ALL_LAYERS: TerrainLayers = {
   spawn: true,
   base: true,
 };
+/**
+ * What a MATCH draws. The spawn pads are an authoring layer: they are how
+ * an author sees the cells they painted, and a board permanently splashed
+ * red where the swarm enters is not what a player should be looking at.
+ * In play the mouths are read from the routes overlay instead, which
+ * outlines the same cells on demand (Game.drawOverlay).
+ */
+export const GAME_LAYERS: TerrainLayers = {
+  wall: true,
+  props: true,
+  spawn: false,
+  base: true,
+};
 
 // flyer drop shadow: painter's offset + premultiplied black tint
 const SHADOW_OFF = 6;
@@ -667,7 +684,7 @@ const KIND_CULL = UNIT_KINDS.map((k, i) => {
   const halo = UNIT_STATS[k].radius * 2.6 + 8;
   // a hull's wake is the longest thing any kind draws: the trail holds
   // `length` ticks of history, so at the hull's own pace it runs that far
-  // back — an omura's is 70 ticks of 0.62 units/tick, over five tiles
+  // back — a skate5's is 70 ticks of 0.62 units/tick, over five tiles
   const wake = UNIT_STATS[k].wake;
   const wakeReach = wake
     ? (UNIT_STATS[k].speed / 60) * wake.length + Math.abs(wake.y) + wake.x + wake.scl
@@ -773,7 +790,7 @@ void main() {
 // border at mip 0, and at mip 3 a texel is eight sheet pixels wide, so
 // the blend reaches eight pixels into the neighbour. On a rotating
 // sprite that reads as a hairline along one edge of its quad, moving
-// with it: the crawler's leg cell sits under the last opaque rows of the
+// with it: the weaver1's leg cell sits under the last opaque rows of the
 // core sprite, so its legs dragged a dark line as they strode; a turret's
 // base plate is opaque to its cell's edge, so at any zoom that minifies,
 // its rim mixed with the transparent black beside it and darkened. The
@@ -1058,7 +1075,7 @@ export class Renderer {
     // a swarm budget, not a worst case: 12 quads is a walking mech with one
     // mirrored gun drawn twice (silhouette rim under, art over), which is
     // what MAX_UNITS of anything is ever actually made of. The heavies cost
-    // more — a scepter's three mounts make 20, a six-legged spiroct closer
+    // more — an ironhide4's three mounts make 20, a six-legged weaver3 closer
     // to 50, and a naval hull 15 (one for the boat, fourteen for the two
     // sides of its wake) — and a field that was somehow ALL heavies would
     // run this dry; they arrive in tens, among thousands of the cheap
@@ -1363,7 +1380,7 @@ export class Renderer {
           // Its MAGNITUDE is all that counts: Mindustry writes the offset
           // as `.inv().setLength(legExtension)`, and Arc's setLength goes
           // through setLength2(len * len) — a negative length comes back
-          // out positive. arkyid's -15 is a +15 offset in the real game
+          // out positive. weaver4's -15 is a +15 offset in the real game
           const dx = jx - fx, dy = jy - fy;
           const d = Math.hypot(dx, dy) || 1;
           const ext = Math.abs(L.extension);
@@ -1371,7 +1388,7 @@ export class Renderer {
           this.pushSeg(b, jx + ex, jy + ey, fx, fy, art.legBase, art.legBaseStroke * flip, tint);
         }
         // the knee cap is never rotated — Mindustry draws it upright. Not
-        // every legged unit has one: arkyid leaves its elbow as the bare
+        // every legged unit has one: weaver4 leaves its elbow as the bare
         // overlap of the two segments and caps the shoulder instead
         const joint = painted ? art.joint : art.sil.joint;
         if (joint) this.push(b, jx, jy, sm, sm, 0, joint, tr, tg, tb, 1);
@@ -1582,11 +1599,12 @@ export class Renderer {
    * rebuild the static tile batch — call on init and whenever the map
    * changes.
    *
-   * THE SPAWN LAYER IS PAINTED HERE, in the editor and in the game alike:
-   * a pad tile on every cell of Terrain.spawn, tinted (see pass 3). It is
-   * a painted layer now rather than a circle on an overlay, so it belongs
-   * in the batch with the rest of the ground — and `layers.spawn` hides it
-   * for an author who wants to see the floor underneath.
+   * THE SPAWN LAYER IS PAINTED HERE: a pad tile on every cell of
+   * Terrain.spawn, tinted (see pass 3). It is a painted layer rather than
+   * a circle on an overlay, so it belongs in the batch with the rest of
+   * the ground — and `layers.spawn` turns it off, for an author who wants
+   * to see the floor underneath and for the game, which never shows it
+   * (GAME_LAYERS): in a match the mouths are the routes overlay's job.
    */
   rebuildTerrain(src: { terrain: Terrain }, layers: TerrainLayers = ALL_LAYERS): void {
     const gl = this.gl;
@@ -2211,7 +2229,7 @@ export class Renderer {
       // screen edge while half of it is still on screen.
       //
       // The two ADD, because a body can be both and the player needs to
-      // see that it is: on Quagmire a fed, five-times-forded crawler is
+      // see that it is: on Quagmire a fed, five-times-forded weaver1 is
       // the single most dangerous thing in the lane and it must not look
       // like either one of those alone
       const swell = ueaten[i] * HUNGRY_GROWTH + uwade[i] * AMPHIBIOUS_GROWTH;
@@ -2284,7 +2302,7 @@ export class Renderer {
         // a flyer is one flat quad on the heading the sim turned it to.
         // That is its own UnitType.rotateSpeed, not its velocity: the
         // stock 5 deg/tick is close enough to instant that the light
-        // flyers read as banking with their drift, while antumbra's 1.9
+        // flyers read as banking with their drift, while stoop4's 1.9
         // visibly swings the hull round after the course change
         // A CLOAKED BODY (Sim.ucloakT, levels.ts cloak) is a ghost of
         // itself: the hull at a fifth, no cell, no halo — enough to read
@@ -2490,9 +2508,9 @@ export class Renderer {
     this.pushUnitPass(dyn, sim, 0);
     this.pushUnitPass(dyn, sim, 1);
     // WHAT A UNIT IS DOING RIGHT NOW, drawn off the unit rather than the
-    // effect pool: a vela's held beam for as long as it burns, the green
-    // ring a corvus gathers before its shot, and the energy field's orbit
-    // round an aegires. Each follows its hull as Mindustry's do
+    // effect pool: a starhart4's held beam for as long as it burns, the green
+    // ring a starhart5 gathers before its shot, and the energy field's orbit
+    // round a livewire4. Each follows its hull as Mindustry's do
     // (parentizeEffects), which a pooled effect at a fixed point cannot
     {
       const { ubeamT, ucharge, uheldRot, utgt, urot } = sim;
@@ -2913,7 +2931,7 @@ export class Renderer {
     const { vx0, vy0, vx1, vy1 } = this;
     const b = this.shields;
     // the census answers "is any carrier even alive" without touching the
-    // units — a wave with no quasar in it skips the whole scan. The
+    // units — a wave with no starhart3 in it skips the whole scan. The
     // shieldTowers below are NOT gated by it: their domes stand between waves,
     // which is exactly when no carrier is alive
     let carriers = 0;
@@ -3430,12 +3448,12 @@ export class Renderer {
    * The soot a hurt unit sheds (Sim.updateStatus): a few grey puffs
    * leaving the body, swelling and thinning as they go, and drifting UP the
    * screen the way smoke does. Fx.smokeCloud's shape at a unit's scale —
-   * e.len carries the hitbox radius, so a toxopid's smoke is not a
-   * dagger's — and none of Mindustry's fire, which this game does not
+   * e.len carries the hitbox radius, so a weaver5's smoke is not a
+   * ironhide1's — and none of Mindustry's fire, which this game does not
    * field. A deviation: upstream units do not smoke, buildings do.
    */
   private drawDamageSmoke(dyn: Batch, e: Effect, t: number): void {
-    const spread = (e.len ?? 10) * 0.7; // len is the hitbox radius; 10 is UR, a bare dagger
+    const spread = (e.len ?? 10) * 0.7; // len is the hitbox radius; 10 is UR, a bare ironhide1
     const rise = t * 6 * MU;
     this.cloud(e.seed ?? 1, 4, spread, t, (x, y, pfin, pfout) => {
       this.fillCircle(dyn, e.x + x, e.y + y - rise, (0.6 + pfout * 2.4) * MU, PAL.gray,
@@ -3588,7 +3606,7 @@ export class Renderer {
    */
   private drawShootFlame(dyn: Batch, e: Effect, t: number): void {
     const fout = 1 - t;
-    // oxynoe's plasma-mount-weapon (sides 1): white through Pal.heal to
+    // livewire2's plasma-mount-weapon (sides 1): white through Pal.heal to
     // grey, eight motes rather than twelve — the plasma torch's own effect
     const plasma = (e.sides ?? 0) === 1;
     const col = plasma
@@ -3648,7 +3666,7 @@ export class Renderer {
    * the first third of the effect and its tail chasing it, so the fan
    * reads as pellets leaving rather than a beam held, and is gone in a
    * fifth of a second. White into the sky's own orange. A full-circle
-   * cone (the horizon's blast straight down) throws more streaks, shorter,
+   * cone (the stoop2's blast straight down) throws more streaks, shorter,
    * so it reads as a burst under the ship rather than a fan off its nose.
    */
   private drawScatter(dyn: Batch, e: Effect, t: number): void {
@@ -3679,7 +3697,7 @@ export class Renderer {
     if (!pts || pts.length < 4) return;
     const stroke = 3 * MU * (1 - t);
     if (stroke <= 0.01) return;
-    // color(e.color, Color.white, fin): arc's is lancer blue, pulsar's heal
+    // color(e.color, Color.white, fin): arc's is lancer blue, starhart2's heal
     const base = e.col ?? PAL_LANCER;
     const col: RGB = [
       base[0] + (1 - base[0]) * t,
@@ -3693,11 +3711,15 @@ export class Renderer {
   }
 
   /**
-   * LaserBulletType.draw, 1:1: three passes of the same beam, each half the
+   * LaserBulletType.draw: three passes of the same beam, each half the
    * width of the last, so the bright base sits inside a wide translucent
-   * sheath. Each pass adds a tip triangle and a pair of flares out the
+   * sheath. Each pass adds a ROUND head and a pair of flares out the
    * sides of the muzzle, and the whole thing grows to length over the first
    * fifth of its life and thins out over the rest.
+   *
+   * The head is the one departure from upstream, and it is shared with
+   * the continuous beam (drawBeam): every laser on the board ends in a
+   * dome. The stacked tip triangles it replaces are described there.
    *
    * `len` is what the beam ACTUALLY reached — Sim.laserBeam shortens it to
    * the fourth unit it hit — so a lancer firing into a crowd draws short.
@@ -3709,7 +3731,7 @@ export class Renderer {
     if (baseLen <= 0.01) return;
     const cos = Math.cos(rot), sin = Math.sin(rot);
     // the style rides `sides`: 0 is lancer's (the class default), the rest
-    // the swarm's own beams — quasar's and corvus's green, eclipse's orange
+    // the swarm's own beams — starhart3's and starhart5's green, stoop5's orange
     const st = LASER_STYLES[e.sides ?? 0] ?? LASER_STYLES[0];
     const width = st.width * MU; // LaserBulletType.width
     const SIDE_LEN = st.sideLength * MU, SIDE_WIDTH = st.sideWidth, SIDE_ANGLE = st.sideAngle, FALLOFF = 0.5;
@@ -3730,9 +3752,13 @@ export class Renderer {
       if (stroke > 0.01) {
         this.pushSeg(dyn, e.x, e.y, e.x + cos * baseLen, e.y + sin * baseLen,
           UV_SOLID, stroke, col, alpha);
-        // the point on the end, and the muzzle bloom
-        tri(e.x + cos * baseLen, e.y + sin * baseLen, stroke, cwidth * 2 + width / 2, rot,
-          col, alpha);
+        // A ROUND HEAD, not upstream's point. LaserBulletType caps each
+        // pass with a triangle `cwidth * 2 + width / 2` long, and three
+        // passes of that down one bearing stacked three spikes of three
+        // lengths — a christmas tree. A disc the width of its own pass
+        // ends every pass on the same dome instead.
+        this.fillCircle(dyn, e.x + cos * baseLen, e.y + sin * baseLen, stroke / 2, col, alpha);
+        // and the muzzle bloom
         this.fillCircle(dyn, e.x, e.y, cwidth * fout, col, alpha);
         for (const sgn of [1, -1])
           tri(e.x, e.y, SIDE_WIDTH * fout * cwidth, SIDE_LEN * compound,
@@ -3749,9 +3775,15 @@ export class Renderer {
    * on screen that says it is working — and `strength` carries the SPOOL
    * (Sim.updateLockBeam), so a beam that has held its target for seconds
    * is visibly fatter than the one that just caught it.
+   *
+   * laserWidth is a THIRD of upstream's, because upstream's beam is a
+   * 18px rope that reads as a fuse's shot rather than a hairline lock.
+   * Drawn at 0.2 a fully spooled beam is 6px and a cold one barely over a
+   * pixel — thin enough that the WIDTH IS THE RAMP and nothing else: the
+   * only reason this beam is ever thick is that it is hurting.
    */
   private drawLockBeam(dyn: Batch, t: Tower): void {
-    const scale = t.beamStr * 0.6; // TractorBeamTurret.laserWidth
+    const scale = t.beamStr * 0.2; // TractorBeamTurret.laserWidth, thinned (see above)
     const x1 = t.x + Math.cos(t.angle) * 5 * MU; // shootLength
     const y1 = t.y + Math.sin(t.angle) * 5 * MU;
     const dx = t.beamX - x1, dy = t.beamY - y1;
@@ -3813,10 +3845,10 @@ export class Renderer {
   }
 
   /**
-   * ContinuousLaserBulletType.draw, 1:1: meltdown's beam. FOUR passes of
+   * ContinuousLaserBulletType.draw: meltdown's beam. FOUR passes of
    * the same line, each narrower and whiter than the last — a broad
    * translucent wash, two hotter bases inside it and a white filament down
-   * the middle — with a flame front capping both ends of every pass. The
+   * the middle — with a ROUND cap closing both ends of every pass. The
    * layering is the entire look: no single pass is the beam.
    *
    * The beam shortens as it goes out (fout drives both stroke and length),
@@ -3840,7 +3872,7 @@ export class Renderer {
    * ContinuousLaserBulletType.draw, 1:1, for any beam: `len` is what the
    * beam reaches this frame (its length times fout), `time` in ticks is
    * the clock its shimmer and oscillation run on, and the style carries
-   * the four washes and the width — meltdown's, or a vela's green.
+   * the four washes and the width — meltdown's, or a starhart4's green.
    */
   private drawBeam(
     dyn: Batch,
@@ -3855,8 +3887,7 @@ export class Renderer {
     if (len <= 0.01) return;
     const shimmer = 1 + ABSIN(time, 1, 0.1);
     const width = style.width + ABSIN(time, 0.8, 1.5); // width + absin(oscScl, oscMag)
-    const body = Math.max(0, len - CL_FRONT);
-    const bx = ox + Math.cos(rot) * body, by = oy + Math.sin(rot) * body;
+    const cos = Math.cos(rot), sin = Math.sin(rot);
     const colors = style.colors;
     for (let i = 0; i < colors.length; i++) {
       const [[cr, cg, cb], ca] = colors[i];
@@ -3868,12 +3899,15 @@ export class Renderer {
       const colorFin = i / (colors.length - 1);
       // strokeFrom 2 -> strokeTo 0.5: every pass inside the one before it
       const stroke = width * fout * (2 + (0.5 - 2) * colorFin) * MU;
-      // pointyScaling: the innermost passes keep a full-length nose while
-      // the outer wash is stubbier, which is what sharpens the tip
-      const lenScl = 1 - i / colors.length + (i / colors.length) * 0.75;
+      // ROUND ENDS. The cap reaches exactly as far as the pass is wide, so
+      // flameFront's arc closes as a half circle rather than a spike, and
+      // the body gives that radius back — every pass, wide wash and white
+      // filament alike, ends its nose on the SAME point at `len`
+      const r = stroke / 2;
+      const body = Math.max(0, len - r);
       this.strokeLine(dyn, ox, oy, rot, body, stroke, col, ca);
-      this.flameFront(dyn, ox, oy, rot + Math.PI, CL_BACK, stroke / 2, col, ca);
-      this.flameFront(dyn, bx, by, rot, CL_FRONT * lenScl, stroke / 2, col, ca);
+      this.flameFront(dyn, ox, oy, rot + Math.PI, r, r, col, ca);
+      this.flameFront(dyn, ox + cos * body, oy + sin * body, rot, r, r, col, ca);
     }
   }
 
@@ -3965,7 +3999,7 @@ export class Renderer {
   /**
    * ShrapnelBulletType.draw, 1:1: a long triangle bolt with a short back
    * spike and perpendicular serrations, tinted from the style's first
-   * colour to its second (fuse: white to thoriumPink; toxopid: sapBullet to
+   * colour to its second (fuse: white to thoriumPink; weaver5: sapBullet to
    * sapBulletBack) over its 10-tick life, all widths shrinking with fout.
    */
   private drawShrapnel(
@@ -4157,7 +4191,7 @@ export class Renderer {
    * colour with a white core, both breathing on absin(20, 0.1) — five arc
    * sectors turning one way just outside it, and, while the field has
    * something to hit (curStroke), five more turning the other way out at
-   * the field's range: the ring the aegires is known by.
+   * the field's range: the ring the livewire4 is known by.
    */
   private drawEnergyField(
     dyn: Batch,
@@ -4210,8 +4244,8 @@ export class Renderer {
   }
 
   /**
-   * Fx.greenLaserCharge (corvus, 80 ticks) and Fx.greenLaserChargeSmall
-   * (vela, 40): a ring in the beam's colour closing in on the muzzle as
+   * Fx.greenLaserCharge (starhart5, 80 ticks) and Fx.greenLaserChargeSmall
+   * (starhart4, 40): a ring in the beam's colour closing in on the muzzle as
    * the charge fills — from 100 units, or 50 — and, on the big one, a
    * green disc swelling under a white one while twenty motes fall inward.
    */

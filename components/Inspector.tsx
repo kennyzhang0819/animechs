@@ -54,10 +54,6 @@ import { useUnitIcon } from "./unitIcons";
  * are one hover away, as they are everywhere else.
  */
 
-/** the portrait a body wears, off the PACKED sheet (components/unitIcons.ts)
- *  — four families draw as animals and have no sprite file at all, so the
- *  raw PNG under public/mindustry is Mindustry's unit, not this game's */
-const stockSprite = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
 
 /**
  * ONE ATTRIBUTE IN THE SELECTION: its glyph on its band's border, and the
@@ -189,7 +185,7 @@ export function Inspector({
   // over a box that also holds spectres would be the one part of this
   // panel that could lie
   const art = unit
-    ? (carved ?? stockSprite(unit))
+    ? carved
     : kind
       ? (icons[kind] ?? TOWER_ICONS[kind])
       : null;

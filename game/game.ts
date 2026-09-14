@@ -77,7 +77,7 @@ import {
   type TowerPlacement,
 } from "./progress";
 import { FIELDED_KINDS, isRetired, TOWER_KINDS } from "./types";
-import { Renderer } from "./renderer";
+import { GAME_LAYERS, Renderer } from "./renderer";
 import { fitZoom } from "./fit";
 import { PICK_LENIENT, PICK_STRUCT_PAD, Sim } from "./sim";
 import { type TechState } from "./tech";
@@ -244,8 +244,8 @@ export interface UiState {
      *  be a lie about the rest */
     kind: TowerKind | null;
     /** the BODY this is, when what was tapped is one of the swarm's —
-     *  null for everything the player built. It is what puts a dagger's
-     *  own picture over a dagger's name */
+     *  null for everything the player built. It is what puts an ironhide1's
+     *  own picture over an ironhide1's name */
     unit: UnitKind | null;
     /** what to call it: the turret's name, the body's kind, "Core", or
      *  "Structures" */
@@ -1699,7 +1699,7 @@ export class Game {
     this.uictx = ctx;
 
     this.fitToMap();
-    this.renderer.rebuildTerrain(this.sim);
+    this.renderer.rebuildTerrain(this.sim, GAME_LAYERS);
 
     window.addEventListener("resize", this.onResize);
     window.addEventListener("keydown", this.onKeyDown);
@@ -2256,7 +2256,7 @@ export class Game {
     this.mmBase = null; // ...and a new ground under the minimap
     this.menuOpen = false;
     this.fitToMap();
-    this.renderer.rebuildTerrain(this.sim);
+    this.renderer.rebuildTerrain(this.sim, GAME_LAYERS);
   }
 
   stats(): Stats {
@@ -3040,10 +3040,11 @@ export class Game {
         c.fillStyle = col;
         c.fill();
       }
-      // THE SPAWN TILES THEMSELVES, outlined rather than filled: the pads
-      // are already painted on the terrain (Renderer.rebuildTerrain), and
-      // what the overlay adds is the EDGE of each mouth — the shape a
-      // player is reading when they ask where the swarm comes from.
+      // THE SPAWN TILES THEMSELVES, outlined rather than filled. The pads
+      // the author painted are not drawn in a match (GAME_LAYERS) — a
+      // board permanently splashed red is not what a player should be
+      // staring at — so this outline is the whole answer to "where does
+      // the swarm come from", and it is here only while the routes are up.
       //
       // Built once per terrain into a Path2D and stroked from there: a map
       // may paint thousands of tiles, and walking them per frame is the one

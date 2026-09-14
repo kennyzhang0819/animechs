@@ -15,7 +15,7 @@ import { RARITIES, weightDial, type Rarity, type RarityWeights, type WeightDial 
  * WHOLE TURRETS, so a formation's footprint on the board is its grid
  * times the turret's own size: a quad of duos is 2x2 tiles and a quad of
  * spectres is 8x8. That is the whole reason the two rolls are separate —
- * a purple in a citadel is a fortress and a common in one is a suburb,
+ * a purple in a citadel is an ironhide3 and a common in one is a suburb,
  * and both come out of the same button.
  *
  * EVERY SHAPE IS A SQUARE, 2x2 up to 6x6, and there are five of them.
@@ -76,7 +76,7 @@ export const FORMATIONS: Readonly<Record<FormationId, FormationDef>> = {
   /* 25 */
   bastion: { id: "bastion", name: "Bastion", w: 5, h: 5, cells: solid(5, 5) },
   /* 36 — the largest thing the deal will ever hand over: thirty-six
-     spectres is a 24x24 tile fortress, and finding the ground for one is
+     spectres is a 24x24 tile ironhide3, and finding the ground for one is
      most of the reward */
   citadel: { id: "citadel", name: "Citadel", w: 6, h: 6, cells: solid(6, 6) },
 };

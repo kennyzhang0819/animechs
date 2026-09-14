@@ -18,7 +18,7 @@ import {
   type WaveUnits,
 } from "@/game/levels";
 import { waveGuide, type WaveRow } from "@/game/ladder";
-import { unitIconOf, useUnitIcons } from "./unitIcons";
+import { BLANK_ICON, unitIconOf, useUnitIcons } from "./unitIcons";
 import {
   drawThumb,
   loadMap,
@@ -31,10 +31,6 @@ import { isWaterFloor } from "@/game/terrain";
 
 /* eslint-disable @next/next/no-img-element -- raw pixel sprites, no optimization wanted */
 
-/** the fallback only: the roster draws off the PACKED sheet
- *  (components/unitIcons.ts), because the four animal families have no
- *  sprite file — their art is generated at load */
-const stockSprite = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
 
 /** health runs to nine figures at the top rung; a table cell wants
  * three characters and a suffix, not 20,276,477 */
@@ -463,7 +459,7 @@ export default function LevelEditorView({
 }
 
 function makeStep(): EditStep {
-  return { uid: uid(), counts: { dagger: 10 } };
+  return { uid: uid(), counts: { ironhide1: 10 } };
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -731,7 +727,7 @@ function StepCard({
           so a wave is just counts.
 
           The slots stay in the same place whatever the wave holds, so its
-          ground/air/crawler mix is readable at a glance instead of being a
+          ground/air/weaver1 mix is readable at a glance instead of being a
           bag of chips. */}
       <div className="mt-1.5 space-y-1">
         {UNIT_TREES.map((tree) => (
@@ -784,7 +780,7 @@ function UnitSlot({
         className="shrink-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] disabled:cursor-default"
       >
         <img
-          src={unitIconOf(kind) ?? stockSprite(kind)}
+          src={unitIconOf(kind) ?? BLANK_ICON}
           alt={unitName(kind)}
           className={`h-5 w-5 object-contain [image-rendering:pixelated] ${on ? "" : "opacity-25"}`}
         />

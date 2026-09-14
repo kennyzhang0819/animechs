@@ -24,7 +24,7 @@ export const INF = 1e9;
  * and the renderer's dynamic batch are sized by it.
  */
 export const MAX_UNITS = 22000;
-// Dagger at true Mindustry scale: 1-tile hitbox, art overhanging 1.5x
+// Ironhide1 at true Mindustry scale: 1-tile hitbox, art overhanging 1.5x
 // (48px art on a 32px tile)
 export const UR = 10;
 // wall-clearance radius (px): strictly under CELL/2, so a 1-tile corridor
@@ -32,7 +32,7 @@ export const UR = 10;
 // the unit-vs-unit and projectile-hit radius
 export const WALL_R = 7;
 export const UNIT_SPRITE = 40;
-// official dagger stats: 150 hp, speed 0.5 px/tick = 3.75 tiles/s
+// official ironhide1 stats: 150 hp, speed 0.5 px/tick = 3.75 tiles/s
 export const HP0 = 150;
 export const UNIT_SPEED = 3.75 * CELL;
 
@@ -83,21 +83,21 @@ export const PAL = {
   gray: pal(0x7f7f7f), // Arc Color.gray
   lightishGray: pal(0xa2a2a2),
   stoneGray: pal(0x8f8f8f),
-  /** Pal.heal — the support line's whole palette: nova's bolts, pulsar's
-   *  arcs, quasar's and corvus's beams, the naval support's plasma */
+  /** Pal.heal — the support line's whole palette: starhart1's bolts, starhart2's
+   *  arcs, starhart3's and starhart5's beams, the naval support's plasma */
   heal: pal(0x98ffa9),
-  /** the crawler line's purple: Pal.sap is the light, sapBullet the
+  /** the weaver1 line's purple: Pal.sap is the light, sapBullet the
    *  beam and shell face, sapBulletBack the shell rim and the blast sparks */
   sap: pal(0x665c9f),
   sapBullet: pal(0xbf92f9),
   sapBulletBack: pal(0x6d56bf),
-  /** Pal.suppress — Pal.sap x 1.6, the disrupt missile's spark */
+  /** Pal.suppress — Pal.sap x 1.6, the boss missile's spark */
   suppress: pal(0xa393fe),
-  /** Pal.unitFront / unitBack — zenith's missiles */
+  /** Pal.unitFront / unitBack — stoop3's missiles */
   unitFront: pal(0xffa665),
   unitBack: pal(0xd06b53),
   surge: pal(0xf3e979),
-  /** Liquids.slag.color — what an atrax spits */
+  /** Liquids.slag.color — what a weaver2 spits */
   slag: pal(0xffa166),
   // ---- THE FAMILY PALETTE, this game's own ----------------------------
   //
@@ -480,7 +480,7 @@ export interface TowerStats {
   // Mindustry Turret.unitSort. Unset is UnitSorts.closest — every turret
   // bar one. `strongest` is foreshadow's: the HIGHEST CURRENT HEALTH in
   // range, ties broken by distance, because a 1350-damage shot spent on
-  // whichever dagger wandered nearest is three and a third seconds of
+  // whichever ironhide1 wandered nearest is three and a third seconds of
   // reload thrown away. (Mindustry sorts on maxHealth with a blended
   // distance term; current health strict is a deliberate deviation — it
   // walks off a target other turrets have nearly finished instead of
@@ -522,14 +522,14 @@ const ZERO_BULLET: BulletStats = {
  * SERPULO TURRETS CARRY NO ARMOUR UPSTREAM. Mindustry only started plating
  * blocks on Erekir, so a 1:1 lift would put a zero on every row and the
  * system would exist without doing anything. So the numbers are AUTHORED,
- * on the swarm's own ladder: a 2x2 wears a mace's plate (4), a 3x3 a
- * fortress's (9), a 4x4 a shade under a scepter's (15), and a 1x1 wears
- * nothing, the way a dagger wears nothing.
+ * on the swarm's own ladder: a 2x2 wears an ironhide2's plate (4), a 3x3 a
+ * ironhide3's (9), a 4x4 a shade under an ironhide4's (15), and a 1x1 wears
+ * nothing, the way an ironhide1 wears nothing.
  *
  * WHAT THAT DOES, because armour is a flat shave PER HIT and the swarm's
- * bite is authored per hit too (weapons.ts): a dagger's 9 is halved on a
- * 2x2 and floored on anything bigger, a fortress shell's 20 is cut to a
- * quarter on a 4x4, and a reign's 80 loses a fifth. Small arms bounce off
+ * bite is authored per hit too (weapons.ts): an ironhide1's 9 is halved on a
+ * 2x2 and floored on anything bigger, an ironhide3 shell's 20 is cut to a
+ * quarter on a 4x4, and an ironhide5's 80 loses a fifth. Small arms bounce off
  * big guns and the heavies still chew through them, which is exactly the
  * relationship the swarm's own armour already has with the turrets'
  * bullets. It is deliberately NOT a fraction of the pool: the pool is
@@ -867,7 +867,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // lancer commits to where it was aiming, not where the target went.
   //
   // armorMultiplier 4 is the catch: armour counts quadruple against it, so
-  // the 140 that guts a dagger is 104 against a fortress. Ground only.
+  // the 140 that guts an ironhide1 is 104 against an ironhide3. Ground only.
   lancer: {
     name: "Lancer",
     size: 2,
@@ -1086,7 +1086,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     targetGround: true,
     // foreshadow's pick, for foreshadow's reason: a beam that has to be
     // held for seconds to be worth anything cannot spend them on whichever
-    // crawler wandered nearest
+    // weaver1 wandered nearest
     sort: "strongest",
     bullet: {
       // damageContinuousPierce is per TICK; this table is per second
@@ -1511,9 +1511,9 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // every body it punches through takes whatever is LEFT of the 1350 and
   // then subtracts its own full health from it (pierceDamageFactor 1). So
   // one shot deletes a queue until 1350 health has gone by and stops dead
-  // there — nine daggers, or a fortress and a half. It kills a health
+  // there — nine runts, or an ironhide3 and a half. It kills a health
   // POOL, which is why it targets the STRONGEST thing in range rather than
-  // the nearest: spending the reload on a stray crawler is the one way to
+  // the nearest: spending the reload on a stray weaver1 is the one way to
   // waste it.
   foreshadow: {
     name: "Foreshadow",
@@ -1752,12 +1752,12 @@ export const NAVAL_LAND_SPEED = 0.5;
  * nothing else, on every cell that IS a water floor (Sim.updateUnits).
  *
  * The naval stat is the speed a hull was authored at, and ashore it was
- * always fine — a sei on a beach reads as a tank and drives like one. The
+ * always fine — a skate4 on a beach reads as a tank and drives like one. The
  * water was the problem: the same number on the water made the sea a road
  * no faster than the land, and a family whose whole premise is "quick in
  * the water, slow on it ashore" had a premise nobody could see. Half
- * again is the number that makes a channel read as a channel — a risso
- * crossing a bay is a boat and a risso crossing a beach is not — without
+ * again is the number that makes a channel read as a channel — a skate1
+ * crossing a bay is a boat and a skate1 crossing a beach is not — without
  * a hull outrunning the guns a fresh board has (NAVAL_PACE in levels.ts
  * is still the dial under it). Like the land tax it is not a pathfinding
  * input: the naval field never reads it.
@@ -1848,8 +1848,8 @@ export const HP_TINT: ReadonlyArray<readonly [number, number, number]> = [
  * same moment the tint's middle step does — one threshold, said two ways.
  */
 export const DAMAGE_SMOKE_BELOW = 0.5;
-/** puffs a second at death's door, for a dagger-sized body; the sim scales
- *  it by the hitbox, so a toxopid at the same health pours several times
+/** puffs a second at death's door, for an ironhide1-sized body; the sim scales
+ *  it by the hitbox, so a weaver5 at the same health pours several times
  *  this. Mathf.chanceDelta-style: a per-second chance scaled by dt */
 export const DAMAGE_SMOKE_RATE = 5;
 /** seconds one puff lives — short, so a body that is healed stops
@@ -1882,9 +1882,9 @@ export const DAMAGE_SMOKE_LIFE = 0.55;
  * minutes of rot on a run that lasts twelve. The status quietly expired
  * somewhere around wave thirty.
  *
- * SO THE CROWD IS THE SCALING, AND THE TIER IS THE WEIGHT. A crawler's
+ * SO THE CROWD IS THE SCALING, AND THE TIER IS THE WEIGHT. A weaver1's
  * spit is twelve health a second at two rolls in five, and what makes a
- * wave of them frightening is that there is a wave of them; a toxopid's
+ * wave of them frightening is that there is a wave of them; a weaver5's
  * bomb is a hundred and fifty across seventeen tiles, and what makes one
  * frightening is the one. The per-application rates used to top out at
  * ten a second for every tier alike, which against a pool that grows by
@@ -1934,7 +1934,7 @@ export const SHORT_FX_LIFE = 0.22;
  *
  * IT IS A STAMP BECAUSE THE ALTERNATIVE IS A SCAN PER BODY PER TICK. There
  * are up to 22,000 bodies and a handful of carriers; asking every body
- * "is a reign near me" every frame is the wrong way round. The carrier
+ * "is an ironhide5 near me" every frame is the wrong way round. The carrier
  * pulses on its own reload and pays for the search once.
  *
  * THE TIMER OUTLIVES THE PULSE by AURA_LINGER, so a body inside a field

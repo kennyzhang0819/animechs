@@ -286,9 +286,10 @@ export default function MenuBackground({
       if (!doc || !renderer) return;
       rng = mulberry32((Math.random() * 0x7fffffff) | 0);
       terrain = terrainFromMap(doc);
-      // NO BASE: the core is a building, and the menu shows country. The
-      // ground, its rock and its props are all a map is here
-      renderer.rebuildTerrain({ terrain }, { wall: true, props: true, spawn: true, base: false });
+      // NO BASE, NO SPAWN PADS: the core is a building and the pads are an
+      // authoring mark, and the menu shows country. The ground, its rock
+      // and its props are all a map is here
+      renderer.rebuildTerrain({ terrain }, { wall: true, props: true, spawn: false, base: false });
       shots = shotsFor(terrain, rng);
     };
 

@@ -42,7 +42,7 @@ import { faster, piercing, stronger } from "./upgrades";
  * worth saying out loud because Monofilament sits close to it. Armour
  * stopping applying changes how a number resolves; every body on the field
  * still does every single thing it was authored to do. The support hull
- * still mends, the reign still stamps its plating — the player just has an
+ * still mends, the ironhide5 still stamps its plating — the player just has an
  * answer to it.
  *
  * AND THE TRACK SAYS SO (track.ts RELICS_FROM). The relic half of the
@@ -283,8 +283,8 @@ export const TITAN_PER_TIER = 0.25;
  * spend. Anything at or below this much of its maximum health dies where
  * it stands, on the next hit that lands on it.
  *
- * A FLAT FRACTION IS WHY IT IS AN ULTRA. Fifteen per cent of a dagger is
- * twenty health and nobody notices; fifteen per cent of an eclipse is
+ * A FLAT FRACTION IS WHY IT IS AN ULTRA. Fifteen per cent of an ironhide1 is
+ * twenty health and nobody notices; fifteen per cent of a stoop5 is
  * three thousand three hundred, and it comes off the END of the pool —
  * the part a board grinds through at its slowest, with the hull already
  * inside the line. Every heavy in the game is a sixth shorter.
@@ -435,7 +435,7 @@ export const RELICS: readonly RelicDef[] = [
     rarity: "ultra",
     glyph: "terminal",
     blurb:
-      "Nothing finishes dying slowly. Any body knocked to 15% of its own health dies on the spot — and 15% of an eclipse is three thousand the board never has to grind through.",
+      "Nothing finishes dying slowly. Any body knocked to 15% of its own health dies on the spot — and 15% of a stoop5 is three thousand the board never has to grind through.",
   },
   {
     id: "ascendancy",

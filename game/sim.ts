@@ -293,7 +293,7 @@ const PHYS_SCL = 1.25;
  * How far a unit of each kind has to look to find something it might be
  * touching: its own physics radius plus the widest ON ITS OWN LAYER, since
  * ground and air pass straight through one another. That layer split is
- * what keeps the eclipse's 7.25-block hitbox — nearly twice the reign, the
+ * what keeps the stoop5's 7.25-block hitbox — nearly twice the ironhide5, the
  * widest thing that walks — off the ground swarm's bill entirely.
  */
 const KIND_REACH = UNIT_KINDS.map(
@@ -311,8 +311,8 @@ const KIND_REACH = UNIT_KINDS.map(
  * candidate set toward what is actually in reach but walks more buckets.
  *
  * This used to be the smallest KIND_REACH (~83px), which is still sized
- * by the widest unit on the ROSTER's layer: a dagger checking neighbours
- * within ~30px swept a 250px window for them, and in a thousand-dagger
+ * by the widest unit on the ROSTER's layer: an ironhide1 checking neighbours
+ * within ~30px swept a 250px window for them, and in a thousand-ironhide1
  * crowd the physics pass was mostly distance tests that could never hit.
  * 32px (1.6 cells) puts the common span at 96px instead; the rare wide
  * units simply take a larger span, which is what the span machinery is
@@ -512,11 +512,11 @@ const KIND_FLYING: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].fl
 const KIND_RADIUS = Float32Array.from(UNIT_KINDS, (k) => UNIT_STATS[k].radius);
 /**
  * The physics size split: the roster's radii cluster into a numerous small
- * class (10..18.75px — daggers to spirocts, the actual swarm) and a sparse
- * heavy class (25px up — the zenith and the T4/T5 hulls).
+ * class (10..18.75px — runts to elites, the actual swarm) and a sparse
+ * heavy class (25px up — the stoop3 and the T4/T5 hulls).
  * Cut between the clusters. A HEAVY unit owns every pair it is part of in
  * the physics pass, so the swarm's scan window is sized by the widest
- * SMALL unit alive rather than by the reign three lanes over; the handful
+ * SMALL unit alive rather than by the ironhide5 three lanes over; the handful
  * of heavies scan the wide window themselves.
  */
 const HEAVY_R = 20;
@@ -528,16 +528,16 @@ const KIND_REPAIR = UNIT_KINDS.map((k) => UNIT_STATS[k].repairField ?? null);
 const KIND_SHIELD = UNIT_KINDS.map((k) => UNIT_STATS[k].shieldField ?? null);
 const KIND_ENERGY = UNIT_KINDS.map((k) => UNIT_STATS[k].energyField ?? null);
 const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
-/** the two STAMP auras (levels.ts armorField / hasteField): the reign's
- *  plating and the spiroct's pace, one carrier each at the moment */
+/** the two STAMP auras (levels.ts armorField / hasteField): the ironhide5's
+ *  plating and the weaver3's pace, one carrier each at the moment */
 const KIND_ARMOR_F = UNIT_KINDS.map((k) => UNIT_STATS[k].armorField ?? null);
 const KIND_HASTE_F = UNIT_KINDS.map((k) => UNIT_STATS[k].hasteField ?? null);
 /** ...and the two the sky and the sea carry (levels.ts jamField /
- *  wakeField): the antumbra's stamp on the BUILDINGS under it, and the
- *  sei's on the hulls around it */
+ *  wakeField): the stoop4's stamp on the BUILDINGS under it, and the
+ *  skate4's on the hulls around it */
 const KIND_JAM_F = UNIT_KINDS.map((k) => UNIT_STATS[k].jamField ?? null);
 const KIND_WAKE_F = UNIT_KINDS.map((k) => UNIT_STATS[k].wakeField ?? null);
-/** the Harpoon fleet's two stamps: the bryde's reach and the sei's drill */
+/** the Harpoon fleet's two stamps: the skate3's reach and the skate4's drill */
 const KIND_SPOTTER_F = UNIT_KINDS.map((k) => UNIT_STATS[k].spotterField ?? null);
 const KIND_DRILL_F = UNIT_KINDS.map((k) => UNIT_STATS[k].drillField ?? null);
 /** the three families' own traits (levels.ts): veterancy, blink, cloak,
@@ -555,8 +555,8 @@ const EMPTY_PADS: readonly number[] = [];
 const MAX_MOUTHS = 12;
 /**
  * MITOSIS (mutation.ts): the tier-1 kinds a death may break into, grouped
- * by the movement layer they travel on — ground gets dagger, crawler and
- * nova, air gets flare, water gets risso and retusa.
+ * by the movement layer they travel on — ground gets ironhide1, weaver1 and
+ * starhart1, air gets stoop1, water gets skate1 and livewire1.
  *
  * THE LAYER IS THE WHOLE FILTER and it is not a convenience. A brood is
  * dropped where its parent fell, so a kind that cannot stand there is a
@@ -565,7 +565,7 @@ const MAX_MOUTHS = 12;
  * parent's own layer means the brood always has somewhere to walk.
  *
  * Bosses are out of the roster (never of the brood — a boss is an
- * authored event, not something a mace leaves behind), which today
+ * authored event, not something an ironhide2 leaves behind), which today
  * removes nothing: the one boss kind is T5.
  */
 const MITOSIS_KINDS: Record<MoveLayer, readonly number[]> = (() => {
@@ -632,8 +632,8 @@ const KIND_WAKE = UNIT_KINDS.map((k) => UNIT_STATS[k].wake ?? null);
 /**
  * How many points of a hull's wake the sim actually keeps.
  *
- * Mindustry's Trail holds one point PER TICK — 20 for a risso, 70 for an
- * omura — and redraws the lot every frame. That is a fine deal for the
+ * Mindustry's Trail holds one point PER TICK — 20 for a skate1, 70 for an
+ * skate5 — and redraws the lot every frame. That is a fine deal for the
  * handful of boats a Mindustry sector fields and a poor one for a wave of
  * them here, so the path is SUBSAMPLED: eight points spread over the same
  * span of history the original keeps, which is 8 quads a side instead of
@@ -655,7 +655,7 @@ const KIND_WAKE_DT = Float32Array.from(UNIT_KINDS, (k) => {
 /** widest leg count on the roster: the stride of the per-leg arrays */
 export const MAX_LEGS = Math.max(1, ...KIND_LEGS.map((l) => l?.count ?? 0));
 // ulegMove packs one swing bit per leg into a Uint8Array, so eight legs is
-// the roster's ceiling — and the toxopid sits exactly on it. A ninth would
+// the roster's ceiling — and the weaver5 sits exactly on it. A ninth would
 // not fail anywhere: the bit would truncate silently, that leg would never
 // register a landing, and it would simply stop throwing dust. Widen
 // ulegMove to a Uint16Array if a unit ever needs more.
@@ -740,7 +740,7 @@ const HAS_ABILITIES =
 const HAS_ARMOR_AURA = KIND_ARMOR_F.some(Boolean);
 
 /** LEADERSHIP (mutation.ts): the bodies that give the order. Tier five is
- *  the roster's top rung — the reigns, toxopids, correspondingly huge
+ *  the roster's top rung — the apexs, apexs, correspondingly huge
  *  hulls and flyers, and the boss — so the rule turns itself on exactly
  *  where a wave is at its heaviest and is dead weight everywhere else */
 const KIND_T5 = Uint8Array.from(UNIT_KINDS, (k) => (UNIT_STATS[k].tier === 5 ? 1 : 0));
@@ -760,8 +760,8 @@ const HAS_CLOAK = KIND_CLOAK.some(Boolean);
 const ROT_SPD = ((5 * Math.PI) / 180) * 60;
 /**
  * UnitType.rotateSpeed per kind, rad/s — how fast the TORSO comes round.
- * Much of the roster above the T1s overrides it (fortress, atrax and
- * spiroct at 3, the horizon at 4.5); kinds that state none take the
+ * Much of the roster above the T1s overrides it (ironhide3, weaver2 and
+ * weaver3 at 3, the stoop2 at 4.5); kinds that state none take the
  * default, and the chassis under all of them keeps baseRotateSpeed
  * either way
  */
@@ -888,8 +888,8 @@ export class Sim {
   readonly uburn = new Float32Array(MAX_UNITS);
   /**
    * THE TWO STAMPED AURAS (constants.ts AURA_LINGER), each a value and the
-   * seconds it has left to run: extra armour from a reign, a speed
-   * multiplier from a spiroct. A carrier's pulse writes both; nothing else
+   * seconds it has left to run: extra armour from an ironhide5, a speed
+   * multiplier from a weaver3. A carrier's pulse writes both; nothing else
    * ever does, and a body with an expired clock reads as if it had never
    * been stamped.
    *
@@ -898,7 +898,7 @@ export class Sim {
    * every body pays one float compare — the other way round is 22,000
    * searches a frame for a buff almost nobody is in range of.
    *
-   * THEY ARE MAXIMA, NOT SUMS. Two reigns walking together do not stack
+   * THEY ARE MAXIMA, NOT SUMS. Two apexs walking together do not stack
    * their plating: the stronger stamp wins and the clock refreshes. An
    * aura that summed would make a T5 pair the answer to every board, and
    * the family trait is meant to be a rule about calibre rather than a
@@ -979,7 +979,7 @@ export class Sim {
    *
    * IT IS THE TERMINATION GUARANTEE, and it is a property of the body
    * rather than arithmetic on the tier table. A brood that could brood
-   * again is a chain with no upper bound — one dagger, one dagger, forever
+   * again is a chain with no upper bound — one ironhide1, one ironhide1, forever
    * — and a wave that can never be finished is not a harder wave. Saying
    * it here says it once and says it for good: whatever the table is
    * edited to, whatever tiers are added, whatever a dashboard bends, the
@@ -1068,9 +1068,9 @@ export class Sim {
   private readonly utT = new Float32Array(MAX_UNITS);
   /**
    * The held beam's clock and the charge's — public, because the renderer
-   * draws both LIVE off the unit rather than off the effect pool: a vela's
+   * draws both LIVE off the unit rather than off the effect pool: a starhart4's
    * beam is a thing the unit is doing for two and a half seconds, and the
-   * ring a corvus gathers before it fires follows the hull. `ubeamT` is
+   * ring a starhart5 gathers before it fires follows the hull. `ubeamT` is
    * seconds of beam left, `ucharge` seconds of charge left (weapons.ts
    * `charge`); `uheldRot` the heading the beam or charge is aimed on,
    * fixed when it began. UNIT_HELD names the weapon
@@ -1089,7 +1089,7 @@ export class Sim {
   private readonly cellTower: (Structure | null)[] = new Array<Structure | null>(NCELLS).fill(null);
   /** the swarm's bullets, missiles and shells in flight (see EnemyShot) */
   readonly shots: EnemyShot[] = [];
-  /** crawlers that went off on a structure: gone, and paid for by no one */
+  /** runts that went off on a structure: gone, and paid for by no one */
   exploded = 0;
   /** KIND_HEAVY[ukind[i]], same reasoning — the physics split reads it per
    * candidate */
@@ -1523,7 +1523,7 @@ export class Sim {
    * The largest radius STANDING on each layer this tick, and the per-kind
    * physics spans derived from it (see updateAliveBounds). The static
    * KIND_SPAN / HIT_SPAN bounds are sized to the biggest unit on the whole
-   * roster, so every dagger's broad phase paid scan area for a toxopid
+   * roster, so every ironhide1's broad phase paid scan area for a weaver5
    * that is almost never on the field; these shrink each bound to what is
    * actually alive, which changes no query's RESULT — only its cost.
    */
@@ -2594,8 +2594,8 @@ export class Sim {
    * has finished entering and every body it put on the field, brood
    * included, is down: killed, devoured or blown up. Counted over every
    * wave staged rather than as a prefix, because waves overlap on a long
-   * field — a wave 8 whose last fortress is still walking must not hold
-   * wave 9's payout back once wave 9 is dead to the last dagger.
+   * field — a wave 8 whose last ironhide3 is still walking must not hold
+   * wave 9's payout back once wave 9 is dead to the last ironhide1.
    */
   wavesCleared(): number {
     let n = 0;
@@ -3191,9 +3191,9 @@ export class Sim {
    * of it a cell at a time, reading the occupancy grid at each sample;
    * each structure is taken once, in the order the beam reaches it.
    *
-   * IT IS A GRID WALK AND NOT A SEARCH: a corvus's 57-tile beam is some
+   * IT IS A GRID WALK AND NOT A SEARCH: a starhart5's 57-tile beam is some
    * hundred and fifteen samples down the line and nine across, a thousand
-   * array reads, once every seven seconds. A nova's is fifteen. It costs
+   * array reads, once every seven seconds. A starhart1's is fifteen. It costs
    * what it looks like it costs.
    */
   private structuresAlong(
@@ -3300,7 +3300,7 @@ export class Sim {
    * would make every sweep silently re-tune the venom family twice.
    *
    * A HIT THAT DOES NO DAMAGE STILL POISONS. The rot rides on the shot
-   * CONNECTING, not on the damage surviving armour: a crawler's 8-point
+   * CONNECTING, not on the damage surviving armour: a weaver1's 8-point
    * spit against a foreshadow's plating lands 0.8 and six full seconds of
    * rot, which is the entire reason that body is on the field.
    */
@@ -3429,7 +3429,7 @@ export class Sim {
    *
    * Instant weapons (beams, bolts, flames, saps, fields, bombs) land the
    * moment they fire; the rest put a shot in flight (shots, updateEnemyShots).
-   * A crawler's weapon is itself: it goes off on the structure and is gone.
+   * A weaver1's weapon is itself: it goes off on the structure and is gone.
    */
   private updateUnitWeapons(dt: number): void {
     const { upx, upy, urot, ukind, uspawn, ucd, utT, ubeamT, ucharge, uheldRot, utgt } = this;
@@ -3484,9 +3484,9 @@ export class Sim {
       let exploded = false;
       // HUNGRY MECHS (mutation.ts): A MEAL IS WORTH WHAT IT ATE, NOT JUST
       // WHAT IT WEIGHED. The rule used to move health alone, and health
-      // alone is what made it a GIFT: twenty daggers walking at a line do
-      // twenty daggers' worth of damage to it, and one body carrying their
-      // health does one dagger's. Measured, a run under the rule lasted a
+      // alone is what made it a GIFT: twenty runts walking at a line do
+      // twenty runts' worth of damage to it, and one body carrying their
+      // health does one ironhide1's. Measured, a run under the rule lasted a
       // third LONGER than the same run without it — the swarm was eating
       // its own damage. So a meal carries the eaten body's bite as well:
       // what the rule concentrates is the threat, not just the pool
@@ -3509,7 +3509,7 @@ export class Sim {
             ubeamT[i] -= dt;
             ucd[slot] -= dt;
             // the mount is fixed to the hull (rotate = false), and the hull
-            // turns onto its target at the type's rotateSpeed — the vela's
+            // turns onto its target at the type's rotateSpeed — the starhart4's
             // 1.8 degrees a tick; the beam swings with it
             if (tgt) {
               const want = Math.atan2(tgt.y - y, tgt.x - x);
@@ -3560,7 +3560,7 @@ export class Sim {
           continue;
         }
         if (wp.charge) {
-          // a charged shot (corvus): the glow gathers for firstShotDelay
+          // a charged shot (starhart5): the glow gathers for firstShotDelay
           // on the heading it was aimed on, then the beam goes down it
           if (ucharge[i] > 0) {
             ucharge[i] -= dt;
@@ -3599,7 +3599,7 @@ export class Sim {
             // A ROUND WITH NO BODY: the hit lands the moment the trigger is
             // pulled and the only thing drawn is the gun's own splash at
             // the muzzle — no projectile crosses the field (weapons.ts:
-            // the dagger's and the boats' copper rounds, the retusa's
+            // the ironhide1's and the boats' copper rounds, the livewire1's
             // torpedo). Splash, where a row carries it, bursts on the
             // target the way the round would have
             for (let k = 0; k < shots; k++) {
@@ -3611,7 +3611,7 @@ export class Sim {
             break;
           }
           case "laser": {
-            // a volley of them fans by ShootSpread (the pulsar's three)
+            // a volley of them fans by ShootSpread (the starhart2's three)
             for (let k = 0; k < shots; k++)
               this.fireUnitLaser(x, y, aim + (k - (shots - 1) / 2) * (wp.spread ?? 0), tgt, wp, wrange, KIND_TIER[ukind[i]] >= 4, fed);
             break;
@@ -3674,7 +3674,7 @@ export class Sim {
               // seeks to `range` and goes off on CONTACT — the last
               // stretch is flown at the target (updateUnits) and the
               // charge is the payload's; a kind without one is the old
-              // crawler charge, the row's own splash centred on itself.
+              // weaver1 charge, the row's own splash centred on itself.
               // Either way it is gone, and no kill goes on the ledger.
               //
               // AN ARRIVAL PAYS HALF. A bomber shot down pays its kill
@@ -3726,7 +3726,7 @@ export class Sim {
             // A THIN LINE AND NOTHING ELSE. The rail used to throw a muzzle
             // splash, a blade every sixty units down its length and a
             // spike on what it struck, every one of them forced past the
-            // effect cap — which on a thousand rissos was thousands of
+            // effect cap — which on a thousand runts was thousands of
             // uncapped quads a second and a frame that stalled. It is ONE
             // effect now: the whole line as a hair-thin streak carrying its
             // length (FxKind.RailShoot, `len`), a small hit flick, and only
@@ -3907,7 +3907,7 @@ export class Sim {
    * LaserBulletType: an instant beam its FULL length down the aim —
    * Mindustry stops a laser only at a block that absorbs lasers, so it runs
    * through the structure it hit and on to its length. The target takes
-   * the damage; the shootEffect (Fx.hitLancer, or eclipse's shockwave)
+   * the damage; the shootEffect (Fx.hitLancer, or stoop5's shockwave)
    * goes off at the muzzle
    */
   private fireUnitLaser(
@@ -3931,7 +3931,7 @@ export class Sim {
     }
     if (!st) return;
     // only a heavy tier's beam is forced past the effect cap (`big`): a
-    // thousand novas' lances are a thousand small effects that fall under
+    // thousand runts' lances are a thousand small effects that fall under
     // it like any other, or the cap means nothing on the wave that needs it
     this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, range, 0, st.id, big);
     if (wp.shoot === FxKind.Shockwave) this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, wp.shootLen ?? 0);
@@ -4078,7 +4078,7 @@ export class Sim {
           (Math.random() * 0x7fffffff) | 0, look.hitStyle ?? 0);
         break;
       case FxKind.GreenCloud:
-        // the retusa torpedo: MultiEffect(blastExplosion, greenCloud)
+        // the livewire1 torpedo: MultiEffect(blastExplosion, greenCloud)
         this.pushFx(sh.x, sh.y, fxLife(FxKind.BlastExplosion), FxKind.BlastExplosion, 0, 0, (Math.random() * 0x7fffffff) | 0);
         this.pushFxCol(sh.x, sh.y, 80 / 60, FxKind.GreenCloud, 0, 0, look.hitColor ?? PAL.heal, 0, false,
           (Math.random() * 0x7fffffff) | 0);
@@ -4765,7 +4765,7 @@ export class Sim {
     if (this.n >= MAX_UNITS || (!brood && pads.length === 0)) return false;
     const r = stats.radius;
     // the drop-zone test is the same broad-phase query the physics pass
-    // runs, so it needs the same reach: a ring of 1 would let two antumbras
+    // runs, so it needs the same reach: a ring of 1 would let two champions
     // land inside one another and start the wave already shoving
     const span = KIND_SPAN[UNIT_ID[kind]];
     const tries = brood ? MITOSIS_TRIES : 8;
@@ -4782,7 +4782,7 @@ export class Sim {
       } else {
         const ci = pads[(Math.random() * pads.length) | 0];
         // jitter within the pad, but keep the hitbox inside the cell when it
-        // fits (a mace is wider than a tile — it spawns pad-centered)
+        // fits (an ironhide2 is wider than a tile — it spawns pad-centered)
         const j = Math.max(0, CELL / 2 - r - 1);
         x = ((ci % COLS) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
         y = (((ci / COLS) | 0) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
@@ -4849,14 +4849,14 @@ export class Sim {
       // THE ARRIVAL CLOCK IS A DOOR RULE, so a brood does not get one: the
       // invincibility is there to stop a drop zone being camped, and a body
       // that broke out of another body in the middle of the kill zone is
-      // already past every door on the map. Twelve untouchable daggers a
-      // reign would be a gift rather than a mutator — a brood is killable
+      // already past every door on the map. Twelve untouchable runts a
+      // ironhide5 would be a gift rather than a mutator — a brood is killable
       // the instant it lands, by the same splash that killed its parent
       this.uspawn[i] = brood ? 0 : SPAWN_INVINCIBLE;
       this.uburn[i] = 0;
       this.uwet[i] = 0;
       this.uwetSlow[i] = 1;
-      // a body walks in unstamped: the reign's plating and the spiroct's
+      // a body walks in unstamped: the ironhide5's plating and the weaver3's
       // pace are both things it has to be standing near something to have
       this.uarmorAdd[i] = 0;
       this.uarmorT[i] = 0;
@@ -5170,7 +5170,7 @@ export class Sim {
       // THE TWO STAMPED AURAS running down (constants.ts AURA_LINGER). No
       // effect on the way out: an aura is a thing a body has while it is
       // near the carrier, and a puff announcing that it no longer is would
-      // be noise on every body leaving a reign's wake
+      // be noise on every body leaving an ironhide5's wake
       if (this.uarmorT[i] > 0 && (this.uarmorT[i] -= dt) <= 0) {
         this.uarmorT[i] = 0;
         this.uarmorAdd[i] = 0;
@@ -5233,8 +5233,8 @@ export class Sim {
       // DAMAGE SMOKE: a body under DAMAGE_SMOKE_BELOW of its pool sheds
       // soot, and the lower it gets the thicker it pours — the tint has
       // gone grey (HP_TINT), and this is the other half of "that one is
-      // nearly dead". Scaled by the hitbox so a toxopid smokes like the
-      // building it is and a dagger like a dagger. pushFx refuses it with
+      // nearly dead". Scaled by the hitbox so a weaver5 smokes like the
+      // building it is and an ironhide1 like an ironhide1. pushFx refuses it with
       // effects off (setEffects), which is the whole of that switch — no
       // second gate here
       if (uhp[i] < uhpmax[i] * DAMAGE_SMOKE_BELOW) {
@@ -5278,8 +5278,8 @@ export class Sim {
    *
    * WHAT DOES NOT CROSS OVER IS EVERYTHING ELSE. Shields, force fields,
    * repair and shield auras, burning, wet, armour, speed, layer, kind — a
-   * meal moves one number and nothing else, so a hungry dagger that has
-   * eaten a quasar is a very fat dagger and not a quasar.
+   * meal moves one number and nothing else, so a hungry ironhide1 that has
+   * eaten a starhart3 is a very fat ironhide1 and not a starhart3.
    *
    * THE HITBOX NEVER MOVES EITHER. urad is what the physics pass, the
    * projectile pass and every targeting scan read; growing it would quietly
@@ -5350,7 +5350,7 @@ export class Sim {
    * event with its own health bar, not a snack), finished arriving (a unit
    * inside its spawn invincibility is untouchable by every weapon on the
    * map and this is no exception), and on the SAME movement layer — a
-   * walker does not pluck a flare out of the sky, and nothing eats a hull
+   * walker does not pluck a stoop1 out of the sky, and nothing eats a hull
    * off the water it cannot stand on.
    *
    * The broad phase is the frame's own hash, so the stale-index guard is
@@ -5495,7 +5495,7 @@ export class Sim {
       const half = (this.sizeOf(t) * CELL) / 2;
       const dx = t.x - x, dy = t.y - y;
       // centre to the footprint's EDGE, the reach every building test in
-      // this file uses: a fortress is in range as soon as its wall is
+      // this file uses: an ironhide3 is in range as soon as its wall is
       const d = Math.sqrt(dx * dx + dy * dy) - half;
       if (d <= reach && d < bd) {
         bd = d;
@@ -5907,8 +5907,8 @@ export class Sim {
     // a leg is DOWN the moment its group's turn passes on, and that
     // transition is where Mindustry hangs everything a footstep does:
     // Fx.unitLandSmall at the foot, the step shake, and — on the units
-    // that carry it — legSplashDamage. Arkyid (32 over 30 units) and
-    // toxopid (80 over 60) carry that last one on this roster, and
+    // that carry it — legSplashDamage. Weaver4 (32 over 30 units) and
+    // weaver5 (80 over 60) carry that last one on this roster, and
     // neither has anything to land on: it hits enemy units and buildings,
     // and the player here fields no units and builds towers that cannot
     // be damaged. So
@@ -6006,8 +6006,8 @@ export class Sim {
    * Mindustry's PhysicsProcess.PhysicsWorld.update(), ported 1:1: every
    * unit is a circle (radius PHYS_R * urad) with mass = area; overlapping
    * same-layer pairs are pushed apart along their center line by the full
-   * overlap softened by PHYS_SCL, split inversely by mass — a mace plows
-   * through daggers, daggers barely rock the mace. Each unordered pair
+   * overlap softened by PHYS_SCL, split inversely by mass — an ironhide2 plows
+   * through runts, runts barely rock the ironhide2. Each unordered pair
    * resolves exactly once per tick, at its first member's turn (the
    * original's `collided` flag == our ascending-index guard), and later
    * pairs see the already-pushed scratch positions, so a pile relaxes a
@@ -6056,8 +6056,8 @@ export class Sim {
       // of and scans the wide window for them; a small unit scans only the
       // small-partner window and skips heavy candidates outright. Each
       // unordered pair still resolves exactly once, and the small window
-      // is what keeps a dagger swarm's broad phase priced for daggers
-      // while a reign stands on the same field
+      // is what keeps an ironhide1 swarm's broad phase priced for runts
+      // while an ironhide5 stands on the same field
       const iHeavy = uheavy[i];
       const ri = urad[i] * PHYS_R;
       const mi = urad[i] * urad[i]; // hitSize^2 * pi — the pi cancels in the ratio
@@ -6206,7 +6206,7 @@ export class Sim {
       // shortest path and the water is a place a tank is quicker rather
       // than a place it is drawn to.
       // ...AND HALF AGAIN AFLOAT (NAVAL_WATER_SPEED): the water is the road
-      // the family is quick on, and a hull under the sei's bow wave
+      // the family is quick on, and a hull under the skate4's bow wave
       // (ubowT, levels.ts wakeField) keeps its afloat pace ashore too.
       // The tax itself is per KIND (KIND_LAND_SPEED): the Wraith fleet
       // pays a fifth where the Harpoon fleet pays a half, because the
@@ -6218,12 +6218,12 @@ export class Sim {
           : HAS_WAKE_AURA && this.ubowT[i] > 0
             ? 1
             : KIND_LAND_SPEED[ukind[i]];
-      // ...and a FOURTH multiplier: the spiroct's pace stamp (levels.ts
+      // ...and a FOURTH multiplier: the weaver3's pace stamp (levels.ts
       // hasteField). It rides here with the wet slow and the land penalty
       // rather than on uspd, so it is a thing happening TO the body and
       // never a permanent change to what it is — walk out of the field and
       // the next frame is at its own speed again. The two can meet: a
-      // soaked body under a spiroct is slowed and hurried at once, and the
+      // soaked body under a weaver3 is slowed and hurried at once, and the
       // product is the honest answer to both.
       const haste = HAS_HASTE_AURA && this.uhasteT[i] > 0 ? this.uhasteMul[i] : 1;
       const spd =
@@ -6523,7 +6523,7 @@ export class Sim {
    * blocked could only be one on the shore of its own mirror-image field,
    * and shoving it to the nearest open GROUND cell would have beached it
    * for good. A tank shares the walkers' ground, so a building can land on
-   * top of one exactly as it can on a dagger — and the cell it is moved to
+   * top of one exactly as it can on an ironhide1 — and the cell it is moved to
    * is one its own mask calls open, which is ground or water either way.
    * Flyers stay out: they are allowed over walls, and nothing should
    * teleport one off a mountain.
@@ -7070,8 +7070,8 @@ export class Sim {
   /**
    * VOLATILE (mutation.ts): the dead body's parting blast, billed to every
    * standing tower whose footprint it reaches. Tier decides the damage and
-   * the body's own hitbox widens the reach — a fortress pops like a shell,
-   * a dagger like a firecracker. Towers only; the swarm never hurts itself.
+   * the body's own hitbox widens the reach — an ironhide3 pops like a shell,
+   * an ironhide1 like a firecracker. Towers only; the swarm never hurts itself.
    */
   private volatileBlast(x: number, y: number, urad: number, kind: number): void {
     // one tier index into both tables: the reach climbs with the tier and
@@ -8278,7 +8278,7 @@ export class Sim {
    * bleeds away, so the shove outlives the frame that dealt it.
    *
    * That mass divisor is the whole character of both weapons that use it:
-   * the same push all but stops a dagger and barely leans on a fortress.
+   * the same push all but stops an ironhide1 and barely leans on an ironhide3.
    */
   private impulse(i: number, wx: number, wy: number): void {
     const hitSize = (this.urad[i] * 2) / MU;
@@ -8305,7 +8305,7 @@ export class Sim {
    * jittered node positions are handed back as the drawn path.
    *
    * ONE DIVERGENCE. In Mindustry each node is a real bullet, and a real
-   * bullet is absorbable — a quasar's force field standing over a node
+   * bullet is absorbable — a starhart3's force field standing over a node
    * would eat it. Here the node damages directly and no field sees it, so
    * a bolt walks through a bubble it should have died in. Arc is a
    * 90-unit ground turret and the bubble is 7.5 tiles, so the two rarely
@@ -8622,7 +8622,7 @@ export class Sim {
    *
    * WHICH BODY IT PICKS is foreshadow's rule (TowerStats.sort
    * "strongest"): the highest CURRENT health in range, because the one
-   * thing a ramp cannot afford is to spend its climb on a crawler. And it
+   * thing a ramp cannot afford is to spend its climb on a weaver1. And it
    * HOLDS that pick — the scan only runs once the lock is broken by death
    * or by the target leaving reach, never to trade up — because re-picking
    * the strongest every interval would ping-pong between two bodies as
@@ -8684,8 +8684,10 @@ export class Sim {
     t.aimShieldTower = shr ? this.shieldTowers.indexOf(shr) : -1;
 
     // `strength` lerps in as the beam catches and out as it lets go, and
-    // the spool rides on top of it: a cold beam is drawn at a third of its
-    // width and a fully spooled one at all of it
+    // the spool rides on top of it: a cold beam is drawn at a FIFTH of its
+    // width and a fully spooled one at all of it. The floor is deliberately
+    // low — the beam is thin (Renderer.drawLockBeam), so the only thing
+    // that thickens it is the ramp, and its width reads as its damage
     const ease = 1 - Math.pow(1 - 0.1, dt * 60);
     if (best < 0 && !shr) {
       t.beamStr += (0 - t.beamStr) * ease;
@@ -8707,7 +8709,7 @@ export class Sim {
     t.angle = Math.abs(diff) <= turn ? targetRot : t.angle + Math.sign(diff) * turn;
     t.beamX = tx;
     t.beamY = ty;
-    t.beamStr += (0.35 + 0.65 * frac - t.beamStr) * ease;
+    t.beamStr += (0.2 + 0.8 * frac - t.beamStr) * ease;
     if (Math.abs(Sim.angleDiff(t.angle, targetRot)) >= st.shootCone) {
       // swung off it, but still HOLDING it: the spool bleeds back at the
       // rate it filled rather than being thrown away
@@ -8790,7 +8792,7 @@ export class Sim {
    * armorMult is BulletType.armorMultiplier, applied the way
    * ShieldComp.damageArmorMult does: it scales the TARGET'S ARMOUR, not the
    * damage, so a lancer's 4 means armour counts quadruple against it and
-   * the same beam is worth far less to a fortress than to a dagger.
+   * the same beam is worth far less to an ironhide3 than to an ironhide1.
    */
   private damageUnit(
     i: number,
@@ -8805,7 +8807,7 @@ export class Sim {
     // ...and on a CLOAKED body (levels.ts cloak) the same: nothing can hit
     // it, splash and beams and bolts included, until it shows again
     if (HAS_CLOAK && this.ucloakT[i] > 0) return;
-    // THE REIGN'S PLATING STAMP rides on top of the body's own armour
+    // THE IRONHIDE5'S PLATING STAMP rides on top of the body's own armour
     // (levels.ts armorField), and it goes through the same armorMult a
     // bullet carries — borrowed plating is plating, so a lancer's
     // armorMultiplier counts it four times over exactly as it counts the
@@ -8817,7 +8819,7 @@ export class Sim {
         : this.uarmor[i];
     // TITAN ROUNDS (relics.ts): the round gains a quarter again for every
     // tier the body stands above the first, so the ramp is worth nothing
-    // against a dagger and DOUBLE against an eclipse. Before armour,
+    // against an ironhide1 and DOUBLE against a stoop5. Before armour,
     // because it is the round hitting harder and not the plate mattering
     // less — Monofilament below is the other one
     const hit = this.titanOn ? raw * TITAN_MUL[KIND_TIER[this.ukind[i]]] : raw;
@@ -9251,7 +9253,7 @@ export class Sim {
           this.damageUnit(i, b.damage);
           // BulletType.hitEntity: an impulse of knockback * 80 world units
           // straight out from the shot. Unit.impulse divides by mass, so
-          // the same shove all but stops a dagger and leans on a fortress
+          // the same shove all but stops an ironhide1 and leans on an ironhide3
           if (b.knockback) {
             const dx = upx[i] - pr.x, dy = upy[i] - pr.y;
             const d = Math.sqrt(dx * dx + dy * dy) || 1;

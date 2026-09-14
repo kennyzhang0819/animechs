@@ -354,8 +354,8 @@ const GLYPHS: Record<string, (g: Pen) => void> = {
 
   /** TITAN ROUNDS — a hull too big for the square, and one small round
    *  going into it with everything it has. The read is the SIZE DIFFERENCE:
-   *  this relic is worth nothing against a dagger and double against an
-   *  eclipse, so the picture is a little round and a large body. */
+   *  this relic is worth nothing against an ironhide1 and double against an
+   *  stoop5, so the picture is a little round and a large body. */
   titan: (g) => {
     g.box(0.38, 0.04, 1.0, 0.96, PAL.steelDark);       // the hull
     g.over((o) => {

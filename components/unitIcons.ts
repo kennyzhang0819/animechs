@@ -7,14 +7,14 @@ import { unitAccent, type UnitKind } from "@/game/levels";
 
 /**
  * A BODY'S PORTRAIT, WHEREVER THE DOM WANTS ONE — and the reason it is a
- * module rather than an `<img src="/mindustry/sprites/units/dagger.png">`
- * is that the file under that path is no longer the unit.
+ * module rather than an `<img>` pointed at a file under
+ * public/mindustry is that the file under that path is no longer the unit.
  *
  * Four families draw as ANIMALS now (game/animalArt.ts, behind
  * game/animalFlag.ts): the ground line is a herd of rhinos, the venom
  * line a nest of spiders, and neither of them has a sprite file anywhere
  * — the art is generated at load and packed over the stock cells. Every
- * panel that loaded the raw PNG was showing Mindustry's dagger next to a
+ * panel that loaded the raw PNG was showing upstream's mech next to a
  * board full of rhinos, so every panel asks for the packed cell instead
  * (atlas.ts `unitIcon`): outlined, antialiased, and wearing its family's
  * accent on its team cell, exactly as the body on the field does.
@@ -26,11 +26,20 @@ import { unitAccent, type UnitKind } from "@/game/levels";
  * that promise, and the answer is kept for the life of the page — the
  * atlas it came off is memoised the same way and never changes.
  *
- * A carve that fails leaves the cache empty and the hook returns null,
- * which every caller draws as the stock sprite file. That fallback is
- * wrong art for the animal families, but it is a picture rather than a
- * hole, and it only happens when the sheet itself failed to build.
+ * THERE IS NO SPRITE-FILE FALLBACK, and there cannot be one: a kind is
+ * `ironhide1` now, and nothing under public/mindustry is called that.
+ * Building a path out of the kind is what the panels used to do, and
+ * after the rename every one of those was a 404. A carve that has not
+ * landed yet — or that failed, which only happens if the sheet itself
+ * failed to build — draws BLANK, so a slot holds its size and the
+ * portrait appears when it is ready.
  */
+
+/** a transparent 1x1: the placeholder under a portrait still being carved.
+ *  Inline, so it costs no request and cannot 404 */
+export const BLANK_ICON =
+  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
 const CACHE = new Map<UnitKind, string>();
 const CARVING = new Map<UnitKind, Promise<void>>();
 

@@ -139,7 +139,7 @@ import MenuBackground from "./MenuBackground";
 import { useEscapeBack } from "./Board";
 import { DealCorner, useDeal } from "./Deal";
 import { Inspector } from "./Inspector";
-import { carveUnitIcon, unitIconOf } from "./unitIcons";
+import { BLANK_ICON, carveUnitIcon, unitIconOf } from "./unitIcons";
 import { RelicShelf } from "./Relics";
 import { useConfirm } from "./ConfirmDialog";
 
@@ -353,7 +353,7 @@ const runSpec = (
   // a slot the OPENING WAVE sends (levels.ts rollFamilies), and which
   // slots those are is a property of this tier's expanded script. Rolling
   // outside and passing the result in let a caller hand over a deal that
-  // opens wave 1 with flares, which is an opening with one legal answer.
+  // opens wave 1 with runts, which is an opening with one legal answer.
   // A custom hand goes through the same call and is dealt under the same
   // rule — what it changes is which families are in the pile, never how
   // they are laid into the slots.
@@ -938,7 +938,7 @@ function FactionPicker({
         <div className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
           <img
-            src={unitIconOf(family.icon) ?? stockSprite(family.icon)}
+            src={unitIconOf(family.icon) ?? BLANK_ICON}
             alt=""
             className="h-10 w-10 shrink-0 object-contain [image-rendering:pixelated]"
           />
@@ -1170,8 +1170,6 @@ const DEAL_COLOR = "#FFD37F";
 const buildFamilyIcons = (): Promise<void> =>
   Promise.all(FAMILIES.map((f) => carveUnitIcon(f.icon))).then(() => undefined);
 
-/** the fallback under a portrait that has not been carved (or failed to) */
-const stockSprite = (kind: UnitKind): string => `/mindustry/sprites/units/${kind}.png`;
 
 /** the bottom square: which families the die dealt this map */
 function DealFamiliesCell({ families }: { families: readonly FamilyKey[] }) {
@@ -1201,7 +1199,7 @@ function DealFamiliesCell({ families }: { families: readonly FamilyKey[] }) {
       {families.map((f) => (
         <img
           key={f}
-          src={unitIconOf(familyByKey(f).icon) ?? stockSprite(familyByKey(f).icon)}
+          src={unitIconOf(familyByKey(f).icon) ?? BLANK_ICON}
           alt=""
           className="h-4 w-4 object-contain [image-rendering:pixelated]"
         />

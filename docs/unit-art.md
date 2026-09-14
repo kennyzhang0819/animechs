@@ -26,22 +26,25 @@ the other way round.
   the wraith fleet. The family accent colours in `PAL` (`game/constants.ts`)
   carry across: the stag's glows are star-gold, the bat's charge is
   magenta.
-- **A body is its family and how far up it stands, and the IDS never
-  move.** No tier gets a proper noun of its own. The family word goes in
-  `FAMILY_NAMES.body` and the five steps are the same for every line —
-  **runt, brute, elite, champion, apex** (`UNIT_RANKS`, `game/levels.ts`)
-  — so a tier reads `Ironhide (runt)` through `Ironhide (apex)`. That is
-  the rule above said out loud: five tiers are ONE animal growing up, and
-  twenty proper nouns said the opposite. `UNIT_NAMES` is built off
-  `FAMILIES`, so a family added to that table is named the moment it has
-  a `body` word and cannot go in half-named. All of it switches with
-  `ANIMAL_ART`, which restores Mindustry's names along with its sprites.
-  What does NOT change is the `UnitKind`: `dagger` stays `dagger` in the
-  sim's arrays, in `public/mindustry`'s file names and in every wave of
-  `public/levels/campaign.json`. Nothing in the UI prints a kind — it
-  prints `unitName(kind)`, and a portrait comes off the packed sheet
-  (`components/unitIcons.ts`), never from a sprite file a drawn family
-  does not have.
+- **A body is its family and how far up it stands. No proper nouns.** The
+  family word goes in `FAMILY_NAMES.body` and the five steps are the same
+  for every line — **runt, brute, elite, champion, apex** (`UNIT_RANKS`,
+  `game/levels.ts`) — so a tier reads `Ironhide (runt)` through
+  `Ironhide (apex)`. That is the rule above said out loud: five tiers are
+  ONE animal growing up, and a tier with a name of its own says the
+  opposite. `UNIT_NAMES` is built off `FAMILIES`, so a family added to
+  that table is named the moment it has a `body` word and cannot go in
+  half-named.
+- **The id says the same thing.** `UnitKind` is `<family><tier>` —
+  `ironhide1` to `livewire5`, plus `boss` — in the sim's arrays and in
+  every wave of `public/levels/campaign.json`. **No upstream unit name
+  survives in the codebase**, and a new family must not reintroduce one:
+  the only place Mindustry's vocabulary is still written is the sprite
+  paths in `game/atlas.ts`, which are the real filenames under
+  `public/mindustry` that the animal art packs OVER. Nothing in the UI
+  prints a kind — it prints `unitName(kind)` — and a portrait comes off
+  the packed sheet (`components/unitIcons.ts`), never from a sprite file
+  a drawn family does not have.
 - **Five tiers are one animal growing up, not five animals.** The T1 is
   the same silhouette as the T5, small. What changes up the ladder is
   scale, stance and ornament: the stag's crown gains beams and tines, the
@@ -73,7 +76,7 @@ the other way round.
 - **Draw facing up on a square grid, like a Mindustry sprite file.** The
   packer rotates to face +x (`sprite()`), team-tints, anti-aliases and
   silhouettes exactly as it does the stock PNGs, so an animal goes through
-  the same pipeline as a dagger and sits next to one without looking
+  the same pipeline as an ironhide1 and sits next to one without looking
   pasted on.
 - **Animate with the rigs that exist.** Mech rig for T1 to T3 (one hoof
   sprite mirrored and slid by the walk cycle), legged rig for T4 and T5
@@ -142,53 +145,53 @@ sprite's own world size (stock native px × 0.625).
 
 Starhart, the stag (Starlight mechs' cells):
 
-| tier | kind | rank | cell | scale | quad, world px | stock, world px | hitbox radius |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| T1 | nova | runt | 64 | 1.5 | 60 | 35 | 10 |
-| T2 | pulsar | brute | 64 | 1.5 | 60 | 42 | 13.75 |
-| T3 | quasar | elite | 128 | 1.4 | 112 | 50 | 16.25 |
-| T4 | vela | champion | 256 | 1.6 | 256 | 106 | 30 |
-| T5 | corvus | apex | 256 | 2.0 | 320 | 134 | 36.25 |
+| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
+| --- | --- | --- | --- | --- | --- | --- |
+| T1 | starhart1 | 64 | 1.5 | 60 | 35 | 10 |
+| T2 | starhart2 | 64 | 1.5 | 60 | 42 | 13.75 |
+| T3 | starhart3 | 128 | 1.4 | 112 | 50 | 16.25 |
+| T4 | starhart4 | 256 | 1.6 | 256 | 106 | 30 |
+| T5 | starhart5 | 256 | 2.0 | 320 | 134 | 36.25 |
 
 Stoop, the bat (Skyfall bombers' cells):
 
-| tier | kind | rank | cell | scale | quad, world px | stock, world px | hitbox radius |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| T1 | flare | runt | 64 | 1.4 | 56 | 30 | 11.25 |
-| T2 | horizon | brute | 128 | 1.2 | 96 | 45 | 13.75 |
-| T3 | zenith | elite | 128 | 1.5 | 120 | 70 | 25 |
-| T4 | antumbra | champion | 256 | 1.4 | 224 | 150 | 57.5 |
-| T5 | eclipse | apex | 384 | 1.6 | 384 | 200 | 72.5 |
+| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
+| --- | --- | --- | --- | --- | --- | --- |
+| T1 | stoop1 | 64 | 1.4 | 56 | 30 | 11.25 |
+| T2 | stoop2 | 128 | 1.2 | 96 | 45 | 13.75 |
+| T3 | stoop3 | 128 | 1.5 | 120 | 70 | 25 |
+| T4 | stoop4 | 256 | 1.4 | 224 | 150 | 57.5 |
+| T5 | stoop5 | 384 | 1.6 | 384 | 200 | 72.5 |
 
 Ironhide, the rhino (ground mechs' cells; mech rig to T3, four legs from T4):
 
-| tier | kind | rank | cell | scale | quad, world px | stock, world px | hitbox radius |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| T1 | dagger | runt | 64 | 1.5 | 60 | 30 | 10 |
-| T2 | mace | brute | 64 | 1.6 | 64 | 40 | 12.5 |
-| T3 | fortress | elite | 128 | 1.4 | 112 | 62 | 16.25 |
-| T4 | scepter | champion | 256 | 1.6 | 256 | 106 | 27.5 |
-| T5 | reign | apex | 256 | 2.0 | 320 | 134 | 37.5 |
+| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
+| --- | --- | --- | --- | --- | --- | --- |
+| T1 | ironhide1 | 64 | 1.5 | 60 | 30 | 10 |
+| T2 | ironhide2 | 64 | 1.6 | 64 | 40 | 12.5 |
+| T3 | ironhide3 | 128 | 1.4 | 112 | 62 | 16.25 |
+| T4 | ironhide4 | 256 | 1.6 | 256 | 106 | 27.5 |
+| T5 | ironhide5 | 256 | 2.0 | 320 | 134 | 37.5 |
 
 Weaver, the spider (venom spitters' cells; legged rig at every tier, six legs on the T1 and eight above):
 
-| tier | kind | rank | cell | scale | quad, world px | stock, world px | hitbox radius |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| T1 | crawler | runt | 64 | 1.5 | 60 | 30 | 10 |
-| T2 | atrax | brute | 128 | 1.1 | 88 | 55 | 16.25 |
-| T3 | spiroct | elite | 128 | 1.4 | 112 | 59 | 18.75 |
-| T4 | arkyid | champion | 256 | 1.6 | 256 | 80 | 28.75 |
-| T5 | toxopid | apex | 256 | 2.0 | 320 | 119 | 32.5 |
+| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
+| --- | --- | --- | --- | --- | --- | --- |
+| T1 | weaver1 | 64 | 1.5 | 60 | 30 | 10 |
+| T2 | weaver2 | 128 | 1.1 | 88 | 55 | 16.25 |
+| T3 | weaver3 | 128 | 1.4 | 112 | 59 | 18.75 |
+| T4 | weaver4 | 256 | 1.6 | 256 | 80 | 28.75 |
+| T5 | weaver5 | 256 | 2.0 | 320 | 119 | 32.5 |
 
 Skate, the manta (harpoon fleet's cells; body and two beating wings, as the bat):
 
 | tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
 | --- | --- | --- | --- | --- | --- | --- |
-| T1 | risso | 128 | 1.2 | 96 | 49 | 12.5 |
-| T2 | minke | 128 | 1.3 | 104 | 63 | 16.25 |
-| T3 | bryde | 256 | 1.1 | 176 | 88 | 25 |
-| T4 | sei | 256 | 1.5 | 240 | 143 | 48.75 |
-| T5 | omura | 384 | 1.7 | 408 | 219 | 72.5 |
+| T1 | skate1 | 128 | 1.2 | 96 | 49 | 12.5 |
+| T2 | skate2 | 128 | 1.3 | 104 | 63 | 16.25 |
+| T3 | skate3 | 256 | 1.1 | 176 | 88 | 25 |
+| T4 | skate4 | 256 | 1.5 | 240 | 143 | 48.75 |
+| T5 | skate5 | 384 | 1.7 | 408 | 219 | 72.5 |
 
 Livewire, the eel (wraith fleet; the worm rig, no overshoot). Its size is
 the chain's, not a quad's: head, then `count` segments at `spacing`, then
@@ -196,11 +199,11 @@ the tail. Head and segment cells are sized to the art, one px over the grid.
 
 | tier | kind | head cell | segment cell | count | spacing, world px | nose to tail, tiles |
 | --- | --- | --- | --- | --- | --- | --- |
-| T1 | retusa | 48 | 36 | 4 | 16 | 5 |
-| T2 | oxynoe | 72 | 52 | 5 | 23 | 8 |
-| T3 | cyerce | 96 | 72 | 7 | 32 | 14 |
-| T4 | aegires | 128 | 100 | 7 | 44 | 19 |
-| T5 | navanax | 184 | 140 | 7 | 62 | 27 |
+| T1 | livewire1 | 48 | 36 | 4 | 16 | 5 |
+| T2 | livewire2 | 72 | 52 | 5 | 23 | 8 |
+| T3 | livewire3 | 96 | 72 | 7 | 32 | 14 |
+| T4 | livewire4 | 128 | 100 | 7 | 44 | 19 |
+| T5 | livewire5 | 184 | 140 | 7 | 62 | 27 |
 
 The eel's icon is its head cell, so it reads small on a card next to a
 manta's; that is the price of the chain and was accepted.
@@ -211,7 +214,7 @@ stock line's 5 to 20, so the apex spans some twenty tiles foot to foot
 on a body drawn at sixteen.
 
 The T4 and T5 stags also get longer legs than the stock walkers
-(`LegSpec.length` 26 and 38 Mindustry units against the stock corvus's
+(`LegSpec.length` 26 and 38 Mindustry units against the stock T5's
 14, with `baseOffset` and `elevation` raised to match), because a big
 body on short legs squats. The leg spec lives in `game/levels.ts` next to
 the kind, behind the same flag.
@@ -242,10 +245,10 @@ antlers or wingspan.
    the `if (ANIMAL_ART)` block, applied to every part together.
 5. Name it, which is two words. `FAMILY_NAMES` (`game/levels.ts`) takes
    the family's `name` and the singular `body` its tiers are called
-   after; the five ranks are already there and are the same for every
-   family. Nothing else has to change: `UNIT_NAMES` builds itself off
-   `FAMILIES`, every panel prints `unitName(kind)`, and the portraits
-   come off the packed sheet.
+   after, and its five kinds are `<body><1..5>` in lower case. The ranks
+   are already there and are the same for every family. Nothing else has
+   to change: `UNIT_NAMES` builds itself off `FAMILIES`, every panel
+   prints `unitName(kind)`, and the portraits come off the packed sheet.
 6. Check in the built game, not in a preview. The preview tooling draws
    the art at scale but cannot show the rig moving, and the walk cycle is
    where a stance goes wrong. Spawn all five tiers side by side with the
