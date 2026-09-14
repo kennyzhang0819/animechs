@@ -28,6 +28,7 @@ import {
   ACTIVE_FAMILIES,
   FAMILIES,
   FAMILIES_PER_RUN,
+  MAX_FAMILIES_PER_WAVE,
   FAMILY_ACCENT,
   familyByKey,
   familyFlies,
@@ -865,10 +866,11 @@ function PickerDone({ summary, onClose }: { summary: string; onClose: () => void
  * THE FACTION LIST — custom mode's, and the only place in the game where
  * the swarm is NAMED rather than rolled.
  *
- * A run sends FAMILIES_PER_RUN families dealt into the script's three
- * slots (levels.ts rollFamilies), and this builds that hand a family at a
- * time. AN EMPTY HAND IS THE DEFAULT AND MEANS ROLLED, and a PARTIAL hand
- * is honoured as far as it goes: name one family and the other two are
+ * A run sends FAMILIES_PER_RUN families, dealt into the script's slots a
+ * wave at a time (levels.ts rollFamilies, transformScript), and this
+ * builds that hand a family at a time. AN EMPTY HAND IS THE DEFAULT AND
+ * MEANS ROLLED, and a PARTIAL hand is honoured as far as it goes: name
+ * one family and the rest are
  * rolled around it, which is how "I want to see what the Wraith fleet
  * does here" is asked without also deciding the rest of the run. The
  * Random row at the top is not a choice sitting alongside the six — it is
@@ -931,8 +933,9 @@ function FactionPicker({
           Random
         </div>
         <p className="text-[14px] text-[#A6A6AF]">
-          The die deals {FAMILIES_PER_RUN} of the {offered.length} families into the
-          script&apos;s slots when the run starts — the campaign&apos;s own deal.
+          The die deals {FAMILIES_PER_RUN} of the {offered.length} families when the
+          run starts, and each wave is played by up to {MAX_FAMILIES_PER_WAVE} of
+          them — the campaign&apos;s own deal.
         </p>
         <SelectButton
           label="Roll them all"
@@ -1024,7 +1027,7 @@ const rgbHex = (c: RGB): string => {
  * nothing. Tick anything and the run is played under precisely that,
  * however many and however dear: this is the door the old admin sandbox
  * was, and its whole purpose is to be able to LOOK at a rule — to see
- * what Volatile does to a fuse wall without re-rolling a Nemesis deploy
+ * what Volatile does to a cleaver wall without re-rolling a Nemesis deploy
  * until it turns up.
  *
  * THE DIFFICULTY'S OWN BUDGET IS PRINTED BESIDE THE TICKED TOTAL and is
@@ -1214,8 +1217,10 @@ function DealFamiliesCell({ families }: { families: readonly FamilyKey[] }) {
         />
       ))}
       <HoverCard tip={tip} title="Swarm families" tag="Deal" color={DEAL_COLOR} align="right">
-        The three families the deploy dealt this run. Every wave sends these
-        three, tier for tier, whatever the script was authored in.
+        The {families.length} families the deploy dealt this run. Every wave is
+        played by some of them, tier for tier, and the deal turns a notch each
+        wave — so the mixture changes as the run goes, and no wave sends more
+        than {MAX_FAMILIES_PER_WAVE}.
         <span className="mt-1.5 block text-[#EDEDEF]">{names.join(" · ")}</span>
       </HoverCard>
     </div>
@@ -2307,7 +2312,7 @@ export default function Animechs() {
       const ui = g.ui();
       if (ui.lost || ui.won || ui.menuOpen) return;
       // ...and there is no grid on a DEALT board: a charged run's turrets
-      // come off the deal, so a letter that used to drop a spectre must
+      // come off the deal, so a letter that used to drop a repeater must
       // not still drop one for free
       if (ui.dealing) return;
       if (ui.unlocked && !ui.unlocked.includes(slot.kind)) return;
@@ -3306,8 +3311,8 @@ export default function Animechs() {
             {/* THE RUN'S DEAL, StarCraft-style, up the right margin: a
                 column of squares growing upward from over the build menu.
                 The BOTTOM square is always the family composition — the
-                three families the die dealt this map (LevelSpec.families),
-                as their first bodies — and every square above it is one
+                families the die dealt this map (LevelSpec.families), as
+                their first bodies — and every square above it is one
                 mutator in force, face and band border. Every cell opens
                 the shared hover card (DealFamiliesCell, DealRuleCell)
                 saying what it is, so the corner answers itself mid-wave

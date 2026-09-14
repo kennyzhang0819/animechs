@@ -3,7 +3,7 @@
  * building right now, as one list with one symbol apiece.
  *
  * IT EXISTS BECAUSE THE STATE WAS ALREADY THERE AND NOWHERE TO BE READ.
- * A unit soaked by a wave drives at 45% and the only sign of it was a
+ * A unit soaked by a douser drives at 45% and the only sign of it was a
  * blue tint; a turret under venom fire loses health every second with
  * nothing on the screen saying why; a body still inside its arrival
  * window eats shots and takes none of them. Each of those is a number in
@@ -29,6 +29,7 @@
  * NOT statuses; they are the thing itself.
  */
 
+import { firesBullets, WET_SHOCK_MUL } from "./constants";
 import { AMPHIBIOUS_MAX_STACKS, HUNGRY_MAX_MEALS, LEADERSHIP_CAP, VIRUS_DPS } from "./mutation";
 import { PAL } from "./pixelArt";
 import type { Sim } from "./sim";
@@ -36,7 +37,16 @@ import { isCore, type Structure, type Tower } from "./types";
 
 export type StatusId =
   | "armor"
+  // the four TURRET TRAITS — properties of the gun, not events on it (see
+  // STATUSES). They sit here, immediately behind plating, because that is
+  // where they are read: plating is what a building can take and these are
+  // what it can DO, and a player clicking a turret is asking both at once
+  | "nonbullet"
+  | "ignites"
+  | "soaks"
+  | "shocks"
   | "wet"
+  | "shocked"
   | "burning"
   | "shield"
   | "arriving"
@@ -92,12 +102,59 @@ export const STATUSES: readonly StatusDef[] = [
       "Every hit is shaved by this much first, down to a tenth of the hit at most — small arms bounce, the heavies still bite.",
     field: false,
   },
+  // ---- THE TURRET TRAITS ----------------------------------------------
+  //
+  // Four chips that are TRUE OF THE GUN rather than happening to it, on
+  // plating's terms exactly (see the note at the top of this file): a
+  // property, always there, never stamped on the field. A turret's row
+  // therefore opens "what it is made of, what its shot is, what its shot
+  // lays" and only then gets to what is being done to it.
+  {
+    id: "nonbullet",
+    name: "Non-bullet",
+    color: PAL.sparkLite,
+    blurb:
+      "Its shot is fire, a bolt, a beam or a rail — not a round. A cloaked hull stops rounds and nothing else, so this keeps aiming at one that has gone dark, and keeps hurting it.",
+    field: false,
+  },
+  {
+    id: "ignites",
+    name: "Ignites",
+    color: PAL.ember,
+    blurb: "What it hits catches fire — health straight off the pool, plating ignored.",
+    field: false,
+  },
+  {
+    id: "soaks",
+    name: "Soaks",
+    color: PAL.waterLite,
+    blurb:
+      "What it hits comes away wet and slowed — and a wet body takes double from an electric shot, so this is half of a pair.",
+    field: false,
+  },
+  {
+    id: "shocks",
+    name: "Electric",
+    color: PAL.spark,
+    blurb:
+      "Its shot is electric. It marks what it hits, which on its own does nothing — but against a SOAKED body an electric shot is worth double. Put one of these behind a douser.",
+    field: false,
+  },
+  // ---- and back to the things that HAPPEN -----------------------------
   {
     id: "wet",
     name: "Soaked",
     color: PAL.waterLite,
     blurb:
-      "Water, off a wave or a tsunami. It drives slower for as long as this lasts, and a fresh soak re-times it rather than stacking.",
+      "Water, off a douser or a deluge. It drives slower for as long as this lasts, and a fresh soak re-times it rather than stacking. Takes more damage from electric shots.",
+    field: true,
+  },
+  {
+    id: "shocked",
+    name: "Shocked",
+    color: PAL.spark,
+    blurb:
+      "Marked by the blue line — a coil, a piercer or a furnace. It does nothing by itself; it is only the sign that an electric gun is on this body. What the electricity is worth is written on SOAKED, because that is where it is paid.",
     field: true,
   },
   {
@@ -105,7 +162,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Burning",
     color: PAL.ember,
     blurb:
-      "Alight, off a scorch. Fire takes health straight off the pool and ignores plating entirely.",
+      "Alight, off a torch. Fire takes health straight off the pool and ignores plating entirely.",
     field: true,
   },
   {
@@ -153,7 +210,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Cloaked",
     color: PAL.wraith,
     blurb:
-      "Gone dark. Nothing can target it and nothing can hurt it until it shows again; the count is the seconds it has left.",
+      "Gone dark. No ROUND can find it until it shows again — but fire, bolts, beams, rays and rails go straight through a cloak, so a non-bullet turret still aims at it and still hurts it. The count is the seconds it has left.",
     field: true,
   },
   {
@@ -268,6 +325,7 @@ const secs = (v: number): string => num(v) + "s left";
 export function unitHasFieldStatus(sim: Sim, i: number): boolean {
   return (
     sim.uwet[i] > 0 ||
+    sim.ushockT[i] > 0 ||
     sim.uburn[i] > 0 ||
     sim.ushield[i] > 0 ||
     sim.uspawn[i] > 0 ||
@@ -285,6 +343,7 @@ export function unitHasFieldStatus(sim: Sim, i: number): boolean {
 export function unitFieldStatuses(sim: Sim, i: number, out: StatusId[]): number {
   out.length = 0;
   if (sim.uwet[i] > 0) out.push("wet");
+  if (sim.ushockT[i] > 0) out.push("shocked");
   if (sim.uburn[i] > 0) out.push("burning");
   if (sim.ushield[i] > 0) out.push("shield");
   if (sim.uspawn[i] > 0) out.push("arriving");
@@ -308,10 +367,20 @@ export function unitStatusChips(sim: Sim, i: number): StatusChip[] {
     out.push({
       id: "wet",
       n: null,
-      // the slow is the whole of what a soak DOES, so the card leads with
-      // it and the clock follows
-      note: `drives at ${Math.round(sim.uwetSlow[i] * 100)}% — ${secs(sim.uwet[i])}`,
+      // the slow is what a soak DOES and the conducting is what it SETS
+      // UP, so the note carries both and the clock follows. The electric
+      // half lives here rather than on the shocked chip because it is a
+      // property of being WET — a soaked body takes it from the first
+      // electric shot that lands, whether or not it has ever been marked
+      note: `drives at ${Math.round(sim.uwetSlow[i] * 100)}% — takes x${WET_SHOCK_MUL} from electric shots — ${secs(sim.uwet[i])}`,
     });
+  // ...and the electric mark right behind the soak, which is the order
+  // that teaches the pairing: the soaked chip states the rule, this one
+  // says an electric gun is here to use it. The multiplier is NOT
+  // repeated here — one fact, one place, and that place is the status the
+  // fact is about
+  if (sim.ushockT[i] > 0)
+    out.push({ id: "shocked", n: null, note: `an electric gun is on it — ${secs(sim.ushockT[i])}` });
   if (sim.uburn[i] > 0) out.push({ id: "burning", n: null, note: secs(sim.uburn[i]) });
   if (sim.ushield[i] > 0) {
     const s = Math.ceil(sim.ushield[i]);
@@ -339,8 +408,16 @@ export function unitStatusChips(sim: Sim, i: number): StatusChip[] {
       n: Math.round((sim.uvet[i] - 1) * 100),
       note: `hits x${sim.uvet[i].toFixed(1)} after ${Math.round(sim.uage[i])}s alive`,
     });
+  // NOT "untouchable" ANY MORE, and the note is the only place a player
+  // would ever have been told so: a cloak stops ROUNDS, and the seven
+  // non-bullet turrets go straight through it (constants.ts
+  // NON_BULLET_KINDS, Sim.damageUnit)
   if (sim.ucloakT[i] > 0)
-    out.push({ id: "cloaked", n: Math.ceil(sim.ucloakT[i]), note: `untouchable — ${secs(sim.ucloakT[i])}` });
+    out.push({
+      id: "cloaked",
+      n: Math.ceil(sim.ucloakT[i]),
+      note: `rounds miss it — ${secs(sim.ucloakT[i])}`,
+    });
   if (sim.uled[i] > 0)
     out.push({ id: "led", n: null, note: `at most ${LEADERSHIP_CAP} off any one hit` });
   if (sim.uvirus[i] !== 0)
@@ -396,6 +473,55 @@ export function structFieldStatuses(s: Structure, out: StatusId[]): number {
  * player drags a box to ask), and over a single turret it is that
  * turret's own number instead.
  */
+/**
+ * WHAT A GUN IS AND WHAT ITS SHOT LAYS — the four chips that sit behind
+ * plating in a turret's row (STATUSES, the turret traits).
+ *
+ * THEY ARE PROPERTIES, NOT EVENTS, which is plating's own exception and
+ * the reason they live beside it: a player clicking a turret is asking
+ * "what is this thing" at least as much as "what is happening to it", and
+ * three of the four answers were previously nowhere on the screen at all.
+ * A player could not tell that a torch reaches a cloaked hull and a tacker
+ * does not, or that a douser and a coil are worth more together than
+ * apart, without being told outside the game.
+ *
+ * READ OFF THE LIVE SPEC, exactly as plating is — so a turret whose
+ * upgrades have given it an incendiary round (upgrades.ts) starts saying
+ * it IGNITES the moment that is bought, and stops if the run never buys
+ * it. The one exception is NON-BULLET, which is read off the kind: what a
+ * turret's shot fundamentally is belongs to the roster
+ * (constants.ts NON_BULLET_KINDS) and is not something an upgrade may move.
+ *
+ * A MIXED BAG KEEPS ONLY WHAT THEY ALL SHARE. Plating's rule for a
+ * selection is "one number or nothing"; a trait's is "every one of these
+ * does it", which for the single turret this panel usually holds is the
+ * same rule and for a dragged box is still a true sentence about
+ * everything in it. The core carries no gun and so carries no trait, and
+ * one in the bag empties the row.
+ */
+function turretTraits(picked: readonly Structure[]): StatusChip[] {
+  let n = 0;
+  let nonbullet = true, ignites = true, soaks = true, shocks = true;
+  for (const st of picked) {
+    if (isCore(st)) return [];
+    const t = st as Tower;
+    n++;
+    if (firesBullets(t.kind)) nonbullet = false;
+    if (t.spec.bullet.burn === undefined) ignites = false;
+    if (t.spec.bullet.wet === undefined) soaks = false;
+    if (t.spec.bullet.shock === undefined) shocks = false;
+  }
+  if (n === 0) return [];
+  const out: StatusChip[] = [];
+  if (nonbullet)
+    out.push({ id: "nonbullet", n: null, note: "a cloaked hull does not stop it" });
+  if (ignites) out.push({ id: "ignites", n: null, note: "what it hits catches fire" });
+  if (soaks) out.push({ id: "soaks", n: null, note: "what it hits comes away wet" });
+  if (shocks)
+    out.push({ id: "shocks", n: null, note: `x${WET_SHOCK_MUL} on anything soaked` });
+  return out;
+}
+
 export function structSelectionChips(picked: readonly Structure[]): StatusChip[] {
   const many = picked.length > 1;
   let armor: number | null = null;
@@ -419,7 +545,7 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
     revives += s.revives;
     rate = Math.min(rate, s.fireRate);
     // the LIVE spec's plating, this turret's attributes folded in — a
-    // Bulwarked duo beside a plain one is two answers, and two answers is
+    // Bulwarked tacker beside a plain one is two answers, and two answers is
     // no answer
     if (armor === null) armor = s.spec.armor;
     else if (armor !== s.spec.armor) armorMixed = true;
@@ -437,6 +563,7 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
   const out: StatusChip[] = [];
   if (armor !== null && !armorMixed)
     out.push({ id: "armor", n: Math.round(armor), note: num(armor) + " off every hit" });
+  out.push(...turretTraits(picked));
   const on = (id: StatusId, n: number | null, note: string): void => {
     const held = tally.get(id);
     if (held === undefined) return;

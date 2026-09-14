@@ -27,7 +27,7 @@
  * the whole board doing something different, and at a hundred and fifty
  * thousand scrap it is the most expensive thing on the shelf, so its
  * picture carries the colour of what it does — heat, coolant blue, scrap
- * gold, mender green — over the whole drawing rather than as
+ * gold, fixer green — over the whole drawing rather than as
  * a pip. A player scanning the shelf should be able to tell the relics
  * from the mods before reading a single border.
  *
@@ -84,7 +84,7 @@ const GLYPHS: Record<string, (g: Pen) => void> = {
   /** HEALTH — a heart, with a plate bolted across it. The heart is
    *  health in every game anyone has played; the plating is what makes
    *  it THIS game's, and keeps it from reading as a life pickup. Ember
-   *  red rather than the mender's green, because the green is REPAIR
+   *  red rather than the fixer's green, because the green is REPAIR
    *  (weave, below) and the two have to be told apart at 12 pixels.
    *
    *  The glyph's NAME is still `plate` in game/mods.ts — a key, not a
@@ -126,7 +126,7 @@ const GLYPHS: Record<string, (g: Pen) => void> = {
     g.poly([[0.98, 0.5], [0.7, 0.34], [0.7, 0.66]], PAL.emberLite);  // the head, out the far side
   },
 
-  /** REPAIR — a green plus, and nothing else. Mender green is the
+  /** REPAIR — a green plus, and nothing else. Fixer green is the
    *  colour every healing thing in this game already wears, and a plus
    *  is the one shape nobody has to think about. NO PLATING: a plus has
    *  no parts to butt against each other, and shading one only costs
@@ -151,7 +151,7 @@ const GLYPHS: Record<string, (g: Pen) => void> = {
     g.box(0.4, 0.4, 0.6, 0.6, PAL.fieldLite);
   },
 
-  /** BULWARK PLATING — a tower shield with a mender pip. A TOWER shield,
+  /** BULWARK PLATING — a tower shield with a fixer pip. A TOWER shield,
    *  flat-topped and square-shouldered, so it does not collide with the
    *  heater shield the Armored Swarms mutator wears. The pip is a CROSS
    *  ON A SHIELD and the health tick is a bare plus, which is the right
@@ -207,21 +207,6 @@ const GLYPHS: Record<string, (g: Pen) => void> = {
     g.poly([[1.0, 0.5], [0.78, 0.28], [0.78, 0.72]], PAL.flame);
     g.box(0.32, 0.32, 0.68, 0.68, PAL.steel);          // the core
     g.box(0.38, 0.38, 0.62, 0.62, PAL.flameLite);
-  },
-
-  // ── the fuse's own attribute ────────────────────────────────────────
-  /** SPLITTER ARRAY — three spikes fanning out of one breech. The fan IS
-   *  the volley: a fuse's three, and the two more this adds are what the
-   *  rare border is for. */
-  fan: (g) => {
-    g.poly([[0.5, 0.94], [0.36, 0.94], [0.02, 0.14], [0.14, 0.06]], PAL.steelLite);
-    g.poly([[0.44, 0.94], [0.56, 0.94], [0.56, 0.02], [0.44, 0.02]], PAL.steelLite);
-    g.poly([[0.5, 0.94], [0.64, 0.94], [0.98, 0.14], [0.86, 0.06]], PAL.steelLite);
-    g.over((o) => o.box(0, 0.62, 1, 1, PAL.steel));
-    g.box(0.02, 0.06, 0.16, 0.18, PAL.emberLite);      // three hot tips
-    g.box(0.44, 0.0, 0.56, 0.12, PAL.emberLite);
-    g.box(0.84, 0.06, 0.98, 0.18, PAL.emberLite);
-    g.box(0.3, 0.8, 0.7, 1.0, PAL.steelDark);          // the breech
   },
 
   // ── the relics ──────────────────────────────────────────────────────
@@ -293,7 +278,7 @@ const GLYPHS: Record<string, (g: Pen) => void> = {
     }
   },
 
-  /** PHOENIX PROTOCOL — the mender's green rising off a wreck. A bird is
+  /** PHOENIX PROTOCOL — the fixer's green rising off a wreck. A bird is
    *  eight pixels of nothing at this size; "up, out of the ash, in the
    *  healing colour" is the whole story and it fits. */
   phoenix: (g) => {
@@ -315,7 +300,7 @@ const GLYPHS: Record<string, (g: Pen) => void> = {
 
   /** UNDYING LEGION — a rampart. Every turret is a wall that does not
    *  come down the first time, so the picture is the wall, with the
-   *  mender's green in the gate. */
+   *  fixer's green in the gate. */
   legion: (g) => {
     g.box(0.04, 0.34, 0.96, 0.96, PAL.steel);
     for (const x of [0.04, 0.36, 0.68]) g.box(x, 0.16, x + 0.28, 0.34, PAL.steel);  // the crenels

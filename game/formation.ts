@@ -8,13 +8,13 @@ import { RARITIES, weightDial, type Rarity, type RarityWeights, type WeightDial 
  * (rarity.ts) and HOW MANY OF IT, IN WHAT SHAPE — here. There is no
  * single-turret formation and there never will be: the floor of the deal
  * is the 2x2 quad, four turrets, and nothing smaller than it exists. So a
- * card is never "a duo", it is "nine duos in a block", and the question
+ * card is never "a tacker", it is "nine tackers in a block", and the question
  * it asks is where nine of anything can possibly go.
  *
  * THE CELLS ARE TURRETS, NOT TILES. Every offset below is counted in
  * WHOLE TURRETS, so a formation's footprint on the board is its grid
- * times the turret's own size: a quad of duos is 2x2 tiles and a quad of
- * spectres is 8x8. That is the whole reason the two rolls are separate —
+ * times the turret's own size: a quad of tackers is 2x2 tiles and a quad of
+ * repeaters is 8x8. That is the whole reason the two rolls are separate —
  * a purple in a citadel is an ironhide3 and a common in one is a suburb,
  * and both come out of the same button.
  *
@@ -76,7 +76,7 @@ export const FORMATIONS: Readonly<Record<FormationId, FormationDef>> = {
   /* 25 */
   bastion: { id: "bastion", name: "Bastion", w: 5, h: 5, cells: solid(5, 5) },
   /* 36 — the largest thing the deal will ever hand over: thirty-six
-     spectres is a 24x24 tile ironhide3, and finding the ground for one is
+     repeaters is a 24x24 tile ironhide3, and finding the ground for one is
      most of the reward */
   citadel: { id: "citadel", name: "Citadel", w: 6, h: 6, cells: solid(6, 6) },
 };
@@ -171,7 +171,7 @@ export function rollFormation(
  * So the two rolls stay the two rolls the deal has always had — the amount
  * is a third, independent axis, and what it multiplies is the GROUND the
  * card asks for rather than the variety it hands over. Nine citadels of
- * spectres is one decision about one piece of map, and it is a decision
+ * repeaters is one decision about one piece of map, and it is a decision
  * about a piece of map the size of a town.
  *
  * THE AMOUNTS ARE SQUARE NUMBERS AND THAT IS THE WHOLE REASON FOR THEM.
@@ -188,7 +188,7 @@ export function rollFormation(
  * the answer is right by construction.
  *
  * THE COPIES BUTT TOGETHER. There is no gap between them — a x9 block of
- * duos is one solid 9x9 of turrets, not nine 3x3s with lanes between. A
+ * tackers is one solid 9x9 of turrets, not nine 3x3s with lanes between. A
  * gutter of one turret-cell used to run between the copies so the fleet
  * would read as its copies; what it actually did was turn every square
  * amount back into an oblong footprint with holes in it, and holes in a

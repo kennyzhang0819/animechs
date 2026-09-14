@@ -18,7 +18,7 @@
  * pictures (`towerIcon`) and the placement ghost (`towerGhostIcon`) take
  * the same files, so every picture of a turret comes off one drawing.
  *
- * The menders have no drawing and keep their stock sprites — hence the
+ * The fixers have no drawing and keep their stock sprites — hence the
  * Partial: a lookup that misses is the fallback, not a bug.
  */
 import type { TowerKind } from "./types";
@@ -46,23 +46,23 @@ export const foundryBaseUrl = (size: number): string =>
 
 /** every kind's head, or absent where the kind has no Foundry drawing */
 export const FOUNDRY_HEAD_URLS: Readonly<Partial<Record<TowerKind, string>>> = {
-  duo: `${F}/duo.png`,
-  hail: `${F}/hail.png`,
-  scorch: `${F}/scorch.png`,
-  arc: `${F}/arc.png`,
-  salvo: `${F}/salvo.png`,
-  scatter: `${F}/scatter.png`,
-  lancer: `${F}/lancer.png`,
-  wave: `${F}/wave.png`,
-  parallax: `${F}/parallax.png`,
-  swarmer: `${F}/swarmer.png`,
-  fuse: `${F}/fuse.png`,
-  ripple: `${F}/ripple.png`,
-  tsunami: `${F}/tsunami.png`,
-  cyclone: `${F}/cyclone.png`,
-  spectre: `${F}/spectre.png`,
-  meltdown: `${F}/meltdown.png`,
-  foreshadow: `${F}/foreshadow.png`,
+  tacker: `${F}/tacker.png`,
+  lobber: `${F}/lobber.png`,
+  torch: `${F}/torch.png`,
+  coil: `${F}/coil.png`,
+  autocannon: `${F}/autocannon.png`,
+  airburst: `${F}/airburst.png`,
+  piercer: `${F}/piercer.png`,
+  douser: `${F}/douser.png`,
+  tether: `${F}/tether.png`,
+  hive: `${F}/hive.png`,
+  cleaver: `${F}/cleaver.png`,
+  barrage: `${F}/barrage.png`,
+  deluge: `${F}/deluge.png`,
+  whirl: `${F}/whirl.png`,
+  repeater: `${F}/repeater.png`,
+  furnace: `${F}/furnace.png`,
+  railhead: `${F}/railhead.png`,
 };
 
 /** the head's file for a kind, or null where there is none */

@@ -47,13 +47,14 @@ function png(px, n) {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
 }
 
-/** size in cells, accent group, a proposed name (a caption, never a key) */
+/** size in cells and accent group, by kind — the kind is the name now, so
+ *  there is no caption column any more (game/constants.ts prints it) */
 export const ROSTER = {
-  duo: [1, "bullet", "Pinion"], hail: [1, "shell", "Lobber"], scorch: [1, "flame", "Torch"], arc: [1, "beam", "Sparker"],
-  salvo: [2, "bullet", "Triplet"], scatter: [2, "missile", "Bellow"], lancer: [2, "beam", "Kiln"], wave: [2, "water", "Sluice"],
-  parallax: [2, "field", "Halo"], swarmer: [2, "missile", "Quiver"],
-  fuse: [3, "flame", "Broadside"], ripple: [3, "shell", "Bombard"], tsunami: [3, "water", "Floodgate"], cyclone: [3, "missile", "Grindstone"],
-  spectre: [4, "bullet", "Crucible"], meltdown: [4, "beam", "Furnace"], foreshadow: [4, "beam", "Railspike"],
+  tacker: [1, "bullet"], lobber: [1, "shell"], torch: [1, "flame"], coil: [1, "beam"],
+  autocannon: [2, "bullet"], airburst: [2, "missile"], piercer: [2, "beam"], douser: [2, "water"],
+  tether: [2, "field"], hive: [2, "missile"],
+  cleaver: [3, "flame"], barrage: [3, "shell"], deluge: [3, "water"], whirl: [3, "missile"],
+  repeater: [4, "bullet"], furnace: [4, "beam"], railhead: [4, "beam"],
 };
 
 // ── render, and refuse a thin run ──────────────────────────────────────

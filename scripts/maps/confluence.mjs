@@ -10,7 +10,7 @@
  *
  * The pipeline and every rule are in mindustry.mjs; this file is the
  * numbers. Sand under sand walls, darksand under dune, stone under stone
- * wall; salt where the rooms open out, two lakes for the arc's earthing,
+ * wall; salt where the rooms open out, two lakes for the coil's earthing,
  * three ruins and the sand's own boulders.
  */
 import {

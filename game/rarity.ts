@@ -57,42 +57,42 @@ export const RARITY: Readonly<Record<Rarity, RarityDef>> = {
  * WHICH TURRET IS WHICH — authored, not derived from price.
  *
  * It reads close to Mindustry's own build cost and deliberately is not it:
- * fuse is an uncommon at four thousand scrap and tsunami a rare at five,
+ * cleaver is an uncommon at four thousand scrap and deluge a rare at five,
  * because what the rarity is pricing is how much a board WANTS the thing,
  * and a liquid turret that stops a naval push cold is a rarer answer than
  * a short-range shotgun. The top rarity is the three 4x4s and nothing
  * else: the biggest footprint in the game is the thing a run is hoping
  * for, and one line says so.
  *
- * The two menders are retired from the field (types.ts RETIRED_KINDS) and
+ * The two fixers are retired from the field (types.ts RETIRED_KINDS) and
  * are never dealt; they are filed as commons so the table stays total and
  * the day they come back they come back with a border already on them.
  */
 export const TURRET_RARITY: Readonly<Record<TowerKind, Rarity>> = {
   // greyish white: the 1x1s and the 2x2 support guns — the board's floor
-  duo: "common",
-  hail: "common",
-  scatter: "common",
-  scorch: "common",
-  arc: "common",
-  wave: "common",
+  tacker: "common",
+  lobber: "common",
+  airburst: "common",
+  torch: "common",
+  coil: "common",
+  douser: "common",
   // blue: the guns that answer one hard body or one massed lane
-  salvo: "uncommon",
-  lancer: "uncommon",
-  parallax: "uncommon",
-  ripple: "uncommon",
-  fuse: "uncommon",
+  autocannon: "uncommon",
+  piercer: "uncommon",
+  tether: "uncommon",
+  barrage: "uncommon",
+  cleaver: "uncommon",
   // amber: the specialists
-  swarmer: "rare",
-  cyclone: "rare",
-  tsunami: "rare",
+  hive: "rare",
+  whirl: "rare",
+  deluge: "rare",
   // purple: every 4x4 in the game
-  spectre: "ultra",
-  meltdown: "ultra",
-  foreshadow: "ultra",
+  repeater: "ultra",
+  furnace: "ultra",
+  railhead: "ultra",
   // retired — see the note above
-  mender: "common",
-  mendProjector: "common",
+  fixer: "common",
+  restorer: "common",
 };
 
 export const rarityOf = (kind: TowerKind): Rarity => TURRET_RARITY[kind];

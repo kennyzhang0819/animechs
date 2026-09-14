@@ -8,13 +8,13 @@
  *
  * THE ONE THING THAT IS DIFFERENT ABOUT THIS FAMILY IS THE SIZE, and it
  * is the point of it. Every other line opens on a 1x1 — a runt drawn on
- * the same 32 grid as a duo. The Tusker runt is a 1.75x1.75 on a 56 grid,
- * half again the widest T1 on the roster (the livewire1's 1.375), and the
- * apex is a 5.5x5.5 on 176: the largest thing that walks, half again the
- * ironhide5 that held that title. Nothing here overshoots to get there —
- * the quad is still the box (docs/unit-art.md section 2) — the BOX is
- * simply bigger, which is what makes a Tusker read as heavy at field zoom
- * instead of as a rhino drawn larger.
+ * the same 32 grid as a tacker. The Tusker runt is a 1.75x1.75 on a 56
+ * grid, half again the widest T1 on the roster (the livewire1's 1.375),
+ * and the apex is a 5.5x5.5 on 176: the largest thing that walks, half
+ * again the ironhide5 that held that title. Nothing here overshoots to
+ * get there — the quad is still the box (docs/unit-art.md section 2) —
+ * the BOX is simply bigger, which is what makes a Tusker read as heavy at
+ * field zoom instead of as a rhino drawn larger.
  *
  * THE ELEPHANT, seen from above, is THREE PRONGS OFF ONE BIG MASS. The
  * body is a single plate from the brow to the tail — an elephant has no
@@ -84,15 +84,24 @@ const HIDE_R = rev(TUSK_HIDE);
  * The hitboxes, UR x 1.75 / 2.25 / 3 / 4.25 / 5.5, at 32 px a tile — so
  * the grids are 56, 72, 96, 136 and 176. `stride` is the mech rig's pad
  * swing (T1-T3); `small`, `th` and `sh` the legged rig's cap grid and its
- * two segment strokes (T4-T5), and both strokes are the widest here of
- * any family: a pillar is a leg with no taper.
+ * two segment strokes (T4-T5).
+ *
+ * A PILLAR IS A LEG WITH NO TAPER, AND IT IS THICK. These strokes are a
+ * fifth of the body's grid, near twice the rhino's and the stag's, and
+ * they barely narrow from thigh to foot — an elephant's leg is a column
+ * under a shoulder, not a limb held out from one. They used to be an
+ * eleventh, which is the rhino's proportion on a body half again as wide,
+ * and a thin limb on a ring of four mounts is a spider leg whatever
+ * animal is drawn over it. The gait that goes with them is in
+ * game/levels.ts: short steps, feet under the body, one foot off the
+ * ground at a time.
  */
 export const TUSK_TIERS: readonly IronTier[] = [
   { t: 1, n: 56, stride: 8, small: 16, th: 4, sh: 4 },
   { t: 2, n: 72, stride: 10, small: 16, th: 4, sh: 4 },
   { t: 3, n: 96, stride: 12, small: 16, th: 4, sh: 4 },
-  { t: 4, n: 136, stride: 0, small: 48, th: 15, sh: 12 },
-  { t: 5, n: 176, stride: 0, small: 64, th: 20, sh: 16 },
+  { t: 4, n: 136, stride: 0, small: 48, th: 26, sh: 22 },
+  { t: 5, n: 176, stride: 0, small: 64, th: 34, sh: 28 },
 ];
 
 /**

@@ -1,89 +1,72 @@
 {
   "roster": {
-    "duo": [
+    "tacker": [
       1,
-      "bullet",
-      "Pinion"
+      "bullet"
     ],
-    "hail": [
+    "lobber": [
       1,
-      "shell",
-      "Lobber"
+      "shell"
     ],
-    "scorch": [
+    "torch": [
       1,
-      "flame",
-      "Torch"
+      "flame"
     ],
-    "arc": [
+    "coil": [
       1,
-      "beam",
-      "Sparker"
+      "beam"
     ],
-    "salvo": [
+    "autocannon": [
       2,
-      "bullet",
-      "Triplet"
+      "bullet"
     ],
-    "scatter": [
+    "airburst": [
       2,
-      "missile",
-      "Bellow"
+      "missile"
     ],
-    "lancer": [
+    "piercer": [
       2,
-      "beam",
-      "Kiln"
+      "beam"
     ],
-    "wave": [
+    "douser": [
       2,
-      "water",
-      "Sluice"
+      "water"
     ],
-    "parallax": [
+    "tether": [
       2,
-      "field",
-      "Halo"
+      "field"
     ],
-    "swarmer": [
+    "hive": [
       2,
-      "missile",
-      "Quiver"
+      "missile"
     ],
-    "fuse": [
+    "cleaver": [
       3,
-      "flame",
-      "Broadside"
+      "flame"
     ],
-    "ripple": [
+    "barrage": [
       3,
-      "shell",
-      "Bombard"
+      "shell"
     ],
-    "tsunami": [
+    "deluge": [
       3,
-      "water",
-      "Floodgate"
+      "water"
     ],
-    "cyclone": [
+    "whirl": [
       3,
-      "missile",
-      "Grindstone"
+      "missile"
     ],
-    "spectre": [
+    "repeater": [
       4,
-      "bullet",
-      "Crucible"
+      "bullet"
     ],
-    "meltdown": [
+    "furnace": [
       4,
-      "beam",
-      "Furnace"
+      "beam"
     ],
-    "foreshadow": [
+    "railhead": [
       4,
-      "beam",
-      "Railspike"
+      "beam"
     ]
   },
   "accent": {

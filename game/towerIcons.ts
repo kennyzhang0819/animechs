@@ -4,28 +4,36 @@ import type { TowerKind } from "./types";
 
 const T = "/mindustry/sprites/blocks/turrets";
 
-/** every turret's palette sprite — the build card, the editor and the progress screen share it */
+/**
+ * Every turret's palette sprite — the build card, the editor and the
+ * progress screen share it.
+ *
+ * THE VALUES ARE STOCK FILENAMES AND THE KEYS ARE OURS. This is the
+ * fallback the game draws with FOUNDRY_ART off, so every path points into
+ * the vendored tree (`public/mindustry`), which is upstream's and is left
+ * spelled upstream's way; nothing else in the game is.
+ */
 export const TOWER_ICONS: Record<TowerKind, string> = {
-  duo: `${T}/duo/duo-preview.png`,
-  hail: `${T}/hail.png`,
-  salvo: `${T}/salvo/salvo-preview.png`,
-  scatter: `${T}/scatter/scatter-preview.png`,
-  fuse: `${T}/fuse.png`,
-  scorch: `${T}/scorch.png`,
-  arc: `${T}/arc.png`,
-  lancer: `${T}/lancer.png`,
-  ripple: `${T}/ripple.png`,
-  wave: `${T}/wave.png`,
-  tsunami: `${T}/tsunami.png`,
-  parallax: `/mindustry/sprites/blocks/defense/parallax.png`,
-  // the support pair is filed under defense with parallax, not turrets
-  mender: `/mindustry/sprites/blocks/defense/mender.png`,
-  mendProjector: `/mindustry/sprites/blocks/defense/mend-projector.png`,
-  swarmer: `${T}/swarmer.png`,
-  cyclone: `${T}/cyclone/cyclone-preview.png`,
-  spectre: `${T}/spectre.png`,
-  meltdown: `${T}/meltdown.png`,
-  foreshadow: `${T}/foreshadow.png`,
+  tacker: `${T}/duo/duo-preview.png`,
+  lobber: `${T}/hail.png`,
+  autocannon: `${T}/salvo/salvo-preview.png`,
+  airburst: `${T}/scatter/scatter-preview.png`,
+  cleaver: `${T}/fuse.png`,
+  torch: `${T}/scorch.png`,
+  coil: `${T}/arc.png`,
+  piercer: `${T}/lancer.png`,
+  barrage: `${T}/ripple.png`,
+  douser: `${T}/wave.png`,
+  deluge: `${T}/tsunami.png`,
+  tether: `/mindustry/sprites/blocks/defense/parallax.png`,
+  // the support pair is filed under defense with tether, not turrets
+  fixer: `/mindustry/sprites/blocks/defense/mender.png`,
+  restorer: `/mindustry/sprites/blocks/defense/mend-projector.png`,
+  hive: `${T}/swarmer.png`,
+  whirl: `${T}/cyclone/cyclone-preview.png`,
+  repeater: `${T}/spectre.png`,
+  furnace: `${T}/meltdown.png`,
+  railhead: `${T}/foreshadow.png`,
 };
 
 export const structIcon = (kind: TowerKind): string => TOWER_ICONS[kind];

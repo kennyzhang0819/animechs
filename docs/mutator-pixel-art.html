@@ -92,7 +92,7 @@ code{font-family:var(--mono);font-size:.88em;color:var(--codex)}
     </div>
     <div class="copy">
       <h3>Shield Towers</h3>
-      <p class="says">Gunmetal bunker under a mender-green field arc.</p>
+      <p class="says">Gunmetal bunker under a fixer-green field arc.</p>
       <p class="blurb">Shield towers rise periodically, absorbing bullets until destroyed.</p>
     </div>
     <footer><span class="tag" style="color:#FFB65C">Heavy · 3</span><span class="cnt">5 colors · 64 rects</span></footer>
@@ -120,7 +120,7 @@ code{font-family:var(--mono);font-size:.88em;color:var(--codex)}
     </div>
     <div class="copy">
       <h3>Overshields</h3>
-      <p class="says">The same shield in parallax blue: a field, not a plate.</p>
+      <p class="says">The same shield in tether blue: a field, not a plate.</p>
       <p class="blurb">Force fields are five times as strong.</p>
     </div>
     <footer><span class="tag" style="color:#FFB65C">Heavy · 3</span><span class="cnt">4 colors · 51 rects</span></footer>
@@ -134,7 +134,7 @@ code{font-family:var(--mono);font-size:.88em;color:var(--codex)}
     </div>
     <div class="copy">
       <h3>Speedy</h3>
-      <p class="says">Pal.lightFlame at the tip, cooling to spectre's ember down its length.</p>
+      <p class="says">Pal.lightFlame at the tip, cooling to repeater's ember down its length.</p>
       <p class="blurb">Every enemy moves twice as fast, and nothing can slow them.</p>
     </div>
     <footer><span class="tag" style="color:#FFB65C">Heavy · 4</span><span class="cnt">4 colors · 36 rects</span></footer>
@@ -162,7 +162,7 @@ code{font-family:var(--mono);font-size:.88em;color:var(--codex)}
     </div>
     <div class="copy">
       <h3>Amphibious</h3>
-      <p class="says">Shallow water, and the mender's green rising out of it.</p>
+      <p class="says">Shallow water, and the fixer's green rising out of it.</p>
       <p class="blurb">Ground enemies that wade come out faster, tougher and healing.</p>
     </div>
     <footer><span class="tag" style="color:#FF6B6B">Brutal · 5</span><span class="cnt">4 colors · 58 rects</span></footer>
@@ -233,15 +233,15 @@ code{font-family:var(--mono);font-size:.88em;color:var(--codex)}
   <div class="hexes">#2c2d38 #4d4e58 #7b7b7b #c1c3d4 #f4f4f4</div>
 </div><div class="ramp">
   <div class="chips"><span class="sw" style="background:#62ae7f" title="#62ae7f"></span><span class="sw" style="background:#84f491" title="#84f491"></span><span class="sw" style="background:#c8ffd2" title="#c8ffd2"></span></div>
-  <div class="rampname">Heal</div><div class="rampsrc">the mender and the force projector</div>
+  <div class="rampname">Heal</div><div class="rampsrc">the fixer and the force projector</div>
   <div class="hexes">#62ae7f #84f491 #c8ffd2</div>
 </div><div class="ramp">
   <div class="chips"><span class="sw" style="background:#6f80e8" title="#6f80e8"></span><span class="sw" style="background:#88a4ff" title="#88a4ff"></span><span class="sw" style="background:#c6d6ff" title="#c6d6ff"></span></div>
-  <div class="rampname">Field</div><div class="rampsrc">parallax's shield</div>
+  <div class="rampname">Field</div><div class="rampsrc">tether's shield</div>
   <div class="hexes">#6f80e8 #88a4ff #c6d6ff</div>
 </div><div class="ramp">
   <div class="chips"><span class="sw" style="background:#db401c" title="#db401c"></span><span class="sw" style="background:#ec7458" title="#ec7458"></span><span class="sw" style="background:#ff9c5a" title="#ff9c5a"></span><span class="sw" style="background:#ffdd55" title="#ffdd55"></span><span class="sw" style="background:#fff2ad" title="#fff2ad"></span></div>
-  <div class="rampname">Ember</div><div class="rampsrc">spectre and swarmer's heat, up into Pal.lightFlame</div>
+  <div class="rampname">Ember</div><div class="rampsrc">repeater and hive's heat, up into Pal.lightFlame</div>
   <div class="hexes">#db401c #ec7458 #ff9c5a #ffdd55 #fff2ad</div>
 </div><div class="ramp">
   <div class="chips"><span class="sw" style="background:#3f4c96" title="#3f4c96"></span><span class="sw" style="background:#5c6dbb" title="#5c6dbb"></span><span class="sw" style="background:#8aa3f4" title="#8aa3f4"></span></div>
@@ -259,12 +259,12 @@ code{font-family:var(--mono);font-size:.88em;color:var(--codex)}
     <div class="notes">
       <div class="note">
         <h3>Flat plates, not a lit edge</h3>
-        <p>The first pass shaded every face by tracing light down its top-left edge and shadow down its bottom-right. That makes an icon look <b>embossed</b> — pressed out of the page like a button. Mindustry's blocks look stamped flat: go and count the colours in <code>lancer.png</code> or <code>mender.png</code> and you get four or five, butted against each other along straight edges, with no dark contour anywhere.</p>
+        <p>The first pass shaded every face by tracing light down its top-left edge and shadow down its bottom-right. That makes an icon look <b>embossed</b> — pressed out of the page like a button. Mindustry's blocks look stamped flat: go and count the colours in the vendored <code>lancer.png</code> or <code>mender.png</code> (upstream keeps its own filenames) and you get four or five, butted against each other along straight edges, with no dark contour anywhere.</p>
         <p>So the shading model here is one primitive: draw a plain rectangle, clip it to whatever the face has already drawn, and you get a top plate or a skirt that follows the silhouette exactly. Form comes from parts, not from a light source.</p>
       </div>
       <div class="note">
         <h3>Three faces fought back</h3>
-        <p><b>Armored Swarms</b> took three tries. Stacked horizontal bands made a cloud sitting on a funnel; a plate inside a rim with a seam across it made a helm with a visor and a row of teeth. Anything symmetrical about a vertical axis cannot become a face — so it is a riveted strake now, which is also how <code>fuse</code> and <code>spectre</code> are built.</p>
+        <p><b>Armored Swarms</b> took three tries. Stacked horizontal bands made a cloud sitting on a funnel; a plate inside a rim with a seam across it made a helm with a visor and a row of teeth. Anything symmetrical about a vertical axis cannot become a face — so it is a riveted strake now, which is also how <code>cleaver</code> and <code>repeater</code> are built.</p>
         <p><b>Hungry Mechs</b> was a duck: a deep pale top plate read as a head and a glinting eye finished the bird. Thin bands, one flat eye, no glint. <b>Speedy</b>'s streaks were gunmetal, two shades off the ground, and vanished the moment the face left the codex tile; they are trailing ember now.</p>
       </div>
       <div class="note">

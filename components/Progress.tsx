@@ -155,7 +155,7 @@ function RewardFace({ reward }: { reward: Reward }) {
 /**
  * One reward on a track row, AS A PICTURE: the turret's sprite or the
  * map's thumbnail in a square the colour of its kind, with the words a
- * hover away. The chip used to print "Turret: Meltdown" and a row of them
+ * hover away. The chip used to print "Turret: Furnace" and a row of them
  * read as a paragraph; the sprite is the thing the player will look for
  * in the build bar, and the map is the place they will play, so the face
  * is the label and the card behind it carries the name and the sentence
@@ -176,7 +176,7 @@ function RewardFace({ reward }: { reward: Reward }) {
  * their own, not by the fact of what kind of thing they are.
  * The track is where a player learns what the deal can hand them, and it
  * teaches the border at the same time it teaches the gun: the row that
- * opens a spectre is purple here, the tile on the unlocks board is purple
+ * opens a repeater is purple here, the tile on the unlocks board is purple
  * there, and the card that turns one over mid-wave is purple too. Nothing
  * has to say so.
  */

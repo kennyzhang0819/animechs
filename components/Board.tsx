@@ -32,7 +32,7 @@ import { clamp } from "@/game/constants";
  * WHY THE CAMERA CAN BE OWNED FROM OUTSIDE (the `cam` prop). The tech tree
  * and the mutator codex are two boards behind one tab strip, so switching
  * tabs UNMOUNTS a board. A camera kept in here would then be re-fitted
- * every time, and a player who panned to the arc branch, glanced at the
+ * every time, and a player who panned to the coil branch, glanced at the
  * mutators and came back would find the board yanked home. A parent that
  * outlives both tabs hands each one a ref and the pan survives the switch.
  * `null` means "never placed" — the board fits itself on first mount and

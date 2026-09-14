@@ -25,19 +25,21 @@
  *   --world <id>     WORLDS id (default 1)
  *   --tier <n>       rung, 0-based (default 0 — no rolled mutators)
  *   --mutators a,b   mutators to play under (default none; intrinsic ones always apply)
- *   --families a,b,c the three families to deal into the script's slots, by key
- *                    (ground, weaver1, groundSupport, air, naval, navalSupport) —
+ *   --families a,b,c the run's families, by key, in the order the deal walks them
+ *                    (ground, weaver, groundSupport, air, naval, navalSupport, tusker).
+ *                    Any number of them: each wave takes as many off the list as it
+ *                    was authored wide, and the list turns a notch every wave —
  *                    default: the script as authored, which is ground, groundSupport, air
  *   --level <n>      player level: which turrets the track has opened (default 15 — the whole roster)
  *   --scale <x>      multiply the roll fee and every turret price (default 1)
  *   --unit-damage <x>  the swarm's damage to structures, as a multiple of Mindustry's (default: the shipped dial, weapons.ts)
  *   --start <n>      opening scrap (default SCRAP_START)
  *   --cap <n>        most turrets the bot may place (default unlimited)
- *   --mix roster|stage|all|duo   the pool it DRAWS from: everything the save
+ *   --mix roster|stage|all|tacker   the pool it DRAWS from: everything the save
  *                    owns (the default, and the only one the real game has),
  *                    or a narrowed pool for an experiment — the stage's band,
- *                    every open band, duos only. The fee follows the pool
- *                    every open band, duos only. The fee is flat, so a
+ *                    every open band, tackers only. The fee follows the pool
+ *                    every open band, tackers only. The fee is flat, so a
  *                    narrowed pool is a poorer deal and not a cheaper one
  *   --log <n>        print a line every n waves (default 5)
  *   --seconds <n>    give up after this much sim time (default 2400)
@@ -171,10 +173,12 @@ if (!world) {
   process.exit(1);
 }
 const spec = { ...LA.specForTier(world, TIER), mutation: MUTATORS };
-// THE DEAL, forced: the script's slots played as these families, exactly
-// as a run's roll deals them (levels.ts transformScript). Unset plays the
-// script as authored, so the numbers a playtest reports against the stage
-// table are the authored ones unless a sweep asks otherwise
+// THE DEAL, forced: the script's slots played out of this list, a wave at
+// a time, exactly as a run's roll deals them (levels.ts transformScript).
+// The deal is deterministic given the list, so a sweep that names one gets
+// the same fifty waves every time. Unset plays the script as authored, so
+// the numbers a playtest reports against the stage table are the authored
+// ones unless a sweep asks otherwise
 if (FAMILIES.length > 0) {
   for (const f of FAMILIES)
     if (!L.FAMILIES.some((x) => x.key === f)) {
@@ -191,17 +195,17 @@ const PROBE_SECONDS = PROBE_OPT === null ? 90 : +PROBE_OPT;
 // ---------- the bot ----------
 
 const { COLS, ROWS, CELL, TOWERS } = C;
-const SUPPORT = new Set(["wave", "tsunami", "parallax", "meltdown"]);
+const SUPPORT = new Set(["douser", "deluge", "tether", "furnace"]);
 const MIX = {
-  1: ["duo", "hail", "scorch", "scatter"],
-  2: ["swarmer", "salvo", "ripple", "cyclone"],
-  3: ["spectre", "fuse", "foreshadow"],
+  1: ["tacker", "lobber", "torch", "airburst"],
+  2: ["hive", "autocannon", "barrage", "whirl"],
+  3: ["repeater", "cleaver", "railhead"],
 };
 // a water lane is a FILE — hulls come down it one behind another — and the
 // beam turrets are the two that pierce, so on a front that is mostly hulls
-// the bot brings them the way a person would. Not the arc: its reach is
+// the bot brings them the way a person would. Not the coil: its reach is
 // short enough that a shoreline placement is a Hydrophobic one
-const WET = { 1: [], 2: ["lancer"], 3: ["meltdown"] };
+const WET = { 1: [], 2: ["piercer"], 3: ["furnace"] };
 // the stage the clock is in (STAGES in economy.ts) — no longer a gate on
 // anything, but still the bot's buying plan: it spends each stage on the
 // band that stage is priced for, as a player minding the bank would
@@ -213,8 +217,8 @@ const tierMix = (t, wet) => (wet ? [...MIX[t], ...WET[t]] : MIX[t]);
 const mixFor = (t, wet = false, roster = null) =>
   MIX_MODE === "roster"
     ? roster ?? []
-    : MIX_MODE === "duo"
-      ? ["duo"]
+    : MIX_MODE === "tacker"
+      ? ["tacker"]
       : MIX_MODE === "all"
         ? [...tierMix(1, wet), ...(t >= 2 ? tierMix(2, wet) : []), ...(t >= 3 ? tierMix(3, wet) : [])]
         : tierMix(t, wet);
@@ -463,9 +467,9 @@ function play() {
     // the only pool the real game ever deals from — the narrowing modes
     // are experiments, and they make the deal cheaper as well as narrower
     // because the fee is a fraction of what the pool is worth. A pool with
-    // nothing owned in it falls back to the duo every save starts with
+    // nothing owned in it falls back to the tacker every save starts with
     const plan = mixFor(stageTier(sim.stageWave()), wet, roster).filter((k) => owned.has(k));
-    const pool = plan.length > 0 ? plan : ["duo"];
+    const pool = plan.length > 0 ? plan : ["tacker"];
     let stuck = 0;
     for (let tries = 0; tries < 40; tries++) {
       if (sim.scrap < E.TURRET_ROLL_PRICE || sim.towers.length >= CAP) break;

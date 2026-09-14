@@ -54,7 +54,7 @@
  *
  * ── 5. FLAT, NOT EMBOSSED ─────────────────────────────────────────────
  *
- * Count the colours in lancer.png or mender.png: four or five, butted
+ * Count the colours in piercer.png or fixer.png: four or five, butted
  * along straight edges, no dark contour and no gradient. Do NOT trace
  * light down a silhouette's top-left edge and shadow down its
  * bottom-right — that is how a button is drawn, and it makes an icon look
@@ -73,10 +73,10 @@
 /**
  * THE PALETTE, COUNTED OFF THE GAME'S OWN SPRITES rather than invented.
  * Every hex was taken from the art under public/mindustry/sprites — the
- * gunmetal ramp is what lancer, fuse and spectre are plated in, the green
- * is the mender's and the force projector's, the field blue is
- * parallax's, the ember ramp is spectre's and swarmer's heat, and the
- * water is the #5c6dbb renderer.ts already records shallow-water.png as
+ * gunmetal ramp is what piercer, cleaver and repeater are plated in, the
+ * green is the fixer's and the force projector's, the field blue is
+ * tether's, the ember ramp is repeater's and hive's heat, and the water
+ * is the #5c6dbb renderer.ts already records shallow-water.png as
  * averaging. Drawing next to art this consistent in invented colours is
  * how an icon ends up looking bolted on.
  */
@@ -93,6 +93,10 @@ export const PAL = {
   // one hue a family, and the symbol of every status a family lays is
   // drawn in that family's hue — acid for the rot, violet for a short and
   // a cloak, magenta for a jam, teal for a veteran
+  // THE BLUE LINE'S OWN, off constants.ts PAL.piercerLaser: coil, piercer
+  // and furnace all fire in #a9d8ff, so the electric mark and the chips
+  // that point at it are drawn in the colour the shot itself is
+  sparkDark: "#3d6fc4", spark: "#a9d8ff", sparkLite: "#e4f3ff",
   venomDark: "#5c8a12", venom: "#d4ff3a",
   wraithDark: "#5a35b8", wraith: "#b48cff",
   bomberDark: "#8f2280", bomber: "#ff5fd6",

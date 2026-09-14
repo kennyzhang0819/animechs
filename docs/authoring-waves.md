@@ -1,14 +1,54 @@
-# Authoring waves: one script, three families a deploy
+# Authoring waves: one script, a deal that turns every wave
 
 Every map plays the same fifty waves. What makes one map's campaign
 different from another's is its ground and its doors, and the **family
 roll** the deploy makes: the script is authored in three unit families
-(ground, ground support, air), those are its three slots, and every run
-rolls three families from the six and deals them into the slots, tier for
-tier (`rollFamilies`, `transformScript` in `game/levels.ts`). Forty
-runts in the script are forty of whichever family took the first slot.
-The boss (Boss) is in no family and is never swapped. The deal is shown
-on the field in the bottom-right corner.
+(ground, ground support, air) and those are its three **slots**, but a
+slot is a ROLE — "the line", "the support behind it", "the third thing" —
+and not a promise about which family plays it. Every run rolls
+`FAMILIES_PER_RUN` families (**four**, of the seven) and deals them into
+the slots tier for tier, **a wave at a time** (`rollFamilies`,
+`transformScript` in `game/levels.ts`). Forty runts in the script are
+forty of whichever family took the line on that wave. The boss (Boss) is
+in no family and is never swapped. The deal is shown on the field in the
+bottom-right corner.
+
+## The deal turns a notch a wave
+
+The run's families are a **ring**. Wave 1 starts at the first of them and
+every wave after it turns the ring one notch, so the roles are re-let
+each wave: wave 1's line is the first family, wave 2's is the second, and
+over a handful of waves all four have had a turn at everything. The deal
+is deterministic — the same script and the same roll give the same fifty
+waves, which is what the balance audit and the headless playtest need —
+and it spreads the families evenly by construction, which a per-wave
+re-roll would not.
+
+Two rules keep a wave readable:
+
+- **A wave sends as many families as it was authored WIDE.** One slot is
+  one family however many the run rolled; three slots is three. So a
+  wave's slot count is the design — whether it reads as one swarm or as a
+  mixture — and which families fill it is the run's.
+- **`MAX_FAMILIES_PER_WAVE` (three) is the ceiling**, whatever the run
+  rolled. Ten families arriving at once is not ten times the variety, it
+  is mush. The variety belongs *across* waves. Where a wave is wider than
+  the cap the extra slots fold back onto the families already dealt to it
+  and their counts add, so nothing authored is dropped.
+
+`FAMILIES_PER_RUN` and the script's slot count are **separate dials** now
+— they used to have to match, because one fixed cast held for the whole
+run and a fourth family had nowhere to go. Raise `FAMILIES_PER_RUN` to put
+more faces in a run; add a slot to widen the mixture a wave may ask for.
+
+**The opening must be walkable.** A flying family is never dealt one of
+the leading ring positions the opening claims (`openingDeal`,
+`AIR_FAMILIES`) — the opening being the script's leading run of
+single-family waves, two on the shipped campaign. A run starts with
+nothing on the board, and a flight that ignores the route and the walls
+is not an opening a player can be asked to solve with whatever the die
+handed them. Past that stretch the script is already asking for more than
+one answer at a time, and air is fair.
 
 ## The documents
 
@@ -77,6 +117,6 @@ Rules of thumb for the counts:
 
 The editor prices the live buffer as you type: the ramp chart, the
 per-wave guide, the stage table and the debut findings (`debutViolations`
-— an armoured kind arriving against a duo board). For a full playthrough
+— an armoured kind arriving against a tacker board). For a full playthrough
 without a browser, `npm run playtest -- --world <id>` runs the headless
 builder bot through the script and reports where it gets to.

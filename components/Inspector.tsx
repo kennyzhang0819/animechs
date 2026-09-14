@@ -181,8 +181,8 @@ export function Inspector({
   const { n, kind, unit, name, hp, hpMax, statuses, mods } = inspect;
   const many = n > 1;
   const carved = useUnitIcon(unit);
-  // the picture, and ONLY when the whole selection is one thing — a duo
-  // over a box that also holds spectres would be the one part of this
+  // the picture, and ONLY when the whole selection is one thing — a tacker
+  // over a box that also holds repeaters would be the one part of this
   // panel that could lie
   const art = unit
     ? carved

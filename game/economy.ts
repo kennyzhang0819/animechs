@@ -249,28 +249,28 @@ export type TowerTier = 1 | 2 | 3;
  * nothing else; no band is held shut inside a run.
  */
 export const TOWER_TIER: Record<TowerKind, TowerTier> = {
-  duo: 1,
-  scorch: 1,
-  hail: 1,
-  arc: 1,
-  scatter: 1,
-  wave: 1,
-  // the support pair sits a band below what it keeps alive: a mender is
+  tacker: 1,
+  torch: 1,
+  lobber: 1,
+  coil: 1,
+  airburst: 1,
+  douser: 1,
+  // the support pair sits a band below what it keeps alive: a fixer is
   // an opening purchase, and the projector goes down beside the first
   // tier-2 gun it is there to nurse
-  mender: 1,
-  mendProjector: 2,
-  swarmer: 2,
-  lancer: 2,
-  salvo: 2,
-  ripple: 2,
-  parallax: 2,
-  cyclone: 2,
-  fuse: 3,
-  tsunami: 3,
-  spectre: 3,
-  meltdown: 3,
-  foreshadow: 3,
+  fixer: 1,
+  restorer: 2,
+  hive: 2,
+  piercer: 2,
+  autocannon: 2,
+  barrage: 2,
+  tether: 2,
+  whirl: 2,
+  cleaver: 3,
+  deluge: 3,
+  repeater: 3,
+  furnace: 3,
+  railhead: 3,
 };
 
 /** every turret of one tier, in roster order */
@@ -285,25 +285,25 @@ export const STAGES: readonly { tier: TowerTier; from: number; to: number }[] = 
 ];
 
 export const TOWER_PRICE: Record<TowerKind, number> = {
-  duo: 60,
-  scorch: 110,
-  hail: 120,
-  arc: 150,
-  scatter: 180,
-  wave: 300,
-  mender: 250,
-  mendProjector: 1200,
-  swarmer: 1000,
-  lancer: 900,
-  salvo: 900,
-  ripple: 1400,
-  parallax: 1500,
-  cyclone: 1800,
-  fuse: 4000,
-  tsunami: 5000,
-  spectre: 7500,
-  meltdown: 9000,
-  foreshadow: 12000,
+  tacker: 60,
+  torch: 110,
+  lobber: 120,
+  coil: 150,
+  airburst: 180,
+  douser: 300,
+  fixer: 250,
+  restorer: 1200,
+  hive: 1000,
+  piercer: 900,
+  autocannon: 900,
+  barrage: 1400,
+  tether: 1500,
+  whirl: 1800,
+  cleaver: 4000,
+  deluge: 5000,
+  repeater: 7500,
+  furnace: 9000,
+  railhead: 12000,
 };
 
 const priceOverrides = new Map<TowerKind, number>();

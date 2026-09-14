@@ -62,7 +62,7 @@ export const PAL = {
   thoriumAmmoFront: pal(0xffffff),
   thoriumAmmoBack: pal(0xf595be),
   thoriumPink: pal(0xf9a3c7),
-  lancerLaser: pal(0xa9d8ff),
+  piercerLaser: pal(0xa9d8ff),
   accent: pal(0xffd37f),
   missileYellow: pal(0xffd2ae),
   missileYellowBack: pal(0xe58956),
@@ -71,7 +71,7 @@ export const PAL = {
   plastaniumFront: pal(0xfffac6),
   plastaniumBack: pal(0xd8d97f),
   orangeSpark: pal(0xd2b29c),
-  meltdownHit: pal(0xffb98b),
+  furnaceHit: pal(0xffb98b),
   lightOrange: pal(0xf68021),
   /** Liquids.water.color — not a Pal entry upstream, but it plays the same
    *  role here an ammo colour pair does: the liquid turrets' orb, their
@@ -139,7 +139,7 @@ export const PAL = {
    *
    * IT IS THE ONE FAMILY THAT IS NOT A HUE. Six hues are already spread
    * round the wheel above and the seat left between any two of them is
-   * somewhere the turrets already sit — the missile orange, the lancer
+   * somewhere the turrets already sit — the missile orange, the piercer
    * blue, the heal green — and the rule over this table is that a family
    * colour is never one of the board's. So the seventh reads by
    * SATURATION instead: a bone white on a slate body, which is the one
@@ -193,6 +193,72 @@ export interface BulletSprite {
   back: RGB; // BasicBulletType.backColor
   front: RGB; // BasicBulletType.frontColor
 }
+
+/**
+ * HOW LONG THE ELECTRIC MARK LASTS, in seconds (BulletStats.shock).
+ *
+ * Long enough to still be on a body when the gun that laid it comes round
+ * again — coil reloads in about half a second and piercer in a third of
+ * this — so a lane under the blue line reads as a lane of shocked bodies
+ * rather than as a symbol that flickers once a shot.
+ */
+export const SHOCK_SECONDS = 3;
+
+/**
+ * WHAT A SOAKED BODY IS WORTH TO AN ELECTRIC SHOT — the multiplier on the
+ * hit, and the one reason the liquid turrets sit on a board next to the
+ * blue line.
+ *
+ * WATER CONDUCTS. A douser and a deluge do almost no damage of their
+ * own (their trivial contact numbers are honest about that) and buy a
+ * deep slow instead; what this adds is a second thing to do with the
+ * soak, and it is a thing only another turret can cash. Neither half is
+ * worth much alone and the pair is worth double, which is the shape a
+ * combo is supposed to have.
+ *
+ * IT IS ON THE RAW HIT, before plating — for TITAN ROUNDS' reason
+ * (Sim.damageUnit): a conducting body is the SHOT landing harder, not the
+ * plate mattering less, so the armour still shaves the bigger number.
+ */
+export const WET_SHOCK_MUL = 2;
+
+/**
+ * THE TURRETS WHOSE SHOT IS NOT A ROUND — fire, bolts, beams, rays and
+ * rails, everything the roster fields that is not a projectile with a
+ * body.
+ *
+ * WHAT IT DECIDES: a CLOAK stops bullets and nothing else. The Wraith
+ * fleet's top three go dark on a cycle (levels.ts cloak) and used to be
+ * untouchable by the whole board while they were — which made the answer
+ * to a cloak "wait", and waiting is not an answer. These seven still
+ * reach a hull that has gone dark, both to aim at it (Sim.bestTarget) and
+ * to hurt it (Sim.damageUnit). So a cloak is now a question the board can
+ * be built to answer rather than a window in which nothing happens.
+ *
+ * IT IS A ROSTER FACT AND NOT A DERIVED ONE. Six of the seven could be
+ * read off their ammo — a `ray`, a `laser`, a `rail`, a `lightning`, a
+ * `continuous`, a `lock` — but TORCH could not: its flame is a
+ * short-lived spriteless PROJECTILE in the sim, exactly as it is
+ * upstream, and no field on it says "this is fire and not a bullet". A
+ * list is honest about being a judgement; a clever predicate over the
+ * ammo would have been the same judgement, hidden, and wrong about the
+ * flamethrower.
+ */
+export const NON_BULLET_KINDS: readonly import("./types").TowerKind[] = [
+  "torch", // the flame
+  "cleaver", // the shrapnel ray
+  "coil", // the bolt
+  "piercer", // the beam
+  "tether", // the held lock
+  "furnace", // the continuous laser
+  "railhead", // the rail
+];
+
+const NON_BULLET = new Set<import("./types").TowerKind>(NON_BULLET_KINDS);
+
+/** does this turret fire ROUNDS — the kind of shot a cloak stops? */
+export const firesBullets = (kind: import("./types").TowerKind): boolean =>
+  !NON_BULLET.has(kind);
 
 export interface BulletStats {
   speed: number; // px/s
@@ -284,7 +350,7 @@ export interface BulletStats {
   // of knockback * 80 world units, straight out along the shot's line
   knockback?: number;
   // StatusEffects.wet, and ONE OF THE ROSTER'S TWO DELIBERATE DEVIATIONS
-  // (the other is parallax's spool, below). Upstream
+  // (the other is tether's spool, below). Upstream
   // a water shot knocks its victim back and wets it for a 0.94x speed
   // multiplier — a garnish on a turret whose real jobs (extinguishing
   // fires, cooling reactors) do not exist here. Here the wet status IS the
@@ -295,6 +361,23 @@ export interface BulletStats {
   // force (see Sim.applyWet). Wet and burning are opposites(): each lands
   // on the other as a quench/dry rather than taking hold
   wet?: { duration: number; slow: number };
+  // SHOCKED (status.ts), for this many seconds on every hit — the mark an
+  // ELECTRIC shot leaves, and the flag that says a shot IS electric.
+  //
+  // THE STATUS ITSELF DOES NOTHING, deliberately. It is not a debuff with a
+  // number; it is the sign over a body that the blue line — coil, piercer,
+  // furnace — has been on it. What the electricity actually buys is paid on
+  // the WET body it lands on (WET_SHOCK_MUL): water conducts, so an
+  // electric hit on a soaked body is worth double. That is a combo between
+  // two turrets rather than a property of one, which is why the mark is
+  // worth drawing: a player who can see which bodies are soaked and which
+  // are shocked can see the pairing they are being offered.
+  //
+  // IT IS READ AS THE SHOT'S NATURE, not as a duration to tune. Every
+  // path that can carry electricity checks for this field's PRESENCE to
+  // decide whether the soaked bonus applies (Sim.damageUnit), so setting
+  // it on a bullet is what makes that bullet electric.
+  shock?: number;
   // LiquidBulletType.orbSize: the shot is not an atlas sprite but a filled
   // disc of the liquid's own colour at this radius in px —
   // Fill.circle(b.x, b.y, orbSize), drawn in fxColor
@@ -302,8 +385,9 @@ export interface BulletStats {
   // Mindustry fragBullet/fragBullets (BulletType.createFrags): where this
   // shot dies it throws `count` children, each on a random bearing within
   // half of `spread` of the parent's heading and at a random fraction of
-  // the child's own full speed. Cyclone's plastanium flak is the one that
-  // uses it: the burst is what makes a flak wall out of a single turret
+  // the child's own full speed. Whirl's plastanium flak is the one
+  // that uses it: the burst is what makes a flak wall out of a single
+  // turret
   frag?: {
     count: number;
     spread: number; // rad — fragRandomSpread, the FULL cone
@@ -335,7 +419,7 @@ export interface BulletStats {
     moveFract: number; // LaserTurret.firingMoveFract: turn rate while firing
   };
   // BasicBulletType.draw: the shot itself. A bullet with no sprite draws
-  // nothing at all — a laser, a bolt, a hitscan ray and scorch's flame
+  // nothing at all — a laser, a bolt, a hitscan ray and torch's flame
   // each live entirely in their effects
   sprite?: BulletSprite;
   // ArtilleryBulletType.update: a puff dropped every (3 + fslope*2) * mult
@@ -354,7 +438,8 @@ export interface BulletStats {
   smokeFx?: BulletFx;
   // BulletType.hitEffect, at the point of contact — and again where the
   // shot dies, since BulletType.init gives every splash bullet despawnHit.
-  // hitFx2 is Mindustry's MultiEffect: ripple lays a shockwave over its blast
+  // hitFx2 is Mindustry's MultiEffect: barrage lays a shockwave over its
+  // blast
   hitFx?: BulletFx;
   hitFx2?: BulletFx;
   // BulletType.despawnEffect, only where the shot runs out of lifetime
@@ -388,9 +473,9 @@ export type BulletFx =
   | FxKind.ArtilleryTrail
   | FxKind.Shockwave
   | FxKind.SparkShoot
-  | FxKind.LancerShoot
-  | FxKind.LancerCharge
-  | FxKind.HitLancer
+  | FxKind.PiercerShoot
+  | FxKind.PiercerCharge
+  | FxKind.HitPiercer
   | FxKind.BlastExplosion
   | FxKind.PlasticExplosion
   | FxKind.InstShoot
@@ -399,7 +484,7 @@ export type BulletFx =
   | FxKind.InstBomb
   | FxKind.RailHit
   | FxKind.SmokeCloud
-  | FxKind.HitMeltdown
+  | FxKind.HitFurnace
   | FxKind.SmokeBig2
   | FxKind.ShootLiquid
   | FxKind.HitLiquid
@@ -419,12 +504,12 @@ export const FX_LIFE: Record<BulletFx, number> = {
   [FxKind.ArtilleryTrail]: 50 / TICK,
   [FxKind.Shockwave]: 9 / TICK,
   [FxKind.SparkShoot]: 12 / TICK,
-  [FxKind.LancerShoot]: 21 / TICK,
-  // MultiEffect(lancerLaserCharge 38, lancerLaserChargeBegin 60): the pair
+  [FxKind.PiercerShoot]: 21 / TICK,
+  // MultiEffect(piercerLaserCharge 38, piercerLaserChargeBegin 60): the pair
   // always fires together, so one entity draws both and the shorter of the
   // two simply stops early. The longer lifetime is the entity's
-  [FxKind.LancerCharge]: 60 / TICK,
-  [FxKind.HitLancer]: 12 / TICK,
+  [FxKind.PiercerCharge]: 60 / TICK,
+  [FxKind.HitPiercer]: 12 / TICK,
   [FxKind.Flak]: 20 / TICK,
   [FxKind.Flame]: 32 / TICK,
   [FxKind.FlameHit]: 14 / TICK,
@@ -436,7 +521,7 @@ export const FX_LIFE: Record<BulletFx, number> = {
   [FxKind.InstBomb]: 15 / TICK,
   [FxKind.RailHit]: 18 / TICK,
   [FxKind.SmokeCloud]: 70 / TICK,
-  [FxKind.HitMeltdown]: 12 / TICK,
+  [FxKind.HitFurnace]: 12 / TICK,
   [FxKind.SmokeBig2]: 18 / TICK,
   [FxKind.ShootLiquid]: 15 / TICK,
   [FxKind.HitLiquid]: 16 / TICK,
@@ -445,8 +530,8 @@ export const FX_LIFE: Record<BulletFx, number> = {
   // player a radius rather than a point of contact
   [FxKind.WaterBurst]: 26 / TICK,
 };
-/** Fx.lancerLaserCharge's own 38 ticks, inside LancerCharge's 60 */
-export const LANCER_CHARGE_SPARK = 38 / 60;
+/** Fx.piercerLaserCharge's own 38 ticks, inside PiercerCharge's 60 */
+export const PIERCER_CHARGE_SPARK = 38 / 60;
 
 export interface TowerStats {
   name: string;
@@ -477,11 +562,11 @@ export interface TowerStats {
   shootY?: number;
   // Mindustry Turret.minRange, artillery only: NOT a refusal to fire at
   // something close, but the floor on how short a shell's flight may be
-  // scaled. A ripple aimed inside 50 units still shoots — the shell just
+  // scaled. A barrage aimed inside 50 units still shoots — the shell just
   // overflies the target rather than landing shorter than this
   minRange?: number;
   // Mindustry shoot.firstShotDelay, in seconds: the volley is queued, then
-  // held this long before the shot leaves. Lancer also sets
+  // held this long before the shot leaves. Piercer also sets
   // moveWhileCharging false, so the barrel LOCKS for the whole charge
   chargeTime?: number;
   // Mindustry Turret.velocityRnd: each shot leaves at a random fraction of
@@ -494,7 +579,7 @@ export interface TowerStats {
   // barrels, `spread` px apart perpendicular to the facing
   barrels?: { count: number; spread: number };
   // Mindustry Turret.unitSort. Unset is UnitSorts.closest — every turret
-  // bar one. `strongest` is foreshadow's: the HIGHEST CURRENT HEALTH in
+  // bar one. `strongest` is railhead's: the HIGHEST CURRENT HEALTH in
   // range, ties broken by distance, because a 1350-damage shot spent on
   // whichever ironhide1 wandered nearest is three and a third seconds of
   // reload thrown away. (Mindustry sorts on maxHealth with a blended
@@ -502,7 +587,7 @@ export interface TowerStats {
   // walks off a target other turrets have nearly finished instead of
   // overkilling it.)
   sort?: "strongest";
-  // A SUPPORT BLOCK'S PULSE instead of a gun (Sim.updateMender): every
+  // A SUPPORT BLOCK'S PULSE instead of a gun (Sim.updateFixer): every
   // `reload` seconds it returns this fraction of their own pool to every
   // player structure whose centre is inside `range`. A block with this set
   // has no target, no barrel and no volley — `bullet` is the inert zero
@@ -519,7 +604,7 @@ export interface TowerStats {
  * turret's damage — so the support pair (see `heal`) carries this instead:
  * no speed, no damage, no lifetime, and nothing it collides with. The fire
  * path leaves before it is ever looked at; what reads it is the UI, and a
- * mender honestly does zero damage.
+ * fixer honestly does zero damage.
  */
 const ZERO_BULLET: BulletStats = {
   speed: 0,
@@ -555,11 +640,11 @@ const ZERO_BULLET: BulletStats = {
 export const TOWER_ARMOR_BY_SIZE: readonly number[] = [0, 0, 4, 9, 15];
 
 export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
-  // Duo, 1:1 from mindustry/content/Blocks.java with copper ammo
+  // Tacker, 1:1 from mindustry/content/Blocks.java with copper ammo
   // (BasicBulletType(2.5, 9)): one shot every 20 ticks, alternating between
   // twin barrels 3.5 units apart (ShootAlternate)
-  duo: {
-    name: "Duo",
+  tacker: {
+    name: "Tacker",
     size: 1,
     health: 250,
     armor: 0,
@@ -598,12 +683,12 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.copperAmmoBack,
     },
   },
-  // Hail, 1:1 from mindustry/content/Blocks.java with graphite ammo
+  // Lobber, 1:1 from mindustry/content/Blocks.java with graphite ammo
   // (ArtilleryBulletType(3, 20)): a slow arcing shell every 60 ticks that
   // ignores everything in flight and blasts 33 splash where it lands.
   // Artillery can't touch the air — ground targets only
-  hail: {
-    name: "Hail",
+  lobber: {
+    name: "Lobber",
     size: 1,
     health: 260,
     armor: 0,
@@ -649,10 +734,10 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.graphiteAmmoBack,
     },
   },
-  // Salvo, 1:1 from mindustry/content/Blocks.java with thorium ammo
+  // Autocannon, 1:1 from mindustry/content/Blocks.java with thorium ammo
   // (BasicBulletType(4, 28)): 4-shot bursts 3 ticks apart, every 29 ticks
-  salvo: {
-    name: "Salvo",
+  autocannon: {
+    name: "Autocannon",
     size: 2,
     health: 960,
     armor: 4,
@@ -678,7 +763,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       sprite: {
         region: "bullet",
         across: 8 * MU,
-        along: 13 * MU, // half again as long as duo's copper pellet
+        along: 13 * MU, // half again as long as tacker's copper pellet
         shrinkX: 0,
         shrinkY: 0.5,
         back: PAL.thoriumAmmoBack,
@@ -691,19 +776,18 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.thoriumAmmoBack,
     },
   },
-  // Scatter, from mindustry/content/Blocks.java with lead ammo
+  // Airburst, from mindustry/content/Blocks.java with lead ammo
   // (FlakBulletType(4.2, 3), splash 27*1.5 in a 15-unit radius).
   //
-  // The ONE deliberate break from upstream: our scatter is not anti-air
-  // only. Upstream's flak waits for flyers, and a turret that idles
-  // through every ground wave is a turret nobody buys — so its shells
-  // fuse over the ground swarm too. That doubles the board it covers, and
-  // the shell pays for it: the lead flak's 3/40.5 goes to 2/13.5, a third
-  // of the blast it carried when it only ever saw the air. A tier-1
-  // common at 180 scrap should not out-damage a 900-scrap salvo on both
-  // layers at once.
-  scatter: {
-    name: "Scatter",
+  // The ONE deliberate break from upstream: our airburst is not anti-air
+  // only. Upstream's flak waits for flyers, and a turret that idles through
+  // every ground wave is a turret nobody buys — so its shells fuse over the
+  // ground swarm too. That doubles the board it covers, and the shell pays
+  // for it: the lead flak's 3/40.5 goes to 2/13.5, a third of the blast it
+  // carried when it only ever saw the air. A tier-1 common at 180 scrap
+  // should not out-damage a 900-scrap autocannon on both layers at once.
+  airburst: {
+    name: "Airburst",
     size: 2,
     health: 800,
     armor: 4,
@@ -749,11 +833,11 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.lightOrange,
     },
   },
-  // Fuse, 1:1 from mindustry/content/Blocks.java with thorium ammo
+  // Cleaver, 1:1 from mindustry/content/Blocks.java with thorium ammo
   // (ShrapnelBulletType, damage 105): three instant piercing rays fired as
   // a ShootSpread(3, 20deg) fan, 3 shots / 0.583s = the official 5.14/sec.
-  fuse: {
-    name: "Fuse",
+  cleaver: {
+    name: "Cleaver",
     size: 3,
     health: 1980,
     armor: 9,
@@ -782,11 +866,11 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       // the muzzle throws the same spray of pink sparks twice over
       shootFx: FxKind.SparkShoot,
       smokeFx: FxKind.SparkShoot,
-      hitFx: FxKind.HitLancer, // ShrapnelBulletType's own
+      hitFx: FxKind.HitPiercer, // ShrapnelBulletType's own
       fxColor: PAL.thoriumPink,
     },
   },
-  // Scorch, 1:1 from mindustry/content/Blocks.java with coal ammo
+  // Torch, 1:1 from mindustry/content/Blocks.java with coal ammo
   // (BulletType(3.35, 17)): a flamethrower. It fires every 6 ticks — ten
   // times a second — and the "bullet" is a plain BulletType, which in the
   // original draws NOTHING. The flame you see is the shoot effect
@@ -794,8 +878,8 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // invisible piercing dart that rakes the whole file of units in front of
   // it and sets each alight. 60 units of range makes it the shortest-
   // ranged turret in the game, and it cannot touch the air at all
-  scorch: {
-    name: "Scorch",
+  torch: {
+    name: "Torch",
     size: 1,
     health: 400,
     armor: 0,
@@ -804,7 +888,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     shots: 1,
     shotDelay: 0,
     spread: 0,
-    inaccuracy: 0, // Turret default — scorch never overrides it
+    inaccuracy: 0, // Turret default — torch never overrides it
     shootCone: (50 * Math.PI) / 180,
     rotateSpeed: ((5 * Math.PI) / 180) * TICK, // BaseTurret default
     targetAir: false,
@@ -834,14 +918,14 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     },
   },
 
-  // Arc, 1:1 from mindustry/content/Blocks.java (a PowerTurret, so its one
-  // shootType is the whole armament): a LightningBulletType at 20 damage
-  // and lightningLength 25. The bolt is not a shot — it walks twelve nodes
-  // out from the muzzle, damaging what each lands on and chaining to the
-  // furthest enemy within reach of it, which is why arc's reach in a crowd
-  // is far longer than the 90 units it targets from. Ground only.
-  arc: {
-    name: "Arc",
+  // Coil, 1:1 from mindustry/content/Blocks.java (a PowerTurret, so its
+  // one shootType is the whole armament): a LightningBulletType at 20
+  // damage and lightningLength 25. The bolt is not a shot — it walks twelve
+  // nodes out from the muzzle, damaging what each lands on and chaining to
+  // the furthest enemy within reach of it, which is why coil's reach in
+  // a crowd is far longer than the 90 units it targets from. Ground only.
+  coil: {
+    name: "Coil",
     size: 1,
     health: 260,
     armor: 0,
@@ -850,7 +934,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     shots: 1,
     shotDelay: 0,
     spread: 0,
-    inaccuracy: 0, // Turret default — arc never overrides it
+    inaccuracy: 0, // Turret default — coil never overrides it
     shootCone: (40 * Math.PI) / 180,
     rotateSpeed: ((8 * Math.PI) / 180) * TICK,
     targetAir: false,
@@ -868,24 +952,25 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       // the node bullet is a plain BulletType, hitSize 4
       hitRadius: (4 / 2) * MU,
       lightning: { length: 25 },
+      shock: SHOCK_SECONDS, // the blue line is electric (BulletStats.shock)
       // the turret names Fx.lightningShoot but leaves smokeEffect alone,
       // so BulletType's stock puff comes along with the sparks
       shootFx: FxKind.SparkShoot,
       smokeFx: FxKind.SmokeSmall,
-      hitFx: FxKind.HitLancer, // every node's own bullet lands one
-      fxColor: PAL.lancerLaser,
+      hitFx: FxKind.HitPiercer, // every node's own bullet lands one
+      fxColor: PAL.piercerLaser,
     },
   },
-  // Lancer, 1:1 from mindustry/content/Blocks.java: a LaserBulletType(140)
+  // Piercer, 1:1 from mindustry/content/Blocks.java: a LaserBulletType(140)
   // 173 units long that pierces FOUR units and stops. shoot.firstShotDelay
   // 40 makes it charge for two thirds of a second before it fires, and
   // moveWhileCharging false locks the barrel for that whole charge — a
-  // lancer commits to where it was aiming, not where the target went.
+  // piercer commits to where it was aiming, not where the target went.
   //
   // armorMultiplier 4 is the catch: armour counts quadruple against it, so
   // the 140 that guts an ironhide1 is 104 against an ironhide3. Ground only.
-  lancer: {
-    name: "Lancer",
+  piercer: {
+    name: "Piercer",
     size: 2,
     health: 1120,
     armor: 4,
@@ -911,23 +996,24 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       collidesGround: true,
       armorMultiplier: 4,
       laser: { length: 173 * MU, pierceCap: 4, width: 15 * MU },
-      // the turret names Fx.lancerLaserShoot and sets smokeEffect to none:
-      // a lancer fires clean, with two blue wings and no powder at all
-      shootFx: FxKind.LancerShoot,
-      chargeFx: FxKind.LancerCharge,
-      hitFx: FxKind.HitLancer,
-      fxColor: PAL.lancerLaser,
+      shock: SHOCK_SECONDS, // the blue line is electric (BulletStats.shock)
+      // the turret names Fx.piercerLaserShoot and sets smokeEffect to none:
+      // a piercer fires clean, with two blue wings and no powder at all
+      shootFx: FxKind.PiercerShoot,
+      chargeFx: FxKind.PiercerCharge,
+      hitFx: FxKind.HitPiercer,
+      fxColor: PAL.piercerLaser,
     },
   },
-  // Ripple, 1:1 from mindustry/content/Blocks.java with graphite ammo
+  // Barrage, 1:1 from mindustry/content/Blocks.java with graphite ammo
   // (ArtilleryBulletType(3, 40), 70 splash in a 22.5-unit radius): four
   // shells every two seconds over 290 units — outreached only by
-  // parallax's 300 and foreshadow's 500.
+  // tether's 300 and railhead's 500.
   // The volley scatters on purpose — 11 degrees of inaccuracy, a velocity
   // roll in [0.8, 1] and a lifetime roll in [0.95, 1.08] — so it lands as a
   // pattern across the lane rather than four shells in one hole.
-  ripple: {
-    name: "Ripple",
+  barrage: {
+    name: "Barrage",
     size: 3,
     health: 1170,
     armor: 9,
@@ -957,7 +1043,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       sprite: {
         region: "shell",
         across: 12 * MU,
-        along: 14 * MU, // longer than hail's, and not round
+        along: 14 * MU, // longer than lobber's, and not round
         shrinkX: 0.15,
         shrinkY: 0.5,
         slopeShrink: true,
@@ -968,20 +1054,20 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       shootFx: FxKind.ShootBig,
       smokeFx: FxKind.SmokeSmall,
       // MultiEffect(Fx.flakExplosion, Fx.shockwaveSmaller): the blast, and
-      // a white ring running out of it — what tells a ripple's landing
-      // apart from a hail's
+      // a white ring running out of it — what tells a barrage's landing
+      // apart from a lobber's
       hitFx: FxKind.Flak,
       hitFx2: FxKind.Shockwave,
       despawnFx: FxKind.BulletHit,
       fxColor: PAL.graphiteAmmoBack,
     },
   },
-  // Wave — THE FIRST OF THE TWO TURRETS (tsunami is the other) WHOSE WEAPON
-  // IS NOT MINDUSTRY'S. Upstream's wave is a hose: twenty tiny orbs a
-  // second, each soaking the single body it touches. That reads as a stream
-  // of dots and pins exactly one enemy at a time, so the block that is
-  // supposed to be the board's crowd-control answer only ever answered the
-  // unit at the front of the file.
+  // Douser — THE FIRST OF THE TWO TURRETS (deluge is the other) WHOSE
+  // WEAPON IS NOT MINDUSTRY'S. Upstream's wave is a hose: twenty tiny orbs
+  // a second, each soaking the single body it touches. That reads as a
+  // stream of dots and pins exactly one enemy at a time, so the block that
+  // is supposed to be the board's crowd-control answer only ever answered
+  // the unit at the front of the file.
   //
   // Here it throws ONE heavy ball of water that bursts on contact and
   // soaks everything inside the burst. The block, its footprint, its
@@ -991,18 +1077,18 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   //
   // The numbers that follow from that:
   //  - reload 45 ticks. One ball every 0.75 s where the hose threw fifteen
-  //    in that time. The soak lasts 2 s, so a single wave still holds a
+  //    in that time. The soak lasts 2 s, so a single douser still holds a
   //    patch of lane wet with uptime to spare.
   //  - splash 10 over a 30-unit radius — near four tiles of reach, so the
   //    burst is better than seven tiles across. It USED TO BE 1, which is
   //    not a number, and a turret that soaked a crowd and left the bank
   //    untouched read as a debuff with a price tag rather than a gun. Ten
   //    is a BIT of damage and is meant to stay one: thirteen a second
-  //    laid over the whole burst, against hail's thirty-three into a
+  //    laid over the whole burst, against lobber's thirty-three into a
   //    third of the area for a third of the price. It chips what it wets
   //    and it still kills nothing on its own — armour shaves it like any
   //    other hit (applyArmor), and ten points shaved is most of ten.
-  //    Tsunami is the same ball at twenty a piece and six times the rate,
+  //    Deluge is the same ball at twenty a piece and six times the rate,
   //    so the pair still reads as one weapon at two scales rather than
   //    one turret at two prices.
   //  - 18 degrees of inaccuracy, where upstream sprays 5. A ball that
@@ -1011,8 +1097,8 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   //    rather than repaint one puddle, and the burst radius is what makes
   //    the scatter forgiving instead of a miss.
   // Wet units still drive at 65% speed for 2 s, refreshed on every soak.
-  wave: {
-    name: "Wave",
+  douser: {
+    name: "Douser",
     size: 2,
     health: 1000,
     armor: 4,
@@ -1059,8 +1145,8 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.water,
     },
   },
-  // Parallax, and THE ROSTER'S OTHER DELIBERATE DEVIATION (the first is
-  // the liquid turrets' soak, see `wet`). Mindustry's parallax is a
+  // Tether, and THE ROSTER'S OTHER DELIBERATE DEVIATION (the first is
+  // the liquid turrets' soak, see `wet`). Mindustry's tether is a
   // TractorBeamTurret: it holds a beam on one FLYER, deals 30
   // armour-piercing damage a second and DRAGS it backwards. The drag is a
   // lovely thing in a game where flyers steer themselves and a menace in
@@ -1069,7 +1155,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // and trades the pull for a SPOOL.
   //
   // The beam takes both layers, locks the HIGHEST-HEALTH body in range the
-  // way foreshadow's rail does, and holds it until it dies or leaves.
+  // way railhead's rail does, and holds it until it dies or leaves.
   // Thirty damage a second is what it opens with — still nothing, still
   // upstream's number — and eight seconds of unbroken contact walks it up
   // to seven times that. So it is a SIEGE WEAPON, not a gun: worthless
@@ -1078,15 +1164,15 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // armoured body nothing else can chew through, because the beam never
   // meets armour at all.
   //
-  // IT IS NOT A FORESHADOW AND MUST NEVER READ AS ONE. Fully spooled it is
-  // 210 damage a second against a single body; foreshadow spends 1,755 on
-  // a queue every 3.3 seconds — better than twice parallax's rate, through
+  // IT IS NOT A RAILHEAD AND MUST NEVER READ AS ONE. Fully spooled it is
+  // 210 damage a second against a single body; railhead spends 1,755 on
+  // a queue every 3.3 seconds — better than twice tether's rate, through
   // as many bodies as the budget reaches, from 200 units further out, and
   // from the first shot rather than the eighth second. The ramp buys
-  // parallax the ONE case foreshadow is wasted on: a lone heavy that has
+  // tether the ONE case railhead is wasted on: a lone heavy that has
   // to be ground down rather than deleted.
-  parallax: {
-    name: "Parallax",
+  tether: {
+    name: "Tether",
     size: 2,
     health: 640,
     armor: 4,
@@ -1100,7 +1186,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     rotateSpeed: ((12 * Math.PI) / 180) * TICK,
     targetAir: true,
     targetGround: true,
-    // foreshadow's pick, for foreshadow's reason: a beam that has to be
+    // railhead's pick, for railhead's reason: a beam that has to be
     // held for seconds to be worth anything cannot spend them on whichever
     // weaver1 wandered nearest
     sort: "strongest",
@@ -1117,13 +1203,13 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       lock: { spool: 8, peak: 7 },
     },
   },
-  // Tsunami — wave's weapon at the endgame's scale, and the same departure
-  // from upstream for the same reason (see wave above). Mindustry's
-  // tsunami is a bigger hose; this one is a bigger SHELL. Upstream's
-  // knockback 1.7 is still traded for the deeper slow.
+  // Deluge — douser's weapon at the endgame's scale, and the same
+  // departure from upstream for the same reason (see wave above).
+  // Mindustry's deluge is a bigger hose; this one is a bigger SHELL.
+  // Upstream's knockback 1.7 is still traded for the deeper slow.
   //
-  // AND IT HITS, WHICH WAVE DOES NOT. This used to be wave's splash of 2
-  // at three times the price and a size-3 footprint: a rare that could
+  // AND IT HITS, WHICH DOUSER DOES NOT. This used to be douser's splash of
+  // 2 at three times the price and a size-3 footprint: a rare that could
   // not kill the thing it had spent four seconds slowing, so a board
   // fielding one was paying five thousand scrap for a debuff and nothing
   // else. The slow is still WHAT IT IS FOR — the 45% for 4 s is the reason
@@ -1136,16 +1222,16 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   //  - a 46-unit burst radius: near twelve tiles across, better than half
   //    again wave's reach per ball, and the reason two balls a volley at
   //    22 degrees of scatter read as a WALL of water rather than two
-  //    puddles. The scatter is deliberately wider than wave's: at 190
+  //    puddles. The scatter is deliberately wider than douser's: at 190
   //    units of range a tight pair would soak one spot, and a burst this
   //    size can afford to miss by tiles and still catch the whole group.
   //  - splash 20 a ball, so eight balls a second is 160 a second laid
   //    over everything in the burst, air and ground alike. Against
-  //    ripple's 140 that reads as more, and it is not: a ball is ARMOUR
+  //    barrage's 140 that reads as more, and it is not: a ball is ARMOUR
   //    SHAVED LIKE ANY OTHER HIT (applyArmor), and twenty points shaved
-  //    flat eight times a second is what a hail does to a heavy, while
-  //    ripple's seventy lands whole. What tsunami has over the artillery
-  //    is the area — four times ripple's — and the four seconds of wet
+  //    flat eight times a second is what a lobber does to a heavy, while
+  //    barrage's seventy lands whole. What deluge has over the artillery
+  //    is the area — four times barrage's — and the four seconds of wet
   //    under it. Wave chips at ten a ball and a ball and a third a second
   //    — a twelfth of this rate — so the two never read as the same
   //    turret at two prices: one softens a group, this one kills it.
@@ -1153,8 +1239,8 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // over 190 range — and the soak is upstream's duration (statusDuration
   // 60*4): wet units drive at 45% speed for 4 s, so anything crossing its
   // umbrella spends better than twice as long under every other turret.
-  tsunami: {
-    name: "Tsunami",
+  deluge: {
+    name: "Deluge",
     size: 3,
     health: 2250,
     armor: 9,
@@ -1172,7 +1258,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     barrels: { count: 2, spread: 4 * MU },
     bullet: {
       speed: 4 * TICK * MU,
-      damage: 0, // as wave: every point this shot deals is splash
+      damage: 0, // as douser: every point this shot deals is splash
       lifetime: 49 / TICK, // 196 units of flight over a 190 range
       splash: 20,
       splashRadius: 46 * MU,
@@ -1190,13 +1276,13 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   },
   // ---------- THE SUPPORT PAIR ----------------------------------------
   //
-  // Mender and mend projector, Mindustry's two block healers, and the only
+  // Fixer and restorer, Mindustry's two block healers, and the only
   // things on the card that never shoot. A gun answers the wave in front of
   // it; these answer the wave AFTER it, by putting a line back together
   // between them — which is why they are worth a slot on a board where
-  // nothing repairs and a chewed duo stays chewed until it falls over.
+  // nothing repairs and a chewed tacker stays chewed until it falls over.
   //
-  // THE PULSE IS OURS, THE REST IS UPSTREAM'S. Mindustry's mender mends 4%
+  // THE PULSE IS OURS, THE REST IS UPSTREAM'S. Mindustry's fixer mends 4%
   // on a 200-tick clock and its projector 15% on 250, both of them fed
   // silicon to do it; here there is no silicon and no logistics to carry
   // it, so a healer that ticks at upstream's rate would be a block that
@@ -1204,8 +1290,8 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // Mindustry's own; the PERCENTAGES are set to what makes the block worth
   // its price on a fifty-wave hold — a tenth of a pool a pulse, a fifth for
   // the big one.
-  mender: {
-    name: "Mender",
+  fixer: {
+    name: "Fixer",
     size: 1,
     health: 200,
     armor: 0,
@@ -1222,12 +1308,12 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     heal: { percent: 0.1 },
     bullet: ZERO_BULLET,
   },
-  // the projector: double the mender's pulse over better than twice its
+  // the projector: double the fixer's pulse over better than twice its
   // reach, on a slightly longer clock — one of these behind a line does
-  // what four menders scattered along it would, which is the whole reason
+  // what four fixers scattered along it would, which is the whole reason
   // to pay a 2x2 footprint and a tier-2 price for a block that fires nothing
-  mendProjector: {
-    name: "Mend Projector",
+  restorer: {
+    name: "Restorer",
     size: 2,
     health: 700,
     armor: 4,
@@ -1244,7 +1330,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     heal: { percent: 0.2 },
     bullet: ZERO_BULLET,
   },
-  // Swarmer, 1:1 from mindustry/content/Blocks.java with blast-compound
+  // Hive, 1:1 from mindustry/content/Blocks.java with blast-compound
   // ammo (MissileBulletType(3.7, 10)): four missiles a volley, five ticks
   // apart, out of three barrels 4 units abreast (ShootBarrel).
   //
@@ -1254,8 +1340,8 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // body it passes. Ten damage on contact is nothing; the 45 splash it
   // lands is the weapon, and the homing is what stops a volley of it
   // being wasted on a target that has already fallen over.
-  swarmer: {
-    name: "Swarmer",
+  hive: {
+    name: "Hive",
     size: 2,
     health: 1200,
     armor: 4,
@@ -1304,20 +1390,20 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.blastAmmoBack,
     },
   },
-  // Cyclone, 1:1 from mindustry/content/Blocks.java with plastanium ammo
+  // Whirl, 1:1 from mindustry/content/Blocks.java with plastanium ammo
   // (FlakBulletType(4, 8)): a shell every ten ticks out of three barrels,
   // proximity-fused at 20 units, 37.5 splash across forty.
   //
   // AND THEN IT FRAGMENTS. Every blast throws six more bullets on random
-  // bearings, each 12 damage — so one cyclone shell is a burst, not a
+  // bearings, each 12 damage — so one whirl shell is a burst, not a
   // point, and a turret firing six a second lays a wall of them. That is
   // the whole reason to own it, and the reason its ammo is plastanium
   // rather than the surge that hits harder in a straight line.
   //
-  // Unlike scatter, plastanium sets collidesGround: cyclone answers both
+  // Unlike airburst, plastanium sets collidesGround: whirl answers both
   // layers.
-  cyclone: {
-    name: "Cyclone",
+  whirl: {
+    name: "Whirl",
     size: 3,
     health: 1305,
     armor: 9,
@@ -1393,10 +1479,10 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.white,
     },
   },
-  // Spectre, 1:1 from mindustry/content/Blocks.java with thorium ammo
+  // Repeater, 1:1 from mindustry/content/Blocks.java with thorium ammo
   // (BasicBulletType(8, 80)). A shell every seven ticks, alternating twin
   // barrels 8 units apart (ShootAlternate) — with the shell up-gunned 30%
-  // over stock, 80 -> 104, alongside meltdown and foreshadow: the phase
+  // over stock, 80 -> 104, alongside furnace and railhead: the phase
   // tier is priced as the run's last purchase and plays like it. 891
   // damage a second, the highest sustained figure in the game and the
   // whole reason it exists.
@@ -1404,8 +1490,8 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // pierceCap 2 makes every shell worth two bodies rather than one, and
   // knockback 0.7 shoves what survives back down the lane. Nothing about
   // it is clever: it is a wall of heavy shells.
-  spectre: {
-    name: "Spectre",
+  repeater: {
+    name: "Repeater",
     size: 4,
     health: 2560,
     armor: 15,
@@ -1439,8 +1525,8 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       knockback: 0.7,
       // THE SHELL IS DRAWN IN COPPER, not in thorium's pink. Every number
       // above is still thorium ammo's; this is the line's look, not its
-      // stats — a spectre ends duo's line and now wears
-      // duo's plating, so it throws duo's round at four times the size
+      // stats — a repeater ends tacker's line and now wears tacker's
+      // plating, so it throws tacker's round at four times the size
       sprite: {
         region: "bullet",
         across: 16 * MU,
@@ -1457,20 +1543,20 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.copperAmmoBack,
     },
   },
-  // Meltdown, from mindustry/content/Blocks.java: a LaserTurret, which
+  // Furnace, from mindustry/content/Blocks.java: a LaserTurret, which
   // is a turret that does not fire shots at all. It lights a
   // ContinuousLaserBulletType and HOLDS it — Mindustry's 78 raised 30% to
-  // 101 (the phase-tier up-gun, see spectre) to everything under the beam
+  // 101 (the phase-tier up-gun, see repeater) to everything under the beam
   // every five ticks, for 230 ticks, and only then does the 90-tick reload
   // start running. 1,212 damage a second while it burns,
   // against nothing at all while it cools: a 72% duty cycle.
   //
   // firingMoveFract halves the turret's turn rate for as long as the beam
-  // is lit, so meltdown tracks a crossing target badly and a queue walking
+  // is lit, so furnace tracks a crossing target badly and a queue walking
   // into it perfectly. The beam pierces without limit, which is what makes
   // that queue the case it is built for.
-  meltdown: {
-    name: "Meltdown",
+  furnace: {
+    name: "Furnace",
     size: 4,
     health: 3200,
     armor: 15,
@@ -1484,7 +1570,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     rotateSpeed: ((1.5 * Math.PI) / 180) * TICK,
     targetAir: true,
     targetGround: true,
-    shootY: 4 * 4 * MU, // Turret's own default, as spectre's
+    shootY: 4 * 4 * MU, // Turret's own default, as repeater's
     bullet: {
       speed: 0,
       damage: 101, // per damageInterval, NOT per second — stock 78, +30%
@@ -1494,6 +1580,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       collidesAir: true,
       collidesGround: true,
       hitRadius: (4 / 2) * MU, // hitSize 4
+      shock: SHOCK_SECONDS, // the blue line is electric (BulletStats.shock)
       continuous: {
         length: 200 * MU,
         damageInterval: 5 / TICK,
@@ -1503,25 +1590,25 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       },
       // Upstream the TURRET names Fx.shootBigSmoke2 and the bullet none,
       // so the block's orange powder cloud is what plays. A laser throws
-      // no powder, and this one ends lancer's line, so it lights up the
-      // way a lancer fires instead: the two blue wings off the muzzle,
+      // no powder, and this one ends piercer's line, so it lights up the
+      // way a piercer fires instead: the two blue wings off the muzzle,
       // square to the beam. No other TURRET fired the cloud; the swarm's
       // artillery and its spark guns still do (weapons.ts)
-      shootFx: FxKind.LancerShoot,
-      hitFx: FxKind.HitMeltdown,
-      // THE BEAM IS LANCER'S BLUE, not Mindustry's orange — a meltdown
-      // ends arc's and lancer's line and now wears its
+      shootFx: FxKind.PiercerShoot,
+      hitFx: FxKind.HitFurnace,
+      // THE BEAM IS PIERCER'S BLUE, not Mindustry's orange — a furnace
+      // ends coil's and piercer's line and now wears its
       // plating, so it burns in its colour too. This entry carries the
       // muzzle cloud and the bars flicking off whatever the beam rests on;
-      // the four washes of the beam itself are MELTDOWN_BEAM (weapons.ts),
+      // the four washes of the beam itself are FURNACE_BEAM (weapons.ts),
       // which is repainted to match
-      fxColor: PAL.lancerLaser,
+      fxColor: PAL.piercerLaser,
     },
   },
-  // Foreshadow, from mindustry/content/Blocks.java with surge ammo (a
+  // Railhead, from mindustry/content/Blocks.java with surge ammo (a
   // RailBulletType): 500 units of range — the only turret that outreaches
   // the map's own lanes — and one 1755-damage shot every 200 ticks
-  // (Mindustry's 1350, +30%: the phase-tier up-gun, see spectre).
+  // (Mindustry's 1350, +30%: the phase-tier up-gun, see repeater).
   //
   // THE DAMAGE IS A BUDGET, NOT A NUMBER. The rail is an instant line, and
   // every body it punches through takes whatever is LEFT of the 1350 and
@@ -1531,8 +1618,8 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // POOL, which is why it targets the STRONGEST thing in range rather than
   // the nearest: spending the reload on a stray weaver1 is the one way to
   // waste it.
-  foreshadow: {
-    name: "Foreshadow",
+  railhead: {
+    name: "Railhead",
     size: 4,
     health: 2400,
     armor: 15,
@@ -1546,7 +1633,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     rotateSpeed: ((1.5 * Math.PI) / 180) * TICK,
     targetAir: true,
     targetGround: true,
-    shootY: 4 * 4 * MU, // Turret's own default, as spectre's
+    shootY: 4 * 4 * MU, // Turret's own default, as repeater's
     sort: "strongest",
     bullet: {
       speed: 0,
@@ -1574,7 +1661,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
  * WHAT A TURRET IS, in one sentence, for the card the tech tree opens over
  * its node.
  *
- * The node itself can only ever say what BUYING it does — "+1 Duo
+ * The node itself can only ever say what BUYING it does — "+1 Tacker
  * placement" — which is the shopkeeper's half of the question and not the
  * player's. The player is choosing between seventeen guns they have never
  * fired, so the card has to say what the gun DOES: how it delivers damage,
@@ -1584,42 +1671,42 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
  * the board and in the balance page, and they would go stale the first time
  * the constants above are touched. No tactics either: where a turret wants
  * to stand is the player's discovery, and a card that hands it over is both
- * longer and less fun. Just what the gun DOES — an arc jumps, a ripple
- * lobs, a foreshadow takes one huge shot — because a card nobody finishes
+ * longer and less fun. Just what the gun DOES — a coil jumps, a barrage
+ * lobs, a railhead takes one huge shot — because a card nobody finishes
  * reading mid-wave has told the player nothing.
  *
  * WHO IT SHOOTS AT IS NOT IN HERE. That line is derived from targetAir and
  * targetGround (see targetingLine below) so it can never contradict the
- * stats, and so a rung that grants air targeting — arc's Ionised Air —
+ * stats, and so a rung that grants air targeting — coil's Ionised Air —
  * moves it for free.
  */
 export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
-  duo: "Shoots small bullets quickly.",
-  scatter: "Shoots flak shells that burst near enemies.",
-  arc: "Shoots lightning that jumps between enemies.",
-  hail: "Lobs shells that explode where they land.",
-  scorch: "Sprays fire at close range and sets enemies alight.",
-  salvo: "Shoots four shells at once, then reloads slowly.",
-  wave: "Lobs a ball of water that bursts, soaking everything nearby and chipping at it.",
-  lancer: "Charges up, then fires a beam through a line of enemies.",
-  ripple: "Lobs four shells at once over a long distance.",
-  parallax: "Locks a beam onto one enemy that burns hotter the longer it holds.",
-  fuse: "Shoots three heavy rays at very close range.",
-  swarmer: "Shoots homing missiles that explode on contact.",
-  cyclone: "Shoots a fast stream of shells that burst into fragments.",
-  tsunami: "Throws heavy water balls that burst into a huge flood, soaking and shredding everything caught in it.",
-  mender: "Repairs nearby buildings every few seconds.",
-  mendProjector: "Repairs nearby buildings faster and over a wider area.",
-  spectre: "Shoots heavy bullets from two barrels without stopping.",
-  meltdown: "Burns one enemy with a continuous laser.",
-  foreshadow: "Shoots one huge railgun shot with a long reload.",
+  tacker: "Shoots small bullets quickly.",
+  airburst: "Shoots flak shells that burst near enemies.",
+  coil: "Shoots lightning that jumps between enemies.",
+  lobber: "Lobs shells that explode where they land.",
+  torch: "Sprays fire at close range and sets enemies alight.",
+  autocannon: "Shoots four shells at once, then reloads slowly.",
+  douser: "Lobs a ball of water that bursts, soaking everything nearby and chipping at it.",
+  piercer: "Charges up, then fires a beam through a line of enemies.",
+  barrage: "Lobs four shells at once over a long distance.",
+  tether: "Locks a beam onto one enemy that burns hotter the longer it holds.",
+  cleaver: "Shoots three heavy rays at very close range.",
+  hive: "Shoots homing missiles that explode on contact.",
+  whirl: "Shoots a fast stream of shells that burst into fragments.",
+  deluge: "Throws heavy water balls that burst into a huge flood, soaking and shredding everything caught in it.",
+  fixer: "Repairs nearby buildings every few seconds.",
+  restorer: "Repairs nearby buildings faster and over a wider area.",
+  repeater: "Shoots heavy bullets from two barrels without stopping.",
+  furnace: "Holds a laser that burns everything in its path.",
+  railhead: "Shoots one huge railgun shot with a long reload.",
 };
 
 /**
  * WHO A TURRET WILL SHOOT AT, as the one line the card prints under the
  * description. Derived rather than authored so it cannot drift from the
  * stats, and so it follows an upgraded turret: pass the stats the player
- * actually has and arc reads "ground and air" the moment Ionised Air is
+ * actually has and coil reads "ground and air" the moment Ionised Air is
  * bought.
  *
  * A SUPPORT BLOCK (TowerStats.heal) reads "Shoots nothing", which is the
@@ -1791,8 +1878,8 @@ export const BURN_DPS = 0.167 * TICK;
 export const BURN_FX_CHANCE = 0.15 * TICK; // Mathf.chanceDelta(0.15)
 // StatusEffects.wet's flicker: Fx.wet at effectChance 0.09 per tick, from
 // a random point inside the hitbox exactly like burning's. The status's
-// TEETH — the slow — are per-bullet (BulletStats.wet), not here: wave and
-// tsunami soak to different depths, so the strength travels with the ammo
+// TEETH — the slow — are per-bullet (BulletStats.wet), not here: douser and
+// deluge soak to different depths, so the strength travels with the ammo
 export const WET_FX_CHANCE = 0.09 * TICK;
 
 // ShrapnelBulletType draw geometry (world units -> px), shared by the
@@ -1932,7 +2019,7 @@ export const POISON_TIME = 6;
  */
 export const POISON_DECAY = 1;
 /** motes a second a rotting structure lifts, for a 1x1 — scaled by the
- *  footprint exactly as the damage smoke is, so a rotting spectre reads
+ *  footprint exactly as the damage smoke is, so a rotting repeater reads
  *  from across the field */
 export const POISON_FX_RATE = 6;
 /** seconds one mote lives */

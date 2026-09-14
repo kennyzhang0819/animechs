@@ -67,6 +67,61 @@ the other way round.
   held that exception before, legged on eight at every tier, is exactly
   what this rule exists to prevent: it was retired for being
   uncomfortable to look at.
+- **A leg is the animal's leg, not the rig's.** The legged rig plants four
+  feet on a ring and strokes two segments out to each one, and left alone
+  it will make every family a spider: thin limbs, a wide ring, and a knee
+  folded far enough to stand proud of the flank. Three numbers decide
+  whether it does, and every legged tier has to answer all three
+  (`LegSpec`, `game/levels.ts`; the strokes are `th`/`sh` on the tier).
+  **How far the foot lands**, as `(baseOffset + length * lengthScl) /
+  radius`: a rhino is a block and stands at 1.09, a deer walks on its
+  feet and so does an elephant, so the stag sits at 1.10 and the Tuskers
+  at 1.13 — the hoof or the pad at the outline and nothing else showing;
+  a frog squats with its legs folded beside it, so the Dartback is 1.75
+  at every tier.
+  Past about 2 the animal is standing inside a span rather than on its
+  feet, and that is a spider whatever is drawn on the body — the Dartback
+  was at 2.85 and read as one. **How thick the limb is**, as stroke over
+  the body's grid: the elephant's and the frog's are a fifth, the rhino's
+  a sixth, the stag's a tenth. Thin is only right where the animal is
+  thin — an elephant walks on pillars and a rhino on stumps, and only the
+  deer has a leg you could call slender. **And whether the two segments are the same width**:
+  a deer's thigh is meat and its cannon bone is a stick, so `th` is near
+  twice `sh`, while an elephant's leg barely tapers at all; two segments
+  of one middling width is a crab's limb however it is walked.
+- **Measure the KNEE, not the foot.** This is the number that settled all
+  four legged families, and it was not obvious: the thing the eye reads
+  as a spider is a bent joint sitting outside the body, and everything
+  else is downstream of it. A foot is planted in the WORLD and stays
+  there while the body walks `moveSpace` past it, so a leg sweeps through
+  a long arc; the knee rides about half way along it, which means it
+  answers to the mount offset and the step length together. Take the
+  knee's furthest distance from the body centre over a whole stance, over
+  the radius. Under 1.0 the knee never leaves the silhouette at all —
+  what clears the outline is a foot and a stub, and the animal reads as a
+  solid thing that walks. The four families sit where they should:
+
+  | family | knee | step | what it reads as |
+  | --- | --- | --- | --- |
+  | Ironhide, the rhino | 0.80–0.86 | 0.76–0.88 | a block on four stumps; the leg is never seen |
+  | Tusker, the elephant | 1.08–1.12 | 0.63–0.66 | pillars under a body, a plod |
+  | Starhart, the stag | 1.10–1.11 | 1.29–1.30 | the knee at the flank, a trot with a reach |
+  | Dartback, the frog | 1.42–1.47 | 1.34–1.48 | legs folded BESIDE it, which is the frog's own outline |
+
+  Over about 1.5 and the joints are out in the open on all four corners,
+  which is a bug at any size: every one of these was between 1.69 and
+  1.93 before, and every one of them looked like a spider. **The cheapest
+  way to bring a knee in is to pull the mount in** (`baseOffset`) and let
+  the leg get longer to keep the same reach — the rhino's mounts sit at
+  1.5 MU, almost at its centre, which is why its legs are invisible.
+  After that, shorten the step: `moveSpace` near 2 radii drags each foot
+  two body-widths behind before picking it up, and that is the scuttle.
+- **The gait group is an animal fact.** `groupSize` 2 swings two diagonal
+  legs at once — a trot, right for the stag and for anything light. An
+  elephant never has more than one foot off the ground, so the Tuskers
+  run `groupSize` 1 and take their turn one leg at a time round the ring.
+  It costs nothing, changes no other number, and is most of why the herd
+  reads as heavy instead of scuttling.
 - **Flat plates, no outlines, nothing thinner than two pixels.** The
   Mindustry rules from `game/pixelArt.ts`: four or five butted colours,
   no dark contour, no bevel. The atlas adds the rim itself (`outlined()`,
@@ -143,7 +198,7 @@ stricter grammar than the trial above, and every family is drawn to it
   part is drawn once in its material and the shade falls on it after
   (`finish`), so the shape is symmetric by construction and the shade is
   never. A part in the REVERSED pair (`rev`) catches light the other way,
-  and that is how a fold, a band or a bevel is shown — the duo's light
+  and that is how a fold, a band or a bevel is shown — the tacker's light
   wedge in its dark half, the rhino's shoulder fold.
 - **Nothing under four pixels.** No line, gap, stud, band or highlight
   narrower than four. The one-pixel checker the trial used for mottled
@@ -151,7 +206,7 @@ stricter grammar than the trial above, and every family is drawn to it
   least four wide, because the shade split cuts it in two.
 - **The scale is the turrets'.** 32 native px a tile, so a body is drawn
   at its hitbox: an ironhide1 is a 1x1 (radius `UR` = 10 world px, one
-  20 px tile) and draws on a 32 grid, like a duo; an ironhide5 is a
+  20 px tile) and draws on a 32 grid, like a tacker; an ironhide5 is a
   3.75x3.75 and draws on 120. There is no overshoot on these — the quad
   is the box — which retires rule 3 of "The size" below for a family on
   this grammar. The sheet's 0.625 world px per native px puts 32 px on
@@ -165,7 +220,7 @@ stricter grammar than the trial above, and every family is drawn to it
   (`game/levels.ts`).
 
 The pixel budget per tier is the hitbox: 32, 40, 52, 88, 120 for the
-rhino, and section 2 has the rest. What fits in 32 is what fits in a duo — a body, a head, a horn
+rhino, and section 2 has the rest. What fits in 32 is what fits in a tacker — a body, a head, a horn
 and one accent block — and that is the point: a T1 next to a 1x1 turret
 is the same kind of drawing at the same size.
 
@@ -190,7 +245,7 @@ footprint gets.
 | Tusker, the elephant | `game/tuskerArt.ts` | mech to T3, four legs from T4 | 56, 72, 96, 136, 176 |
 
 **A family may be big, and the Tusker is the one that is.** Every other
-line opens on about a tile — a 32 grid, a duo's own footprint — because
+line opens on about a tile — a 32 grid, a tacker's own footprint — because
 every other line is one of Mindustry's trees and inherited its hitbox. The
 elephants were authored here, so their boxes were chosen rather than
 inherited: the runt is a 1.75x1.75 on a 56 grid, half again the widest T1

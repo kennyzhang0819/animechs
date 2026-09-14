@@ -6,8 +6,8 @@
  * the concept sheets live in scripts/turret-concepts.mjs, which imports
  * this file so the roster is drawn from one place.
  *
- * HOW A HEAD IS DRAWN, read off duo.png, lancer.png, ripple.png and
- * spectre.png rather than assumed:
+ * HOW A HEAD IS DRAWN, read off tacker.png, piercer.png, barrage.png and
+ * repeater.png rather than assumed:
  *   - NO outline, NO rim, NO inset border plate. Four or five flat colours
  *     butted against each other, inside the stock margin (4 px on a 32
  *     grid, 8 on 64, 6 on 96 and 128) so the base plate shows around it.
@@ -33,8 +33,8 @@
  *     — never a dressing of studs, vents and rounds: at 2.5 px a stroke
  *     on the board those are noise, and the hand-edited sheet this pass
  *     replaced had already scraped most of them off.
- *   - The body is gunmetal (the ripple's and the spectre's), the barrels
- *     steel (the lancer's), a bore near-black, and the ACCENT is the
+ *   - The body is gunmetal (the barrage's and the repeater's), the barrels
+ *     steel (the piercer's), a bore near-black, and the ACCENT is the
  *     colour of what the turret throws, in Mindustry's own ammo pairs
  *     where it has one — never the colour of a rarity band.
  *
@@ -51,7 +51,7 @@ export const GUN: Mat = ["#4d4e58", "#7b7b7b"];
 export const STEEL: Mat = ["#c1c3d4", "#f4f4f4"];
 export const BORE: Mat = ["#2c2d38", "#2c2d38"];
 /** the same material with its shade reversed — a bevel band drawn in it
- *  catches light the other way, the duo's light wedge inside its dark
+ *  catches light the other way, the tacker's light wedge inside its dark
  *  half, done on purpose */
 export const rev = (m: Mat): Mat => [m[1], m[0]];
 export const GUN_R: Mat = rev(GUN);
@@ -59,13 +59,13 @@ export const GUN_R: Mat = rev(GUN);
 /** what a turret throws, and the colour it wears for it */
 export type AmmoGroup = "bullet" | "shell" | "flame" | "beam" | "water" | "field" | "missile";
 export const ACCENT: Record<AmmoGroup, Mat> = {
-  bullet: ["#8f665b", "#c9a58f"], // copper — the duo's own body
-  shell: ["#d99f6b", "#f3e979"], // brass — the cyclone's and foreshadow's
-  flame: ["#ec7458", "#ff9c5a"], // ember — the spectre's and meltdown's
-  beam: ["#6974c4", "#8aa3f4"], // the lancer's blue
+  bullet: ["#8f665b", "#c9a58f"], // copper — the tacker's own body
+  shell: ["#d99f6b", "#f3e979"], // brass — the whirl's and railhead's
+  flame: ["#ec7458", "#ff9c5a"], // ember — the repeater's and furnace's
+  beam: ["#6974c4", "#8aa3f4"], // the piercer's blue
   water: ["#3f4c96", "#5c6dbb"], // Liquids.water, darker than the beam
   field: ["#4fa88a", "#8fe0b8"], // mint, the one hue no stock turret uses
-  missile: ["#da6b68", "#feb380"], // the ripple's and swarmer's salmon
+  missile: ["#da6b68", "#feb380"], // the barrage's and hive's salmon
 };
 
 /** every channel of the stock base plate times this: still grey, a step
@@ -171,21 +171,21 @@ export function bars(P: Pen, x0: number, x1: number, y: number, n: number, h: nu
 }
 
 // ── the roster ─────────────────────────────────────────────────────────
-/** the kinds with a drawing: every turret but the retired menders */
+/** the kinds with a drawing: every turret but the retired fixers */
 export const TURRET_ART_KINDS = [
-  "duo", "hail", "scorch", "arc",
-  "salvo", "scatter", "lancer", "wave", "parallax", "swarmer",
-  "fuse", "ripple", "tsunami", "cyclone",
-  "spectre", "meltdown", "foreshadow",
+  "tacker", "lobber", "torch", "coil",
+  "autocannon", "airburst", "piercer", "douser", "tether", "hive",
+  "cleaver", "barrage", "deluge", "whirl",
+  "repeater", "furnace", "railhead",
 ] as const;
 export type TurretArtKind = (typeof TURRET_ART_KINDS)[number];
 /** size in cells, and what it throws */
 export const ROSTER: Record<TurretArtKind, { size: 1 | 2 | 3 | 4; ammo: AmmoGroup }> = {
-  duo: { size: 1, ammo: "bullet" }, hail: { size: 1, ammo: "shell" }, scorch: { size: 1, ammo: "flame" }, arc: { size: 1, ammo: "beam" },
-  salvo: { size: 2, ammo: "bullet" }, scatter: { size: 2, ammo: "missile" }, lancer: { size: 2, ammo: "beam" }, wave: { size: 2, ammo: "water" },
-  parallax: { size: 2, ammo: "field" }, swarmer: { size: 2, ammo: "missile" },
-  fuse: { size: 3, ammo: "flame" }, ripple: { size: 3, ammo: "shell" }, tsunami: { size: 3, ammo: "water" }, cyclone: { size: 3, ammo: "missile" },
-  spectre: { size: 4, ammo: "bullet" }, meltdown: { size: 4, ammo: "beam" }, foreshadow: { size: 4, ammo: "beam" },
+  tacker: { size: 1, ammo: "bullet" }, lobber: { size: 1, ammo: "shell" }, torch: { size: 1, ammo: "flame" }, coil: { size: 1, ammo: "beam" },
+  autocannon: { size: 2, ammo: "bullet" }, airburst: { size: 2, ammo: "missile" }, piercer: { size: 2, ammo: "beam" }, douser: { size: 2, ammo: "water" },
+  tether: { size: 2, ammo: "field" }, hive: { size: 2, ammo: "missile" },
+  cleaver: { size: 3, ammo: "flame" }, barrage: { size: 3, ammo: "shell" }, deluge: { size: 3, ammo: "water" }, whirl: { size: 3, ammo: "missile" },
+  repeater: { size: 4, ammo: "bullet" }, furnace: { size: 4, ammo: "beam" }, railhead: { size: 4, ammo: "beam" },
 };
 export type HeadFn = (P: Pen, A: Mat) => void;
 
@@ -210,71 +210,71 @@ export type HeadFn = (P: Pen, A: Mat) => void;
  */
 export const HEADS: Record<TurretArtKind, HeadFn> = {
   // 1x1, 32 px ───────────────────────────────────────────────────────
-  duo(P, A) {                                            // two barrels on a copper block
+  tacker(P, A) {                                         // two barrels on a copper block
     P.octa(6, 12, 26, 28, 4, GUN);                        // the turntable
     P.box(6, 12, 26, 20, A);                              // the copper block, across it
     barrel(P, 8, 12, 4, 12, A, { cap: 4 });               // a barrel, 4 wide, its cap 4 tall
   },
-  hail(P, A) {                                           // one mortar mouth, a plate behind
+  lobber(P, A) {                                         // one mortar mouth, a plate behind
     P.octa(6, 4, 26, 24, 6, STEEL);                       // the mouth
     P.box(10, 10, 22, 18, A);                             // the shell in it
     P.box(6, 18, 26, 28, GUN);                            // the plate
   },
-  scorch(P, A) {                                         // a flat wide nozzle on a tank
+  torch(P, A) {                                          // a flat wide nozzle on a tank
     P.octa(4, 12, 28, 28, 4, A);                          // the tank
     P.box(8, 4, 24, 12, STEEL);                           // the nozzle, as wide as the tank's top
     P.box(14, 4, 18, 8, BORE);
     P.box(4, 20, 28, 28, GUN);                            // the cradle behind
   },
-  arc(P, A) {                                            // a coil dome, two prongs, no barrel
+  coil(P, A) {                                           // a coil dome, two prongs, no barrel
     P.octa(4, 8, 28, 28, 4, GUN);
     P.box(8, 12, 24, 24, A);                              // the coil
     P.box(12, 16, 20, 20, STEEL);                         // its core
     P.box(4, 4, 8, 14, STEEL);                            // a prong, at the edge
   },
   // 2x2, 64 px ───────────────────────────────────────────────────────
-  salvo(P, A) {                                          // three barrels over a magazine
+  autocannon(P, A) {                                     // three barrels over a magazine
     P.octa(8, 16, 56, 56, 12, GUN);
     barrel(P, 12, 20, 6, 24, A, { cap: 6 });
     barrel(P, 28, 36, 6, 24, A, { cap: 6 });
     P.box(8, 24, 56, 40, A);                              // the magazine, across the drum
     P.box(28, 40, 36, 56, STEEL);                         // the feed
   },
-  scatter(P, A) {                                        // a bell that flares forward
+  airburst(P, A) {                                       // a bell that flares forward
     P.octa(8, 26, 56, 58, 10, GUN);
     P.box(14, 14, 50, 30, STEEL);                         // the throat
     P.box(10, 6, 54, 16, A);                              // the flare
     P.box(24, 6, 40, 12, BORE);                           // the mouth
     P.box(20, 40, 44, 52, A);                             // the magazine
   },
-  lancer(P, A) {                                         // a wedge with capacitors on the flanks
+  piercer(P, A) {                                        // a wedge with capacitors on the flanks
     P.octa(10, 20, 54, 58, 12, GUN);
     P.box(18, 4, 46, 24, STEEL);                          // the emitter block
     P.box(24, 4, 40, 12, A);                              // the emitter
     P.box(28, 24, 36, 50, A);                             // the charge line
     P.box(8, 24, 18, 42, A);                              // a capacitor on the flank
   },
-  wave(P, A) {                                           // a tank with a window and one nozzle
+  douser(P, A) {                                         // a tank with a window and one nozzle
     P.octa(8, 20, 56, 58, 12, GUN);
     inset(P, 8, 20, 56, 58, 12, 6, STEEL);                // the window's rim
     inset(P, 8, 20, 56, 58, 12, 10, A);                   // the water
     P.box(26, 4, 38, 26, STEEL);                          // the nozzle
     P.box(22, 8, 42, 16, A);                              // the valve
   },
-  parallax(P, A) {                                       // a dish on a yoke
+  tether(P, A) {                                         // a dish on a yoke
     P.octa(10, 33, 54, 58, 8, GUN); P.box(10, 33, 54, 41, GUN);   // the yoke, square at the top
     P.octa(8, 4, 56, 44, 16, STEEL);                      // the dish
     inset(P, 8, 4, 56, 44, 16, 4, GUN_R);                 // its bowl
     inset(P, 8, 4, 56, 44, 16, 12, A);                    // the field
     P.box(28, 20, 36, 28, STEEL);                         // the emitter
   },
-  swarmer(P, A) {                                        // a box of missile cells
+  hive(P, A) {                                           // a box of missile cells
     P.octa(8, 8, 56, 58, 12, GUN);
     P.box(16, 16, 48, 48, STEEL);                         // the box
     P.box(20, 20, 28, 28, A); P.box(20, 32, 28, 40, A);   // two cells a side
   },
   // 3x3, 96 px ───────────────────────────────────────────────────────
-  fuse(P, A) {                                           // a broadside: one blast face as wide as the drum
+  cleaver(P, A) {                                        // one blast face as wide as the drum
     P.octa(6, 30, 90, 90, 18, GUN);
     P.octa(12, 6, 84, 34, 8, STEEL);                      // the blast face
     P.box(12, 34, 84, 42, A);                             // the heat band where it meets the drum
@@ -282,7 +282,7 @@ export const HEADS: Record<TurretArtKind, HeadFn> = {
     P.box(40, 56, 56, 72, STEEL);
     P.box(10, 48, 22, 72, A);                             // a shell rack on the rim
   },
-  ripple(P, A) {                                         // four ringed mouths on a plate
+  barrage(P, A) {                                        // four ringed mouths on a plate
     P.octa(6, 6, 90, 90, 16, GUN);
     for (const y of [14, 54]) {
       P.octa(14, y, 42, y + 28, 8, STEEL);                // a mouth
@@ -290,13 +290,13 @@ export const HEADS: Record<TurretArtKind, HeadFn> = {
       P.box(24, y + 10, 32, y + 18, BORE);
     }
   },
-  tsunami(P, A) {                                        // the great tank, twin nozzles
+  deluge(P, A) {                                         // the great tank, twin nozzles
     P.octa(6, 26, 90, 90, 14, GUN);
     inset(P, 6, 26, 90, 90, 14, 4, STEEL);                // the window's rim
     inset(P, 6, 26, 90, 90, 14, 8, A);                    // the water
     barrel(P, 24, 40, 4, 30, A, { cap: 6, bore: 8, collar: 6 });   // a nozzle
   },
-  cyclone(P, A) {                                        // a rotary cluster on a banded drum
+  whirl(P, A) {                                          // a rotary cluster on a banded drum
     P.octa(10, 34, 86, 90, 14, GUN);
     barrel(P, 20, 32, 10, 38, A, { cap: 6, collar: 6 });  // the outer barrels
     barrel(P, 42, 54, 2, 46, A, { cap: 6, collar: 6 });   // the middle one, forward
@@ -305,7 +305,7 @@ export const HEADS: Record<TurretArtKind, HeadFn> = {
     P.box(42, 62, 54, 74, STEEL);                         // its hub
   },
   // 4x4, 128 px ──────────────────────────────────────────────────────
-  spectre(P, A) {                                        // long twin barrels on a breech, radiator pods
+  repeater(P, A) {                                       // long twin barrels on a breech, radiator pods
     P.octa(10, 62, 118, 122, 20, GUN);
     P.box(26, 34, 102, 62, A);                            // the breech, the barrels stand on it
     barrel(P, 30, 50, 6, 62, A, { cap: 10, bore: 8 });    // a barrel
@@ -313,7 +313,7 @@ export const HEADS: Record<TurretArtKind, HeadFn> = {
     P.octa(48, 72, 80, 104, 8, A);                        // the ammo drum
     P.box(58, 82, 70, 94, STEEL);
   },
-  meltdown(P, A) {                                       // one lens and three capacitor banks
+  furnace(P, A) {                                        // one lens and three capacitor banks
     P.octa(8, 26, 120, 122, 26, GUN);
     P.octa(40, 6, 88, 34, 10, STEEL);                     // the emitter housing
     P.box(56, 6, 72, 18, A);                              // the emitter
@@ -323,7 +323,7 @@ export const HEADS: Record<TurretArtKind, HeadFn> = {
     P.box(20, 52, 34, 96, A);                             // a capacitor bank on the flank
     P.box(52, 96, 76, 116, A);                            // and one behind
   },
-  foreshadow(P, A) {                                     // a single rail with accelerator rings
+  railhead(P, A) {                                       // a single rail with accelerator rings
     P.octa(16, 60, 112, 122, 16, GUN);
     P.box(44, 2, 84, 80, STEEL);                          // the rail
     P.box(60, 2, 68, 12, BORE);
@@ -434,7 +434,7 @@ export function drawHead(kind: TurretArtKind, set: Record<TurretArtKind, HeadFn>
 const isArtKind = (kind: TowerKind): kind is TurretArtKind => (TURRET_ART_KINDS as readonly string[]).includes(kind);
 const HEAD_CACHE = new Map<TurretArtKind, Art>();
 /** the head for a turret kind, drawn once and kept — null for a kind with
- *  no Foundry drawing (the retired menders keep their stock sprites) */
+ *  no Foundry drawing (the retired fixers keep their stock sprites) */
 export function turretHead(kind: TowerKind): Art | null {
   if (!isArtKind(kind)) return null;
   let a = HEAD_CACHE.get(kind);

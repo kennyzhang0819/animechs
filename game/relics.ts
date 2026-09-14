@@ -35,7 +35,7 @@ import { faster, piercing, stronger } from "./upgrades";
  * ability — is a relic whose whole effect is that content stops happening.
  * It reads as the game doing less rather than the player doing more, and
  * it quietly deletes the reason the disabled thing was written. An Aegis
- * Breaker that turned the swarm's mender, shield, plating and haste fields
+ * Breaker that turned the swarm's fixer, shield, plating and haste fields
  * off lived here for exactly one commit and is gone for this reason.
  *
  * CHANGING AN ARITHMETIC IS NOT SWITCHING A SYSTEM OFF, and the line is
@@ -91,8 +91,8 @@ import { faster, piercing, stronger } from "./upgrades";
  * bullet fields instead they would have been silently inert for half the
  * roster: `pierceArmor` is honoured on exactly one of the sim's damage
  * paths and `wet` on two, so a "every round ignores armour" relic bolted
- * onto BulletStats would have done nothing at all for a lancer, an arc or
- * a meltdown. A relic is a rule over the whole board, so it is enforced
+ * onto BulletStats would have done nothing at all for a piercer, a coil or
+ * a furnace. A relic is a rule over the whole board, so it is enforced
  * where the whole board passes.
  */
 
@@ -274,7 +274,7 @@ export const TWINFIRE_SHOTS = 1;
  * bottom of the roster and everything at the top, and the two stack
  * because they are different shapes. A run that has both is hitting a T5
  * for four times what it started at, which is roughly what it takes to
- * make a duo matter in the back half of the campaign.
+ * make a tacker matter in the back half of the campaign.
  */
 export const TITAN_PER_TIER = 0.25;
 

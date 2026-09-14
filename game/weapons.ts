@@ -22,8 +22,8 @@ import { FxKind, type RGB } from "./types";
  * THE RTS TURN, second half: every unit attack-moves. It walks the field
  * toward the base as it always did, and whatever structure comes within
  * a weapon's reach on the way is shot (Sim.updateUnitWeapons) — the
- * turret on the corner of the lane, the wall of duos across it, the
- * spectre it is walking into. A structure in the swarm's PATH is now a
+ * turret on the corner of the lane, the wall of tackers across it, the
+ * repeater it is walking into. A structure in the swarm's PATH is now a
  * wall the swarm chews through (FlowField: a structure cell is passable
  * at STRUCTURE_COST), which is Mindustry's own ground pathing, and what
  * "a-move" means when the enemy has no player units to fight.
@@ -148,7 +148,7 @@ export interface ShotLook {
 /**
  * LaserBulletType.draw's parameters: `colors` (r, g, b, alpha per pass,
  * each pass half the width of the last), the beam width and the side
- * runts off the muzzle. Style 0 is lancer's — the turret's beam and the
+ * runts off the muzzle. Style 0 is piercer's — the turret's beam and the
  * class default.
  */
 export interface LaserStyle {
@@ -171,7 +171,7 @@ export interface SapStyle {
 
 /**
  * ContinuousLaserBulletType.colors and width — the four washes of a held
- * beam. Style 0 is meltdown's (the class default), read by the turret.
+ * beam. Style 0 is furnace's (the class default), read by the turret.
  */
 export interface BeamStyle {
   id: number;
@@ -322,7 +322,7 @@ export interface UnitWeapon {
    * the nearest structure within `reach` of the last one it struck that it
    * has not struck yet, `jumps` times, each hop carrying `decay` of the
    * last. A patch is a chain's whole reason to exist — one hull on a wall
-   * of duos lights the wall.
+   * of tackers lights the wall.
    */
   arc?: { jumps: number; reach: number; decay: number; color: RGB };
   /**
@@ -354,7 +354,7 @@ export interface UnitWeapon {
    * is not: Giant and Bulwark (mods.ts) put a late-run gun past a quarter
    * of a million health, which is minutes of the venom line's rot and
    * tens of seconds of anything else. A share of the pool is the same
-   * number of SECONDS against a duo and against that, so the answer to a
+   * number of SECONDS against a tacker and against that, so the answer to a
    * Tusker is never "a bigger turret" — it is not letting one arrive.
    *
    * NEVER ON THE CORE, which has no gun to lose and is the run's whole
@@ -467,9 +467,9 @@ const explosionStyle = (s: Omit<ExplosionStyle, "id">): ExplosionStyle => {
 const DEG = Math.PI / 180;
 const WHITE: RGB = PAL.white;
 
-/** LaserBulletType's own defaults — lancer's beam, style 0 */
-export const LANCER_LASER = laserStyle({
-  colors: [[PAL.lancerLaser, 0.4], [PAL.lancerLaser, 1], [WHITE, 1]],
+/** LaserBulletType's own defaults — piercer's beam, style 0 */
+export const PIERCER_LASER = laserStyle({
+  colors: [[PAL.piercerLaser, 0.4], [PAL.piercerLaser, 1], [WHITE, 1]],
   width: 15,
   sideAngle: 90 * DEG,
   sideWidth: 0.7,
@@ -496,7 +496,7 @@ const STARHART5_LASER = laserStyle({
 });
 /** THE STARLIGHT MECHS' THIN BEAMS (weapons "starhart1-lance", "starhart2-fan"):
  *  starhart3's palette on a line a fraction of its width, with the same
- *  45-degree stoop1 cut down to match. Style 0 is lancer's and the two
+ *  45-degree stoop1 cut down to match. Style 0 is piercer's and the two
  *  green ones above are Mindustry's own; these two are this game's, so
  *  the family's opening tiers fire the family's light */
 const STARHART1_LASER = laserStyle({
@@ -517,23 +517,23 @@ const STARHART2_LASER = laserStyle({
 });
 
 /**
- * ContinuousLaserBulletType.colors — meltdown's, style 0, REPAINTED BLUE.
+ * ContinuousLaserBulletType.colors — furnace's, style 0, REPAINTED BLUE.
  * The class's shape is untouched: a deep wash twice over at rising alpha,
  * a light one at full, and a white filament down the middle. Only the two
- * hues move — Mindustry's ec7458/ff9c5a for the blue a meltdown's own line
- * already fires in, since arc and lancer stand below it. The hull itself
+ * hues move — Mindustry's ec7458/ff9c5a for the blue a furnace's own line
+ * already fires in, since coil and piercer stand below it. The hull itself
  * is upstream's gunmetal again; the beam keeps the line's blue.
  *
- * 6974c4 is lancer.png's own plating shade, so the beam's base is the
- * colour of the turret throwing it; Pal.lancerLaser is what arc's bolt and
- * lancer's beam are already drawn in, and it takes the third wash.
+ * 6974c4 is piercer.png's own plating shade, so the beam's base is the
+ * colour of the turret throwing it; Pal.piercerLaser is what coil's bolt and
+ * piercer's beam are already drawn in, and it takes the third wash.
  */
-const LANCER_HULL: RGB = [0x69 / 255, 0x74 / 255, 0xc4 / 255];
-export const MELTDOWN_BEAM = beamStyle({
+const PIERCER_HULL: RGB = [0x69 / 255, 0x74 / 255, 0xc4 / 255];
+export const FURNACE_BEAM = beamStyle({
   colors: [
-    [LANCER_HULL, 0x55 / 255],
-    [LANCER_HULL, 0xaa / 255],
-    [PAL.lancerLaser, 1],
+    [PIERCER_HULL, 0x55 / 255],
+    [PIERCER_HULL, 0xaa / 255],
+    [PAL.piercerLaser, 1],
     [WHITE, 1],
   ],
   width: 9,
@@ -544,8 +544,8 @@ const STARHART4_BEAM = beamStyle({
   colors: [[PAL.starDark, 0.2], [PAL.starDark, 0.5], [PAL.star, 1], [WHITE, 1]],
   width: 9,
 });
-/** fuse's ray — style 0, the geometry constants.ts already carries */
-export const FUSE_SHRAPNEL = shrapnelStyle({ ...SHRAPNEL });
+/** cleaver's ray — style 0, the geometry constants.ts already carries */
+export const CLEAVER_SHRAPNEL = shrapnelStyle({ ...SHRAPNEL });
 /** the boss missile's shootOnDeath burst: Pal.sap x 1.8 wave, suppress smoke and sparks */
 const sapBright: RGB = [Math.min(1, PAL.sap[0] * 1.8), Math.min(1, PAL.sap[1] * 1.8), Math.min(1, PAL.sap[2] * 1.8)];
 const BOSS_EXPLOSION = explosionStyle({
@@ -944,7 +944,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   starhart3: [
     {
       name: "beam-weapon", reload: t(55), mounts: 2, damage: 45, range: u(135), speed: 0, fx: "laser",
-      pierce: true, laser: STARHART3_LASER, shoot: FxKind.HitLancer,
+      pierce: true, laser: STARHART3_LASER, shoot: FxKind.HitPiercer,
     },
   ],
   // starhart4-weapon: ContinuousLaserBulletType(35) length 180, lifetime 160,
@@ -965,7 +965,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   starhart5: [
     {
       name: "starhart5-weapon", reload: t(350 + 80), mounts: 1, damage: 560, range: u(460), speed: 0, fx: "laser",
-      pierce: true, laser: STARHART5_LASER, charge: t(80), shoot: FxKind.HitLancer,
+      pierce: true, laser: STARHART5_LASER, charge: t(80), shoot: FxKind.HitPiercer,
     },
   ],
 
@@ -1022,11 +1022,11 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // teal (railColor), that hits what it was aimed at and nothing
   // else, except the skate5's, which PIERCES everything on the line. And
   // every tier has INSANE REACH: a skate1 harpoons from FIFTY tiles, past
-  // every gun on the board but the foreshadow (sixty-two), and a skate5
+  // every gun on the board but the railhead (sixty-two), and a skate5
   // from NINETY, past that too. The line used to be copper, flak,
   // missiles and artillery at the walkers' reaches; it is the SNIPER
   // family now — and the reach has to clear the long guns, or it is a
-  // slow family standing inside a ripple's range for its whole crawl in
+  // slow family standing inside a barrage's range for its whole crawl in
   // (the first cut, at forty tiles, was a walkover for the headless bot).
   //
   // WHAT IT POSES: it opens fire long before anything can answer, from a
@@ -1036,7 +1036,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // a fresh skate1's harpoon is a tenth of the old copper pair — because a
   // fleet that has been alive eighty seconds hits three times as hard and
   // is still out of reach. The answer is a gun that reaches out
-  // (ripple, spectre, foreshadow) and kills them YOUNG, and the spotter
+  // (barrage, repeater, railhead) and kills them YOUNG, and the spotter
   // (skate3) and the drill (skate4) are the hulls to kill first.
   skate1: [
     { name: "skate1-harpoon", reload: t(90), mounts: 1, damage: 20, range: u(400), speed: 0, fx: "rail", railColor: PAL.harpoon },
@@ -1073,14 +1073,18 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   //
   // WHAT IT POSES is in levels.ts: every hull BLINKS — a hit that lands
   // throws it forward past the gun that landed it — and the top three
-  // CLOAK: gone, untargetable and untouchable, on a cycle, the flagship
-  // taking the hulls round it with it. A turret line that opens fire on
-  // wraiths is a line the wraiths are past; the answer is bursts and
-  // fields that catch a body wherever it lands, and killing the flagship
-  // in the seconds it shows.
+  // CLOAK on a cycle, the flagship taking the hulls round it with it. A
+  // turret line that opens fire on wraiths is a line the wraiths are
+  // past; the answer is bursts and fields that catch a body wherever it
+  // lands, and killing the flagship in the seconds it shows.
+  //
+  // THE CLOAK STOPS ROUNDS AND NOTHING ELSE (levels.ts cloak). Fire, a
+  // bolt, a beam, a ray and a rail all reach a dark hull, so a board
+  // holding any of the seven non-bullet turrets has an answer to the
+  // vanishing that does not consist of waiting.
   //
   // THE CHAIN'S REACH is a patch neighbour — three to four tiles — so an
-  // arc on a lone duo is one hit and an arc on a wall of them is the wall.
+  // arc on a lone tacker is one hit and an arc on a wall of them is the wall.
   livewire1: [
     {
       name: "livewire1-arc", reload: t(40), mounts: 2, damage: 20, range: u(110), speed: 0, fx: "arc",
@@ -1137,45 +1141,57 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // about the line (levels.ts: the plating, the bubble, the charge) exists
   // to get it from the second state to the first.
   //
-  // WHAT A TIER BUYS IS WEIGHT, and the ladder is steep on purpose: 120
-  // damage a second at the runt, twelve HUNDRED at the apex. For scale,
-  // the ironhide5's cannon — the heaviest round the swarm fires — is under
-  // four hundred, from eighteen tiles. And every blow also RENDS
+  // WHAT A TIER BUYS IS WEIGHT, and the ladder is steep on purpose: 224
+  // damage a second at the runt, twenty-four HUNDRED at the apex. For
+  // scale, the ironhide5's cannon — the heaviest round the swarm fires —
+  // is under four hundred, from eighteen tiles, so the apex's tusks are
+  // six of it and the runt's are most of one. And every blow also RENDS
   // (UnitWeapon.rend): a share of the turret's own maximum health, which
   // is the family's answer to a board that solved everything else by
   // building bigger pools.
   //
-  // THE RUNT IS SET AGAINST WAVE 1 (see its row in levels.ts): a hundred
-  // and ten damage a second and a fifth of a per cent a blow. Measured
-  // against the wall of sixteen duos a first card actually buys, forty
-  // runts take a tenth to a fifth of it run to run and every one of them
-  // dies doing it — where forty ironhide1s, shooting from eighteen tiles
-  // the whole way in, take a third. A tusker runt is the tougher body
-  // that does less on the approach and more once it lands, which is the
-  // family in one row.
+  // THE TUSKS WERE DOUBLED, and the reach, the pace and the rend were
+  // not. Every number above is twice what the family shipped with and
+  // nothing else about it moved, which is deliberate: the line's price
+  // has always been the WALK IN (the two tiles of reach, the crawl, the
+  // long guns it has to cross), and what was wrong was the reward at the
+  // end of it — a body that had paid that price and arrived was taking a
+  // turret apart slower than the Ironhides were shooting it from
+  // eighteen tiles. Doubling the blow pays the arrival and leaves the
+  // price exactly where it was.
+  //
+  // THE RUNT IS SET AGAINST WAVE 1 (see its row in levels.ts): two
+  // hundred and twenty damage a second and a fifth of a per cent a blow,
+  // against the wall of sixteen tackers a first card actually buys. Forty
+  // runts now take roughly twice the share of that wall they used to —
+  // the share was a tenth to a fifth at the old numbers, measured run to
+  // run — and every one of them still dies doing it, where forty
+  // ironhide1s shooting from eighteen tiles the whole way in take a
+  // third. A tusker runt is the tougher body that does less on the
+  // approach and more once it lands, which is the family in one row.
   //
   // THE TOP TWO STOMP (splash). The champion and the apex are heavy
   // enough that a blow lands on the patch and not just the gun — three
   // and four tiles of it — so a Tusker that reaches a block of turrets is
   // taking the block apart rather than one turret at a time.
   tusker1: [
-    { name: "tusker1-tusks", reload: t(30), mounts: 2, damage: 28, range: u(14), speed: 0, fx: "melee", rend: 0.002 },
+    { name: "tusker1-tusks", reload: t(30), mounts: 2, damage: 56, range: u(14), speed: 0, fx: "melee", rend: 0.002 },
   ],
   tusker2: [
-    { name: "tusker2-tusks", reload: t(30), mounts: 2, damage: 60, range: u(18), speed: 0, fx: "melee", rend: 0.0035 },
+    { name: "tusker2-tusks", reload: t(30), mounts: 2, damage: 120, range: u(18), speed: 0, fx: "melee", rend: 0.0035 },
   ],
   tusker3: [
-    { name: "tusker3-tusks", reload: t(32), mounts: 2, damage: 110, range: u(22), speed: 0, fx: "melee", rend: 0.005 },
+    { name: "tusker3-tusks", reload: t(32), mounts: 2, damage: 220, range: u(22), speed: 0, fx: "melee", rend: 0.005 },
   ],
   tusker4: [
     {
-      name: "tusker4-tusks", reload: t(36), mounts: 2, damage: 220, splash: 70, splashRadius: u(26),
+      name: "tusker4-tusks", reload: t(36), mounts: 2, damage: 440, splash: 140, splashRadius: u(26),
       range: u(30), speed: 0, fx: "melee", rend: 0.008,
     },
   ],
   tusker5: [
     {
-      name: "tusker5-tusks", reload: t(40), mounts: 2, damage: 400, splash: 140, splashRadius: u(36),
+      name: "tusker5-tusks", reload: t(40), mounts: 2, damage: 800, splash: 280, splashRadius: u(36),
       range: u(38), speed: 0, fx: "melee", rend: 0.012,
     },
   ],

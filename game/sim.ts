@@ -36,6 +36,8 @@ import {
   ROWS as ROWS_IMPORT,
   TOWERS as TOWERS_IMPORT,
   TOWER_HP_SCALE,
+  WET_SHOCK_MUL,
+  firesBullets,
   towerMaxHp,
   UR,
   W as W_IMPORT,
@@ -240,7 +242,7 @@ const EXPLOSION_LIFE: readonly number[] = EXPLOSION_STYLES.map((e) => e.lifetime
  * over budget loses the flash of the shot being fired while stale puffs
  * linger. The one exception: effects that ARE a weapon — a hitscan shot's
  * only visible artifact — push past the cap (see pushFx's `force`), so a
- * saturated screen can no longer make a firing fuse look like a stalled
+ * saturated screen can no longer make a firing cleaver look like a stalled
  * one.
  *
  * Measured, uncapped, on a 160-turret map with 3,200 units walking into it:
@@ -546,6 +548,44 @@ const KIND_WAKE_F = UNIT_KINDS.map((k) => UNIT_STATS[k].wakeField ?? null);
 /** the Harpoon fleet's two stamps: the skate3's reach and the skate4's drill */
 const KIND_SPOTTER_F = UNIT_KINDS.map((k) => UNIT_STATS[k].spotterField ?? null);
 const KIND_DRILL_F = UNIT_KINDS.map((k) => UNIT_STATS[k].drillField ?? null);
+/**
+ * WHAT A HIT IS — a two-bit description of the damage arriving at a body,
+ * threaded through every damage path in the sim to Sim.damageUnit, which
+ * is the one door they all come through.
+ *
+ * TWO RULES READ IT AND NOTHING ELSE DOES:
+ *
+ *   BULLET   — a round, and a CLOAK stops rounds. The seven turrets whose
+ *              shot is not a round (constants.ts NON_BULLET_KINDS) keep
+ *              hitting a hull that has gone dark; everything else does
+ *              not. Fire ticks and blasts thrown by dying hulls carry
+ *              whatever their source carried.
+ *   ELECTRIC — the blue line's, and a SOAKED body takes WET_SHOCK_MUL
+ *              times the hit (constants.ts).
+ *
+ * A NUMBER RATHER THAN A PAIR OF BOOLEANS because this rides every hit in
+ * the game, including the inner loop of a bolt walking a crowd: one int
+ * compared twice costs nothing, and the alternative — an object saying
+ * what the shot was — would allocate per victim.
+ */
+const DMG_BULLET = 1;
+const DMG_ELECTRIC = 2;
+/** fire, and anything else with no gun behind it: neither rule applies */
+const DMG_NEITHER = 0;
+
+/**
+ * EVERY TURRET'S NATURE, precomputed by kind. `firesBullets` is the roster
+ * list (constants.ts) and the electric bit is read off the ammo, because
+ * `shock` on a bullet IS what makes that bullet electric.
+ */
+const TOWER_NATURE: Record<TowerKind, number> = Object.fromEntries(
+  TOWER_KINDS.map((k) => [
+    k,
+    (firesBullets(k) ? DMG_BULLET : 0) |
+      (TOWERS_IMPORT[k].bullet.shock !== undefined ? DMG_ELECTRIC : 0),
+  ]),
+) as Record<TowerKind, number>;
+
 /** the three families' own traits (levels.ts): veterancy, blink, cloak,
  *  and the payload a bomber IS */
 const KIND_VET = UNIT_KINDS.map((k) => UNIT_STATS[k].veteran ?? null);
@@ -629,7 +669,7 @@ const KIND_WET_IMMUNE = Uint8Array.from(UNIT_KINDS, (k) =>
 );
 /**
  * UnitType.drag per kind — the fraction of an external shove a unit sheds
- * per tick. It bleeds the pull channel, which a spectre round's knockback
+ * per tick. It bleeds the pull channel, which a repeater round's knockback
  * feeds (see impulse()).
  * Mindustry's own default is 0.3, which is what every kind that does not
  * state one carries.
@@ -887,7 +927,7 @@ export class Sim {
   readonly uforceDown = new Uint8Array(MAX_UNITS);
   /**
    * Mindustry's impulse velocity, px/s: an outside shove that is NOT the
-   * unit's own drive. A spectre round's knockback adds to it, the kind's
+   * unit's own drive. A repeater round's knockback adds to it, the kind's
    * drag bleeds it away, and it rides on top of the capped drive exactly
    * like the crowd shove does — a unit can be shoved faster than it can
    * walk, and has to walk back out of it
@@ -908,6 +948,20 @@ export class Sim {
    * status map, which keeps one entry per effect
    */
   readonly uburn = new Float32Array(MAX_UNITS);
+  /**
+   * SHOCKED (constants.ts BulletStats.shock): seconds of the electric mark
+   * left, reapplied rather than stacked exactly as burning is.
+   *
+   * NOTHING READS IT BUT THE PANEL AND THE OVERLAY, and that is the whole
+   * design (status.ts): the mark says the blue line has been on this body
+   * and does nothing else. The damage the electricity actually buys is
+   * paid against the body's WETNESS at the moment of the hit
+   * (WET_SHOCK_MUL in damageUnit), not against this clock — so a shocked
+   * body that has dried is worth nothing extra, and a soaked body that has
+   * never been shocked takes the bonus on the first electric hit it eats.
+   * The clock is a TELL, not a term in the arithmetic.
+   */
+  readonly ushockT = new Float32Array(MAX_UNITS);
   /**
    * THE TWO STAMPED AURAS (constants.ts AURA_LINGER), each a value and the
    * seconds it has left to run: extra armour from an ironhide5, a speed
@@ -1289,7 +1343,7 @@ export class Sim {
    * It is a CACHE, refreshed only when one of its two inputs moves: the
    * save's points (setTech) and the number of each kind standing
    * (refreshSpecs, at every place a tower is added, sold or cleared).
-   * Neither can change between those moments, and duo power's per-duo
+   * Neither can change between those moments, and tacker power's per-tacker
    * damage would otherwise mean a head count of the whole board on every
    * bullet — five hundred scans a tick to recompute a number that did not
    * move.
@@ -1535,14 +1589,14 @@ export class Sim {
 
   // --- effects, in struct-of-arrays like the units ---
   // These used to be an array of small objects, allocated on every push —
-  // and a fuse-heavy board at 8x speed pushes thousands a second, which is
+  // and a cleaver-heavy board at 8x speed pushes thousands a second, which is
   // steady GC pressure timed exactly to the busiest frames. The pool is
   // flat typed arrays with a live count and swap-remove, so a push is a
   // handful of stores and an expiry allocates nothing. The renderer reads
   // these directly (see its effects passes); everything an old Effect
   // object carried has a lane here, with fxHasCol standing in for the
   // optional colour and fxPts — the one field that is genuinely a list,
-  // arc's bolt path — kept as a parallel ref array that swap-removes in
+  // coil's bolt path — kept as a parallel ref array that swap-removes in
   // step and only ever holds an array while a bolt is alive.
   fxN = 0;
   readonly fxX = new Float32Array(FX_MAX);
@@ -1775,7 +1829,7 @@ export class Sim {
     this.cellTower.fill(null);
     this.shots.length = 0;
     this.exploded = 0;
-    this.refreshSpecs(); // an empty board is a duo with no company
+    this.refreshSpecs(); // an empty board is a tacker with no company
     // the official map document IS the world: map-editor saves land in its
     // JSON, and the next full page load plays them. The documents are
     // fetched before the sim is built (see Game.create), never imported.
@@ -2346,8 +2400,8 @@ export class Sim {
    *
    * It rides the line `force` already draws, and draws it for exactly the
    * reason this switch needs drawn: an effect marked forced IS a weapon
-   * rather than dressing on one — fuse's shrapnel ray, lancer's beam and
-   * its charge glow, arc's bolt, the rail's trail — and those weapons deal
+   * rather than dressing on one — cleaver's shrapnel ray, piercer's beam and
+   * its charge glow, coil's bolt, the rail's trail — and those weapons deal
    * instant invisible damage, so dropping them would leave a firing turret
    * and a stalled one looking identical. Every one of them therefore
    * survives this switch. What goes is the dressing: death puffs,
@@ -2375,8 +2429,8 @@ export class Sim {
    * changes or a tower is placed, sold or cleared — see `specs` for why
    * those are the only moments that can move it.
    *
-   * The head count is what a count-dependent rung reads (duo power: "each
-   * OTHER duo on the board", hence the whole board's census here). Every
+   * The head count is what a count-dependent rung reads (tacker power: "each
+   * OTHER tacker on the board", hence the whole board's census here). Every
    * turret of one kind shares the one resolved spec, which is what makes a
    * single cached object the honest answer rather than an approximation of
    * a per-turret one.
@@ -2530,7 +2584,7 @@ export class Sim {
    * has to know which kinds have been upgraded.
    *
    * PUBLIC, because the renderer and the field's own overlays need it too.
-   * They used to read TOWERS directly, which meant a meltdown whose beam
+   * They used to read TOWERS directly, which meant a furnace whose beam
    * had been lengthened damaged at the new reach and was DRAWN at the old
    * one, and a selected turret showed a range ring its shots outran — the
    * two halves asking different tables the same question.
@@ -2739,7 +2793,7 @@ export class Sim {
     this.resolveTower(tower);
     tower.hp = tower.hpMax;
     this.claimGround(tower, true);
-    // a count-dependent rung (duo power) reads the board, so the board
+    // a count-dependent rung (tacker power) reads the board, so the board
     // changing is what moves it
     this.refreshSpecs();
   }
@@ -3401,7 +3455,7 @@ export class Sim {
    *
    * A HIT THAT DOES NO DAMAGE STILL POISONS. The rot rides on the shot
    * CONNECTING, not on the damage surviving armour: a weaver1's 8-point
-   * spit against a foreshadow's plating lands 0.8 and six full seconds of
+   * spit against a railhead's plating lands 0.8 and six full seconds of
    * rot, which is the entire reason that body is on the field.
    */
   private hitStructure(t: Structure, dmg: number, poison = 0, poisonChance = 1, rend = 0): void {
@@ -3481,7 +3535,7 @@ export class Sim {
    *
    * WHICH SIDE IS BEING HIT DECIDES THE DIAL. A shot ARRIVING on the
    * player rides the swarm's own damage scale (hitStructure), exactly as
-   * its bodies' weapons do, so a conquered spectre hits as hard as the
+   * its bodies' weapons do, so a conquered repeater hits as hard as the
    * swarm hits; a shot the player fires lands raw.
    */
   private structureHit(s: Structure, dmg: number, fx: BulletFx | undefined, angle: number, col?: RGB): void {
@@ -4043,7 +4097,7 @@ export class Sim {
    * LaserBulletType: an instant beam its FULL length down the aim —
    * Mindustry stops a laser only at a block that absorbs lasers, so it runs
    * through the structure it hit and on to its length. The target takes
-   * the damage; the shootEffect (Fx.hitLancer, or stoop5's shockwave)
+   * the damage; the shootEffect (Fx.hitPiercer, or stoop5's shockwave)
    * goes off at the muzzle
    */
   private fireUnitLaser(
@@ -4963,7 +5017,7 @@ export class Sim {
       }
       // ...plus ARMORED SWARMS' plating on the light bodies (mutation.ts —
       // the heavies never take it): baked into uarmor here so every armour
-      // read downstream — the lancer's x4 included — sees it
+      // read downstream — the piercer's x4 included — sees it
       this.uarmor[i] =
         stats.armor +
         (this.armoredOn && stats.tier <= ARMORED_MAX_TIER ? ARMORED_ARMOR : 0);
@@ -4992,6 +5046,7 @@ export class Sim {
       this.uburn[i] = 0;
       this.uwet[i] = 0;
       this.uwetSlow[i] = 1;
+      this.ushockT[i] = 0;
       // a body walks in unstamped: the ironhide5's plating and the weaver3's
       // pace are both things it has to be standing near something to have
       this.uarmorAdd[i] = 0;
@@ -5375,6 +5430,10 @@ export class Sim {
       // ...and the ORDER (Leadership, mutation.ts), which is the same
       // shape of thing with nothing but a clock behind it
       if (this.uled[i] > 0 && (this.uled[i] -= dt) <= 0) this.uled[i] = 0;
+      // ...and the electric mark, which is a clock and nothing else
+      // (ushockT): no damage, no flicker, no second term — it expires and
+      // the symbol goes
+      if (this.ushockT[i] > 0 && (this.ushockT[i] -= dt) <= 0) this.ushockT[i] = 0;
       if (uwet[i] > 0) {
         uwet[i] -= dt;
         if (uwet[i] <= 0) {
@@ -5408,7 +5467,8 @@ export class Sim {
       }
       if (uburn[i] <= 0) continue;
       uburn[i] -= dt;
-      this.damageUnit(i, BURN_DPS * dt, true);
+      // fire is not a round and never was: a cloak does not put it out
+      this.damageUnit(i, BURN_DPS * dt, true, 1, DMG_NEITHER);
       if (uhp[i] <= 0) {
         this.killUnit(i);
         continue;
@@ -5927,6 +5987,7 @@ export class Sim {
     this.uburn[i] = this.uburn[n];
     this.uwet[i] = this.uwet[n];
     this.uwetSlow[i] = this.uwetSlow[n];
+    this.ushockT[i] = this.ushockT[n];
     this.uarmorAdd[i] = this.uarmorAdd[n];
     this.uarmorT[i] = this.uarmorT[n];
     this.uhasteMul[i] = this.uhasteMul[n];
@@ -6667,7 +6728,7 @@ export class Sim {
         mvx = (mvx / ml) * spd;
         mvy = (mvy / ml) * spd;
       }
-      // an outside shove (a spectre round's knockback) rides on top of the
+      // an outside shove (a repeater round's knockback) rides on top of the
       // capped drive like the crowd shove does, and bleeds off at the
       // kind's own drag — Mindustry keeps the impulse in `vel` and scales
       // the whole thing by (1 - drag) every tick, so a shove outlives the
@@ -7182,7 +7243,7 @@ export class Sim {
    * WHAT IT KEEPS is everything that makes it the turret it was: the
    * kind, the footprint, the attributes it rolled at its placement
    * (Tower.mods) and the RESOLVED stats those composed (Tower.spec) — a
-   * giant braced spectre comes back a giant braced spectre. What it is
+   * giant braced repeater comes back a giant braced repeater. What it is
    * handed back is the stand-ups it was BORN with (Tower.revivesMax), so
    * an Undying board arms the swarm with turrets that have to be killed
    * twice. What it never gets is the player's Phoenix roll (an unlimited
@@ -7607,11 +7668,11 @@ export class Sim {
 
   /**
    * EVERY BUILDING LIKE THIS ONE NEARBY — the same gesture as selectLike,
-   * on the other half of the selection. A ctrl- or double-click on a duo
-   * takes every duo within reach of it, which is how a line of turrets is
+   * on the other half of the selection. A ctrl- or double-click on a tacker
+   * takes every tacker within reach of it, which is how a line of turrets is
    * upgraded or sold without clicking each one.
    *
-   * "Like" is the KIND, so a duo gathers duos and a ripple ripples;
+   * "Like" is the KIND, so a tacker gathers tackers and a barrage barrages;
    * a shell still going up counts, because a row half-built is still the
    * row you meant. The CORE is the one thing that gathers nothing: there
    * is only ever one, and a click on it means it.
@@ -7695,10 +7756,10 @@ export class Sim {
       if (t.flashT > 0) t.flashT -= dt;
       // DAMAGE SMOKE, the units' own rule (updateStatus): under half its
       // pool a structure sheds soot, thicker the lower it gets, scaled by
-      // its footprint so a spectre smokes like the building it is. The
+      // its footprint so a repeater smokes like the building it is. The
       // tint has gone grey (renderer, HP_TINT); this is the other half
       // NANOWEAVE / BULWARK (mods.ts): a turret born with either repairs
-      // itself, and it repairs at ITS OWN ceiling — a braced duo mends
+      // itself, and it repairs at ITS OWN ceiling — a braced tacker mends
       // faster than the plain one beside it because its pool is bigger
       if (t.regen > 0 && t.hp > 0 && t.hp < t.hpMax)
         t.hp = Math.min(t.hpMax, t.hp + t.regen * dt);
@@ -7715,7 +7776,7 @@ export class Sim {
       // of its arithmetic: no stack, no decay and no clock, a flat share
       // of this turret's OWN ceiling every second, raw so plating cannot
       // blunt it. Twenty seconds is twenty seconds whether the building is
-      // a duo or a Giant Bulwarked spectre, which is the only way a status
+      // a tacker or a Giant Bulwarked repeater, which is the only way a status
       // stays worth something across a run that multiplies pools
       if (t.virus && t.hp > 0) this.damageTower(t, t.hpMax * VIRUS_DPS * dt, true);
       if (t.poisonT > 0) {
@@ -7795,7 +7856,7 @@ export class Sim {
       // SHORTED OUT (Tower.shortT, the Wraith fleet's EMP): nothing below
       // runs — no reload, no volley, no mending, no beam — until the clock
       // is out. The sparks are the only sign, on the rot's own footprint
-      // rule, so a shorted spectre reads from across the field
+      // rule, so a shorted repeater reads from across the field
       if (t.shortT > 0) {
         t.shortT -= dt;
         if (t.shortT <= 0) t.shortT = 0;
@@ -7814,10 +7875,10 @@ export class Sim {
       }
       // a support block has no target and no barrel — it pulses (the
       // damage smoke above is still its, because it is still a building
-      // the swarm can chew on). THE SWARM'S COPY PULSES NOTHING: a mender
+      // the swarm can chew on). THE SWARM'S COPY PULSES NOTHING: a fixer
       // mends a line, and the swarm has no line here to mend
       if (st.heal) {
-        if (!hostile) this.updateMender(t, st, dt);
+        if (!hostile) this.updateFixer(t, st, dt);
         continue;
       }
       // a lock turret has no reload and no volley — it holds a beam on one
@@ -7828,7 +7889,7 @@ export class Sim {
         continue;
       }
       // LaserTurret: while the beam is lit the reload does NOT run, so a
-      // meltdown's cycle is 230 ticks of burning and only then 90 of
+      // furnace's cycle is 230 ticks of burning and only then 90 of
       // cooling. The beam is also what damages, every damageInterval
       const cont = st.bullet.continuous;
       if (cont && t.beamT >= 0) this.updateBeam(t, st, cont, dt);
@@ -7871,7 +7932,7 @@ export class Sim {
       // spatial hash's buckets under the range circle rather than every
       // unit on the field; a turret whose whole target layer is empty
       // skips even that. The default sort is UnitSorts.closest — plain
-      // squared distance; foreshadow's `strongest` is documented on
+      // squared distance; railhead's `strongest` is documented on
       // bestTarget and TowerStats.sort
       const r2t = st.range * st.range;
       let best = -1;
@@ -7917,7 +7978,10 @@ export class Sim {
             (st.targetAir && this.nAliveAir > 0) ||
             (st.targetGround && this.nAliveGround > 0);
           best = hasTargets
-            ? this.bestTarget(t.x, t.y, st.range, st.targetAir, st.targetGround, st.sort === "strongest")
+            ? this.bestTarget(
+                t.x, t.y, st.range, st.targetAir, st.targetGround,
+                st.sort === "strongest", !(TOWER_NATURE[t.kind] & DMG_BULLET),
+              )
             : -1;
           t.targetT = TARGET_INTERVAL;
           t.target = best >= 0 ? this.uid[best] : -1;
@@ -7985,12 +8049,12 @@ export class Sim {
       const targetRot = Math.atan2(aimY, aimX);
 
       // Turret.shouldTurn: moveWhileCharging false LOCKS the barrel for the
-      // whole charge, so a lancer commits to where it was aiming rather
+      // whole charge, so a piercer commits to where it was aiming rather
       // than tracking through the two thirds of a second it takes to fire
       if (t.chargeT < 0) {
         const diff = Sim.angleDiff(t.angle, targetRot);
         // LaserTurret.turnToTarget: firingMoveFract while the beam is
-        // HELD (not while it fades), so meltdown tracks a crossing target
+        // HELD (not while it fades), so furnace tracks a crossing target
         // at half speed and a queue walking into it at full
         const held = cont !== undefined && t.beamT > cont.fade;
         const turn = st.rotateSpeed * (held ? cont!.moveFract : 1) * dt;
@@ -8032,7 +8096,7 @@ export class Sim {
           // and off the barrel's own facing (no per-shot inaccuracy yet)
           const mz = st.shootY ?? st.size * 5;
           // forced: the glow is the only sign a charging turret is doing
-          // anything at all — dropped, a winding-up lancer reads as stalled
+          // anything at all — dropped, a winding-up piercer reads as stalled
           this.bulletFx(
             st.bullet.chargeFx,
             t.x + Math.cos(t.angle) * mz,
@@ -8057,6 +8121,17 @@ export class Sim {
 
 
 
+  /**
+   * `seeCloaked` IS THE OTHER HALF OF THE CLOAK RULE (see damageUnit). A
+   * turret whose shot goes through a cloak has to be able to AIM at the
+   * hull as well, or the rule buys nothing for the six of the seven that
+   * need a target to fire at — only a bolt and a rail happen to sweep a
+   * body they were not pointed at. A furnace that could burn a dark hull
+   * but never pick one is a furnace that stares past it.
+   *
+   * AND IT IS A REAL TELL, not a cheat: the beam that swings onto an empty
+   * patch of ground is the player being shown where the wraith is.
+   */
   private bestTarget(
     x: number,
     y: number,
@@ -8064,6 +8139,7 @@ export class Sim {
     air: boolean,
     ground: boolean,
     strongest: boolean,
+    seeCloaked: boolean,
   ): number {
     const { upx, upy, uhp, ufly } = this;
     const n = this.n;
@@ -8075,7 +8151,8 @@ export class Sim {
     if (n <= 128) {
       for (let i = 0; i < n; i++) {
         if (ufly[i] !== 0 ? !air : !ground) continue;
-        if (HAS_CLOAK && this.ucloakT[i] > 0) continue; // hidden: not there to aim at
+        // hidden: not there to aim at, unless this gun goes through it
+        if (HAS_CLOAK && !seeCloaked && this.ucloakT[i] > 0) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
         const d2 = dx * dx + dy * dy;
         if (d2 >= r2) continue;
@@ -8100,7 +8177,7 @@ export class Sim {
         const i = bUnits[k];
         if (i >= n) continue;
         if (ufly[i] !== 0 ? !air : !ground) continue;
-        if (HAS_CLOAK && this.ucloakT[i] > 0) continue;
+        if (HAS_CLOAK && !seeCloaked && this.ucloakT[i] > 0) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
         const d2 = dx * dx + dy * dy;
         if (d2 >= r2) continue;
@@ -8116,7 +8193,7 @@ export class Sim {
 
   /**
    * One bullet at the turret's rotation plus the volley's ShootSpread fan
-   * offset and the per-shot inaccuracy. Hitscan rays (fuse shrapnel) damage
+   * offset and the per-shot inaccuracy. Hitscan rays (cleaver shrapnel) damage
    * instantly and leave only their animation; the rest spawn projectiles.
    */
   private fireShot(t: Tower, st: TowerStats, idx: number): void {
@@ -8137,7 +8214,7 @@ export class Sim {
     }
     t.shotCount++;
     // BulletType.shootEffect and smokeEffect, both fired at the muzzle
-    // along the shot's angle. For scorch the pair IS the weapon: the
+    // along the shot's angle. For torch the pair IS the weapon: the
     // bullet itself draws nothing at all
     const shownShoot = this.bulletFx(st.bullet.shootFx, x, y, a, st.bullet.fxColor);
     const shownSmoke = this.bulletFx(st.bullet.smokeFx, x, y, a, st.bullet.fxColor);
@@ -8179,12 +8256,20 @@ export class Sim {
     // sweep below walks the swarm's BODIES, and a conquered turret has
     // none to walk. Its shot is the building it was aimed at, plus the
     // same shape on screen — the bolt, the beam, the rail's trail, the
-    // ray — at the weapon's own length, so a taken lancer still visibly
-    // fires a lancer's beam
+    // ray — at the weapon's own length, so a taken piercer still visibly
+    // fires a piercer's beam
     const hostile = t.team === "enemy";
+    // WHAT THIS TURRET'S HIT IS (TOWER_NATURE), handed to every sweep
+    // below and written onto every projectile it throws. It is read here,
+    // once a shot, rather than inside the sweeps: a bolt walking eight
+    // bodies should not look the answer up eight times, and a sweep that
+    // decided for itself would be a second place the roster's judgement
+    // about what counts as a bullet could drift from the first
+    const nature = TOWER_NATURE[t.kind];
+    const shock = st.bullet.shock ?? 0;
     if (st.bullet.lightning) {
       if (hostile) {
-        this.unitBolt(x, y, a, st.bullet.lightning.length, st.bullet.fxColor ?? PAL.lancerLaser);
+        this.unitBolt(x, y, a, st.bullet.lightning.length, st.bullet.fxColor ?? PAL.piercerLaser);
         hitAimed();
         return;
       }
@@ -8197,8 +8282,10 @@ export class Sim {
         st.bullet.collidesGround,
         st.bullet.hitFx,
         st.bullet.fxColor,
+        nature,
+        shock,
       );
-      this.pushBolt(x, y, st.bullet.lifetime, pts, true); // the bolt IS arc's shot
+      this.pushBolt(x, y, st.bullet.lifetime, pts, true); // the bolt IS coil's shot
       hitAimed();
       return;
     }
@@ -8215,8 +8302,10 @@ export class Sim {
             st.bullet.collidesGround,
             st.bullet.hitFx,
             st.bullet.fxColor,
+            nature,
+            shock,
           );
-      // forced: the beam is lancer's entire visible shot (damage is instant)
+      // forced: the beam is piercer's entire visible shot (damage is instant)
       this.pushFx(x, y, st.bullet.lifetime, FxKind.Laser, a, reached, 0, 0, true);
       hitAimed();
       return;
@@ -8229,7 +8318,7 @@ export class Sim {
           for (let d = 0; d <= spec.length; d += spec.pointSpacing)
             this.bulletFx(st.bullet.pointFx, x + cos * d, y + sin * d, a, st.bullet.fxColor, true);
         this.bulletFx(st.bullet.despawnFx, x, y, a, st.bullet.fxColor, true);
-      } else this.railShot(x, y, a, st.bullet);
+      } else this.railShot(x, y, a, st.bullet, nature);
       hitAimed();
       return;
     }
@@ -8245,8 +8334,9 @@ export class Sim {
           st.bullet.collidesGround,
           st.bullet.hitFx,
           st.bullet.fxColor,
+          nature,
         );
-      // forced: the ray is fuse's entire visible shot (damage is instant)
+      // forced: the ray is cleaver's entire visible shot (damage is instant)
       this.pushFx(x, y, st.bullet.lifetime, FxKind.Shrapnel, a, st.bullet.ray.length, 0, 0, true);
       hitAimed();
       return;
@@ -8268,7 +8358,7 @@ export class Sim {
         clamp(((1 + off) * Math.hypot(t.aimX - x, t.aimY - y)) / reach, lo, st.range / reach);
     }
     // lifeScaleRandMin/Max and velocityRnd: the two rolls that turn a
-    // ripple's four shells from one hole into a pattern down the lane
+    // barrage's four shells from one hole into a pattern down the lane
     const lr = st.bullet.lifeScaleRand;
     if (lr) life *= lr[0] + Math.random() * (lr[1] - lr[0]);
     const vr = st.velocityRnd ?? 0;
@@ -8289,7 +8379,7 @@ export class Sim {
       // a shot of the swarm's flies past every body and lands on the
       // player's buildings instead (stepHostileProjectile)
       enemy: hostile,
-      // SCORCH, AND ONLY SCORCH: a bullet with neither sprite nor orb has
+      // TORCH, AND ONLY TORCH: a bullet with neither sprite nor orb has
       // no visible body of its own, so when the pool refused its flame
       // there is nothing left on screen at all. Say so, and the renderer
       // draws the bullet itself down the lane (see Projectile.bare)
@@ -8367,7 +8457,7 @@ export class Sim {
    * throws `count` children, each on a bearing drawn uniformly from the
    * full `spread` cone around the parent's heading, at a random fraction
    * of the CHILD's own speed and starting a random offset out from the
-   * blast. Cyclone's six plastanium fragments are the only user, and they
+   * blast. Whirl's six plastanium fragments are the only user, and they
    * are what turns one shell into a wall.
    */
   private createFrags(pr: Projectile, spec: NonNullable<BulletStats["frag"]>): void {
@@ -8410,7 +8500,13 @@ export class Sim {
    * `pointEffect` is laid down the length it actually reached, not the
    * 500 units it was allowed.
    */
-  private railShot(x: number, y: number, angle: number, b: BulletStats): void {
+  private railShot(
+    x: number,
+    y: number,
+    angle: number,
+    b: BulletStats,
+    nature: number,
+  ): void {
     const spec = b.rail!;
     const { upx, upy, uhp } = this;
     const dirx = Math.cos(angle), diry = Math.sin(angle);
@@ -8427,7 +8523,7 @@ export class Sim {
       }
       const i = hits[k];
       const health = uhp[i];
-      this.damageUnit(i, left);
+      this.damageUnit(i, left, false, 1, nature);
       // hit(), then handlePierce: the burst lands on the body, and the
       // body's own health comes off the budget that made it
       this.bulletFx(b.hitFx, upx[i], upy[i], angle, b.fxColor);
@@ -8465,6 +8561,7 @@ export class Sim {
     ground: boolean,
     hitFx: BulletFx | undefined,
     fxColor: RGB | undefined,
+    nature: number,
   ): void {
     const { upx, upy, uhp, uarmor, urad, ukind, bStart, bUnits, splashHits } = this;
     const EXPAND = 7.5; // collideLine's expand = 3 world units
@@ -8491,7 +8588,7 @@ export class Sim {
       }
     }
     for (const i of splashHits) {
-      this.damageUnit(i, dmg);
+      this.damageUnit(i, dmg, false, 1, nature);
       if (uhp[i] > 0) this.bulletFx(hitFx, upx[i], upy[i], angle, fxColor);
     }
     splashHits.sort((a2, b2) => b2 - a2);
@@ -8595,7 +8692,7 @@ export class Sim {
   }
 
   /**
-   * Mindustry Lightning.createLightningInternal, ported whole: arc's shot
+   * Mindustry Lightning.createLightningInternal, ported whole: coil's shot
    * is not a projectile but a bolt that WALKS.
    *
    * It takes `length / 2` steps. At each one it drops a node bullet where
@@ -8612,7 +8709,7 @@ export class Sim {
    * ONE DIVERGENCE. In Mindustry each node is a real bullet, and a real
    * bullet is absorbable — a starhart3's force field standing over a node
    * would eat it. Here the node damages directly and no field sees it, so
-   * a bolt walks through a bubble it should have died in. Arc is a
+   * a bolt walks through a bubble it should have died in. Coil is a
    * 90-unit ground turret and the bubble is 7.5 tiles, so the two rarely
    * meet; wiring it up properly means the absorb pass running before the
    * turrets rather than after them, which is a change to the tick order.
@@ -8628,6 +8725,8 @@ export class Sim {
     ground: boolean,
     hitFx: BulletFx | undefined,
     fxColor: RGB | undefined,
+    nature: number,
+    shock: number,
   ): number[] {
     const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
     const HIT_RANGE = 30 * MU; // Lightning.hitRange
@@ -8640,13 +8739,17 @@ export class Sim {
     let rot = angle;
     const nodes = (length / 2) | 0;
     for (let step = 0; step < nodes; step++) {
-      // the node's own bullet, which is where every point of arc's damage
+      // the node's own bullet, which is where every point of coil's damage
       // is actually dealt
       const victim = this.nearestUnit(x, y, brad, air, ground);
       if (victim >= 0) {
-        this.damageUnit(victim, damage);
-        if (uhp[victim] > 0) this.bulletFx(hitFx, x, y, rot, fxColor);
-        else if (!hits.includes(victim)) hits.push(victim);
+        this.damageUnit(victim, damage, false, 1, nature);
+        // the mark lands on what SURVIVED the node, as every status in
+        // the game does — shocking a corpse is a symbol nobody reads
+        if (uhp[victim] > 0) {
+          if (shock > 0) this.applyShock(victim, shock);
+          this.bulletFx(hitFx, x, y, rot, fxColor);
+        } else if (!hits.includes(victim)) hits.push(victim);
       }
       pts.push(x + (Math.random() * 2 - 1) * 3 * MU, y + (Math.random() * 2 - 1) * 3 * MU);
 
@@ -8693,14 +8796,14 @@ export class Sim {
   }
 
   /**
-   * Mindustry Damage.collideLaser, the lancer's whole shot: an instant beam
+   * Mindustry Damage.collideLaser, the piercer's whole shot: an instant beam
    * that pierces a FIXED NUMBER of units and stops.
    *
    * Two passes, exactly as the original: findPierceLength collects every
    * eligible unit the segment crosses and, if there are more of them than
    * the cap, shortens the beam to the cap'th nearest; collideLine then
    * damages that many, nearest first. Returns the length the beam reached,
-   * which is what gets drawn — a lancer firing into a crowd is visibly
+   * which is what gets drawn — a piercer firing into a crowd is visibly
    * shorter than one firing down an empty lane.
    */
   private laserBeam(
@@ -8715,6 +8818,8 @@ export class Sim {
     ground: boolean,
     hitFx: BulletFx | undefined,
     fxColor: RGB | undefined,
+    nature: number,
+    shock: number,
   ): number {
     const { upx, upy, uhp } = this;
     const dirx = Math.cos(angle), diry = Math.sin(angle);
@@ -8731,9 +8836,11 @@ export class Sim {
     const dead: number[] = [];
     for (let k = 0; k < order.length && (pierceCap <= 0 || k < pierceCap); k++) {
       const i = hits[order[k]];
-      this.damageUnit(i, damage, false, armorMult);
-      if (uhp[i] > 0) this.bulletFx(hitFx, upx[i], upy[i], angle, fxColor);
-      else dead.push(i);
+      this.damageUnit(i, damage, false, armorMult, nature);
+      if (uhp[i] > 0) {
+        if (shock > 0) this.applyShock(i, shock);
+        this.bulletFx(hitFx, upx[i], upy[i], angle, fxColor);
+      } else dead.push(i);
     }
     dead.sort((a, b) => b - a);
     for (const i of dead) if (uhp[i] <= 0) this.killUnit(i);
@@ -8830,9 +8937,13 @@ export class Sim {
       // removed highest index first so the swap-remove never moves a
       // body that is still waiting its turn
       for (const i of hits) {
-        this.damageUnit(i, b.damage, b.pierceArmor ?? false, b.armorMultiplier ?? 1);
-        if (uhp[i] > 0) this.bulletFx(b.hitFx, upx[i], upy[i], t.beamRot, b.fxColor);
-        else dead.push(i);
+        this.damageUnit(
+          i, b.damage, b.pierceArmor ?? false, b.armorMultiplier ?? 1, TOWER_NATURE[t.kind],
+        );
+        if (uhp[i] > 0) {
+          if (b.shock) this.applyShock(i, b.shock);
+          this.bulletFx(b.hitFx, upx[i], upy[i], t.beamRot, b.fxColor);
+        } else dead.push(i);
       }
       dead.sort((p, q) => q - p);
       for (const i of dead) if (uhp[i] <= 0) this.killUnit(i);
@@ -8843,7 +8954,7 @@ export class Sim {
         if (s && s.hp > 0) this.shieldTowerHit(s, b.damage, b.hitFx, t.beamRot, b.fxColor);
       }
       // ...and a beam held on a BUILDING the same way, which is the only
-      // damage a conquered meltdown ever does: the sweep above walks the
+      // damage a conquered furnace ever does: the sweep above walks the
       // swarm's bodies, and the swarm's own gun has none to walk
       if (t.aimTower) this.structureHit(t.aimTower, b.damage, b.hitFx, t.beamRot, b.fxColor);
     }
@@ -8861,7 +8972,7 @@ export class Sim {
 
   /**
    * THE SUPPORT PAIR'S PULSE (TowerStats.heal): every `reload` seconds a
-   * mender or a mend projector returns `heal.percent` of their OWN pool to
+   * fixer or a restorer returns `heal.percent` of their OWN pool to
    * every player structure whose centre is inside its range, itself
    * included.
    *
@@ -8875,10 +8986,10 @@ export class Sim {
    *   time and the reason the ring is only thrown when something took.
    *
    * The reload runs on the tower's own fireRate like a gun's, so the
-   * Hydrophobic rule slows a waterlogged mender exactly as it slows a
-   * waterlogged duo.
+   * Hydrophobic rule slows a waterlogged fixer exactly as it slows a
+   * waterlogged tacker.
    */
-  private updateMender(t: Tower, st: TowerStats, dt: number): void {
+  private updateFixer(t: Tower, st: TowerStats, dt: number): void {
     if (t.cd > 0) {
       t.cd -= dt * t.fireRate;
       return;
@@ -8888,7 +8999,7 @@ export class Sim {
     let did = false;
     for (const o of this.towers) {
       if (o.team !== "player") continue; // nothing of the player's mends the swarm's
-      // the TARGET's own ceiling (Tower.hpMax), not its kind's: a mender
+      // the TARGET's own ceiling (Tower.hpMax), not its kind's: a fixer
       // topping up a braced turret has to fill the pool that turret has
       const max = o.hpMax;
       if (o.hp >= max) continue;
@@ -8900,13 +9011,13 @@ export class Sim {
       this.pushFx(o.x, o.y, 0.4, FxKind.Heal);
     }
     // ...and healWaveDynamic over the pulse's whole reach, so a player can
-    // see what a mender actually covers without selecting it. Only when
-    // something took: a mender over an untouched line is quiet
+    // see what a fixer actually covers without selecting it. Only when
+    // something took: a fixer over an untouched line is quiet
     if (did) this.pushFxCol(t.x, t.y, 22 / 60, FxKind.HealWave, 0, st.range, PAL.heal);
   }
 
   /**
-   * THE LOCK BEAM (BulletStats.lock, parallax and nothing else). No
+   * THE LOCK BEAM (BulletStats.lock, tether and nothing else). No
    * reload, no volley and no bullet: the turret picks ONE body, swings
    * onto it, and for as long as it is aimed within its cone it burns that
    * body and nothing else.
@@ -8925,7 +9036,7 @@ export class Sim {
    * filled rather than dropping it, so a target that jinks costs seconds
    * and not the siege.
    *
-   * WHICH BODY IT PICKS is foreshadow's rule (TowerStats.sort
+   * WHICH BODY IT PICKS is railhead's rule (TowerStats.sort
    * "strongest"): the highest CURRENT health in range, because the one
    * thing a ramp cannot afford is to spend its climb on a weaver1. And it
    * HOLDS that pick — the scan only runs once the lock is broken by death
@@ -8966,7 +9077,10 @@ export class Sim {
       const hasTargets =
         (st.targetAir && this.nAliveAir > 0) || (st.targetGround && this.nAliveGround > 0);
       best = hasTargets
-        ? this.bestTarget(t.x, t.y, st.range, st.targetAir, st.targetGround, st.sort === "strongest")
+        ? this.bestTarget(
+            t.x, t.y, st.range, st.targetAir, st.targetGround,
+            st.sort === "strongest", !(TOWER_NATURE[t.kind] & DMG_BULLET),
+          )
         : -1;
       t.targetT = TARGET_INTERVAL;
     }
@@ -9030,7 +9144,8 @@ export class Sim {
       return;
     }
     // damageContinuousPierce: armour never applies, but a shield still eats it
-    this.damageUnit(best, dmg, st.bullet.pierceArmor ?? false);
+    this.damageUnit(best, dmg, st.bullet.pierceArmor ?? false, 1, TOWER_NATURE[t.kind]);
+    if (st.bullet.shock && this.uhp[best] > 0) this.applyShock(best, st.bullet.shock);
     if (uhp[best] <= 0) this.killUnit(best);
   }
 
@@ -9042,9 +9157,24 @@ export class Sim {
    * time * 0.5` — and only when that empties it does the incoming status
    * take hold, at its own full duration. So water quenches a burning unit
    * before it can soak it, fire dries a soaked unit before it can light
-   * it, and scorch and the liquid turrets covering one lane fight each
+   * it, and torch and the liquid turrets covering one lane fight each
    * other for the status slot exactly as they do upstream.
    */
+  /**
+   * THE ELECTRIC MARK (constants.ts BulletStats.shock). Reapplied rather
+   * than stacked, like every other clock in the status map.
+   *
+   * IT HAS NO OPPOSITE, which is the difference between it and the fire /
+   * water pair above. Burning and soaked fight each other for the one
+   * status slot because upstream declares them opposites and because they
+   * mean opposite things; electricity means neither, and a body can
+   * perfectly well be soaked AND shocked — indeed that is the pairing the
+   * whole mark exists to advertise. So this one just lands.
+   */
+  private applyShock(i: number, duration: number): void {
+    if (this.ushockT[i] < duration) this.ushockT[i] = duration;
+  }
+
   private applyBurn(i: number, duration: number): void {
     if (this.uwet[i] > 0) {
       this.uwet[i] -= duration * 0.5;
@@ -9059,7 +9189,7 @@ export class Sim {
    * The wet half of the pair, plus the one rule opposite() cannot supply:
    * WHICH water wins. Mindustry keeps one status entry and re-times it;
    * our wet carries a per-ammo slow, so the strongest slow in force holds
-   * the entry — a tsunami soaking cannot be watered down by a wave
+   * the entry — a deluge soaking cannot be watered down by a douser
    * droplet, while an equal or deeper soak re-times freely.
    */
   private applyWet(i: number, spec: { duration: number; slow: number }): void {
@@ -9096,7 +9226,7 @@ export class Sim {
    *
    * armorMult is BulletType.armorMultiplier, applied the way
    * ShieldComp.damageArmorMult does: it scales the TARGET'S ARMOUR, not the
-   * damage, so a lancer's 4 means armour counts quadruple against it and
+   * damage, so a piercer's 4 means armour counts quadruple against it and
    * the same beam is worth far less to an ironhide3 than to an ironhide1.
    */
   private damageUnit(
@@ -9104,17 +9234,30 @@ export class Sim {
     raw: number,
     pierceArmor = false,
     armorMult = 1,
+    /** what the hit IS (DMG_BULLET / DMG_ELECTRIC) — a round unless said */
+    nature = DMG_BULLET,
   ): void {
     // StatusEffects.invincible, healthMultiplier infinity: every hit lands
     // on a unit still arriving for exactly nothing. It runs a full second,
     // half of it after the unit has started walking
     if (this.uspawn[i] > 0) return;
-    // ...and on a CLOAKED body (levels.ts cloak) the same: nothing can hit
-    // it, splash and beams and bolts included, until it shows again
-    if (HAS_CLOAK && this.ucloakT[i] > 0) return;
+    // ...and on a CLOAKED body (levels.ts cloak), A ROUND lands on it for
+    // nothing until it shows again.
+    //
+    // ONLY A ROUND. The cloak used to eat every point of damage in the
+    // game, which made the Wraith fleet's answer "wait for it to come
+    // back" — and a window in which the board can do nothing at all is
+    // not a mechanic a player can build against, it is a pause. What
+    // stops a bullet is the hull not being where the bullet was aimed;
+    // fire, a bolt, a beam, a ray and a rail are not aimed at a point in
+    // that sense, so the seven non-bullet turrets (constants.ts
+    // NON_BULLET_KINDS) go through it. That makes a cloak a REASON TO
+    // OWN ONE OF THEM rather than a reason to stop playing, and it is why
+    // those seven can also still take aim at a dark hull (bestTarget).
+    if (HAS_CLOAK && nature & DMG_BULLET && this.ucloakT[i] > 0) return;
     // THE IRONHIDE5'S PLATING STAMP rides on top of the body's own armour
     // (levels.ts armorField), and it goes through the same armorMult a
-    // bullet carries — borrowed plating is plating, so a lancer's
+    // bullet carries — borrowed plating is plating, so a piercer's
     // armorMultiplier counts it four times over exactly as it counts the
     // body's own. Nothing is stamped when no carrier is on the roster
     // (HAS_ARMOR_AURA), so this costs one compare in the usual case
@@ -9127,12 +9270,18 @@ export class Sim {
     // against an ironhide1 and DOUBLE against a stoop5. Before armour,
     // because it is the round hitting harder and not the plate mattering
     // less — Monofilament below is the other one
-    const hit = this.titanOn ? raw * TITAN_MUL[KIND_TIER[this.ukind[i]]] : raw;
+    let hit = this.titanOn ? raw * TITAN_MUL[KIND_TIER[this.ukind[i]]] : raw;
+    // WATER CONDUCTS (constants.ts WET_SHOCK_MUL): an electric hit on a
+    // SOAKED body is worth the multiple. It sits beside Titan, above
+    // plating, for Titan's reason — the shot lands harder, the plate does
+    // not matter less — and it keys off the body being wet RIGHT NOW
+    // rather than off the shocked mark, which is only the tell (ushockT)
+    if (nature & DMG_ELECTRIC && this.uwet[i] > 0) hit *= WET_SHOCK_MUL;
     // MONOFILAMENT ROUNDS (relics.ts): armour stops applying, to every
     // damage path in the game at once. It is here rather than on
     // BulletStats because a bullet's own `pierceArmor` is honoured by
     // exactly ONE of the sim's damage paths — a relic written as a bullet
-    // field would have done nothing at all for a lancer or a meltdown
+    // field would have done nothing at all for a piercer or a furnace
     let amount =
       pierceArmor || this.armorBlind ? hit : Sim.applyArmor(hit, armor * armorMult);
     // LEADERSHIP (mutation.ts): the CEILING on one hit, taken after
@@ -9378,7 +9527,7 @@ export class Sim {
    * bullet never splashes (BulletType.despawned skips the blast on
    * `b.absorbed`) — the blast dies with the shell.
    *
-   * Only `absorbable` bullets are eaten. Fuse is the exception on this
+   * Only `absorbable` bullets are eaten. Cleaver is the exception on this
    * roster and needs no flag: its ShrapnelBulletType sets absorbable=false
    * AND deals its damage as an instant ray at the muzzle, so it never
    * becomes a projectile here at all and rakes straight through a field.
@@ -9558,7 +9707,7 @@ export class Sim {
           }
         }
         for (const i of hits) {
-          this.damageUnit(i, b.damage);
+          this.damageUnit(i, b.damage, false, 1, TOWER_NATURE[pr.kind]);
           // BulletType.hitEntity: an impulse of knockback * 80 world units
           // straight out from the shot. Unit.impulse divides by mass, so
           // the same shove all but stops an ironhide1 and leans on an ironhide3
@@ -9570,6 +9719,7 @@ export class Sim {
           }
           if (uhp[i] > 0 && b.burn && !KIND_BURN_IMMUNE[this.ukind[i]]) this.applyBurn(i, b.burn);
           if (uhp[i] > 0 && b.wet && !KIND_WET_IMMUNE[this.ukind[i]]) this.applyWet(i, b.wet);
+          if (uhp[i] > 0 && b.shock) this.applyShock(i, b.shock);
           // BulletType.hitEffect, at the bullet rather than the victim.
           // A splash shot skips it — the blast in the `dead` branch below
           // is its hit effect — and so does a killing blow, whose death
@@ -9654,12 +9804,14 @@ export class Sim {
             b.collidesGround,
             b.burn,
             b.wet,
+            TOWER_NATURE[pr.kind],
+            b.shock ?? 0,
           );
         }
         // BulletType.despawned, and only that: a shot spent on a direct
         // hit was removed, not despawned, and leaves nothing behind
         if (pr.life <= 0) this.bulletFx(b.despawnFx, pr.x, pr.y, rot, b.fxColor);
-        // BulletType.hit -> createFrags: the burst that makes a cyclone
+        // BulletType.hit -> createFrags: the burst that makes a whirl
         // shell a wall rather than a point. Fired here, at the end, so a
         // fragment is never walked by the loop it was born in
         if (b.frag) this.createFrags(pr, b.frag);
@@ -9720,6 +9872,11 @@ export class Sim {
     ground: boolean,
     burn?: number,
     wet?: BulletStats["wet"],
+    /** what threw it — a shell's blast is its shell's (TOWER_NATURE). A
+     *  hull coming apart (Cascade) has no gun behind it and keeps the
+     *  default, which is the behaviour it always had */
+    nature = DMG_BULLET,
+    shock = 0,
   ): void {
     const { upx, upy, uhp, uarmor, urad, ukind, bStart, bUnits, splashHits } = this;
     splashHits.length = 0;
@@ -9770,12 +9927,13 @@ export class Sim {
       const ddx = upx[i] - x, ddy = upy[i] - y;
       const d = Math.sqrt(ddx * ddx + ddy * ddy);
       const raw = dmg * Math.max(0, 0.4 + 0.6 * (1 - d / radius));
-      this.damageUnit(i, raw);
+      this.damageUnit(i, raw, false, 1, nature);
       // the status lands on what SURVIVED the blast, exactly as it does on
       // a direct hit — lighting a corpse is a fire nobody sees
       if (uhp[i] > 0) {
         if (burn && !KIND_BURN_IMMUNE[ukind[i]]) this.applyBurn(i, burn);
         if (wet && !KIND_WET_IMMUNE[ukind[i]]) this.applyWet(i, wet);
+        if (shock > 0) this.applyShock(i, shock);
       }
     }
     splashHits.sort((a, b) => b - a);
@@ -9855,7 +10013,7 @@ export class Sim {
 
   /**
    * `force` marks an effect that IS a weapon rather than dressing on one —
-   * fuse's shrapnel ray, lancer's beam and charge glow, arc's bolt, the
+   * cleaver's shrapnel ray, piercer's beam and charge glow, coil's bolt, the
    * rail's trail — and pushes it past FX_CAP. Those weapons deal instant
    * invisible damage, so with their one visible artifact dropped a firing
    * turret and a stalled one look identical, and a swarm big enough to

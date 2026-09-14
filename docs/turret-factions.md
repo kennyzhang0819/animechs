@@ -1,26 +1,31 @@
 # Foundry: the player's turret set
 
-The seventeen turrets are Mindustry's, sprite for sprite
+The seventeen turrets started as Mindustry's, sprite for sprite
 (`public/mindustry/README.md`: placeholder art, GPL, to be replaced). The
-swarm has already stopped being Mindustry's (`docs/unit-art.md`). Foundry
-is the first player faction: machine turrets, one metal, every kind its
-own shape, an accent per ammo. The heads are in
+swarm stopped being Mindustry's first (`docs/unit-art.md`), then the
+heads, and now the names: every kind says what the gun DOES — tacker,
+lobber, piercer, repeater — and the stock names survive in one place
+only, as the filenames of the vendored art under `public/mindustry`,
+which is upstream's tree and is left spelled upstream's way. Foundry is the first
+player faction: machine turrets, one metal, every kind its own shape, an
+accent per ammo. The heads are in
 `docs/turret-concepts/mill-<kind>.png`, rendered by
 `FORCE=1 npm run gen:turrets` from `game/turretArt.ts`; those PNGs are
 what the game ships ("How it ships", below).
 
 ## How a head is drawn, read off the stock art
 
-Read off `duo.png`, `lancer.png`, `ripple.png` and `spectre.png` rather
-than assumed:
+Read off the four stock sprites that tacker, piercer, barrage and repeater
+replaced (in the vendored tree, under their upstream names) rather than
+assumed:
 
 - **No outline, no rim, no inset border plate.** Four or five flat colours
   butted against each other. The head sits inside a four-pixel margin
   and the stock base plate (`blocks/turrets/bases/block-N.png`, the one
   the renderer already draws) shows around it.
 - **Every material is a pair, dark on the left half and light on the
-  right.** That is the whole of the lighting: the duo's body is
-  `#8f665b` left and `#c9a58f` right, the lancer's `#6974c4` and
+  right.** That is the whole of the lighting: the tacker's body is
+  `#8f665b` left and `#c9a58f` right, the piercer's `#6974c4` and
   `#8aa3f4`. A part is drawn once in a material and the shade is applied
   after, so the shape is symmetric by construction and the shade never is.
 - **Cuts are at 45 degrees or straight, nothing narrower than four
@@ -62,50 +67,55 @@ than assumed:
 
 ## The two rules of the faction
 
-- **One shape a role.** No head is another head at a different size. Duo
-  is two barrels on a copper block; hail one mortar mouth on a turntable;
-  scorch a flat wide nozzle with a tank behind; arc a coil and prongs
-  with no barrel; salvo three barrels over a magazine; scatter a bell
-  that flares forward; lancer a wedge with capacitors on the flanks;
-  wave a tank with a window and one nozzle; parallax a dish on a yoke;
-  swarmer a box of missile cells; fuse a broadside of three wide short
-  tubes; ripple four ringed mouths; tsunami the great tank with twin
-  nozzles; cyclone a rotary cluster on a banded drum; spectre long twin
-  barrels with radiator rails; meltdown one lens and three capacitor
-  banks; foreshadow a single rail with accelerator rings.
+- **One shape a role.** No head is another head at a different size. Tacker
+  is two barrels on a copper block; lobber one mortar mouth on a turntable;
+  torch a flat wide nozzle with a tank behind; coil a coil and prongs
+  with no barrel; autocannon three barrels over a magazine; airburst a bell
+  that flares forward; piercer a wedge with capacitors on the flanks;
+  douser a tank with a window and one nozzle; tether a dish on a yoke;
+  hive a box of missile cells; cleaver three wide short
+  tubes; barrage four ringed mouths; deluge the great tank with twin
+  nozzles; whirl a rotary cluster on a banded drum; repeater long twin
+  barrels with radiator rails; furnace one lens and three capacitor
+  banks; railhead a single rail with accelerator rings.
 - **One metal, one accent per ammo.** The body is gunmetal
-  (`#4d4e58 / #7b7b7b`, the ripple's and the spectre's), the barrels steel
-  (`#c1c3d4 / #f4f4f4`, the lancer's), a bore `#2c2d38`. The accent is
+  (`#4d4e58 / #7b7b7b`, the barrage's and the repeater's), the barrels steel
+  (`#c1c3d4 / #f4f4f4`, the piercer's), a bore `#2c2d38`. The accent is
   the colour of what the turret throws, in Mindustry's own ammo pairs
   where it has one, and never the colour of a rarity band
   (`game/pixelArt.ts` rule 4):
 
   | accent | pair | kinds |
   | --- | --- | --- |
-  | copper, a bullet | `#8f665b / #c9a58f` | duo, salvo, spectre |
-  | brass, a shell | `#d99f6b / #f3e979` | hail, ripple |
-  | ember, flame | `#ec7458 / #ff9c5a` | scorch, fuse |
-  | blue, a beam | `#6974c4 / #8aa3f4` | arc, lancer, meltdown, foreshadow |
-  | water | `#3f4c96 / #5c6dbb` | wave, tsunami |
-  | mint, a field | `#4fa88a / #8fe0b8` | parallax |
-  | salmon, a missile or flak | `#da6b68 / #feb380` | scatter, swarmer, cyclone |
+  | copper, a bullet | `#8f665b / #c9a58f` | tacker, autocannon, repeater |
+  | brass, a shell | `#d99f6b / #f3e979` | lobber, barrage |
+  | ember, flame | `#ec7458 / #ff9c5a` | torch, cleaver |
+  | blue, a beam | `#6974c4 / #8aa3f4` | coil, piercer, furnace, railhead |
+  | water | `#3f4c96 / #5c6dbb` | douser, deluge |
+  | mint, a field | `#4fa88a / #8fe0b8` | tether |
+  | salmon, a missile or flak | `#da6b68 / #feb380` | airburst, hive, whirl |
 
   A player learns seven colours and reads a formation's job across the
   map.
 
-The proposed names in `roster.json` (Pinion, Lobber, Torch, Sparker,
-Triplet, Bellow, Kiln, Sluice, Halo, Quiver, Broadside, Bombard,
-Floodgate, Grindstone, Crucible, Furnace, Railspike) are captions only;
-the stock kind stays the key everywhere in the code.
+A NAME SAYS THE JOB, AND THE NAME IS THE KEY. `roster.json` used to
+carry a caption column of proposed names while the stock kind still ran
+through the code; both are gone. What a turret is called now describes
+what it does — a tacker tacks small rounds down, a douser soaks, a
+railhead fires one rail shot — and that word is the kind itself, in
+`TOWER_KINDS`, in every table keyed by it, and on the card. Where a
+plain word was already taken by something else here (a volley, the flak
+class, a patch, the Aegis arc, a starhart's lance, a flood) the turret
+took another one, so no name in this file means two things.
 
 ### One silhouette a kind
 
 `mill-<kind>.png` is the roster: the round-leaning set (turntables,
-drums, a tank with the nozzle on top, a gatling salvo, a tesla dome),
-every turntable an octagon since the four-pixel pass. The fuse is the
+drums, a tank with the nozzle on top, a gatling autocannon, a tesla dome),
+every turntable an octagon since the four-pixel pass. The cleaver is the
 one head that lost its barrels: it throws shards a few tiles, and three
 gun tubes said sniper, so it is a drum with one blast face as wide as
-itself and a heat band where the face meets the drum. The swarmer, which
+itself and a heat band where the face meets the drum. The hive, which
 had four round tubes and a rail, is a steel box of four missile cells.
 All eighteen render through the same run check with none flagged.
 
@@ -144,7 +154,7 @@ near-collision is the rhino, whose body grey sits close to the gunmetal
 ramp; its crux red keeps it on the right side, and if that ever fails
 on the board the fix is to warm the rhino, not the turrets. Scale is
 the game's own: a 1x1 turret is one tile of 20 world px and a T1 animal
-draws at three, so a duo next to a dagger-sized body is small by design
+draws at three, so a tacker next to a dagger-sized body is small by design
 (`docs/unit-art.md`, "The size").
 ## How it ships
 
@@ -165,7 +175,7 @@ four stock plates darkened by `BASE_DARK` (`plateArt`), and puts the
 HUD's turret pictures through the same pass (`towerIcon`); the placement
 ghost composes its stamp from the head's own file (`towerGhostIcon`)
 over the plate darkened the same way (`game.ts ghostArt`). A kind with no drawing
-(the retired menders) keeps its stock sprite. Nothing under
+(the retired fixers) keeps its stock sprite. Nothing under
 `public/mindustry` is touched, and the flag off restores Mindustry's
 turrets byte for byte.
 
@@ -178,6 +188,6 @@ the normal way to put an edit to the heads on the sheet.
 
 A faction, when a second comes, is a skin over this one roster, never a
 second roster: the sim, the deal, mods and relics are keyed by
-`TowerKind`, and a faction changes what a duo looks like, not what it
+`TowerKind`, and a faction changes what a tacker looks like, not what it
 does. The head lookup in `atlas.ts` and the plate treatment are the two
 places it plugs in.

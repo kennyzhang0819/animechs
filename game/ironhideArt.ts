@@ -12,10 +12,10 @@
  *     a third tone.
  *   - NOTHING NARROWER THAN FOUR PIXELS: no line, no stud, no gap, no
  *     band under four. No dither, no checker, no one-pixel highlight. The
- *     duo is 32 px and reads with four colours in blocks; so does the T1.
+ *     tacker is 32 px and reads with four colours in blocks; so does the T1.
  *   - THE SCALE IS THE TURRETS': 32 native px a tile, so a body is drawn
  *     at its HITBOX. An ironhide1 is a 1x1 (radius UR = 10 world px, a 20
- *     px tile) and draws on a 32 grid, like a duo; an ironhide5 is a
+ *     px tile) and draws on a 32 grid, like a tacker; an ironhide5 is a
  *     3.75x3.75 and draws on 120. No overshoot: the quad IS the box, and
  *     the sheet's 0.625 world px per native px puts 32 px on one tile.
  *   - Facing up, on its own square grid, through the same packer as
@@ -54,13 +54,19 @@ export interface IronTier {
   th: number;
   sh: number;
 }
-/** hitboxes UR x 1 / 1.25 / 1.625 / 2.75 / 3.75, at 32 px a tile */
+/** hitboxes UR x 1 / 1.25 / 1.625 / 2.75 / 3.75, at 32 px a tile.
+ *  A RHINO IS A BLOCK ON FOUR STUMPS. The legged tiers' strokes are a
+ *  sixth of the grid, between the stag's tapering limb and the
+ *  elephant's pillar, and they hardly narrow: what little of a leg shows
+ *  past a body this wide is all shin. They were a ninth, which on a
+ *  stance that swung the feet three radii out (game/levels.ts) made four
+ *  thin limbs reaching from under a plate — a spider. */
 export const IRON_TIERS: readonly IronTier[] = [
   { t: 1, n: 32, stride: 5, small: 16, th: 4, sh: 4 },
   { t: 2, n: 40, stride: 6, small: 16, th: 4, sh: 4 },
   { t: 3, n: 52, stride: 7, small: 16, th: 4, sh: 4 },
-  { t: 4, n: 88, stride: 0, small: 32, th: 10, sh: 8 },
-  { t: 5, n: 120, stride: 0, small: 48, th: 14, sh: 11 },
+  { t: 4, n: 88, stride: 0, small: 32, th: 15, sh: 12 },
+  { t: 5, n: 120, stride: 0, small: 48, th: 20, sh: 16 },
 ];
 
 /** pixel coordinates on the tier's grid, off a 32-grid layout: every value
@@ -157,8 +163,11 @@ export function ironLegged(T: IronTier): LegParts {
     body: art,
     base: draw(n, (P) => P.octa(q(7), q(13), n - q(7), n - q(3), w(4), GUN)),
     cell,
-    // the hoof: a block of hide with a gunmetal toe, drawn pointing up
-    foot: draw(small, (P) => { P.box(sc - w(3), sc - w(3), sc + w(3), sc + w(3), HIDE); P.box(sc - w(3), sc - w(3), sc + w(3), sc - w(3) + w(2), GUN); }, false),
+    // the hoof: a broad block of hide with a gunmetal toe, drawn pointing
+    // up. Wider across the leg than along it, and wider than the leg
+    // itself — on the two legged tiers the hoof and a stub of shin are
+    // the only parts of a leg that clear the body at all
+    foot: draw(small, (P) => { P.box(sc - w(4), sc - w(3), sc + w(4), sc + w(3), HIDE); P.box(sc - w(4), sc - w(3), sc + w(4), sc - w(3) + w(2), GUN); }, false),
     joint: draw(small, (P) => P.disc(sc, sc, Math.max(2, Math.round(T.th / 2)), HIDE), false),
     baseJoint: draw(small, (P) => P.disc(sc, sc, Math.max(3, Math.round(T.th * 0.75)), GUN), false),
     small,

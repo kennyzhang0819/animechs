@@ -317,14 +317,14 @@ export interface EnergyFieldSpec {
 
 /**
  * The status effects a unit can carry. Mindustry has dozens; this game
- * fields exactly two — StatusEffects.burning, lit by the scorch turret,
- * and StatusEffects.wet, soaked in by the liquid turrets (wave, tsunami).
+ * fields exactly two — StatusEffects.burning, lit by the torch turret,
+ * and StatusEffects.wet, soaked in by the liquid turrets (douser, deluge).
  *
  * WET IMMUNITY BELONGS TO THE HULLS, and to nothing else. UnitType.init
  * adds StatusEffects.wet to the immunities of every naval type the moment
  * it detects one (the `water preset` block, alongside canDrown = false), so
  * it is not a per-unit authoring choice upstream and is not one here — all
- * ten ships declare it, and a wave or tsunami soaking a boat does nothing
+ * ten ships declare it, and a douser or deluge soaking a boat does nothing
  * at all. Burning immunity is the opposite: two kinds have it by hand.
  */
 export type StatusKind = "burning" | "wet";
@@ -355,7 +355,7 @@ export interface UnitStats {
    * Mindustry UnitType.drag, "movement drag as fraction": how much of an
    * external shove a unit sheds per tick. Nothing this game does steers by
    * it — our units chase a flow field rather than accelerating — but a
-   * spectre round's knockback is a Mindustry impulse, and this is what
+   * repeater round's knockback is a Mindustry impulse, and this is what
    * decides how long that shove keeps acting after it lands. Unset takes
    * UnitType's own 0.3, which is what every kind below that omits it has.
    */
@@ -452,13 +452,13 @@ export interface UnitStats {
    * `amount` of extra armour onto every body in `range`, live for as long as
    * the stamp lasts (constants.ts AURA_LINGER).
    *
-   * ARMOUR IS A FLAT SHAVE FLOORED AT A TENTH OF THE HIT (Sim.applyArmor),
-   * so this is not a percentage of anything and its worth depends entirely
-   * on what is shooting: +12 armour is nothing at all to a fuse and very
-   * nearly everything to a wall of duos. That is the point of it — an ironhide5
-   * in the crowd does not make the crowd tougher, it makes SMALL CALIBRE
-   * stop working, and the answer is to bring a bigger gun rather than more
-   * of the same one.
+   * ARMOUR IS A FLAT SHAVE FLOORED AT A TENTH OF THE HIT (Sim.applyArmor), so
+   * this is not a percentage of anything and its worth depends entirely on
+   * what is shooting: +12 armour is nothing at all to a cleaver and very
+   * nearly everything to a wall of tackers. That is the point of it — an
+   * ironhide5 in the crowd does not make the crowd tougher, it makes SMALL
+   * CALIBRE stop working, and the answer is to bring a bigger gun rather than
+   * more of the same one.
    */
   armorField?: { amount: number; reload: number; range: number };
   /**
@@ -570,11 +570,23 @@ export interface UnitStats {
    */
   charge?: { range: number };
   /**
-   * CLOAK — every `period` seconds the body vanishes for `duration`:
-   * nothing can target it and nothing can hurt it (Sim.damageUnit,
-   * bestTarget), and it is drawn as a ghost of itself. `veil` is the
-   * flagship's: when it cloaks, every body within that radius cloaks with
-   * it for the same duration.
+   * CLOAK — every `period` seconds the body vanishes for `duration`, and
+   * it is drawn as a ghost of itself. `veil` is the flagship's: when it
+   * cloaks, every body within that radius cloaks with it for the same
+   * duration.
+   *
+   * IT STOPS ROUNDS, AND ONLY ROUNDS (Sim.damageUnit, Sim.bestTarget). A
+   * bullet cannot find a hull that is not where it was aimed; fire, a
+   * bolt, a beam, a ray and a rail are not aimed at a point in that
+   * sense, so the seven non-bullet turrets (constants.ts
+   * NON_BULLET_KINDS) both take aim at a dark hull and hurt it.
+   *
+   * IT USED TO STOP EVERYTHING, and that was the problem: a window in
+   * which the whole board could do nothing is a pause, not a mechanic,
+   * and the only counterplay it offered was waiting. Now a cloak asks the
+   * player a question their line can be built to answer — own one of the
+   * seven and the fleet is a hard fight; own none and it is still the
+   * fight it always was.
    */
   cloak?: { duration: number; period: number; veil?: number };
   /**
@@ -697,21 +709,40 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 2.1,
     shieldField: { amount: 25, max: 250, reload: 1, range: 7.5 * CELL },
     // THE ANIMAL TRIAL (animalFlag.ts): the Ironhide T4 is a rhino on
-    // four stout planted legs (LEG_ART.ironhide4 in atlas.ts), short for
-    // its bulk so the feet stay close under a body that is mostly back.
-    // The body is drawn at its hitbox (ironhideArt.ts), 55 px across, so
-    // the legs mount inside its edge and reach a little past it
+    // four planted legs (LEG_ART.ironhide4 in atlas.ts), and a rhino is a
+    // BLOCK. It is the one family on the roster whose legs never leave
+    // the body at all.
+    //
+    // THE MOUNTS ARE ALMOST AT THE CENTRE — `baseOffset` 1.5 against the
+    // 8 it used to run — and the leg is long enough to reach out from
+    // there to the edge and no further (`length` 11, `lengthScl` 0.95,
+    // putting the resting foot 1.09 radii out). That sounds like nothing
+    // and it is the whole change: the KNEE sits about half way along a
+    // leg, so pulling the mount in drags the knee in with it. This one's
+    // rides at 0.86 radii through every part of its step — inside the
+    // silhouette, under 55 px of drawn body, never seen. What clears the
+    // outline is a hoof and a stub of shin, which is what a rhino seen
+    // from overhead actually shows. It used to swing its feet out to 3.08
+    // radii with the knee at 1.89, folded and bare on both sides of a
+    // plate: four thin limbs around a block, which is a spider.
+    //
+    // And the step is short with it — `moveSpace` 0.7 walks 0.88 radii
+    // between footfalls against 2.07 before, so no foot is ever left
+    // trailing two body-widths back. `elevation` 0.15 keeps the swinging
+    // hoof low: this one does not pick its feet up, it shoves them along.
+    // The strokes that go with all this are in IRON_TIERS
+    // (game/ironhideArt.ts) — a sixth of the grid, up from a ninth
     ...(ANIMAL_ART
       ? {
           legs: legs({
             count: 4,
-            length: 14 * MU,
-            forwardScl: 0.7,
-            moveSpace: 1.3,
-            baseOffset: 8 * MU,
-            lengthScl: 0.9,
+            length: 11 * MU,
+            forwardScl: 0.65,
+            moveSpace: 0.7,
+            baseOffset: 1.5 * MU,
+            lengthScl: 0.95,
             speed: 0.14,
-            elevation: 0.25,
+            elevation: 0.15,
             ripple: 2,
           }),
         }
@@ -722,11 +753,11 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // walks FASTER than the ironhide4 it replaces (2.7), the second time the
   // roster hands a tier an upgrade that is not also a slowdown
   //
-  // armor 30 is the number that matters. Armour is a flat shave floored at
-  // a tenth of the raw shot (see Sim.applyArmor), so anything firing under
-  // 20 a hit is reduced to paying the floor: a duo's 9-damage bolt lands 0.9
-  // instead of 9, and a full duo wall does a tenth of its paper DPS. The
-  // counter is calibre, not volume — one lancer hit clears the shave twice
+  // armor 30 is the number that matters. Armour is a flat shave floored at a
+  // tenth of the raw shot (see Sim.applyArmor), so anything firing under 20 a
+  // hit is reduced to paying the floor: a tacker's 9-damage bolt lands 0.9
+  // instead of 9, and a full tacker wall does a tenth of its paper DPS. The
+  // counter is calibre, not volume — one piercer hit clears the shave twice
   // over. No ability: at this weight it does not need one
   ironhide5: {
     hp: 24000,
@@ -736,30 +767,31 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 5,
     rotateSpeed: 1.65,
     // THE CROWN HANDS ITS PLATING DOWN. The line's whole argument is that
-    // armour is a flat shave and the counter is calibre, not volume; this
-    // is that argument applied to everything walking with it. +12 within
-    // nine tiles turns an ironhide1 escort into something a duo wall reduces
-    // itself against, and changes nothing at all for a fuse.
+    // armour is a flat shave and the counter is calibre, not volume; this is
+    // that argument applied to everything walking with it. +12 within nine
+    // tiles turns an ironhide1 escort into something a tacker wall reduces
+    // itself against, and changes nothing at all for a cleaver.
     //
     // It carries no shield of its own. The ironhide2 and the ironhide3 wear one
     // because they are the tiers that have to survive their own approach;
     // the ironhide5 survives on thirty armour and twenty-four thousand health,
     // and what it adds to the line is the thing it is already best at.
     armorField: { amount: 12, reload: 2, range: 9 * CELL },
-    // THE ANIMAL TRIAL (animalFlag.ts): the Ironhide T5, the same four
-    // legs at the ironhide5's weight and reach (LEG_ART.ironhide5 in
-    // atlas.ts), on a body drawn 75 px across
+    // THE ANIMAL TRIAL (animalFlag.ts): the Ironhide T5, the same block
+    // on the same four legs at its own weight (LEG_ART.ironhide5 in
+    // atlas.ts), on a body drawn 75 px across. Knee at 0.80 radii, the
+    // most buried on the roster; see the note on the ironhide4 above
     ...(ANIMAL_ART
       ? {
           legs: legs({
             count: 4,
-            length: 19 * MU,
-            forwardScl: 0.7,
-            moveSpace: 1.4,
-            baseOffset: 11 * MU,
-            lengthScl: 0.9,
+            length: 14 * MU,
+            forwardScl: 0.6,
+            moveSpace: 0.65,
+            baseOffset: 2 * MU,
+            lengthScl: 0.95,
             speed: 0.13,
-            elevation: 0.35,
+            elevation: 0.2,
             ripple: 3,
           }),
         }
@@ -790,11 +822,11 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // IT NO LONGER THROWS SLAG — the whole tree throws one thing now
   // (weapons.ts) — but it keeps `immunities: burning`, and the reason has
   // simply moved. Upstream it is fireproof because it is the slag unit;
-  // here it is fireproof because SCORCH IS THE OBVIOUS ANSWER TO A LIGHT,
+  // here it is fireproof because TORCH IS THE OBVIOUS ANSWER TO A LIGHT,
   // FAST, CLOSE-RANGE FAMILY, and a family with no answer to its own
   // counter is one the player solves with a wall of one turret. So the tier
   // the swarm upgrades INTO is the tier the flame slides off, and a board
-  // that opened with scorch has to find a second idea by wave twenty.
+  // that opened with torch has to find a second idea by wave twenty.
   weaver2: {
     hp: 600,
     speed: 5.5 * CELL,
@@ -811,9 +843,15 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     // on its feet and scuttles instead of striding.
     //
     // THE ANIMAL TRIAL (animalFlag.ts): as the Dartback T2 the legs are a
-    // frog's — four, on short mounts, planted just past a 32 world px body
+    // frog's, and a frog's leg is SHORT AND THICK. The whole tree is cut
+    // to plant its feet about 1.75 body radii out (`baseOffset` +
+    // `length` * `lengthScl` over `radius`) where it used to reach 2.85,
+    // and `lengthScl` 0.8 folds the knee well clear of the flank instead
+    // of running the limb out straight. Long thin limbs on long mounts
+    // are what read as a spider however few of them there are; the
+    // stroke that goes with these is in FROG_TIERS (game/familyArt.ts)
     legs: ANIMAL_ART
-      ? legs({ count: 4, length: 14 * MU, forwardScl: 0.6, moveSpace: 1.1, baseOffset: 6 * MU, lengthScl: 0.9, elevation: 0.15 })
+      ? legs({ count: 4, length: 11 * MU, forwardScl: 0.6, moveSpace: 0.7, baseOffset: 2 * MU, lengthScl: 0.85, elevation: 0.15 })
       : legs({ count: 4, length: 5 * MU, forwardScl: 0.6, moveSpace: 1.1, elevation: 0.12 }),
   },
   // weaver3: the line's T3 — 1000 hp, armor 9, a 1.875x1.875-block hitbox,
@@ -834,10 +872,10 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     // sooner. A third of again on everything within ten tiles, itself
     // included, and it is the only speed buff in the game.
     hasteField: { mult: 1.35, reload: 2, range: 10 * CELL },
-    // THE ANIMAL TRIAL (animalFlag.ts): the Dartback T3, four legs a
-    // little longer
+    // THE ANIMAL TRIAL (animalFlag.ts): the Dartback T3 — the T2's
+    // crouch on the bigger body, at the same 1.75 radii
     legs: ANIMAL_ART
-      ? legs({ count: 4, length: 16 * MU, forwardScl: 0.65, moveSpace: 1.1, baseOffset: 7 * MU, lengthScl: 0.9, elevation: 0.2 })
+      ? legs({ count: 4, length: 12.5 * MU, forwardScl: 0.65, moveSpace: 0.7, baseOffset: 2.5 * MU, lengthScl: 0.85, elevation: 0.18 })
       : legs({
           count: 6,
           length: 6.5 * MU,
@@ -873,18 +911,19 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 4,
     drag: 0.1,
     rotateSpeed: 2.7,
-    // THE ANIMAL TRIAL (animalFlag.ts): the Dartback T4 — four legs at
-    // twice the stock reach, staggered leg by leg
+    // THE ANIMAL TRIAL (animalFlag.ts): the Dartback T4 — the same
+    // crouch again, staggered leg by leg so the four do not swing as one
     legs: ANIMAL_ART
       ? legs({
           count: 4,
-          length: 24 * MU,
+          length: 19 * MU,
+          forwardScl: 0.7,
           pairOffset: 3 * MU,
-          moveSpace: 1.2,
-          baseOffset: 10 * MU,
-          lengthScl: 0.9,
+          moveSpace: 0.7,
+          baseOffset: 4 * MU,
+          lengthScl: 0.85,
           speed: 0.2,
-          elevation: 0.3,
+          elevation: 0.25,
           ripple: 2,
         })
       : legs({
@@ -925,18 +964,20 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 5,
     drag: 0.1,
     rotateSpeed: 1.9,
-    // THE ANIMAL TRIAL (animalFlag.ts): the Dartback T5 — four legs, the
-    // longest stride on the ground, high-stepping
+    // THE ANIMAL TRIAL (animalFlag.ts): the Dartback T5 — the family's
+    // stance at its largest, and still a crouch: the biggest frog on the
+    // field puts its feet no further out, in radii, than the T2 does
     legs: ANIMAL_ART
       ? legs({
           count: 4,
-          length: 30 * MU,
+          length: 21.5 * MU,
+          forwardScl: 0.7,
           pairOffset: 3 * MU,
-          moveSpace: 1.0,
-          baseOffset: 12 * MU,
-          lengthScl: 0.9,
+          moveSpace: 0.65,
+          baseOffset: 4.5 * MU,
+          lengthScl: 0.85,
           speed: 0.18,
-          elevation: 0.4,
+          elevation: 0.3,
           ripple: 3,
         })
       : legs({
@@ -954,8 +995,8 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   },
   // stoop1: 70 hp, no armor, 1.125-block hitbox, 15 tiles/s (upstream 20.25).
   // The fastest thing in the sky still, but the whole line was brought down
-  // to a pace the guns can track — a stoop1 used to cross the flak before a
-  // scatter finished a burst.
+  // to a pace the guns can track — a stoop1 used to cross the flak before
+  // an airburst finished a burst.
   // THE T1 IS THE FAMILY IN MINIATURE (the Skyfall bombers): no gun, a
   // charge that goes off on the turret it dives at — or wherever it is
   // shot down — for 150 over three and a half tiles
@@ -1026,7 +1067,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // where its predecessor covers the ground around it, this one is simply
   // very hard to remove
   //
-  // immunities = burning: scorch's flame slides off this one exactly as it
+  // immunities = burning: torch's flame slides off this one exactly as it
   // does off the weaver2, the roster's only other fireproof unit. A flame
   // wall that melts an ironhide1 column is the wrong answer here — 9 armour
   // already takes 17-damage flame hits down to 8, and the 0.167/tick burn
@@ -1055,23 +1096,46 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     shieldField: { amount: 30, max: 300, reload: 2, range: 9 * CELL },
     // THE ANIMAL TRIAL (animalFlag.ts): the Starhart T4 is the tier the
     // stag's stance opens, so it leaves the mech rig for four planted legs
-    // (LEG_ART.starhart4 in atlas.ts carries the art). A deer's legs from
-    // above are UNDER the deer: the same short reach as the rhino's
-    // (ironhide4 above, 14 on mounts 8), a little shorter still on mounts
-    // that sit inside the stag's narrower back, so a foot lands about a
-    // body's half-width out from the flank and no further. Off the trial
-    // it has no gait and walks as the starhart4 mech it always was
+    // (LEG_ART.starhart4 in atlas.ts carries the art).
+    //
+    // A DEER DOES NOT CRAWL. The legged rig will make anything a spider
+    // if it is let: mounts on a wide ring, a foot planted well outside
+    // the flank, and a knee folded hard enough to stand proud of the body
+    // is a crab's limb whatever animal is drawn over it. So this one
+    // walks instead, and every number below is that one decision.
+    //
+    // THE FOOT LANDS AT THE OUTLINE, 1.10 radii out against the 1.32 it
+    // used to stand at — a third of a body clear of its own edge — so
+    // what shows past the flank is a hoof and the last of a shin, not a
+    // splayed limb. `lengthScl` 0.92 runs the leg near straight from
+    // shoulder to hoof, which is what a deer's leg is from above; the
+    // knee barely leaves the line between the two. `elevation` 0.55
+    // nearly doubles the lift, so a swinging hoof rises clear of the
+    // ground instead of dragging round to the next plant. The stride
+    // stays about four fifths of the leg's own length (`moveSpace` 1.25
+    // on a leg cut by a sixth), so the hoof really does swing fore and
+    // aft through a step rather than shuffling, and `forwardScl` 0.65
+    // holds the reach-ahead where the rest of the roster keeps it instead
+    // of yanking the limb out past what its two segments can span. The
+    // gait groups are diagonal pairs already (four mounts at 45 degrees,
+    // `groupSize` 2) — a trot, and the one thing here that was right.
+    //
+    // The art goes with it: HART_TIERS (game/familyArt.ts) tapers the
+    // thigh into a much thinner shin, because two segments of one
+    // middling width is a crab's limb however it is walked.
+    //
+    // Off the trial it has no gait and walks as the mech it always was
     ...(ANIMAL_ART
       ? {
           legs: legs({
             count: 4,
-            length: 12 * MU,
-            forwardScl: 0.7,
-            moveSpace: 1.3,
-            baseOffset: 5 * MU,
-            lengthScl: 0.9,
-            speed: 0.15,
-            elevation: 0.3,
+            length: 10 * MU,
+            forwardScl: 0.65,
+            moveSpace: 1.25,
+            baseOffset: 4 * MU,
+            lengthScl: 0.92,
+            speed: 0.22,
+            elevation: 0.55,
             ripple: 2,
           }),
         }
@@ -1104,19 +1168,20 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     repairField: { amount: 80, reload: 2, range: 11 * CELL },
     shieldField: { amount: 50, max: 500, reload: 2, range: 11 * CELL },
     // THE ANIMAL TRIAL (animalFlag.ts): as the Starhart T5 the four legs
-    // are a stag's — the starhart4's short reach scaled to the bigger
-    // body (the ironhide5 runs 19 on mounts 11), planted under it, never
-    // a spider's span
+    // are a stag's — the starhart4's walk scaled to the bigger body:
+    // feet 1.11 radii out, the limb near straight, and the highest lift
+    // on the roster. Never a spider's span and never a spider's crawl;
+    // see the note on the starhart4 above
     legs: ANIMAL_ART
       ? legs({
           count: 4,
-          length: 15 * MU,
-          forwardScl: 0.7,
-          moveSpace: 1.4,
-          baseOffset: 6 * MU,
-          lengthScl: 0.9,
-          speed: 0.15,
-          elevation: 0.4,
+          length: 12 * MU,
+          forwardScl: 0.65,
+          moveSpace: 1.25,
+          baseOffset: 5 * MU,
+          lengthScl: 0.92,
+          speed: 0.2,
+          elevation: 0.65,
           ripple: 3,
         })
       : legs({
@@ -1139,14 +1204,14 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // and the T4 and T5 are deliberately heavy — a hull that takes a patch
   // when it lands is a hull the board should see coming. The stoop1's old
   // 20.25 was the other end of the problem from the stoop5's 4.05: it
-  // crossed the flak faster than a scatter finished a burst, so the guns
+  // crossed the flak faster than an airburst finished a burst, so the guns
   // never got their answer either. What the family asks a board for is
   // guns that reach the sky and answer fast — and now it gives them the
   // time to, at the tiers where the damage actually is.
 
   // stoop2: the T2 — 340 hp, armor 3, 1.375x1.375-block hitbox, 10 tiles/s
   // (upstream 12.375). Slower than a stoop1 but four times the health, and
-  // armour 3 blunts the scatter flak that shreds the T1
+  // armour 3 blunts the airburst flak that shreds the T1
   // The charge is the bomber's whole reason: 550 over five tiles, which
   // is the old bomb rack's whole rain delivered in one arrival
   stoop2: {
@@ -1232,7 +1297,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // two and a half seconds, a fat orange orb swelling on the ground, and
   // then takes 9,000 off everything within SIXTEEN TILES. That is a
   // 32-tile circle of board, which is most of a citadel, at four figures
-  // past what a spectre carrying half the catalog is holding: nothing in
+  // past what a repeater carrying half the catalog is holding: nothing in
   // the blast is meant to survive it. The fuse is the player's warning
   // and the family's rule at its largest — a stoop5 shot down over the
   // line is a line with two and a half seconds to be somewhere else, and
@@ -1255,7 +1320,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // (x4 at first; doubled again when the phase turrets melted it before it
   // loomed, then x12 when x8 still fell too fast). Armour is 30
   // over the official 9 — far past the ironhide5's 18, so anything hitting
-  // under ~33 pays the 10% floor: pellet AA, duos and salvos all read as
+  // under ~33 pays the 10% floor: pellet AA, tackers and autocannons all read as
   // sparks off the hull, and the answer is calibre, which is what the
   // phase turrets are. Speed drops from the official 1 unit/tick
   // (7.5 tiles/s, weaver1 pace — it would outrun its own escort and reach
@@ -1305,7 +1370,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // skate1: the naval line's T1 — 280 hp, armor 2, a 1.25x1.25-block hitbox,
   // 1.1 units/tick = 8.25 tiles/s, the fastest hull there is. Note it
   // opens at nearly TWICE the ironhide1's health with armour the ironhide1 does
-  // not have: the naval T1 is not chaff, and a duo's 9-damage bolt is
+  // not have: the naval T1 is not chaff, and a tacker's 9-damage bolt is
   // already paying 7 against it
   skate1: {
     hp: 280,
@@ -1533,25 +1598,25 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // THREE THINGS MAKE THE FAMILY, and the first two are what the size is
   // for:
   //
-  //   ARMOUR, TWO TO THREE TIMES THE GROUND MECHS' AT EVERY STEP — 3, 12,
-  //   22, 38, 52 against the Ironhides' 0, 4, 9, 20, 30. Armour is a FLAT
-  //   SHAVE floored at a tenth of the raw shot (Sim.applyArmor), so the
-  //   apex's 52 is not "a tough unit": it is a rule that every gun under
-  //   58 damage a hit pays the floor and does a TENTH of its paper DPS.
-  //   A lancer at 105 still lands 53 and a fuse at 140 lands 88; a salvo
-  //   at 20 lands two. That is the whole sentence the family says.
-  //   The Ironhides made that argument at 30 and the answer was calibre;
-  //   this family makes it at 52, and the answer is the same answer only
-  //   more so — fuse, spectre, meltdown, foreshadow, and nothing else
-  //   matters.
+  // ARMOUR, TWO TO THREE TIMES THE GROUND MECHS' AT EVERY STEP — 3, 12, 22,
+  // 38, 52 against the Ironhides' 0, 4, 9, 20, 30. Armour is a FLAT SHAVE
+  // floored at a tenth of the raw shot (Sim.applyArmor), so the apex's 52 is
+  // not "a tough unit": it is a rule that every gun under 58 damage a hit pays
+  // the floor and does a TENTH of its paper DPS. A piercer at 105 still lands
+  // 53 and a cleaver at 140 lands 88; an autocannon at 20 lands two. That is
+  // the whole sentence the family says. The Ironhides made that argument at 30
+  // and the answer was calibre; this family makes it at 52, and the answer is
+  // the same answer only more so — cleaver, repeater, furnace, railhead, and
+  // nothing else matters.
   //
   //   A MELEE MAUL (weapons.ts, fx "melee"). Not one of these carries a
   //   gun. The tusks are the weapon and the reach is two to four tiles —
   //   against a roster whose SHORTEST gun reaches eleven — so a Tusker
   //   does nothing at all until it is standing on the turret, and then it
   //   does more damage per second than anything else in the game. The
-  //   apex mauls for twelve hundred a second where the ironhide5's cannon,
-  //   the heaviest round the swarm fires, does under four.
+  //   apex mauls for twenty-four hundred a second where the ironhide5's
+  //   cannon, the heaviest round the swarm fires, does under four — six
+  //   of it, out of a body that has to be standing on the gun.
   //
   //   AND THE CHARGE (UnitStats.charge), the trait that makes the other
   //   two mean anything: THEY LEAVE THE ROUTE. Every other body walks the
@@ -1578,11 +1643,11 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // WHAT IT IS WORTH IS SET AGAINST WAVE 1, and that is not a footnote.
   // A run opens with nothing on the board and answers the first wave with
   // whatever the first card happens to be, which is usually a wall of
-  // duos; a duo's 9-damage bolt lands 6 here against 9 on an ironhide1,
+  // tackers; a tacker's 9-damage bolt lands 6 here against 9 on an ironhide1,
   // so a runt is about two and a half times the body the ground line
   // opens with. The first cut of this row was 380 hp behind armour 6 and
   // a personal shield bar — eight times an ironhide1 — and measured
-  // against sixteen duos it was not a hard opening but an unanswerable
+  // against sixteen tackers it was not a hard opening but an unanswerable
   // one: forty ironhide1s died to the wall and left it standing at
   // two-thirds, forty tuskers took the wall to zero and lost seven. A
   // family whose premise is "bring calibre" still has to let wave 1 be
@@ -1617,9 +1682,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // ironhide4's, at T3), 2.6 tiles/s. Its bubble is the starhart3's in
   // everything but the pool, and the bar behind it is deeper: this is the
   // tier a Tusker push stops being a body and starts being a front.
-  // Measured against sixteen duos, eight of these took the wall to zero
+  // Measured against sixteen tackers, eight of these took the wall to zero
   // in half a minute and lost nothing — which is the right answer, since
-  // a duo is wave-1 tech and an elite is not a wave-1 problem
+  // a tacker is wave-1 tech and an elite is not a wave-1 problem
   tusker3: {
     hp: 2200,
     speed: 2.6 * CELL,
@@ -1637,8 +1702,29 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // the whole herd inside it
   //
   // THE STANCE OPENS HERE (tuskerArt.ts): the T4 leaves the mech rig for
-  // four planted legs — pillars, short for the bulk and set wide, the
-  // thickest leg strokes on the roster
+  // four planted legs.
+  //
+  // AN ELEPHANT STANDS ON PILLARS AND PLODS. The legged rig does not know
+  // that — left to itself it gives every family the same ring of thin
+  // limbs taking strides longer than the body, which is a spider however
+  // big the animal on top is. Three things make this one an elephant.
+  // THE LEGS ARE COLUMNS: strokes a fifth of the body's grid, near twice
+  // the rhino's, barely tapering from thigh to foot (TUSK_TIERS in
+  // game/tuskerArt.ts). THE FEET ARE UNDER IT: `lengthScl` 0.95 on a leg
+  // cut by two fifths, on mounts pulled in to match, so a foot rides
+  // between 0.85 and 1.6 radii out where it used to swing from 1.05 to
+  // 2.49 — and the knee, which used to bow a third of a radius clear of
+  // the flank at the folded end of its swing, now bows a sixth. AND THE
+  // STEP IS SHORT: `moveSpace` 1.0 on that shorter leg walks 0.66 radii
+  // between one footfall and the next, against 1.65 before, so no foot is
+  // ever left trailing a body-length behind.
+  //
+  // `groupSize` 1 is the gait itself. Every other legged unit on the
+  // roster swings two diagonal legs at once — a trot, which is right for
+  // a deer and wrong for this. At 1 the four legs take their turn one at
+  // a time round the ring, so three feet are on the ground at every
+  // moment and the body is never in the air between them: the amble, and
+  // the reason the herd reads as heavy rather than as scuttling
   tusker4: {
     hp: 10500,
     speed: 2.45 * CELL,
@@ -1651,11 +1737,12 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     shieldField: { amount: 60, max: 420, reload: 2, range: 9.5 * CELL },
     legs: legs({
       count: 4,
-      length: 15 * MU,
+      groupSize: 1,
+      length: 9 * MU,
       forwardScl: 0.6,
-      moveSpace: 1.5,
-      baseOffset: 12 * MU,
-      lengthScl: 0.85,
+      moveSpace: 1.0,
+      baseOffset: 11 * MU,
+      lengthScl: 0.95,
       speed: 0.12,
       elevation: 0.2,
       ripple: 3,
@@ -1666,6 +1753,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // than the ironhide5 on a box half again its size, and nearly twice its
   // plating: at 52 every gun under 58 a hit is reduced to the 10% floor,
   // which is most of the catalogue.
+  //
+  // Four pillars and the same amble as the champion, scaled up: see the
+  // note on the tusker4 for what each number is doing
   //
   // A 3000-POINT BUBBLE OVER TWELVE TILES, the biggest force field in the
   // game, with a 600 bar handed to everything under it. The Starlight T5
@@ -1684,11 +1774,12 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     shieldField: { amount: 90, max: 600, reload: 2, range: 12 * CELL },
     legs: legs({
       count: 4,
-      length: 18 * MU,
+      groupSize: 1,
+      length: 11 * MU,
       forwardScl: 0.6,
-      moveSpace: 1.6,
-      baseOffset: 16 * MU,
-      lengthScl: 0.85,
+      moveSpace: 1.0,
+      baseOffset: 14 * MU,
+      lengthScl: 0.95,
       speed: 0.11,
       elevation: 0.25,
       ripple: 4,
@@ -1986,21 +2077,62 @@ export const ACTIVE_FAMILIES: readonly FamilyKey[] = FAMILIES.map((f) => f.key).
   (k) => !SHELVED_FAMILIES.includes(k),
 );
 
-/** how many families a deploy sends — the die picks this many */
-export const FAMILIES_PER_RUN = 3;
+/**
+ * HOW MANY FAMILIES A DEPLOY SENDS — the die picks this many, and the
+ * script is dealt them a wave at a time (transformScript).
+ *
+ * IT IS NOT TIED TO THE SCRIPT'S SHAPE ANY MORE. It used to have to equal
+ * the number of families the campaign was authored in, because the deal
+ * was one fixed cast for the whole run — slot 0 played as families[0] for
+ * all fifty waves — so a fourth family had nowhere to go and a second
+ * script authored in two would have left one unsent. The deal turns a
+ * notch every wave now, so ANY number of families fits ANY script: the
+ * run's families ride a ring and each wave takes the next few off it.
+ *
+ * FOUR, because a run wants a swarm with more than one face in it and
+ * three families over fifty waves is three faces. The cap on how many
+ * show up AT ONCE is a separate number (MAX_FAMILIES_PER_WAVE) — that is
+ * the one that keeps a wave readable, and raising this one does not touch
+ * it.
+ */
+export const FAMILIES_PER_RUN = 4;
 
 /**
- * THE FAMILIES THAT ARRIVE BY AIR, and they are never dealt an opening
- * slot (rollFamilies).
+ * THE MOST FAMILIES ONE WAVE MAY SEND, however many the run rolled.
  *
- * WAVE 1 MUST BE WALKABLE. A run opens with nothing on the board — no
- * turret is bought until the first scrap is banked — and the opening wave
- * is the one the player answers by putting the first card down. A ground
- * wave walks the route, which is a route the player can read and block; a
- * flight of runts crosses everything between the door and the core in a
- * straight line and cares about none of it. Meeting that on wave 1 is not
- * a hard opening, it is an opening with one legal answer, and the deal has
- * not necessarily handed over a turret that can even shoot up.
+ * A WAVE IS A THING A PLAYER HAS TO READ IN THREE SECONDS. Ten families
+ * arriving together is not ten times the variety, it is mush: every
+ * colour on the field at once, every status on the board at once, and no
+ * answer that is better than any other. The run's variety belongs ACROSS
+ * waves — this wave is the elephants and the bombers, the next is the
+ * snipers — and that is what the per-wave deal gives.
+ *
+ * A wave never sends more than it was AUTHORED with either: the cap bites
+ * only where a script draws on more slots than this, and there the extra
+ * slots fold back onto the families already dealt (their counts add), so
+ * nothing authored is dropped. The shipped script's widest wave draws on
+ * three, so today the cap is the ceiling and the script is the floor.
+ */
+export const MAX_FAMILIES_PER_WAVE = 3;
+
+/**
+ * THE FAMILIES THAT ARRIVE BY AIR, and they are never dealt a position
+ * the OPENING claims (rollFamilies, openingDeal).
+ *
+ * THE OPENING MUST BE WALKABLE. A run opens with nothing on the board —
+ * no turret is bought until the first scrap is banked — and while the
+ * script is still sending one family at a time it is still the stretch a
+ * player answers by putting their first cards down. A ground wave walks
+ * the route, which is a route the player can read and block; a flight of
+ * runts crosses everything between the door and the core in a straight
+ * line and cares about none of it. Meeting that there is not a hard
+ * opening, it is an opening with one legal answer, and the deal has not
+ * necessarily handed over a turret that can even shoot up.
+ *
+ * IT IS THE SCRIPT THAT SAYS HOW LONG THE OPENING IS (openingDeal): its
+ * leading run of single-family waves, two on the shipped campaign. Past
+ * that the script is already asking for more than one answer at a time,
+ * and a flight is a fair thing to ask for.
  *
  * IT IS READ OFF THE BODIES, not off the family's `layer` label: a family
  * is "air" here if ANY of its kinds flies, so a mixed family could never
@@ -2125,9 +2257,14 @@ const tierIndexOf = (kind: UnitKind): number => {
 
 /**
  * The families a script is authored in, in order of first appearance —
- * the SLOTS the roll fills. The campaign's script is written in three
- * (ground, ground support, air), and that order is what the deploy's
- * three families are dealt into.
+ * the SLOTS the deal fills. The campaign's script is written in three
+ * (ground, ground support, air); a slot is a ROLE in a wave ("the line",
+ * "the support behind it"), not a promise about which family plays it,
+ * and the deal re-lets the roles every wave (transformScript).
+ *
+ * THE COUNT OF SLOTS NO LONGER HAS TO MATCH THE RUN'S FAMILIES. It is
+ * only the widest a wave can be authored; how many families the run
+ * sends is FAMILIES_PER_RUN, and the two are independent now.
  */
 export function scriptFamilies(script: readonly LevelStep[]): FamilyKey[] {
   const out: FamilyKey[] = [];
@@ -2142,25 +2279,28 @@ export function scriptFamilies(script: readonly LevelStep[]): FamilyKey[] {
 }
 
 /**
- * WHICH SLOTS THE OPENING WAVE DRAWS ON — the indices into scriptFamilies
- * that the script's FIRST wave actually sends, and therefore the slots a
- * flying family must be kept out of.
+ * WHICH SLOTS ONE WAVE DRAWS ON — the indices into `slots`
+ * (scriptFamilies) that this wave actually sends, in slot order.
  *
- * It is a list rather than "slot 0" because a script is a document the
- * level editor writes: wave 1 is one family today, and the day somebody
- * opens with two, the second one must be kept walkable as well without
- * anybody having to remember that this rule exists.
+ * This is a wave's WIDTH as authored, and the deal reads it to know how
+ * many families to take off the ring for it (transformScript): a wave
+ * written in one slot is one family however many the run rolled, which
+ * is the whole reason a fourth family does not turn every wave into a
+ * four-way mixture.
+ *
+ * The boss belongs to no family and draws on no slot, so a boss wave is
+ * zero wide and takes nothing off the ring.
  */
-export function openingSlots(script: readonly LevelStep[]): number[] {
-  const first = script.find((st) => "wave" in st);
-  if (!first) return [];
-  const slots = scriptFamilies(script);
+export function waveSlots(
+  wave: WaveUnits | readonly RegionWave[],
+  slots: readonly FamilyKey[],
+): number[] {
   const out = new Set<number>();
-  for (const g of waveGroups(first.wave))
+  for (const g of waveGroups(wave))
     g.counts.forEach((c, i) => {
       if (c <= 0) return;
       const f = familyOf(UNIT_KINDS[i]);
-      if (!f) return; // the boss belongs to no family and fills no slot
+      if (!f) return;
       const at = slots.indexOf(f);
       if (at >= 0) out.add(at);
     });
@@ -2168,8 +2308,50 @@ export function openingSlots(script: readonly LevelStep[]): number[] {
 }
 
 /**
- * THE DIE ROLL: FAMILIES_PER_RUN families, in a random order — the order
- * is the deal, since slot i of the script plays as families[i].
+ * HOW MANY FAMILIES OFF THE FRONT OF THE RING THE OPENING CLAIMS, and
+ * therefore how many of the roll's leading families must be able to WALK
+ * (rollFamilies, AIR_FAMILIES).
+ *
+ * THE OPENING IS THE SCRIPT'S LEADING RUN OF SINGLE-FAMILY WAVES. A run
+ * starts with nothing on the board — no turret is bought until the first
+ * scrap is banked — and while the script is still sending one family at a
+ * time it is still asking to be answered with the first card off the
+ * deal. A flight crosses everything between the door and the core in a
+ * straight line and cares about none of it, so meeting one there is not a
+ * hard opening, it is an opening with one legal answer, and the deal has
+ * not necessarily handed over a turret that can even shoot up. The
+ * shipped script opens with two waves of runts, so its opening is two.
+ *
+ * IT USED TO BE A LIST OF SLOTS, and could afford to be: one fixed cast
+ * held for the whole run, so pinning the opening wave's SLOT pinned it
+ * for every wave that slot ever appeared in. The cast turns every wave
+ * now, so what has to be pinned is the RING POSITIONS the opening
+ * consumes — which, because the deal starts at position 0 and walks
+ * forward, are simply the first few (transformScript).
+ *
+ * A multi-family first wave ends the opening at itself: the script is
+ * already asking for more than one answer, so it is past the stretch this
+ * rule protects, and only its own width is claimed.
+ */
+export function openingDeal(script: readonly LevelStep[]): number {
+  const slots = scriptFamilies(script);
+  let n = 0;
+  for (const step of script) {
+    const take = Math.min(waveSlots(step.wave, slots).length, MAX_FAMILIES_PER_WAVE);
+    if (take === 0) continue; // an empty wave, or the boss alone
+    if (take > 1) return n === 0 ? take : n;
+    n += take;
+  }
+  return n;
+}
+
+/**
+ * THE DIE ROLL: FAMILIES_PER_RUN families, in a random order — and the
+ * order is the RING the deal walks, not a slot-for-slot cast. Wave 1
+ * starts at families[0] and every wave after it turns the ring one notch
+ * (transformScript), so the order decides which family opens the run and
+ * which of them tend to arrive together, never "families[2] is the air
+ * slot for fifty waves".
  *
  * EVERY FAMILY IN PLAY IS ELIGIBLE ON EVERY MAP. This used to be drawn
  * against the map's doors, and a map with no water door could not roll a
@@ -2179,31 +2361,39 @@ export function openingSlots(script: readonly LevelStep[]): number[] {
  * cannot play. The only thing that keeps a family out of the draw is the
  * shelf (SHELVED_FAMILIES).
  *
- * ...BUT NOT EVERY FAMILY IS ELIGIBLE FOR EVERY SLOT. A flying family is
- * never dealt a slot the opening wave sends (AIR_FAMILIES, openingSlots):
- * wave 1 is answered with the first card off the deal, and a flight that
- * ignores the route and the walls is not an opening a player can be asked
- * to solve with whatever the die handed them. Pass the script and the
- * guarantee is exact; pass none and it holds for slot 0, which is the
- * opening slot of every script this game has ever had.
+ * ...BUT THE FRONT OF THE RING IS RESERVED FOR WALKERS. The opening
+ * claims the first few positions (openingDeal) and a flying family is
+ * never dealt one of them (AIR_FAMILIES): the waves a script sends one
+ * family at a time are answered with the first card off the deal, and a
+ * flight that ignores the route and the walls is not an opening a player
+ * can be asked to solve with whatever the die handed them. Pass the
+ * script and the guarantee is exact; pass none and it holds for position
+ * 0, which is the opening of every script this game has ever had.
  *
- * THE SHUFFLE IS OTHERWISE UNTOUCHED. The opening slots take the first
- * walking families off the shuffled pile and everything else falls into
- * the remaining slots in the order it was shuffled, so a flying family is
- * still equally likely to land in any slot that is not an opening one —
- * this narrows WHERE air can be dealt, never how often it is drawn.
+ * IF THERE ARE NOT ENOUGH WALKERS the front keeps a flyer rather than
+ * coming up empty — a wave with nothing in it is worse than a hard one.
+ *
+ * THE SHUFFLE IS OTHERWISE UNTOUCHED. The opening takes the first walking
+ * families off the shuffled pile and everything else falls in behind them
+ * in the order a SECOND shuffle leaves. Filling the tail in the order the
+ * first shuffle happened to leave would bias where a flyer lands —
+ * reserving the front pushes a family shuffled to position 0 into
+ * position 1, so air would take the second position more often than the
+ * third for no reason anyone designed. Two more swaps make every
+ * non-opening position equally likely again; this narrows WHERE air can
+ * be dealt, never how often it is drawn.
  *
  * `chosen` IS CUSTOM MODE'S HAND, and the one way a family arrives
  * without the die. A regular deploy passes nothing and gets the roll
  * above; a custom one passes the families the player ticked, which are
  * taken FIRST and the rest of the run filled out by the same shuffle —
- * so a hand of one is one family asked for and two rolled. The
+ * so a hand of one is one family asked for and the rest rolled. The
  * arrangement rule still holds over a chosen hand: a walker takes the
- * opening slot where the hand has one, because a script's first wave is
- * answered with the first card off the deal whoever picked the swarm.
- * What a chosen hand does NOT get is the second shuffle: the slots are
- * the player's list in the order they gave it, since a hand is not a
- * roll and there is no bias left to spread.
+ * front where the hand has one, because a script's opening is answered
+ * with the first card off the deal whoever picked the swarm. What a
+ * chosen hand does NOT get is the second shuffle: the tail is the
+ * player's list in the order they gave it, since a hand is not a roll and
+ * there is no bias left to spread.
  */
 export function rollFamilies(
   rand: () => number = Math.random,
@@ -2217,48 +2407,67 @@ export function rollFamilies(
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
   const picked = [...hand, ...pool].slice(0, FAMILIES_PER_RUN);
-  const opening = script ? openingSlots(script) : [0];
-  if (opening.length === 0) return picked;
-  const out: (FamilyKey | undefined)[] = new Array(picked.length).fill(undefined);
+  const opening = Math.min(script ? openingDeal(script) : 1, picked.length);
+  if (opening <= 0) return picked;
+  // the front first, each position taking the earliest WALKING family
+  // still unspent
   const spent = new Set<number>();
-  // the opening slots first, each taking the earliest WALKING family still
-  // unspent. If there are somehow none left the slot keeps a flyer rather
-  // than coming up empty — a wave with nothing in it is worse than a hard one
-  for (const slot of opening) {
-    if (slot >= picked.length) continue;
+  const front: FamilyKey[] = [];
+  for (let n = 0; n < opening; n++) {
     const at = picked.findIndex((f, i) => !spent.has(i) && !familyFlies(f));
-    if (at < 0) continue;
-    out[slot] = picked[at];
+    if (at < 0) break; // out of walkers — the rest of the front takes what comes
+    front.push(picked[at]);
     spent.add(at);
   }
-  // ...and everything else is SHUFFLED AGAIN into the slots that are left.
-  // Filling them in the order the first shuffle happened to leave would
-  // bias which slot a flyer lands in — reserving slot 0 pushes a family
-  // shuffled to the front into slot 1, so air would take the second slot
-  // twice as often as the third for no reason anyone designed. A second
-  // shuffle over the leftovers costs two swaps and makes every
-  // non-opening slot equally likely again.
-  // A CHOSEN HAND SKIPS IT (see `chosen` above): there is no roll to
-  // de-bias, and a player who listed three families is owed their list.
+  // ...and everything else is SHUFFLED AGAIN behind them (see above).
+  // A CHOSEN HAND SKIPS IT: there is no roll to de-bias, and a player who
+  // listed families is owed their list.
   const rest = picked.filter((_, i) => !spent.has(i));
   if (hand.length === 0)
     for (let i = rest.length - 1; i > 0; i--) {
       const j = Math.floor(rand() * (i + 1));
       [rest[i], rest[j]] = [rest[j], rest[i]];
     }
-  let next = 0;
-  for (let i = 0; i < out.length; i++) if (!out[i]) out[i] = rest[next++];
-  return out as FamilyKey[];
+  return [...front, ...rest];
 }
 
 /**
  * THE WAVE TRANSFORMATION: the script re-cast into the rolled families,
- * tier for tier. The script's families (scriptFamilies, in order) are
- * its slots; slot i becomes families[i]. A script with more slots than
- * the deal has families wraps — its fourth family plays as the first
- * again — so nothing authored is dropped, and one with fewer leaves the
- * spare families unsent. The boss is never touched. Two slots landing on
- * one family add their counts.
+ * tier for tier, A WAVE AT A TIME.
+ *
+ * THE DEAL IS PER WAVE, NOT PER RUN. The script's families
+ * (scriptFamilies, in order) are its SLOTS — roles, not families: "the
+ * line", "the support behind it", "the third thing". Each wave takes as
+ * many families off the ring as it has slots, starting where the ring
+ * left off and turning ONE NOTCH per wave, so the roles are re-let every
+ * wave: wave 1's line is families[0], wave 2's is families[1], and a run
+ * of four families shows all four over a handful of waves without ever
+ * showing more than one wave's worth at once.
+ *
+ * WHY A RING AND NOT A SECOND DIE. A per-wave roll would be variety with
+ * no guarantee behind it: a family could sit out all fifty waves, or take
+ * three waves in a row while another never appeared. The ring is
+ * deterministic — the same script and the same roll give the same fifty
+ * waves, which is what the audit arithmetic and the headless playtest
+ * need — and it spreads the families evenly by construction, because
+ * every notch moves every slot onto the next family along.
+ *
+ * WHY ONE NOTCH AND NOT THE WAVE'S WIDTH. Stepping by the width looks
+ * tidier and cycles badly: four families and a run of two-slot waves
+ * would alternate {0,1}, {2,3}, {0,1} forever — two mixtures, not four.
+ * One notch a wave walks every window across the whole ring.
+ *
+ * HOW MANY FAMILIES A WAVE GETS is the narrowest of three: the slots it
+ * was authored in, MAX_FAMILIES_PER_WAVE, and the families the run has.
+ * A WAVE AUTHORED IN ONE SLOT SENDS ONE FAMILY whatever the run rolled —
+ * that is the point of reading the wave's own width, and it is why a
+ * fourth family does not turn the opening into a mixture. Where a wave is
+ * wider than the cap or the run, the extra slots fold back round the
+ * families already dealt to it and their counts add, so nothing authored
+ * is dropped.
+ *
+ * THE BOSS IS NEVER TOUCHED. It belongs to no family, draws on no slot,
+ * and a wave that is only the boss does not turn the ring.
  */
 export function transformScript(
   script: readonly LevelStep[],
@@ -2266,27 +2475,38 @@ export function transformScript(
 ): LevelStep[] {
   if (families.length === 0) return [...script];
   const slots = scriptFamilies(script);
-  const cast = new Map<FamilyKey, FamilyKey>();
-  slots.forEach((f, i) => cast.set(f, families[i % families.length]));
-  const recast = <T extends WaveUnits>(w: T): T => {
-    const out: WaveUnits = {};
-    if ("region" in w) (out as RegionWave).region = (w as RegionWave).region;
-    for (const k of UNIT_KINDS) {
-      const c = w[k] ?? 0;
-      if (c <= 0) continue;
-      const from = familyOf(k);
-      const to = from ? cast.get(from) : null;
-      const kind = to ? familyByKey(to).kinds[tierIndexOf(k)] : k;
-      out[kind] = (out[kind] ?? 0) + c;
-    }
-    return out as T;
-  };
-  return script.map((step) => ({
-    ...step,
-    wave: Array.isArray(step.wave)
-      ? (step.wave as readonly RegionWave[]).map(recast)
-      : recast(step.wave as WaveUnits),
-  }));
+  let turn = 0; // the notch the ring is on — one per wave that sends a family
+  return script.map((step) => {
+    const used = waveSlots(step.wave, slots);
+    const take = Math.min(used.length, MAX_FAMILIES_PER_WAVE, families.length);
+    if (take === 0) return { ...step };
+    // this wave's window on the ring: `take` families from the current
+    // notch, with any slots past the cap folded back round them
+    const cast = new Map<FamilyKey, FamilyKey>();
+    used.forEach((slot, j) => {
+      cast.set(slots[slot], families[(turn + (j % take)) % families.length]);
+    });
+    turn = (turn + 1) % families.length;
+    const recast = <T extends WaveUnits>(w: T): T => {
+      const out: WaveUnits = {};
+      if ("region" in w) (out as RegionWave).region = (w as RegionWave).region;
+      for (const k of UNIT_KINDS) {
+        const c = w[k] ?? 0;
+        if (c <= 0) continue;
+        const from = familyOf(k);
+        const to = from ? cast.get(from) : null;
+        const kind = to ? familyByKey(to).kinds[tierIndexOf(k)] : k;
+        out[kind] = (out[kind] ?? 0) + c;
+      }
+      return out as T;
+    };
+    return {
+      ...step,
+      wave: Array.isArray(step.wave)
+        ? (step.wave as readonly RegionWave[]).map(recast)
+        : recast(step.wave as WaveUnits),
+    };
+  });
 }
 
 /**
@@ -2380,10 +2600,16 @@ export interface LevelSpec {
   tier?: number;
   /**
    * THE FAMILIES THIS RUN SENDS — the die roll (rollFamilies) the deploy
-   * made, in slot order: the script's first
-   * family plays as families[0], its second as families[1], its third as
-   * families[2] (transformScript). Unset is the script as authored, which
-   * is what the editor and the audit arithmetic price.
+   * made, in the order the deal walks them: the script's first wave plays
+   * in families[0], the next in families[1], and so on round the list,
+   * every wave taking as many off it as the wave was authored wide
+   * (transformScript). There is no fixed "families[2] is the air",
+   * because the roles are re-let every wave.
+   *
+   * HOW MANY THERE ARE IS FAMILIES_PER_RUN, not the script's slot count:
+   * the two are independent, and a list of any length plays any script.
+   * Unset is the script as authored, which is what the editor and the
+   * audit arithmetic price.
    */
   families?: readonly FamilyKey[];
   /**
@@ -2499,8 +2725,9 @@ export function levelDocOf(_worldId?: string): LevelDoc {
  * what makes one map different from the next is its ground and its
  * doors. Every family may be rolled on every map (rollFamilies) — every
  * movement layer crosses every ground now, and comes in by whatever door
- * the map does paint — and the shared script is re-cast into the three
- * the deploy rolled (transformScript). The identity (name, map,
+ * the map does paint — and the shared script is re-cast, a wave at a
+ * time, into the families the deploy rolled (transformScript). The
+ * identity (name, map,
  * mission) is this table's; no map carries rules of its own — all maps
  * are equal, and every mutator is in every roll.
  *
@@ -2514,7 +2741,7 @@ export function levelDocOf(_worldId?: string): LevelDoc {
  * (tierXpBonus in ladder.ts).
  *
  * Armour is flat, max(dmg - armor, 0.1 * dmg), so an ironhide3 (armour 9)
- * against a duo (damage 9) hits the 10% floor and costs a duo line ten
+ * against a tacker (damage 9) hits the 10% floor and costs a tacker line ten
  * times its printed health. That is not a reason a heavy cannot debut
  * early — the floor is a floor, nothing is unkillable — but it is a
  * reason to know what a wave asks: debutViolations() in ladder.ts prints
@@ -2535,9 +2762,25 @@ export const WORLDS: LevelSpec[] = [
     // below documents HOW to author a wave; WHAT the waves are lives in
     // the document, and the admin level editor writes it. It is authored
     // in three families (ground, ground support, air) and those are its
-    // three SLOTS: a deploy rolls three of the seven families and deals
-    // them into the slots (transformScript), so the counts
-    // travel to every map and the bodies are whatever the die said.
+    // three SLOTS — ROLES, not families: "the line", "the support behind
+    // it", "the third thing". A deploy rolls FAMILIES_PER_RUN of the
+    // seven families and the deal re-lets the roles EVERY WAVE
+    // (transformScript), so the counts travel to every map and the bodies
+    // are whatever the die said.
+    //
+    // AUTHOR A WAVE'S WIDTH, NOT ITS FAMILIES. How many slots a wave
+    // draws on is how many families it sends — one slot is ONE family
+    // however many the run rolled, three slots is three — and the cap
+    // (MAX_FAMILIES_PER_WAVE) is what stops a run of ten families from
+    // turning every wave into mush. So a wave written in one slot is a
+    // wave that will always read as one swarm, and a wave written in
+    // three is the mixture. The slot COUNT is the design; which families
+    // fill it is the run's.
+    //
+    // THE SLOT COUNT IS NOT THE RUN'S FAMILY COUNT. They used to have to
+    // match; they do not any more. Add a fourth slot to widen the mixture
+    // a wave may ask for, and raise FAMILIES_PER_RUN to put more faces in
+    // the run — they are separate dials.
     //
     // EVERY RUNG PLAYS THIS WHOLE LIST. There is one run per map and ten
     // difficulties to play it at, and a rung only scales the counts
@@ -2562,7 +2805,7 @@ export const WORLDS: LevelSpec[] = [
     // THE HEAVY KINDS LAND WHERE THE DROPS CAN HAVE PAID FOR THEIR
     // ANSWER: a body pays scrap off its health when it dies (economy.ts),
     // and the heavies pay the most of it, so
-    // the tier-3 turrets (fuse up to foreshadow) arrive on the bank the
+    // the tier-3 turrets (cleaver up to railhead) arrive on the bank the
     // middle script has filled, which is why the tier-5 bodies start
     // deep in the second half.
     script: [],

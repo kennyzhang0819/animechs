@@ -186,11 +186,11 @@ const PLACED: readonly { level: number; reward: Reward }[] = [
 
 /**
  * THE FIRST BOARD: a gun for the ground, a gun for the air, artillery for
- * the crowd, and the SALVO — the first gun that answers a single hard body
+ * the crowd, and the AUTOCANNON — the first gun that answers a single hard body
  * rather than a crowd, without which the first ten waves are answered by
- * putting down more duos. Everything else is dealt one a level.
+ * putting down more tackers. Everything else is dealt one a level.
  *
- * THE SPECTRE USED TO BE HERE and has been moved to the top of the track
+ * THE REPEATER USED TO BE HERE and has been moved to the top of the track
  * (UNLOCKS, level 12). It was in the opening hand to show a new save what
  * its scrap was FOR, back when scrap bought a named turret off a shelf —
  * and the deal (rarity.ts) answers that question by itself now. Worse, an
@@ -199,7 +199,7 @@ const PLACED: readonly { level: number; reward: Reward }[] = [
  * nothing if the board it can come out of is four commons deep.
  */
 export const STARTING_ROSTER: readonly TowerKind[] = [
-  "duo", "hail", "scatter", "salvo",
+  "tacker", "lobber", "airburst", "autocannon",
 ];
 
 /**
@@ -211,32 +211,32 @@ const UNLOCKS: Readonly<Record<number, readonly TowerKind[]>> = {
   // THE COMMONS LEAD, because every one of them widens the floor of the
   // draw rather than its ceiling: the opening levels are where a save
   // learns what the deal FEELS like, and it should feel like a board being
-  // filled in. The two menders that used to lead this list are retired
+  // filled in. The two fixers that used to lead this list are retired
   // (types.ts RETIRED_KINDS) and no level hands one out
-  2: ["scorch"],
-  3: ["arc"],
+  2: ["torch"],
+  3: ["coil"],
   // ...but the bands are INTERLEAVED rather than dealt in blocks. A blue
   // among the commons is the first level that changes what a board can do
   // instead of how much of it there is, and the last common lands after it
   // so the floor is still being filled in while the ceiling rises
-  4: ["lancer"],
-  5: ["wave"],
-  6: ["ripple"],
+  4: ["piercer"],
+  5: ["douser"],
+  6: ["barrage"],
   // the first amber comes early for the same reason, and the blue that
   // follows it keeps the middle of the track from settling into a pattern
-  7: ["swarmer"],
-  8: ["parallax"],
-  9: ["cyclone"],
-  10: ["fuse"],
-  11: ["tsunami"],
+  7: ["hive"],
+  8: ["tether"],
+  9: ["whirl"],
+  10: ["cleaver"],
+  11: ["deluge"],
   // THE PURPLES ARE SPREAD, four levels apart, and the last of them is the
   // top of the roster. A 4x4 is the thing a run is hoping the deal turns
   // over, and handing all three out on consecutive levels spent the whole
   // ceiling of the game in three clears. The gaps are the point: a save
-  // plays a good while WITH the spectre before the meltdown turns up
-  12: ["spectre"],
-  16: ["meltdown"],
-  20: ["foreshadow"],
+  // plays a good while WITH the repeater before the furnace turns up
+  12: ["repeater"],
+  16: ["furnace"],
+  20: ["railhead"],
 };
 
 /**
@@ -278,13 +278,12 @@ const MOD_UNLOCKS: Readonly<Record<number, readonly ModId[]>> = {
   4: ["hp2"],
   5: ["range2"],
   6: ["regen1"],
-  // the rares: a shape rather than a dial — a frame, a wall, a spear, a fan
+  // the rares: a shape rather than a dial — a frame, a wall and a spear
   7: ["prototype"],
   8: ["bulwark"],
   9: ["sabot"],
-  10: ["splitter"],
-  // 11 deals no mod: it opens the seventh map, and the gap between the
-  // rares and the ultras is where the purples are spread rather than
+  // 10 and 11 deal no mod: 11 opens the seventh map, and the gap between
+  // the rares and the ultras is where the purples are spread rather than
   // stacked — the same reason UNLOCKS puts four levels between its own
   12: ["giant"],
   13: ["sniper"],

@@ -20,8 +20,8 @@ import {
   UV_PINES,
   UV_SPAWN,
   UV_RING,
-  UV_FUSE,
-  UV_SCATTER,
+  UV_CLEAVER,
+  UV_AIRBURST,
   UV_FLOOR_EDGES,
   UV_BULLET,
   UV_BULLET_BACK,
@@ -42,31 +42,31 @@ import {
   type UnitEngine,
   SEGMENT_ART,
   type SegmentArt,
-  UV_HAIL,
+  UV_LOBBER,
   UV_DISC,
-  UV_DUO,
+  UV_TACKER,
   UV_TOWER_BASE,
   UV_TOWER_BASE1,
   UV_TOWER_BASE3,
   UV_TOWER_BASE4,
   UV_SHIELD_TOWER,
   UV_DISC_BIG,
-  UV_SCORCH,
-  UV_ARC,
-  UV_LANCER,
-  UV_RIPPLE,
-  UV_WAVE,
-  UV_PARALLAX,
-  UV_MEND_PROJECTOR,
-  UV_MENDER,
-  UV_TSUNAMI,
-  UV_SWARMER,
-  UV_CYCLONE,
-  UV_SPECTRE,
-  UV_MELTDOWN,
-  UV_FORESHADOW,
-  UV_PARALLAX_LASER,
-  UV_PARALLAX_LASER_END,
+  UV_TORCH,
+  UV_COIL,
+  UV_PIERCER,
+  UV_BARRAGE,
+  UV_DOUSER,
+  UV_TETHER,
+  UV_RESTORER,
+  UV_FIXER,
+  UV_DELUGE,
+  UV_HIVE,
+  UV_WHIRL,
+  UV_REPEATER,
+  UV_FURNACE,
+  UV_RAILHEAD,
+  UV_TETHER_LASER,
+  UV_TETHER_LASER_END,
   UV_TRI,
   UV_TURRET,
   UV_WALLS,
@@ -86,7 +86,7 @@ import {
   FX_LIFE,
   H as H_IMPORT,
   HP_TINT as HP_TINT_IMPORT,
-  LANCER_CHARGE_SPARK,
+  PIERCER_CHARGE_SPARK,
   MAX_UNITS,
   MERGE_GROWTH,
   NCELLS,
@@ -132,7 +132,7 @@ import {
   BEAM_STYLES,
   EXPLOSION_STYLES,
   LASER_STYLES,
-  MELTDOWN_BEAM,
+  FURNACE_BEAM,
   SAP_STYLES,
   SHRAPNEL_STYLES,
   UNIT_HELD,
@@ -155,25 +155,25 @@ import {
  * Tower.kind is.
  */
 const UV_TURRETS: Record<TowerKind, UVRect> = {
-  duo: UV_DUO,
-  hail: UV_HAIL,
-  salvo: UV_TURRET,
-  scatter: UV_SCATTER,
-  fuse: UV_FUSE,
-  scorch: UV_SCORCH,
-  arc: UV_ARC,
-  lancer: UV_LANCER,
-  ripple: UV_RIPPLE,
-  wave: UV_WAVE,
-  parallax: UV_PARALLAX,
-  mender: UV_MENDER,
-  mendProjector: UV_MEND_PROJECTOR,
-  tsunami: UV_TSUNAMI,
-  swarmer: UV_SWARMER,
-  cyclone: UV_CYCLONE,
-  spectre: UV_SPECTRE,
-  meltdown: UV_MELTDOWN,
-  foreshadow: UV_FORESHADOW,
+  tacker: UV_TACKER,
+  lobber: UV_LOBBER,
+  autocannon: UV_TURRET,
+  airburst: UV_AIRBURST,
+  cleaver: UV_CLEAVER,
+  torch: UV_TORCH,
+  coil: UV_COIL,
+  piercer: UV_PIERCER,
+  barrage: UV_BARRAGE,
+  douser: UV_DOUSER,
+  tether: UV_TETHER,
+  fixer: UV_FIXER,
+  restorer: UV_RESTORER,
+  deluge: UV_DELUGE,
+  hive: UV_HIVE,
+  whirl: UV_WHIRL,
+  repeater: UV_REPEATER,
+  furnace: UV_FURNACE,
+  railhead: UV_RAILHEAD,
 };
 /**
  * The two regions BasicBulletType.draw lays on one rect: the longer `-back`
@@ -236,9 +236,9 @@ const FLOOR_DUST: readonly RGB[] = [
   [0x60 / 255, 0x4b / 255, 0x94 / 255], // shallow spore water
   [0x44 / 255, 0x35 / 255, 0x6b / 255], // deep spore water
 ];
-/** Pal.lancerLaser #a9d8ff — arc's bolt and lancer's beam are both drawn
+/** Pal.piercerLaser #a9d8ff — coil's bolt and piercer's beam are both drawn
  * in it, and both wash out to white as they fade */
-const PAL_LANCER = PAL.lancerLaser;
+const PAL_PIERCER = PAL.piercerLaser;
 /**
  * The region pair behind each of the swarm's ShotLook sprites (weapons.ts):
  * `-back` first, front over it, exactly as BULLET_REGIONS does for the
@@ -312,7 +312,7 @@ const SPREAD_50 = (50 * Math.PI) / 180;
 const SPREAD_60 = (60 * Math.PI) / 180;
 /**
  * Mathf.absin(in, scl, mag): a 0..mag ripple with a period of 4*pi*scl
- * ticks. Meltdown is the only thing that uses it, twice — once on the
+ * ticks. Furnace is the only thing that uses it, twice — once on the
  * colour and once on the width, at slightly different rates so the beam
  * never settles into one look.
  */
@@ -320,7 +320,7 @@ const ABSIN = (x: number, scl: number, mag: number): number =>
   (Math.sin(x / (scl * 2)) * mag + mag) / 2;
 /**
  * ContinuousLaserBulletType.colors ride the BeamStyle (weapons.ts) — the
- * two outer washes carry their alpha (0x55 and 0xaa on meltdown's); they
+ * two outer washes carry their alpha (0x55 and 0xaa on furnace's); they
  * are meant to be seen THROUGH, which is what layers the beam rather than
  * stacking four bars.
  *
@@ -1923,7 +1923,7 @@ export class Renderer {
     // the line as it stands, packed cell-and-size in field order, so a
     // footprint appearing, moving, resizing or being replaced by another
     // in the same frame all read as a change. FOUR bits for the size: it
-    // used to be three, which held the core's five and a foreshadow's
+    // used to be three, which held the core's five and a railhead's
     // four — and then the GIANT attribute (mods.ts) doubled a footprint
     // to eight, which is the first size that does not fit in three
     const next = this.shadowNext;
@@ -2144,7 +2144,7 @@ export class Renderer {
     }
     for (const p of sim.projs) {
       if (p.x < vx0 - 48 || p.x > vx1 + 48 || p.y < vy0 - 48 || p.y > vy1 + 48) continue;
-      // the SIM's resolution, not the static table: a duo the tree has
+      // the SIM's resolution, not the static table: a tacker the tree has
       // upgraded fires a different bullet, and drawing the stock one made
       // the graphite round invisible as a graphite round
       const b = sim.bulletFor(p.kind, p.frag);
@@ -2156,14 +2156,14 @@ export class Renderer {
         this.fillCircle(dyn, p.x, p.y, b.orb, b.fxColor ?? PAL.white, 1);
         continue;
       }
-      // a bare BulletType has no sprite at all — scorch's flame lives
+      // a bare BulletType has no sprite at all — torch's flame lives
       // entirely in its shoot and hit effects. A shot thrown by a frag
       // burst carries the CHILD ammo's sprite, not the shell's
       const sp = b.sprite;
       if (!sp) {
         // THE ONE TURRET A MISSING EFFECT WOULD SILENCE. With its shoot
         // and hit effects gone, a spriteless bullet has no visible shot
-        // left at all, and scorch reads as a turret that tracks and never
+        // left at all, and torch reads as a turret that tracks and never
         // fires. So the bullet — which is real, and already flying —
         // draws itself instead: one disc on the flame's own ramp, against
         // drawShootFlame's twelve. It stays a flame tongue leaving the
@@ -2176,7 +2176,7 @@ export class Renderer {
         // being fired, and a wave big enough to saturate the budget is
         // exactly when a player is reading the line for dead guns. The
         // sim marks the shots it could not draw (Projectile.bare), so
-        // this is per BULLET and not per frame: a scorch whose flame
+        // this is per BULLET and not per frame: a torch whose flame
         // landed keeps its full tongue and is never drawn twice.
         if (!this.fxOn || p.bare) {
           const fout = clamp(p.life / (p.life + p.age), 0, 1);
@@ -2352,7 +2352,9 @@ export class Renderer {
         // visibly swings the hull round after the course change
         // A CLOAKED BODY (Sim.ucloakT, levels.ts cloak) is a ghost of
         // itself: the hull at a fifth, no cell, no halo — enough to read
-        // that something is there and nothing to aim at. Only the plain
+        // that something is there. A cloak stops ROUNDS only, so a
+        // non-bullet turret is still firing at the ghost, and the beam
+        // swinging onto it is the other half of this drawing. Only the plain
         // hulls cloak (the Wraith fleet); a mech or a walker that took the
         // trait would need the same on its own draw path
         const fp = KIND_FLYER[k];
@@ -2468,8 +2470,8 @@ export class Renderer {
       const sz = t.size;
       const px = sz * CELL;
       if (t.x < vx0 - px || t.x > vx1 + px || t.y < vy0 - px || t.y > vy1 + px) continue;
-      // ONE ROSTER, ONE DRAWING: the swarm's lancer is the lancer's own
-      // sprite on the lancer's own base
+      // ONE ROSTER, ONE DRAWING: the swarm's piercer is the piercer's own
+      // sprite on the piercer's own base
       const top = UV_TURRETS[t.kind];
       const angle = t.angle;
       const base =
@@ -2532,7 +2534,7 @@ export class Renderer {
     // burning — it has no bullet, so this is its only visual
     for (const t of sim.towers) {
       if (t.beamStr > 0.01) this.drawLockBeam(dyn, t);
-      // the beam's LIVE stats, not the table's: a meltdown whose upgrade
+      // the beam's LIVE stats, not the table's: a furnace whose upgrade
       // branch lengthened its beam has to be drawn at the length it is
       // actually burning at (see Sim.statsFor)
       if (t.beamT >= 0) this.drawContinuousBeam(dyn, t, t.spec.bullet.continuous);
@@ -2675,16 +2677,16 @@ export class Renderer {
           col[0], col[1], col[2], RING_ALPHA);
       } else if (e.kind === FxKind.SparkShoot) {
         this.drawSparkShoot(dyn, e, t);
-      } else if (e.kind === FxKind.HitLancer) {
-        this.drawHitLancer(dyn, e, t);
-      } else if (e.kind === FxKind.LancerShoot) {
-        // Fx.lancerLaserShoot: two blue wings thrown off the muzzle,
+      } else if (e.kind === FxKind.HitPiercer) {
+        this.drawHitPiercer(dyn, e, t);
+      } else if (e.kind === FxKind.PiercerShoot) {
+        // Fx.piercerLaserShoot: two blue wings thrown off the muzzle,
         // square to the shot rather than along it
         const w = 4 * (1 - t) * MU;
         for (const side of [-1, 1])
-          this.tri(dyn, e.x, e.y, w, 29 * MU, (e.rot ?? 0) + (side * Math.PI) / 2, PAL_LANCER, 1);
-      } else if (e.kind === FxKind.LancerCharge) {
-        this.drawLancerCharge(dyn, e, t);
+          this.tri(dyn, e.x, e.y, w, 29 * MU, (e.rot ?? 0) + (side * Math.PI) / 2, PAL_PIERCER, 1);
+      } else if (e.kind === FxKind.PiercerCharge) {
+        this.drawPiercerCharge(dyn, e, t);
       } else if (e.kind === FxKind.ArtilleryTrail) {
         // already drawn, in its own pass under the shells
       } else if (e.kind === FxKind.Heal) {
@@ -2761,7 +2763,7 @@ export class Renderer {
           this.fillCircle(dyn, e.x + x, e.y + y, rad, e.col ?? PAL.water, 1);
         });
       } else if (e.kind === FxKind.Scatter) {
-        this.drawScatter(dyn, e, t);
+        this.drawAirburst(dyn, e, t);
       } else if (e.kind === FxKind.Blink) {
         // A BLINK (Sim.blinkUnit): the streak from where the body was to
         // where it landed, violet, thinning from the far end back — and a
@@ -2823,13 +2825,13 @@ export class Renderer {
         this.drawSmokeCloud(dyn, e, t);
       } else if (e.kind === FxKind.DamageSmoke) {
         this.drawDamageSmoke(dyn, e, t);
-      } else if (e.kind === FxKind.HitMeltdown) {
-        // Fx.hitMeltdown: six bars flicking off whatever the beam is
-        // resting on. Mindustry hardcodes Pal.meltdownHit here; the beam
-        // wears its line's colour now (constants.ts meltdown), so the bars
+      } else if (e.kind === FxKind.HitFurnace) {
+        // Fx.hitFurnace: six bars flicking off whatever the beam is
+        // resting on. Mindustry hardcodes Pal.furnaceHit here; the beam
+        // wears its line's colour now (constants.ts furnace), so the bars
         // take the one they arrive with and keep the orange as the fallback
         const bar = ((1 - t) * 4 + 1) * MU;
-        const mcol = e.col ?? PAL.meltdownHit;
+        const mcol = e.col ?? PAL.furnaceHit;
         this.scatter(e.seed ?? 1, 6, FIN_POW(t) * 18 * MU, 0, Math.PI, (x, y, bearing) => {
           this.strokeLine(dyn, e.x + x, e.y + y, bearing, bar, (1 - t) * 2 * MU,
             mcol, 1);
@@ -2838,7 +2840,7 @@ export class Renderer {
         this.drawUnitSpawn(dyn, e, t);
       } else if (e.kind === FxKind.SmokeBig2) {
         // Fx.shootBigSmoke2: shootBigSmoke's cloud, but nine motes over
-        // 23 units instead of eight over 19. Meltdown used to be the only
+        // 23 units instead of eight over 19. Furnace used to be the only
         // block firing it and is not any more (constants.ts); the swarm's
         // artillery and its spark guns still do
         const col = ramp(PAL.lightOrange, PAL.lightGray, PAL.gray, t);
@@ -2884,7 +2886,7 @@ export class Renderer {
       } else if (e.kind === FxKind.EmpHit) {
         this.drawEmpHit(dyn, e, t);
       } else if (e.kind === FxKind.HitLaserBlast || e.kind === FxKind.HitMeltHeal) {
-        // Fx.hitLaserBlast: hitLancer's eight bars in the beam's colour;
+        // Fx.hitLaserBlast: hitPiercer's eight bars in the beam's colour;
         // Fx.hitMeltHeal: six of them, 18 units, stroke 2, in Pal.heal
         const meltHeal = e.kind === FxKind.HitMeltHeal;
         const col = e.col ?? PAL.heal;
@@ -3338,7 +3340,7 @@ export class Renderer {
   }
 
   /**
-   * Fx.blastExplosion, 1:1: swarmer's warhead. A pale ring snaps out over
+   * Fx.blastExplosion, 1:1: hive's warhead. A pale ring snaps out over
    * the first six ticks, five grey cinders tumble after it and four
    * missile-orange sparks chase those — flakExplosion's shape in the
    * missile palette, thrown a third again as wide.
@@ -3363,7 +3365,7 @@ export class Renderer {
   }
 
   /**
-   * Fx.plasticExplosion, 1:1: cyclone's. The same three passes again, in
+   * Fx.plasticExplosion, 1:1: whirl's. The same three passes again, in
    * plastanium yellow-green and wider still — a 24-unit ring over seven
    * ticks and seven cinders rather than five. The six fragments thrown by
    * the same blast are real bullets, not part of this.
@@ -3388,7 +3390,7 @@ export class Renderer {
   }
 
   /**
-   * Fx.instShoot, 1:1: foreshadow's muzzle. A 50-unit ring blows off the
+   * Fx.instShoot, 1:1: railhead's muzzle. A 50-unit ring blows off the
    * barrel over the first ten ticks while four long blades stand out of
    * it — one pair square to the shot and one pair almost along it. It is
    * the biggest muzzle flash in the game, and deliberately so: the shot
@@ -3489,7 +3491,7 @@ export class Renderer {
   }
 
   /**
-   * Fx.smokeCloud, 1:1: the powder foreshadow leaves hanging for a second
+   * Fx.smokeCloud, 1:1: the powder railhead leaves hanging for a second
    * and a bit. Thirty motes on the boiling-cloud variant of
    * randLenVectors, each fading in and out on its OWN clock — an alpha
    * that peaks when that mote is halfway through its life.
@@ -3595,12 +3597,12 @@ export class Renderer {
 
   /**
    * Fx.thoriumShoot and Fx.lightningShoot — one shape, and the colour it
-   * ramps into says which: fuse throws thorium pink, arc lancer blue.
+   * ramps into says which: cleaver throws thorium pink, coil piercer blue.
    * Seven sparks out of the muzzle in a wide cone, LENGTHENING as they go
    * (fin, not fout) so the spray reads as opening rather than dying.
    */
   private drawSparkShoot(dyn: Batch, e: Effect, t: number): void {
-    const col = ramp(PAL.white, e.col ?? PAL.lancerLaser, null, t);
+    const col = ramp(PAL.white, e.col ?? PAL.piercerLaser, null, t);
     const stroke = ((1 - t) * 1.2 + 0.5) * MU;
     const bar = (t * 5 + 2) * MU;
     this.scatter(e.seed ?? 1, 7, 25 * FIN_POW(t) * MU, e.rot ?? 0, SPREAD_50,
@@ -3609,9 +3611,9 @@ export class Renderer {
       });
   }
 
-  /** Fx.hitLancer: eight white bars flicking off whatever the beam or the
+  /** Fx.hitPiercer: eight white bars flicking off whatever the beam or the
    *  bolt just landed on */
-  private drawHitLancer(dyn: Batch, e: Effect, t: number): void {
+  private drawHitPiercer(dyn: Batch, e: Effect, t: number): void {
     const fout = 1 - t;
     const bar = (fout * 4 + 1) * MU;
     const stroke = fout * 1.5 * MU;
@@ -3621,30 +3623,30 @@ export class Renderer {
   }
 
   /**
-   * Fx.lancerLaserCharge over Fx.lancerLaserChargeBegin — Mindustry's
+   * Fx.piercerLaserCharge over Fx.piercerLaserChargeBegin — Mindustry's
    * MultiEffect, drawn off one entity because the pair never appears apart.
    * Fourteen sparks fall INWARD on the muzzle (their length runs on fout,
    * so the ring closes) over 38 ticks, while a blue base swells under a
    * white one for 60 and then snaps out over the last tenth.
    */
-  private drawLancerCharge(dyn: Batch, e: Effect, t: number): void {
+  private drawPiercerCharge(dyn: Batch, e: Effect, t: number): void {
     // Mathf.curve(fin, 0.9): nothing until the last tenth, then a hard
     // collapse — the flash of the shot actually leaving
     const margin = 1 - Math.max(0, (t - 0.9) / 0.1);
     const base = Math.min(margin, t);
-    this.fillCircle(dyn, e.x, e.y, base * 3 * MU, PAL_LANCER, 1);
+    this.fillCircle(dyn, e.x, e.y, base * 3 * MU, PAL_PIERCER, 1);
     this.fillCircle(dyn, e.x, e.y, base * 2 * MU, PAL.white, 1);
-    if (t >= LANCER_CHARGE_SPARK) return;
-    const s = t / LANCER_CHARGE_SPARK;
+    if (t >= PIERCER_CHARGE_SPARK) return;
+    const s = t / PIERCER_CHARGE_SPARK;
     const bar = ((1 - Math.abs(s - 0.5) * 2) * 3 + 1) * MU; // fslope
     this.scatter(e.seed ?? 1, 14, (1 + 20 * (1 - s)) * MU, e.rot ?? 0, SPREAD_120,
       (x, y, bearing) => {
-        this.strokeLine(dyn, e.x + x, e.y + y, bearing, bar, MU, PAL_LANCER, 1);
+        this.strokeLine(dyn, e.x + x, e.y + y, bearing, bar, MU, PAL_PIERCER, 1);
       });
   }
 
   /**
-   * Fx.shootSmallFlame, 1:1 — scorch's entire visible weapon. Twelve
+   * Fx.shootSmallFlame, 1:1 — torch's entire visible weapon. Twelve
    * particles stream out of the muzzle inside a 10-degree cone, each one
    * parked at its own fixed fraction of a length that eases out to 60
    * units, so the tongue lengthens fast and then hangs. They fatten as they
@@ -3703,10 +3705,10 @@ export class Renderer {
   }
 
   /**
-   * Fx.lightning, 1:1: arc's bolt is drawn from the very point list the
+   * Fx.lightning, 1:1: coil's bolt is drawn from the very point list the
    * walk built (Sim.lightningBolt), stroked 3 units wide and fading, with a
    * dot at every node so the corners read as joints rather than kinks. The
-   * colour washes from Pal.lancerLaser to white as it goes out.
+   * colour washes from Pal.piercerLaser to white as it goes out.
    */
   /**
    * THE SKY GUNSHIPS' SHOTGUN (FxKind.Scatter, weapons.ts fx "scatter"):
@@ -3719,7 +3721,7 @@ export class Renderer {
    * cone (the stoop2's blast straight down) throws more streaks, shorter,
    * so it reads as a burst under the ship rather than a fan off its nose.
    */
-  private drawScatter(dyn: Batch, e: Effect, t: number): void {
+  private drawAirburst(dyn: Batch, e: Effect, t: number): void {
     const fout = 1 - t;
     const cone = ((e.sides ?? 20) * Math.PI) / 180;
     const ring = cone >= Math.PI - 0.01;
@@ -3747,8 +3749,8 @@ export class Renderer {
     if (!pts || pts.length < 4) return;
     const stroke = 3 * MU * (1 - t);
     if (stroke <= 0.01) return;
-    // color(e.color, Color.white, fin): arc's is lancer blue, starhart2's heal
-    const base = e.col ?? PAL_LANCER;
+    // color(e.color, Color.white, fin): coil's is piercer blue, starhart2's heal
+    const base = e.col ?? PAL_PIERCER;
     const col: RGB = [
       base[0] + (1 - base[0]) * t,
       base[1] + (1 - base[1]) * t,
@@ -3772,7 +3774,7 @@ export class Renderer {
    * dome. The stacked tip triangles it replaces are described there.
    *
    * `len` is what the beam ACTUALLY reached — Sim.laserBeam shortens it to
-   * the fourth unit it hit — so a lancer firing into a crowd draws short.
+   * the fourth unit it hit — so a piercer firing into a crowd draws short.
    */
   private drawLaser(dyn: Batch, e: Effect, t: number): void {
     const rot = e.rot ?? 0;
@@ -3780,7 +3782,7 @@ export class Renderer {
     const baseLen = (e.len ?? 0) * Math.min(1, t / 0.2); // Mathf.curve(fin, 0, 0.2)
     if (baseLen <= 0.01) return;
     const cos = Math.cos(rot), sin = Math.sin(rot);
-    // the style rides `sides`: 0 is lancer's (the class default), the rest
+    // the style rides `sides`: 0 is piercer's (the class default), the rest
     // the swarm's own beams — starhart3's and starhart5's green, stoop5's orange
     const st = LASER_STYLES[e.sides ?? 0] ?? LASER_STYLES[0];
     const width = st.width * MU; // LaserBulletType.width
@@ -3819,15 +3821,15 @@ export class Renderer {
   }
 
   /**
-   * Drawf.laser for a LOCK BEAM (parallax): a 12-unit-wide line scaled by
+   * Drawf.laser for a LOCK BEAM (tether): a 12-unit-wide line scaled by
    * the turret's `strength` and laserWidth, inset at both ends by the caps
-   * that close it off. Parallax fires no bullet, so this is the only thing
+   * that close it off. Tether fires no bullet, so this is the only thing
    * on screen that says it is working — and `strength` carries the SPOOL
    * (Sim.updateLockBeam), so a beam that has held its target for seconds
    * is visibly fatter than the one that just caught it.
    *
    * laserWidth is a THIRD of upstream's, because upstream's beam is a
-   * 18px rope that reads as a fuse's shot rather than a lock. Drawn at
+   * 18px rope that reads as a cleaver's shot rather than a lock. Drawn at
    * 0.2 a fully spooled beam is 6 world px, and the WIDTH IS THE RAMP: the
    * only reason this beam is ever thick is that it is hurting. The cold
    * end is floored, though — the art's rule is nothing under four native
@@ -3848,10 +3850,10 @@ export class Renderer {
     const ux = dx / d, uy = dy / d;
     const white: RGB = [1, 1, 1]; // TractorBeamTurret.laserColor
     this.pushSeg(dyn, x1 + ux * inset, y1 + uy * inset, t.beamX - ux * inset,
-      t.beamY - uy * inset, UV_PARALLAX_LASER, 12 * scale * MU, white);
+      t.beamY - uy * inset, UV_TETHER_LASER, 12 * scale * MU, white);
     const a = Math.atan2(dy, dx);
-    this.push(dyn, x1, y1, cap, cap, a + Math.PI, UV_PARALLAX_LASER_END, 1, 1, 1, 1);
-    this.push(dyn, t.beamX, t.beamY, cap, cap, a, UV_PARALLAX_LASER_END, 1, 1, 1, 1);
+    this.push(dyn, x1, y1, cap, cap, a + Math.PI, UV_TETHER_LASER_END, 1, 1, 1, 1);
+    this.push(dyn, t.beamX, t.beamY, cap, cap, a, UV_TETHER_LASER_END, 1, 1, 1, 1);
   }
 
   /**
@@ -3897,7 +3899,7 @@ export class Renderer {
   }
 
   /**
-   * ContinuousLaserBulletType.draw: meltdown's beam. FOUR passes of
+   * ContinuousLaserBulletType.draw: furnace's beam. FOUR passes of
    * the same line, each narrower and whiter than the last — a broad
    * translucent wash, two hotter bases inside it and a white filament down
    * the middle — with a ROUND cap closing both ends of every pass. The
@@ -3917,14 +3919,14 @@ export class Renderer {
     const fout = t.beamT > cont.fade ? 1 : t.beamT / cont.fade;
     // Time.time, in ticks — the beam's own elapsed life does for a clock
     const time = (cont.duration + cont.fade - t.beamT) * 60;
-    this.drawBeam(dyn, t.beamOX, t.beamOY, t.beamRot, cont.length * fout, fout, time, MELTDOWN_BEAM);
+    this.drawBeam(dyn, t.beamOX, t.beamOY, t.beamRot, cont.length * fout, fout, time, FURNACE_BEAM);
   }
 
   /**
    * ContinuousLaserBulletType.draw, 1:1, for any beam: `len` is what the
    * beam reaches this frame (its length times fout), `time` in ticks is
    * the clock its shimmer and oscillation run on, and the style carries
-   * the four washes and the width — meltdown's, or a starhart4's green.
+   * the four washes and the width — furnace's, or a starhart4's green.
    */
   private drawBeam(
     dyn: Batch,
@@ -4032,7 +4034,7 @@ export class Renderer {
   }
 
   /**
-   * Fx.burning, 1:1: three embers guttering off a unit that scorch has set
+   * Fx.burning, 1:1: three embers guttering off a unit that torch has set
    * alight, drifting out in any direction over 35 ticks
    */
   private drawBurning(dyn: Batch, e: Effect, t: number): void {
@@ -4051,7 +4053,7 @@ export class Renderer {
   /**
    * ShrapnelBulletType.draw, 1:1: a long triangle bolt with a short back
    * spike and perpendicular serrations, tinted from the style's first
-   * colour to its second (fuse: white to thoriumPink; weaver5: sapBullet to
+   * colour to its second (cleaver: white to thoriumPink; weaver5: sapBullet to
    * sapBulletBack) over its 10-tick life, all widths shrinking with fout.
    */
   private drawShrapnel(

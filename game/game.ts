@@ -277,8 +277,9 @@ export interface UiState {
    *  to know the card in hand has landed (see Game.built) */
   built: number;
   /** who each turret will shoot at, in the player's words — one line under
-   *  the build card's description. It reads the turret's LIVE stats, so an
-   *  arc with Ionised Air bought reads "ground and air" the moment it is */
+   *  the build card's description. It reads the turret's LIVE stats, so a
+   *  coil with Ionised Air bought reads "ground and air" the moment it
+   *  is */
   targeting: Record<TowerKind, string>;
 }
 
@@ -420,11 +421,11 @@ function paint(): Promise<void> {
 // leave enough room to aim at a single cell on a phone-sized viewport.
 //
 // The board is 256x192 cells, so "cover" on a 1280px-wide viewport puts one
-// cell at 5 CSS px — a 1x1 duo was 20px across even at the old ceiling of 4,
-// which is a thing you place blind rather than aim. At 12 a cell is 60px and
-// the visible field is 21 cells wide on a desktop and about 7 on a phone:
-// close enough to pick one turret out of a packed line, and still showing
-// enough ground to see what is walking into it.
+// cell at 5 CSS px — a 1x1 tacker was 20px across even at the old ceiling of
+// 4, which is a thing you place blind rather than aim. At 12 a cell is 60px
+// and the visible field is 21 cells wide on a desktop and about 7 on a
+// phone: close enough to pick one turret out of a packed line, and still
+// showing enough ground to see what is walking into it.
 //
 // Only the ceiling is a constant: zooming IN only ever crops, so it cares
 // about nothing but the fingertip. The floor depends on the map and the
@@ -1156,7 +1157,7 @@ export class Game {
    *   a SHIELD TOWER   — the same question, of the mutator's structure
    *   a BUILDING OF OURS — SELECT IT, which is what draws its range ring
    *                and what the delete key sells. Shift adds it to whatever
-   *                is already held: a row of duos and the core is a
+   *                is already held: a row of tackers and the core is a
    *                selection a hand can build one click at a time
    *   nothing    — clear everything: selection and mark alike
    *
@@ -1362,7 +1363,7 @@ export class Game {
    * still rolls ONE turret and ONE shape and then TILES that shape four
    * times (formation.ts fleetLayout) — so what the amount multiplies is
    * the GROUND the card asks for, not the variety it hands over. Nine
-   * citadels of spectres is one decision about one piece of map, and the
+   * citadels of repeaters is one decision about one piece of map, and the
    * ghost of it is most of the reward for pressing the button.
    *
    * IT IS ALL OR NOTHING ON THE SCRAP. The fee is flat (economy.ts, no
@@ -1927,7 +1928,7 @@ export class Game {
    * The ambient-effects switch, both halves at once — the sim stops
    * pushing dressing into the effect pool (Sim.setEffects, which keeps
    * every effect that IS a weapon) and the renderer drops the decoration
-   * it owns itself and stands scorch's flame back up (Renderer.setEffects).
+   * it owns itself and stands torch's flame back up (Renderer.setEffects).
    *
    * Live: it can be thrown mid-run and takes hold on the next frame.
    * Effects already in flight play out their remaining life rather than
@@ -2729,7 +2730,7 @@ export class Game {
    * each. It looked cheap — a timer around the call reads hundredths of a
    * millisecond — because what costs is the canvas RASTERISING those
    * paths, which happens after the call returns. A wave soaked by a
-   * tsunami puts a few hundred symbols up at once, and the frame died
+   * deluge puts a few hundred symbols up at once, and the frame died
    * under a couple of thousand path fills that no profiler pointed at.
    *
    * Two things fix it, and both of them are this function:
@@ -2866,7 +2867,7 @@ export class Game {
    * the camera and not about anything on the board.
    *
    * It is the worst case's whole bill. Eight hundred bodies under a
-   * wave's soak is five thousand symbols a frame; pulled all the way back
+   * douser's soak is five thousand symbols a frame; pulled all the way back
    * to look at the map, every one of them lands on less than half a pixel
    * and none of them is worth what it costs.
    */

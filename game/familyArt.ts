@@ -6,7 +6,7 @@
  * midline and nothing else for lighting, a fold or a band in the reversed
  * pair, NOTHING NARROWER THAN FOUR PIXELS, no dither, and every body drawn
  * AT ITS HITBOX on the turrets' 32 px a tile — a starhart1 on a 32 grid
- * like a duo, a stoop5 on 232. No overshoot: the quad is the box.
+ * like a tacker, a stoop5 on 232. No overshoot: the quad is the box.
  *
  * Every width here is built up from the scaler's units (w, never under
  * four) so that what is left beside a feature is a unit too: a seam ±U on
@@ -107,13 +107,18 @@ function flyerGeom(T: FlyerTier, L: Wing): StoopGeom {
 export const HART: Mat = ["#5a3f2c", "#9a7350"];
 export const STAR: Mat = ["#e0a830", "#ffe58a"];
 const HART_R = rev(HART);
-/** hitboxes UR x 1 / 1.375 / 1.625 / 3 / 3.625, at 32 px a tile */
+/** hitboxes UR x 1 / 1.375 / 1.625 / 3 / 3.625, at 32 px a tile.
+ *  A DEER'S LEG TAPERS: the thigh is meat and the cannon bone under the
+ *  hock is a stick, so `th` (mount to knee) is near twice `sh` (knee to
+ *  hoof) on the two legged tiers. Two segments of the same middling width
+ *  is a crab's limb, and a crab's limb on a ring of four mounts is what
+ *  reads as a spider however the thing walks */
 export const HART_TIERS: readonly IronTier[] = [
   { t: 1, n: 32, stride: 4, small: 16, th: 4, sh: 4 },
   { t: 2, n: 44, stride: 5, small: 16, th: 4, sh: 4 },
   { t: 3, n: 52, stride: 6, small: 16, th: 4, sh: 4 },
-  { t: 4, n: 96, stride: 0, small: 32, th: 8, sh: 6 },
-  { t: 5, n: 116, stride: 0, small: 48, th: 10, sh: 8 },
+  { t: 4, n: 96, stride: 0, small: 32, th: 10, sh: 5 },
+  { t: 5, n: 116, stride: 0, small: 48, th: 13, sh: 6 },
 ];
 function hartBody(P: Pen, T: IronTier): void {
   const { n, t } = T; const { q, w } = scaler(n); const c = n / 2; const U = w(2);
@@ -186,74 +191,118 @@ export function hartLegged(T: IronTier): LegParts {
 
 // ── WEAVER ───────────────────────────────────────────────────────────────
 //
-// The poison frog (the Dartbacks): the silhouette is the whole animal —
-// wide hips, a waist, a head as wide as the hips with a blunt snout —
-// and two acid stripes down the back, the way a dart frog is marked. The
-// machine is the venom: a steel tank down the spine from T2, the spitter
-// a steel tube from the tank forward over the head to the snout from T3,
-// a gunmetal collar at the waist and a stack behind the tank from T4, a
-// brow plate at T5. Acid toes. The runt sits on the mech rig with its
-// feet tucked; T2 up ride the legged rig on FOUR legs, a frog's, on
-// short mounts. It replaced the spider, whose eight legs at every tier
-// were the thing no one wanted to look at.
+// The poison frog (the Dartbacks): the silhouette is the whole animal,
+// and A FROG SEEN FROM ABOVE IS WIDE — a broad mass of folded thigh at
+// the back, a body barely narrower, and a head nearly as wide again
+// tapering to a blunt snout. Two acid stripes run the length of the
+// back, the way a dart frog is marked. The machine is the venom: a steel
+// tank down the spine from T2, the spitter a steel tube from the tank
+// forward over the head to the snout from T3, a gunmetal collar at the
+// shoulders and a stack behind the tank from T4, a brow plate at T5.
+// Acid toes. The runt sits on the mech rig with its feet tucked; T2 up
+// ride the legged rig on FOUR legs, a frog's.
+//
+// THE OUTLINE IS IN q(), NOT IN MULTIPLES OF w(2). A body laid out in
+// units of the scaler's w() stops growing the moment w's four-pixel
+// floor bites: 3 * w(2) is 12 px on the 32 grid AND on the 52 and the
+// 60, so every tier above the runt used to come out a narrow trunk
+// rattling around inside a big box with four long thin legs reaching out
+// of it. That is a spider, which is the one thing this family exists to
+// not be. The silhouette scales with the grid now — the thighs are 26/32
+// of it at every tier, the rhino's own proportion — and only the
+// machine's bands are still built from w(), which is what that floor is
+// for.
+//
+// AND THE LEGS ARE SHORT AND THICK. The stroke is a fifth of the body's
+// grid, near twice what the rhino and the elephant take, and the foot
+// reaches about one body-width out (`baseOffset` + `length` * `lengthScl`
+// in game/levels.ts: ~1.75 radii, against the 2.85 it used to be), with
+// `lengthScl` low enough that the knee stands well clear of the flank.
+// Thin limbs on long mounts read as a spider however few of them there
+// are; a frog's limb is as thick as a third of its own body and folds up
+// beside it.
 export const FROG: Mat = ["#1c2430", "#3c5068"];
 export const ACID: Mat = ["#6c9a18", "#d8ff40"];
-/** hitboxes UR x 1 / 1.625 / 1.875 / 2.875 / 3.25; th and sh the leg strokes */
+/** hitboxes UR x 1 / 1.625 / 1.875 / 2.875 / 3.25; th and sh the leg
+ *  strokes, a fifth of the grid (the rhino's are a ninth) */
 export const FROG_TIERS: readonly IronTier[] = [
   { t: 1, n: 32, stride: 5, small: 16, th: 4, sh: 4 },
-  { t: 2, n: 52, stride: 0, small: 32, th: 6, sh: 5 },
-  { t: 3, n: 60, stride: 0, small: 32, th: 7, sh: 6 },
-  { t: 4, n: 92, stride: 0, small: 48, th: 11, sh: 9 },
-  { t: 5, n: 104, stride: 0, small: 48, th: 14, sh: 11 },
+  { t: 2, n: 52, stride: 0, small: 32, th: 10, sh: 8 },
+  { t: 3, n: 60, stride: 0, small: 32, th: 12, sh: 9 },
+  { t: 4, n: 92, stride: 0, small: 48, th: 18, sh: 14 },
+  { t: 5, n: 104, stride: 0, small: 48, th: 21, sh: 16 },
 ];
 function frogBody(P: Pen, T: IronTier): void {
   const { n, t } = T; const { q, w } = scaler(n); const c = n / 2; const U = w(2);
-  // the hips, the waist and the head
-  P.octa(c - 3 * U, q(12), c + 3 * U, n - q(2), w(4), FROG);
-  P.octa(c - 2 * U, q(6), c + 2 * U, q(16), U, FROG);
-  P.octa(c - 3 * U, q(1), c + 3 * U, q(9), w(3), FROG);
-  // the stripes, a unit in from the hips' edge (the mirror does the right)
-  P.box(c - 2 * U, q(9), c - U, n - q(5), ACID);
-  // the tank down the spine from T2, between the stripes
-  if (t >= 2) P.box(c - U, q(12), c + U, n - q(6), STEEL);
-  // the brow plate at T5, under the spitter
-  if (t >= 5) P.box(c - 2 * U, q(3), c + 2 * U, q(3) + U, STEEL);
-  // the spitter from T3: tank to snout, its bore at the tip
-  if (t >= 3) { P.box(c - U, q(1), c + U, q(12), STEEL); P.box(c - U, q(1), c + U, q(1) + U, BORE); }
-  // the collar at the waist and the stack behind the tank from T4, an acid heat band on it
+  // half the hide left between the two stripes: what the tank, the collar
+  // and the stack are all sized off, so nothing down the spine ever
+  // crowds a stripe whatever the grid rounds to
+  const spine = q(8) - w(3);
+  // Four overlapping octagons — a blunt snout, a jaw that widens fast,
+  // a trunk, and the folded thighs, which are the widest thing on the
+  // animal. Each reaches far enough into the next that no pair of
+  // chamfers ever meets: two chamfers facing each other pinch a waist
+  // into the outline, and a waist on a top-down body is a thorax.
+  P.octa(c - q(13), q(11), c + q(13), n - q(1), w(6), FROG);   // the thighs, at the back
+  P.octa(c - q(12), q(7), c + q(12), q(21), w(4), FROG);       // the trunk
+  P.octa(c - q(11), q(4), c + q(11), q(14), w(4), FROG);       // the jaw
+  P.octa(c - q(5), q(1), c + q(5), q(9), w(2), FROG);          // the snout, blunt
+  // the stripes: a band down each flank from the shoulder to the thighs,
+  // set a unit inside the trunk's own width so it can never run off the
+  // outline (the mirror does the right)
+  P.box(c - q(8), q(12), c - q(8) + w(3), n - q(6), ACID);
+  // the tank down the spine from T2, between the stripes and wider than
+  // the tube it feeds, so the two read as plumbing and not as one bar
+  if (t >= 2) P.box(c - (spine - U), q(13), c + (spine - U), n - q(9), STEEL);
+  // the brow plate at T5: gunmetal, not steel, so the spitter reads as a
+  // tube lying OVER it rather than melting into one steel T
+  if (t >= 5) P.box(c - q(5), q(6), c + q(5), q(6) + w(3), GUN);
+  // the spitter from T3: the steel tube off the tank, forward over the
+  // head to the snout, its bore at the tip
+  if (t >= 3) { P.box(c - U, q(3), c + U, q(14), STEEL); P.box(c - U, q(3), c + U, q(3) + U, BORE); }
+  // the collar at the shoulders and the stack behind the tank from T4, an
+  // acid heat band on it. The collar runs from one stripe to the other and
+  // stops there: a band that crosses the WHOLE body is a horizontal cut,
+  // and a horizontal cut on a symmetrical body is a face
   if (t >= 4) {
-    P.box(c - 2 * U, q(10), c + 2 * U, q(10) + w(3), GUN);
-    P.box(c - U, n - q(6), c + U, n - q(2), GUN);
-    P.box(c - U, n - q(6), c + U, n - q(6) + U, ACID);
+    P.box(c - spine, q(12), c + spine, q(12) + w(3), GUN);
+    P.box(c - U, n - q(9), c + U, n - q(3), GUN);
+    P.box(c - U, n - q(9), c + U, n - q(9) + U, ACID);
   }
 }
-/** the runt on the mech rig: body, base plate, the near-side feet with their acid toes */
+/** the runt on the mech rig: body, base plate, and the near-side feet —
+ *  broad pads at the flank with the acid across their toes, tucked up
+ *  against the body the way a sitting frog's are */
 export function frogMech(T: IronTier): MechParts {
-  const { n } = T; const { q, w } = scaler(n); const U = w(2);
+  const { n } = T; const { q, w } = scaler(n);
   const { art, cell } = drawWithCell(n, (P) => frogBody(P, T), ACID);
   return {
     body: art,
-    base: draw(n, (P) => P.octa(q(9), q(10), n - q(9), n - q(3), w(3), GUN)),
+    base: draw(n, (P) => P.octa(q(6), q(10), n - q(6), n - q(3), w(4), GUN)),
     leg: draw(n, (P) => {
-      for (const y of [q(6), q(19)]) {
-        P.box(n - q(4) - U, y, n - q(4) + U, y + w(4), FROG);
-        P.box(n - q(4) - U, y, n - q(4) + U, y + U, ACID);
+      for (const y of [q(7), q(19)]) {
+        P.box(n - q(7), y, n - q(1), y + w(8), FROG);
+        P.box(n - q(7), y, n - q(1), y + w(3), ACID);
       }
     }, false),
     cell,
     stride: T.stride,
   };
 }
-/** T2-T5 on the legged rig: four legs of hide on gunmetal mounts, a wide
- *  toe pad with the acid on it */
+/** T2-T5 on the legged rig: four thick legs of hide, and a foot that is
+ *  a broad pad WIDER THAN THE LEG IT HANGS OFF — a frog's splayed toes —
+ *  with the acid across its front */
 export function frogLegged(T: IronTier): LegParts {
-  const { n, small, th } = T; const { q, w } = scaler(n); const sc = small / 2, cx = n / 2; const U = w(2);
+  const { n, small, th } = T; const { q, w } = scaler(n); const c = n / 2; const sc = small / 2;
   const { art, cell } = drawWithCell(n, (P) => frogBody(P, T), ACID);
   return {
     body: art,
-    base: draw(n, (P) => P.octa(cx - 2 * U, q(10), cx + 2 * U, n - q(4), w(3), GUN)),
+    base: draw(n, (P) => P.octa(c - q(10), q(10), c + q(10), n - q(2), w(5), GUN)),
     cell,
-    foot: draw(small, (P) => { P.box(sc - w(3), sc - U, sc + w(3), sc + U, FROG); P.box(sc - w(3), sc - U, sc + w(3), sc, ACID); }, false),
+    foot: draw(small, (P) => {
+      P.box(sc - w(5), sc - w(3), sc + w(5), sc + w(3), FROG);
+      P.box(sc - w(5), sc - w(3), sc + w(5), sc - w(3) + w(2), ACID);
+    }, false),
     joint: draw(small, (P) => P.disc(sc, sc, Math.max(2, Math.round(th / 2)), FROG), false),
     baseJoint: draw(small, (P) => P.disc(sc, sc, Math.max(3, Math.round(th * 0.75)), GUN), false),
     small,

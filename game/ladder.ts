@@ -434,7 +434,7 @@ export interface Budget {
   armourShare: number;
   /** share of health carried by units with a shield ability */
   shieldShare: number;
-  /** share of health that flies — hail and scorch cannot touch it at all */
+  /** share of health that flies — lobber and torch cannot touch it at all */
   airShare: number;
   /** share of health carried by unit tier 3 and up */
   t3Share: number;
@@ -493,10 +493,10 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
 /**
  * Units whose armour meets nothing that can efficiently hurt it, WHERE THAT
  * ACTUALLY DECIDES ANYTHING — inside the first stage, where a fresh save's
- * board is duos and whatever tier-1 turret it has managed to unlock.
+ * board is tackers and whatever tier-1 turret it has managed to unlock.
  *
  * This is a NOTE, not a gate. Nothing is ever unkillable — the 10% floor
- * means a duo always lands 0.9 — so a heavily armoured debut costs more
+ * means a tacker always lands 0.9 — so a heavily armoured debut costs more
  * scrap, which is a legitimate thing for a script to ask for. What it
  * reports is the size of that ask, so an author choosing it is choosing it.
  */
@@ -511,7 +511,7 @@ export function debutViolations(spec: LevelSpec = WORLD): LadderIssue[] {
       });
   });
 
-  const shot = TOWERS.duo.bullet.damage;
+  const shot = TOWERS.tacker.bullet.damage;
   const opening = STAGES[0].to;
   const bad: LadderIssue[] = [];
   for (const [kind, wave] of debut) {
@@ -526,7 +526,7 @@ export function debutViolations(spec: LevelSpec = WORLD): LadderIssue[] {
       bad.push({
         tier: 0,
         kind: "debut",
-        message: `${kind} (armour ${armor}) debuts on wave ${wave + 1} against a duo's ${shot} damage — it costs an opening board ${tax.toFixed(1)}x its printed health, so budget the scrap for it`,
+        message: `${kind} (armour ${armor}) debuts on wave ${wave + 1} against a tacker's ${shot} damage — it costs an opening board ${tax.toFixed(1)}x its printed health, so budget the scrap for it`,
       });
   }
   return bad;
@@ -554,7 +554,7 @@ export interface WaveCost {
   t3Share: number;
   /** share carried by units with armour 3 or more */
   armourShare: number;
-  /** how much of it flies — hail and scorch cannot touch these at all */
+  /** how much of it flies — lobber and torch cannot touch these at all */
   airShare: number;
   /** what killing the whole wave drops — which is the wave's whole income
    *  now that staging one pays nothing. XP is not in here either: a wave's

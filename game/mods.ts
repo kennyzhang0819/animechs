@@ -49,7 +49,7 @@ import { armored, faster, piercing, reaching, stronger } from "./upgrades";
  *
  * A MOD IS ANYTHING THAT COMPOSES ONTO ONE TURRET'S TABLE. It used to be
  * narrower than that — "a stat tweak and nothing else, behaviour is the
- * relics' job" — and the line was drawn in the wrong place: a fuse that
+ * relics' job" — and the line was drawn in the wrong place: a cleaver that
  * fires five spikes instead of three is not a number going up, it is the
  * gun doing a different thing, and it is still one turret's business and
  * nobody else's. So a mod may change what a turret DOES as long as it says
@@ -152,7 +152,6 @@ export const MOD_IDS = [
   "prototype",
   "bulwark",
   "sabot",
-  "splitter",
   "giant",
   "sniper",
   "allround",
@@ -182,8 +181,7 @@ export type ModGlyph =
   | "shield"
   | "giant"
   | "scope"
-  | "allround"
-  | "fan";
+  | "allround";
 
 export interface ModDef {
   id: ModId;
@@ -251,8 +249,8 @@ export interface ModDef {
   /**
    * HEALTH RETURNED A SECOND PER COPY OWNED, as a fraction of the
    * turret's OWN ceiling —
-   * so the same 3% mends a braced spectre faster in absolute hp than a
-   * bare duo, which is what "a percentage of its own pool" has to mean.
+   * so the same 3% mends a braced repeater faster in absolute hp than a
+   * bare tacker, which is what "a percentage of its own pool" has to mean.
    * The sim resolves it to hp/second once at the placement
    * (Sim.resolveTower) and the fire loop adds `regen * dt`; nothing
    * re-reads a percentage per tick.
@@ -261,7 +259,7 @@ export interface ModDef {
   /**
    * THE FOOTPRINT MULTIPLIER — the GIANT and nothing else. A turret with
    * this stands on `scale` times its kind's edge in tiles, so a 4x4
-   * foreshadow becomes an 8x8 building. It is on the def rather than a
+   * railhead becomes an 8x8 building. It is on the def rather than a
    * check on the id so the sim asks the catalog "how big is a turret with
    * this mask" (sizeWithMods) instead of asking "is it the giant".
    *
@@ -286,12 +284,14 @@ export interface ModDef {
    */
   solo?: boolean;
   /**
-   * A MOD THAT ONLY MEANS ANYTHING ON ONE KIND — the Splitter Array is a
-   * fuse's attribute and nothing else's. Unset is every kind.
+   * A MOD THAT ONLY MEANS ANYTHING ON ONE KIND — one turret's own
+   * attribute and nothing else's. Unset is every kind, and NOTHING SETS
+   * IT TODAY: the one mod that did has been taken off the list. The
+   * machinery stays because the next one-kind attribute wants it.
    *
    * It gates the ROLL: a placement of any other kind never rolls for it
-   * at all (rollTurretMods), so the odds are per FUSE placed and the shelf
-   * says so (oddsLine). It is on the def rather than inside `apply`
+   * at all (rollTurretMods), so the odds are per THAT KIND placed and the
+   * shelf says so (oddsLine). It is on the def rather than inside `apply`
    * because the roll happens before there is a table to apply anything to.
    */
   only?: TowerKind;
@@ -306,8 +306,8 @@ export interface ModDef {
 // ---------------------------------------------------------------------------
 
 /**
- * THE GIANT'S EDGE, as a multiple of the turret's own: twice, so a duo's
- * 2x2 is a 4x4 and a foreshadow's 4x4 is an 8x8 — the biggest thing that
+ * THE GIANT'S EDGE, as a multiple of the turret's own: twice, so a tacker's
+ * 2x2 is a 4x4 and a railhead's 4x4 is an 8x8 — the biggest thing that
  * will ever stand on this board, core included.
  */
 export const GIANT_SCALE = 2;
@@ -479,28 +479,6 @@ const TURRET_MODS: readonly ModDef[] = [
     blurb: "A chance for a new turret to fire sabot: harder rounds, and each one punches through another body.",
     apply: (t, n) => piercing(stronger(t, per(1.15, n)), 1 * Math.max(1, n)),
   },
-  {
-    // THE FIRST ATTRIBUTE THAT IS NOT A NUMBER GOING UP — see the header.
-    // It was a relic, and a relic that improves one kind of gun is a
-    // hundred-and-fifty-thousand-scrap bet on the deal handing over
-    // fuses; as a
-    // fuse's OWN attribute it is rolled on every fuse placed and on
-    // nothing else, which is the shape the thing always had
-    id: "splitter",
-    name: "Splitter Array",
-    tweak: "+1 spike a volley, fuse only",
-    total: (n) => `+${nOf(n)} spike${nOf(n) === 1 ? "" : "s"} a volley, fuse only`,
-    rarity: "rare",
-    glyph: "fan",
-    only: "fuse",
-    // STEEPER THAN THE OTHER RARES, because it rolls against ONE kind: a
-    // tenth would speckle a patch of duos and never once show on the two
-    // fuses a run puts down
-    chance: 0.3,
-    blurb: "A chance for a new fuse to fire an extra spike — four to the volley instead of three, and another for every copy held.",
-    apply: (s, n) => ({ ...s, shots: s.shots + 1 * Math.max(1, n) }),
-  },
-
   // ---- ULTRA: NAMED, and the turret changes species --------------------
   {
     id: "giant",

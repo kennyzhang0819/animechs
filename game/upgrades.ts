@@ -23,7 +23,7 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  *   4  THE ULTIMATE. Three points and a level gate, and it does not
  *      improve the turret so much as replace it.
  *
- * ONLY DUO AND ARC SHIP A FOURTH RUNG TODAY, and the other fifteen are
+ * ONLY TACKER AND COIL SHIP A FOURTH RUNG TODAY, and the other fifteen are
  * deliberately unwritten rather than missing: an ultimate is a turret
  * REPLACED, which is a design decision per turret and not a formula, so
  * they are authored by hand and land here when they are ready. Writing one
@@ -34,72 +34,72 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * assume four. `tier` says which rung a def is, and ULTIMATE_TIER is what
  * makes one the ultimate — never its index.
  *
- * WHY STATS AND NOT MORE TURRETS. A tech tree that only ever sells the
- * NEXT turret asks the player to abandon what they have every time they
- * climb a stage — the duos that carried the first ten waves are dead
- * weight by wave thirty. These branches are the other offer: keep what
- * works and make it worth keeping. A maxed duo line and a bare salvo are a
- * real choice, which is the whole point — and in-run, where every turret
- * costs scrap, an upgraded cheap turret is a cheaper answer.
+ * WHY STATS AND NOT MORE TURRETS. A tech tree that only ever sells the NEXT
+ * turret asks the player to abandon what they have every time they climb a stage
+ * — the tackers that carried the first ten waves are dead weight by wave thirty.
+ * These branches are the other offer: keep what works and make it worth keeping.
+ * A maxed tacker line and a bare autocannon are a real choice, which is the whole
+ * point — and in-run, where every turret costs scrap, an upgraded cheap turret is
+ * a cheaper answer.
  */
 
 /** every upgrade node id, in tree order — the tech tree's third namespace */
 export const UPGRADE_KINDS = [
-  // duo's four keep the ids they shipped with: a save's points are keyed
+  // tacker's four keep the ids they shipped with: a save's points are keyed
   // by id, and renaming one would silently delete what a player bought
-  "duo-rof",
-  "duo-pierce",
-  "duo-graphite",
-  "duo-power",
-  "scatter-loader",
-  "scatter-fuse",
-  "scatter-metaglass",
-  "arc-coils",
-  "arc-reach",
-  "arc-ionised",
-  "arc-cascade",
-  "hail-bore",
-  "hail-charge",
-  "hail-incendiary",
-  "scorch-pressure",
-  "scorch-fuel",
-  "scorch-pyratite",
-  "salvo-autoload",
-  "salvo-pierce",
-  "salvo-pyratite",
-  "wave-pump",
-  "wave-nozzle",
-  "wave-cryo",
-  "lancer-capacitor",
-  "lancer-lens",
-  "lancer-optics",
-  "ripple-barrels",
-  "ripple-frag",
-  "ripple-plastanium",
-  "parallax-field",
-  "parallax-aperture",
-  "parallax-phase",
-  "fuse-choke",
-  "fuse-reach",
-  "fuse-surge",
-  "swarmer-fins",
-  "swarmer-racks",
-  "swarmer-warheads",
-  "cyclone-belt",
-  "cyclone-fuse",
-  "cyclone-surge",
-  "tsunami-chamber",
-  "tsunami-spray",
-  "tsunami-cryo",
-  "spectre-cooling",
-  "spectre-bases",
-  "spectre-surge",
-  "meltdown-loop",
-  "meltdown-array",
-  "meltdown-phase",
-  "foreshadow-caps",
-  "foreshadow-servos",
-  "foreshadow-surge",
+  "tacker-rof",
+  "tacker-pierce",
+  "tacker-graphite",
+  "tacker-power",
+  "airburst-loader",
+  "airburst-fuse",
+  "airburst-metaglass",
+  "coil-overcharge",
+  "coil-reach",
+  "coil-ionised",
+  "coil-cascade",
+  "lobber-bore",
+  "lobber-charge",
+  "lobber-incendiary",
+  "torch-pressure",
+  "torch-fuel",
+  "torch-pyratite",
+  "autocannon-autoload",
+  "autocannon-pierce",
+  "autocannon-pyratite",
+  "douser-pump",
+  "douser-nozzle",
+  "douser-cryo",
+  "piercer-capacitor",
+  "piercer-lens",
+  "piercer-optics",
+  "barrage-barrels",
+  "barrage-frag",
+  "barrage-plastanium",
+  "tether-field",
+  "tether-aperture",
+  "tether-phase",
+  "cleaver-choke",
+  "cleaver-reach",
+  "cleaver-surge",
+  "hive-fins",
+  "hive-racks",
+  "hive-warheads",
+  "whirl-belt",
+  "whirl-fuse",
+  "whirl-surge",
+  "deluge-chamber",
+  "deluge-spray",
+  "deluge-cryo",
+  "repeater-cooling",
+  "repeater-bases",
+  "repeater-surge",
+  "furnace-loop",
+  "furnace-array",
+  "furnace-phase",
+  "railhead-caps",
+  "railhead-servos",
+  "railhead-surge",
 ] as const;
 export type UpgradeKind = (typeof UPGRADE_KINDS)[number];
 
@@ -126,8 +126,8 @@ export const MAX_RUNGS = ULTIMATE_TIER;
 /**
  * What the branch is allowed to know about the board it is being resolved
  * against. Today that is one number, and it exists for the one upgrade
- * whose worth is a HEAD COUNT rather than a purchase (duo power): every
- * duo hits harder for each OTHER duo standing.
+ * whose worth is a HEAD COUNT rather than a purchase (tacker power): every
+ * tacker hits harder for each OTHER tacker standing.
  *
  * It is resolved at the moments the count can move — a tower placed, sold
  * or cleared — and never per shot. See Sim.refreshSpecs.
@@ -198,8 +198,8 @@ export const faster = (s: TowerStats, mul: number): TowerStats => ({ ...s, reloa
 /**
  * Damage, and the splash that goes with it. A shell's blast and its direct
  * hit are the same round doing the same thing, so a damage node that moved
- * only one of them would read as broken on exactly the turrets — hail,
- * ripple, scatter — whose damage IS the blast.
+ * only one of them would read as broken on exactly the turrets — lobber,
+ * barrage, airburst — whose damage IS the blast.
  */
 export const stronger = (s: TowerStats, mul: number): TowerStats =>
   withBullet(s, { damage: s.bullet.damage * mul, splash: s.bullet.splash * mul });
@@ -260,7 +260,7 @@ const spooling = (
     : s;
 
 /** PLATING, added flat — armour is a shave per hit and never a multiplier,
- *  so "+6 armour" means the same six on a duo as on a spectre */
+ *  so "+6 armour" means the same six on a tacker as on a repeater */
 export const armored = (s: TowerStats, add: number): TowerStats => ({ ...s, armor: s.armor + add });
 
 /** turn a shot into a piercing one, or raise the cap on one that already is */
@@ -296,10 +296,10 @@ const then = (
 // THE BRANCHES
 // ---------------------------------------------------------------------------
 
-const DUO: readonly TurretUpgradeDef[] = [
+const TACKER: readonly TurretUpgradeDef[] = [
   {
-    id: "duo-rof",
-    turret: "duo",
+    id: "tacker-rof",
+    turret: "tacker",
     tier: 1,
     name: "Rate of Fire",
     blurb: "+50% attack speed.",
@@ -307,26 +307,26 @@ const DUO: readonly TurretUpgradeDef[] = [
     apply: (s) => faster(s, 1.5),
   },
   {
-    id: "duo-pierce",
-    turret: "duo",
+    id: "tacker-pierce",
+    turret: "tacker",
     tier: 2,
     name: "Pierce",
     blurb: "Shots punch through 3 bodies instead of stopping at the first.",
     glyph: "pierce",
-    // PIERCE IS A CAP, NOT A FLAG. A stock duo bullet has no `pierce` at
+    // PIERCE IS A CAP, NOT A FLAG. A stock tacker bullet has no `pierce` at
     // all, which the sim reads as "spent on the first body". Two extra
     // bodies makes a cap of three, and the cap keeps a shot from running
     // its whole lifetime down a lane
     apply: (s) => piercing(s, 2),
   },
   {
-    id: "duo-graphite",
-    turret: "duo",
+    id: "tacker-graphite",
+    turret: "tacker",
     tier: 3,
     name: "Graphite Rounds",
     blurb: "Loads graphite instead of copper: 9 damage a shot becomes 18.",
     glyph: "damage",
-    // THE GRAPHITE ROUND, 1:1 from Blocks.java's duo ammo() block:
+    // THE GRAPHITE ROUND, 1:1 from Blocks.java's tacker ammo() block:
     //
     //   Items.graphite, new BasicBulletType(3.5f, 18){{
     //     width = 9f; height = 12f;
@@ -337,7 +337,7 @@ const DUO: readonly TurretUpgradeDef[] = [
     // Copper is a warm tan (eac1a8 over d39169) and graphite is a pale
     // blue-white over blue-violet (dae1ee over 7d89d8), so the swap is the
     // most visible thing the upgrade does — which is the point: a node
-    // that doubles every duo's damage must not fire a shot that looks
+    // that doubles every tacker's damage must not fire a shot that looks
     // identical to the one before it.
     //
     // NOT IMPORTED: speed 3.5 (copper 2.5), rangeChange +16, and
@@ -360,20 +360,20 @@ const DUO: readonly TurretUpgradeDef[] = [
       }),
   },
   {
-    id: "duo-power",
-    turret: "duo",
+    id: "tacker-power",
+    turret: "tacker",
     tier: 4,
-    name: "Duo Power",
-    blurb: "+1% damage for every OTHER duo standing. A hundred duos is +99% damage each.",
+    name: "Tacker Power",
+    blurb: "+1% damage for every OTHER tacker standing. A hundred tackers is +99% damage each.",
     glyph: "surge",
     apply: (s, ctx) => stronger(s, 1 + 0.01 * Math.max(0, ctx.count - 1)),
   },
 ];
 
-const SCATTER: readonly TurretUpgradeDef[] = [
+const AIRBURST: readonly TurretUpgradeDef[] = [
   {
-    id: "scatter-loader",
-    turret: "scatter",
+    id: "airburst-loader",
+    turret: "airburst",
     tier: 1,
     name: "Belt Loader",
     blurb: "+40% attack speed.",
@@ -381,8 +381,8 @@ const SCATTER: readonly TurretUpgradeDef[] = [
     apply: (s) => faster(s, 1.4),
   },
   {
-    id: "scatter-fuse",
-    turret: "scatter",
+    id: "airburst-fuse",
+    turret: "airburst",
     tier: 2,
     name: "Proximity Fuse",
     blurb: "+50% fuse range and +25% blast radius.",
@@ -390,15 +390,15 @@ const SCATTER: readonly TurretUpgradeDef[] = [
     apply: (s) => wider(fusedAt(s, 1.5), 1.25),
   },
   {
-    id: "scatter-metaglass",
-    turret: "scatter",
+    id: "airburst-metaglass",
+    turret: "airburst",
     tier: 3,
     name: "Metaglass Flak",
     blurb: "Loads metaglass instead of lead: +100% damage, +15% blast radius, +35% fuse range.",
     glyph: "damage",
-    // Mindustry's own metaglass flak is scatter's best ammo — damage 5
+    // Mindustry's own metaglass flak is airburst's best ammo — damage 5
     // over lead's 3 and splashDamage 33 over 22. Taken as ratios rather
-    // than absolutes, because our scatter's numbers are already scaled
+    // than absolutes, because our airburst's numbers are already scaled
     // down for a flak that fuses over the ground swarm as well as the air
     // (constants.ts): doubled, the blast still lands short of the
     // air-only shell this turret used to carry
@@ -406,10 +406,10 @@ const SCATTER: readonly TurretUpgradeDef[] = [
   },
 ];
 
-const ARC: readonly TurretUpgradeDef[] = [
+const COIL: readonly TurretUpgradeDef[] = [
   {
-    id: "arc-coils",
-    turret: "arc",
+    id: "coil-overcharge",
+    turret: "coil",
     tier: 1,
     name: "Overcharged Coils",
     blurb: "+50% damage.",
@@ -417,8 +417,8 @@ const ARC: readonly TurretUpgradeDef[] = [
     apply: (s) => stronger(s, 1.5),
   },
   {
-    id: "arc-reach",
-    turret: "arc",
+    id: "coil-reach",
+    turret: "coil",
     tier: 2,
     name: "Extended Arcs",
     blurb: "The bolt jumps to 4 more bodies before it dies.",
@@ -430,17 +430,17 @@ const ARC: readonly TurretUpgradeDef[] = [
       }),
   },
   {
-    id: "arc-ionised",
-    turret: "arc",
+    id: "coil-ionised",
+    turret: "coil",
     tier: 3,
     name: "Ionised Air",
-    blurb: "+30% range, and the arc can hit air units.",
+    blurb: "+30% range, and the coil can hit air units.",
     glyph: "air",
     apply: (s) => then(reaching(s, 1.3), { targetAir: true }, { collidesAir: true }),
   },
   {
-    id: "arc-cascade",
-    turret: "arc",
+    id: "coil-cascade",
+    turret: "coil",
     tier: 4,
     name: "Tesla Cascade",
     blurb:
@@ -460,10 +460,10 @@ const ARC: readonly TurretUpgradeDef[] = [
   },
 ];
 
-const HAIL: readonly TurretUpgradeDef[] = [
+const LOBBER: readonly TurretUpgradeDef[] = [
   {
-    id: "hail-bore",
-    turret: "hail",
+    id: "lobber-bore",
+    turret: "lobber",
     tier: 1,
     name: "Rifled Bore",
     blurb: "+40% attack speed.",
@@ -471,8 +471,8 @@ const HAIL: readonly TurretUpgradeDef[] = [
     apply: (s) => faster(s, 1.4),
   },
   {
-    id: "hail-charge",
-    turret: "hail",
+    id: "lobber-charge",
+    turret: "lobber",
     tier: 2,
     name: "Bigger Charge",
     blurb: "+30% blast radius.",
@@ -480,8 +480,8 @@ const HAIL: readonly TurretUpgradeDef[] = [
     apply: (s) => wider(s, 1.3),
   },
   {
-    id: "hail-incendiary",
-    turret: "hail",
+    id: "lobber-incendiary",
+    turret: "lobber",
     tier: 3,
     name: "Incendiary Shells",
     blurb:
@@ -495,10 +495,10 @@ const HAIL: readonly TurretUpgradeDef[] = [
   },
 ];
 
-const SCORCH: readonly TurretUpgradeDef[] = [
+const TORCH: readonly TurretUpgradeDef[] = [
   {
-    id: "scorch-pressure",
-    turret: "scorch",
+    id: "torch-pressure",
+    turret: "torch",
     tier: 1,
     name: "Pressure Feed",
     blurb: "+40% range.",
@@ -506,8 +506,8 @@ const SCORCH: readonly TurretUpgradeDef[] = [
     apply: (s) => reaching(s, 1.4),
   },
   {
-    id: "scorch-fuel",
-    turret: "scorch",
+    id: "torch-fuel",
+    turret: "torch",
     tier: 2,
     name: "Rich Fuel",
     blurb: "Burns for 3s longer. Burning ignores armour.",
@@ -515,8 +515,8 @@ const SCORCH: readonly TurretUpgradeDef[] = [
     apply: (s) => withBullet(s, { burn: (s.bullet.burn ?? 0) + 3 }),
   },
   {
-    id: "scorch-pyratite",
-    turret: "scorch",
+    id: "torch-pyratite",
+    turret: "torch",
     tier: 3,
     name: "Pyratite Feed",
     blurb: "Burns pyratite instead of coal: +90% damage, double burn duration, +40% flame radius.",
@@ -529,10 +529,10 @@ const SCORCH: readonly TurretUpgradeDef[] = [
   },
 ];
 
-const SALVO: readonly TurretUpgradeDef[] = [
+const AUTOCANNON: readonly TurretUpgradeDef[] = [
   {
-    id: "salvo-autoload",
-    turret: "salvo",
+    id: "autocannon-autoload",
+    turret: "autocannon",
     tier: 1,
     name: "Autoloader",
     blurb: "+40% attack speed.",
@@ -540,8 +540,8 @@ const SALVO: readonly TurretUpgradeDef[] = [
     apply: (s) => faster(s, 1.4),
   },
   {
-    id: "salvo-pierce",
-    turret: "salvo",
+    id: "autocannon-pierce",
+    turret: "autocannon",
     tier: 2,
     name: "Piercing Rounds",
     blurb: "Each shell takes 2 more bodies out of a file.",
@@ -549,8 +549,8 @@ const SALVO: readonly TurretUpgradeDef[] = [
     apply: (s) => piercing(s, 2),
   },
   {
-    id: "salvo-pyratite",
-    turret: "salvo",
+    id: "autocannon-pyratite",
+    turret: "autocannon",
     tier: 3,
     name: "Pyratite Shells",
     blurb: "Loads pyratite shells: +50% damage, and anything a shell touches burns for 5s.",
@@ -566,10 +566,10 @@ const SALVO: readonly TurretUpgradeDef[] = [
   },
 ];
 
-const WAVE: readonly TurretUpgradeDef[] = [
+const DOUSER: readonly TurretUpgradeDef[] = [
   {
-    id: "wave-pump",
-    turret: "wave",
+    id: "douser-pump",
+    turret: "douser",
     tier: 1,
     name: "High-Pressure Pump",
     blurb: "Soaked enemies stay slowed 3s longer.",
@@ -577,8 +577,8 @@ const WAVE: readonly TurretUpgradeDef[] = [
     apply: (s) => soaking(s, 3),
   },
   {
-    id: "wave-nozzle",
-    turret: "wave",
+    id: "douser-nozzle",
+    turret: "douser",
     tier: 2,
     name: "Wide Nozzle",
     blurb: "+30% range.",
@@ -586,8 +586,8 @@ const WAVE: readonly TurretUpgradeDef[] = [
     apply: (s) => reaching(s, 1.3),
   },
   {
-    id: "wave-cryo",
-    turret: "wave",
+    id: "douser-cryo",
+    turret: "douser",
     tier: 3,
     name: "Cryofluid Mix",
     blurb:
@@ -597,16 +597,16 @@ const WAVE: readonly TurretUpgradeDef[] = [
       s.bullet.wet
         ? withBullet(s, {
             wet: { duration: s.bullet.wet.duration * 1.5, slow: 0.4 },
-            fxColor: PAL.lancerLaser,
+            fxColor: PAL.piercerLaser,
           })
         : s,
   },
 ];
 
-const LANCER: readonly TurretUpgradeDef[] = [
+const PIERCER: readonly TurretUpgradeDef[] = [
   {
-    id: "lancer-capacitor",
-    turret: "lancer",
+    id: "piercer-capacitor",
+    turret: "piercer",
     tier: 1,
     name: "Capacitor Bank",
     blurb: "+50% damage.",
@@ -614,8 +614,8 @@ const LANCER: readonly TurretUpgradeDef[] = [
     apply: (s) => stronger(s, 1.5),
   },
   {
-    id: "lancer-lens",
-    turret: "lancer",
+    id: "piercer-lens",
+    turret: "piercer",
     tier: 2,
     name: "Focusing Lens",
     blurb: "The beam holds through 3 more bodies.",
@@ -626,13 +626,13 @@ const LANCER: readonly TurretUpgradeDef[] = [
         : s,
   },
   {
-    id: "lancer-optics",
-    turret: "lancer",
+    id: "piercer-optics",
+    turret: "piercer",
     tier: 3,
     name: "Charged Optics",
     blurb: "Armour stops counting quadruple against the beam: −60% charge time, +40% beam width.",
     glyph: "beam",
-    // armorMultiplier 4 is stock lancer's one real weakness — armour
+    // armorMultiplier 4 is stock piercer's one real weakness — armour
     // counts QUADRUPLE against it, which is why a 140-damage beam does
     // almost nothing to the things that most need hitting. Putting it back
     // to 1 is the largest single number in this file and it is deliberate:
@@ -651,10 +651,10 @@ const LANCER: readonly TurretUpgradeDef[] = [
   },
 ];
 
-const RIPPLE: readonly TurretUpgradeDef[] = [
+const BARRAGE: readonly TurretUpgradeDef[] = [
   {
-    id: "ripple-barrels",
-    turret: "ripple",
+    id: "barrage-barrels",
+    turret: "barrage",
     tier: 1,
     name: "Long Barrels",
     blurb: "+40% range.",
@@ -662,8 +662,8 @@ const RIPPLE: readonly TurretUpgradeDef[] = [
     apply: (s) => reaching(s, 1.4),
   },
   {
-    id: "ripple-frag",
-    turret: "ripple",
+    id: "barrage-frag",
+    turret: "barrage",
     tier: 2,
     name: "Fragmentation",
     blurb: "+30% blast radius.",
@@ -671,8 +671,8 @@ const RIPPLE: readonly TurretUpgradeDef[] = [
     apply: (s) => wider(s, 1.3),
   },
   {
-    id: "ripple-plastanium",
-    turret: "ripple",
+    id: "barrage-plastanium",
+    turret: "barrage",
     tier: 3,
     name: "Plastanium Shells",
     blurb: "Loads plastanium shells: 6 shells an arc instead of 4, +35% damage.",
@@ -688,15 +688,15 @@ const RIPPLE: readonly TurretUpgradeDef[] = [
   },
 ];
 
-// the ramp is what parallax IS, so its branch buys the ramp: a hotter
+// the ramp is what tether IS, so its branch buys the ramp: a hotter
 // beam at both ends, then reach, then the spool itself. Nothing here may
-// take the fully-upgraded beam anywhere near foreshadow's rail — the top
+// take the fully-upgraded beam anywhere near railhead's rail — the top
 // rung lands it at 405 damage a second against ONE body, where an
-// upgraded foreshadow spends better than four times that on a queue
-const PARALLAX: readonly TurretUpgradeDef[] = [
+// upgraded railhead spends better than four times that on a queue
+const TETHER: readonly TurretUpgradeDef[] = [
   {
-    id: "parallax-field",
-    turret: "parallax",
+    id: "tether-field",
+    turret: "tether",
     tier: 1,
     name: "Focused Emitter",
     blurb: "+50% beam damage, cold and fully spooled alike.",
@@ -704,8 +704,8 @@ const PARALLAX: readonly TurretUpgradeDef[] = [
     apply: (s) => stronger(s, 1.5),
   },
   {
-    id: "parallax-aperture",
-    turret: "parallax",
+    id: "tether-aperture",
+    turret: "tether",
     tier: 2,
     name: "Wide Aperture",
     blurb: "+30% range.",
@@ -713,8 +713,8 @@ const PARALLAX: readonly TurretUpgradeDef[] = [
     apply: (s) => reaching(s, 1.3),
   },
   {
-    id: "parallax-phase",
-    turret: "parallax",
+    id: "tether-phase",
+    turret: "tether",
     tier: 3,
     name: "Phase Coils",
     blurb: "Phase fabric in the emitter: the beam spools twice as fast and burns up to 9x the cold beam.",
@@ -723,10 +723,10 @@ const PARALLAX: readonly TurretUpgradeDef[] = [
   },
 ];
 
-const FUSE: readonly TurretUpgradeDef[] = [
+const CLEAVER: readonly TurretUpgradeDef[] = [
   {
-    id: "fuse-choke",
-    turret: "fuse",
+    id: "cleaver-choke",
+    turret: "cleaver",
     tier: 1,
     name: "Choked Barrels",
     blurb: "+50% damage.",
@@ -734,8 +734,8 @@ const FUSE: readonly TurretUpgradeDef[] = [
     apply: (s) => stronger(s, 1.5),
   },
   {
-    id: "fuse-reach",
-    turret: "fuse",
+    id: "cleaver-reach",
+    turret: "cleaver",
     tier: 2,
     name: "Extended Rays",
     blurb: "+30% range.",
@@ -743,8 +743,8 @@ const FUSE: readonly TurretUpgradeDef[] = [
     apply: (s) => reaching(s, 1.3),
   },
   {
-    id: "fuse-surge",
-    turret: "fuse",
+    id: "cleaver-surge",
+    turret: "cleaver",
     tier: 3,
     name: "Surge Shot",
     blurb: "5 rays a shot instead of 3: +30% damage, and a wider spread.",
@@ -753,10 +753,10 @@ const FUSE: readonly TurretUpgradeDef[] = [
   },
 ];
 
-const SWARMER: readonly TurretUpgradeDef[] = [
+const HIVE: readonly TurretUpgradeDef[] = [
   {
-    id: "swarmer-fins",
-    turret: "swarmer",
+    id: "hive-fins",
+    turret: "hive",
     tier: 1,
     name: "Guidance Fins",
     blurb: "+60% missile turn rate and +30% lock range.",
@@ -772,8 +772,8 @@ const SWARMER: readonly TurretUpgradeDef[] = [
         : s,
   },
   {
-    id: "swarmer-racks",
-    turret: "swarmer",
+    id: "hive-racks",
+    turret: "hive",
     tier: 2,
     name: "Missile Racks",
     blurb: "+30% attack speed.",
@@ -781,8 +781,8 @@ const SWARMER: readonly TurretUpgradeDef[] = [
     apply: (s) => faster(s, 1.3),
   },
   {
-    id: "swarmer-warheads",
-    turret: "swarmer",
+    id: "hive-warheads",
+    turret: "hive",
     tier: 3,
     name: "Surge Warheads",
     blurb: "6 missiles a volley instead of 4: +60% splash damage, +30% blast radius.",
@@ -791,10 +791,10 @@ const SWARMER: readonly TurretUpgradeDef[] = [
   },
 ];
 
-const CYCLONE: readonly TurretUpgradeDef[] = [
+const WHIRL: readonly TurretUpgradeDef[] = [
   {
-    id: "cyclone-belt",
-    turret: "cyclone",
+    id: "whirl-belt",
+    turret: "whirl",
     tier: 1,
     name: "Belt Feed",
     blurb: "+40% attack speed.",
@@ -802,8 +802,8 @@ const CYCLONE: readonly TurretUpgradeDef[] = [
     apply: (s) => faster(s, 1.4),
   },
   {
-    id: "cyclone-fuse",
-    turret: "cyclone",
+    id: "whirl-fuse",
+    turret: "whirl",
     tier: 2,
     name: "Proximity Fuse",
     blurb: "+40% fuse range.",
@@ -811,8 +811,8 @@ const CYCLONE: readonly TurretUpgradeDef[] = [
     apply: (s) => fusedAt(s, 1.4),
   },
   {
-    id: "cyclone-surge",
-    turret: "cyclone",
+    id: "whirl-surge",
+    turret: "whirl",
     tier: 3,
     name: "Surge Rounds",
     blurb:
@@ -826,10 +826,10 @@ const CYCLONE: readonly TurretUpgradeDef[] = [
   },
 ];
 
-const TSUNAMI: readonly TurretUpgradeDef[] = [
+const DELUGE: readonly TurretUpgradeDef[] = [
   {
-    id: "tsunami-chamber",
-    turret: "tsunami",
+    id: "deluge-chamber",
+    turret: "deluge",
     tier: 1,
     name: "Pressure Chamber",
     blurb: "Soaked enemies stay slowed 4s longer.",
@@ -837,8 +837,8 @@ const TSUNAMI: readonly TurretUpgradeDef[] = [
     apply: (s) => soaking(s, 4),
   },
   {
-    id: "tsunami-spray",
-    turret: "tsunami",
+    id: "deluge-spray",
+    turret: "deluge",
     tier: 2,
     name: "Wide Spray",
     blurb: "+30% range.",
@@ -846,8 +846,8 @@ const TSUNAMI: readonly TurretUpgradeDef[] = [
     apply: (s) => reaching(s, 1.3),
   },
   {
-    id: "tsunami-cryo",
-    turret: "tsunami",
+    id: "deluge-cryo",
+    turret: "deluge",
     tier: 3,
     name: "Cryofluid Mix",
     blurb:
@@ -857,16 +857,16 @@ const TSUNAMI: readonly TurretUpgradeDef[] = [
       s.bullet.wet
         ? withBullet(s, {
             wet: { duration: s.bullet.wet.duration * 1.4, slow: 0.25 },
-            fxColor: PAL.lancerLaser,
+            fxColor: PAL.piercerLaser,
           })
         : s,
   },
 ];
 
-const SPECTRE: readonly TurretUpgradeDef[] = [
+const REPEATER: readonly TurretUpgradeDef[] = [
   {
-    id: "spectre-cooling",
-    turret: "spectre",
+    id: "repeater-cooling",
+    turret: "repeater",
     tier: 1,
     name: "Cooling Jacket",
     blurb: "+40% attack speed.",
@@ -874,8 +874,8 @@ const SPECTRE: readonly TurretUpgradeDef[] = [
     apply: (s) => faster(s, 1.4),
   },
   {
-    id: "spectre-bases",
-    turret: "spectre",
+    id: "repeater-bases",
+    turret: "repeater",
     tier: 2,
     name: "Hardened Bases",
     blurb: "+30% damage.",
@@ -883,8 +883,8 @@ const SPECTRE: readonly TurretUpgradeDef[] = [
     apply: (s) => stronger(s, 1.3),
   },
   {
-    id: "spectre-surge",
-    turret: "spectre",
+    id: "repeater-surge",
+    turret: "repeater",
     tier: 3,
     name: "Surge Shells",
     blurb: "Surge shells: +35% damage, 5 pierce instead of 2, and armour is ignored entirely.",
@@ -894,10 +894,10 @@ const SPECTRE: readonly TurretUpgradeDef[] = [
   },
 ];
 
-const MELTDOWN: readonly TurretUpgradeDef[] = [
+const FURNACE: readonly TurretUpgradeDef[] = [
   {
-    id: "meltdown-loop",
-    turret: "meltdown",
+    id: "furnace-loop",
+    turret: "furnace",
     tier: 1,
     name: "Coolant Loop",
     blurb: "+50% cooling speed — the beam is back sooner.",
@@ -905,8 +905,8 @@ const MELTDOWN: readonly TurretUpgradeDef[] = [
     apply: (s) => faster(s, 1.5),
   },
   {
-    id: "meltdown-array",
-    turret: "meltdown",
+    id: "furnace-array",
+    turret: "furnace",
     tier: 2,
     name: "Focusing Array",
     blurb: "+30% damage.",
@@ -914,8 +914,8 @@ const MELTDOWN: readonly TurretUpgradeDef[] = [
     apply: (s) => stronger(s, 1.3),
   },
   {
-    id: "meltdown-phase",
-    turret: "meltdown",
+    id: "furnace-phase",
+    turret: "furnace",
     tier: 3,
     name: "Phase Lens",
     blurb: "+35% range, and the beam bites every 3.5 ticks instead of every 5.",
@@ -934,10 +934,10 @@ const MELTDOWN: readonly TurretUpgradeDef[] = [
   },
 ];
 
-const FORESHADOW: readonly TurretUpgradeDef[] = [
+const RAILHEAD: readonly TurretUpgradeDef[] = [
   {
-    id: "foreshadow-caps",
-    turret: "foreshadow",
+    id: "railhead-caps",
+    turret: "railhead",
     tier: 1,
     name: "Rail Capacitors",
     blurb: "+50% damage.",
@@ -945,8 +945,8 @@ const FORESHADOW: readonly TurretUpgradeDef[] = [
     apply: (s) => stronger(s, 1.5),
   },
   {
-    id: "foreshadow-servos",
-    turret: "foreshadow",
+    id: "railhead-servos",
+    turret: "railhead",
     tier: 2,
     name: "Servo Motors",
     blurb: "Double traverse speed and a 5° wider firing cone.",
@@ -958,8 +958,8 @@ const FORESHADOW: readonly TurretUpgradeDef[] = [
     }),
   },
   {
-    id: "foreshadow-surge",
-    turret: "foreshadow",
+    id: "railhead-surge",
+    turret: "railhead",
     tier: 3,
     name: "Surge Rail",
     blurb: "+30% damage, and the reload drops to 60% of stock.",
@@ -971,32 +971,32 @@ const FORESHADOW: readonly TurretUpgradeDef[] = [
 /**
  * THE TABLE. One branch per turret, in tier order — the order they are
  * bought in, because each rung requires the one above it (see tech.ts).
- * Three rungs on most turrets and four on duo and arc, which are the two
+ * Three rungs on most turrets and four on tacker and coil, which are the two
  * that have an ultimate written for them so far.
  */
 export const TURRET_UPGRADES: Record<TowerKind, readonly TurretUpgradeDef[]> = {
-  duo: DUO,
-  scatter: SCATTER,
-  arc: ARC,
-  hail: HAIL,
-  scorch: SCORCH,
-  salvo: SALVO,
-  wave: WAVE,
-  lancer: LANCER,
-  ripple: RIPPLE,
-  parallax: PARALLAX,
+  tacker: TACKER,
+  airburst: AIRBURST,
+  coil: COIL,
+  lobber: LOBBER,
+  torch: TORCH,
+  autocannon: AUTOCANNON,
+  douser: DOUSER,
+  piercer: PIERCER,
+  barrage: BARRAGE,
+  tether: TETHER,
   // the support pair has no branch yet: every rung written so far bends a
   // gun (range, damage, a volley's shape), and a block that fires nothing
   // has none of those to bend
-  mender: [],
-  mendProjector: [],
-  fuse: FUSE,
-  swarmer: SWARMER,
-  cyclone: CYCLONE,
-  tsunami: TSUNAMI,
-  spectre: SPECTRE,
-  meltdown: MELTDOWN,
-  foreshadow: FORESHADOW,
+  fixer: [],
+  restorer: [],
+  cleaver: CLEAVER,
+  hive: HIVE,
+  whirl: WHIRL,
+  deluge: DELUGE,
+  repeater: REPEATER,
+  furnace: FURNACE,
+  railhead: RAILHEAD,
 };
 
 /** every upgrade def, flat — what tech.ts turns into nodes */

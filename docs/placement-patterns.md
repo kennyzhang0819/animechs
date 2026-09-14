@@ -18,8 +18,8 @@ A placement pattern makes the shelf itself an ingredient. Two consequences
 worth having:
 
 - **The same seventeen turrets play differently per map**, without a line of
-  balance work. A map with a long thin ridge is a duo map; a map with a
-  four-wide seam over the choke is a spectre map. The author decides by
+  balance work. A map with a long thin ridge is a tacker map; a map with a
+  four-wide seam over the choke is a repeater map. The author decides by
   drawing, not by writing a rule.
 - **The tech tree stops being the only axis.** Upgrades buy *stats*, mutators
   take them away; a pattern buys neither — it asks a question about the
@@ -62,7 +62,7 @@ needs the rule explained twice.
 
 **Mindustry itself — deliberately none.** Turrets have no adjacency at all
 upstream; what buffs a turret is a separate *building* next to it (overdrive
-projector, mender, force projector). **Lesson: we are adding something the
+projector, fixer, force projector). **Lesson: we are adding something the
 source game does not have, so it has to be legible on its own** — no player
 arrives expecting it.
 
@@ -76,11 +76,11 @@ is a chore you perform before the wave. Four guards, all used below:
 2. **Vary the shape.** A run, a block, a shoreline, an *empty* neighbourhood —
    five turrets wanting five different shapes cannot all be satisfied at once
    on one shelf.
-3. **Two of the seventeen want solitude.** Scatter and foreshadow are worse
+3. **Two of the seventeen want solitude.** Airburst and railhead are worse
    when packed, which is the ISLANDERS lever and the only thing that makes a
    sprawling defence beat a dense one.
 4. **Orthogonal only, footprint-relative.** Diagonals double the neighbour
-   count and halve the legibility. A 4×4 spectre has sixteen edge cells; it
+   count and halve the legibility. A 4×4 repeater has sixteen edge cells; it
    should not therefore have sixteen times the pattern.
 
 ## The seventeen
@@ -95,36 +95,36 @@ a cost above that, and a rare authored terrain feature at the top.
 
 | turret | pattern | rule |
 | --- | --- | --- |
-| **duo** | **Firing line** | +8% fire rate per other duo in the same unbroken orthogonal run, counted both ways, max 4 → **+32%** |
+| **tacker** | **Firing line** | +8% fire rate per other tacker in the same unbroken orthogonal run, counted both ways, max 4 → **+32%** |
 
-Duo is 1×1, costs 60 scrap and a board holds dozens. A *run* rather than a
+Tacker is 1×1, costs 60 scrap and a board holds dozens. A *run* rather than a
 neighbour count is deliberate: a 2×2 huddle and a straight row both give two
 orthogonal neighbours, so counting neighbours would teach nothing about shape.
 Counting the run teaches the whole system in one turret — **the picture on the
-board is the bonus** — and it draws a duo wall along a ridge, which is what a
-duo wall should look like.
+board is the bonus** — and it draws a tacker wall along a ridge, which is what a
+tacker wall should look like.
 
 ### Titanium band — one condition each, five different primitives
 
 | turret | pattern | rule |
 | --- | --- | --- |
-| **hail** | **Battery** | two or more hails orthogonally adjacent → **−25% reload** |
-| **scorch** | **Backdraft** | +12% damage per *different* turret kind orthogonally adjacent, max 3 → **+36%** |
-| **arc** | **Earthing** | footprint touches any water cell → **+30% damage, +1 chain jump** |
-| **scatter** | **Crown** | *no* other turret orthogonally touching its 2×2 → **+20% range** |
-| **wave** | **Cistern** | footprint touches shallow water → **+50% wet duration**; deep water → **+100%** instead |
+| **lobber** | **Battery** | two or more lobbers orthogonally adjacent → **−25% reload** |
+| **torch** | **Backdraft** | +12% damage per *different* turret kind orthogonally adjacent, max 3 → **+36%** |
+| **coil** | **Earthing** | footprint touches any water cell → **+30% damage, +1 chain jump** |
+| **airburst** | **Crown** | *no* other turret orthogonally touching its 2×2 → **+20% range** |
+| **douser** | **Cistern** | footprint touches shallow water → **+50% wet duration**; deep water → **+100%** instead |
 
 Five turrets, five primitives, and they are the whole vocabulary the rest of
 the game reuses: same-kind threshold, different-kind count, terrain touch,
 isolation, graded terrain touch. A player who has bought this band has been
 taught every idea in the system without reading anything.
 
-They also pull against each other on purpose. Scorch wants to be buried in a
-mixed cluster; scatter wants to be alone; hail wants a square of its own kind.
+They also pull against each other on purpose. Torch wants to be buried in a
+mixed cluster; airburst wants to be alone; lobber wants a square of its own kind.
 One shelf cannot serve all three, which is the second guard above doing its
 job on the cheapest turrets in the game.
 
-Arc and wave are the two that ask the **map** rather than the board, and both
+Coil and douser are the two that ask the **map** rather than the board, and both
 ask about water, which already exists and is already authored (`FLOOR_SHALLOW_WATER`,
 `FLOOR_DEEP_WATER`). No new terrain is needed to ship this band — that matters,
 because a pattern nobody can satisfy on the current maps is a pattern nobody
@@ -134,69 +134,69 @@ learns.
 
 | turret | pattern | rule |
 | --- | --- | --- |
-| **salvo** | **Magazine** | **+1 shot per burst** per orthogonally adjacent salvo, max +2 |
-| **lancer** | **Capacitor bank** | an arc within 2 cells of the footprint → **−40% charge time**; a second arc → **−60%** |
-| **ripple** | **Dug in** | no open floor orthogonally adjacent to the 3×3 — walled in rock on every side → **+25% range, −15% minimum range** |
-| **parallax** | **Anchor** | two or more of its 2×2's four sides fully on open floor, **and** no other parallax within 6 cells → **the beam spools 30% faster, +15% range** |
+| **autocannon** | **Magazine** | **+1 shot per burst** per orthogonally adjacent autocannon, max +2 |
+| **piercer** | **Capacitor bank** | a coil within 2 cells of the footprint → **−40% charge time**; a second coil → **−60%** |
+| **barrage** | **Dug in** | no open floor orthogonally adjacent to the 3×3 — walled in rock on every side → **+25% range, −15% minimum range** |
+| **tether** | **Anchor** | two or more of its 2×2's four sides fully on open floor, **and** no other tether within 6 cells → **the beam spools 30% faster, +15% range** |
 
-Salvo's is the first pattern that changes a turret's *shape of fire* rather
-than a multiplier — three salvos in a row are a different weapon, not a
+Autocannon's is the first pattern that changes a turret's *shape of fire* rather
+than a multiplier — three autocannons in a row are a different weapon, not a
 stronger one, which is the Loop Hero lesson at a small scale.
 
-Lancer's is the **named pair**, and it names arc for a reason: arc is lancer's
-own ancestor in the tree (`duo → arc → scorch → lancer`) and the two are the
-same weapon at two scales. A player who kept their opening arcs standing gets
+Piercer's is the **named pair**, and it names coil for a reason: coil is piercer's
+own ancestor in the tree (`tacker → coil → torch → piercer`) and the two are the
+same weapon at two scales. A player who kept their opening coils standing gets
 paid for it, which is exactly the thing `upgrades.ts` says the tree exists to
 reward — *keep what works*.
 
-Ripple's asks for a **3×3 hole in a platform with rock on all four sides**,
+Barrage's asks for a **3×3 hole in a platform with rock on all four sides**,
 which is the scarcest geometry on any current map and needs an author to
-deliberately leave one. That is the point: ripple is the longest-ranged
+deliberately leave one. That is the point: barrage is the longest-ranged
 non-phase turret in the game and it should have one good seat per map.
 
-Parallax's is the first pattern with a positive and a negative clause at once.
+Tether's is the first pattern with a positive and a negative clause at once.
 
 ### Plastanium band — compound, and one with a real cost
 
 | turret | pattern | rule |
 | --- | --- | --- |
-| **fuse** | **Shield wall** | **+1 pierce and +10% damage** per orthogonally adjacent fuse (max 2) — and every fuse in the wall loses **15% range** |
-| **swarmer** | **Relay** | a salvo, cyclone or other swarmer adjacent → **+1 missile per volley**, max +2, and a relayed swarmer targets the *strongest* body in range rather than the closest |
-| **cyclone** | **Crossfire net** | +8% fire rate per **distinct other turret kind** within 3 cells, max 5 → **+40%** |
-| **tsunami** | **Reservoir** | 3+ water cells adjacent to its footprint → **+40% fire rate**; if any of them is deep, **wet duration doubles** |
+| **cleaver** | **Shield wall** | **+1 pierce and +10% damage** per orthogonally adjacent cleaver (max 2) — and every cleaver in the wall loses **15% range** |
+| **hive** | **Relay** | an autocannon, whirl or other hive adjacent → **+1 missile per volley**, max +2, and a relayed hive targets the *strongest* body in range rather than the closest |
+| **whirl** | **Crossfire net** | +8% fire rate per **distinct other turret kind** within 3 cells, max 5 → **+40%** |
+| **deluge** | **Reservoir** | 3+ water cells adjacent to its footprint → **+40% fire rate**; if any of them is deep, **wet duration doubles** |
 
-Fuse is the **Mountain Peak**: the only pattern in the game that takes
-something away. Fuse is already a 90-range point-blank shotgun, so −15% is a
+Cleaver is the **Mountain Peak**: the only pattern in the game that takes
+something away. Cleaver is already a 90-range point-blank shotgun, so −15% is a
 genuine cost and a wall of three is a decision rather than free value.
 
-Cyclone's wants **five different kinds within three cells** — a hard ask that
+Whirl's wants **five different kinds within three cells** — a hard ask that
 can only be met by a player who owns most of the tree and is willing to build
 a genuinely mixed emplacement instead of a monoculture. It is the anti-spam
 pattern, and it is priced in *breadth of ownership*, which nothing else in the
 game charges for.
 
-Tsunami's needs real authored coastline. See the terrain section.
+Deluge's needs real authored coastline. See the terrain section.
 
 ### Phase band — the deepest three
 
 | turret | pattern | rule |
 | --- | --- | --- |
-| **spectre** | **Foundry** | **+5% damage per ore-bearing rock cell** under its 4×4 footprint, max 10 → **+50%** |
-| **meltdown** | **Heat exchange** | a heat cell (hotrock / magmarock / steam vent) touching one side **and** a coolant cell (water / ice / cryofluid) touching another → **+35% beam damage, and the beam does not break for reload while its target lives**. Either alone: **+15%** and nothing more |
-| **foreshadow** | **Solitude** | no other turret within 8 cells → **+40% damage**; each turret inside that radius takes 8% of it back |
+| **repeater** | **Foundry** | **+5% damage per ore-bearing rock cell** under its 4×4 footprint, max 10 → **+50%** |
+| **furnace** | **Heat exchange** | a heat cell (hotrock / magmarock / steam vent) touching one side **and** a coolant cell (water / ice / cryofluid) touching another → **+35% beam damage, and the beam does not break for reload while its target lives**. Either alone: **+15%** and nothing more |
+| **railhead** | **Solitude** | no other turret within 8 cells → **+40% damage**; each turret inside that radius takes 8% of it back |
 
 These three are where new terrain earns its keep, and they are deliberately
 the hardest to satisfy — a phase turret costs a campaign's worth of farming
 and its best emplacement should be a place on the map you went looking for.
 
-Meltdown's is the one I would build first if only one of the three shipped. It
+Furnace's is the one I would build first if only one of the three shipped. It
 wants **two opposed terrain features touching the same 4×4** — a vent on one
 side and water on the other — which is a thing an author places once per map,
 on purpose, and which every player will recognise on sight for the rest of the
 campaign. It is the closest thing here to a Loop Hero combo: not a bigger
 number, a different weapon.
 
-Foreshadow's is the isolation pattern taken to its end. Its range is 500 and
+Railhead's is the isolation pattern taken to its end. Its range is 500 and
 its sort is `strongest`; it was never a line turret, and parking it in one
 should read as a mistake the moment the number goes grey.
 
@@ -252,7 +252,7 @@ vent on any ground, and `stone-vent` / `basalt-vent` are Serpulo-native anyway.
 overlay on a *wall* cell, which is exactly the cell a turret stands on. It costs
 **no pathfinding change at all** — `blocked` and `wall` are untouched, it is a
 new per-cell layer the renderer draws over the rock — and it hands the phase
-band a per-cell socket to key off. Spectre's Foundry is written against it.
+band a per-cell socket to key off. Repeater's Foundry is written against it.
 Build this one first.
 
 **Hazard floors are the expensive win, and they carry a real cost.** The README
@@ -273,7 +273,7 @@ Three batches, cheapest first.
 
 | add | why |
 | --- | --- |
-| **wall ores** — thorium, graphite, beryllium, tungsten | the socket the phase band keys off; spectre's whole pattern |
+| **wall ores** — thorium, graphite, beryllium, tungsten | the socket the phase band keys off; repeater's whole pattern |
 | **graphitic wall** | a fourth buildable rock family, and a natural seam colour |
 | **floor ores** — copper, titanium, thorium, coal, scrap | pure decoration today, but it makes a map read as a place worth defending |
 
@@ -296,15 +296,15 @@ work of one.
 | floor | Mindustry's rule | ours |
 | --- | --- | --- |
 | **mud** | speed ×0.6, `muddy` | mild slow; the natural apron around any water |
-| **tar** | speed ×0.19, `tarred`, drowns | hard slow, and **burning does double damage on it** — the scorch/incendiary terrain |
+| **tar** | speed ×0.19, `tarred`, drowns | hard slow, and **burning does double damage on it** — the torch/incendiary terrain |
 | **ice** | drag ×0.35, speed ×0.9 | units *slide* — they overshoot the corner they were turning |
-| **hotrock / magmarock** | heat 0.5 / 0.75, emits light | ignites what walks it; **meltdown's heat side** |
-| **pooled cryofluid** | `freezing`, speed ×0.5 | rare deep slow; **meltdown's coolant side** |
+| **hotrock / magmarock** | heat 0.5 / 0.75, emits light | ignites what walks it; **furnace's heat side** |
+| **pooled cryofluid** | `freezing`, speed ×0.5 | rare deep slow; **furnace's coolant side** |
 | **molten slag** | `melting` — speed ×0.8 and **armour ×0.8** | armour shred, which is the one debuff the game has no answer to today (`max(dmg - armor, 0.1 × dmg)` never scales) |
-| **steam vent** | steam attribute, animated | **meltdown's heat side**, and a visible landmark |
+| **steam vent** | steam attribute, animated | **furnace's heat side**, and a visible landmark |
 
 Slag is the interesting one. The wave-authoring doc calls armour "a permanent
-multiplier" that "never scales with level" — an ironhide3 costs a duo line ten
+multiplier" that "never scales with level" — an ironhide3 costs a tacker line ten
 times its printed health at every tier forever. A floor that shaves armour is
 the first terrain in the game that answers a stat the ladder cannot touch, and
 it belongs in exactly one place per map.
@@ -314,7 +314,7 @@ it belongs in exactly one place per map.
 ### The architecture problem, up front
 
 `Sim.statsFor(kind)` resolves stats **per kind**, not per turret — one
-`TowerStats` object shared by every duo on the board (`sim.ts:1200`, filled by
+`TowerStats` object shared by every tacker on the board (`sim.ts:1200`, filled by
 `refreshSpecs`). A placement bonus is per *turret*. That is the whole of the
 work.
 
@@ -367,7 +367,7 @@ to it. So:
 - The caps above are the balance. A perfectly-played board runs roughly
   **+25–35%** effective damage, not double.
 - `SCRAP_START` (7,500, a hundred-odd tier-1 turrets) is the campaign's difficulty anchor and it
-  is hand-tuned by feel. A dozen duos that can form firing lines are worth more
+  is hand-tuned by feel. A dozen tackers that can form firing lines are worth more
   than a dozen that cannot. **Re-feel the opening after this lands**, and expect
   the number to want to come down.
 - There is a natural mutator in here: **Interference — placement patterns give
@@ -377,7 +377,7 @@ to it. So:
 
 ### Order of work
 
-1. Wall ores + graphitic wall (batch 1). No rules, and it unblocks spectre.
+1. Wall ores + graphitic wall (batch 1). No rules, and it unblocks repeater.
 2. `placement.ts`, `Tower.bonus`, per-tower `statsFor`. Ship with the copper
    and titanium bands only — six patterns, all satisfiable on today's maps.
 3. The build-ghost preview and the tech-tree sentence. Do not ship 2 without 3.

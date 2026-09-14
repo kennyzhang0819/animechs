@@ -70,7 +70,7 @@ const FACES: Record<string, (g: Pen) => void> = {
    * one: three stacked bands made a cloud on a funnel, and a plate inside
    * a rim with a seam across it made a helm with a visor and a row of
    * teeth. Nothing symmetrical about a VERTICAL axis can become a face,
-   * and it is also how the game's own blocks are built — fuse and spectre
+   * and it is also how the game's own blocks are built — cleaver and repeater
    * are a central strake between flanking plates, nothing more.
    */
   armored: (g) => {
@@ -84,7 +84,7 @@ const FACES: Record<string, (g: Pen) => void> = {
     });
   },
 
-  /** The same shield, but a FIELD and not a plate, so it is parallax blue
+  /** The same shield, but a FIELD and not a plate, so it is tether blue
    *  and the plus is lit rather than cut out — Overshields is armour ADDED */
   overshields: (g) => {
     g.poly(shield(1), PAL.field);
@@ -131,7 +131,7 @@ const FACES: Record<string, (g: Pen) => void> = {
     g.disc(0.42, 0.25, 0.05, PAL.steelDeep);                 // the eye
   },
 
-  /** A droplet with the mender's green rising out of it — Amphibious is
+  /** A droplet with the fixer's green rising out of it — Amphibious is
    *  what comes UP out of the water, stronger than it went in */
   amphibious: (g) => {
     drop(g);

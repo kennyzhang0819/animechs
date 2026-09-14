@@ -38,7 +38,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `game/constants.ts` — grid, base placement, tower tuning: every turret's
   stats read out of Mindustry's `Blocks.java` (`TOWERS`), the two dials
   over them (`TOWER_HP_SCALE`, 5, and plating by footprint, `TOWER_ARMOR_BY_SIZE`; the phase tier's +30% up-gun on
-  spectre, meltdown and foreshadow), `MAX_UNITS` (22,000) and the core's
+  repeater, furnace and railhead), `MAX_UNITS` (22,000) and the core's
   pool (`CORE_HP`, on a dial of its own). A placement is INSTANT — there
   is no construction shell any more
 - `game/levels.ts` — unit stats and wave-script plumbing; the authored
@@ -83,8 +83,8 @@ stale tab or a cached bundle looks exactly like a fix not working.
   cell count (`formationRarity`), the deliberately soft odds between those
   bands (`FORMATION_WEIGHTS`), and the one piece of arithmetic the ghost
   and the placement share (`formationCells`). A formation's cells are
-  counted in WHOLE TURRETS, so a quad of duos is 2×2 tiles and a quad of
-  spectres is 8×8
+  counted in WHOLE TURRETS, so a quad of tackers is 2×2 tiles and a quad of
+  repeaters is 8×8
 - `game/rarity.ts` — **the deal**: every turret's rarity and its border
   colour (`TURRET_RARITY`, `RARITY` — greyish white, blue, amber, purple),
   the odds a draw is rolled against (`BASE_WEIGHTS`: 62 / 27 / 10 / **1**)
@@ -461,7 +461,7 @@ moved it.
 diagram in the card's top-right corner. There is no single-turret shape:
 the smallest thing the deal hands over is a quad of four and the largest a
 bastion of twenty-five, and the cells are counted in whole turrets, so the
-same quad is 2×2 tiles of duos or 8×8 tiles of spectres. The odds between
+same quad is 2×2 tiles of tackers or 8×8 tiles of repeaters. The odds between
 the six are flat on purpose — the rarity roll is where the tension is, and
 what a player should feel at the button is *which gun* first and *how much
 of it* second.
@@ -545,7 +545,7 @@ actually did was turn every square amount back into an oblong footprint
 with holes in it, and holes in a wall are where the swarm walks. The
 card's own diagram already says how many copies are in the fleet.
 
-So ×9 of a citadel of spectres is 324 turrets in one ghost, 9,000 scrap,
+So ×9 of a citadel of repeaters is 324 turrets in one ghost, 9,000 scrap,
 and **finding ground for it is most of the reward**. The card's corner
 diagram draws the whole tiling, so what the hand is
 holding is a picture of what the board is about to get.
@@ -573,10 +573,10 @@ it fits.
 
 | rarity | border | turrets | odds |
 |---|---|---|---|
-| Common | greyish white | duo, hail, scatter, scorch, arc, wave | 62% |
-| Uncommon | blue | salvo, lancer, parallax, ripple, fuse | 27% |
-| Rare | amber | swarmer, cyclone, tsunami | 10% |
-| Ultra Rare | purple | spectre, meltdown, foreshadow — every 4x4 | **1%** |
+| Common | greyish white | tacker, lobber, airburst, torch, coil, douser | 62% |
+| Uncommon | blue | autocannon, piercer, tether, barrage, cleaver | 27% |
+| Rare | amber | hive, whirl, deluge | 10% |
+| Ultra Rare | purple | repeater, furnace, railhead — every 4x4 | **1%** |
 
 The rarities are authored (`TURRET_RARITY`) and fixed for the whole run;
 the **weights are not** (`Game.setRarityWeights`), because a relic can shift
@@ -654,7 +654,7 @@ Owning one improves nothing on the board: it adds a roll to every turret
 *placed from now on*, and a turret that wins it carries the mod for as long
 as it stands (`Tower.mods`, a bitmask; `Tower.spec`, its own resolved
 stats). A card puts down four to thirty-six turrets, so **a patch comes out
-speckled** — thirty-six duos, four of them gleaming. A turret carrying one
+speckled** — thirty-six tackers, four of them gleaming. A turret carrying one
 wears a **pip in the corner of its footprint** in the band of the best mod
 it has, always, not on hover: the whole point of a chance is being able to
 see which ones won it.
@@ -686,7 +686,7 @@ bought mid-wave reaches the turrets already standing.
 
 **A mod is anything that composes onto one turret's table.** It used to be
 narrower — "a stat tweak and nothing else" — and the line was in the wrong
-place: a fuse firing five spikes instead of three is the gun doing a
+place: a cleaver firing five spikes instead of three is the gun doing a
 different thing, not a number going up, and it is still one turret's
 business. So a mod may change what a turret *does*, through its table —
 shots, spread, pierce, repair. What it may not do is reach past the turret
@@ -707,7 +707,6 @@ a relic.
 | **Prototype Chassis** | Rare | 10% | +12% damage, +12% fire rate |
 | **Bulwark Plating** | Rare | 10% | more health, armour and repair at once |
 | **Sabot Rounds** | Rare | 10% | +1 pierce and harder rounds with it |
-| **Splitter Array** | Rare | *per fuse* | +1 spike a volley. **Fuse only**: rolled on every fuse placed and nothing else |
 | **Giant** | **Ultra** | **per CARD** | vastly more health and damage, far less range, twice the footprint — and it eats the card |
 | **Sniper** | **Ultra** | | reaches four times as far and dies to a stiff breeze |
 | **All Round** | **Ultra** | | simply better at everything |
@@ -717,7 +716,7 @@ Rarities tab; the table above is the shape of the ladder, not a spec.)
 
 **THE GIANT EATS THE CARD.** If a placement rolls it, the shape is
 discarded and the whole card is spent on **one building** at the middle of
-where the patch was going — twice its kind's edge, so a 4×4 foreshadow
+where the patch was going — twice its kind's edge, so a 4×4 railhead
 becomes an **8×8**, the biggest thing that will ever stand on the board.
 `Tower.size` is per-*tower* for exactly this: the ground it claims, the
 shadow it casts, the quad it is drawn on and what a unit walks into all
@@ -801,7 +800,7 @@ damage path and *every* death in the game passes through. Written as
 `BulletStats` fields instead they would have been silently inert for half
 the roster: a bullet's own `pierceArmor` is honoured on exactly one of the
 sim's damage paths, so an "every round ignores armour" relic bolted onto the
-bullet would have done nothing at all for a lancer, an arc or a meltdown. A
+bullet would have done nothing at all for a piercer, a coil or a furnace. A
 relic is a rule over the whole board, so it is enforced where the whole
 board passes.
 
@@ -845,8 +844,8 @@ health pool and the Giant's tenth of a range. **A relic never charges**: at
 **Repair is a percentage of the turret's OWN ceiling, per second.**
 `Sim.resolveTower` multiplies `modRegen(mask)` by that turret's `hpMax`
 once, at the placement, and the fire loop adds `regen * dt` — so the same
-3% mends a Bulwarked spectre far faster in absolute hit points than a bare
-duo, and a turret that also rolled +50% health mends half again as fast as
+3% mends a Bulwarked repeater far faster in absolute hit points than a bare
+tacker, and a turret that also rolled +50% health mends half again as fast as
 one that did not. Nothing re-reads a percentage per tick, and it only
 ticks while the turret is hurt and alive.
 
@@ -867,9 +866,9 @@ composed against. No band is held shut inside a run.
 
 | stage | waves | tier | prices |
 |---|---|---|---|
-| 1 | 1–20 | duo, scorch, hail, arc, scatter, wave | 60–300 |
-| 2 | 21–35 | swarmer, lancer, salvo, ripple, parallax, cyclone | 900–1,800 |
-| 3 | 36–50 | fuse, tsunami, spectre, meltdown, foreshadow | 4,000–12,000 |
+| 1 | 1–20 | tacker, torch, lobber, coil, airburst, douser | 60–300 |
+| 2 | 21–35 | hive, piercer, autocannon, barrage, tether, whirl | 900–1,800 |
+| 3 | 36–50 | cleaver, deluge, repeater, furnace, railhead | 4,000–12,000 |
 
 The stage table (`stageAudit`, on the balance dashboard) is where this is
 checked against the script's drops; `check()` complains when a stage buys
@@ -877,11 +876,11 @@ too few or too many of its band (`STAGE_BOARDS`).
 
 ### The level track
 
-**A fresh save owns four turrets** — the duo, the hail, the scatter and
-the salvo (`STARTING_ROSTER` in `game/track.ts`) — and **every one of
+**A fresh save owns four turrets** — the tacker, the lobber, the airburst and
+the autocannon (`STARTING_ROSTER` in `game/track.ts`) — and **every one of
 levels 2 to 14 opens one more** (`UNLOCKS`), commons first, then the
 blues, the ambers threaded through them, and the three purples last:
-the spectre at 12, the meltdown at 13, the foreshadow at 14, when the
+the repeater at 12, the furnace at 13, the railhead at 14, when the
 roster is complete. **The roster IS the draw pool** — the deal rolls over
 exactly what the track has handed out, which is what makes a level-2 save
 draw commons and a level-14 one draw anything. The levels between also
@@ -901,24 +900,38 @@ full count is always playable. A shut row is greyed in the list and names
 the level it opens at in the detail beside it, the same way a locked map
 does.
 
-**The two menders are retired** (`RETIRED_KINDS` in `game/types.ts`): the
+**The two fixers are retired** (`RETIRED_KINDS` in `game/types.ts`): the
 support pair is off the field while the deal is being built, implemented
 and priced and dealt to nobody. Putting them back is deleting a name from
 that list.
 
-### One script, three families a deploy
+### One script, a deal that turns every wave
 
 **Every map plays the same fifty waves** — `public/levels/campaign.json`,
 edited in the admin level editor from any world's card. The script is
 authored in three unit families (ground, ground support, air), and those
-are its three **slots**. When a run deploys, **the die rolls three
-families** from the seven — every layer crosses every map now, and a fleet
-on a map with no channel simply drives — and deals them into the slots,
-tier for tier (`rollFamilies`, `transformScript` in levels.ts). In custom
-mode the hand is named instead, in whole or in part, and whatever is left
-unnamed is still rolled. Forty of the first ground body in the
-script are forty of whichever family took the first slot. The boss
-(Boss) is in no family and is never swapped.
+are its three **slots** — but a slot is a ROLE ("the line", "the support
+behind it"), not a promise about which family plays it. When a run
+deploys, **the die rolls four families** from the seven — every layer
+crosses every map now, and a fleet on a map with no channel simply drives
+— and deals them into the slots tier for tier, **a wave at a time**
+(`rollFamilies`, `transformScript` in levels.ts). In custom mode the hand
+is named instead, in whole or in part, and whatever is left unnamed is
+still rolled. Forty of the first ground body in the script are forty of
+whichever family took the line on that wave. The boss (Boss) is in no
+family and is never swapped.
+
+**The run's families are a ring and it turns one notch a wave**, so the
+mixture changes as the run goes: wave 1's line is the first family, wave
+2's is the second, and over a handful of waves every family has had a turn
+at every role. A wave sends as many families as it was authored **wide** —
+one slot is one family however many the run rolled — and never more than
+`MAX_FAMILIES_PER_WAVE` (three), because the variety belongs across waves
+and not inside one. The two numbers are independent: `FAMILIES_PER_RUN` is
+how many faces a run has, the script's slot count is how wide a wave may
+be. A flying family is never dealt one of the leading positions the
+opening claims, so the waves the script sends one family at a time stay
+walkable (`openingDeal`).
 
 | family | animal | one body | layer | one look | one mechanic |
 |---|---|---|---|---|---|
@@ -1093,7 +1106,7 @@ over them. The answer is reach: kill them over nothing.
 **Skates — snipers that grow old.** Every gun on the fleet is a
 **rail** (`fx: "rail"`, in the fleet's teal) from **beyond the
 board's reach**: fifty tiles on the runt, ninety on the apex, past the
-foreshadow's sixty-two — and the apex's **pierces** everything on its
+railhead's sixty-two — and the apex's **pierces** everything on its
 line. The hulls crawl ashore (`NAVAL_PACE`, `NAVAL_LAND_SPEED` at half)
 and are half again as quick afloat, and every one carries **veterancy**
 (`veteran`, `Sim.uvet`): every hit is multiplied by how long the hull has
@@ -1116,8 +1129,10 @@ refresh never a stack, so one hull flickers a gun and a crowd holds it
 down. Every hull **blinks** (`blink`, `Sim.blinkUnit`): a hit that lands
 throws it four to six tiles up its route, past the gun that landed it,
 stopping short of rock and of any building. The top three **cloak**
-(`cloak`): three to five seconds gone in every nine to twelve, untargetable
-and untouchable and drawn as a ghost; the **apex**'s cloak **veils**
+(`cloak`): three to five seconds gone in every nine to twelve, drawn as a
+ghost, and while it lasts **no round can find it** — though fire, bolts,
+beams, rays and rails go straight through a cloak, so the seven
+**non-bullet** turrets still take aim and still bite; the **apex**'s cloak **veils**
 every body within ten tiles. The **champion**'s field shorts everything in
 twenty-two tiles and heals the fleet by a share of its health.
 
@@ -1130,11 +1145,11 @@ elephants are the seventh line and the first with **no gun at any tier**:
 nothing this family fires crosses the field, because it does not fire.
 Its weapon is its **tusks** (fx `melee`), two to four tiles of reach
 against a roster whose shortest gun reaches eleven — and at that range it
-hits harder than anything else in the game does at any range, twelve
-hundred a second at the **apex** where the heaviest round the swarm
+hits harder than anything else in the game does at any range, **twenty-four
+hundred a second** at the **apex** where the heaviest round the swarm
 fires is under four hundred. Every blow also **rends** (`rend`): a share
 of the turret's own *maximum* health, so a gun built up to a quarter of a
-million points falls in the same number of seconds as a duo, and there is
+million points falls in the same number of seconds as a tacker, and there is
 no out-building it.
 
 Three other things make the line. It is **big** — the **runt** is a
@@ -1196,6 +1211,56 @@ runs the real sim with an ordinary builder bot at the keyboard (route
 coverage from a dry run, the stage's tier bought round-robin, never a
 sale, never a rebuild) and reports where it gets to. Run it after any
 wave, price, weapon, mutator or unit edit.
+
+### What a turret's shot IS
+
+Two facts about a gun that were previously nowhere on the screen, and are
+now **chips in the inspector, immediately behind plating** — because
+plating is what a building can take and these are what it can *do*, and a
+player clicking a turret is asking both at once (`game/status.ts`, the
+turret traits).
+
+**Non-bullet.** Seven turrets do not fire a round: **torch** (fire),
+**cleaver** (a shrapnel ray), **coil** (a bolt), **piercer** (a beam),
+**tether** (a held lock), **furnace** (a continuous laser) and
+**railhead** (a rail) — `NON_BULLET_KINDS` in `game/constants.ts`. What
+that buys them is the **cloak**: the Wraith fleet's top three go dark on a
+cycle, and a cloak stops **rounds and nothing else**. A bullet cannot find
+a hull that is not where it was aimed; fire, bolts, beams, rays and rails
+are not aimed at a point in that sense, so these seven both **take aim at
+a dark hull and hurt it** (`Sim.damageUnit`, `Sim.bestTarget`). The cloak
+used to eat every point of damage in the game, which made its only
+counterplay *waiting*; it is now a question a line can be built to answer.
+
+It is a roster list and not a predicate over the ammo, deliberately: six
+of the seven could be read off their bullet, but **torch's flame is a
+spriteless projectile** in the sim exactly as it is upstream, and nothing
+on it says "this is fire". A list is honest about being a judgement.
+
+**Elemental.** A turret whose shot lays a status says so on the same row,
+read off its **live** spec — so a gun whose upgrades gave it an
+incendiary round starts saying **Ignites** the moment that is bought:
+
+| chip | who has it | what it lays |
+|---|---|---|
+| **Ignites** | torch (and anything upgraded into it) | **Burning** — health straight off the pool, plating ignored |
+| **Soaks** | douser, deluge | **Soaked** — a deep slow, *and* the conducting below |
+| **Electric** | coil, piercer, furnace | **Shocked** — a mark, and nothing else |
+
+**The rule is written on SOAKED, because that is where it is paid**:
+water conducts, so a wet body **takes more damage from electric shots** —
+double (`WET_SHOCK_MUL`), on the raw hit, before plating. It keys off the
+body being wet at the moment of the hit, not off the mark, so a soaked
+body takes it from the first electric shot that lands whether or not it
+has ever been shocked.
+
+**Shocked therefore does nothing on its own**, and that is the point of
+it: it is only the sign that an electric gun is on this body — the tell
+that the pairing is available, sitting on the row right behind the soak
+that pays it. Neither half is worth much alone: the liquid turrets do
+almost no damage and buy a slow, the blue line does damage and buys
+nothing. Put a douser in front of a coil and the pair is worth twice the
+sum.
 
 ### The core
 

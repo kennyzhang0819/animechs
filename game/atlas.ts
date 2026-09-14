@@ -653,53 +653,53 @@ export const UV_TRI = reserve("tri", 64, 64, { inset: 2, upright: true });
 // size-4 tops (96 and 128) stay NATIVE — anything but an integer upscale
 // shreds their antialiasing. The bases are the same at each size.
 export const UV_TOWER_BASE = flat("tower-base-2", 128);
-export const UV_TURRET = top("salvo", 128);
-export const UV_SCATTER = top("scatter", 128);
-export const UV_FUSE = top("fuse", 96);
+export const UV_TURRET = top("autocannon", 128);
+export const UV_AIRBURST = top("airburst", 128);
+export const UV_CLEAVER = top("cleaver", 96);
 export const UV_TOWER_BASE3 = flat("tower-base-3", 96);
-export const UV_DUO = top("duo", 64);
+export const UV_TACKER = top("tacker", 64);
 export const UV_TOWER_BASE1 = flat("tower-base-1", 64);
-export const UV_HAIL = top("hail", 64);
-export const UV_SCORCH = top("scorch", 64);
-export const UV_ARC = top("arc", 64);
-export const UV_LANCER = top("lancer", 128);
-export const UV_PARALLAX = top("parallax", 128);
-export const UV_RIPPLE = top("ripple", 96);
-export const UV_WAVE = top("wave", 128);
-export const UV_TSUNAMI = top("tsunami", 96);
-export const UV_SWARMER = top("swarmer", 128);
-export const UV_CYCLONE = top("cyclone", 96);
-export const UV_SPECTRE = top("spectre", 128);
-export const UV_MELTDOWN = top("meltdown", 128);
-export const UV_FORESHADOW = top("foreshadow", 128);
+export const UV_LOBBER = top("lobber", 64);
+export const UV_TORCH = top("torch", 64);
+export const UV_COIL = top("coil", 64);
+export const UV_PIERCER = top("piercer", 128);
+export const UV_TETHER = top("tether", 128);
+export const UV_BARRAGE = top("barrage", 96);
+export const UV_DOUSER = top("douser", 128);
+export const UV_DELUGE = top("deluge", 96);
+export const UV_HIVE = top("hive", 128);
+export const UV_WHIRL = top("whirl", 96);
+export const UV_REPEATER = top("repeater", 128);
+export const UV_FURNACE = top("furnace", 128);
+export const UV_RAILHEAD = top("railhead", 128);
 export const UV_TOWER_BASE4 = flat("tower-base-4", 128);
 /**
  * The blocks that never turn keep the heading they were drawn at: the
  * shield tower (the Shield Towers mutator, Mindustry's force projector,
- * 96px of 3x3 block art) and the support pair, the mender a 32px source
+ * 96px of 3x3 block art) and the support pair, the fixer a 32px source
  * at 2x, the projector a 64px one at 2x.
  */
 export const UV_SHIELD_TOWER = flat("shield-tower", 96);
-export const UV_MEND_PROJECTOR = flat("mend-projector", 128);
-export const UV_MENDER = flat("mender", 64);
+export const UV_RESTORER = flat("restorer", 128);
+export const UV_FIXER = flat("fixer", 64);
 /**
- * Parallax's beam, the two regions Drawf.laser stretches between the
+ * Tether's beam, the two regions Drawf.laser stretches between the
  * turret and its target. The line is packed ROTATED — its 4x48 source runs
  * along the beam, and pushSeg maps a region's WIDTH along the line it is
  * stretched down.
  *
  * Both cells hug the OPAQUE art, not the source rect, and that is not
  * tidiness: Arc's packer trims a sprite's transparent border and Mindustry
- * then draws the trimmed region, so `parallax-laser` is really 4x24 and
- * `parallax-laser-end` really 32x32. Taking the source rects instead put a
+ * then draws the trimmed region, so `tether-laser` is really 4x24 and
+ * `tether-laser-end` really 32x32. Taking the source rects instead put a
  * quarter of transparent film on each end of a STRETCHED beam — the line
  * drew at half length, floating between the turret and its target — and
  * made the end glow, whose size Drawf.laser reads off the region itself,
  * less than half of what it should be. The pack pass draws the full
  * source centred on the cell and the clip takes the film off.
  */
-export const UV_PARALLAX_LASER = reserve("parallax-laser", 24, 4, { art: [24, 4] });
-export const UV_PARALLAX_LASER_END = sprite("parallax-laser-end", 32, 32);
+export const UV_TETHER_LASER = reserve("tether-laser", 24, 4, { art: [24, 4] });
+export const UV_TETHER_LASER_END = sprite("tether-laser-end", 32, 32);
 // the player's base, the core nucleus at native 160px
 export const UV_BASE = flat("base", 160);
 
@@ -709,7 +709,7 @@ export const UV_BASE = flat("base", 160);
  * comes out right.
  *
  * White, because an ammo type is a pair of colours over one pair of shapes:
- * duo's copper pellet, salvo's thorium round and scatter's flak shell are
+ * tacker's copper pellet, autocannon's thorium round and airburst's flak shell are
  * the same two sprites tinted differently. Baking a colour in would need a
  * cell per ammo and would still lose the two separate Draw.color passes.
  *
@@ -730,7 +730,7 @@ export const UV_BULLET = sprite("bullet", 52, 52);
 export const UV_BULLET_BACK = sprite("bullet-back", 52, 52);
 export const UV_SHELL = sprite("shell", 36, 36);
 export const UV_SHELL_BACK = sprite("shell-back", 36, 36);
-// the third pair: swarmer's warhead. 36x36 like the shell, and the same rule
+// the third pair: hive's warhead. 36x36 like the shell, and the same rule
 export const UV_MISSILE = sprite("missile", 36, 36);
 export const UV_MISSILE_BACK = sprite("missile-back", 36, 36);
 /**
@@ -1995,73 +1995,73 @@ const SPRITES = {
   foundryBase2: FOUNDRY_BASE_URLS[1],
   foundryBase3: FOUNDRY_BASE_URLS[2],
   foundryBase4: FOUNDRY_BASE_URLS[3],
-  foundryDuo: FOUNDRY_HEAD_URLS.duo!,
-  foundryHail: FOUNDRY_HEAD_URLS.hail!,
-  foundryScorch: FOUNDRY_HEAD_URLS.scorch!,
-  foundryArc: FOUNDRY_HEAD_URLS.arc!,
-  foundrySalvo: FOUNDRY_HEAD_URLS.salvo!,
-  foundryScatter: FOUNDRY_HEAD_URLS.scatter!,
-  foundryLancer: FOUNDRY_HEAD_URLS.lancer!,
-  foundryWave: FOUNDRY_HEAD_URLS.wave!,
-  foundryParallax: FOUNDRY_HEAD_URLS.parallax!,
-  foundrySwarmer: FOUNDRY_HEAD_URLS.swarmer!,
-  foundryFuse: FOUNDRY_HEAD_URLS.fuse!,
-  foundryRipple: FOUNDRY_HEAD_URLS.ripple!,
-  foundryTsunami: FOUNDRY_HEAD_URLS.tsunami!,
-  foundryCyclone: FOUNDRY_HEAD_URLS.cyclone!,
-  foundrySpectre: FOUNDRY_HEAD_URLS.spectre!,
-  foundryMeltdown: FOUNDRY_HEAD_URLS.meltdown!,
-  foundryForeshadow: FOUNDRY_HEAD_URLS.foreshadow!,
+  foundryTacker: FOUNDRY_HEAD_URLS.tacker!,
+  foundryLobber: FOUNDRY_HEAD_URLS.lobber!,
+  foundryTorch: FOUNDRY_HEAD_URLS.torch!,
+  foundryCoil: FOUNDRY_HEAD_URLS.coil!,
+  foundryAutocannon: FOUNDRY_HEAD_URLS.autocannon!,
+  foundryAirburst: FOUNDRY_HEAD_URLS.airburst!,
+  foundryPiercer: FOUNDRY_HEAD_URLS.piercer!,
+  foundryDouser: FOUNDRY_HEAD_URLS.douser!,
+  foundryTether: FOUNDRY_HEAD_URLS.tether!,
+  foundryHive: FOUNDRY_HEAD_URLS.hive!,
+  foundryCleaver: FOUNDRY_HEAD_URLS.cleaver!,
+  foundryBarrage: FOUNDRY_HEAD_URLS.barrage!,
+  foundryDeluge: FOUNDRY_HEAD_URLS.deluge!,
+  foundryWhirl: FOUNDRY_HEAD_URLS.whirl!,
+  foundryRepeater: FOUNDRY_HEAD_URLS.repeater!,
+  foundryFurnace: FOUNDRY_HEAD_URLS.furnace!,
+  foundryRailhead: FOUNDRY_HEAD_URLS.railhead!,
   spawnPad: `${ENV}/dark-panel-2.png`,
   towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
   towerBase1: "/mindustry/sprites/blocks/turrets/bases/block-1.png",
   towerBase3: "/mindustry/sprites/blocks/turrets/bases/block-3.png",
-  duoPreview: "/mindustry/sprites/blocks/turrets/duo/duo-preview.png",
-  hail: "/mindustry/sprites/blocks/turrets/hail.png",
-  salvoPreview: "/mindustry/sprites/blocks/turrets/salvo/salvo-preview.png",
-  scatterPreview: "/mindustry/sprites/blocks/turrets/scatter/scatter-preview.png",
-  fuse: "/mindustry/sprites/blocks/turrets/fuse.png",
-  scorch: "/mindustry/sprites/blocks/turrets/scorch.png",
-  arc: "/mindustry/sprites/blocks/turrets/arc.png",
-  lancer: "/mindustry/sprites/blocks/turrets/lancer.png",
-  ripple: "/mindustry/sprites/blocks/turrets/ripple.png",
+  tackerPreview: "/mindustry/sprites/blocks/turrets/duo/duo-preview.png",
+  lobber: "/mindustry/sprites/blocks/turrets/hail.png",
+  autocannonPreview: "/mindustry/sprites/blocks/turrets/salvo/salvo-preview.png",
+  airburstPreview: "/mindustry/sprites/blocks/turrets/scatter/scatter-preview.png",
+  cleaver: "/mindustry/sprites/blocks/turrets/fuse.png",
+  torch: "/mindustry/sprites/blocks/turrets/scorch.png",
+  coil: "/mindustry/sprites/blocks/turrets/arc.png",
+  piercer: "/mindustry/sprites/blocks/turrets/lancer.png",
+  barrage: "/mindustry/sprites/blocks/turrets/ripple.png",
   // the liquid turrets ship in three layers apiece: the turret art, the
   // liquid window (a white mask, tinted at pack time), and the specular
   // gleam drawn untinted over the water — see liquidTurret()
-  wave: "/mindustry/sprites/blocks/turrets/wave.png",
-  waveLiquid: "/mindustry/sprites/blocks/turrets/wave-liquid.png",
-  waveTop: "/mindustry/sprites/blocks/turrets/wave-top.png",
-  tsunami: "/mindustry/sprites/blocks/turrets/tsunami.png",
-  tsunamiLiquid: "/mindustry/sprites/blocks/turrets/tsunami-liquid.png",
-  tsunamiTop: "/mindustry/sprites/blocks/turrets/tsunami-top.png",
-  // parallax is filed under defense, not turrets — upstream it damages
+  douser: "/mindustry/sprites/blocks/turrets/wave.png",
+  douserLiquid: "/mindustry/sprites/blocks/turrets/wave-liquid.png",
+  douserTop: "/mindustry/sprites/blocks/turrets/wave-top.png",
+  deluge: "/mindustry/sprites/blocks/turrets/tsunami.png",
+  delugeLiquid: "/mindustry/sprites/blocks/turrets/tsunami-liquid.png",
+  delugeTop: "/mindustry/sprites/blocks/turrets/tsunami-top.png",
+  // tether is filed under defense, not turrets — upstream it damages
   // almost nothing and Mindustry classes it with the support blocks (ours
   // spools up into a real gun; the sprite still lives where Mindustry
   // packs it)
-  parallax: "/mindustry/sprites/blocks/defense/parallax.png",
+  tether: "/mindustry/sprites/blocks/defense/parallax.png",
   // the support pair, each in the two layers DrawDefault + DrawRegion lays
   // down: the block and the `-top` crystal over it (see mendBlock)
-  mender: "/mindustry/sprites/blocks/defense/mender.png",
-  menderTop: "/mindustry/sprites/blocks/defense/mender-top.png",
-  mendProjector: "/mindustry/sprites/blocks/defense/mend-projector.png",
-  mendProjectorTop: "/mindustry/sprites/blocks/defense/mend-projector-top.png",
+  fixer: "/mindustry/sprites/blocks/defense/mender.png",
+  fixerTop: "/mindustry/sprites/blocks/defense/mender-top.png",
+  restorer: "/mindustry/sprites/blocks/defense/mend-projector.png",
+  restorerTop: "/mindustry/sprites/blocks/defense/mend-projector-top.png",
   // the shield tower wears the force projector's art — the one Mindustry
   // block whose whole job is standing a dome, which is this structure's too
   shieldTower: "/mindustry/sprites/blocks/defense/force-projector.png",
   towerBase4: "/mindustry/sprites/blocks/turrets/bases/block-4.png",
-  swarmer: "/mindustry/sprites/blocks/turrets/swarmer.png",
-  // cyclone's own art is the bare head; its three barrels are separate
+  hive: "/mindustry/sprites/blocks/turrets/swarmer.png",
+  // whirl's own art is the bare head; its three barrels are separate
   // sprites the preview already has assembled underneath
-  cyclonePreview: "/mindustry/sprites/blocks/turrets/cyclone/cyclone-preview.png",
-  spectre: "/mindustry/sprites/blocks/turrets/spectre.png",
-  meltdown: "/mindustry/sprites/blocks/turrets/meltdown.png",
-  foreshadow: "/mindustry/sprites/blocks/turrets/foreshadow.png",
+  whirlPreview: "/mindustry/sprites/blocks/turrets/cyclone/cyclone-preview.png",
+  repeater: "/mindustry/sprites/blocks/turrets/spectre.png",
+  furnace: "/mindustry/sprites/blocks/turrets/meltdown.png",
+  railhead: "/mindustry/sprites/blocks/turrets/foreshadow.png",
   // the walls, 1x1 block art at Mindustry's 32px
   // ...and the 2x2 large walls, 64px block art
   missile: "/mindustry/sprites/effects/missile.png",
   missileBack: "/mindustry/sprites/effects/missile-back.png",
-  parallaxLaser: "/mindustry/sprites/effects/parallax-laser.png",
-  parallaxLaserEnd: "/mindustry/sprites/effects/parallax-laser-end.png",
+  tetherLaser: "/mindustry/sprites/effects/parallax-laser.png",
+  tetherLaserEnd: "/mindustry/sprites/effects/parallax-laser-end.png",
   shell: "/mindustry/sprites/effects/shell.png",
   shellBack: "/mindustry/sprites/effects/shell-back.png",
   base: "/mindustry/sprites/blocks/storage/core-nucleus.png",
@@ -2334,7 +2334,7 @@ function liquidTurret(
 
 /**
  * A support block's two layers baked flat: the outlined block art with its
- * `-top` crystal laid over it, which is all Mindustry's MendProjector draws
+ * `-top` crystal laid over it, which is all Mindustry's Restorer draws
  * beyond the pulse itself. The top is NOT outlined — it sits inside the
  * block's own silhouette, and outlining it would draw a black ring in the
  * middle of the sprite.
@@ -3158,7 +3158,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // FOUNDRY (turretArt.ts, behind turretFlag.ts): every plate darkened
   // and every head that has a drawing generated here and put through
   // the same outline + antialias pass as the stock top it replaces; a
-  // kind without one (the menders) keeps its stock sprite
+  // kind without one (the fixers) keeps its stock sprite
   // the sheet's plates come DARKENED (foundryArt.ts), so the BASE_DARK
   // multiply that used to happen here is in the file already
   const plateArt = (foundry: HTMLImageElement, stock: HTMLImageElement): HTMLCanvasElement =>
@@ -3169,36 +3169,36 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   draw(UV_TOWER_BASE1, plateArt(img.foundryBase1, img.towerBase1));
   draw(UV_TOWER_BASE3, plateArt(img.foundryBase3, img.towerBase3));
   draw(UV_TOWER_BASE4, plateArt(img.foundryBase4, img.towerBase4));
-  draw(UV_TURRET, headArt("foundrySalvo", () => outlinedBlock(img.salvoPreview)));
-  draw(UV_SCATTER, headArt("foundryScatter", () => outlinedBlock(img.scatterPreview)));
-  draw(UV_HAIL, headArt("foundryHail", () => outlinedBlock(img.hail)));
-  draw(UV_FUSE, headArt("foundryFuse", () => outlinedBlock(img.fuse)));
-  draw(UV_SCORCH, headArt("foundryScorch", () => outlinedBlock(img.scorch)));
-  draw(UV_DUO, headArt("foundryDuo", () => outlinedBlock(img.duoPreview)));
-  draw(UV_ARC, headArt("foundryArc", () => outlinedBlock(img.arc)));
-  draw(UV_LANCER, headArt("foundryLancer", () => outlinedBlock(img.lancer)));
-  draw(UV_PARALLAX, headArt("foundryParallax", () => outlinedBlock(img.parallax)));
-  draw(UV_RIPPLE, headArt("foundryRipple", () => outlinedBlock(img.ripple)));
-  draw(UV_SWARMER, headArt("foundrySwarmer", () => outlinedBlock(img.swarmer)));
-  // cyclone's own art is the bare head; its three barrels are separate
+  draw(UV_TURRET, headArt("foundryAutocannon", () => outlinedBlock(img.autocannonPreview)));
+  draw(UV_AIRBURST, headArt("foundryAirburst", () => outlinedBlock(img.airburstPreview)));
+  draw(UV_LOBBER, headArt("foundryLobber", () => outlinedBlock(img.lobber)));
+  draw(UV_CLEAVER, headArt("foundryCleaver", () => outlinedBlock(img.cleaver)));
+  draw(UV_TORCH, headArt("foundryTorch", () => outlinedBlock(img.torch)));
+  draw(UV_TACKER, headArt("foundryTacker", () => outlinedBlock(img.tackerPreview)));
+  draw(UV_COIL, headArt("foundryCoil", () => outlinedBlock(img.coil)));
+  draw(UV_PIERCER, headArt("foundryPiercer", () => outlinedBlock(img.piercer)));
+  draw(UV_TETHER, headArt("foundryTether", () => outlinedBlock(img.tether)));
+  draw(UV_BARRAGE, headArt("foundryBarrage", () => outlinedBlock(img.barrage)));
+  draw(UV_HIVE, headArt("foundryHive", () => outlinedBlock(img.hive)));
+  // whirl's own art is the bare head; its three barrels are separate
   // sprites the preview already has assembled underneath
-  draw(UV_CYCLONE, headArt("foundryCyclone", () => outlinedBlock(img.cyclonePreview)));
-  draw(UV_SPECTRE, headArt("foundrySpectre", () => outlinedBlock(img.spectre)));
-  draw(UV_MELTDOWN, headArt("foundryMeltdown", () => outlinedBlock(img.meltdown)));
-  draw(UV_FORESHADOW, headArt("foundryForeshadow", () => outlinedBlock(img.foreshadow)));
+  draw(UV_WHIRL, headArt("foundryWhirl", () => outlinedBlock(img.whirlPreview)));
+  draw(UV_REPEATER, headArt("foundryRepeater", () => outlinedBlock(img.repeater)));
+  draw(UV_FURNACE, headArt("foundryFurnace", () => outlinedBlock(img.furnace)));
+  draw(UV_RAILHEAD, headArt("foundryRailhead", () => outlinedBlock(img.railhead)));
   // the liquid turrets, composited flat (see liquidTurret)
   // (a Foundry tank carries its water window in the drawing)
-  draw(UV_WAVE, headArt("foundryWave", () => antialiased(liquidTurret(img.wave, img.waveLiquid, img.waveTop))));
-  draw(UV_TSUNAMI, headArt("foundryTsunami", () => antialiased(liquidTurret(img.tsunami, img.tsunamiLiquid, img.tsunamiTop))));
-  // parallax's beam: the end glow and the line, each the full source
+  draw(UV_DOUSER, headArt("foundryDouser", () => antialiased(liquidTurret(img.douser, img.douserLiquid, img.douserTop))));
+  draw(UV_DELUGE, headArt("foundryDeluge", () => antialiased(liquidTurret(img.deluge, img.delugeLiquid, img.delugeTop))));
+  // tether's beam: the end glow and the line, each the full source
   // centred on the cell that hugs its opaque part (see the UV note), the
   // line turned so its length runs along the +x axis pushSeg stretches
-  draw(UV_PARALLAX_LASER_END, antialiased(img.parallaxLaserEnd), [72, 72]);
-  draw(UV_PARALLAX_LASER, antialiased(img.parallaxLaser), [4, 48]);
+  draw(UV_TETHER_LASER_END, antialiased(img.tetherLaserEnd), [72, 72]);
+  draw(UV_TETHER_LASER, antialiased(img.tetherLaser), [4, 48]);
   // the blocks that never turn, outlined and as authored
   draw(UV_SHIELD_TOWER, outlinedBlock(img.shieldTower));
-  draw(UV_MEND_PROJECTOR, antialiased(mendBlock(img.mendProjector, img.mendProjectorTop)));
-  draw(UV_MENDER, antialiased(mendBlock(img.mender, img.menderTop)));
+  draw(UV_RESTORER, antialiased(mendBlock(img.restorer, img.restorerTop)));
+  draw(UV_FIXER, antialiased(mendBlock(img.fixer, img.fixerTop)));
 
   // the base building at native 160px: the block, then the team overlay
   // tinted sharded-yellow the way Mindustry composites team regions

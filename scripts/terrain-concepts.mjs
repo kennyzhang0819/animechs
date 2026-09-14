@@ -99,7 +99,7 @@ const SCENE = makeBoard(24, 14, (x, y) => {
   return wd < 2.3 ? DEEP : wd < 3.9 ? SHALLOW : rock ? ROCK : FLOOR;
 }, (x, y) => (fbm(x * 0.17 + 3, y * 0.17, 16) > 0.56 ? "dirt" : "grass"));
 // the things on the scene: [kind, tx, ty]
-const HEADS = [["ripple", 3, 0], ["duo", 9, 1], ["lancer", 14, 0]];
+const HEADS = [["barrage", 3, 0], ["tacker", 9, 1], ["piercer", 14, 0]];
 const CORE = [8, 8];
 const PROPS = [["boulder", 1.4, 7.2], ["boulder", 18.6, 4.3], ["pine", 20, 0.6], ["pine", 0.4, 1.1], ["shrub", 12.3, 12.1]];
 
@@ -575,7 +575,7 @@ if (wants("families")) {
   // a few heads on rock beside open ground: the first footprints that fit, spread out
   const heads = [];
   const fits = (x, y, s) => { for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) if (!CROP.isRock(x + dx, y + dy) || CROP.depth[(y + dy) * CW + x + dx] > 2) return false; let edge = false; for (let dy = -1; dy <= s; dy++) for (let dx = -1; dx <= s; dx++) if (!CROP.isRock(x + dx, y + dy)) edge = true; return edge; };
-  const wanted = [["ripple", 3], ["lancer", 2], ["duo", 1], ["duo", 1], ["salvo", 2], ["duo", 1], ["hail", 1], ["scatter", 2]];
+  const wanted = [["barrage", 3], ["piercer", 2], ["tacker", 1], ["tacker", 1], ["autocannon", 2], ["tacker", 1], ["lobber", 1], ["airburst", 2]];
   for (const [kind, s] of wanted) {
     let placed = false;
     for (let tries = 0; tries < 4000 && !placed; tries++) {
@@ -647,7 +647,7 @@ if (wants("families")) {
     for (const [fam, tier, count] of walkers) tryPlace(fam, tier, count, false);
     for (const [fam, tier, count] of flyers) tryPlace(fam, tier, count, true);
     // the heads, the shipped PNGs on their plates, each turned to its nearest walker
-    const SIZE = { duo: 1, hail: 1, scorch: 1, arc: 1, salvo: 2, scatter: 2, lancer: 2, wave: 2, parallax: 2, swarmer: 2, fuse: 3, ripple: 3, tsunami: 3, cyclone: 3, spectre: 4, meltdown: 4, foreshadow: 4 };
+    const SIZE = { tacker: 1, lobber: 1, torch: 1, coil: 1, autocannon: 2, airburst: 2, piercer: 2, douser: 2, tether: 2, hive: 2, cleaver: 3, barrage: 3, deluge: 3, whirl: 3, repeater: 4, furnace: 4, railhead: 4 };
     for (const [kind, tx, ty] of subHeads) {
       const size = SIZE[kind], cx = (tx + size / 2) * N, cy = (ty + size / 2) * N;
       stampAt(out, W, H, foundryArt(`base-${size}`), cx, cy);

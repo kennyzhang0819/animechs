@@ -2,21 +2,21 @@
  * Every Serpulo turret the campaign will ever field, in tech-tree order.
  *
  * EVERY ONE OF THEM IS IMPLEMENTED — real stats, real ammo, drawn on the
- * field. Two of them, the menders, are RETIRED for now and dealt to nobody
+ * field. Two of them, the fixers, are RETIRED for now and dealt to nobody
  * (RETIRED_KINDS below); the other seventeen are what the deal draws from
  * (rarity.ts) and what the track hands out. The late five were stubs
- * carrying a duo's bullet until they were given their own: swarmer's
- * homing missiles, cyclone's fragmenting flak, spectre's piercing twin
- * cannon, meltdown's held beam and foreshadow's rail shot.
+ * carrying a tacker's bullet until they were given their own: hive's
+ * homing missiles, whirl's fragmenting flak, repeater's piercing twin
+ * cannon, furnace's held beam and railhead's rail shot.
  *
- * Wave and tsunami are the liquid turrets, and they are the roster's one
- * DELIBERATE DEVIATION rather than a 1:1 port. Upstream their water shoves
- * units back (knockback) and wets them for a 0.94x speed multiplier — a
- * nudge, because their real jobs there are extinguishing fire and healing
- * blocks, neither of which exists here. Here the wet status IS the weapon:
- * no push, and the slow is deep (see BulletStats.wet). Their trivial
- * contact damage is kept — the number on the tin is honest about what they
- * are for.
+ * Douser and deluge are the liquid turrets, and they are the roster's
+ * one DELIBERATE DEVIATION rather than a 1:1 port. Upstream their water
+ * shoves units back (knockback) and wets them for a 0.94x speed multiplier
+ * — a nudge, because their real jobs there are extinguishing fire and
+ * healing blocks, neither of which exists here. Here the wet status IS the
+ * weapon: no push, and the slow is deep (see BulletStats.wet). Their
+ * trivial contact damage is kept — the number on the tin is honest about
+ * what they are for.
  *
  * One Serpulo turret stays deliberately absent. Segment shoots down enemy
  * bullets, and our units never fire at buildings, so it would have nothing
@@ -24,44 +24,44 @@
  */
 export const TOWER_KINDS = [
   // implemented
-  "duo",
-  "hail",
-  "salvo",
-  "scatter",
-  "fuse",
-  "scorch",
-  "arc",
-  "lancer",
-  "ripple",
-  "wave",
-  "parallax",
-  "tsunami",
+  "tacker",
+  "lobber",
+  "autocannon",
+  "airburst",
+  "cleaver",
+  "torch",
+  "coil",
+  "piercer",
+  "barrage",
+  "douser",
+  "tether",
+  "deluge",
   // the support pair: they shoot nothing and heal the line instead
-  "mender",
-  "mendProjector",
+  "fixer",
+  "restorer",
   // extreme and nemesis
-  "swarmer",
-  "cyclone",
-  "spectre",
-  "meltdown",
-  "foreshadow",
+  "hive",
+  "whirl",
+  "repeater",
+  "furnace",
+  "railhead",
 ] as const;
 export type TowerKind = (typeof TOWER_KINDS)[number];
 
 /**
  * RETIRED FOR NOW — implemented, drawn, priced, and dealt to nobody.
  *
- * The two menders are the support pair, and the support pair is off the
+ * The two fixers are the support pair, and the support pair is off the
  * field while the deal (rarity.ts) is being built: a block that heals the
  * line is a different decision from a block that shoots it, and a card
  * dealt at random is the wrong door to hand one through. Everything about
- * them stays — Sim.updateMender, their stats, their upgrades, their
+ * them stays — Sim.updateFixer, their stats, their upgrades, their
  * sprites — so putting them back is deleting a name from this list.
  *
  * Nothing outside this file should special-case a kind: read FIELDED_KINDS
  * and the retired ones are simply not there.
  */
-export const RETIRED_KINDS: readonly TowerKind[] = ["mender", "mendProjector"];
+export const RETIRED_KINDS: readonly TowerKind[] = ["fixer", "restorer"];
 
 const RETIRED = new Set<TowerKind>(RETIRED_KINDS);
 
@@ -141,8 +141,8 @@ export interface Tower {
   /**
    * HOW MANY TILES ON A SIDE THIS BUILDING ACTUALLY STANDS ON, and it is
    * per-TOWER rather than per-kind because the GIANT attribute doubles it
-   * (mods.ts sizeWithMods): a giant foreshadow is an 8x8 where every
-   * other foreshadow is a 4x4.
+   * (mods.ts sizeWithMods): a giant railhead is an 8x8 where every
+   * other railhead is a 4x4.
    *
    * EVERYTHING THAT MEASURES A FOOTPRINT READS THIS, never the table —
    * the ground it claims, the shadow it casts, the quad it is drawn on,
@@ -164,10 +164,10 @@ export interface Tower {
   hp: number;
   /**
    * THIS TURRET'S OWN CEILING, and it is per-TURRET rather than per-kind
-   * (constants.ts towerMaxHp) because a turret's mods move it: a
-   * duo born with Braced Frame carries half again what the duo beside it
-   * does. Everything that draws or reads a structure's fullness reads
-   * this, never the table.
+   * (constants.ts towerMaxHp) because a turret's mods move it: a tacker
+   * born with Braced Frame carries half again what the tacker beside it
+   * does. Everything that draws or reads a structure's fullness reads this,
+   * never the table.
    */
   hpMax: number;
   /**
@@ -201,10 +201,10 @@ export interface Tower {
    * seconds it still has to run (constants.ts POISON_TIME). The venom line
    * is the only thing in the game that applies it.
    *
-   * IT IS RAW DAMAGE AND NOT A PERCENTAGE. A tenth of a duo's pool a second
-   * and a tenth of a foreshadow's are not the same rule, and the one that
-   * scales with the target turns the venom family into a flat tax the big
-   * guns pay hardest. A number of hit points a second is a number the
+   * IT IS RAW DAMAGE AND NOT A PERCENTAGE. A tenth of a tacker's pool a
+   * second and a tenth of a railhead's are not the same rule, and the one
+   * that scales with the target turns the venom family into a flat tax the
+   * big guns pay hardest. A number of hit points a second is a number the
    * player can hold against the thing they are about to place.
    *
    * IT ALSO IGNORES ARMOUR, exactly as burning does on the other side
@@ -327,10 +327,10 @@ export interface Tower {
   aimX: number;
   aimY: number;
   // Mindustry shoot.firstShotDelay: seconds left of a queued volley's
-  // charge, or -1 when nothing is charging. Lancer sets moveWhileCharging
+  // charge, or -1 when nothing is charging. Piercer sets moveWhileCharging
   // false, so a charging turret also stops turning
   chargeT: number;
-  // A LOCK BEAM's live state (parallax, Sim.updateLockBeam): where the
+  // A LOCK BEAM's live state (tether, Sim.updateLockBeam): where the
   // beam ends, and Mindustry's `strength` — which lerps in as the beam
   // catches and out as it lets go, and which the spool below rides on top
   // of so a hot beam is visibly fatter than a cold one. A lock turret has
@@ -347,7 +347,7 @@ export interface Tower {
    * turret (see Sim.updateLockBeam).
    */
   beamSpool: number;
-  // LaserTurret's held beam (meltdown). Mindustry pins the beam bullet to
+  // LaserTurret's held beam (furnace). Mindustry pins the beam bullet to
   // the muzzle for shootDuration and then simply LETS GO of it: the last
   // fadeTime of beam stays where it was released while the turret is
   // already slewing off and reloading. So the beam carries its own origin
@@ -448,7 +448,7 @@ export interface Projectile {
   // the enemy shots' rule (updateEnemyShots) on the turrets' own bullets
   enemy: boolean;
   /**
-   * A shot with NO SPRITE OF ITS OWN — scorch's flame is the only one —
+   * A shot with NO SPRITE OF ITS OWN — torch's flame is the only one —
    * whose muzzle effect the pool refused. Such a bullet normally draws
    * nothing at all, the visible weapon being Fx.shootSmallFlame at the
    * barrel, so with the flame dropped the turret reads as one that tracks
@@ -490,19 +490,19 @@ export const enum FxKind {
   Shockwave = 21, // Fx.shockwaveSmaller
   /** Fx.thoriumShoot and Fx.lightningShoot — again one shape, two colours */
   SparkShoot = 22,
-  LancerShoot = 23, // Fx.lancerLaserShoot
-  LancerCharge = 24, // Fx.lancerLaserCharge over Fx.lancerLaserChargeBegin
-  HitLancer = 25, // Fx.hitLancer
-  BlastExplosion = 26, // Fx.blastExplosion — swarmer's warhead
-  PlasticExplosion = 27, // Fx.plasticExplosion — cyclone's
-  InstShoot = 28, // Fx.instShoot — foreshadow's muzzle
+  PiercerShoot = 23, // Fx.piercerLaserShoot
+  PiercerCharge = 24, // Fx.piercerLaserCharge over Fx.piercerLaserChargeBegin
+  HitPiercer = 25, // Fx.hitPiercer
+  BlastExplosion = 26, // Fx.blastExplosion — hive's warhead
+  PlasticExplosion = 27, // Fx.plasticExplosion — whirl's
+  InstShoot = 28, // Fx.instShoot — railhead's muzzle
   InstHit = 29, // Fx.instHit
   InstTrail = 30, // Fx.instTrail, laid every 20 units down the rail line
   InstBomb = 31, // Fx.instBomb, where a rail shot runs out unspent
   RailHit = 32, // Fx.railHit, at each body the rail punches through
   SmokeCloud = 33, // Fx.smokeCloud
-  HitMeltdown = 34, // Fx.hitMeltdown
-  SmokeBig2 = 35, // Fx.shootBigSmoke2 — meltdown's, wider than shootBigSmoke
+  HitFurnace = 34, // Fx.hitFurnace
+  SmokeBig2 = 35, // Fx.shootBigSmoke2 — furnace's, wider than shootBigSmoke
   /** Fx.unitSpawn: the entrance. Two copies of the arriving unit's OWN
    *  sprite — one shrinking onto it out of nothing, one counter-rotated
    *  underneath fading away. WaveSpawner.spawnEffect fires it on every
@@ -584,11 +584,11 @@ export type RGB = readonly [number, number, number];
 
 /**
  * The shape of one effect AS THE DRAW HELPERS READ IT. The sim no longer
- * stores effects as objects of this shape — they live in flat typed
- * arrays on Sim (fxX/fxY/fxAge/..., see the pool there), because a
- * fuse-heavy board pushes thousands a second and an object per push was
- * steady GC pressure. The renderer refills one reused view of this shape
- * per effect per frame, so every field's meaning below is unchanged.
+ * stores effects as objects of this shape — they live in flat typed arrays
+ * on Sim (fxX/fxY/fxAge/..., see the pool there), because a cleaver-heavy
+ * board pushes thousands a second and an object per push was steady GC
+ * pressure. The renderer refills one reused view of this shape per effect
+ * per frame, so every field's meaning below is unchanged.
  */
 export interface Effect {
   x: number;

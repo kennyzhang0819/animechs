@@ -25,8 +25,8 @@
  *
  * NOTHING HERE CARRIES A RARITY BAND (rule 4) — these are not rewards.
  * Each is the colour of the thing it depicts: water blue for a soak,
- * ember for fire, parallax blue for a field, the venom line's purple for
- * rot, the mender's green for repair.
+ * ember for fire, tether blue for a field, the venom line's purple for
+ * rot, the fixer's green for repair.
  */
 
 import { memoDraw, PAL, type Ink, type Layer, type Pen } from "./pixelArt";
@@ -51,6 +51,51 @@ function drop(g: Pen): void {
   });
 }
 
+/**
+ * THE FLAME both fire symbols are cut from — the same teardrop twice, a
+ * cool outer body with a hot heart inside it. That is PARTS and not
+ * embossing (rule 5): the inner flame is a smaller flame, not a highlight
+ * traced down an edge.
+ *
+ * TWO CHIPS WEAR IT: `burning`, the body that is alight, and `ignites`,
+ * the gun that lights it. One picture, because they are one idea seen
+ * from the two ends of it, and the catalog's whole promise is that a
+ * player learns a symbol once.
+ */
+function flame(g: Pen): void {
+  g.disc(0.5, 0.64, 0.34, PAL.emberDark);
+  g.poly([[0.5, 0.0], [0.84, 0.64], [0.16, 0.64]], PAL.emberDark);
+  g.over((o) => {
+    o.disc(0.5, 0.7, 0.23, PAL.ember);
+    o.poly([[0.5, 0.24], [0.73, 0.7], [0.27, 0.7]], PAL.ember);
+  });
+  g.over((o) => o.disc(0.5, 0.76, 0.14, PAL.flame));
+}
+
+/**
+ * THE BOLT the two electric chips are cut from — `shocked`, the body the
+ * blue line has been on, and `shocks`, the gun that puts it there.
+ *
+ * IT IS A BOLT IN SPARK BLUE, and the catalog already holds two other
+ * bolts: `short` in the Wraith fleet's violet and `boost` in flame. That
+ * is on purpose and it is how this file already works — a bolt means
+ * ELECTRICITY and the hue says whose. The three never meet on one thing
+ * either: a short is a building's, a last volley is a building's, and
+ * this one is a body's.
+ *
+ * The strike is drawn UNSPLIT — one zigzag, nothing behind it — where
+ * `short` puts its bolt over a dark bar. The bar there is the gun being
+ * struck; nothing is being struck here, the body IS the thing, so the
+ * mark stands alone with a dark keel under it for weight at seven pixels.
+ */
+function bolt(g: Pen): void {
+  g.poly(
+    [[0.7, 0.0], [0.16, 0.56], [0.44, 0.56], [0.3, 1.0], [0.84, 0.44], [0.56, 0.44]],
+    PAL.spark,
+  );
+  g.over((o) => o.box(0, 0.62, 1, 1, PAL.sparkDark));
+}
+
 const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
   /**
    * PLATING — a heater shield, plated DOWN its middle. The strake is
@@ -70,11 +115,51 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
 
   /**
    * SOAKED — the droplet, and nothing else. This is the symbol the
-   * liquid turrets earn: a wave puts it on everything it reaches, so it
+   * liquid turrets earn: a douser puts it on everything it reaches, so it
    * is the one in this file that will be on the screen in bulk, and
    * anything added to it would be the thing that stops reading first.
    */
+  /**
+   * NON-BULLET — a LANCE, and the only thing in this catalog drawn as a
+   * line across the square rather than as an object in the middle of it.
+   *
+   * That is the point: every other symbol here is a thing (a droplet, a
+   * flame, a shield), and this one is a thing PASSING THROUGH. A beam
+   * that runs edge to edge says "it does not stop" without needing
+   * anything for it to be not-stopping at, and a bullet-with-a-slash —
+   * the obvious alternative — would have been two objects and a negation
+   * at seven pixels, which is mush.
+   *
+   * The pale core inside the blue body is PARTS and not embossing (rule
+   * 5): a beam is a hot line inside a cooler one, which is how every beam
+   * in the game is actually drawn.
+   */
+  nonbullet: (g) => {
+    g.poly([[0.0, 0.62], [0.62, 0.0], [1.0, 0.0], [0.38, 0.62]], PAL.sparkDark);
+    g.poly([[0.0, 1.0], [0.62, 0.38], [1.0, 0.38], [0.38, 1.0]], PAL.sparkDark);
+    g.over((o) => {
+      o.poly([[0.16, 0.74], [0.7, 0.2], [0.88, 0.2], [0.34, 0.74]], PAL.spark);
+      o.poly([[0.16, 0.96], [0.7, 0.42], [0.88, 0.42], [0.34, 0.96]], PAL.spark);
+    });
+    g.over((o) => o.poly([[0.24, 0.8], [0.72, 0.32], [0.8, 0.32], [0.32, 0.8]], PAL.sparkLite));
+  },
+
+  /** IGNITES — the flame again: the gun that lights what it hits, drawn
+   *  as the fire it lights (see `flame`). */
+  ignites: (g) => flame(g),
+
+  /** SOAKS — the droplet again: the gun that leaves what it hits wet,
+   *  drawn as the water it leaves (see `drop`). */
+  soaks: (g) => drop(g),
+
+  /** ELECTRIC — the bolt: the gun whose shot is electric, drawn as the
+   *  mark it lays (see `bolt`). */
+  shocks: (g) => bolt(g),
+
   wet: (g) => drop(g),
+
+  /** SHOCKED — the bolt: a body the blue line has been on (see `bolt`). */
+  shocked: (g) => bolt(g),
 
   /**
    * BURNING — a flame, drawn as the same teardrop twice: a cool outer
@@ -82,15 +167,7 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
    * (rule 5) — the inner flame is a smaller flame, not a highlight
    * traced down an edge.
    */
-  burning: (g) => {
-    g.disc(0.5, 0.64, 0.34, PAL.emberDark);
-    g.poly([[0.5, 0.0], [0.84, 0.64], [0.16, 0.64]], PAL.emberDark);
-    g.over((o) => {
-      o.disc(0.5, 0.7, 0.23, PAL.ember);
-      o.poly([[0.5, 0.24], [0.73, 0.7], [0.27, 0.7]], PAL.ember);
-    });
-    g.over((o) => o.disc(0.5, 0.76, 0.14, PAL.flame));
-  },
+  burning: (g) => flame(g),
 
   /**
    * FORCE FIELD — a canopy over a body, not a shield outline. Plating is
@@ -133,7 +210,7 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
   },
 
   /**
-   * AMPHIBIOUS — the mender's green coming UP out of a waterline. It is
+   * AMPHIBIOUS — the fixer's green coming UP out of a waterline. It is
    * deliberately not the droplet-with-a-stem the mutator face uses: that
    * one and the plain droplet are the same silhouette, and the two would
    * be indistinguishable at the size this is read at. A line of water
@@ -259,7 +336,7 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
     g.over((o) => o.box(0, 0.8, 1, 1, PAL.ember));
   },
 
-  /** MENDING — the mender's cross. Nothing else in the game is a green
+  /** MENDING — the fixer's cross. Nothing else in the game is a green
    *  plus, and a plus is the one shape that survives any size. */
   regen: (g) => {
     g.box(0.38, 0.06, 0.62, 0.94, PAL.heal);
@@ -268,7 +345,7 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
   },
 
   /**
-   * UNDYING — a rampart with the mender's green in the gate, the same
+   * UNDYING — a rampart with the fixer's green in the gate, the same
    * picture the Undying Legion attribute wears on the shelf (modArt.ts
    * `legion`). Two places, one drawing, one thing to learn: the wall that
    * does not come down the first time.
@@ -329,7 +406,7 @@ for (const d of STATUSES)
  * THIS USED TO FILL PATHS AND THAT WAS THE BUG. Each symbol is three to
  * five colours and each colour is a Path2D of twenty-odd one-pixel-tall
  * rectangles, so drawing one cost four `fill()` calls over a hundred-odd
- * sub-rectangles — and a wave soaked by a tsunami puts a few hundred
+ * sub-rectangles — and a wave soaked by a deluge puts a few hundred
  * symbols on the screen at once, which is a couple of thousand path fills
  * a frame. It does not show up in a CPU timer around the call, because
  * what is expensive is the canvas rasterising them, not the JS asking.

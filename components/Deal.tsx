@@ -72,7 +72,7 @@ const HALF_SUB: Record<Exclude<DealHalf, "open">, string> = {
  * TILED nine times (formation.ts fleetLayout), so a x9 press still rolls
  * one gun and one shape and what it multiplies is the GROUND being asked
  * for. THE AMOUNTS ARE SQUARES (economy.ts) so the tiling is square and
- * the copies butt with no gap: nine citadels of spectres is one solid
+ * the copies butt with no gap: nine citadels of repeaters is one solid
  * decision about one piece of map the size of a town, and the ghost of it
  * going down over the terrain is most of what the button is for.
  *
@@ -264,7 +264,7 @@ function useReveal(hud: UiState | null): ModDraw {
  *
  * Two rarities on one card, in one palette. The border round the whole
  * card is the TURRET's band and the little frame in the corner is the
- * SHAPE's, so "nine duos" and "thirty-six duos" are told apart at a
+ * SHAPE's, so "nine tackers" and "thirty-six tackers" are told apart at a
  * glance without either number being read — and a grey card with a purple
  * corner is exactly as legible as it should be, which is "the gun is
  * nothing special and there are an awful lot of it".

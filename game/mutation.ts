@@ -714,19 +714,19 @@ export const HUNGRY_HUE: readonly [number, number, number] = [1, 0.55, 0.86];
 // a mutator now, rolled like everything else, and the ladder is the level
 // curve and the mutation pair and nothing else.
 //
-// TEN IS THE OLD TOP-TIER VALUE, kept whole rather than re-derived. Armour
-// is a flat shave floored at a tenth of the raw hit (Sim.applyArmor), so
-// the rule is REGRESSIVE BY CALIBRE on purpose: +10 is nothing to a
-// lancer's 140 and 1.55x effective health against a salvo's 28, but it
-// floors a duo's 9 and a scatter's 3 outright — those guns land a tenth of
-// what they print and no more. That asymmetry IS the mutator. It does not
-// say "the swarm is tougher", it says "the cheap guns stop counting", and
-// the answer to it is calibre: bigger emplacements, and an anti-air line
-// that is not built out of pellets.
+// TEN IS THE OLD TOP-TIER VALUE, kept whole rather than re-derived. Armour is
+// a flat shave floored at a tenth of the raw hit (Sim.applyArmor), so the
+// rule is REGRESSIVE BY CALIBRE on purpose: +10 is nothing to a piercer's 140
+// and 1.55x effective health against an autocannon's 28, but it floors a
+// tacker's 9 and an airburst's 3 outright — those guns land a tenth of what
+// they print and no more. That asymmetry IS the mutator. It does not say "the
+// swarm is tougher", it says "the cheap guns stop counting", and the answer
+// to it is calibre: bigger emplacements, and an anti-air line that is not
+// built out of pellets.
 //
 // IT IS PRICED AS HEAVY RATHER THAN BRUTAL because that answer exists and
 // is affordable. The board that already holds the run holds it under this
-// rule too, more slowly; the board built entirely out of duo walls and
+// rule too, more slowly; the board built entirely out of tacker walls and
 // scatters does not, and has to be rebuilt. Rolled early, before the tree
 // has anything with weight behind it, it is the harshest 4 in the catalog
 // — which is the honest reading of a rule whose whole content is "your
@@ -734,7 +734,7 @@ export const HUNGRY_HUE: readonly [number, number, number] = [1, 0.55, 0.86];
 
 /** flat armour added to every unit of tier 3 or below under Armored
  *  Swarms — applied once at spawn (Sim.spawnUnit), so every armour read
- *  downstream, the lancer's x4 included, already sees it */
+ *  downstream, the piercer's x4 included, already sees it */
 export const ARMORED_ARMOR = 10;
 
 /** the top unit tier the plating reaches; T4 and T5 never take it */
@@ -925,9 +925,10 @@ export const AMPHIBIOUS_SPEED = 0.1;
 /** armour added per stack, FLAT — see the note above on why this one is
  *  not a percentage. Five stacks is two and a half plates — it was ten,
  *  the whole of ARMORED_ARMOR, and a body wearing ten plates is a body a
- *  duo hits for its floor, which on Quagmire was every weaver1 by wave
+ *  tacker hits for its floor, which on Quagmire was every weaver1 by wave
  *  four and every ironhide2 by wave twelve. The health is the rule's weight
- *  now; the plating is the edge that makes a hail worth more than a duo */
+ *  now; the plating is the edge that makes a lobber worth more than a
+ *  tacker */
 export const AMPHIBIOUS_ARMOR = 0.5;
 
 /** healing per stack per second, as a share of the health it spawned with:
@@ -980,14 +981,14 @@ export const OVERSHIELD_SCALE = 5;
 // is the rule that turns tower health (towerMaxHp in constants.ts) from a
 // dead field into a mechanic: nothing else in the game hurts a tower.
 //
-// IT TAXES POINT-BLANK PLAY SPECIFICALLY. A blast reaches from a little
-// over two cells (an ironhide1) to six (a tier-5 body), so the emplacements
-// built against the lane — scorch, fuse, arc, a duo wall on the choke —
-// feel it hardest, and they feel it in proportion to how many bodies die
-// at their feet and how heavy those bodies were. A long-range board is
-// still untouched. That asymmetry is the design: the mutator does not
-// say "your towers take damage", it says "the kill zone cannot also be
-// the front row", which is a layout problem rather than a stat problem.
+// IT TAXES POINT-BLANK PLAY SPECIFICALLY. A blast reaches from a little over
+// two cells (an ironhide1) to six (a tier-5 body), so the emplacements built
+// against the lane — torch, cleaver, coil, a tacker wall on the choke —
+// feel it hardest, and they feel it in proportion to how many bodies die at
+// their feet and how heavy those bodies were. A long-range board is still
+// untouched. That asymmetry is the design: the mutator does not say "your
+// towers take damage", it says "the kill zone cannot also be the front row",
+// which is a layout problem rather than a stat problem.
 //
 // THE REACH CLIMBS WITH THE TIER (VOLATILE_RADIUS) and that is what gives
 // the rule its shape rather than just its strength. An ironhide1's pop only
@@ -1058,7 +1059,7 @@ if (VOLATILE_RADIUS.length !== VOLATILE_DMG.length)
 // no armour, no shield, no ability. A turret that can kill things fast
 // barely notices it. What it takes apart is the board built to kill a few
 // EXPENSIVE things — the long-reload heavies, the single-target snipers,
-// the lancer line whose whole answer to an ironhide3 is one shot that is
+// the piercer line whose whole answer to an ironhide3 is one shot that is
 // worth it. Those turrets spend the same reload on an ironhide1, and the
 // mutator hands them eleven more of them to spend it on.
 //
@@ -1166,7 +1167,7 @@ for (let t = 1; t < MITOSIS_BROOD.length; t++)
 // no matter what is being fired at it meanwhile. Only with the
 // dome down can the shield tower's body be hurt, and a destroyed shield tower is GONE
 // FOR GOOD; another rises elsewhere on the timer. Instant weapons —
-// lancer, arc, fuse, foreshadow, meltdown's held beam, parallax's lock
+// piercer, coil, cleaver, railhead, furnace's held beam, tether's lock
 // beam — are not absorbed,
 // exactly as unit force fields never absorb them: aimed at the shield tower
 // they damage shield first, then body, which quietly makes the beam
@@ -1363,7 +1364,7 @@ export const SHIELD_TOWER_COL: readonly [number, number, number] = [1.0, 0.36, 0
 // invalidates a way of playing outright: every board built on a dense
 // block of turrets is a board that arms the swarm in proportion to how
 // well it was built, and the denser the block the worse the loss. A
-// forward line of spectres is a forward line of spectres pointed at the
+// forward line of repeaters is a forward line of repeaters pointed at the
 // core the moment it breaks.
 //
 // A TURRET IS ONLY TAKEN WHEN IT TRULY DIES. The relics that refuse a
@@ -1376,11 +1377,11 @@ export const SHIELD_TOWER_COL: readonly [number, number, number] = [1.0, 0.36, 0
 //
 // EVERY TAKEN GUN SHOOTS, whatever it used to shoot at. A turret's air/
 // ground targeting is about BODIES, and the swarm's copy has no bodies to
-// pick between — its only mark is a building — so a conquered scatter
-// shells the line exactly as a conquered spectre does rather than
+// pick between — its only mark is a building — so a conquered airburst
+// shells the line exactly as a conquered repeater does rather than
 // standing there inert because the player fields no aircraft. The two
 // turrets with no gun at all are the exceptions and stay exceptions: a
-// mender mends nothing for the swarm and a tractor beam drags nothing
+// fixer mends nothing for the swarm and a tractor beam drags nothing
 // (Sim.fireTowers), so taking one costs the player the block and hands
 // the swarm a wall.
 //
@@ -1402,7 +1403,7 @@ export const CONQUEST_HP = 0.6;
 
 /** the swarm's copy fires at this share of the rate it did for the player
  *  — the rule is the turret pointed the other way, not a better turret,
- *  and a slower barrel is what keeps a conquered spectre from simply
+ *  and a slower barrel is what keeps a conquered repeater from simply
  *  out-trading the two that killed it */
 export const CONQUEST_RATE = 0.7;
 
@@ -1468,10 +1469,10 @@ if (RECONSTRUCT_DELAY <= 0 || RECONSTRUCT_GRACE <= 0)
 // it and starts caring only how often.
 //
 // IT INVALIDATES A WAY OF PLAYING, WHICH IS WHAT FIVE POINTS BUYS. A board
-// built on big single shots — a spectre's cannon, a foreshadow's rail, a
-// ripple's shells — is a board whose whole damage is the SIZE of each
+// built on big single shots — a repeater's cannon, a railhead's rail, a
+// barrage's shells — is a board whose whole damage is the SIZE of each
 // hit, and this rule prices that at ten whatever the number on the tin
-// says. A board built on rate — duos, scorches, arcs, a meltdown's beam —
+// says. A board built on rate — tackers, torches, coils, a furnace's beam —
 // is untouched, because every one of those already lands under the cap.
 // So the rule does not make the swarm tougher so much as it makes one
 // half of the roster worthless while a tier five is on the screen, and
@@ -1496,9 +1497,9 @@ if (RECONSTRUCT_DELAY <= 0 || RECONSTRUCT_GRACE <= 0)
 // cent of a run this rule is an empty slot, and the deploy panel has
 // already charged for it. Where it does apply it is savage: measured
 // against the board, the ceiling deletes 87% of a mixed line's damage,
-// and per turret it takes 0% off a duo, 11% off an arc, 35% off a
-// scorch, 61% off a salvo, 71% off a ripple and 90% off a spectre, a
-// fuse or a lancer. On a run that actually reaches the tier fives it
+// and per turret it takes 0% off a tacker, 11% off a coil, 35% off a
+// torch, 61% off an autocannon, 71% off a barrage and 90% off a repeater, a
+// cleaver or a piercer. On a run that actually reaches the tier fives it
 // costs 5% of the run's life.
 
 /** how far the order carries, in cells, measured centre to centre */
@@ -1531,7 +1532,7 @@ if (LEADERSHIP_CAP <= 0 || LEADERSHIP_TILES <= 0 || LEADERSHIP_PERIOD <= 0)
 // turret's own ceiling every second.
 //
 // IT IS A SHARE OF THE POOL AND THAT IS DELIBERATE. A flat rate would be
-// death to a duo and a rounding error to a Giant Bulwarked spectre; five
+// death to a tacker and a rounding error to a Giant Bulwarked repeater; five
 // percent is TWENTY SECONDS whatever the building is, so the rule reads
 // the same on the first wave and the fiftieth and cannot be out-built.
 // Plating does not shave it either (it is raw, the rot's own rule): a
