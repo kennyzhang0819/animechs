@@ -1145,12 +1145,21 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // is the family's answer to a board that solved everything else by
   // building bigger pools.
   //
+  // THE RUNT IS SET AGAINST WAVE 1 (see its row in levels.ts): a hundred
+  // and ten damage a second and a fifth of a per cent a blow. Measured
+  // against the wall of sixteen duos a first card actually buys, forty
+  // runts take a tenth to a fifth of it run to run and every one of them
+  // dies doing it — where forty ironhide1s, shooting from eighteen tiles
+  // the whole way in, take a third. A tusker runt is the tougher body
+  // that does less on the approach and more once it lands, which is the
+  // family in one row.
+  //
   // THE TOP TWO STOMP (splash). The champion and the apex are heavy
   // enough that a blow lands on the patch and not just the gun — three
   // and four tiles of it — so a Tusker that reaches a block of turrets is
   // taking the block apart rather than one turret at a time.
   tusker1: [
-    { name: "tusker1-tusks", reload: t(30), mounts: 2, damage: 30, range: u(14), speed: 0, fx: "melee", rend: 0.002 },
+    { name: "tusker1-tusks", reload: t(30), mounts: 2, damage: 28, range: u(14), speed: 0, fx: "melee", rend: 0.002 },
   ],
   tusker2: [
     { name: "tusker2-tusks", reload: t(30), mounts: 2, damage: 60, range: u(18), speed: 0, fx: "melee", rend: 0.0035 },
