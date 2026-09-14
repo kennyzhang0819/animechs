@@ -1,16 +1,20 @@
 // FOUNDRY, THE TURRET CONCEPT SHEETS: every head of the roster drawn at
 // native size (32 px a tile: 32, 64, 96, 128 for a 1x1 to a 4x4) into
-// docs/turret-concepts/, and every render checked for a lone pixel or a
-// one-pixel stroke — the two things the house rules forbid.
+// docs/turret-concepts/, and every render checked against the house
+// rules: no run of one material under four pixels along a row or a
+// column, and none under eight where it straddles the midline the shade
+// splits (game/turretArt.ts thinRuns).
 //
-// IT IS NOT THE SOURCE OF TRUTH ANY MORE. The sheet it writes is edited by
-// hand afterwards and the game ships those PNGs (game/foundryArt.ts), so a
-// re-render throws every hand edit away. It refuses to overwrite a drawing
-// that is already there unless FORCE=1 says to.
+// The game ships the PNGs this writes (game/foundryArt.ts). The sheet was
+// edited by hand for a while and the code carried what it had seeded, so
+// the script refuses to overwrite a drawing that is already there unless
+// FORCE=1 says to; since the four-pixel pass the code is the drawing
+// again and the sheet is a render of it, so FORCE=1 is the normal way to
+// update the sheet after an edit to the heads.
 //
 //   npm run gen:turrets                       (skips what exists)
 //   FORCE=1 npm run gen:turrets               (re-renders from the code)
-//   ALL=1 ...   list every flagged pixel      DUMP=1 ...   print its neighbourhood
+//   ALL=1 ...   list every flagged run
 //
 // The engine, the parts and the heads come from the game itself
 // (game/turretArt.ts), so the sheet and the board draw from one place.
@@ -18,7 +22,7 @@
 // docs/turret-factions.md.
 import { deflateSync } from "node:zlib";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { ACCENT, BORE, GUN, GUN_R, HEADS, STEEL, barrel, bars, drawCore, drawHead, plate, rev, stud } from "../game/turretArt.ts";
+import { ACCENT, CORE_N, HEADS, coreHead, drawCore, drawHead, layout, thinRuns } from "../game/turretArt.ts";
 
 // ── PNG, by hand ───────────────────────────────────────────────────────
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -52,41 +56,30 @@ export const ROSTER = {
   spectre: [4, "bullet", "Crucible"], meltdown: [4, "beam", "Furnace"], foreshadow: [4, "beam", "Railspike"],
 };
 
-// ── render, and refuse a hairline ──────────────────────────────────────
+// ── render, and refuse a thin run ──────────────────────────────────────
 const OUT = "docs/turret-concepts";
 mkdirSync(OUT, { recursive: true });
 const FORCE = !!process.env.FORCE;
 let kept = 0;
-let hairlines = 0; const dumped = {};
+let thin = 0;
 const jobs = [];
-for (const kind of Object.keys(ROSTER)) jobs.push([kind, () => drawHead(kind, HEADS)]);
-jobs.push(["core", drawCore]);
-for (const [name, make] of jobs) {
+for (const kind of Object.keys(ROSTER)) {
+  const [size, ammo] = ROSTER[kind];
+  jobs.push([kind, () => drawHead(kind, HEADS), () => layout(32 * size, (P) => HEADS[kind](P, ACCENT[ammo]))]);
+}
+jobs.push(["core", drawCore, () => layout(CORE_N, coreHead)]);
+for (const [name, make, laid] of jobs) {
   const file = `${OUT}/mill-${name}.png`;
-  // the drawing on disk may be a hand edit; only FORCE=1 replaces it
+  // the drawing on disk is kept unless FORCE=1 says to re-render it
   if (!FORCE && existsSync(file)) { kept++; continue; }
   const { n, px } = make();
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const c = px[y * n + x]; if (c === null) continue;
-    const at = (X, Y) => (X < 0 || Y < 0 || X >= n || Y >= n ? null : px[Y * n + X]);
-    const nb = [];
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && at(x + dx, y + dy) === c) nb.push([dx, dy]);
-    const stroke = nb.length === 0 || nb.every(([dx, dy]) => dx * nb[0][1] - dy * nb[0][0] === 0);
-    if (stroke) {
-      hairlines++;
-      if (process.env.ALL || hairlines <= 40) console.log(`  ${name}: one-wide at ${x},${y} ${c}`);
-      if (process.env.DUMP && !(dumped[name] ??= new Set()).has(`${x >> 3},${y >> 3}`)) {
-        dumped[name].add(`${x >> 3},${y >> 3}`);
-        const key = {}; let k = 0;
-        const sym = (v) => (v === null ? "." : (key[v] ??= "ABCDEFGHIJKLMNOP"[k++]));
-        console.log(`  ${name} around ${x},${y}:`);
-        for (let Y = y - 4; Y <= y + 4; Y++) console.log("    " + String(Y).padStart(3) + " " + Array.from({ length: 13 }, (_, i) => sym(at(x - 6 + i, Y))).join(""));
-        console.log("    " + Object.entries(key).map(([v, s]) => `${s}=${v}`).join(" "));
-      }
-    }
-  }
+  // the check reads the materials, not the shades: the split down the
+  // middle is not a feature, and a run is measured across it
+  const bad = thinRuns(laid(), n);
+  for (const b of bad) if (process.env.ALL || thin++ < 40) console.log(`  ${name}: ${b}`);
+  thin = Math.max(thin, bad.length);
   writeFileSync(file, png(px, n));
 }
 writeFileSync(`${OUT}/roster.json`, JSON.stringify({ roster: ROSTER, accent: ACCENT }, null, 2));
-console.log(`wrote ${jobs.length - kept} drawings to ${OUT}/, ${hairlines} lone pixels`);
+console.log(`wrote ${jobs.length - kept} drawings to ${OUT}/, ${thin} thin runs`);
 if (kept) console.log(`kept ${kept} already on disk — FORCE=1 to re-render them from the code`);

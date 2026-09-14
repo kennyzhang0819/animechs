@@ -130,6 +130,11 @@ function hartBody(P: Pen, T: IronTier): void {
     for (let k = 0; k < tines; k++) P.box(bx - w(3), top + k * period, bx + beamW, top + k * period + tH, STEEL);
     P.box(bx, top, bx + beamW, top + w(3), STAR);
   }
+  // a gunmetal yoke over each shoulder from T4, from beside the neck out
+  // to the back's edge and in to the saddle: it is also where the legged
+  // rig's shoulder caps sit (levels.ts starhart4, mounts 5 MU out at 45
+  // degrees), so the caps come up under a plate, not beside a bare neck
+  if (t >= 4) P.octa(q(6), q(9), c - 2 * U, q(12) + w(6), U, GUN);
   // the neck and the head, a wedge forward of the shoulders
   P.box(c - w(3), q(8), c + w(3), q(14), HART);
   P.octa(c - w(4), q(2), c + w(4), q(10), U, HART);
@@ -140,12 +145,8 @@ function hartBody(P: Pen, T: IronTier): void {
     P.box(c - U, q(13) + U, c + U, n - q(3) - U, STAR);
     if (t >= 3) P.box(c - 2 * U, q(13), c + 2 * U, q(13) + U, GUN);
   } else P.box(c - U, q(14), c + U, q(27), STAR);
-  // a gunmetal yoke over each shoulder from T4, out to the saddle's edge,
-  // and vents down the saddle; a crest plate over the head at T5
-  if (t >= 4) {
-    P.octa(q(7), q(12), c - 2 * U, q(12) + w(6), U, GUN);
-    bars(P, c - w(3), c + w(3), n - q(9), 2, U, U, BORE);
-  }
+  // vents down the saddle from T4; a crest plate over the head at T5
+  if (t >= 4) bars(P, c - w(3), c + w(3), n - q(9), 2, U, U, BORE);
   if (t >= 5) P.box(c - w(3), q(4), c + w(3), q(4) + w(3), GUN);
 }
 /** T1-T3 on the mech rig: body, base plate, and the near-side hooves */

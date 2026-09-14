@@ -1020,16 +1020,20 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     shieldField: { amount: 30, max: 300, reload: 2, range: 9 * CELL },
     // THE ANIMAL TRIAL (animalFlag.ts): the Starhart T4 is the tier the
     // stag's stance opens, so it leaves the mech rig for four planted legs
-    // (LEG_ART.starhart4 in atlas.ts carries the art). Off the trial it has no
-    // gait and walks as the starhart4 mech it always was
+    // (LEG_ART.starhart4 in atlas.ts carries the art). A deer's legs from
+    // above are UNDER the deer: the same short reach as the rhino's
+    // (ironhide4 above, 14 on mounts 8), a little shorter still on mounts
+    // that sit inside the stag's narrower back, so a foot lands about a
+    // body's half-width out from the flank and no further. Off the trial
+    // it has no gait and walks as the starhart4 mech it always was
     ...(ANIMAL_ART
       ? {
           legs: legs({
             count: 4,
-            length: 26 * MU,
+            length: 12 * MU,
             forwardScl: 0.7,
             moveSpace: 1.3,
-            baseOffset: 8 * MU,
+            baseOffset: 5 * MU,
             lengthScl: 0.9,
             speed: 0.15,
             elevation: 0.3,
@@ -1065,15 +1069,16 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     repairField: { amount: 80, reload: 2, range: 11 * CELL },
     shieldField: { amount: 50, max: 500, reload: 2, range: 11 * CELL },
     // THE ANIMAL TRIAL (animalFlag.ts): as the Starhart T5 the four legs
-    // are a stag's — longer, on closer mounts, planted well out from a
-    // body that no longer overhangs them
+    // are a stag's — the starhart4's short reach scaled to the bigger
+    // body (the ironhide5 runs 19 on mounts 11), planted under it, never
+    // a spider's span
     legs: ANIMAL_ART
       ? legs({
           count: 4,
-          length: 38 * MU,
+          length: 15 * MU,
           forwardScl: 0.7,
           moveSpace: 1.4,
-          baseOffset: 11 * MU,
+          baseOffset: 6 * MU,
           lengthScl: 0.9,
           speed: 0.15,
           elevation: 0.4,

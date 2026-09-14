@@ -188,9 +188,13 @@ the whole width rather than most of it.
 The frog's four legs run 14, 16, 24 and 30 Mindustry units from T2 on
 mounts 6 to 12 out, so every tier crouches on legs a little past its
 body and the apex strides. The rhino's are 14 and 19 units on
-55 and 75 world px bodies; the stag's 26 and 38 on 60 and 72.5, a
-stag's legs being long. The leg spec lives in `game/levels.ts` next to
-the kind, behind the same flag.
+55 and 75 world px bodies; the stag's 12 and 15 on 60 and 72.5, on
+mounts 5 and 6 out. A deer's legs from above are under the deer: a foot
+lands about a body's half-width out from the flank and no further, and
+the shoulder caps come up under the gunmetal yoke the T4 and T5 wear
+beside the neck. The first cut had the stag on 26 and 38, which read as
+a spider's span. The leg spec lives in `game/levels.ts` next to the
+kind, behind the same flag.
 
 ### Hitboxes
 

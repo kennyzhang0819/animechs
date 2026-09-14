@@ -4,10 +4,10 @@ The seventeen turrets are Mindustry's, sprite for sprite
 (`public/mindustry/README.md`: placeholder art, GPL, to be replaced). The
 swarm has already stopped being Mindustry's (`docs/unit-art.md`). Foundry
 is the first player faction: machine turrets, one metal, every kind its
-own shape, an accent per ammo. The concept heads are in
-`docs/turret-concepts/mill-<kind>.png`, seeded by
-`node scripts/turret-concepts.mjs` and edited by hand after; those PNGs
-are what the game ships ("How it ships", below).
+own shape, an accent per ammo. The heads are in
+`docs/turret-concepts/mill-<kind>.png`, rendered by
+`FORCE=1 npm run gen:turrets` from `game/turretArt.ts`; those PNGs are
+what the game ships ("How it ships", below).
 
 ## How a head is drawn, read off the stock art
 
@@ -23,27 +23,38 @@ than assumed:
   `#8f665b` left and `#c9a58f` right, the lancer's `#6974c4` and
   `#8aa3f4`. A part is drawn once in a material and the shade is applied
   after, so the shape is symmetric by construction and the shade never is.
-- **Cuts are at 45 degrees or straight, nothing thinner than two pixels,
-  and every head is authored in pixels on its own grid.** A clearance of
-  two pixels has to be two pixels; rounding a unit fraction is how a
-  one-pixel sliver gets in. The script checks every render for a pixel
-  whose same-colour neighbours all lie on one line through it (a lone
-  pixel or a one-pixel stroke, straight or diagonal) and prints where;
-  the roster renders with none. What the check taught: a circle drawn
-  near a 45-degree chamfer runs parallel to it and leaves a one-pixel
-  diagonal between them (so the arc and the swarmer carry no bevel band);
-  two circles with different centres leave a crescent (so a window is
-  concentric with its tank); and any feature centred on the sprite's
-  midline has to be at least four pixels wide, because the shade split
-  cuts it in two.
-- **A head is built from parts, not shapes.** A chamfered plate with a
-  bevel band along its chamfers, drawn in the reversed shade; barrels
-  with a wider muzzle brake, a bore, shroud bands and an accent collar at
-  the root; magazines with the rounds showing; vents as stacked bars;
-  studs as small diamonds; capacitor banks with charge bands; a raised
-  breech between the barrels of the heavies. Where the stock sprites put
-  their form is in how many plates butt against each other, never in more
-  colours: a 3x3 or 4x4 stock top is five colours.
+- **Cuts are at 45 degrees or straight, nothing narrower than four
+  pixels, and every head is authored in pixels on its own grid.** Four
+  native px is 2.5 px on the board at 1x, the least that still reads as
+  a stroke, and it is the same floor the animals and the ground are
+  drawn to. A clearance of four pixels has to be four pixels; rounding a
+  unit fraction is how a sliver gets in. A feature that sits on the
+  sprite's midline is eight wide, because the shade split cuts it in
+  two (a bore may be four: its two shades are one colour). The script
+  measures every render on its material layout, before the shade — a run
+  of one material under four along any row or column, or one straddling
+  the midline under eight — and prints where; the roster renders with
+  none.
+- **Boxes and octagons only, and a part goes where the octagon is flat.**
+  A circle's edge is a stair of single pixels and a circle cut by a
+  straight edge leaves a two-pixel stub at each end of the cut, so there
+  are no circles: an octagon with a deep chamfer reads as round at field
+  zoom. An octagon is flat between its chamfers, and a box laid on it
+  either sits inside that flat or reaches past the octagon's edge
+  altogether — a straight edge that ends inside a chamfer leaves a wedge
+  that tapers to a pixel. A second octagon inside the first is the
+  first moved in by the same amount on every side (`inset()`), which
+  keeps the band between them one width along the straights and the
+  chamfers; the bevel band that used to run along a plate's chamfers
+  alone tapered to a point at both ends, so there are no bevel bands.
+- **A head is a few parts.** A body, the thing it fires with, one
+  accent: barrels with a gunmetal cap and, where the shaft is wide
+  enough, a bore; a magazine or a breech in the accent; a window as an
+  inset. Not a dressing of studs, vents, shroud bands and rounds — at 2.5
+  px a stroke on the board those are noise, and the hand-edited sheet
+  this pass replaced had already scraped most of them off. Where the
+  stock sprites put their form is in how many plates butt against each
+  other, never in more colours: a 3x3 or 4x4 stock top is five colours.
 - **A turret is two sprites**: the base plate that never turns, and the
   head the renderer spins to face its target (`top()` in `game/atlas.ts`),
   32 px a tile: 32, 64, 96, 128 for a 1x1 to a 4x4. A head must have a
@@ -90,26 +101,21 @@ the stock kind stays the key everywhere in the code.
 ### One silhouette a kind
 
 `mill-<kind>.png` is the roster: the round-leaning set (turntables,
-drums, a tank with the nozzle on top, a round gatling salvo, a tesla
-dome). The fuse is the one head that
-lost its barrels: it throws shards a few tiles, and three gun tubes
-said sniper, so it is a drum with one blast face as wide as itself,
-five slits in it and a heat band where the face meets the drum. All
-eighteen render through the same one-pixel check with none flagged. Two more
-things it taught: a pod or pipe that crosses the turntable's rim must
-cover the rim for every row it spans (the rim's inner edge emerging from
-under a vertical edge is a one-pixel step), and a coil or collar laid
-across a round base has to start above where the base's interior first
-appears.
+drums, a tank with the nozzle on top, a gatling salvo, a tesla dome),
+every turntable an octagon since the four-pixel pass. The fuse is the
+one head that lost its barrels: it throws shards a few tiles, and three
+gun tubes said sniper, so it is a drum with one blast face as wide as
+itself and a heat band where the face meets the drum. The swarmer, which
+had four round tubes and a rail, is a steel box of four missile cells.
+All eighteen render through the same run check with none flagged.
 
 ### The core
 
 The core (`mill-core.png`, `drawCore`) is drawn to the same rules on the
-nucleus's 160 px, five cells square: one gunmetal plate with a bevel
-band, four steel intake silos at the corners, conduits to a reactor ring
-in the middle, and the team's sharded yellow drawn into the reactor
-where the stock team overlay put it, as a dark/light pair like every
-other material. It is symmetric on both axes because a building the
+nucleus's 160 px, five cells square: one gunmetal plate, four steel
+conduits into a reactor ring in the middle, and the team's sharded
+yellow drawn into the reactor where the stock team overlay put it, as a
+dark/light pair like every other material. It is symmetric on both axes because a building the
 swarm walks at from every side has no front. While the flag is on the
 atlas packs it in place of the nucleus and its overlay; off, the stock
 composite comes back.
@@ -127,7 +133,7 @@ same on `towerBaseIcon`'s PNGs for the placement ghost.
 
 The animals (`game/animalArt.ts`) and these heads are the same kind of
 drawing: flat plates, four or five colours, no outline, nothing under
-two pixels, symmetric by construction. Two things differ, both on
+four pixels, symmetric by construction. Two things differ, both on
 purpose. The heads carry Mindustry's turret lighting, dark left and
 light right, and the animals do not: a building is lit like a machine
 and a body is not, which is one more cue that separates the two sides
@@ -142,10 +148,13 @@ draws at three, so a duo next to a dagger-sized body is small by design
 (`docs/unit-art.md`, "The size").
 ## How it ships
 
-THE PNGs ON THE SHEET ARE THE ART, not the code that seeded them.
-`game/turretArt.ts` drew them once and they have been edited by hand
-since, so `docs/turret-concepts/mill-<kind>.png` is the source of truth
-and the generator refuses to overwrite one without `FORCE=1`.
+THE GAME SHIPS THE PNGs ON THE SHEET, and the sheet is a render of
+`game/turretArt.ts`. It was edited by hand for a while — the code drew
+it once and the edits scraped detail off — and the four-pixel pass
+folded those edits back into the code, so the code is the drawing again
+and `docs/turret-concepts/mill-<kind>.png` is what `FORCE=1 npm run
+gen:turrets` writes; the generator still refuses to overwrite a drawing
+without `FORCE=1`, so a hand edit is a choice and not an accident.
 `npm run sync:art` copies the sheet into `public/foundry/`, where the
 browser can fetch it, and runs before every dev server and every build;
 `game/foundryArt.ts` names the files. While `FOUNDRY_ART`
@@ -163,9 +172,9 @@ turrets byte for byte.
 `scripts/turret-concepts.mjs` imports the roster from the game module,
 so a re-render starts from the same parts the heads were built out of;
 `npm run gen:turrets` fills in any of the eighteen that is missing from
-`docs/turret-concepts/` and reports any one-pixel stroke, and
-`FORCE=1 npm run gen:turrets` redraws the lot — which throws away every
-hand edit, so it wants to be a deliberate act.
+`docs/turret-concepts/` and reports any run under four pixels, and
+`FORCE=1 npm run gen:turrets` redraws the lot from the code, which is
+the normal way to put an edit to the heads on the sheet.
 
 A faction, when a second comes, is a skin over this one roster, never a
 second roster: the sim, the deal, mods and relics are keyed by

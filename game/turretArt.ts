@@ -15,11 +15,24 @@
  *     its light on the right. That is the whole of the lighting. A part
  *     is drawn once in a material and the shade is applied after, so the
  *     shape is symmetric by construction and the shade never is.
- *   - Cuts are at 45 degrees or straight, nothing thinner than two
- *     pixels, and every head is authored in PIXELS on its own grid: a
- *     clearance of two pixels has to be two pixels, and rounding a unit
- *     fraction is how a one-pixel sliver gets in. The concept script
- *     checks every render for a lone pixel or a one-pixel stroke.
+ *   - Cuts are at 45 degrees or straight, NOTHING NARROWER THAN FOUR
+ *     PIXELS, and every head is authored in PIXELS on its own grid: a
+ *     clearance of four pixels has to be four pixels, and rounding a unit
+ *     fraction is how a sliver gets in. Four native px is 2.5 px on the
+ *     board at 1x, the least that still reads as a stroke; a bevel band
+ *     is four, a bore is four, a barrel is four. A feature that sits on
+ *     the midline is EIGHT wide, because the shade split cuts it in two
+ *     (a bore may be four: its two shades are one colour). The concept
+ *     script checks every render for a run of one material under four,
+ *     and for one straddling the midline under eight.
+ *   - Boxes and octagons only. A circle's edge is a stair whose steps are
+ *     one pixel, and a circle cut by a straight edge or laid near a
+ *     chamfer leaves slivers; an octagon with a deep chamfer reads as
+ *     round at field zoom and its bands are the width they were drawn.
+ *   - A head is a FEW parts — a body, the thing it fires with, one accent
+ *     — never a dressing of studs, vents and rounds: at 2.5 px a stroke
+ *     on the board those are noise, and the hand-edited sheet this pass
+ *     replaced had already scraped most of them off.
  *   - The body is gunmetal (the ripple's and the spectre's), the barrels
  *     steel (the lancer's), a bore near-black, and the ACCENT is the
  *     colour of what the turret throws, in Mindustry's own ammo pairs
@@ -123,40 +136,39 @@ function mask(mat: Cell[], n: number, m: Mat): Art {
 // ── the vocabulary: the parts a turret is built from ───────────────────
 /** a chamfered plate with a bevel band `b` px wide along every chamfer:
  *  the octagon in the reversed shade, then the same octagon cut deeper on
- *  top of it in the plate's own shade */
-export function plate(P: Pen, x0: number, y0: number, x1: number, y1: number, c: number, m: Mat, b = 3): void {
+ *  top of it in the plate's own shade. Four is the least band there is */
+export function plate(P: Pen, x0: number, y0: number, x1: number, y1: number, c: number, m: Mat, b = 4): void {
   P.octa(x0, y0, x1, y1, c, rev(m));
   P.octa(x0, y0, x1, y1, c + b, m);
 }
-export interface BarrelOpts {
-  /** how far the brake and the collar stand proud of the shaft, each side */
-  lip?: number;
-  /** the muzzle brake's height */
-  brake?: number;
-  /** the root collar's height; 0 for none */
-  collar?: number;
-  /** how far the bore sits in from the shaft's edge */
-  bore?: number;
-  /** the rows shroud bands start on */
-  bands?: readonly number[];
-  bandH?: number;
+/** an octagon inset `b` inside another of chamfer `c`, so the band between
+ *  them is `b` wide along the straights AND the chamfers: the inner one's
+ *  chamfer is `c - b`, never less than 0 */
+export function inset(P: Pen, x0: number, y0: number, x1: number, y1: number, c: number, b: number, m: Mat): void {
+  P.octa(x0 + b, y0 + b, x1 - b, y1 - b, Math.max(0, c - b), m);
 }
-/** a barrel: steel shaft, a wider gunmetal muzzle brake with a bore in it,
- *  optional shroud bands, an accent collar at the root */
+export interface BarrelOpts {
+  /** the gunmetal muzzle cap's height, the shaft's width; 0 for none */
+  cap?: number;
+  /** the bore's width inside the cap, centred; 0 for none — the shaft has
+   *  to be at least eight wider than it */
+  bore?: number;
+  /** the accent collar's height at the root; 0 for none */
+  collar?: number;
+}
+/** a barrel: a steel shaft with a gunmetal cap at the muzzle, a bore in
+ *  the cap where the shaft is wide enough, an accent collar at the root */
 export function barrel(P: Pen, x0: number, x1: number, y0: number, y1: number, A: Mat, o: BarrelOpts = {}): void {
-  const lip = o.lip ?? 2, brake = o.brake ?? 4, collar = o.collar ?? 3, boreIn = o.bore ?? 2;
+  const cap = o.cap ?? 6, bore = o.bore ?? 0, collar = o.collar ?? 0;
   P.box(x0, y0, x1, y1, STEEL);
-  P.box(x0 - lip, y0, x1 + lip, y0 + brake, GUN);
-  P.box(x0 + boreIn, y0, x1 - boreIn, y0 + brake, BORE);
-  for (const y of o.bands ?? []) P.box(x0 - lip, y, x1 + lip, y + (o.bandH ?? 3), GUN);
-  if (collar > 0) P.box(x0 - lip, y1 - collar, x1 + lip, y1, A);
+  if (cap > 0) P.box(x0, y0, x1, y0 + cap, GUN);
+  if (bore > 0) { const m = (x0 + x1 - bore) / 2; P.box(m, y0, m + bore, y0 + cap, BORE); }
+  if (collar > 0) P.box(x0, y1 - collar, x1, y1, A);
 }
 /** n bars, h px tall, gap px apart */
 export function bars(P: Pen, x0: number, x1: number, y: number, n: number, h: number, gap: number, m: Mat = BORE): void {
   for (let i = 0; i < n; i++) P.box(x0, y + i * (h + gap), x1, y + i * (h + gap) + h, m);
 }
-/** a stud: a small diamond */
-export const stud = (P: Pen, x: number, y: number, r = 2, m: Mat = BORE): void => P.diamond(x, y, r, m);
 
 // ── the roster ─────────────────────────────────────────────────────────
 /** the kinds with a drawing: every turret but the retired menders */
@@ -179,205 +191,146 @@ export type HeadFn = (P: Pen, A: Mat) => void;
 
 /**
  * THE HEADS: one silhouette a role, so no head is another head at a
- * different size. The twin gun is two barrels; the mortar a mouth on a
- * turntable; the charge beam an emitter block with capacitors; the
- * artillery ringed mouths; the heavy barrels longer than its body.
- * Every head is drawn left half and centre only; finish() mirrors and
- * shades. `A` is the accent pair.
+ * different size. The twin gun is two barrels on a copper block; the
+ * mortar a mouth on a turntable; the charge beam an emitter block with
+ * capacitors; the artillery four ringed mouths; the heavy barrels longer
+ * than its body. Every head is drawn left half and centre only; finish()
+ * mirrors and shades. `A` is the accent pair.
+ *
+ * Every head is a body, the thing it fires with, and one accent, in
+ * boxes and octagons whose every run is four px or more and whose every
+ * midline feature is eight wide. WHERE A PART MAY GO: an octagon is flat
+ * between its chamfers — rows y0+c..y1-c and columns x0+c..x1-c — and a
+ * box laid on it either sits inside that flat, or reaches past the
+ * octagon's edge altogether. A straight edge that ends INSIDE a chamfer
+ * leaves a wedge that tapers to a pixel, and so does a second octagon
+ * whose chamfer is not the first's moved in by the same amount on every
+ * side (inset()). The margins are the stock ones: 4 px on the 32 grid, 8
+ * on 64, 6 on 96 and 128.
  */
 export const HEADS: Record<TurretArtKind, HeadFn> = {
   // 1x1, 32 px ───────────────────────────────────────────────────────
-  duo(P, A) {                                            // a round turret, a drum between the barrels
-    P.disc(16, 18, 10, GUN);
-    P.disc(16, 20, 6, GUN_R);                             // the bevel under the drum
-    barrel(P, 9, 13, 3, 16, A, { lip: 2, brake: 3, collar: 4, bore: 1 });
-    P.box(14, 12, 18, 22, A);                             // the ammo drum
+  duo(P, A) {                                            // two barrels on a copper block
+    P.octa(6, 12, 26, 28, 4, GUN);                        // the turntable
+    P.box(6, 12, 26, 20, A);                              // the copper block, across it
+    barrel(P, 8, 12, 4, 12, A, { cap: 4 });               // a barrel, 4 wide, its cap 4 tall
   },
-  hail(P, A) {                                           // a square mortar with a shell rack
-    plate(P, 5, 8, 27, 29, 5, GUN);
-    P.ring(16, 17, 7, 3, STEEL);                          // the tube
-    P.disc(16, 17, 4, A);
-    P.disc(16, 17, 2, BORE);
-    P.box(10, 21, 22, 29, A);                             // the shell rack
-    P.box(14, 23, 18, 27, STEEL);                         // a shell in it
+  hail(P, A) {                                           // one mortar mouth, a plate behind
+    P.octa(6, 4, 26, 24, 6, STEEL);                       // the mouth
+    P.box(10, 10, 22, 18, A);                             // the shell in it
+    P.box(6, 18, 26, 28, GUN);                            // the plate
   },
-  scorch(P, A) {                                         // a round tank, the nozzle up top
-    P.disc(16, 19, 9, GUN);
-    P.ring(16, 19, 9, 3, GUN_R);
-    P.disc(16, 19, 5, A);                                 // the fuel
-    P.disc(16, 19, 2, STEEL);                             // its cap
-    P.box(12, 3, 20, 12, STEEL);                          // the nozzle
-    P.box(14, 3, 18, 6, BORE);
-    P.box(11, 6, 21, 8, GUN);                             // its lip
-    P.box(11, 8, 21, 12, A);                              // the burner
-    P.box(5, 14, 8, 24, STEEL);                           // a fuel line on the flank
+  scorch(P, A) {                                         // a flat wide nozzle on a tank
+    P.octa(4, 12, 28, 28, 4, A);                          // the tank
+    P.box(8, 4, 24, 12, STEEL);                           // the nozzle, as wide as the tank's top
+    P.box(14, 4, 18, 8, BORE);
+    P.box(4, 20, 28, 28, GUN);                            // the cradle behind
   },
-  arc(P, A) {                                            // a tesla dome, one forked prong
-    plate(P, 5, 12, 27, 29, 4, GUN, 0);
-    P.disc(16, 18, 8, A);                                 // the dome
-    P.disc(16, 18, 5, STEEL);
-    P.disc(16, 18, 2, A);
-    P.box(12, 3, 20, 12, STEEL);                          // the prong
-    P.box(14, 3, 18, 7, BORE);                            // its slot
-    P.box(12, 9, 20, 12, A);                              // its collar, where the prong meets the dome
-    P.box(5, 16, 9, 24, A);                               // a coil on the flank, butted to the dome
+  arc(P, A) {                                            // a coil dome, two prongs, no barrel
+    P.octa(4, 8, 28, 28, 4, GUN);
+    P.box(8, 12, 24, 24, A);                              // the coil
+    P.box(12, 16, 20, 20, STEEL);                         // its core
+    P.box(4, 4, 8, 14, STEEL);                            // a prong, at the edge
   },
   // 2x2, 64 px ───────────────────────────────────────────────────────
-  salvo(P, A) {                                          // a round gatling salvo
-    P.disc(32, 36, 20, GUN);
-    P.ring(32, 36, 20, 4, GUN_R);
-    barrel(P, 14, 20, 4, 30, A, { bands: [14], collar: 3 });
-    barrel(P, 29, 35, 4, 30, A, { bands: [14], collar: 3 });
-    P.disc(32, 40, 8, A);                                 // the drum
-    P.disc(32, 40, 4, STEEL);
-    P.box(8, 34, 20, 46, A);                              // the feed pod, over the rim
-    bars(P, 22, 26, 44, 2, 2, 2);
+  salvo(P, A) {                                          // three barrels over a magazine
+    P.octa(8, 16, 56, 56, 12, GUN);
+    barrel(P, 12, 20, 6, 24, A, { cap: 6 });
+    barrel(P, 28, 36, 6, 24, A, { cap: 6 });
+    P.box(8, 24, 56, 40, A);                              // the magazine, across the drum
+    P.box(28, 40, 36, 56, STEEL);                         // the feed
   },
-  scatter(P, A) {                                        // twin fat barrels, a radar between
-    plate(P, 8, 24, 56, 58, 8, GUN, 4);
-    barrel(P, 12, 24, 6, 34, A, { lip: 2, brake: 8, collar: 5, bore: 3, bands: [18] });
-    P.ring(32, 20, 6, 3, STEEL);                          // the ranging dish
-    P.disc(32, 20, 3, A);
-    P.octa(14, 40, 50, 54, 4, A);                         // the magazine
-    P.box(18, 44, 46, 51, GUN);                           // its lid
-    P.box(20, 46, 24, 49, STEEL); P.box(28, 46, 36, 49, STEEL);   // flak shells
-    bars(P, 10, 14, 32, 2, 2, 2);
+  scatter(P, A) {                                        // a bell that flares forward
+    P.octa(8, 26, 56, 58, 10, GUN);
+    P.box(14, 14, 50, 30, STEEL);                         // the throat
+    P.box(10, 6, 54, 16, A);                              // the flare
+    P.box(24, 6, 40, 12, BORE);                           // the mouth
+    P.box(20, 40, 44, 52, A);                             // the magazine
   },
-  lancer(P, A) {                                         // a round lancer, pods on the rim
-    P.disc(32, 34, 21, GUN);
-    P.ring(32, 34, 21, 4, GUN_R);
-    P.box(24, 4, 40, 22, STEEL);                          // the emitter block
-    P.box(28, 4, 36, 9, BORE);
-    P.box(28, 12, 36, 18, A);
-    P.box(8, 26, 18, 44, A);                              // capacitor pods, over the rim
-    bars(P, 8, 18, 29, 3, 2, 3, GUN);
-    P.box(28, 22, 36, 48, A);                             // the charge line
-    P.box(20, 34, 44, 44, GUN_R);                         // the coil housing
-    P.box(28, 34, 36, 44, STEEL);
-    P.box(28, 50, 36, 56, A);
+  lancer(P, A) {                                         // a wedge with capacitors on the flanks
+    P.octa(10, 20, 54, 58, 12, GUN);
+    P.box(18, 4, 46, 24, STEEL);                          // the emitter block
+    P.box(24, 4, 40, 12, A);                              // the emitter
+    P.box(28, 24, 36, 50, A);                             // the charge line
+    P.box(8, 24, 18, 42, A);                              // a capacitor on the flank
   },
-  wave(P, A) {                                           // a square tank
-    plate(P, 8, 22, 56, 58, 8, GUN, 4);
-    P.disc(32, 40, 13, STEEL);                            // the window
-    P.disc(32, 40, 10, A);
-    P.disc(27, 36, 2, rev(A));
-    P.box(26, 4, 38, 28, STEEL);                          // the nozzle
-    P.box(22, 4, 42, 9, GUN);
-    P.box(28, 4, 36, 9, BORE);
-    P.box(24, 12, 40, 18, A);                             // the valve
-    P.box(10, 30, 16, 50, STEEL); P.box(12, 32, 14, 48, A);   // a pipe on the flank
-    P.box(28, 54, 36, 58, A);                             // the drain
+  wave(P, A) {                                           // a tank with a window and one nozzle
+    P.octa(8, 20, 56, 58, 12, GUN);
+    inset(P, 8, 20, 56, 58, 12, 6, STEEL);                // the window's rim
+    inset(P, 8, 20, 56, 58, 12, 10, A);                   // the water
+    P.box(26, 4, 38, 26, STEEL);                          // the nozzle
+    P.box(22, 8, 42, 16, A);                              // the valve
   },
-  parallax(P, A) {                                       // an octagonal dish on a yoke
-    plate(P, 10, 30, 54, 58, 6, GUN, 3);
-    P.box(6, 32, 12, 52, GUN); P.box(8, 34, 10, 50, GUN_R);   // the yoke arms
-    plate(P, 12, 6, 52, 38, 12, STEEL, 4);                // the dish
-    P.octa(18, 12, 46, 32, 8, GUN_R);
-    P.octa(24, 16, 40, 28, 4, A);
-    P.box(30, 20, 34, 24, STEEL);                         // the emitter core
-    P.box(28, 4, 36, 12, STEEL); P.box(26, 4, 38, 7, A);  // the feed horn
-    stud(P, 16, 50);
+  parallax(P, A) {                                       // a dish on a yoke
+    P.octa(10, 33, 54, 58, 8, GUN); P.box(10, 33, 54, 41, GUN);   // the yoke, square at the top
+    P.octa(8, 4, 56, 44, 16, STEEL);                      // the dish
+    inset(P, 8, 4, 56, 44, 16, 4, GUN_R);                 // its bowl
+    inset(P, 8, 4, 56, 44, 16, 12, A);                    // the field
+    P.box(28, 20, 36, 28, STEEL);                         // the emitter
   },
-  swarmer(P, A) {                                        // round pod launcher, four tubes
-    P.disc(32, 32, 22, GUN);
-    P.ring(32, 32, 22, 4, GUN_R);
-    for (const cy of [26, 38]) { P.disc(23, cy, 4, BORE); P.disc(23, cy, 2, A); }   // the tubes, well inside the rim
-    P.box(28, 20, 36, 44, A);                             // the spine
-    P.box(30, 24, 34, 40, STEEL);
-    P.box(20, 48, 44, 55, A);                             // the reload rail
+  swarmer(P, A) {                                        // a box of missile cells
+    P.octa(8, 8, 56, 58, 12, GUN);
+    P.box(16, 16, 48, 48, STEEL);                         // the box
+    P.box(20, 20, 28, 28, A); P.box(20, 32, 28, 40, A);   // two cells a side
   },
   // 3x3, 96 px ───────────────────────────────────────────────────────
-  fuse(P, A) {                                           // a round shotgun: one wide blast face, no tubes
-    P.disc(48, 52, 36, GUN);
-    P.ring(48, 52, 36, 6, GUN_R);
-    plate(P, 14, 8, 82, 32, 8, STEEL, 4);                 // the blast face, as wide as the drum
-    P.box(20, 12, 26, 28, BORE); P.box(32, 12, 38, 28, BORE); P.box(44, 12, 52, 28, BORE);   // its slits
-    P.box(16, 30, 80, 38, A);                             // the heat band where the face meets the drum
-    P.disc(48, 58, 12, A);                                // the breech
-    P.disc(48, 58, 6, STEEL);
-    P.disc(48, 58, 2, BORE);
-    P.box(12, 48, 24, 66, A);                             // a shell rack on the rim
-    P.box(14, 50, 18, 54, STEEL); P.box(14, 56, 18, 60, STEEL);
+  fuse(P, A) {                                           // a broadside: one blast face as wide as the drum
+    P.octa(6, 30, 90, 90, 18, GUN);
+    P.octa(12, 6, 84, 34, 8, STEEL);                      // the blast face
+    P.box(12, 34, 84, 42, A);                             // the heat band where it meets the drum
+    P.octa(32, 48, 64, 80, 8, A);                         // the breech
+    P.box(40, 56, 56, 72, STEEL);
+    P.box(10, 48, 22, 72, A);                             // a shell rack on the rim
   },
-  ripple(P, A) {                                         // a square four-tube mortar block
-    plate(P, 8, 8, 88, 90, 14, GUN, 6);
-    for (const cy of [30, 66]) { P.ring(30, cy, 14, 5, STEEL); P.disc(30, cy, 9, A); P.disc(30, cy, 5, BORE); }
-    P.box(42, 12, 54, 86, GUN_R);                         // the cross between the tubes
-    P.box(12, 42, 84, 54, GUN_R);
-    P.diamond(48, 48, 3, A);
+  ripple(P, A) {                                         // four ringed mouths on a plate
+    P.octa(6, 6, 90, 90, 16, GUN);
+    for (const y of [14, 54]) {
+      P.octa(14, y, 42, y + 28, 8, STEEL);                // a mouth
+      inset(P, 14, y, 42, y + 28, 8, 4, A);
+      P.box(24, y + 10, 32, y + 18, BORE);
+    }
   },
-  tsunami(P, A) {                                        // a square tank, twin nozzles
-    plate(P, 6, 20, 90, 90, 12, GUN, 5);
-    P.disc(48, 56, 26, STEEL);                            // the window
-    P.disc(48, 56, 22, A);
-    P.disc(40, 48, 4, rev(A));
-    barrel(P, 24, 36, 4, 24, A, { lip: 2, brake: 6, collar: 0, bore: 3 });
-    P.box(8, 20, 88, 30, GUN);                            // the manifold
-    P.box(44, 22, 52, 28, A);
-    P.box(10, 34, 16, 78, STEEL); P.box(12, 36, 14, 76, A);   // a pipe on the flank
-    P.box(42, 83, 54, 90, A);                             // the drain
+  tsunami(P, A) {                                        // the great tank, twin nozzles
+    P.octa(6, 26, 90, 90, 14, GUN);
+    inset(P, 6, 26, 90, 90, 14, 4, STEEL);                // the window's rim
+    inset(P, 6, 26, 90, 90, 14, 8, A);                    // the water
+    barrel(P, 24, 40, 4, 30, A, { cap: 6, bore: 8, collar: 6 });   // a nozzle
   },
-  cyclone(P, A) {                                        // a hex turret, three barrels in a triangle
-    plate(P, 10, 30, 86, 90, 14, GUN, 5);
-    barrel(P, 24, 32, 12, 44, A, { lip: 2, brake: 6, bands: [24], bandH: 4, collar: 4, bore: 2 });
-    barrel(P, 44, 52, 4, 44, A, { lip: 2, brake: 6, bands: [16], bandH: 4, collar: 4, bore: 2 });
-    P.ring(48, 66, 20, 5, A);                             // the drum
-    P.disc(48, 66, 15, GUN_R);
-    P.disc(48, 66, 6, A);
-    P.disc(48, 66, 3, STEEL);
-    P.box(12, 50, 20, 76, STEEL); P.box(14, 52, 18, 74, A);   // the feed chute
-    bars(P, 22, 26, 56, 3, 2, 2);
+  cyclone(P, A) {                                        // a rotary cluster on a banded drum
+    P.octa(10, 34, 86, 90, 14, GUN);
+    barrel(P, 20, 32, 10, 38, A, { cap: 6, collar: 6 });  // the outer barrels
+    barrel(P, 42, 54, 2, 46, A, { cap: 6, collar: 6 });   // the middle one, forward
+    P.octa(26, 50, 70, 86, 12, A);                        // the drum's band
+    inset(P, 26, 50, 70, 86, 12, 6, GUN_R);
+    P.box(42, 62, 54, 74, STEEL);                         // its hub
   },
   // 4x4, 128 px ──────────────────────────────────────────────────────
-  spectre(P, A) {                                        // a round heavy, radiator pods
-    P.disc(64, 72, 50, GUN);
-    P.ring(64, 72, 50, 8, GUN_R);
-    barrel(P, 32, 48, 6, 64, A, { lip: 4, brake: 10, bands: [22, 32, 44], bandH: 4, collar: 6, bore: 4 });
-    P.octa(50, 24, 78, 56, 6, GUN_R);                     // the breech between the barrels
-    P.box(56, 30, 72, 50, A);
-    P.box(60, 34, 68, 46, STEEL);
-    P.octa(8, 60, 28, 92, 4, A);                          // the radiator pods, over the rim
-    bars(P, 10, 22, 64, 3, 4, 4, GUN);
-    P.disc(64, 84, 14, A);                                // the ammo drum
-    P.disc(64, 84, 7, STEEL);
-    P.disc(64, 84, 3, BORE);
-    stud(P, 48, 104, 3);
+  spectre(P, A) {                                        // long twin barrels on a breech, radiator pods
+    P.octa(10, 62, 118, 122, 20, GUN);
+    P.box(26, 34, 102, 62, A);                            // the breech, the barrels stand on it
+    barrel(P, 30, 50, 6, 62, A, { cap: 10, bore: 8 });    // a barrel
+    P.box(6, 62, 26, 98, A);                              // a radiator pod, out past the rim
+    P.octa(48, 72, 80, 104, 8, A);                        // the ammo drum
+    P.box(58, 82, 70, 94, STEEL);
   },
-  meltdown(P, A) {                                       // a round reactor, an emitter housing above
-    P.disc(64, 68, 54, GUN);
-    P.ring(64, 68, 54, 8, GUN_R);
-    plate(P, 40, 6, 88, 30, 10, STEEL, 4);                // the emitter housing
-    P.box(58, 6, 70, 14, BORE);
-    P.box(58, 18, 70, 26, A);
-    P.ring(64, 50, 18, 6, STEEL);                         // the lens
-    P.ring(64, 50, 12, 3, rev(A));
-    P.disc(64, 50, 9, A);
-    P.disc(64, 50, 3, STEEL);
-    P.octa(6, 52, 23, 84, 4, A);                          // capacitor pods, over the rim
-    bars(P, 8, 20, 56, 3, 4, 6, rev(A));
-    P.box(58, 66, 70, 106, A);                            // the charge line
-    P.box(44, 78, 84, 94, GUN_R);
-    P.box(58, 78, 70, 94, STEEL);
-    bars(P, 42, 54, 98, 2, 3, 3);
+  meltdown(P, A) {                                       // one lens and three capacitor banks
+    P.octa(8, 26, 120, 122, 26, GUN);
+    P.octa(40, 6, 88, 34, 10, STEEL);                     // the emitter housing
+    P.box(56, 6, 72, 18, A);                              // the emitter
+    P.octa(40, 40, 88, 88, 12, STEEL);                    // the lens
+    inset(P, 40, 40, 88, 88, 12, 6, A);
+    P.box(58, 58, 70, 70, STEEL);
+    P.box(20, 52, 34, 96, A);                             // a capacitor bank on the flank
+    P.box(52, 96, 76, 116, A);                            // and one behind
   },
-  foreshadow(P, A) {                                     // twin rails
-    plate(P, 16, 60, 112, 122, 16, GUN, 6);
-    for (const x of [40]) {
-      P.box(x, 2, x + 12, 76, STEEL);                     // a rail
-      P.box(x - 4, 2, x + 16, 10, GUN);                   // its muzzle
-      P.box(x + 4, 2, x + 8, 72, BORE);
-      for (const y of [14, 30, 46]) { P.box(x - 6, y, x + 18, y + 8, A); P.box(x - 4, y + 2, x + 16, y + 6, rev(A)); }
-    }
-    P.box(58, 20, 70, 60, GUN_R);                         // the bridge between them
-    P.box(60, 26, 68, 54, A);
-    P.box(62, 32, 66, 48, STEEL);
-    P.box(4, 76, 20, 106, STEEL);                         // the stabilisers
-    P.box(8, 80, 16, 102, GUN);
-    bars(P, 8, 16, 84, 3, 4, 3, STEEL);
-    P.octa(40, 84, 88, 118, 8, GUN_R);                    // the breech
-    P.box(52, 90, 76, 112, A);
-    P.box(58, 96, 70, 106, STEEL);
-    stud(P, 34, 74, 3);
+  foreshadow(P, A) {                                     // a single rail with accelerator rings
+    P.octa(16, 60, 112, 122, 16, GUN);
+    P.box(44, 2, 84, 80, STEEL);                          // the rail
+    P.box(60, 2, 68, 12, BORE);
+    for (const y of [12, 28, 44]) P.box(38, y, 90, y + 8, A);   // the rings
+    P.box(52, 84, 76, 112, A);                            // the breech
+    P.box(58, 90, 70, 106, STEEL);
+    P.box(4, 70, 20, 110, STEEL);                         // a stabiliser
   },
 };
 
@@ -388,40 +341,24 @@ export const TEAM: Mat = ["#d9a85a", "#ffd37f"];
 /**
  * THE CORE, drawn to the same rules as the heads: one gunmetal plate,
  * five cells square (160 px, the nucleus's size), that never turns. A
- * reactor ring in the middle wearing the team's colour, four intake
- * silos at the corners, conduits between, vents along the rim. Symmetric
- * on both axes, since a building the swarm walks at from every side has
- * no front.
+ * reactor in the middle wearing the team's colour, four conduits into
+ * it. Symmetric on both axes, since a building the swarm walks at from
+ * every side has no front.
  */
-export function drawCore(): Art {
-  const n = 160;
-  const g = grid(n);
-  const P = g.pen;
-  plate(P, 4, 4, 156, 156, 24, GUN, 8);
-  // the corner silos, top and bottom (the mirror does the right)
-  for (const y0 of [16, 112]) {
-    plate(P, 16, y0, 48, y0 + 32, 6, STEEL, 3);
-    P.disc(32, y0 + 16, 8, GUN_R);                        // the intake
-    P.disc(32, y0 + 16, 3, BORE);
-  }
-  // the conduits from the silos to the reactor
-  P.box(48, 28, 62, 36, STEEL); P.box(48, 124, 62, 132, STEEL);
-  P.box(28, 48, 36, 62, STEEL); P.box(28, 98, 36, 112, STEEL);
-  P.box(50, 30, 60, 34, GUN_R); P.box(50, 126, 60, 130, GUN_R);
-  P.box(30, 50, 34, 60, GUN_R); P.box(30, 100, 34, 110, GUN_R);
+export const CORE_N = 160;
+export function coreHead(P: Pen): void {
+  P.octa(4, 4, 156, 156, 28, GUN);
+  // the conduits, top and bottom and left (the mirror does the right)
+  P.box(76, 12, 84, 40, STEEL); P.box(76, 120, 84, 148, STEEL);
+  P.box(12, 76, 40, 84, STEEL);
   // the reactor
-  P.ring(80, 80, 44, 8, STEEL);
-  P.ring(80, 80, 36, 4, GUN_R);
-  P.disc(80, 80, 32, GUN);
-  P.disc(80, 80, 26, TEAM);                               // the team's colour, where the stock overlay put it
-  P.ring(80, 80, 26, 3, rev(TEAM));
-  P.disc(80, 80, 10, STEEL);
-  P.disc(80, 80, 4, BORE);
-  // vents along the top and bottom rims, and studs on the plate
-  bars(P, 60, 76, 8, 1, 4, 0); bars(P, 60, 76, 148, 1, 4, 0);
-  stud(P, 12, 80, 3);
-  stud(P, 56, 12, 3); stud(P, 56, 147, 3);
-  return finish(g.mat, n);
+  P.octa(36, 36, 124, 124, 24, STEEL);
+  inset(P, 36, 36, 124, 124, 24, 8, GUN_R);
+  inset(P, 36, 36, 124, 124, 24, 16, TEAM);               // the team's colour, where the stock overlay put it
+  P.box(74, 74, 86, 86, BORE);
+}
+export function drawCore(): Art {
+  return draw(CORE_N, coreHead);
 }
 
 /** any drawing on an n grid through the same mirror-and-shade finish —
@@ -442,6 +379,47 @@ export function drawWithCell(n: number, fn: (P: Pen) => void, accent: Mat): { ar
   // finish mirrors the material grid in place, so the mask is read after it
   const art = finish(g.mat, n);
   return { art, cell: mask(g.mat, n, accent) };
+}
+
+/** a material laid on a pixel, or none */
+export type Laid = Mat | null;
+/** the drawing BEFORE the shade: which material lies on every pixel,
+ *  mirrored. The rule check reads this (a run of one material under four
+ *  px, or one straddling the midline under eight), since the shade split
+ *  is not a feature and a material's two shades are one thing */
+export function layout(n: number, fn: (P: Pen) => void, mirror = true): readonly Laid[] {
+  const g = grid(n);
+  fn(g.pen);
+  if (mirror) for (let y = 0; y < n; y++) for (let x = 0; x < n >> 1; x++) g.mat[y * n + (n - 1 - x)] = g.mat[y * n + x];
+  return g.mat;
+}
+/** the runs the rules forbid on a laid-out grid: every maximal run of one
+ *  material along a row or a column under `min` px, and every run that
+ *  crosses the midline under `mid` px (a material whose shades are one
+ *  colour is exempt from the second). Each is "row y x0..x1" or "col x
+ *  y0..y1" with the run's length */
+export function thinRuns(mat: readonly Laid[], n: number, min = 4, mid = 8): string[] {
+  const out: string[] = [];
+  const at = (x: number, y: number): Laid => mat[y * n + x];
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n;) {
+      const m = at(x, y); let x1 = x; while (x1 < n && at(x1, y) === m) x1++;
+      const len = x1 - x;
+      if (m !== null) {
+        if (len < min) out.push(`row ${y} x ${x}..${x1 - 1} (${len})`);
+        else if (len < mid && x < n / 2 && x1 > n / 2 && m[0] !== m[1]) out.push(`row ${y} x ${x}..${x1 - 1} (${len}) on the midline`);
+      }
+      x = x1;
+    }
+  }
+  for (let x = 0; x < n; x++) {
+    for (let y = 0; y < n;) {
+      const m = at(x, y); let y1 = y; while (y1 < n && at(x, y1) === m) y1++;
+      if (m !== null && y1 - y < min) out.push(`col ${x} y ${y}..${y1 - 1} (${y1 - y})`);
+      y = y1;
+    }
+  }
+  return out;
 }
 
 /** draw one head of `set` (the roster by default) at its native size */

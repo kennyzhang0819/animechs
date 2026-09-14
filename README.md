@@ -189,12 +189,13 @@ stale tab or a cached bundle looks exactly like a fix not working.
   same way and packed over the stock turret cells while `FOUNDRY_ART`
   (`game/turretFlag.ts`) is on, the stock plates darkened under them.
   The HUD's turret pictures and the placement ghost come off the same
-  drawings. THE ART IS THE PNG SHEET, not the code that seeded it:
-  `docs/turret-concepts/mill-<kind>.png` is drawn by hand on top of what
-  `npm run gen:turrets` first rendered, `npm run sync:art` copies it into
-  `public/foundry/` before every dev server and build, and
-  `game/foundryArt.ts` names the files. The direction and the drawing
-  rules are in [docs/turret-factions.md](docs/turret-factions.md)
+  drawings. The game ships the PNG sheet:
+  `docs/turret-concepts/mill-<kind>.png` is what `FORCE=1 npm run
+  gen:turrets` renders from the code (every head checked for a run under
+  four pixels), `npm run sync:art` copies it into `public/foundry/`
+  before every dev server and build, and `game/foundryArt.ts` names the
+  files. The direction and the drawing rules are in
+  [docs/turret-factions.md](docs/turret-factions.md)
 - `game/renderer.ts` — WebGL2 instanced sprites: static terrain, shadow
   and wall batches, one dynamic batch in painter's order, and a shield
   pass. Water is a batch and a program of its own — Mindustry's

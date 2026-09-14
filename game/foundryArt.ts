@@ -2,13 +2,14 @@
  * FOUNDRY'S ART, AS IT SHIPS: the heads and the core the game actually
  * draws, by URL.
  *
- * The drawings are AUTHORED AS PNGs in `docs/turret-concepts/` — generated
- * once by `scripts/turret-concepts.mjs` from the code in `turretArt.ts`,
- * then edited by hand — so the PNG is the source of truth and the code is
- * the thing that seeded it. `npm run sync:art` copies the sheet into
- * `public/foundry/`, which is what these URLs point at; it runs before
- * every dev server and every build, so an edit to the sheet is on the
- * board the next time the page loads.
+ * The drawings are the PNGs in `docs/turret-concepts/`, rendered by
+ * `scripts/turret-concepts.mjs` from the code in `turretArt.ts` (the
+ * sheet was edited by hand for a while; the four-pixel pass folded those
+ * edits back into the code and the sheet is a render of it again).
+ * `npm run sync:art` copies the sheet into `public/foundry/`, which is
+ * what these URLs point at; it runs before every dev server and every
+ * build, so a re-rendered sheet is on the board the next time the page
+ * loads.
  *
  * Every sprite is at its native size, 32 px a tile: 32, 64, 96, 128 for a
  * 1x1 to a 4x4, and the core at the nucleus's 160. A head faces +x, the
