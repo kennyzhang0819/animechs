@@ -106,7 +106,7 @@ export const PLANTS: Record<PlantKind, (P: Pen) => void> = {
     P.disc(32, 32, 28, CAP);
     P.ring(32, 32, 28, 4, rev(CAP));
     P.disc(32, 32, 10, rev(CAP));
-    P.disc(17, 21, 3, PALE); P.disc(16, 38, 3, PALE); P.disc(26, 50, 3, PALE);   // spots, clear of the dome and the rim
+    P.disc(17, 21, 3, PALE); P.disc(16, 38, 3, PALE); P.disc(26, 48, 3, PALE);   // spots, clear of the dome and the rim
   },
   lancer(P) {                                            // SUNFLOWER: petals round a seed head; turns
     petalRing(P, 32, 32, 24, 8, 7);
