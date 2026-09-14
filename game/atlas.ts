@@ -11,7 +11,7 @@ import {
 import type { UnitKind } from "./levels";
 import { ANIMAL_ART } from "./animalFlag";
 import { FOUNDRY_ART } from "./turretFlag";
-import { BASE_DARK, turretHead } from "./turretArt";
+import { BASE_DARK, drawCore, turretHead } from "./turretArt";
 import { TOWER_ICONS } from "./towerIcons";
 import type { TowerKind } from "./types";
 import {
@@ -3164,19 +3164,25 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
 
   // the base building at native 160px: the block, then the team overlay
   // tinted sharded-yellow the way Mindustry composites team regions
-  draw(UV_BASE, antialiased(img.base));
-  const baseTeam = antialiased(img.baseTeam);
-  const team = document.createElement("canvas");
-  team.width = team.height = 160;
-  const tc = team.getContext("2d");
-  if (!tc) throw new Error("2d context unavailable");
-  tc.drawImage(baseTeam, 0, 0, 160, 160);
-  tc.globalCompositeOperation = "multiply";
-  tc.fillStyle = TEAM_COLOR;
-  tc.fillRect(0, 0, 160, 160);
-  tc.globalCompositeOperation = "destination-in";
-  tc.drawImage(baseTeam, 0, 0, 160, 160);
-  draw(UV_BASE, team);
+  if (FOUNDRY_ART) {
+    // FOUNDRY's core (turretArt.ts drawCore): the same plating as the
+    // heads, the team's colour drawn into it, no overlay to composite
+    draw(UV_BASE, antialiased(toCanvas(drawCore())));
+  } else {
+    draw(UV_BASE, antialiased(img.base));
+    const baseTeam = antialiased(img.baseTeam);
+    const team = document.createElement("canvas");
+    team.width = team.height = 160;
+    const tc = team.getContext("2d");
+    if (!tc) throw new Error("2d context unavailable");
+    tc.drawImage(baseTeam, 0, 0, 160, 160);
+    tc.globalCompositeOperation = "multiply";
+    tc.fillStyle = TEAM_COLOR;
+    tc.fillRect(0, 0, 160, 160);
+    tc.globalCompositeOperation = "destination-in";
+    tc.drawImage(baseTeam, 0, 0, 160, 160);
+    draw(UV_BASE, team);
+  }
 
   // the animal trial goes over the stock cells it replaces, once they are
   // all drawn and before the team cells are packed, since it requeues its own

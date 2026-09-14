@@ -90,7 +90,11 @@ the stock kind stays the key everywhere in the code.
 
 `mill-<kind>.png` is the roster: the round-leaning set (turntables,
 drums, a tank with the nozzle on top, a round gatling salvo, a tesla
-dome), chosen over the two alternates that are kept beside it,
+dome), chosen over the two alternates. The fuse is the one head that
+lost its barrels: it throws shards a few tiles, and three gun tubes
+said sniper, so it is a drum with one blast face as wide as itself,
+five slits in it and a heat band where the face meets the drum. The
+alternates kept their tubes that are kept beside it,
 `mill-<kind>-a.png` (the first, angular-leaning set) and
 `mill-<kind>-c.png` (hex plates, prisms, a wedge mortar, a coilgun on a
 round base), so a kind can still be swapped head by head. All fifty-one
@@ -100,6 +104,18 @@ cover the rim for every row it spans (the rim's inner edge emerging from
 under a vertical edge is a one-pixel step), and a coil or collar laid
 across a round base has to start above where the base's interior first
 appears.
+
+### The core
+
+The core (`mill-core.png`, `drawCore`) is drawn to the same rules on the
+nucleus's 160 px, five cells square: one gunmetal plate with a bevel
+band, four steel intake silos at the corners, conduits to a reactor ring
+in the middle, and the team's sharded yellow drawn into the reactor
+where the stock team overlay put it, as a dark/light pair like every
+other material. It is symmetric on both axes because a building the
+swarm walks at from every side has no front. While the flag is on the
+atlas packs it in place of the nucleus and its overlay; off, the stock
+composite comes back.
 
 ### The plate
 
