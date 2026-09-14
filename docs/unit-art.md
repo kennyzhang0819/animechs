@@ -119,7 +119,16 @@ stricter grammar than the trial above, and every family is drawn to it
 
 - **Every colour is a pair, dark and light.** The dark on the left half
   of the sprite, the light on the right, and that is the whole of the
-  lighting: no lit top, no dark underside, no third tone, no dither. A
+  lighting: no lit top, no dark underside, no third tone, no dither.
+  The rule is the SHAPE of a pair and never which pairs: nothing here
+  ties a body's colours to the turret palette, and every family invents
+  its own (`HIDE`/`CRIM`, `HART`/`STAR`, `FROG`/`ACID`, `SKIN`/`TEAL`,
+  `TUSK_HIDE`/`IVORY`). The six Mindustry lines draw their HARDWARE in
+  the turrets' `GUN`/`STEEL`/`BORE` because it was already there — a
+  convention, not a constraint. The Tusker's plating is its own warm
+  `IRON` for exactly that reason: gunmetal on a cool grey hide was two
+  greys arguing, and the family reads better with its gear a different
+  temperature from its animal. A
   part is drawn once in its material and the shade falls on it after
   (`finish`), so the shape is symmetric by construction and the shade is
   never. A part in the REVERSED pair (`rev`) catches light the other way,

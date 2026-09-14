@@ -44,7 +44,7 @@
  * and the thickest leg strokes on the roster.
  */
 import type { LegParts, MechParts } from "./animalArt";
-import { BORE, GUN, STEEL, draw, drawWithCell, rev, type Mat, type Pen } from "./turretArt";
+import { BORE, STEEL, draw, drawWithCell, rev, type Mat, type Pen } from "./turretArt";
 import { scaler, segment, type IronTier } from "./ironhideArt";
 
 /**
@@ -59,11 +59,23 @@ import { scaler, segment, type IronTier } from "./ironhideArt";
  * rhino is a dark body with one crimson-tipped horn and the Tusker is a
  * pale one with three prongs, two of them ivory.
  *
- * Everything the machine is drawn in (GUN, BORE) is now DARKER than the
- * hide rather than lighter, so the howdah reads as plating laid on the
- * animal — which is the right way round and was the other thing the dark
- * cut got backwards.
+ * THE IRON IS THE FAMILY'S OWN AND NOT THE TURRETS'. Nothing in the
+ * grammar (docs/unit-art.md 1b) ties a body's materials to the turret
+ * palette: the rule is that every colour is a PAIR shaded dark-left and
+ * light-right, never which pairs. The six Mindustry lines happen to draw
+ * their hardware in the turrets' gunmetal because it was there, and that
+ * is a convention rather than a constraint — every one of them already
+ * invents its own hide and its own accent (HIDE/CRIM, HART/STAR,
+ * FROG/ACID, SKIN/TEAL...).
+ *
+ * So the Tuskers' plating is a warm dark iron rather than the turrets'
+ * cold gunmetal. It reads as leather-and-iron gear strapped to an animal
+ * instead of as a turret part bolted on, it sits well clear of a cool
+ * grey hide where the gunmetal sat almost on top of it, and it is the
+ * ivory's neighbour on the wheel rather than its opposite. STEEL and
+ * BORE stay shared: a bright edge is a bright edge and a bore is a hole.
  */
+export const IRON: Mat = ["#34302b", "#5c554c"];
 export const TUSK_HIDE: Mat = ["#67666f", "#a3a2ad"];
 export const IVORY: Mat = ["#a89372", "#fff3de"];
 const HIDE_R = rev(TUSK_HIDE);
@@ -132,13 +144,13 @@ function body(P: Pen, T: IronTier): void {
   // gunmetal howdah under it from T2, and the howdah run forward to the
   // brow from T3
   if (t >= 2) {
-    P.box(c - 2 * U, q(t >= 3 ? 14 : 19), c + 2 * U, n - q(3), GUN);
+    P.box(c - 2 * U, q(t >= 3 ? 14 : 19), c + 2 * U, n - q(3), IRON);
     P.box(c - U, q(t >= 3 ? 16 : 21), c + U, n - q(5), IVORY);
   } else P.box(c - U, q(20), c + U, q(27), IVORY);
   // a stack at the tail from T4, twin stacks either side of the seam at
   // T5, each with an ivory heat band — the rhino's tell, on a bigger body
   if (t >= 4) for (const x of t >= 5 ? [c - 2 * U, c + 2 * U] : [c]) {
-    P.box(x - U, n - q(7), x + U, n, GUN);
+    P.box(x - U, n - q(7), x + U, n, IRON);
     P.box(x - U, n - q(7), x + U, n - q(7) + U, BORE);
     P.box(x - U, n - q(3), x + U, n - q(3) + U, IVORY);
   }
@@ -161,13 +173,13 @@ function body(P: Pen, T: IronTier): void {
   // ladder
   const tuskL = q(t >= 4 ? 15 : t >= 3 ? 14 : 13);
   P.box(c - 3 * U, q(2), c - 2 * U, tuskL, IVORY);
-  if (t >= 3) P.box(c - 3 * U, q(10), c - 2 * U, q(10) + U, GUN);
+  if (t >= 3) P.box(c - 3 * U, q(10), c - 2 * U, q(10) + U, IRON);
 }
 
 /** the plate the mech rig's pads mount to, under the body */
 const base = (P: Pen, T: IronTier): void => {
   const { n } = T; const { q, w } = scaler(n);
-  P.octa(q(8), q(12), n - q(8), n - q(2), w(5), GUN);
+  P.octa(q(8), q(12), n - q(8), n - q(2), w(5), IRON);
 };
 /** the near-side pads: two broad blocks at the body's right edge, each
  *  with a band of ivory toenail across its front — the one place the
@@ -207,11 +219,11 @@ export function tuskLegged(T: IronTier): LegParts {
   };
   return {
     body: art,
-    base: draw(n, (P) => P.octa(q(9), q(13), n - q(9), n - q(3), w(5), GUN)),
+    base: draw(n, (P) => P.octa(q(9), q(13), n - q(9), n - q(3), w(5), IRON)),
     cell,
     foot: draw(small, foot, false),
     joint: draw(small, (P) => P.disc(sc, sc, Math.max(2, Math.round(th / 2)), TUSK_HIDE), false),
-    baseJoint: draw(small, (P) => P.disc(sc, sc, Math.max(3, Math.round(th * 0.75)), GUN), false),
+    baseJoint: draw(small, (P) => P.disc(sc, sc, Math.max(3, Math.round(th * 0.75)), IRON), false),
     small,
     leg: segment(64, th, TUSK_HIDE),
     legBase: segment(64, T.sh, TUSK_HIDE),
