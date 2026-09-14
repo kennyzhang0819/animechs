@@ -2321,12 +2321,15 @@ export class Renderer {
         } else if (fp) {
           // A FLYER IN PARTS (atlas.ts FLYER_PARTS): the wings first,
           // under the body, each on its own root. A beat is a sine on sim
-          // time, offset per body by its spawn-time walk seed so a flight
-          // does not flap in step; at the top of it the wing folds toward
-          // its root — the quad across the heading shrinks about the
-          // root, which from above is what a downstroke looks like — and
-          // sweeps a little forward at the same time
-          this.pushWings(dyn, fp, upx[i], upy[i], urot[i], sim.time, uwalk[i], tint);
+          // time at the part's own rate — constant, whatever the body's
+          // speed — offset per body by its id so a flight does not flap
+          // in step (NOT by uwalk: a hull's walk counter keeps counting
+          // distance, and a beat seeded from it speeds up with the hull);
+          // at the top of it the wing folds toward its root — the quad
+          // across the heading shrinks about the root, which from above
+          // is what a downstroke looks like — and sweeps a little forward
+          // at the same time
+          this.pushWings(dyn, fp, upx[i], upy[i], urot[i], sim.time, sim.uid[i] * 2.399, tint);
           this.push(dyn, upx[i], upy[i], fp.sprite, fp.sprite, urot[i], fp.body, tint[0], tint[1], tint[2], 1);
           if (cell) this.pushCell(dyn, cell, upx[i], upy[i], usz, urot[i], this.cellTint);
         } else {
