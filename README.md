@@ -179,11 +179,14 @@ stale tab or a cached bundle looks exactly like a fix not working.
   take. Packed over the stock cells while `ANIMAL_ART`
   (`game/animalFlag.ts`) is on. The style, the sizing rule and how to
   add a family are in [docs/unit-art.md](docs/unit-art.md)
-- `game/ironhideArt.ts`, `game/familyArt.ts` — the six families on the
+- `game/ironhideArt.ts`, `game/familyArt.ts`, `game/tuskerArt.ts` — the
+  seven families on the
   turrets' engine and grammar: paired colours shaded dark-left
   light-right, nothing under four pixels, every body drawn at its hitbox
   on 32 px a tile. The rhino in the first file, the stag, bat, poison frog,
-  manta and narwhal in the second
+  manta and narwhal in the second, the elephant in the third — the one
+  family with no Mindustry hull under it, drawn into cells of its own at
+  boxes nearly twice everyone else's
 - `game/turretArt.ts` — the player's turrets as FOUNDRY, one gunmetal
   plating with a silhouette a kind and an accent per ammo, generated the
   same way and packed over the stock turret cells while `FOUNDRY_ART`
@@ -908,7 +911,7 @@ that list.
 edited in the admin level editor from any world's card. The script is
 authored in three unit families (ground, ground support, air), and those
 are its three **slots**. When a run deploys, **the die rolls three
-families** from the six — every layer crosses every map now, and a fleet
+families** from the seven — every layer crosses every map now, and a fleet
 on a map with no channel simply drives — and deals them into the slots,
 tier for tier (`rollFamilies`, `transformScript` in levels.ts). In custom
 mode the hand is named instead, in whole or in part, and whatever is left
@@ -924,10 +927,11 @@ script are forty of whichever family took the first slot. The boss
 | Stoop | bat | Stoop | air | **magenta** charges; no gun, the body is the bomb | goes off on contact or on death; the T5 is a nuke |
 | Skates | manta | Skate | water | **teal** harpoon rails | insane reach, a crawl, and the longer alive the harder it hits |
 | Livewires | narwhal | Livewire | water | **violet** arcs that short a gun | blinks forward when hit; the top tiers cloak |
+| Tuskers | elephant | Tusker | ground | **ivory** tusks; no gun at all | the biggest bodies and twice the plating; charges the guns and mauls them |
 
 **A body is its family and how far up it stands.** There are no proper
 nouns on the roster. A family comes in five ranks, the same five for
-every line (`UNIT_RANKS` in levels.ts), so the whole swarm is six words
+every line (`UNIT_RANKS` in levels.ts), so the whole swarm is seven words
 and these —
 
 > **runt · brute · elite · champion · apex**
@@ -1119,6 +1123,35 @@ twenty-two tiles and heals the fleet by a share of its health.
 *What it poses:* a line that cannot hold a target. The answer is bursts
 and fields that catch a body wherever it lands, and killing the flagship
 in the seconds it shows.
+
+**Tuskers — the big ones, and they come to find the guns.** The
+elephants are the seventh line and the first with **no gun at any tier**:
+nothing this family fires crosses the field, because it does not fire.
+Its weapon is its **tusks** (fx `melee`), two to four tiles of reach
+against a roster whose shortest gun reaches eleven — and at that range it
+hits harder than anything else in the game does at any range, twelve
+hundred a second at the **apex** where the heaviest round the swarm
+fires is under four hundred. Every blow also **rends** (`rend`): a share
+of the turret's own *maximum* health, so a gun built up to a quarter of a
+million points falls in the same number of seconds as a duo, and there is
+no out-building it.
+
+Three other things make the line. It is **big** — the **runt** is a
+1.75x1.75 where every other family opens on about a tile, and the
+**apex** is a 5.5x5.5, the largest body that walks. It wears **roughly
+twice the Ironhides' plating** at every step, ending on a flat 52 shaved
+off every hit, which puts most of the catalogue on the 10% floor. And it
+**charges** (`charge`): a tusker that can see a structure inside its
+range drops the flow field and walks straight at it, so mazing it past
+your line does not work — it was never going to the core. From the
+**brute** up it also carries a **force field** and a **shield field** at
+once: the bubble eats shots for the body, the bar is handed to the herd
+behind it.
+
+*What it poses:* nothing small hurts it, nothing draws it away, and what
+it reaches it eats. Every answer is on the approach — calibre, and the
+reach to use it — because there is no answering a Tusker that has
+arrived.
 
 ### The swarm shoots back
 

@@ -552,6 +552,22 @@ const KIND_VET = UNIT_KINDS.map((k) => UNIT_STATS[k].veteran ?? null);
 const KIND_BLINK = UNIT_KINDS.map((k) => UNIT_STATS[k].blink ?? null);
 const KIND_CLOAK = UNIT_KINDS.map((k) => UNIT_STATS[k].cloak ?? null);
 const KIND_PAYLOAD = UNIT_KINDS.map((k) => UNIT_STATS[k].payload ?? null);
+/**
+ * THE CHARGE (levels.ts UnitStats.charge), the Tuskers' trait: how far out
+ * a body goes looking for a structure to leave the route for, in world px,
+ * and 0 for everything that does not.
+ *
+ * ...AND THE REACH IT PICKS A TARGET AT, which is the longer of that and
+ * its own longest gun. A melee family's weapons reach a few tiles, so
+ * picking targets at weapon reach would mean a tusker only ever noticed a
+ * turret it was already touching and never charged anything; a ranged
+ * family has no charge and the pick is its reach exactly, as it always was.
+ */
+const KIND_CHARGE = Float64Array.from(UNIT_KINDS, (k) => UNIT_STATS[k].charge?.range ?? 0);
+const HAS_CHARGE = KIND_CHARGE.some((r) => r > 0);
+const KIND_SEEK = Float64Array.from(UNIT_KINDS, (k) =>
+  Math.max(UNIT_REACH[k], UNIT_STATS[k].charge?.range ?? 0),
+);
 const KIND_BOSS: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].boss);
 const BOSS_KINDS = KIND_BOSS.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
 /** the pad list a brood spawn is handed — it picks its own spot, so there
@@ -3049,6 +3065,51 @@ export class Sim {
   }
 
   /**
+   * CAN THIS BODY WALK STRAIGHT THERE? The same DDA as hasSight, over
+   * WALKABILITY rather than sight, and with one deliberate hole in it:
+   * a cell a STRUCTURE stands on does not count as a wall.
+   *
+   * IT IS THE CHARGE'S SAFETY CATCH (levels.ts UnitStats.charge). Sight is
+   * cast over rock alone, because a hill is the only thing that stops a
+   * bullet; a Tusker that leaves the flow field to walk at what it can see
+   * would happily grind against the near shore of a lake for the rest of
+   * the run, with a turret in plain view on the far side. So the charge
+   * asks a stricter question than the gun does — is there anything on this
+   * line I cannot cross — and falls back to the route when the answer is
+   * yes.
+   *
+   * A structure is the exception because a structure is the POINT: a
+   * turret in a patch is reached by walking through its neighbours, which
+   * is what a body pressed into a wall does anyway (FlowField.soft).
+   */
+  private canWalkTo(x0: number, y0: number, x1: number, y1: number, f: FlowField): boolean {
+    let cx = clamp((x0 / CELL) | 0, 0, COLS - 1), cy = clamp((y0 / CELL) | 0, 0, ROWS - 1);
+    const ex = clamp((x1 / CELL) | 0, 0, COLS - 1), ey = clamp((y1 / CELL) | 0, 0, ROWS - 1);
+    if (cx === ex && cy === ey) return true;
+    const dx = x1 - x0, dy = y1 - y0;
+    const sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1;
+    let tx = dx === 0 ? Infinity : ((dx > 0 ? cx + 1 : cx) * CELL - x0) / dx;
+    let ty = dy === 0 ? Infinity : ((dy > 0 ? cy + 1 : cy) * CELL - y0) / dy;
+    const gx = dx === 0 ? Infinity : Math.abs(CELL / dx);
+    const gy = dy === 0 ? Infinity : Math.abs(CELL / dy);
+    const { walk, soft } = f;
+    for (let n = COLS + ROWS + 2; n > 0; n--) {
+      if (tx < ty) {
+        cx += sx;
+        tx += gx;
+      } else {
+        cy += sy;
+        ty += gy;
+      }
+      if (cx === ex && cy === ey) return true;
+      if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) return false;
+      const i = cy * COLS + cx;
+      if (walk[i] === 1 && soft[i] === 0) return false;
+    }
+    return false;
+  }
+
+  /**
    * CAN THIS BODY SEE THAT BUILDING? The line runs to the nearest point of
    * the structure's FOOTPRINT, not to its middle: a 3x3 core is a wall of a
    * thing, and asking for sight of the one cell at its centre would have a
@@ -3343,11 +3404,17 @@ export class Sim {
    * spit against a foreshadow's plating lands 0.8 and six full seconds of
    * rot, which is the entire reason that body is on the field.
    */
-  private hitStructure(t: Structure, dmg: number, poison = 0, poisonChance = 1): void {
+  private hitStructure(t: Structure, dmg: number, poison = 0, poisonChance = 1, rend = 0): void {
+    // THE REND (weapons.ts UnitWeapon.rend), the Tuskers' melee bite: a
+    // share of THIS structure's own maximum pool, added to the blow
+    // before the dial rather than billed separately, because it is one
+    // hit with two terms. Never on the core — it has no gun to lose and
+    // it is the run's stake (see the note on the field)
+    const raw = rend > 0 && !isCore(t) ? dmg + t.hpMax * rend : dmg;
     // ...times the firing body's VETERANCY (uvet), set for the body whose
     // weapons are being run (updateUnitWeapons) and 1 the rest of the
     // time; a shot in flight carried it out of the muzzle already
-    if (dmg > 0) this.damageTower(t, dmg * unitDamageScale() * this.dmgMul);
+    if (raw > 0) this.damageTower(t, raw * unitDamageScale() * this.dmgMul);
     if (poison > 0) this.poisonTower(t, poison, poisonChance);
   }
   /** the veterancy of the body whose weapons are being run right now */
@@ -3451,8 +3518,8 @@ export class Sim {
   }
 
   /** one hit on the aim, from a body of `team` */
-  private aimHit(a: Aim, dmg: number, poison = 0, poisonChance = 1): void {
-    this.hitStructure(a.s, dmg, poison, poisonChance);
+  private aimHit(a: Aim, dmg: number, poison = 0, poisonChance = 1, rend = 0): void {
+    this.hitStructure(a.s, dmg, poison, poisonChance, rend);
   }
 
 
@@ -3488,7 +3555,7 @@ export class Sim {
       // has is this much longer while it lasts — the longest gun's, for
       // the pick, and each weapon's own below
       const reachMul = HAS_SPOTTER && this.ureachT[i] > 0 ? this.ureachMul[i] : 1;
-      const reach = UNIT_REACH[kind] * reachMul;
+      const reach = KIND_SEEK[ukind[i]] * reachMul;
       // ...and its VETERANCY (uvet): what every hit below is multiplied by
       // (hitStructure), and what a shot leaving the muzzle carries
       this.dmgMul = HAS_VET ? this.uvet[i] : 1;
@@ -3651,6 +3718,29 @@ export class Sim {
                 this.splashStructures(tgt.x, tgt.y, wpSplash, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1);
               this.fireUnitGun(x, y, aim + (k - (shots - 1) / 2) * 0.06, wp);
             }
+            break;
+          }
+          case "melee": {
+            // THE TUSKS (weapons.ts, the Tuskers): nothing is fired and
+            // nothing crosses the field. The body is standing against the
+            // building and tears at it — the blow carries its REND, a
+            // share of the structure's own pool, and on the heavy tiers a
+            // stomp that reaches the rest of the patch.
+            //
+            // WHAT IS DRAWN IS ON THE BUILDING, not at a muzzle, because
+            // that is where it is happening: rubble off the near face of
+            // the footprint, where the tusks are, and an ivory spark over
+            // it. Every other weapon in the game announces itself at the
+            // body that fired it; this one announces itself at the thing
+            // coming apart
+            for (let k = 0; k < shots; k++) {
+              this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1, wp.rend ?? 0);
+              if (wpSplash)
+                this.splashStructures(tgt.x, tgt.y, wpSplash, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1);
+            }
+            const fx = tgt.x - Math.cos(aim) * tgt.half, fy = tgt.y - Math.sin(aim) * tgt.half;
+            this.pushFx(fx, fy, 24 / 60, FxKind.Pulverize, 0, 0, (Math.random() * 0x7fffffff) | 0);
+            this.pushFxCol(fx, fy, 14 / 60, FxKind.BulletHit, aim, 0, PAL.tusk);
             break;
           }
           case "laser": {
@@ -5060,7 +5150,12 @@ export class Sim {
           ushield[i] > 0
             ? uforceScale[i] + (1 - uforceScale[i]) * (1 - Math.pow(1 - 0.06, dt * 60))
             : 0;
-        continue;
+        // ...AND IT FALLS THROUGH, because a bubble is no longer the last
+        // word on what a body carries. The Tuskers (levels.ts) wear a
+        // force field AND a shield field: the bubble is the carrier's own
+        // and the bar is what it hands the herd walking behind it. The
+        // pulse below is skipped anyway for a kind that has nothing else,
+        // so a starhart3 costs exactly what it did
       }
       const repair = KIND_REPAIR[k];
       const shield = KIND_SHIELD[k];
@@ -5164,7 +5259,16 @@ export class Sim {
             this.udrillT[j] = reload + AURA_LINGER;
             did = true;
           }
-          if (shield && ushield[j] < shield.max * ss) {
+          // A BROKEN FORCE FIELD SERVES ITS OUTAGE. ForceFieldAbility buys
+          // its cooldown by driving the pool NEGATIVE (see the branch
+          // above), so a pool under zero is a bubble counting itself back
+          // up — and a shield pulse landing in it would cut that short by
+          // however much the crowd happened to be carrying. Two Tuskers
+          // standing together would then hold each other's bubbles up
+          // forever, which is the one thing a field that eats bullets
+          // outright must not be able to do. The bar is for bodies that
+          // have one to fill; a bubble refills itself
+          if (shield && ushield[j] >= 0 && ushield[j] < shield.max * ss) {
             ushield[j] = Math.min(ushield[j] + shield.amount * ss, shield.max * ss);
             ushieldAlpha[j] = 1;
             did = true;
@@ -6368,7 +6472,30 @@ export class Sim {
           flowTmp.y = 0;
         } else this.airHeading(upx[i], upy[i], gdx / gl, gdy / gl, flowTmp, this.airField);
       } else {
-        mf.sample(upx[i], upy[i], flowTmp);
+        // A TUSKER CHARGES (levels.ts charge): with a structure picked
+        // inside its charge range (updateUnitWeapons, which scans out to
+        // KIND_SEEK for exactly this) it drops the flow field and walks
+        // straight at that instead of at the core — the bomber's dive,
+        // on the ground.
+        //
+        // IT IS THE ONLY REASON A MELEE FAMILY WORKS. Attack-moving is
+        // enough for a gun that reaches eleven tiles or ninety: the route
+        // to the core passes through what it can shoot. A body whose
+        // reach is two tiles would be routed neatly around your guns and
+        // arrive at the core having touched nothing, so this one leaves
+        // the route.
+        //
+        // WALKING STRAIGHT IS SAFE HERE: a ground body may only hold a
+        // target it can SEE (updateUnitWeapons casts the ray every tick),
+        // so there is no rock on the line. A crowd on the line is sorted
+        // out by the same shove that sorts out every other body's.
+        const rush = HAS_CHARGE && KIND_CHARGE[ukind[i]] > 0 ? this.utgt[i] : null;
+        if (rush && this.canWalkTo(upx[i], upy[i], rush.x, rush.y, mf)) {
+          const tx = rush.x - upx[i], ty = rush.y - upy[i];
+          const tl = Math.sqrt(tx * tx + ty * ty) || 1;
+          flowTmp.x = tx / tl;
+          flowTmp.y = ty / tl;
+        } else mf.sample(upx[i], upy[i], flowTmp);
       }
       // StatusEffects.unmoving is a speedMultiplier of 0, not a freeze: a
       // unit still materialising cannot drive itself anywhere, but the

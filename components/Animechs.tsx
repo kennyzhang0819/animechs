@@ -25,6 +25,7 @@ import {
 } from "@/game/game";
 import { loadBalanceDoc } from "@/game/balance";
 import {
+  ACTIVE_FAMILIES,
   FAMILIES,
   FAMILIES_PER_RUN,
   FAMILY_ACCENT,
@@ -896,13 +897,19 @@ function FactionPicker({
   const full = picked.length >= FAMILIES_PER_RUN;
   const rolled = FAMILIES_PER_RUN - picked.length;
 
+  // the families a hand may actually name: the table less the shelf
+  // (levels.ts SHELVED_FAMILIES, which cleanFamilies enforces anyway — a
+  // row here for a family the roller will not deal is a row that does
+  // nothing when it is ticked)
+  const offered = FAMILIES.filter((f) => ACTIVE_FAMILIES.includes(f.key));
+
   const rowText = "truncate font-display text-[15px] font-bold uppercase tracking-widest";
   const list = (
     <>
       <PickRow selected={picked.length === 0} focused={focus === null} onPick={() => setFocus(null)}>
         <span className={`${rowText} text-[#EDEDEF]`}>Random</span>
       </PickRow>
-      {FAMILIES.map((f) => (
+      {offered.map((f) => (
         <PickRow
           key={f.key}
           selected={picked.includes(f.key)}
@@ -924,7 +931,7 @@ function FactionPicker({
           Random
         </div>
         <p className="text-[14px] text-[#A6A6AF]">
-          The die deals {FAMILIES_PER_RUN} of the {FAMILIES.length} families into the
+          The die deals {FAMILIES_PER_RUN} of the {offered.length} families into the
           script&apos;s slots when the run starts — the campaign&apos;s own deal.
         </p>
         <SelectButton
@@ -1155,12 +1162,14 @@ const DEAL_COLOR = "#FFD37F";
  * rather than loaded from /mindustry/sprites/units
  * (components/unitIcons.ts, atlas.ts unitIcon).
  *
- * The raw sprite file is not the body the game draws, and for four of the
- * six families there is no file at all — the rhinos, frogs, stags and
+ * The raw sprite file is not the body the game draws, and for most of the
+ * seven families there is no file at all — the rhinos, frogs, stags and
  * bats are generated at load (game/animalArt.ts) and packed over the
- * stock cells, so a thumbnail off public/mindustry showed a picture of
- * upstream's unit: wrong animal, wrong edges, and Mindustry's crux red
- * where the hue that tells a player which family this is belongs.
+ * stock cells, and the elephants have no upstream hull behind them at
+ * all — so a thumbnail off public/mindustry showed a picture of
+ * upstream's unit, or nothing: wrong animal, wrong edges, and
+ * Mindustry's crux red where the hue that tells a player which family
+ * this is belongs.
  *
  * Built ONCE per page and shared with every other panel that wants a
  * body's portrait, and primed by the boot warm-up so the squares are not

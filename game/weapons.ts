@@ -12,8 +12,10 @@ import { FxKind, type RGB } from "./types";
  * it is about to do: yellow straight bullets (Ground mechs), purple orbs
  * that rot (Venom spitters), green lasers that pierce (Starlight mechs),
  * a body that is a bomb (Skyfall bombers), teal harpoon rails from
- * beyond the board's reach (Harpoon fleet) and violet arcs that short a gun
- * off a hull that blinks and cloaks (Wraith fleet). Each tree's
+ * beyond the board's reach (Harpoon fleet), violet arcs that short a gun
+ * off a hull that blinks and cloaks (Wraith fleet) — and, on the seventh
+ * tree, NOTHING IN THE AIR AT ALL: the Tuskers carry no gun and maul the
+ * turret they are standing on (fx "melee"). Each tree's
  * header below says what its tiers buy. The notes on THE LOOK and THE
  * BITE that follow are about the rows that are still Mindustry's.
  *
@@ -83,7 +85,8 @@ export type WeaponFx =
   | "rail" // instant, very long, the skate5's railgun
   | "field" // EnergyFieldAbility: every structure in reach, at once
   | "scatter" // THE SKY'S SHOTGUN: instant, every structure in a cone off the muzzle, no round drawn
-  | "arc"; // THE AEGIS ARC: instant chain lightning, the target and then its neighbours in turn
+  | "arc" // THE AEGIS ARC: instant chain lightning, the target and then its neighbours in turn
+  | "melee"; // THE TUSKS: instant, at arm's length, and what it draws is on the BUILDING
 
 /**
  * Which atlas region pair a flying shot is drawn with — the sprite name a
@@ -340,6 +343,31 @@ export interface UnitWeapon {
    *  ladder poisonChance is: a livewire1 shorts one gun in five it touches, a
    *  livewire5 every one */
   shortChance?: number;
+  /**
+   * THE REND — the Tuskers' bite, and the other half of what fx "melee"
+   * means: on top of `damage`, every blow that connects takes this SHARE
+   * OF THE STRUCTURE'S OWN MAX HEALTH (Tower.hpMax, Sim.hitStructure). 0.01
+   * is one per cent a blow.
+   *
+   * IT IS THE ONE THING ON THE FIELD THAT DOES NOT CARE HOW BIG YOU BUILT
+   * IT. Every other number the swarm throws is flat, and a turret's pool
+   * is not: Giant and Bulwark (mods.ts) put a late-run gun past a quarter
+   * of a million health, which is minutes of the venom line's rot and
+   * tens of seconds of anything else. A share of the pool is the same
+   * number of SECONDS against a duo and against that, so the answer to a
+   * Tusker is never "a bigger turret" — it is not letting one arrive.
+   *
+   * NEVER ON THE CORE, which has no gun to lose and is the run's whole
+   * stake: a percentage bite on a pool that size would make the last
+   * stand a formality rather than a fight. The core takes the flat
+   * `damage` like everything else does.
+   *
+   * IT RIDES THE DAMAGE DIAL (unitDamageScale) with the rest of the blow,
+   * because unlike the rot it IS damage — it is one hit with two terms,
+   * not a status — and a balance sweep that moved one and not the other
+   * would be tuning the family twice.
+   */
+  rend?: number;
   /** fx "scatter": the colour the fan is drawn in, and the sparks on what
    *  it struck. The sky's own orange unless set */
   scatterColor?: RGB;
@@ -1091,6 +1119,57 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
       arc: { jumps: 6, reach: u(36), decay: 0.8, color: PAL.wraith }, short: 1, shortChance: 0.5,
     },
   ],
+
+  // ---- THE TUSKERS ------------------------------------------------------
+  //
+  // NO GUN, AT ANY TIER. Every other family on the roster is authored so a
+  // shot in the air says who fired it; this one is authored so that there
+  // is nothing in the air at all. A tusker walks up to the turret and
+  // takes it apart with its tusks (fx "melee"): nothing is drawn crossing
+  // the field, and what the player sees is the BUILDING coming apart —
+  // ivory sparks and rubble off the face the body is standing against.
+  //
+  // THE REACH IS THE WHOLE PRICE OF THE FAMILY. Two tiles at the runt,
+  // just under five at the apex, against a roster whose SHORTEST gun —
+  // the starhart2's fan — reaches eleven and whose longest reaches ninety.
+  // A Tusker inside its own reach is the most dangerous body in the game
+  // and a Tusker outside it is a slow, enormous target. Everything else
+  // about the line (levels.ts: the plating, the bubble, the charge) exists
+  // to get it from the second state to the first.
+  //
+  // WHAT A TIER BUYS IS WEIGHT, and the ladder is steep on purpose: 120
+  // damage a second at the runt, twelve HUNDRED at the apex. For scale,
+  // the ironhide5's cannon — the heaviest round the swarm fires — is under
+  // four hundred, from eighteen tiles. And every blow also RENDS
+  // (UnitWeapon.rend): a share of the turret's own maximum health, which
+  // is the family's answer to a board that solved everything else by
+  // building bigger pools.
+  //
+  // THE TOP TWO STOMP (splash). The champion and the apex are heavy
+  // enough that a blow lands on the patch and not just the gun — three
+  // and four tiles of it — so a Tusker that reaches a block of turrets is
+  // taking the block apart rather than one turret at a time.
+  tusker1: [
+    { name: "tusker1-tusks", reload: t(30), mounts: 2, damage: 30, range: u(14), speed: 0, fx: "melee", rend: 0.002 },
+  ],
+  tusker2: [
+    { name: "tusker2-tusks", reload: t(30), mounts: 2, damage: 60, range: u(18), speed: 0, fx: "melee", rend: 0.0035 },
+  ],
+  tusker3: [
+    { name: "tusker3-tusks", reload: t(32), mounts: 2, damage: 110, range: u(22), speed: 0, fx: "melee", rend: 0.005 },
+  ],
+  tusker4: [
+    {
+      name: "tusker4-tusks", reload: t(36), mounts: 2, damage: 220, splash: 70, splashRadius: u(26),
+      range: u(30), speed: 0, fx: "melee", rend: 0.008,
+    },
+  ],
+  tusker5: [
+    {
+      name: "tusker5-tusks", reload: t(40), mounts: 2, damage: 400, splash: 140, splashRadius: u(36),
+      range: u(38), speed: 0, fx: "melee", rend: 0.012,
+    },
+  ],
 };
 
 /** the most weapon slots any unit carries — the per-unit cooldown stride in the sim */
@@ -1132,5 +1211,9 @@ for (const [k, ws] of Object.entries(UNIT_WEAPONS)) {
     if (w.fx === "scatter" && w.cone === undefined) throw new Error(`${k}/${w.name} is a scatter with no cone`);
     if (w.fx === "arc" && !w.arc) throw new Error(`${k}/${w.name} is an arc with no chain`);
     if (w.pierce && w.fx !== "laser" && w.fx !== "rail") throw new Error(`${k}/${w.name} pierces but is neither laser nor rail`);
+    // the rend is the melee bite and nothing else's: a percentage of a
+    // turret's pool arriving from across the board would be a different
+    // game, and the family's whole cost is having to walk up to it
+    if (w.rend && w.fx !== "melee") throw new Error(`${k}/${w.name} rends but is not a melee weapon`);
   }
 }

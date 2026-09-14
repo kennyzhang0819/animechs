@@ -6,7 +6,7 @@ import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // import must never become a value one or the two files form a cycle
 import type { MutationId } from "./mutation";
 
-export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "weaver1", "weaver2", "weaver3", "weaver4", "weaver5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "boss"] as const;
+export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "weaver1", "weaver2", "weaver3", "weaver4", "weaver5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -42,7 +42,12 @@ export const UNIT_ID: Record<UnitKind, number> = {
   livewire3: 27,
   livewire4: 28,
   livewire5: 29,
-  boss: 30,
+  tusker1: 30,
+  tusker2: 31,
+  tusker3: 32,
+  tusker4: 33,
+  tusker5: 34,
+  boss: 35,
 };
 
 /**
@@ -74,6 +79,10 @@ export const FAMILY_NAMES = {
   air: { name: ANIMAL_ART ? "Stoop" : "Skyfall bombers", body: "Stoop" },
   naval: { name: ANIMAL_ART ? "Skates" : "Harpoon fleet", body: "Skate" },
   navalSupport: { name: ANIMAL_ART ? "Livewires" : "Wraith fleet", body: "Livewire" },
+  // the seventh line, and the first that never had a Mindustry hull behind
+  // it: it is the elephant or it is nothing, so it keeps its name off the
+  // switch too (there is no upstream weapon to name it for)
+  tusker: { name: "Tuskers", body: "Tusker" },
 } as const satisfies Record<string, { name: string; body: string }>;
 
 /**
@@ -534,6 +543,32 @@ export interface UnitStats {
    * line ever gets a second volley into the same hull.
    */
   blink?: { dist: number; cooldown: number };
+  /**
+   * THE CHARGE — the Tuskers' family trait, and the thing that makes a
+   * MELEE family possible at all: A BODY THAT LEAVES THE ROUTE TO GET AT
+   * A GUN.
+   *
+   * Every other body on the roster attack-moves — it walks the flow field
+   * toward the core and shoots whatever happens to come inside its reach
+   * on the way (Sim.updateUnitWeapons). That works because every other
+   * family reaches eleven to ninety tiles, so "on the way" is most of the
+   * board. A family whose longest weapon is four tiles would simply file
+   * past a turret line the field routed it around and never touch it.
+   *
+   * So this one BREAKS FORMATION. With a structure it can see inside
+   * `range`, the body drops the field and walks straight at it
+   * (Sim.updateUnits), and `range` is also how far out it goes looking
+   * (Sim.updateUnitWeapons picks a target within the longer of this and
+   * its weapons' reach). A tusker that has seen your guns is not going to
+   * the core any more; it is coming to the guns, and it will keep coming
+   * while it can see one.
+   *
+   * IT IS SAFE TO WALK STRAIGHT AT: a ground body may only target what it
+   * can SEE (canSee), so the line to the target is a line with no rock on
+   * it. What the charge can still walk into is a crowd, and the crowd
+   * shove sorts that out the way it does for everything else.
+   */
+  charge?: { range: number };
   /**
    * CLOAK — every `period` seconds the body vanishes for `duration`:
    * nothing can target it and nothing can hurt it (Sim.damageUnit,
@@ -1476,6 +1511,170 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     cloak: { duration: 4.5, period: 12, veil: 10 * CELL },
     wake: wake({ x: 23 * MU, y: -32 * MU, length: 70, scl: 3.5 * MU }),
   },
+
+  // ---- THE TUSKERS ------------------------------------------------------
+  //
+  // THE BIG ONES, and that is the first and the loudest thing about them.
+  // Every other line on the roster opens on a 1x1 or thereabouts — the
+  // ironhide1, the weaver1 and the starhart1 are all exactly one tile, the
+  // widest T1 anywhere is the livewire1's 1.375 — and the Tusker RUNT is a
+  // 1.75x1.75. It is half again the biggest opening body in the game, it
+  // is drawn at that box (tuskerArt.ts: no overshoot, the quad is the
+  // hitbox), and the ladder ends on a 5.5x5.5 apex: the largest thing
+  // that walks, against the ironhide5's 3.75 that held the title. A
+  // Tusker wave does not look like anybody else's wave from the first
+  // body on.
+  //
+  // THREE THINGS MAKE THE FAMILY, and the first two are what the size is
+  // for:
+  //
+  //   ARMOUR, ROUGHLY DOUBLE THE GROUND MECHS' AT EVERY STEP — 6, 14, 24,
+  //   38, 52 against the Ironhides' 0, 4, 9, 20, 30. Armour is a FLAT
+  //   SHAVE floored at a tenth of the raw shot (Sim.applyArmor), so the
+  //   apex's 52 is not "a tough unit": it is a rule that every gun under
+  //   58 damage a hit pays the floor and does a TENTH of its paper DPS.
+  //   The Ironhides made that argument at 30 and the answer was calibre;
+  //   this family makes it at 52, and the answer is the same answer only
+  //   more so — fuse, spectre, meltdown, foreshadow, and nothing else
+  //   matters.
+  //
+  //   A MELEE MAUL (weapons.ts, fx "melee"). Not one of these carries a
+  //   gun. The tusks are the weapon and the reach is two to four tiles —
+  //   against a roster whose SHORTEST gun reaches eleven — so a Tusker
+  //   does nothing at all until it is standing on the turret, and then it
+  //   does more damage per second than anything else in the game. The
+  //   apex mauls for twelve hundred a second where the ironhide5's cannon,
+  //   the heaviest round the swarm fires, does under four.
+  //
+  //   AND THE CHARGE (UnitStats.charge), the trait that makes the other
+  //   two mean anything: THEY LEAVE THE ROUTE. Every other body walks the
+  //   field to the core and shoots what its reach happens to cover on the
+  //   way; a Tusker that can see a structure inside its charge range drops
+  //   the field and walks straight at it. Mazing a Tusker wave past your
+  //   guns does not work, because it is not trying to get past them.
+  //
+  // WHAT IT POSES: a body you cannot chip down and cannot lead away, that
+  // takes a turret apart in seconds once it arrives. Every answer is on
+  // the approach — calibre, and the reach to use it before they close.
+  //
+  // AND THEY ARE SLOW, which is the whole reason that answer exists. 3
+  // tiles a second down to 2.3: after the Starlight mechs, the slowest
+  // line on the field, and the apex turns at 1.3 degrees a tick. A Tusker
+  // wave is a deadline you watch walking toward you.
+
+  // tusker1: the runt — 380 hp, armour 6, a 1.75x1.75-block hitbox, 3
+  // tiles/s. Note the armour before anything else: a duo's 9-damage bolt
+  // lands 3 on the opening body of this family, which is the tier where a
+  // player learns what the whole line is about.
+  //
+  // THE T1 IS THE FAMILY IN MINIATURE: it charges, it mauls, and it wears
+  // a personal shield bar — a field at range 0 catches whatever its own
+  // hitbox covers, which on a body standing still is the body itself
+  // (the ironhide2's trick, one tier earlier because this line starts big)
+  tusker1: {
+    hp: 380,
+    speed: 3 * CELL,
+    armor: 6,
+    radius: UR * 1.75,
+    tier: 1,
+    rotateSpeed: 3.2,
+    charge: { range: 14 * CELL },
+    shieldField: { amount: 20, max: 80, reload: 3, range: 0 },
+  },
+  // tusker2: the brute — 1150 hp, armour 14, a 2.25x2.25-block hitbox,
+  // 2.8 tiles/s. THE TIER THE BUBBLE STARTS: a 5-tile force field holding
+  // 220, which EATS absorbable shots outright rather than soaking them
+  // (Sim.updateAbilities), and a shield bar for the bodies walking with
+  // it. See the note on FAMILIES below for why this line carries both
+  tusker2: {
+    hp: 1150,
+    speed: 2.8 * CELL,
+    armor: 14,
+    radius: UR * 2.25,
+    tier: 2,
+    rotateSpeed: 2.8,
+    charge: { range: 16 * CELL },
+    forceField: { radius: 5 * CELL, regen: 20, max: 220, cooldown: 6 },
+    shieldField: { amount: 25, max: 150, reload: 3, range: 5 * CELL },
+  },
+  // tusker3: the elite — 2400 hp, armour 24, a 3x3-block hitbox (an
+  // ironhide4's, at T3), 2.6 tiles/s. Its bubble is the starhart3's in
+  // everything but the pool, and the bar behind it is deeper: this is the
+  // tier a Tusker push stops being a body and starts being a front
+  tusker3: {
+    hp: 2400,
+    speed: 2.6 * CELL,
+    armor: 24,
+    radius: UR * 3,
+    tier: 3,
+    rotateSpeed: 2.4,
+    charge: { range: 18 * CELL },
+    forceField: { radius: 7 * CELL, regen: 32, max: 550, cooldown: 6 },
+    shieldField: { amount: 40, max: 260, reload: 3, range: 7 * CELL },
+  },
+  // tusker4: the champion — 11000 hp, armour 38, a 4.25x4.25-block hitbox
+  // (wider than the ironhide5, one tier below the top), 2.45 tiles/s and
+  // rotateSpeed 1.7. A 1500-point bubble over nine and a half tiles with
+  // the whole herd inside it
+  //
+  // THE STANCE OPENS HERE (tuskerArt.ts): the T4 leaves the mech rig for
+  // four planted legs — pillars, short for the bulk and set wide, the
+  // thickest leg strokes on the roster
+  tusker4: {
+    hp: 11000,
+    speed: 2.45 * CELL,
+    armor: 38,
+    radius: UR * 4.25,
+    tier: 4,
+    rotateSpeed: 1.7,
+    charge: { range: 22 * CELL },
+    forceField: { radius: 9.5 * CELL, regen: 60, max: 1500, cooldown: 5 },
+    shieldField: { amount: 60, max: 420, reload: 2, range: 9.5 * CELL },
+    legs: legs({
+      count: 4,
+      length: 15 * MU,
+      forwardScl: 0.6,
+      moveSpace: 1.5,
+      baseOffset: 12 * MU,
+      lengthScl: 0.85,
+      speed: 0.12,
+      elevation: 0.2,
+      ripple: 3,
+    }),
+  },
+  // tusker5: the apex, and the largest body that walks — 26000 hp, armour
+  // 52, a 5.5x5.5-block hitbox, 2.3 tiles/s, rotateSpeed 1.3. More health
+  // than the ironhide5 on a box half again its size, and nearly twice its
+  // plating: at 52 every gun under 58 a hit is reduced to the 10% floor,
+  // which is most of the catalogue.
+  //
+  // A 3000-POINT BUBBLE OVER TWELVE TILES, the biggest force field in the
+  // game, with a 600 bar handed to everything under it. The Starlight T5
+  // is the line the board cannot wear down; this one is the line the
+  // board cannot get a shot through, and the difference is that when it
+  // arrives it eats the turret
+  tusker5: {
+    hp: 26000,
+    speed: 2.3 * CELL,
+    armor: 52,
+    radius: UR * 5.5,
+    tier: 5,
+    rotateSpeed: 1.3,
+    charge: { range: 26 * CELL },
+    forceField: { radius: 12 * CELL, regen: 95, max: 3000, cooldown: 5 },
+    shieldField: { amount: 90, max: 600, reload: 2, range: 12 * CELL },
+    legs: legs({
+      count: 4,
+      length: 18 * MU,
+      forwardScl: 0.6,
+      moveSpace: 1.6,
+      baseOffset: 16 * MU,
+      lengthScl: 0.85,
+      speed: 0.11,
+      elevation: 0.25,
+      ripple: 4,
+    }),
+  },
 };
 
 /**
@@ -1496,6 +1695,8 @@ export const UNIT_TREES = [
   // by a ground door and drives to the core when there is no sea
   { key: "naval", name: FAMILY_NAMES.naval.name, kinds: ["skate1", "skate2", "skate3", "skate4", "skate5"] },
   { key: "navalSupport", name: FAMILY_NAMES.navalSupport.name, kinds: ["livewire1", "livewire2", "livewire3", "livewire4", "livewire5"] },
+  // the seventh row: the heavy melee line, on the walkers' layer
+  { key: "tusker", name: FAMILY_NAMES.tusker.name, kinds: ["tusker1", "tusker2", "tusker3", "tusker4", "tusker5"] },
   // not an upgrade path: the boss row holds the kinds that arrive as an
   // event rather than a stream, so its slots do not read as tiers
   { key: "boss", name: "Boss", kinds: ["boss"] },
@@ -1674,6 +1875,39 @@ export const FAMILIES = [
   // the flagship in the seconds it shows.
   { key: "navalSupport", name: FAMILY_NAMES.navalSupport.name, layer: "water", icon: "livewire1",
     kinds: ["livewire1", "livewire2", "livewire3", "livewire4", "livewire5"] },
+  // THE TUSKERS: the elephants — tusker1 to tusker5 — and the first line
+  // that carries NO GUN. Every one of them fights with its tusks
+  // (weapons.ts, fx "melee"): two to four tiles of reach against a roster
+  // whose shortest gun is eleven, and more damage a second at that range
+  // than anything else in the game fires at any range.
+  //
+  // THEY ARE THE BIG ONES. The runt is a 1.75x1.75 where every other
+  // family's is about a tile, and the apex is a 5.5x5.5 — the largest
+  // body that walks. Every tier wears roughly twice the Ironhides'
+  // plating, which at the top means a flat 52 shaved off every hit.
+  //
+  // AND THEY CHARGE (UnitStats.charge): a tusker that can see a structure
+  // inside its range leaves the flow field and walks straight at it. That
+  // is the whole reason a melee family can exist here, and it is what
+  // makes it a different problem from the Ironhides — a wall that walks
+  // can be walled off and walked around; this one comes to find the guns.
+  //
+  // WHY IT CARRIES BOTH FIELDS. A force field EATS absorbable shots at
+  // the outline and bills them to the carrier's shield pool; a shield
+  // field hands a bar to the bodies around it. This line wants both
+  // because its whole problem is the WALK IN: the bubble is what gets the
+  // body through the long guns, the bar is what gets the herd behind it
+  // through the same fire, and a broken bubble is a Tusker with nothing
+  // but its plating for five seconds. The two share the one pool
+  // (ForceFieldSpec), so the bar is deliberately set well under the
+  // bubble — a carrier's own pool never drops low enough for its pulse to
+  // touch it, and an outage is served in full.
+  //
+  // WHAT IT POSES: nothing small hurts it, nothing draws it away, and
+  // what it reaches it eats. The answer is calibre and reach, used on the
+  // approach — there is no answering a Tusker that has arrived.
+  { key: "tusker", name: FAMILY_NAMES.tusker.name, layer: "ground", icon: "tusker1",
+    kinds: ["tusker1", "tusker2", "tusker3", "tusker4", "tusker5"] },
 ] as const satisfies readonly {
   key: string;
   name: string;
@@ -1701,6 +1935,7 @@ export const FAMILY_ACCENT: Readonly<Record<FamilyKey, RGB>> = {
   air: PAL.bomber,
   naval: PAL.harpoon,
   navalSupport: PAL.wraith,
+  tusker: PAL.tusk,
 };
 
 /**
@@ -1711,11 +1946,21 @@ export const FAMILY_ACCENT: Readonly<Record<FamilyKey, RGB>> = {
  * Take the name back out and it is on the board again, at the level the
  * track always meant to open it on.
  *
- * NOTHING IS SHELVED. The Wraith fleet sat here (as the Aegis tanks) while
- * the support lines were re-cut; it blinks, cloaks and shorts now and holds
- * a front on its own, so all six families roll.
+ * NOTHING IS SHELVED WHILE THE ANIMAL ART IS ON. The Wraith fleet sat here
+ * (as the Aegis tanks) while the support lines were re-cut; it blinks,
+ * cloaks and shorts now and holds a front on its own, so all seven
+ * families roll.
+ *
+ * THE TUSKERS ARE THE ONE FAMILY THE SWITCH CAN SHELVE. The other six are
+ * Mindustry trees wearing animal art: turn ANIMAL_ART off and they come
+ * back as the hulls they were, byte for byte, which is that flag's whole
+ * promise. The elephants have no hull behind them — there is no upstream
+ * unit they are packed over, only cells of their own that the animal pass
+ * paints (atlas.ts) — so off the switch they would roll into waves as
+ * empty sprites. They sit on the shelf instead, which keeps the promise
+ * exact: off, the game is the six lines it shipped with.
  */
-export const SHELVED_FAMILIES: readonly FamilyKey[] = [];
+export const SHELVED_FAMILIES: readonly FamilyKey[] = ANIMAL_ART ? [] : ["tusker"];
 
 /** the families in play: the table, less the shelf */
 export const ACTIVE_FAMILIES: readonly FamilyKey[] = FAMILIES.map((f) => f.key).filter(
@@ -1801,12 +2046,19 @@ export const UNIT_NAMES: Record<UnitKind, string> = (() => {
   const capitalised = Object.fromEntries(
     UNIT_KINDS.map((k) => [k, k[0].toUpperCase() + k.slice(1)]),
   ) as Record<UnitKind, string>;
-  if (!ANIMAL_ART) return capitalised;
   const out = { ...capitalised };
-  for (const f of FAMILIES)
+  for (const f of FAMILIES) {
+    // OFF THE SWITCH, ONLY THE SIX MINDUSTRY LINES FALL BACK — because
+    // the id they fall back TO is a real upstream unit with a real
+    // upstream sprite, which is the whole of that promise. The Tuskers
+    // have no upstream anything to fall back to (they are shelved off the
+    // switch, SHELVED_FAMILIES), so they are named off the table either
+    // way rather than reading as `Tusker3` in the level editor.
+    if (!ANIMAL_ART && f.key !== "tusker") continue;
     f.kinds.forEach((k, i) => {
       out[k] = `${FAMILY_NAMES[f.key].body} (${UNIT_RANKS[i]})`;
     });
+  }
   return out;
 })();
 
@@ -2264,7 +2516,7 @@ export const WORLDS: LevelSpec[] = [
     // below documents HOW to author a wave; WHAT the waves are lives in
     // the document, and the admin level editor writes it. It is authored
     // in three families (ground, ground support, air) and those are its
-    // three SLOTS: a deploy rolls three of the six families and deals
+    // three SLOTS: a deploy rolls three of the seven families and deals
     // them into the slots (transformScript), so the counts
     // travel to every map and the bodies are whatever the die said.
     //

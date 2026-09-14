@@ -43,7 +43,8 @@ import {
   stoopGeom,
   type FlyerTier,
 } from "./familyArt";
-import { IRON_TIERS, ironLegged, ironMech } from "./ironhideArt";
+import { IRON_TIERS, ironLegged, ironMech, type IronTier } from "./ironhideArt";
+import { TUSK_TIERS, tuskLegged, tuskMech } from "./tuskerArt";
 
 /**
  * THE SHEET IS PACKED AT LOAD. Nothing in this file names a pixel
@@ -995,6 +996,56 @@ export const UV_SKATE5 = sprite("skate5", 384, [264, 351]);
 export const UV_LIVEWIRE5 = sprite("livewire5", 384, [258, 366]);
 
 /**
+ * THE TUSKERS' CELLS, and they are the first family on the sheet that is
+ * not packed OVER anything. Every other animal draws into a cell the stock
+ * art already owned — a rhino goes over Mindustry's dagger, a manta over
+ * its risso — because every other family is one of Mindustry's trees
+ * wearing a new coat. The elephants are not a tree; there is no upstream
+ * hull called `tusker3` and no sprite file anywhere under public/ for one,
+ * so the whole line asks the packer for room of its own. Nothing is
+ * cleared and nothing is replaced: with ANIMAL_ART off these cells are
+ * simply never painted, which is why the family sits on the shelf there
+ * (levels.ts SHELVED_FAMILIES).
+ *
+ * The cell sizes are the usual arithmetic and nothing more: a body is
+ * drawn at its hitbox in native px (56, 72, 96, 136, 176 — tuskerArt.ts)
+ * and rides the smallest 64-multiple cell that holds it, so the world px
+ * per native px is the same 0.625 every other body on the sheet has.
+ */
+const TUSK1 = TUSK_TIERS[0], TUSK2 = TUSK_TIERS[1], TUSK3 = TUSK_TIERS[2];
+const TUSK4 = TUSK_TIERS[3], TUSK5 = TUSK_TIERS[4];
+/** one mech tier's three parts and their silhouettes, on one cell size */
+const tuskMechCells = (t: number, n: number, cell: number) => ({
+  body: sprite(`tusker${t}`, cell, n),
+  base: sprite(`tusker${t}-base`, cell, n),
+  leg: sprite(`tusker${t}-leg`, cell, n),
+  bodySil: sprite(`tusker${t}-sil`, cell, n),
+  baseSil: sprite(`tusker${t}-base-sil`, cell, n),
+  legSil: sprite(`tusker${t}-leg-sil`, cell, n),
+});
+export const TUSK1_CELLS = tuskMechCells(1, TUSK1.n, 64);
+export const TUSK2_CELLS = tuskMechCells(2, TUSK2.n, 128);
+export const TUSK3_CELLS = tuskMechCells(3, TUSK3.n, 128);
+/** one legged tier: body and base on the body's cell, the caps and the pad
+ *  on the small one, the two pillar segments on their exact rects */
+const tuskLegCells = (t: number, T: (typeof TUSK_TIERS)[number], cell: number, small: number) => ({
+  body: sprite(`tusker${t}`, cell, T.n),
+  base: sprite(`tusker${t}-base`, cell, T.n),
+  bodySil: sprite(`tusker${t}-sil`, cell, T.n),
+  baseSil: sprite(`tusker${t}-base-sil`, cell, T.n),
+  foot: sprite(`tusker${t}-foot`, small, T.small),
+  footSil: sprite(`tusker${t}-foot-sil`, small, T.small),
+  joint: upright(`tusker${t}-joint`, small, T.small),
+  jointSil: upright(`tusker${t}-joint-sil`, small, T.small),
+  baseJoint: sprite(`tusker${t}-joint-base`, small, T.small),
+  baseJointSil: sprite(`tusker${t}-joint-base-sil`, small, T.small),
+  leg: flat(`tusker${t}-leg-seg`, 64, T.th),
+  legBase: flat(`tusker${t}-leg-base-seg`, 64, T.sh),
+});
+export const TUSK4_CELLS = tuskLegCells(4, TUSK4, 256, 64);
+export const TUSK5_CELLS = tuskLegCells(5, TUSK5, 256, 128);
+
+/**
  * WHERE A BODY'S TEAM CELL RIDES ON ITS BODY QUAD, filled in at pack time
  * (packTeamCells) and read by the renderer.
  *
@@ -1063,6 +1114,15 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   livewire3: { uv: UV_LIVEWIRE3, sprite: UNIT_SPRITE * 4 },
   livewire4: { uv: UV_LIVEWIRE4, sprite: UNIT_SPRITE * 4 },
   livewire5: { uv: UV_LIVEWIRE5, sprite: UNIT_SPRITE * 6 },
+  // the elephants, on cells of their own (see the TUSKER note): a 56px
+  // runt in a 64 cell, then 72 and 96 in 128s, then 136 and 176 in 256s —
+  // the same world px per native px as everything above, on bodies drawn
+  // at boxes nobody else on the roster has
+  tusker1: { uv: TUSK1_CELLS.body, sprite: UNIT_SPRITE },
+  tusker2: { uv: TUSK2_CELLS.body, sprite: UNIT_SPRITE * 2 },
+  tusker3: { uv: TUSK3_CELLS.body, sprite: UNIT_SPRITE * 2 },
+  tusker4: { uv: TUSK4_CELLS.body, sprite: UNIT_SPRITE * 4 },
+  tusker5: { uv: TUSK5_CELLS.body, sprite: UNIT_SPRITE * 4 },
 };
 
 // Mindustry world units → px (CELL / 8, see constants.ts)
@@ -1768,6 +1828,51 @@ if (ANIMAL_ART) {
     body: UV_WEAVER5_BODY, joint: UV_WEAVER5_JOINT, baseJoint: UV_WEAVER5_JOINT_BASE, foot: UV_WEAVER5_FOOT, leg: UV_WEAVER5_LEG_SEG, legBase: UV_WEAVER5_LEG_BASE_SEG,
     sil: { body: UV_WEAVER5_BODY_SIL, joint: UV_WEAVER5_JOINT_SIL, baseJoint: UV_WEAVER5_JOINT_BASE_SIL, foot: UV_WEAVER5_FOOT_SIL },
   }, 4);
+
+  // ---- Tusker ----
+  // the elephant, on the two ground rigs and on cells of its own: the
+  // runt, the brute and the elite keep their legs tucked under the mech
+  // rig (a base plate, a body, one sprite of near-side pads slid by the
+  // walk), and the champion and the apex open their stance onto four
+  // planted pillars. No gun quads at any tier — the tusks are drawn into
+  // the body, the way the rhino's horn is, because they ARE the weapon.
+  //
+  // THE LUMBER IS THE POINT OF THE SWAY NUMBERS. mechFrontSway climbs to
+  // fifteen times stock by the T3 on a body that walks at 2.6 tiles a
+  // second: the heaviest walker on the field pitches onto each pad
+  // instead of striding over it
+  const tuskMechArt = (c: typeof TUSK1_CELLS, T: IronTier, cellScale: 1 | 2, sway: number): MechArt => ({
+    leg: c.leg,
+    base: c.base,
+    body: c.body,
+    guns: [],
+    stride: T.stride * PX,
+    frontSway: sway * MU,
+    sprite: UNIT_SPRITE * cellScale,
+    sil: { leg: c.legSil, base: c.baseSil, body: c.bodySil },
+  });
+  MECH_ART.tusker1 = tuskMechArt(TUSK1_CELLS, TUSK1, 1, 0.9);
+  MECH_ART.tusker2 = tuskMechArt(TUSK2_CELLS, TUSK2, 2, 1.2);
+  MECH_ART.tusker3 = tuskMechArt(TUSK3_CELLS, TUSK3, 2, 1.5);
+  const tuskLegArt = (k: UnitKind, c: typeof TUSK4_CELLS, T: IronTier, smallScale: 1 | 2): void => {
+    LEG_ART[k] = {
+      body: c.body,
+      base: c.base,
+      joint: c.joint,
+      baseJoint: c.baseJoint,
+      foot: c.foot,
+      leg: c.leg,
+      legBase: c.legBase,
+      legStroke: T.th * PX,
+      legBaseStroke: T.sh * PX,
+      guns: [],
+      sprite: UNIT_SPRITE * 4,
+      small: UNIT_SPRITE * smallScale,
+      sil: { body: c.bodySil, base: c.baseSil, joint: c.jointSil, baseJoint: c.baseJointSil, foot: c.footSil },
+    };
+  };
+  tuskLegArt("tusker4", TUSK4_CELLS, TUSK4, 1);
+  tuskLegArt("tusker5", TUSK5_CELLS, TUSK5, 2);
 }
 
 const ENV = "/mindustry/sprites/blocks/environment";
@@ -2605,6 +2710,25 @@ function packAnimalArt(
       sil: { body: UV_WEAVER5_BODY_SIL, joint: UV_WEAVER5_JOINT_SIL, baseJoint: UV_WEAVER5_JOINT_BASE_SIL, foot: UV_WEAVER5_FOOT_SIL } },
   ];
   frogLegCells.forEach((cells, i) => packLegged(cells, frogLegged(FROG_TIERS[1 + i]), FROG_TIERS[1 + i].n));
+  // the elephants, into cells nobody else owns (see THE TUSKERS' CELLS).
+  // `part` clears before it draws like everywhere else — here there is
+  // simply nothing under it to clear
+  const tuskMechCellSets: readonly MechCells[] = [
+    { kind: "tusker1", body: TUSK1_CELLS.body, base: TUSK1_CELLS.base, leg: TUSK1_CELLS.leg,
+      sil: { body: TUSK1_CELLS.bodySil, base: TUSK1_CELLS.baseSil, leg: TUSK1_CELLS.legSil } },
+    { kind: "tusker2", body: TUSK2_CELLS.body, base: TUSK2_CELLS.base, leg: TUSK2_CELLS.leg,
+      sil: { body: TUSK2_CELLS.bodySil, base: TUSK2_CELLS.baseSil, leg: TUSK2_CELLS.legSil } },
+    { kind: "tusker3", body: TUSK3_CELLS.body, base: TUSK3_CELLS.base, leg: TUSK3_CELLS.leg,
+      sil: { body: TUSK3_CELLS.bodySil, base: TUSK3_CELLS.baseSil, leg: TUSK3_CELLS.legSil } },
+  ];
+  tuskMechCellSets.forEach((cells, i) => packMech(cells, tuskMech(TUSK_TIERS[i]), TUSK_TIERS[i].n));
+  const tuskLegCellSets: readonly LegCells[] = [
+    { kind: "tusker4", body: TUSK4_CELLS.body, base: TUSK4_CELLS.base, joint: TUSK4_CELLS.joint, baseJoint: TUSK4_CELLS.baseJoint, foot: TUSK4_CELLS.foot, leg: TUSK4_CELLS.leg, legBase: TUSK4_CELLS.legBase,
+      sil: { body: TUSK4_CELLS.bodySil, base: TUSK4_CELLS.baseSil, joint: TUSK4_CELLS.jointSil, baseJoint: TUSK4_CELLS.baseJointSil, foot: TUSK4_CELLS.footSil } },
+    { kind: "tusker5", body: TUSK5_CELLS.body, base: TUSK5_CELLS.base, joint: TUSK5_CELLS.joint, baseJoint: TUSK5_CELLS.baseJoint, foot: TUSK5_CELLS.foot, leg: TUSK5_CELLS.leg, legBase: TUSK5_CELLS.legBase,
+      sil: { body: TUSK5_CELLS.bodySil, base: TUSK5_CELLS.baseSil, joint: TUSK5_CELLS.jointSil, baseJoint: TUSK5_CELLS.baseJointSil, foot: TUSK5_CELLS.footSil } },
+  ];
+  tuskLegCellSets.forEach((cells, i) => packLegged(cells, tuskLegged(TUSK_TIERS[3 + i]), TUSK_TIERS[3 + i].n));
 
   // ---- Stoop, Skate, Livewire ----
   // the wing rig: the composed sprite in the kind's own cell, the body
