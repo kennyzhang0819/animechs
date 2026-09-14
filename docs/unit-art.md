@@ -4,7 +4,7 @@ This is the direction the enemy art settled on after the animal trial
 (behind `ANIMAL_ART` in `game/animalFlag.ts`), written down so the next
 family is drawn to the same rules without re-running the trial. All six
 families are on the turrets' grammar now (section 1b): the Ironhide rhino
-in `game/ironhideArt.ts`, the Starhart stag, Stoop bat, Weaver spider,
+in `game/ironhideArt.ts`, the Starhart stag, Stoop bat, Dartback poison frog,
 Skate manta and Livewire narwhal in `game/familyArt.ts`, on the turret
 engine in `game/turretArt.ts`, with what they share in
 `game/animalArt.ts` and the packing in `game/atlas.ts`.
@@ -21,7 +21,7 @@ the other way round.
 
 - **One animal per family, one gimmick per family, unchanged.** The
   families are renamed for the animal, the gimmick stays what it was:
-  Ironhides (rhino) are the ground mechs, Weavers (spider) the venom
+  Ironhides (rhino) are the ground mechs, Dartbacks (poison frog) the venom
   spitters, Starhart (stag) the starlight mechs, Stoop (bat) the skyfall
   bombers, Skates (manta) the harpoon fleet, Livewires (narwhal) the
   wraith fleet. The family accent colours in `PAL` (`game/constants.ts`)
@@ -56,9 +56,11 @@ the other way round.
   stance out, and those two are the only ones that ride the legged rig
   with real planted legs. This is the single most important rule in this
   file. A spread stance at T2 reads as a bug, and the whole family reads
-  as bugs after it. The one exception is the family that IS a bug: the
-  Weaver spider is legged at every tier, because a spider's legs are its
-  silhouette and a spider with them tucked is a bead.
+  as bugs after it. The one exception is the frog, legged on four from
+  T2 because a frog's folded legs are its outline — and the spider that
+  held that exception before, legged on eight at every tier, is exactly
+  what this rule exists to prevent: it was retired for being
+  uncomfortable to look at.
 - **Flat plates, no outlines, nothing thinner than two pixels.** The
   Mindustry rules from `game/pixelArt.ts`: four or five butted colours,
   no dark contour, no bevel. The atlas adds the rim itself (`outlined()`,
@@ -155,7 +157,7 @@ footprint gets.
 | --- | --- | --- | --- |
 | Ironhide, the rhino | `game/ironhideArt.ts` | mech to T3, four legs from T4 | 32, 40, 52, 88, 120 |
 | Starhart, the stag | `game/familyArt.ts` | mech to T3, four legs from T4 | 32, 44, 52, 96, 116 |
-| Weaver, the spider | `game/familyArt.ts` | legged at every tier | 32, 52, 60, 92, 104 |
+| Dartback, the poison frog | `game/familyArt.ts` | mech as a runt, four legs from T2 | 32, 52, 60, 92, 104 |
 | Stoop, the bat | `game/familyArt.ts` | body and two wings | 36, 44, 80, 184, 232 |
 | Skate, the manta | `game/familyArt.ts` | body and two wings | 40, 52, 80, 156, 232 |
 | Livewire, the narwhal | `game/familyArt.ts` | body and two flippers | 44, 56, 80, 176, 232 |
@@ -183,10 +185,9 @@ the whole width rather than most of it.
 
 ### Legs
 
-The spider's legs are the size that matters for that family: leg length
-runs 12, 18, 26, 50 and 60 Mindustry units up the ladder against the
-stock line's 5 to 20, so the apex spans some twenty tiles foot to foot
-on a body drawn at its 3.25-tile box. The rhino's are 14 and 19 units on
+The frog's four legs run 14, 16, 24 and 30 Mindustry units from T2 on
+mounts 6 to 12 out, so every tier crouches on legs a little past its
+body and the apex strides. The rhino's are 14 and 19 units on
 55 and 75 world px bodies; the stag's 26 and 38 on 60 and 72.5, a
 stag's legs being long. The leg spec lives in `game/levels.ts` next to
 the kind, behind the same flag.

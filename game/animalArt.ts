@@ -2,8 +2,8 @@
  * THE ANIMAL ART'S SHARED PIECES: the drawing type every family produces,
  * the canvases the packer turns it into, and the part bundles the three
  * rigs take. The drawings themselves live with their families — the
- * Ironhide rhino in ironhideArt.ts, the Starhart stag, Stoop bat, Weaver
- * spider, Skate manta and Livewire narwhal in familyArt.ts — all on the
+ * Ironhide rhino in ironhideArt.ts, the Starhart stag, Stoop bat, Dartback
+ * frog, Skate manta and Livewire narwhal in familyArt.ts — all on the
  * turrets' engine (turretArt.ts) and grammar (docs/unit-art.md section
  * 1b), packed over the stock families' atlas cells (atlas.ts
  * packAnimalArt) while game/animalFlag.ts ANIMAL_ART is on.
@@ -31,9 +31,10 @@
  * atlas.ts). The composed sprite is packed too, for the icon, the spawn
  * effect and the cloak ghost.
  *
- * Weaver is legged at every tier, the T1 included — a spider's legs ARE
- * its silhouette, so the one animal that gets its legs out at every size
- * is the one whose body is nothing without them.
+ * The Dartback frog (the weaver kinds) is a mech as a runt and legged on
+ * FOUR legs from T2: a frog crouched with its legs at its sides is what a
+ * frog looks like from above, and four short legs on the legged rig is
+ * the nearest the rig comes. It replaced the spider.
  *
  * Skate and Livewire ride the bat's parts rig on the water: hulls go
  * through the same draw path as flyers, so a manta beats its wings the

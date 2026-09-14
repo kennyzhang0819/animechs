@@ -54,7 +54,7 @@ export const UNIT_ID: Record<UnitKind, number> = {
  * The four the animal art has taken over are named for their ANIMAL now,
  * not for their weapon — the line is a herd of rhinos, not "ground mechs"
  * — and the gimmick behind the name is untouched: the Ironhides still
- * fire the straight round, the Weavers still rot what they hit. The two
+ * fire the straight round, the Dartbacks still rot what they hit. The two
  * six lines are drawn now (game/animalArt.ts), so all six are named for
  * the animal rather than the weapon: the fleets are Skates (manta) and
  * Livewires (narwhal), not the harpoon and wraith fleets they were while
@@ -67,7 +67,9 @@ export const UNIT_ID: Record<UnitKind, number> = {
  */
 export const FAMILY_NAMES = {
   ground: { name: ANIMAL_ART ? "Ironhides" : "Ground mechs", body: "Ironhide" },
-  weaver: { name: ANIMAL_ART ? "Weavers" : "Venom spitters", body: "Weaver" },
+  // the kind ids stay `weaver1`..`weaver5` (the sim's arrays and every wave
+  // on disk name them); the family is the poison frog on screen
+  weaver: { name: ANIMAL_ART ? "Dartbacks" : "Venom spitters", body: "Dartback" },
   groundSupport: { name: ANIMAL_ART ? "Starhart" : "Starlight mechs", body: "Starhart" },
   air: { name: ANIMAL_ART ? "Stoop" : "Skyfall bombers", body: "Stoop" },
   naval: { name: ANIMAL_ART ? "Skates" : "Harpoon fleet", body: "Skate" },
@@ -743,10 +745,8 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     armor: 0,
     radius: UR,
     tier: 1,
-    // THE ANIMAL TRIAL (animalFlag.ts): the Weaver T1 is a mite on six
-    // legs (LEG_ART.weaver1 in atlas.ts); off the trial it has no gait and
-    // scuttles as the weaver1 mech it always was
-    ...(ANIMAL_ART ? { legs: legs({ count: 6, length: 12 * MU, forwardScl: 0.6, moveSpace: 1.1, baseOffset: 2 * MU, elevation: 0.12 }) } : {}),
+    // THE ANIMAL TRIAL (animalFlag.ts): the Dartback runt keeps the weaver1
+    // mech's rig, a frog with its feet tucked (MECH_ART.weaver1 in atlas.ts)
   },
   // weaver2: the venom line's T2 — 600 hp, armor 2, a 1.625x1.625-block
   // hitbox, 5.5 tiles/s. It is the weaver1's VOLUME tier and nothing else:
@@ -775,10 +775,10 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     // Mindustry gives it and the elevation with it, so the body sits down
     // on its feet and scuttles instead of striding.
     //
-    // THE ANIMAL TRIAL (animalFlag.ts): as the Weaver T2 the legs are a
-    // spider's — eight of them, well past the body, the silhouette itself
+    // THE ANIMAL TRIAL (animalFlag.ts): as the Dartback T2 the legs are a
+    // frog's — four, on short mounts, planted just past a 32 world px body
     legs: ANIMAL_ART
-      ? legs({ count: 8, length: 18 * MU, forwardScl: 0.6, moveSpace: 1.1, baseOffset: 3 * MU, lengthScl: 0.9, elevation: 0.15 })
+      ? legs({ count: 4, length: 14 * MU, forwardScl: 0.6, moveSpace: 1.1, baseOffset: 6 * MU, lengthScl: 0.9, elevation: 0.15 })
       : legs({ count: 4, length: 5 * MU, forwardScl: 0.6, moveSpace: 1.1, elevation: 0.12 }),
   },
   // weaver3: the line's T3 — 1000 hp, armor 9, a 1.875x1.875-block hitbox,
@@ -799,10 +799,10 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     // sooner. A third of again on everything within ten tiles, itself
     // included, and it is the only speed buff in the game.
     hasteField: { mult: 1.35, reload: 2, range: 10 * CELL },
-    // THE ANIMAL TRIAL (animalFlag.ts): the Weaver T3, a tarantula on
-    // eight legs, longer again
+    // THE ANIMAL TRIAL (animalFlag.ts): the Dartback T3, four legs a
+    // little longer
     legs: ANIMAL_ART
-      ? legs({ count: 8, length: 26 * MU, forwardScl: 0.65, moveSpace: 1.1, baseOffset: 4 * MU, lengthScl: 0.9, elevation: 0.2 })
+      ? legs({ count: 4, length: 16 * MU, forwardScl: 0.65, moveSpace: 1.1, baseOffset: 7 * MU, lengthScl: 0.9, elevation: 0.2 })
       : legs({
           count: 6,
           length: 6.5 * MU,
@@ -838,15 +838,15 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 4,
     drag: 0.1,
     rotateSpeed: 2.7,
-    // THE ANIMAL TRIAL (animalFlag.ts): the Weaver T4, a huntsman — eight
-    // legs at twice the stock reach, staggered leg by leg
+    // THE ANIMAL TRIAL (animalFlag.ts): the Dartback T4 — four legs at
+    // twice the stock reach, staggered leg by leg
     legs: ANIMAL_ART
       ? legs({
-          count: 8,
-          length: 50 * MU,
+          count: 4,
+          length: 24 * MU,
           pairOffset: 3 * MU,
           moveSpace: 1.2,
-          baseOffset: 8 * MU,
+          baseOffset: 10 * MU,
           lengthScl: 0.9,
           speed: 0.2,
           elevation: 0.3,
@@ -866,7 +866,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   },
   // weaver5: the weaver1 line's T5 — 22000 hp, armor 22, a 3.25x3.25-block
   // hitbox, and 0.5 px/tick = 3.75 tiles/s, which is exactly the ironhide1's
-  // marching pace: the largest spider on the field keeps up with the line
+  // marching pace: the largest frog on the field keeps up with the line
   // it walks in front of
   //
   // Its legs are the whole silhouette. Eight of them at 75 world units —
@@ -890,12 +890,12 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 5,
     drag: 0.1,
     rotateSpeed: 1.9,
-    // THE ANIMAL TRIAL (animalFlag.ts): the Weaver T5, the widow — the
-    // longest legs on the field, three times the weaver5's own
+    // THE ANIMAL TRIAL (animalFlag.ts): the Dartback T5 — four legs, the
+    // longest stride on the ground, high-stepping
     legs: ANIMAL_ART
       ? legs({
-          count: 8,
-          length: 60 * MU,
+          count: 4,
+          length: 30 * MU,
           pairOffset: 3 * MU,
           moveSpace: 1.0,
           baseOffset: 12 * MU,

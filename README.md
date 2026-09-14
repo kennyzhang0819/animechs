@@ -182,7 +182,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `game/ironhideArt.ts`, `game/familyArt.ts` — the six families on the
   turrets' engine and grammar: paired colours shaded dark-left
   light-right, nothing under four pixels, every body drawn at its hitbox
-  on 32 px a tile. The rhino in the first file, the stag, bat, spider,
+  on 32 px a tile. The rhino in the first file, the stag, bat, poison frog,
   manta and narwhal in the second
 - `game/turretArt.ts` — the player's turrets as FOUNDRY, one gunmetal
   plating with a silhouette a kind and an accent per ammo, generated the
@@ -919,7 +919,7 @@ script are forty of whichever family took the first slot. The boss
 | family | animal | one body | layer | one look | one mechanic |
 |---|---|---|---|---|---|
 | Ironhides | rhino | Ironhide | ground | **crimson** straight bullets | plating and worn shields |
-| Weavers | spider | Weaver | ground | **acid** orbs | rot, which ignores plating |
+| Dartbacks | poison frog | Dartback | ground | **acid** orbs | rot, which ignores plating |
 | Starhart | stag | Starhart | ground | **star-gold** lasers | every laser pierces; heals and shields |
 | Stoop | bat | Stoop | air | **magenta** charges; no gun, the body is the bomb | goes off on contact or on death; the T5 is a nuke |
 | Skates | manta | Skate | water | **teal** harpoon rails | insane reach, a crawl, and the longer alive the harder it hits |
@@ -993,7 +993,7 @@ working**.
 
 *What it poses:* a wall that walks. The answer is calibre, never volume.
 
-**Weavers — one orb, one status, five tiers.** Every weapon on the
+**Dartbacks — one orb, one status, five tiers.** Every weapon on the
 tree throws the same thing: a filled **purple orb** (`venomOrb`, no sprite
 — the renderer fills a disc, bright core over dark rim) landing **poison**.
 The line used to be four weapon classes wearing one palette — a contact
@@ -1048,7 +1048,7 @@ them, or out-mending them.
 The two are built to be **opposite problems on purpose**: one is answered
 by bringing a bigger gun, the other by not letting the clock refresh. The
 Ironhides' siege shell was made blockable in the same pass that left the
-Weavers' thrown bomb unblockable, so one family is answered by putting
+Dartbacks' thrown bomb unblockable, so one family is answered by putting
 something in the way and the other is not.
 
 **Starhart — green lasers that pierce, and a crowd that keeps

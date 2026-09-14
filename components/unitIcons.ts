@@ -12,7 +12,7 @@ import { unitAccent, type UnitKind } from "@/game/levels";
  *
  * Four families draw as ANIMALS now (game/animalArt.ts, behind
  * game/animalFlag.ts): the ground line is a herd of rhinos, the venom
- * line a nest of spiders, and neither of them has a sprite file anywhere
+ * line a nest of poison frogs, and neither of them has a sprite file anywhere
  * — the art is generated at load and packed over the stock cells. Every
  * panel that loaded the raw PNG was showing upstream's mech next to a
  * board full of rhinos, so every panel asks for the packed cell instead

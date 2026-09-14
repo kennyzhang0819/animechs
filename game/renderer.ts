@@ -188,6 +188,9 @@ const BULLET_REGIONS: Record<"bullet" | "shell" | "missile", readonly [UVRect, U
 };
 /** px per Mindustry world unit — effect geometry is written in those units */
 const MU = CELL / 8;
+/** the lock beam's floor: four native px of width, 12 * scale * MU wide
+ *  at scale — the turrets' minimum mark, so no beam is a hairline */
+const BEAM_MIN_SCALE = (4 * 0.625) / (12 * MU);
 /** Pal.heal #98ffa9 */
 const PAL_HEAL = [0x98 / 255, 0xff / 255, 0xa9 / 255] as const;
 /**
@@ -3824,13 +3827,15 @@ export class Renderer {
    * is visibly fatter than the one that just caught it.
    *
    * laserWidth is a THIRD of upstream's, because upstream's beam is a
-   * 18px rope that reads as a fuse's shot rather than a hairline lock.
-   * Drawn at 0.2 a fully spooled beam is 6px and a cold one barely over a
-   * pixel — thin enough that the WIDTH IS THE RAMP and nothing else: the
-   * only reason this beam is ever thick is that it is hurting.
+   * 18px rope that reads as a fuse's shot rather than a lock. Drawn at
+   * 0.2 a fully spooled beam is 6 world px, and the WIDTH IS THE RAMP: the
+   * only reason this beam is ever thick is that it is hurting. The cold
+   * end is floored, though — the art's rule is nothing under four native
+   * px (2.5 world px, docs/unit-art.md 1b), and a beam that just caught
+   * its target used to be a hairline under that.
    */
   private drawLockBeam(dyn: Batch, t: Tower): void {
-    const scale = t.beamStr * 0.2; // TractorBeamTurret.laserWidth, thinned (see above)
+    const scale = Math.max(BEAM_MIN_SCALE, t.beamStr * 0.2); // TractorBeamTurret.laserWidth, thinned and floored (see above)
     const x1 = t.x + Math.cos(t.angle) * 5 * MU; // shootLength
     const y1 = t.y + Math.sin(t.angle) * 5 * MU;
     const dx = t.beamX - x1, dy = t.beamY - y1;

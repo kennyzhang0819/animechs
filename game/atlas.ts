@@ -29,15 +29,16 @@ import {
   HART_TIERS,
   MANTA_TIERS,
   NARWHAL_TIERS,
-  SPIDER_TIERS,
+  FROG_TIERS,
   STOOP_TIERS,
+  frogLegged,
+  frogMech,
   hartLegged,
   hartMech,
   manta,
   mantaGeom,
   narwhal,
   narwhalGeom,
-  spiderLegged,
   stoop,
   stoopGeom,
   type FlyerTier,
@@ -1527,28 +1528,22 @@ export const UV_IRONHIDE4_LEG_SEG = flat("ironhide4-leg-seg", 64, IRON4.th);
 export const UV_IRONHIDE4_LEG_BASE_SEG = flat("ironhide4-leg-base-seg", 64, IRON4.sh);
 export const UV_IRONHIDE5_LEG_SEG = flat("ironhide5-leg-seg", 64, IRON5.th);
 export const UV_IRONHIDE5_LEG_BASE_SEG = flat("ironhide5-leg-base-seg", 64, IRON5.sh);
-/** the spider's parts the venom line's rigs never had — a knee cap and a
- *  foot for the weaver1, which leaves the mech rig, and knees for the
- *  weaver4 and weaver5 — and every tier's steel segments, both the same
- *  stroke; the rest of its parts go on in the venom line's own cells */
-export const UV_WEAVER1_JOINT = upright("weaver1-joint", 64, 64);
-export const UV_WEAVER1_JOINT_SIL = upright("weaver1-joint-sil", 64, 64);
-export const UV_WEAVER1_FOOT = sprite("weaver1-foot", 64, 64);
-export const UV_WEAVER1_FOOT_SIL = sprite("weaver1-foot-sil", 64, 64);
+/** the frog's parts the venom line's rigs never had — knees for the
+ *  weaver4 and weaver5 — and every legged tier's segments of hide; the
+ *  rest of its parts go on in the venom line's own cells, the runt's on
+ *  the weaver1 mech's */
 export const UV_WEAVER4_JOINT = upright("weaver4-joint", 128, 128);
 export const UV_WEAVER4_JOINT_SIL = upright("weaver4-joint-sil", 128, 128);
 export const UV_WEAVER5_JOINT = upright("weaver5-joint", 128, 128);
 export const UV_WEAVER5_JOINT_SIL = upright("weaver5-joint-sil", 128, 128);
-export const UV_WEAVER1_LEG_SEG = flat("weaver1-leg-seg", 64, SPIDER_TIERS[0].th);
-export const UV_WEAVER1_LEG_BASE_SEG = flat("weaver1-leg-base-seg", 64, SPIDER_TIERS[0].sh);
-export const UV_WEAVER2_LEG_SEG = flat("weaver2-leg-seg", 64, SPIDER_TIERS[1].th);
-export const UV_WEAVER2_LEG_BASE_SEG = flat("weaver2-leg-base-seg", 64, SPIDER_TIERS[1].sh);
-export const UV_WEAVER3_LEG_SEG = flat("weaver3-leg-seg", 64, SPIDER_TIERS[2].th);
-export const UV_WEAVER3_LEG_BASE_SEG = flat("weaver3-leg-base-seg", 64, SPIDER_TIERS[2].sh);
-export const UV_WEAVER4_LEG_SEG = flat("weaver4-leg-seg", 64, SPIDER_TIERS[3].th);
-export const UV_WEAVER4_LEG_BASE_SEG = flat("weaver4-leg-base-seg", 64, SPIDER_TIERS[3].sh);
-export const UV_WEAVER5_LEG_SEG = flat("weaver5-leg-seg", 64, SPIDER_TIERS[4].th);
-export const UV_WEAVER5_LEG_BASE_SEG = flat("weaver5-leg-base-seg", 64, SPIDER_TIERS[4].sh);
+export const UV_WEAVER2_LEG_SEG = flat("weaver2-leg-seg", 64, FROG_TIERS[1].th);
+export const UV_WEAVER2_LEG_BASE_SEG = flat("weaver2-leg-base-seg", 64, FROG_TIERS[1].sh);
+export const UV_WEAVER3_LEG_SEG = flat("weaver3-leg-seg", 64, FROG_TIERS[2].th);
+export const UV_WEAVER3_LEG_BASE_SEG = flat("weaver3-leg-base-seg", 64, FROG_TIERS[2].sh);
+export const UV_WEAVER4_LEG_SEG = flat("weaver4-leg-seg", 64, FROG_TIERS[3].th);
+export const UV_WEAVER4_LEG_BASE_SEG = flat("weaver4-leg-base-seg", 64, FROG_TIERS[3].sh);
+export const UV_WEAVER5_LEG_SEG = flat("weaver5-leg-seg", 64, FROG_TIERS[4].th);
+export const UV_WEAVER5_LEG_BASE_SEG = flat("weaver5-leg-base-seg", 64, FROG_TIERS[4].sh);
 /** the bats', mantas' and narwhals' bodies and wings, apart, each on a
  *  cell one px over its art (FlyerTier n/bw/nw): the body is drawn on the
  *  composed grid, since a hull is longer than a wing is wide, and packed
@@ -1713,14 +1708,13 @@ if (ANIMAL_ART) {
   };
 
   // ---- Weaver ----
-  // the spider is legged at every tier: the weaver1 leaves the mech rig
-  // for six legs on a knee and foot of its own, weaver2 up keep the venom
-  // line's legged rig on eight, guns off (there are none on a spider),
-  // with steel segments of their own and a knee the weaver4 and weaver5
-  // never had
-  delete MECH_ART.weaver1;
-  const spiderLegArt = (k: UnitKind, i: number, parts: Omit<LegArt, "legStroke" | "legBaseStroke" | "guns" | "sprite" | "small">, cellScale: 1 | 2 | 4): void => {
-    const T = SPIDER_TIERS[i];
+  // the frog: the runt keeps the weaver1 mech's rig and cells (feet tucked,
+  // guns off — the venom is drawn live, never off a sprite), weaver2 up
+  // keep the venom line's legged rig on four legs, with segments of their
+  // own and a knee the weaver4 and weaver5 never had
+  MECH_ART.weaver1 = { ...MECH_ART.weaver1!, guns: [], stride: FROG_TIERS[0].stride * PX };
+  const frogLegArt = (k: UnitKind, i: number, parts: Omit<LegArt, "legStroke" | "legBaseStroke" | "guns" | "sprite" | "small">, cellScale: 1 | 2 | 4): void => {
+    const T = FROG_TIERS[i];
     LEG_ART[k] = {
       ...parts,
       legStroke: T.th * PX,
@@ -1730,19 +1724,15 @@ if (ANIMAL_ART) {
       small: UNIT_SPRITE * Math.max(1, cellScale / 2),
     };
   };
-  spiderLegArt("weaver1", 0, {
-    body: UV_WEAVER1_BODY, base: UV_WEAVER1_BASE, joint: UV_WEAVER1_JOINT, foot: UV_WEAVER1_FOOT, leg: UV_WEAVER1_LEG_SEG, legBase: UV_WEAVER1_LEG_BASE_SEG,
-    sil: { body: UV_WEAVER1_BODY_SIL, base: UV_WEAVER1_BASE_SIL, joint: UV_WEAVER1_JOINT_SIL, foot: UV_WEAVER1_FOOT_SIL },
-  }, 1);
-  spiderLegArt("weaver2", 1, {
+  frogLegArt("weaver2", 1, {
     body: UV_WEAVER2_BODY, base: UV_WEAVER2_BASE, joint: UV_WEAVER2_JOINT, foot: UV_WEAVER2_FOOT, leg: UV_WEAVER2_LEG_SEG, legBase: UV_WEAVER2_LEG_BASE_SEG,
     sil: { body: UV_WEAVER2_BODY_SIL, base: UV_WEAVER2_BASE_SIL, joint: UV_WEAVER2_JOINT_SIL, foot: UV_WEAVER2_FOOT_SIL },
   }, 2);
-  spiderLegArt("weaver3", 2, {
+  frogLegArt("weaver3", 2, {
     body: UV_WEAVER3_BODY, joint: UV_WEAVER3_JOINT, foot: UV_WEAVER3_FOOT, leg: UV_WEAVER3_LEG_SEG, legBase: UV_WEAVER3_LEG_BASE_SEG,
     sil: { body: UV_WEAVER3_BODY_SIL, joint: UV_WEAVER3_JOINT_SIL, foot: UV_WEAVER3_FOOT_SIL },
   }, 2);
-  spiderLegArt("weaver4", 3, {
+  frogLegArt("weaver4", 3, {
     body: UV_WEAVER4_BODY, joint: UV_WEAVER4_JOINT, baseJoint: UV_WEAVER4_JOINT_BASE, foot: UV_WEAVER4_FOOT, leg: UV_WEAVER4_LEG_SEG, legBase: UV_WEAVER4_LEG_BASE_SEG,
     sil: { body: UV_WEAVER4_BODY_SIL, joint: UV_WEAVER4_JOINT_SIL, baseJoint: UV_WEAVER4_JOINT_BASE_SIL, foot: UV_WEAVER4_FOOT_SIL },
   }, 4);
@@ -1774,7 +1764,7 @@ if (ANIMAL_ART) {
   wingParts(STOOP_KINDS, STOOP_TIERS, UV_STOOP_CELLS, stoopGeom, true);
   wingParts(MANTA_KINDS, MANTA_TIERS, UV_MANTA_CELLS, mantaGeom, false);
   wingParts(NARWHAL_KINDS, NARWHAL_TIERS, UV_NARWHAL_CELLS, narwhalGeom, false);
-  spiderLegArt("weaver5", 4, {
+  frogLegArt("weaver5", 4, {
     body: UV_WEAVER5_BODY, joint: UV_WEAVER5_JOINT, baseJoint: UV_WEAVER5_JOINT_BASE, foot: UV_WEAVER5_FOOT, leg: UV_WEAVER5_LEG_SEG, legBase: UV_WEAVER5_LEG_BASE_SEG,
     sil: { body: UV_WEAVER5_BODY_SIL, joint: UV_WEAVER5_JOINT_SIL, baseJoint: UV_WEAVER5_JOINT_BASE_SIL, foot: UV_WEAVER5_FOOT_SIL },
   }, 4);
@@ -2600,9 +2590,11 @@ function packAnimalArt(
       sil: { body: UV_IRONHIDE5_BODY_SIL, base: UV_IRONHIDE5_BASE_SIL, joint: UV_IRONHIDE5_JOINT_SIL, baseJoint: UV_IRONHIDE5_JOINT_BASE_SIL, foot: UV_IRONHIDE5_FOOT_SIL } },
   ];
   rhinoLegCells.forEach((cells, i) => packLegged(cells, ironLegged(IRON_TIERS[3 + i]), IRON_TIERS[3 + i].n));
-  const spiderLegCells: readonly LegCells[] = [
-    { kind: "weaver1", body: UV_WEAVER1_BODY, base: UV_WEAVER1_BASE, joint: UV_WEAVER1_JOINT, foot: UV_WEAVER1_FOOT, leg: UV_WEAVER1_LEG_SEG, legBase: UV_WEAVER1_LEG_BASE_SEG,
-      sil: { body: UV_WEAVER1_BODY_SIL, base: UV_WEAVER1_BASE_SIL, joint: UV_WEAVER1_JOINT_SIL, foot: UV_WEAVER1_FOOT_SIL } },
+  packMech(
+    { kind: "weaver1", body: UV_WEAVER1_BODY, base: UV_WEAVER1_BASE, leg: UV_WEAVER1_LEG, sil: { body: UV_WEAVER1_BODY_SIL, base: UV_WEAVER1_BASE_SIL, leg: UV_WEAVER1_LEG_SIL } },
+    frogMech(FROG_TIERS[0]), FROG_TIERS[0].n,
+  );
+  const frogLegCells: readonly LegCells[] = [
     { kind: "weaver2", body: UV_WEAVER2_BODY, base: UV_WEAVER2_BASE, joint: UV_WEAVER2_JOINT, foot: UV_WEAVER2_FOOT, leg: UV_WEAVER2_LEG_SEG, legBase: UV_WEAVER2_LEG_BASE_SEG,
       sil: { body: UV_WEAVER2_BODY_SIL, base: UV_WEAVER2_BASE_SIL, joint: UV_WEAVER2_JOINT_SIL, foot: UV_WEAVER2_FOOT_SIL } },
     { kind: "weaver3", body: UV_WEAVER3_BODY, joint: UV_WEAVER3_JOINT, foot: UV_WEAVER3_FOOT, leg: UV_WEAVER3_LEG_SEG, legBase: UV_WEAVER3_LEG_BASE_SEG,
@@ -2612,7 +2604,7 @@ function packAnimalArt(
     { kind: "weaver5", body: UV_WEAVER5_BODY, joint: UV_WEAVER5_JOINT, baseJoint: UV_WEAVER5_JOINT_BASE, foot: UV_WEAVER5_FOOT, leg: UV_WEAVER5_LEG_SEG, legBase: UV_WEAVER5_LEG_BASE_SEG,
       sil: { body: UV_WEAVER5_BODY_SIL, joint: UV_WEAVER5_JOINT_SIL, baseJoint: UV_WEAVER5_JOINT_BASE_SIL, foot: UV_WEAVER5_FOOT_SIL } },
   ];
-  spiderLegCells.forEach((cells, i) => packLegged(cells, spiderLegged(SPIDER_TIERS[i]), SPIDER_TIERS[i].n));
+  frogLegCells.forEach((cells, i) => packLegged(cells, frogLegged(FROG_TIERS[1 + i]), FROG_TIERS[1 + i].n));
 
   // ---- Stoop, Skate, Livewire ----
   // the wing rig: the composed sprite in the kind's own cell, the body

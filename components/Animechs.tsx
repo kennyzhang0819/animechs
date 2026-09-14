@@ -1156,7 +1156,7 @@ const DEAL_COLOR = "#FFD37F";
  * (components/unitIcons.ts, atlas.ts unitIcon).
  *
  * The raw sprite file is not the body the game draws, and for four of the
- * six families there is no file at all — the rhinos, spiders, stags and
+ * six families there is no file at all — the rhinos, frogs, stags and
  * bats are generated at load (game/animalArt.ts) and packed over the
  * stock cells, so a thumbnail off public/mindustry showed a picture of
  * upstream's unit: wrong animal, wrong edges, and Mindustry's crux red
