@@ -143,6 +143,25 @@ on the board the fix is to warm the rhino, not the turrets. Scale is
 the game's own: a 1x1 turret is one tile of 20 world px and a T1 animal
 draws at three, so a duo next to a dagger-sized body is small by design
 (`docs/unit-art.md`, "The size").
+## Botanica, the second faction as a concept
+
+`scripts/botanica-concepts.mjs` draws the same seventeen roles as
+plants and fruit, on the same grids and to the same rules (it imports
+the engine from `game/turretArt.ts`), into
+`docs/turret-concepts/botanica-<kind>.png`, with the faction's own bed
+(`botanica-base-N.png`: bark with a bevel, moss inside) in place of
+Mindustry's plate. The materials are a plant's — bark for stems and
+trunks, leaf for the hulls, pale for petals and lips, moss for the bed —
+and the accent is what the turret throws, as a fruit: hazelnut for a
+bullet, pumpkin for a shell, chili for flame, blueberry for a beam,
+water, sage for the field, raspberry for a missile. Every role keeps its
+Foundry cue (the twin gun is two pods on stems, the mortar a pitcher's
+mouth, the charge beam a sunflower with a bud, the heavy trunks longer
+than its stump), so a player who learned one faction reads the other.
+It is a concept, not wired in: a second faction is a skin over the one
+roster, and the head lookup and the plate treatment in `atlas.ts` are
+where it would plug in.
+
 ## How it ships
 
 `game/turretArt.ts` is the roster: the engine, the parts vocabulary and

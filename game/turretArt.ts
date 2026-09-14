@@ -419,6 +419,14 @@ export function drawCore(): Art {
   return finish(g.mat, n);
 }
 
+/** any drawing on an n grid through the same mirror-and-shade finish —
+ *  what a concept sheet uses for a plate or another faction's heads */
+export function draw(n: number, fn: (P: Pen) => void): Art {
+  const g = grid(n);
+  fn(g.pen);
+  return finish(g.mat, n);
+}
+
 /** draw one head of `set` (the roster by default) at its native size */
 export function drawHead(kind: TurretArtKind, set: Record<TurretArtKind, HeadFn> = HEADS): Art {
   const { size, ammo } = ROSTER[kind];
