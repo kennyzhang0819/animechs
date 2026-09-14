@@ -103,11 +103,11 @@ appears.
 
 ### The plate
 
-The heads sit on Mindustry's block plates with every channel at 0.8
+The heads sit on Mindustry's block plates with every channel at 0.65
 (`base-N.png`, written by `scripts/turret-concepts.mjs`): still grey, a
 step darker, so a head reads as standing on something. In the game that
 is one multiply on the base draw in `renderer.ts` (the plate already
-takes the hp tint as an RGB, so a constant 0.8 folds into it) and the
+takes the hp tint as an RGB, so a constant 0.65 folds into it) and the
 same on `towerBaseIcon`'s PNGs for the placement ghost.
 
 ### Against the swarm
