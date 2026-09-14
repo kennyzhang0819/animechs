@@ -18,8 +18,9 @@
  * symmetric by construction.
  *
  * WHAT THE LADDER BUYS is ornament and reach, never a new body plan: the
- * runt is bare hide, the brute takes a gunmetal hub plate with the copper
- * in it, the elite runs the launch tube up the forward arm, the champion
+ * runt is hide and the bare copper drum, the brute sets that drum in a
+ * gunmetal hub plate, the elite runs the launch tube up the forward arm,
+ * the champion
  * lengthens every arm and rings the hub, and the apex TIPS ALL FIVE ARMS
  * in copper — five lit points, no two of them adjacent, which is the tell
  * that reads at field zoom and the one thing no tier below it wears.
@@ -108,12 +109,18 @@ function body(P: Pen, T: IronTier): void {
   // the disc, over every root, with its rim in the reversed pair
   P.octa(c - disc, c - disc, c + disc, c + disc, w(4), STAR);
   P.octa(c - disc + w(2), c - disc + w(2), c + disc - w(2), c + disc - w(2), w(3), STAR_R);
-  // THE WINCH: the hub plate the hook runs off, with the copper drum in
-  // it. It is the whole of the machine on this body bar the tube
-  if (t >= 2) {
-    P.box(c - 2 * U, c - 2 * U, c + 2 * U, c + 2 * U, GUN);
-    P.box(c - U, c - U, c + U, c + U, COPPER);
-  }
+  // THE WINCH: the copper drum the hook runs off, with a gunmetal hub
+  // plate round it from T2. It is the whole of the machine on this body
+  // bar the tube.
+  //
+  // THE DRUM IS ON EVERY TIER, RUNT INCLUDED, and that is a hard
+  // requirement rather than a taste: a body's TEAM CELL is the mask of
+  // every pixel laid in the family's accent (drawWithCell), and the atlas
+  // refuses a cell with nothing in it — "the starfish1 team cell has no
+  // pixels in it", thrown while a level is loading. The runt wore no
+  // copper at all for one build and took the game down with it.
+  if (t >= 2) P.box(c - 2 * U, c - 2 * U, c + 2 * U, c + 2 * U, GUN);
+  P.box(c - U, c - U, c + U, c + U, COPPER);
   // the launch tube up the forward arm from T3, its bore at the tip: the
   // one piece of machine that leaves the disc, because the star-shot has
   // to come out of something

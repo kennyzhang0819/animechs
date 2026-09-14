@@ -236,6 +236,47 @@ const artMissing = artWanted
   .map(([what, url]) => `${what}: ${url} has no ${path.relative(ROOT, drawingFor(url)).replace(/\\/g, "/")}`);
 report("art", artMissing, `${artWanted.length} drawings`);
 
+// ---------- cells: a body whose TEAM CELL is empty takes the game down ----------
+
+// Every drawn body hands the packer a team cell as well as a drawing: the
+// mask of every pixel laid in the family's accent, which the sheet tints
+// and lays back over the body (packTeamCells). A body that wears none of
+// its family's colour produces an empty mask, and the packer throws — "the
+// starfish1 team cell has no pixels in it" — WHILE A LEVEL IS LOADING,
+// which is as late as a failure can be found and the one place none of the
+// other stages look: the atlas needs a canvas, so nothing here packs it.
+//
+// The rule is one line and it belongs on this side of that: a tier that
+// wears no accent is a tier that cannot ship. The runt is the one that
+// gets caught, every time — it is the tier whose ornament is cut last.
+const cellFamilies = (() => {
+  const IA = R("ironhideArt.js"), FAM = R("familyArt.js"), TA = R("tuskerArt.js"), SA = R("starfishArt.js");
+  // a ground family's tier is a mech tier or a legged one; the Grapnels
+  // ride the mech rig at every tier with no stride at all, so the rig is
+  // named per family rather than read off the stride
+  const ground = (mech, legged) => (T) => (T.stride > 0 ? mech(T) : legged(T));
+  return [
+    ["ironhide", IA.IRON_TIERS, ground(IA.ironMech, IA.ironLegged)],
+    ["starhart", FAM.HART_TIERS, ground(FAM.hartMech, FAM.hartLegged)],
+    ["weaver", FAM.FROG_TIERS, ground(FAM.frogMech, FAM.frogLegged)],
+    ["tusker", TA.TUSK_TIERS, ground(TA.tuskMech, TA.tuskLegged)],
+    ["starfish", SA.STARFISH_TIERS, SA.starfishMech],
+    ["stoop", FAM.STOOP_TIERS, FAM.stoop],
+    ["skate", FAM.MANTA_TIERS, FAM.manta],
+    ["livewire", FAM.NARWHAL_TIERS, FAM.narwhal],
+  ];
+})();
+const cellProblems = [];
+let bodiesChecked = 0;
+for (const [family, tiers, art] of cellFamilies)
+  for (const T of tiers) {
+    bodiesChecked++;
+    const cell = art(T).cell;
+    if (!cell.px.some((p) => p !== null))
+      cellProblems.push(`${family}${T.t}: its team cell has no pixels — it wears none of its family's accent, and the atlas refuses that at level load`);
+  }
+report("cells", cellProblems, `${bodiesChecked} team cells`);
+
 // ---------- docs: the JSON on disk, which nothing typechecks ----------
 
 const docProblems = [];
