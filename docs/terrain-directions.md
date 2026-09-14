@@ -173,6 +173,15 @@ separates from gunmetal best; bone is the most linocut and the most
 legible zoomed out, and wants a lighter plate under the heads; night is
 a mood that would need the swarm's six hues to carry the board.
 
+`linocut-ochre-shade<n>.png` (and `-map.png`) is the SHADE LADDER: ochre
+with the hill-side band stepped down from six logical pixels at 0.6
+toward black to a two-pixel hairline at 0.2, the lit band stepping down
+with it (`LADDER` in the script; `band` on the painter, `dark` and
+`light` on the ink are separate dials). Four pixels at 0.45 keeps the
+carved edge without framing every room in black; below three the umber
+rock and the loam floor lose their boundary, which is the one line the
+game cannot do without.
+
 ## The recommendation
 
 Mesa, with Chart's stipple at the foot of the cliff if the floor wants

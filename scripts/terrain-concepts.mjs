@@ -122,29 +122,33 @@ const WALL_FAMILY = ["stone", "stone", "dirt", "dirt", null, "basalt", "basalt",
 // ── the linocut palettes: one carved hand, four inks ───────────────────
 // each takes a family base and answers the three tones of the rock, the
 // three of the floor, the water and its crests
+// `S` is the hill-side shading: `dark` how far the shaded band goes toward
+// black (0..1), `light` how far the lit band goes toward the ink's
+// highlight; the band's width is the painter's (`band`, below)
+const SHADE = { dark: 0.6, light: 1 };
 const LINOCUT_PALETTES = {
   /** cool slate rock, the floors as they are */
-  slate: (f) => {
+  slate: (f, S = SHADE) => {
     const rock = mix(shd(f.rock, 0.22), "#5a6270", 0.4);
-    return { base: desat(f.floor, 0.1), fl: lit(desat(f.floor, 0.1), 0.2), fd: shd(f.floor, 0.22), rock, rockL: mix(lit(f.rock, 0.18), "#c8ccd4", 0.3), rockD: shd(rock, 0.6), gouge: lit(rock, 0.1), deep: "#2b3a68", shallow: "#43579a", crest: "#b7c4e2", wet: shd(f.floor, 0.3), tree: shd(f.tree, 0.15) };
+    return { base: desat(f.floor, 0.1), fl: lit(desat(f.floor, 0.1), 0.2), fd: shd(f.floor, 0.22), rock, rockL: mix(rock, mix(lit(f.rock, 0.18), "#c8ccd4", 0.3), S.light), rockD: shd(rock, S.dark), gouge: lit(rock, 0.1), deep: "#2b3a68", shallow: "#43579a", crest: "#b7c4e2", wet: shd(f.floor, 0.3), tree: shd(f.tree, 0.15) };
   },
   /** burnt umber rock, warm floors, teal water */
-  ochre: (f) => {
+  ochre: (f, S = SHADE) => {
     const rock = mix(shd(f.rock, 0.18), "#8a5a34", 0.45);
     const floor = mix(f.floor, "#c9a45a", 0.15);
-    return { base: floor, fl: lit(floor, 0.2), fd: shd(floor, 0.22), rock, rockL: mix(lit(f.rock, 0.2), "#e2b876", 0.35), rockD: shd(mix(f.rock, "#5a3a20", 0.5), 0.55), gouge: lit(rock, 0.1), deep: "#1f4a55", shallow: "#2f6b74", crest: "#cfe6d8", wet: shd(floor, 0.3), tree: mix(f.tree, "#6a7a30", 0.3) };
+    return { base: floor, fl: lit(floor, 0.2), fd: shd(floor, 0.22), rock, rockL: mix(rock, mix(lit(f.rock, 0.2), "#e2b876", 0.35), S.light), rockD: shd(mix(rock, "#5a3a20", 0.4), S.dark * 0.92), gouge: lit(rock, 0.1), deep: "#1f4a55", shallow: "#2f6b74", crest: "#cfe6d8", wet: shd(floor, 0.3), tree: mix(f.tree, "#6a7a30", 0.3) };
   },
   /** a night print: near-black rock with bone bands, deep floors */
-  night: (f) => {
+  night: (f, S = SHADE) => {
     const rock = shd(mix(f.rock, "#2a2d3a", 0.7), 0.3);
     const floor = shd(desat(f.floor, 0.2), 0.42);
-    return { base: floor, fl: lit(floor, 0.18), fd: shd(floor, 0.3), rock, rockL: mix(lit(f.rock, 0.3), "#d9d3c2", 0.55), rockD: "#101218", gouge: lit(rock, 0.12), deep: "#141c38", shallow: "#22305a", crest: "#8fa0d0", wet: shd(floor, 0.35), tree: shd(f.tree, 0.45) };
+    return { base: floor, fl: lit(floor, 0.18), fd: shd(floor, 0.3), rock, rockL: mix(rock, mix(lit(f.rock, 0.3), "#d9d3c2", 0.55), S.light), rockD: shd(rock, S.dark), gouge: lit(rock, 0.12), deep: "#141c38", shallow: "#22305a", crest: "#8fa0d0", wet: shd(floor, 0.35), tree: shd(f.tree, 0.45) };
   },
   /** bone and ink: pale floors, dark ink rock with white bands */
-  bone: (f) => {
+  bone: (f, S = SHADE) => {
     const rock = mix(shd(f.rock, 0.55), "#3a3530", 0.5);
     const floor = lit(desat(f.floor, 0.35), 0.3);
-    return { base: floor, fl: lit(floor, 0.25), fd: shd(floor, 0.16), rock, rockL: "#d8d2c4", rockD: "#1e1b18", gouge: lit(rock, 0.12), deep: "#7a93b6", shallow: "#a6b8d0", crest: "#ffffff", wet: shd(floor, 0.25), tree: mix(f.tree, "#b9b39f", 0.3) };
+    return { base: floor, fl: lit(floor, 0.25), fd: shd(floor, 0.16), rock, rockL: mix(rock, "#d8d2c4", S.light), rockD: shd(rock, S.dark), gouge: lit(rock, 0.12), deep: "#7a93b6", shallow: "#a6b8d0", crest: "#ffffff", wet: shd(floor, 0.25), tree: mix(f.tree, "#b9b39f", 0.3) };
   },
 };
 
@@ -225,6 +229,7 @@ const OPTIONS = {
    *  on its lit edges and a wide dark one on the shaded, a few gouges */
   linocut: {
     tones: (f) => LINOCUT_PALETTES.slate(f),
+    band: 6,
     floor(B, t, wx, wy, lx, ly, tx, ty) {
       let c = t.base;
       const h = hash2(tx, ty, 41);
@@ -236,7 +241,7 @@ const OPTIONS = {
     rock(B, t, wx, wy, lx, ly, tx, ty) {
       const S = !B.isRock(tx, ty + 1), Nn = !B.isRock(tx, ty - 1), E = !B.isRock(tx + 1, ty), W = !B.isRock(tx - 1, ty);
       const NE = !B.isRock(tx + 1, ty - 1), SW = !B.isRock(tx - 1, ty + 1);
-      const b = 6;
+      const b = this.band;
       if ((Nn && ly < b) || (E && lx >= L - b) || (NE && lx >= L - b && ly < b)) return t.rockL;
       if ((S && ly >= L - b) || (W && lx < b) || (SW && lx < b && ly >= L - b)) return t.rockD;
       if (hash2(tx, ty, 45) < 0.12) { const x0 = 1 + hash2(tx, ty, 46) * 6, y0 = 1 + hash2(tx, ty, 47) * 6, flip = hash2(tx, ty, 50) < 0.5 ? 1 : -1; const u = (lx - x0) + flip * (ly - y0), v = (lx - x0) - flip * (ly - y0); if (u >= 0 && u < 16 && Math.abs(v) < 1.6) return t.gouge; }
@@ -468,7 +473,25 @@ for (const name of SCENE_OPTS) write(`docs/terrain-concepts/${name}.png`, compos
     write(`docs/terrain-concepts/linocut-${name}.png`, compose(paintOption(opt, SCENE, { rockFam: "grass", props: PROPS }), { heads: HEADS, core: CORE }));
     write(`docs/terrain-concepts/linocut-${name}-crop.png`, compose(paintOption(opt, CROP, { props: pineProps }), { heads: heads.map(([k, x, y]) => [k, x, y]), core, zoom: 1 }));
   }
+  // THE SHADE LADDER: linocut in ochre with the hill-side band at four
+  // widths and strengths, from the six-pixel band above down to a
+  // two-pixel edge, on a 64x36 window of the crop and on the whole map
+  const LADDER = [
+    { name: "6", band: 6, dark: 0.6, light: 1 },
+    { name: "4", band: 4, dark: 0.45, light: 0.75 },
+    { name: "3", band: 3, dark: 0.32, light: 0.55 },
+    { name: "2", band: 2, dark: 0.2, light: 0.4 },
+  ];
+  const SW2 = 64, SH2 = 36, sx0 = cx0 + 20, sy0 = cy0 + 10;
+  const SUB = makeBoard(SW2, SH2, (x, y) => cellAt(sx0 + x, sy0 + y), (x, y) => famAt(sx0 + x, sy0 + y));
+  const subHeads = heads.filter(([, x, y, sz]) => x - 20 >= 0 && y - 10 >= 0 && x - 20 + sz <= SW2 && y - 10 + sz <= SH2).map(([k, x, y]) => [k, x - 20, y - 10]);
+  const subCore = core && core[0] - 20 >= 0 && core[1] - 10 >= 0 && core[0] - 20 + 5 <= SW2 && core[1] - 10 + 5 <= SH2 ? [core[0] - 20, core[1] - 10] : null;
   const MAP = makeBoard(MW, MH, cellAt, famAt);
+  for (const step of LADDER) {
+    const opt = { ...OPTIONS.linocut, band: step.band, tones: (f) => LINOCUT_PALETTES.ochre(f, { dark: step.dark, light: step.light }) };
+    write(`docs/terrain-concepts/linocut-ochre-shade${step.name}.png`, compose(paintOption(opt, SUB), { heads: subHeads, core: subCore, zoom: 1 }));
+    write(`docs/terrain-concepts/linocut-ochre-shade${step.name}-map.png`, paintOption(opt, MAP, { step: 4 }));
+  }
   for (const name of Object.keys(LINOCUT_PALETTES)) {
     const img = paintOption(OPTIONS[`linocut-${name}`], MAP, { step: 4 });
     write(`docs/terrain-concepts/linocut-${name}-map.png`, img);
