@@ -18,6 +18,12 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { GUN, draw, drawCore, drawHead, plate } from "../game/turretArt.ts";
 import { paintFloor, paintProp, paintWall } from "../game/tiles.ts";
+import { HART_TIERS, RHINO_TIERS, STOOP_TIERS, hartMech, rhinoLegged, rhinoMech, rhinoSeg, stoop } from "../game/animalArt.ts";
+import { inflateSync } from "node:zlib";
+
+// ONLY=play (or scene, map, ladder, families) renders that section alone
+const ONLY = process.env.ONLY ?? null;
+const wants = (section) => !ONLY || ONLY === section;
 
 // ── png ────────────────────────────────────────────────────────────────
 const crcTable = new Uint32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
@@ -316,6 +322,120 @@ function stampProp(out, B, kind, cx, cy, tones, style) {
   }
 }
 
+// ── PNG in: the shipped Foundry heads and plates ───────────────────────
+// 8-bit RGB or RGBA, not interlaced — what public/foundry/ holds. A pixel
+// under half alpha is nothing
+function readPng(file) {
+  const buf = readFileSync(file);
+  let pos = 8; const idat = [];
+  let w = 0, h = 0, type = 6;
+  while (pos < buf.length) {
+    const len = buf.readUInt32BE(pos), kind = buf.toString("ascii", pos + 4, pos + 8), data = buf.subarray(pos + 8, pos + 8 + len);
+    if (kind === "IHDR") { w = data.readUInt32BE(0); h = data.readUInt32BE(4); type = data[9]; if (data[8] !== 8 || data[12] !== 0) throw new Error(`${file}: only 8-bit, not interlaced`); }
+    else if (kind === "IDAT") idat.push(data);
+    pos += 12 + len;
+  }
+  const bpp = type === 6 ? 4 : type === 2 ? 3 : (() => { throw new Error(`${file}: colour type ${type}`); })();
+  const raw = inflateSync(Buffer.concat(idat)), stride = w * bpp;
+  const out = Buffer.alloc(stride * h);
+  for (let y = 0; y < h; y++) {
+    const f = raw[y * (stride + 1)], src = y * (stride + 1) + 1, dst = y * stride;
+    for (let i = 0; i < stride; i++) {
+      const a = i >= bpp ? out[dst + i - bpp] : 0, b = y > 0 ? out[dst - stride + i] : 0, c = y > 0 && i >= bpp ? out[dst - stride + i - bpp] : 0, x = raw[src + i];
+      let v;
+      if (f === 0) v = x; else if (f === 1) v = x + a; else if (f === 2) v = x + b; else if (f === 3) v = x + ((a + b) >> 1);
+      else { const pp = a + b - c, pa = Math.abs(pp - a), pb = Math.abs(pp - b), pc = Math.abs(pp - c); v = x + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c); }
+      out[dst + i] = v & 255;
+    }
+  }
+  const px = new Array(w * h).fill(null);
+  for (let i = 0; i < w * h; i++) { const o = i * bpp; if (bpp === 4 && out[o + 3] < 128) continue; px[i] = rgb(out[o], out[o + 1], out[o + 2]); }
+  if (w !== h) throw new Error(`${file}: not square`);
+  return { n: w, px };
+}
+const FOUNDRY = "public/foundry";
+const foundryCache = new Map();
+const foundryArt = (name) => { let a = foundryCache.get(name); if (!a) { a = readPng(`${FOUNDRY}/${name}.png`); foundryCache.set(name, a); } return a; };
+
+// ── art helpers: scale, turn, stamp with alpha ─────────────────────────
+/** nearest-neighbour resample of a square Art to m px */
+const scaleArt = (art, m) => { const px = new Array(m * m).fill(null); for (let y = 0; y < m; y++) for (let x = 0; x < m; x++) px[y * m + x] = art.px[Math.min(art.n - 1, (y * art.n / m) | 0) * art.n + Math.min(art.n - 1, (x * art.n / m) | 0)]; return { n: m, px }; };
+/** the Art turned by `ang` radians about its centre (drawn facing up; +x is ang = pi/2) */
+const rotateArt = (art, ang) => {
+  const n = art.n, c = (n - 1) / 2, px = new Array(n * n).fill(null), cs = Math.cos(-ang), sn = Math.sin(-ang);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const dx = x - c, dy = y - c; const sx = Math.round(c + dx * cs - dy * sn), sy = Math.round(c + dx * sn + dy * cs); if (sx >= 0 && sy >= 0 && sx < n && sy < n) px[y * n + x] = art.px[sy * n + sx]; }
+  return { n, px };
+};
+/** two Arts of one grid, b over a */
+const overArt = (a, b) => ({ n: a.n, px: a.px.map((c, i) => b.px[i] ?? c) });
+/** the Art mirrored left to right */
+const mirrorArt = (a) => { const n = a.n, px = new Array(n * n); for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) px[y * n + x] = a.px[y * n + (n - 1 - x)]; return { n, px }; };
+/** stamp centred at (cx, cy) native px; `shadow` stamps the silhouette as black at that alpha instead */
+const stampAt = (out, W, H, art, cx, cy, shadow = 0) => {
+  const x0 = Math.round(cx - art.n / 2), y0 = Math.round(cy - art.n / 2);
+  for (let y = 0; y < art.n; y++) for (let x = 0; x < art.n; x++) {
+    const c = art.px[y * art.n + x]; if (c === null) continue;
+    const ox = x0 + x, oy = y0 + y; if (ox < 0 || oy < 0 || ox >= W || oy >= H) continue;
+    const o = (oy * W + ox) * 4;
+    if (shadow) { out[o] *= 1 - shadow; out[o + 1] *= 1 - shadow; out[o + 2] *= 1 - shadow; continue; }
+    const [r, g, b] = hex(c); out[o] = r; out[o + 1] = g; out[o + 2] = b; out[o + 3] = 255;
+  }
+};
+
+// ── the swarm, off the animal art ──────────────────────────────────────
+// A unit's world size is its cell x 0.625 x the tier's scale (docs/unit-art.md);
+// a tile is 20 world px and 32 native, so native = world x 1.6
+const NATIVE_PER_WORLD = 32 / 20;
+const unitPx = (cell, scale) => Math.round(cell * 0.625 * scale * NATIVE_PER_WORLD);
+const unitCache = new Map();
+/** a ground unit composed facing up at its native size: the mech rig's
+ *  belly, hooves and body, or the legged rig's belly, four legs and body */
+function unitArt(family, tier) {
+  const key = family + tier; let a = unitCache.get(key); if (a) return a;
+  if (family === "stoop") { const T = STOOP_TIERS[tier - 1]; a = scaleArt(stoop(T).full, unitPx(T.n + 1, T.scale)); unitCache.set(key, a); return a; }
+  const T = (family === "rhino" ? RHINO_TIERS : HART_TIERS)[tier - 1];
+  const n = T.n, R = T.R, c = (n - 1) / 2;
+  let art;
+  if (tier <= 3) {
+    const P = family === "rhino" ? rhinoMech(T) : hartMech(T);
+    art = overArt(overArt(overArt(P.base, P.leg), mirrorArt(P.leg)), P.body);
+  } else {
+    const P = rhinoLegged(T);
+    const px = P.base.px.slice(); const g = { n, px };
+    // four stout legs: mount at the flank, knee out and a little forward, foot planted wide
+    const { th, sh } = rhinoSeg(T);
+    const tone = ["#3e3a3c", "#66605f", "#8e8684"];
+    const stroke = (x0, y0, x1, y1, w) => { const L = Math.hypot(x1 - x0, y1 - y0), nx = -(y1 - y0) / L, ny = (x1 - x0) / L; for (let t = 0; t <= L; t += 0.5) for (let k = -w / 2; k <= w / 2; k += 0.5) { const x = Math.round(x0 + (x1 - x0) * t / L + nx * k), y = Math.round(y0 + (y1 - y0) * t / L + ny * k); if (x >= 0 && y >= 0 && x < n && y < n) px[y * n + x] = k < -w * 0.2 ? tone[2] : k > w * 0.25 ? tone[0] : tone[1]; } };
+    for (const s of [-1, 1]) for (const [my, ky, fy] of [[-0.45, -0.75, -0.55], [0.5, 0.75, 0.95]]) {
+      const mx = c + s * 0.6 * R, kx = c + s * 1.25 * R, fx = c + s * 1.7 * R;
+      stroke(mx, c + my * R, kx, c + ky * R, th); stroke(kx, c + ky * R, fx, c + fy * R, sh);
+      const hw = Math.round(R * 0.3), hh = Math.round(R * 0.26);
+      for (let y = -hh / 2; y < hh / 2; y++) for (let x = -hw / 2; x < hw / 2; x++) { const X = Math.round(fx + x), Y = Math.round(c + fy * R + y); if (X >= 0 && Y >= 0 && X < n && Y < n) px[Y * n + X] = y < -hh * 0.15 ? "#2c2d38" : tone[0]; }
+    }
+    art = overArt(g, P.body);
+  }
+  a = scaleArt(art, unitPx(n + 1, T.scale)); unitCache.set(key, a); return a;
+}
+
+// ── the original hill-side shading, as the renderer draws it ───────────
+// Mindustry's two buffers on top of any terrain: the rim shadow on the
+// floor (0.71 black at the wall's edge, gone half a cell out) and the
+// darkness inside the hill (an erosion ramp: nothing on the rim cell,
+// 0.375 one cell in, then 0.625, 0.875, solid). The darkness is drawn
+// over the ground units and the structures too, so it goes on after the
+// heads and the walkers and before the flyers, exactly as in the game
+function originalShading(out, W, H, B, native = 2) {
+  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
+    const wx = (px / native) | 0, wy = (py / native) | 0, tx = (wx / L) | 0, ty = (wy / L) | 0;
+    const k = B.cell[ty * B.TW + tx];
+    let f = 1;
+    if (k === ROCK) { const d = B.depth[ty * B.TW + tx]; if (d > 0) f = 1 - Math.min((d + 0.5) / 4, 1); }
+    else { const dr = B.dRock(wx, wy); if (dr < 0.5) f = 1 - 0.71 * (1 - dr / 0.5); }
+    if (f === 1) continue;
+    const o = (py * W + px) * 4; out[o] *= f; out[o + 1] *= f; out[o + 2] *= f;
+  }
+}
+
 // ── the current look, through the game's own painters ──────────────────
 function paintCurrent(B) {
   const out = new Uint8ClampedArray(B.LW * B.LH * 4);
@@ -403,12 +523,12 @@ const write = (file, img) => { writeFileSync(file, png(img.px, img.W, img.H)); c
 
 mkdirSync("docs/terrain-concepts", { recursive: true });
 const SCENE_OPTS = ["mesa", "chart", "linocut", "strata"];
-write("docs/terrain-concepts/current.png", compose(paintCurrent(SCENE), { heads: HEADS, core: CORE }));
-for (const name of SCENE_OPTS) write(`docs/terrain-concepts/${name}.png`, compose(paintOption(OPTIONS[name], SCENE, { rockFam: "grass", props: PROPS }), { heads: HEADS, core: CORE }));
+if (wants("scene")) write("docs/terrain-concepts/current.png", compose(paintCurrent(SCENE), { heads: HEADS, core: CORE }));
+if (wants("scene")) for (const name of SCENE_OPTS) write(`docs/terrain-concepts/${name}.png`, compose(paintOption(OPTIONS[name], SCENE, { rockFam: "grass", props: PROPS }), { heads: HEADS, core: CORE }));
 
 // the family strip: every option on every family, a 3x3 board a card —
 // rock across the top, floor in the middle, water along the bottom
-{
+if (wants("families")) {
   const fams = ["grass", "dirt", "sand", "stone", "snow", "moss", "basalt"];
   const MINI = makeBoard(3, 3, (x, y) => (y === 0 ? ROCK : y === 1 ? FLOOR : x === 2 ? DEEP : SHALLOW));
   const SW = MINI.LW, SH = MINI.LH, GAP = 4;
@@ -468,7 +588,7 @@ for (const name of SCENE_OPTS) write(`docs/terrain-concepts/${name}.png`, compos
   const inCrop = doc.base.x >= cx0 && doc.base.x + 5 <= cx0 + CW && doc.base.y >= cy0 && doc.base.y + 5 <= cy0 + CH;
   const core = inCrop ? [doc.base.x - cx0, doc.base.y - cy0] : null;
   const pineProps = [];
-  for (const name of Object.keys(LINOCUT_PALETTES)) {
+  if (wants("map")) for (const name of Object.keys(LINOCUT_PALETTES)) {
     const opt = OPTIONS[`linocut-${name}`];
     write(`docs/terrain-concepts/linocut-${name}.png`, compose(paintOption(opt, SCENE, { rockFam: "grass", props: PROPS }), { heads: HEADS, core: CORE }));
     write(`docs/terrain-concepts/linocut-${name}-crop.png`, compose(paintOption(opt, CROP, { props: pineProps }), { heads: heads.map(([k, x, y]) => [k, x, y]), core, zoom: 1 }));
@@ -487,13 +607,69 @@ for (const name of SCENE_OPTS) write(`docs/terrain-concepts/${name}.png`, compos
   const subHeads = heads.filter(([, x, y, sz]) => x - 20 >= 0 && y - 10 >= 0 && x - 20 + sz <= SW2 && y - 10 + sz <= SH2).map(([k, x, y]) => [k, x - 20, y - 10]);
   const subCore = core && core[0] - 20 >= 0 && core[1] - 10 >= 0 && core[0] - 20 + 5 <= SW2 && core[1] - 10 + 5 <= SH2 ? [core[0] - 20, core[1] - 10] : null;
   const MAP = makeBoard(MW, MH, cellAt, famAt);
-  for (const step of LADDER) {
+  if (wants("map")) for (const name of Object.keys(LINOCUT_PALETTES)) write(`docs/terrain-concepts/linocut-${name}-map.png`, paintOption(OPTIONS[`linocut-${name}`], MAP, { step: 4 }));
+  if (wants("ladder")) for (const step of LADDER) {
     const opt = { ...OPTIONS.linocut, band: step.band, tones: (f) => LINOCUT_PALETTES.ochre(f, { dark: step.dark, light: step.light }) };
     write(`docs/terrain-concepts/linocut-ochre-shade${step.name}.png`, compose(paintOption(opt, SUB), { heads: subHeads, core: subCore, zoom: 1 }));
     write(`docs/terrain-concepts/linocut-ochre-shade${step.name}-map.png`, paintOption(opt, MAP, { step: 4 }));
   }
-  for (const name of Object.keys(LINOCUT_PALETTES)) {
-    const img = paintOption(OPTIONS[`linocut-${name}`], MAP, { step: 4 });
-    write(`docs/terrain-concepts/linocut-${name}-map.png`, img);
+
+  // ── THE PLAY RENDER: linocut ochre with the shipped heads, the swarm
+  // on the lane and the game's own hill shading ───────────────────────
+  if (wants("play")) {
+    const opt = OPTIONS["linocut-ochre"];
+    const terrain = paintOption(opt, SUB);
+    const W = SUB.LW * 2, H = SUB.LH * 2;
+    const out = upscale(terrain.px, SUB.LW, SUB.LH, 2);
+    // the core, in map coordinates, is what everything faces
+    const coreX = (doc.base.x + 2.5 - sx0) * N, coreY = (doc.base.y + 2.5 - sy0) * N;
+    // the swarm: on open dry ground, the big ones clear of the rock, each
+    // heading for the core
+    const walkers = [["rhino", 1, 6], ["rhino", 2, 3], ["rhino", 3, 2], ["rhino", 4, 1], ["hart", 2, 2], ["hart", 3, 1]];
+    const flyers = [["stoop", 2, 2], ["stoop", 3, 1]];
+    const placed = [];
+    const clear = (x, y, r) => placed.every(([px, py, pr]) => Math.hypot(px - x, py - y) > r + pr);
+    const tryPlace = (fam, tier, count, air) => {
+      const art = unitArt(fam, tier), r = art.n * 0.34;
+      let n = 0;
+      for (let tries = 0; tries < 6000 && n < count; tries++) {
+        const tx = hash2(tries, tier * 7 + n, 91) * SW2, ty = hash2(tier * 7 + n, tries, 92) * SH2;
+        const k = SUB.at(tx | 0, ty | 0);
+        if (!air && k !== FLOOR) continue;
+        if (air && (k >= SHALLOW && k <= DEEP)) continue;
+        const wx = (tx * L) | 0, wy = (ty * L) | 0;
+        if (!air && SUB.dRock(wx, wy) * N < r * 0.8) continue;
+        const x = tx * N, y = ty * N;
+        if (x < r || y < r || x > W - r || y > H - r || !clear(x, y, r)) continue;
+        placed.push([x, y, r, fam, tier, air]); n++;
+      }
+    };
+    for (const [fam, tier, count] of walkers) tryPlace(fam, tier, count, false);
+    for (const [fam, tier, count] of flyers) tryPlace(fam, tier, count, true);
+    // the heads, the shipped PNGs on their plates, each turned to its nearest walker
+    const SIZE = { duo: 1, hail: 1, scorch: 1, arc: 1, salvo: 2, scatter: 2, lancer: 2, wave: 2, parallax: 2, swarmer: 2, fuse: 3, ripple: 3, tsunami: 3, cyclone: 3, spectre: 4, meltdown: 4, foreshadow: 4 };
+    for (const [kind, tx, ty] of subHeads) {
+      const size = SIZE[kind], cx = (tx + size / 2) * N, cy = (ty + size / 2) * N;
+      stampAt(out, W, H, foundryArt(`base-${size}`), cx, cy);
+      let best = null, bd = Infinity;
+      for (const u of placed) { if (u[5]) continue; const d = Math.hypot(u[0] - cx, u[1] - cy); if (d < bd) { bd = d; best = u; } }
+      // the file faces +x; the turn is the heading to the target
+      const ang = best ? Math.atan2(best[1] - cy, best[0] - cx) : 0;
+      stampAt(out, W, H, rotateArt(foundryArt(kind), ang), cx, cy);
+    }
+    if (subCore) stampAt(out, W, H, foundryArt("core"), (subCore[0] + 2.5) * N, (subCore[1] + 2.5) * N);
+    // the walkers, facing the core (the art faces up, so the heading is turned a quarter)
+    for (const [x, y, , fam, tier, air] of placed) if (!air) stampAt(out, W, H, rotateArt(unitArt(fam, tier), Math.atan2(coreY - y, coreX - x) + Math.PI / 2), x, y);
+    // then the game's shading over the lot, and the flyers above it with their drop shadows
+    originalShading(out, W, H, SUB);
+    for (const [x, y, , fam, tier, air] of placed) if (air) { const a = rotateArt(unitArt(fam, tier), Math.atan2(coreY - y, coreX - x) + Math.PI / 2); stampAt(out, W, H, a, x + 6 * NATIVE_PER_WORLD, y + 6 * NATIVE_PER_WORLD, 0.22); stampAt(out, W, H, a, x, y); }
+    write("docs/terrain-concepts/linocut-ochre-play.png", { px: out, W, H });
+    // and the same, without the shading, for the difference
+    const out2 = upscale(terrain.px, SUB.LW, SUB.LH, 2);
+    for (const [kind, tx, ty] of subHeads) { const size = SIZE[kind], cx = (tx + size / 2) * N, cy = (ty + size / 2) * N; stampAt(out2, W, H, foundryArt(`base-${size}`), cx, cy); let best = null, bd = Infinity; for (const u of placed) { if (u[5]) continue; const d = Math.hypot(u[0] - cx, u[1] - cy); if (d < bd) { bd = d; best = u; } } stampAt(out2, W, H, rotateArt(foundryArt(kind), best ? Math.atan2(best[1] - cy, best[0] - cx) : 0), cx, cy); }
+    if (subCore) stampAt(out2, W, H, foundryArt("core"), (subCore[0] + 2.5) * N, (subCore[1] + 2.5) * N);
+    for (const [x, y, , fam, tier, air] of placed) if (!air) stampAt(out2, W, H, rotateArt(unitArt(fam, tier), Math.atan2(coreY - y, coreX - x) + Math.PI / 2), x, y);
+    for (const [x, y, , fam, tier, air] of placed) if (air) { const a = rotateArt(unitArt(fam, tier), Math.atan2(coreY - y, coreX - x) + Math.PI / 2); stampAt(out2, W, H, a, x + 6 * NATIVE_PER_WORLD, y + 6 * NATIVE_PER_WORLD, 0.22); stampAt(out2, W, H, a, x, y); }
+    write("docs/terrain-concepts/linocut-ochre-play-unshaded.png", { px: out2, W, H });
   }
 }

@@ -43,8 +43,11 @@ Three facts about this game that Mindustry's ground was never drawn for:
 
 Shared by every direction, whichever is picked:
 
-- The darkness buffer goes (or is capped at one step). The rim shadow on
-  the floor stays: it is what makes a lane a lane.
+- **The hill-side shading stays as it is.** The rim shadow on the floor
+  and the darkness inside the hill are the game's own logic and are
+  kept; every direction is drawn under them. (The first draft of this
+  page proposed lifting the darkness; that is withdrawn — see the play
+  render below for what it does to the ink.)
 - One rock is a step lighter and warmer than gunmetal. The concepts use
   `#9a958a` for stone; the stone floor moves with it (`#a19c94`).
 - The marsh loses its violet: bog and peat in olive and brown, the spore
@@ -182,6 +185,22 @@ carved edge without framing every room in black; below three the umber
 rock and the loam floor lose their boundary, which is the one line the
 game cannot do without.
 
+`linocut-ochre-play.png` is the PLAY RENDER: the same window in ochre
+with what actually goes on it — the Foundry heads as they ship (the
+hand-edited PNGs under `public/foundry/`, on their darkened plates, each
+turned toward its nearest walker), the core, and the swarm off the animal
+art at its real sizes (Ironhide runts to a champion, two Starhart tiers,
+three Stoop bats with drop shadows) — and then the game's own hill-side
+shading over it in the renderer's order: the rim shadow on the floor, the
+darkness inside the hill over the ground units and the structures, the
+flyers above it all. `-unshaded.png` is the same frame without, for the
+difference. What it shows: the swarm reads on ochre (crimson and magenta
+sit on it without a fight); with the darkness kept, the carved bands
+live on the rim cell only and the hill past it is the ramp, so the
+linocut is really a treatment of the rim and the floor; and a head two
+cells into the rock is drawn under the darkness, as in the game today
+(a draw-order fact, not a tile one).
+
 ## The recommendation
 
 Mesa, with Chart's stipple at the foot of the cliff if the floor wants
@@ -191,4 +210,5 @@ neighbour-aware art the atlas already knows how to key, and it leaves
 the animals and the Foundry heads exactly where they are.
 
 The first step in any of them is the same and can ship on its own:
-lift the darkness, warm the stone, and drop the violet marsh.
+warm the stone off gunmetal and drop the violet marsh. The hill-side
+shading stays.
