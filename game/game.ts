@@ -9,7 +9,9 @@ import {
   SPAWN_STYLE,
 } from "./maps";
 import { SHIELD_TOWER_SIZE } from "./mutation";
-import { TOWER_ICONS, towerBaseIcon } from "./towerIcons";
+import { towerBaseIcon, towerGhostIcon } from "./towerIcons";
+import { BASE_DARK } from "./turretArt";
+import { FOUNDRY_ART } from "./turretFlag";
 import {
   CELL,
   clamp,
@@ -3236,7 +3238,7 @@ export class Game {
     const done = this.ghostComposites.get(kind);
     if (done) return done;
     const size = TOWERS[kind].size;
-    const top = this.ghostSprite(TOWER_ICONS[kind]);
+    const top = this.ghostSprite(towerGhostIcon(kind));
     const base = this.ghostSprite(towerBaseIcon(size));
     const loaded = (i: HTMLImageElement) => i.complete && i.naturalWidth > 0;
     if (!loaded(top) || !loaded(base)) return null;
@@ -3250,6 +3252,17 @@ export class Game {
     if (!g) return null;
     g.imageSmoothingEnabled = false;
     g.drawImage(base, 0, 0, n, n);
+    if (FOUNDRY_ART) {
+      // the plate as dark as the sheet packs it (atlas.ts plateArt): a
+      // multiply by the same grey, then the plate's own alpha put back
+      const v = Math.round(255 * BASE_DARK);
+      g.globalCompositeOperation = "multiply";
+      g.fillStyle = `rgb(${v},${v},${v})`;
+      g.fillRect(0, 0, n, n);
+      g.globalCompositeOperation = "destination-in";
+      g.drawImage(base, 0, 0, n, n);
+      g.globalCompositeOperation = "source-over";
+    }
     // THE PLATE NEVER TURNS and the head always does (renderer.ts pushes
     // the base at rotation 0 and the top at the turret's angle)
     g.translate(n / 2, n / 2);

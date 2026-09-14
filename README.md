@@ -174,6 +174,14 @@ stale tab or a cached bundle looks exactly like a fix not working.
   art packed over the stock cells while `ANIMAL_ART`
   (`game/animalFlag.ts`) is on. The style, the sizing rule and how to
   add a family are in [docs/unit-art.md](docs/unit-art.md)
+- `game/turretArt.ts` — the player's turrets as FOUNDRY, one gunmetal
+  plating with a silhouette a kind and an accent per ammo, generated the
+  same way and packed over the stock turret cells while `FOUNDRY_ART`
+  (`game/turretFlag.ts`) is on, the stock plates darkened under them.
+  The HUD's turret pictures and the placement ghost come off the same
+  drawings. The direction, the drawing rules and the alternate
+  silhouettes are in [docs/turret-factions.md](docs/turret-factions.md);
+  `npm run gen:turrets` renders the sheets into `docs/turret-concepts/`
 - `game/renderer.ts` — WebGL2 instanced sprites: static terrain, shadow
   and wall batches, one dynamic batch in painter's order, and a shield
   pass. Water is a batch and a program of its own — Mindustry's

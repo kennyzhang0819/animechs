@@ -127,15 +127,28 @@ on the board the fix is to warm the rhino, not the turrets. Scale is
 the game's own: a 1x1 turret is one tile of 20 world px and a T1 animal
 draws at three, so a duo next to a dagger-sized body is small by design
 (`docs/unit-art.md`, "The size").
-## Shipping it
+## How it ships
 
-A faction is a skin over the one roster, never a second roster: the sim,
-the deal, mods and relics are keyed by `TowerKind`, and a faction changes
-what a duo looks like, not what it does. `UV_TURRETS` (renderer) and
-`TOWER_ICONS` (`towerIcons.ts`) take a faction; the icon pipeline
-(`turretIcon`) is unchanged because the heads go through the same pass
-as the stock tops. It ships the way the animals shipped: generated at
-load with the pixel engine, packed over the stock cells behind a flag
-(`packAnimalArt`, `ANIMAL_ART`), judged in the built game on a full wave,
-zoomed out. The base plates stay Mindustry's four until the whole set is
-original.
+`game/turretArt.ts` is the roster: the engine, the parts vocabulary and
+the seventeen heads, exactly the drawings on the sheet. While
+`FOUNDRY_ART` (`game/turretFlag.ts`) is on, `game/atlas.ts` generates
+every head at load and packs it over the stock turret cell through the
+same outline + antialias pass the stock top took (`headArt`), draws the
+four stock plates darkened by `BASE_DARK` (`plateArt`), and carves the
+HUD's turret pictures off the same drawings (`towerIcon`); the placement
+ghost composes its stamp from the raw head (`towerGhostIcon`) over the
+plate darkened the same way (`game.ts ghostArt`). A kind with no drawing
+(the retired menders) keeps its stock sprite. Nothing under
+`public/mindustry` is touched, and the flag off restores Mindustry's
+turrets byte for byte.
+
+`scripts/turret-concepts.mjs` imports the roster from the game module
+and adds the two alternate sets, so the sheet and the board are drawn
+from one place; `npm run gen:turrets` renders all fifty-one into
+`docs/turret-concepts/` and reports any one-pixel stroke.
+
+A faction, when a second comes, is a skin over this one roster, never a
+second roster: the sim, the deal, mods and relics are keyed by
+`TowerKind`, and a faction changes what a duo looks like, not what it
+does. The head lookup in `atlas.ts` and the plate treatment are the two
+places it plugs in.

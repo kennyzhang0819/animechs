@@ -25,6 +25,7 @@ import {
   type Reward,
   type UnlockEntry,
 } from "@/game/track";
+import type { TowerKind } from "@/game/types";
 import { upgradeDef } from "@/game/upgrades";
 import { BackButton, BoardTabs } from "./Board";
 import { HoverCard, useHoverCard } from "./HoverCard";
@@ -33,7 +34,7 @@ import Unlocks from "./Unlocks";
 import { bandFor, MutationFace, MUT_LIT } from "./mutationFace";
 import { Glyph } from "./Relics";
 import { RARITY, rarityDef } from "@/game/rarity";
-import { TOWER_ICONS } from "./towerIcons";
+import { useTowerIcon } from "./towerIcons";
 import { tile } from "./tile";
 
 /**
@@ -130,6 +131,12 @@ function MapThumb({ mapId }: { mapId: string }) {
  *  thumbnail, a pace as its multiplier. An
  *  upgrade rung shows the turret it buffs — the ring colour is what
  *  separates it from owning the gun */
+/** a turret's picture, the head the board builds (components/towerIcons.ts useTowerIcon) */
+function TurretFace({ kind }: { kind: TowerKind }) {
+  const src = useTowerIcon(kind);
+  return <img src={src} alt="" className="h-[26px] w-[26px] object-contain [image-rendering:pixelated]" />;
+}
+
 function RewardFace({ reward }: { reward: Reward }) {
   if (reward.kind === "world") return <MapThumb mapId={worldMapId(reward.worldId)} />;
   if (reward.kind === "speed")
@@ -142,14 +149,7 @@ function RewardFace({ reward }: { reward: Reward }) {
     return <Glyph glyph={modDef(reward.id).glyph} className="h-[22px] w-[22px]" />;
   if (reward.kind === "relic")
     return <Glyph glyph={relicDef(reward.id).glyph} className="h-[22px] w-[22px]" />;
-  const kind = reward.kind === "turret" ? reward.id : upgradeDef(reward.id).turret;
-  return (
-    <img
-      src={TOWER_ICONS[kind]}
-      alt=""
-      className="h-[26px] w-[26px] object-contain [image-rendering:pixelated]"
-    />
-  );
+  return <TurretFace kind={reward.kind === "turret" ? reward.id : upgradeDef(reward.id).turret} />;
 }
 
 /**
