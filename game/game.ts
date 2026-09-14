@@ -167,6 +167,13 @@ export interface UiState {
   menuOpen: boolean;
   /** simulation speed multiplier: one of SPEEDS */
   speed: number;
+  /**
+   * FRAMES A SECOND, smoothed (Game.fpsEma) and rounded — what the corner
+   * counter prints when the Video tab has asked for it. It rides the HUD
+   * poll like everything else here, so it lands ten times a second, which
+   * is as often as a number a human is reading wants to change anyway.
+   */
+  fps: number;
   /** is the drop-zone and air-route overlay on? */
   showRoutes: boolean;
   /**
@@ -2049,6 +2056,7 @@ export class Game {
       held: this.heldCard,
       paused: this.paused,
       speed: this.speed,
+      fps: Math.round(this.fpsEma),
       showRoutes: this.showRoutes,
       lost: this.sim.lost(),
       coreHp: Math.ceil(this.sim.core.hp),

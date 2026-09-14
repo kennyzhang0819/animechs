@@ -1,4 +1,4 @@
-import { FLOOR_STYLE, WATER_VARIANTS, type FloorKind } from "./tiles";
+import { FLOOR_STYLE, WATER_VARIANTS, WATER_WAVE_VARIANT, type FloorKind } from "./tiles";
 import { LINOCUT_TERRAIN } from "./terrainFlag";
 import {
   FLYER_PARTS,
@@ -572,6 +572,25 @@ const HAS_WAKE = KIND_WAKE.some(Boolean);
  * lerp is a constant here and this is what it settles on.
  */
 const WAKE_COL: RGB = [0x8b / 255, 0xa4 / 255, 0xff / 255];
+/**
+ * HOW MUCH OF THAT COLOUR ACTUALLY LANDS. Upstream draws its two Trails
+ * opaque, and opaque pale blue on this palette's teal water is a pair of
+ * white stripes that read louder than the hull towing them — on a fleet
+ * of skates the eye followed the wakes and not the boats.
+ *
+ * So the head of the wake is drawn at this, and the tail fades from it to
+ * nothing (pushWake). That is two fades at once — the strip already
+ * tapers to zero WIDTH at its oldest point — which is what turns a stripe
+ * into a wash that dissolves behind a hull rather than ending somewhere.
+ *
+ * IT IS A HINT OF DISTURBED WATER, NOT A MARK ON IT. Three tenths was
+ * still a thing you could follow across a lake — and a wake is only ever
+ * meant to say "something passed here", never to compete with the hull
+ * for the eye. At this the brightest pixel of a skate5's wake is about a
+ * tenth of the way from the water to the foam, which at play zoom over a
+ * whole fleet is a faint sheen on the surface and nothing more.
+ */
+const WAKE_ALPHA = 0.12;
 const TAU = Math.PI * 2;
 // Mindustry throws every shadow along (shadowTX, shadowTY) = (-12, -13)
 // world units times the caster's elevation. This game's shadows fall the
@@ -631,19 +650,45 @@ const cellHash = (x: number, y: number): number => {
   h ^= h >>> 13;
   return h >>> 0;
 };
-const waterVariant = (x: number, y: number): number => cellHash(x, y) % WATER_VARIANTS;
 /**
- * HALF THE MARKED GROUND IS DRAWN PLAIN. Slot 0 of a land group is the
+ * HOW MANY OF THE CELLS THAT ROLLED A WAVE KEEP IT. A water kind paints
+ * three cells and one of them carries the crest (tiles.ts paintWater), so
+ * the raw roll puts a wave on a third of a lake — close enough together
+ * that a sea read as corduroy. This keeps one in three of those, a wave
+ * on a ninth of the water, which is a swell here and there on open water
+ * rather than a texture over all of it.
+ *
+ * It only ever takes a wave AWAY, exactly as floorVariant does with the
+ * ground's ticks: the two bare cells of a group are the same flat teal,
+ * so dropping onto slot 0 is dropping the crest and changing nothing else.
+ */
+const WATER_WAVE_KEEP = 3;
+const waterVariant = (x: number, y: number): number => {
+  const h = cellHash(x, y);
+  const v = h % WATER_VARIANTS;
+  return v === WATER_WAVE_VARIANT && (h >>> 8) % WATER_WAVE_KEEP !== 0 ? 0 : v;
+};
+/**
+ * MOST OF THE MARKED GROUND IS DRAWN PLAIN. Slot 0 of a land group is the
  * variant carrying the carved tick and slots 1 and 2 are bare ground
  * (tiles.ts paintFloor), and a map paints the three at random — a tick on
- * a third of the board, which from above still read as a texture laid
- * over the whole map rather than as marks on the ground. This drops half
- * of them to the bare slot beside them, a sixth of cells marked, fixed
- * per cell. It only ever takes a mark AWAY: a cell painted bare stays
- * bare, so nothing an author put down appears that was not there.
+ * a third of the board, which from above read as a texture laid over the
+ * whole map rather than as marks on the ground. This keeps one in
+ * FLOOR_MARK_KEEP of them and drops the rest to the bare slot beside
+ * them: a twelfth of cells marked, fixed per cell.
+ *
+ * It was a sixth, and a sixth was still a rash — at the zoom the board is
+ * actually played at, one cell in six carrying a stroke is a stroke in
+ * every glance, and the ground stopped being ground. A twelfth is sparse
+ * enough that a tick reads as a crack in that patch rather than as the
+ * way the whole map is drawn.
+ *
+ * It only ever takes a mark AWAY: a cell painted bare stays bare, so
+ * nothing an author put down appears that was not there.
  */
+const FLOOR_MARK_KEEP = 4;
 const floorVariant = (floor: number, x: number, y: number): number =>
-  floor % 3 === 0 && (cellHash(x, y) >>> 8) % 2 === 0 ? floor + 1 : floor;
+  floor % 3 === 0 && (cellHash(x, y) >>> 8) % FLOOR_MARK_KEEP !== 0 ? floor + 1 : floor;
 // wall shadow strength: BlockRenderer.shadowColor is black at 0.71 — the
 // premultiplied blend of a black quad at this alpha equals its multiply
 export const WALL_SHADOW_A = 0.71;
@@ -1531,7 +1576,9 @@ export class Renderer {
           // head. One segment carries the two half-widths it spans, which
           // add up to the full stroke between them
           const stroke = (w.scl * (k - 1)) / span + (w.scl * k) / span;
-          this.pushSeg(b, x0, y0, x1, y1, UV_SOLID, stroke, WAKE_COL, 1);
+          // ...and the same taper again in alpha: the oldest segment is
+          // gone entirely, the newest carries the full wash
+          this.pushSeg(b, x0, y0, x1, y1, UV_SOLID, stroke, WAKE_COL, (WAKE_ALPHA * k) / span);
         }
         x0 = x1;
         y0 = y1;

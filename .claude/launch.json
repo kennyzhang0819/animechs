@@ -191,6 +191,30 @@
         "4402"
       ],
       "port": 4402
+    },
+    {
+      "name": "animechs-4511",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:web",
+        "--",
+        "-p",
+        "4511"
+      ],
+      "port": 4511
+    },
+    {
+      "name": "animechs-4633",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:web",
+        "--",
+        "-p",
+        "4633"
+      ],
+      "port": 4633
     }
   ]
 }

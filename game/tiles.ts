@@ -151,6 +151,13 @@ const INK = {
  * so two cells in three are plain ground — a mark on two of three read
  * as a texture over the whole board rather than something on the ground
  * here and there.
+ *
+ * THIS IS THE PAINT, NOT THE BOARD. The renderer thins the marked cells
+ * again on the way down (FLOOR_MARK_KEEP in renderer.ts), so what a map
+ * actually carries is a twelfth rather than this third. Tuning happens
+ * there, because it costs nothing: the atlas cells are already packed
+ * either way, and dropping a mark is a different slot rather than a
+ * different painting.
  */
 const LINOCUT_MARK_EVERY = 3;
 /** how far the shaded band goes toward black, and the lit band toward the ink's highlight */
@@ -496,13 +503,16 @@ function toRgba(grid: readonly string[], N: number, P: number): Uint8ClampedArra
  * THE VARIANT IS WHY A SEA IS NOT A GRID. One tile is repeated over every
  * water cell, so a wave in it is a wave every 32px in both directions.
  * Variant 1 alone carries the wave and the renderer picks a variant per
- * cell, which puts a wave on a third of them, in a different place on
- * each kind.
+ * cell, in a different place on each kind — and thins the picks that land
+ * on it again (WATER_WAVE_KEEP in renderer.ts), so a lake ends up with a
+ * crest on a ninth of its cells rather than a third.
  * ====================================================================== */
 export type WaterKind = "shallowWater" | "deepWater" | "taintedWater" | "deepTaintedWater";
 /** how many painted cells a water kind has, and which of them has the wave */
 export const WATER_VARIANTS = 3;
-const WATER_WAVE_VARIANT = 1;
+/** which of a water group's painted cells carries the crest. The renderer
+ *  thins these out further per cell — see WATER_WAVE_KEEP in renderer.ts */
+export const WATER_WAVE_VARIANT = 1;
 export function paintWater(kind: WaterKind, variant = WATER_WAVE_VARIANT): Uint8ClampedArray<ArrayBuffer> {
   const N = TILE_LOGICAL;
   const deep = kind === "deepWater" || kind === "deepTaintedWater";

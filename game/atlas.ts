@@ -2480,6 +2480,31 @@ export async function unitIcon(
   kind: UnitKind,
   accent: readonly [number, number, number],
 ): Promise<string> {
+  return (await carveUnit(kind, accent, true)).url;
+}
+
+/**
+ * THE SAME BODY, AS THE BOARD DRAWS IT: the whole cell, uncropped, still
+ * facing +x the way the sheet holds it. `size` is the cell's edge in sheet
+ * px, and the renderer stretches exactly that square to UNIT_ART[kind]
+ * `sprite` world px — so a caller that knows both can lay a world-px
+ * measurement over the picture and have it land where it lands in the
+ * game. That is what the admin Hitboxes tab does, and it is why this one
+ * keeps the margin that `unitIcon` trims: crop the art and the frame the
+ * hitbox is measured in is gone with it.
+ */
+export async function unitQuad(
+  kind: UnitKind,
+  accent: readonly [number, number, number],
+): Promise<{ url: string; size: number }> {
+  return carveUnit(kind, accent, false);
+}
+
+async function carveUnit(
+  kind: UnitKind,
+  accent: readonly [number, number, number],
+  upright: boolean,
+): Promise<{ url: string; size: number }> {
   const sheet = await buildAtlas();
   const { uv } = UNIT_ART[kind];
   const x = Math.round(uv[0] * ATLAS_W), y = Math.round(uv[1] * ATLAS_H);
@@ -2529,6 +2554,9 @@ export async function unitIcon(
     );
   }
 
+  // the board's own frame, for a caller that wants to measure against it
+  if (!upright) return { url: flat.toDataURL(), size };
+
   // and the quarter turn back, so the body points up the way the sprite
   // files it was composited from do — CROPPED TO WHAT IT COVERS on the
   // way, because a sheet cell is bigger than the art in it by a different
@@ -2547,7 +2575,7 @@ export async function unitIcon(
   oc.translate(crop.h / 2, crop.w / 2);
   oc.rotate(-Math.PI / 2);
   oc.drawImage(flat, crop.x, crop.y, crop.w, crop.h, -crop.w / 2, -crop.h / 2, crop.w, crop.h);
-  return out.toDataURL();
+  return { url: out.toDataURL(), size };
 }
 
 // ---------------------------------------------------------------------

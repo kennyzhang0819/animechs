@@ -9,6 +9,8 @@ import {
   MUT_COST_MIN,
   MUT_COUNT_MAX,
 } from "@/game/mutation";
+import { HITBOX_MAX, HITBOX_MIN } from "@/game/hitbox";
+import { UNIT_KINDS } from "@/game/levels";
 import { TURRET_MOD_IDS } from "@/game/mods";
 import { RARITIES } from "@/game/rarity";
 import { TOWER_KINDS } from "@/game/types";
@@ -76,6 +78,15 @@ const BAND_KEYS: readonly string[] = RARITIES;
 const CHANCE_KEYS: readonly string[] = TURRET_MOD_IDS;
 
 /**
+ * THE SHAPES SECTION: two full extents in px per unit kind, `long` nose to
+ * tail and `wide` flank to flank (hitbox.ts). Both are bounded by the same
+ * pair the editor clamps its drags to, so a hand-edited document cannot
+ * put a body on the field that no shot can be aimed at or that fills a
+ * quarter of the map.
+ */
+const HITBOX_KEYS: readonly string[] = UNIT_KINDS;
+
+/**
  * Dev-only balance persistence: the admin dashboard POSTs the knobs it has
  * bent and this writes public/balance.json, which the game reads over the
  * authored values at startup (see game/balance.ts).
@@ -100,6 +111,63 @@ export async function POST(req: Request): Promise<NextResponse> {
     Record<string, number> | Record<string, Record<string, number>>
   > = {};
   for (const [id, raw] of Object.entries(body as Record<string, unknown>)) {
+    // WHAT A TURRET COSTS IN SCRAP, by turret kind (economy.ts). This
+    // section had no branch here at all while BalanceDoc has carried it,
+    // so the moment any price was bent, Save fell through to the
+    // unknown-node check below and every tab's Save failed with it
+    if (id === "prices") {
+      if (!raw || typeof raw !== "object")
+        return NextResponse.json({ error: "bad prices section" }, { status: 400 });
+      const section: Record<string, number> = {};
+      for (const [kind, v] of Object.entries(raw as Record<string, unknown>)) {
+        if (!(TOWER_KINDS as readonly string[]).includes(kind))
+          return NextResponse.json({ error: `unknown turret ${kind}` }, { status: 400 });
+        if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > LIMITS.base)
+          return NextResponse.json({ error: `bad price for ${kind}` }, { status: 400 });
+        section[kind] = v;
+      }
+      if (Object.keys(section).length > 0) doc.prices = section;
+      continue;
+    }
+    // the reserved section: the shape of each body, by unit kind
+    if (id === "hitboxes") {
+      if (!raw || typeof raw !== "object")
+        return NextResponse.json({ error: "bad hitboxes section" }, { status: 400 });
+      const section: Record<string, Record<string, number>> = {};
+      for (const [kind, box] of Object.entries(raw as Record<string, unknown>)) {
+        if (!HITBOX_KEYS.includes(kind))
+          return NextResponse.json({ error: `unknown unit ${kind}` }, { status: 400 });
+        if (!box || typeof box !== "object")
+          return NextResponse.json({ error: `bad hitbox for ${kind}` }, { status: 400 });
+        const out: Record<string, number> = {};
+        for (const axis of ["long", "wide"] as const) {
+          const v = (box as Record<string, unknown>)[axis];
+          if (v === undefined) continue;
+          if (
+            typeof v !== "number" ||
+            !Number.isFinite(v) ||
+            v < HITBOX_MIN ||
+            v > HITBOX_MAX
+          )
+            return NextResponse.json(
+              { error: `bad ${axis} for ${kind}; the range is ${HITBOX_MIN}-${HITBOX_MAX}px` },
+              { status: 400 },
+            );
+          out[axis] = v;
+        }
+        // a shape is two numbers or it is not a shape: half of one saved
+        // would load as the authored extent on the other axis and read as
+        // a dial that only half stuck
+        if (Object.keys(out).length === 2) section[kind] = out;
+        else if (Object.keys(out).length === 1)
+          return NextResponse.json(
+            { error: `${kind} needs both long and wide` },
+            { status: 400 },
+          );
+      }
+      if (Object.keys(section).length > 0) doc.hitboxes = section;
+      continue;
+    }
     // the reserved section: dials per RUNG ORDINAL, not per tech node
     if (id === "difficulties") {
       if (!raw || typeof raw !== "object")

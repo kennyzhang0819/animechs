@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import BalanceView from "@/components/BalanceView";
+import HitboxView from "@/components/HitboxView";
 import RaritiesView from "@/components/RaritiesView";
 import { loadBalanceDoc } from "@/game/balance";
 import { ADMIN_ENABLED } from "@/game/env";
@@ -150,7 +151,9 @@ function AdminInner() {
   // free placement, every pace). A bookmarked ?tab=sandbox lands on the
   // content tab rather than on nothing.
   const tab =
-    raw === "balance" || raw === "rarities" || raw === "save" ? raw : "content";
+    raw === "balance" || raw === "rarities" || raw === "hitboxes" || raw === "save"
+      ? raw
+      : "content";
   const [maps, setMaps] = useState<MapData[]>([]);
   const [open, setOpen] = useState<MapData | null>(null);
   // level documents overlay WORLDS in place, so this is a "have they landed
@@ -211,7 +214,8 @@ function AdminInner() {
               Debug tool. Ctrl+Shift+M toggles this page. Map edits write public/maps/&lt;id&gt;.json
               and ARE the official map; level edits write public/levels/campaign.json — the one
               wave script every map plays, re-cast per deploy into the families the die rolls; balance and
-              rarity edits write public/balance.json and override the authored tuning coefficients; the Save
+              rarity edits write public/balance.json and override the authored tuning coefficients, as do
+              hitbox edits; the Save
               tab edits this machine&apos;s own campaign — its XP, and therefore its level.
             </p>
           </div>
@@ -228,6 +232,7 @@ function AdminInner() {
             ["content", "Levels & maps"],
             ["balance", "Balance"],
             ["rarities", "Rarities"],
+            ["hitboxes", "Hitboxes"],
             ["save", "Save"],
           ] as const).map(([id, label]) => (
             <button
@@ -266,6 +271,17 @@ function AdminInner() {
             tab writes a document into the repo, this one writes the
             PLAYER'S save — localStorage in a tab, the shell's file on the
             desktop. Nothing to fetch first, so nothing to wait on */}
+        {/* THE SHAPES, and they wait on the same document as the odds:
+            every box on the page reads the live override layer, so opening
+            it before balance.json has landed would draw the authored
+            circles and then quietly disagree with the file underneath */}
+        {tab === "hitboxes" &&
+          (balanceReady ? (
+            <HitboxView />
+          ) : (
+            <p className="text-[#71717C]">Reading public/balance.json…</p>
+          ))}
+
         {tab === "save" && <SaveEditorView />}
 
         {tab === "content" && (

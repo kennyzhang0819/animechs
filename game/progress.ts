@@ -167,6 +167,13 @@ export interface Progress {
    * (see Sim.setEffects). Absent means ON; only an explicit `false` is off.
    */
   effects?: boolean;
+  /**
+   * THE FRAME COUNTER in the top corner of the field (UiState.fps). Absent
+   * means OFF — unlike every other knob on the Video tab it is a diagnostic
+   * rather than a preference about how the game should look, so a save that
+   * has never asked for it does not get it.
+   */
+  showFps?: boolean;
   /** the in-game HUD's size, as the --ui-scale multiplier — one of UI_SCALES */
   uiScale?: number;
   /**
@@ -319,6 +326,8 @@ export function loadProgress(): Progress {
       mutators: cleanMutations(p.mutators),
       // absent means ON — only an explicit false switches them off
       effects: p.effects !== false,
+      // absent means OFF — only an explicit true switches it on
+      showFps: p.showFps === true,
       uiScale: readUiScale(p),
       panSpeed: readPanSpeed(p),
       // absent means ON — only an explicit false switches it off
@@ -422,6 +431,13 @@ export function saveEffects(on: boolean): void {
   const p = loadProgress();
   if ((p.effects ?? true) === on) return;
   saveProgress({ ...p, effects: on });
+}
+
+/** the Video tab's frame counter — off unless a save has asked for it */
+export function saveShowFps(on: boolean): void {
+  const p = loadProgress();
+  if ((p.showFps ?? false) === on) return;
+  saveProgress({ ...p, showFps: on });
 }
 
 export function saveUiScale(scale: number): void {

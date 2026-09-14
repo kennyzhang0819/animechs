@@ -75,6 +75,7 @@ import {
   loadProgress,
   resetProgress,
   saveEffects,
+  saveShowFps,
   saveUiScale,
   savePanSpeed,
   saveAllyBars,
@@ -1859,6 +1860,17 @@ export default function Animechs() {
    */
   const [effects, setEffects] = useState(true);
   /**
+   * Is the frame counter up? A saved preference (Progress.showFps) like
+   * `effects`, and the one knob on the Video tab that defaults to OFF: it
+   * answers "is this machine keeping up", which is a question a player asks
+   * when something already feels wrong, not a readout to have sitting over
+   * the field of every run.
+   *
+   * It needs nothing from Game — the number is already on the HUD poll
+   * (UiState.fps) — so the switch is only ever this flag.
+   */
+  const [showFps, setShowFps] = useState(false);
+  /**
    * The HUD size — a saved preference (Progress.uiScale) like `effects`.
    * Which settings panel is up is NOT saved: settings always opens on the
    * first tab the way every other screen opens at its top.
@@ -1990,6 +2002,7 @@ export default function Animechs() {
     setFamilies(p.families ?? []);
     setMutators(p.mutators ?? []);
     setEffects(p.effects ?? true);
+    setShowFps(p.showFps ?? false);
     setUiScale(p.uiScale ?? UI_SCALE_DEFAULT);
     setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
     setAllyBars(p.allyBars ?? HEALTH_BARS_DEFAULT);
@@ -2630,6 +2643,25 @@ export default function Animechs() {
                 {effects ? "On" : "Off"}
               </button>
             </SettingRow>
+
+            {/* THE COUNTER THE SWITCH ABOVE IS ANSWERED BY: turn the
+                dressing off, watch the number, and the question is settled
+                on this one panel rather than by feel. It stands in the
+                top-right corner of the field (below) and nowhere else — the
+                menus are not the thing whose frame rate is ever in doubt. */}
+            <SettingRow label="FPS counter">
+              <button
+                aria-pressed={showFps}
+                onClick={() => {
+                  const next = !showFps;
+                  setShowFps(next);
+                  saveShowFps(next); // a preference about the device, like Effects
+                }}
+                className="ms-btn w-16 shrink-0 px-3 py-1.5 text-[15px]"
+              >
+                {showFps ? "On" : "Off"}
+              </button>
+            </SettingRow>
           </SettingsBox>
         )}
 
@@ -3259,26 +3291,49 @@ export default function Animechs() {
             )}
           </div>
         )}
-        {hud && !hud.lost && !hud.won && !hud.menuOpen && (
-          <div
-            role="group"
-            aria-label="view and menu"
-            className="ui-zoom absolute right-[1rem] top-[1rem] flex items-start gap-2"
-          >
-            {/* the same menu esc raises — a pointer needs a way in too */}
-            <button
-              aria-label="Game menu"
-              title="Game menu (Esc)"
-              onClick={openMenu}
-              className="ms-btn p-[6px]"
-            >
-              <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" aria-hidden="true">
-                <path
-                  fill="currentColor"
-                  d="M19.14 12.94a7.5 7.5 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.3 7.3 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.56-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.65 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.5 7.5 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.5.38 1.04.7 1.63.94l.36 2.54c.04.24.25.42.5.42h3.84c.25 0 .46-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.63-.94l2.39.96c.21.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"
-                />
-              </svg>
-            </button>
+        {/* THE TOP-RIGHT CORNER: the frame counter and the way into the
+            menu, on one row, in that order — the readout takes the inside
+            lane so the button keeps the exact corner it has always had, and
+            the thumb does not have to learn a new spot the day the counter
+            is switched on.
+            The ROW stands for the whole run and each of the two decides for
+            itself whether to draw. The gear goes when a screen that owns the
+            frame is up (the end panels, the pause menu); the counter stays,
+            because a player who turns it on from the pause overlay's own
+            copy of Settings would otherwise press the switch and watch
+            nothing happen. */}
+        {hud && (
+          <div className="ui-zoom absolute right-[1rem] top-[1rem] z-10 flex items-center gap-2">
+            {/* WHAT THE DISPLAY IS ACTUALLY GETTING (UiState.fps) — the
+                render loop's own smoothed rate and not the sim's pace, so a
+                run at 8x still reads whatever the screen is drawing.
+                It wears no pane, like the clock over the minimap: it is one
+                number over the field, and a box round it would make it look
+                like something to press. */}
+            {showFps && (
+              <div
+                aria-label="frames per second"
+                className="pointer-events-none select-none text-[15px] font-bold uppercase tracking-widest tabular-nums text-[#A1A1AA] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]"
+              >
+                {`${hud.fps} FPS`}
+              </div>
+            )}
+            {!hud.lost && !hud.won && !hud.menuOpen && (
+              /* the same menu esc raises — a pointer needs a way in too */
+              <button
+                aria-label="Game menu"
+                title="Game menu (Esc)"
+                onClick={openMenu}
+                className="ms-btn p-[6px]"
+              >
+                <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M19.14 12.94a7.5 7.5 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.3 7.3 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.56-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.65 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.5 7.5 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.5.38 1.04.7 1.63.94l.36 2.54c.04.24.25.42.5.42h3.84c.25 0 .46-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.63-.94l2.39.96c.21.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"
+                  />
+                </svg>
+              </button>
+            )}
           </div>
         )}
         {/* THE MINIMAP, StarCraft-style, in the bottom-left corner: the

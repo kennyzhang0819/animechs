@@ -1,5 +1,64 @@
 {
- "mutations": {
-  "speedy": 5
+ "hitboxes": {
+  "starhart1": {
+   "long": 20,
+   "wide": 15
+  },
+  "starhart2": {
+   "long": 27.5,
+   "wide": 18
+  },
+  "starhart3": {
+   "long": 32.5,
+   "wide": 21
+  },
+  "starhart4": {
+   "long": 60,
+   "wide": 40
+  },
+  "starhart5": {
+   "long": 72.5,
+   "wide": 48
+  },
+  "livewire1": {
+   "long": 27.5,
+   "wide": 17
+  },
+  "livewire2": {
+   "long": 35,
+   "wide": 20
+  },
+  "livewire3": {
+   "long": 50,
+   "wide": 30
+  },
+  "livewire4": {
+   "long": 110,
+   "wide": 55
+  },
+  "livewire5": {
+   "long": 145,
+   "wide": 73
+  },
+  "skate5": {
+   "long": 145,
+   "wide": 116
+  },
+  "skate2": {
+   "long": 32.5,
+   "wide": 25
+  },
+  "skate1": {
+   "long": 25,
+   "wide": 18
+  },
+  "skate3": {
+   "long": 50,
+   "wide": 37
+  },
+  "skate4": {
+   "long": 97.5,
+   "wide": 75
+  }
  }
 }

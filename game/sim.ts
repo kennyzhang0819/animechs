@@ -71,12 +71,18 @@ const W = W_IMPORT;
 const WALL_R = WALL_R_IMPORT;
 import { FlowField, type Footprint, type Vec2 } from "./flowfield";
 import {
+  HB_A,
+  HB_B,
+  HB_HEAVY,
+  HB_MEAN,
+  HB_OUTER,
+  HB_OVAL,
+  HB_RMAX,
+} from "./hitbox";
+import {
   WORLDS,
   UNIT_ID,
   UNIT_KINDS as UNIT_KINDS_IMPORT,
-  UNIT_RMAX,
-  UNIT_RMAX_AIR,
-  UNIT_RMAX_GROUND,
   UNIT_STATS,
   unitDrop,
   waveGroups,
@@ -298,27 +304,16 @@ const PHYS_R = 1.2;
 // pair moves only 1/1.25 of the way apart per tick, split by mass
 const PHYS_SCL = 1.25;
 /**
- * How far a unit of each kind has to look to find something it might be
- * touching: its own physics radius plus the widest ON ITS OWN LAYER, since
- * ground and air pass straight through one another. That layer split is
- * what keeps the stoop5's 7.25-block hitbox — nearly twice the ironhide5, the
- * widest thing that walks — off the ground swarm's bill entirely.
- */
-const KIND_REACH = UNIT_KINDS.map(
-  (k) =>
-    (UNIT_STATS[k].radius + (UNIT_STATS[k].flying ? UNIT_RMAX_AIR : UNIT_RMAX_GROUND)) * PHYS_R,
-);
-/**
  * Spatial hash cell size (px); rebuilt every frame with a counting sort.
  *
- * Every query spans as many cells as its own reach needs (KIND_SPAN and
+ * Every query spans as many cells as its own reach needs (kindSpan and
  * the dynamic spans in updateAliveBounds), so correctness does not ride
  * on this number at all — only cost does, and it pulls two ways. A big
  * cell makes broad queries (a turret's range circle) touch few buckets
  * but stuffs each one with far-away units; a small cell trims the
  * candidate set toward what is actually in reach but walks more buckets.
  *
- * This used to be the smallest KIND_REACH (~83px), which is still sized
+ * This used to be the smallest kindSpan reach (~83px), which is sized
  * by the widest unit on the ROSTER's layer: an ironhide1 checking neighbours
  * within ~30px swept a 250px window for them, and in a thousand-ironhide1
  * crowd the physics pass was mostly distance tests that could never hit.
@@ -328,15 +323,21 @@ const KIND_REACH = UNIT_KINDS.map(
  */
 const HC = 32;
 /**
- * The same reach in cells: a pair further apart than `span * HC` in either
- * axis is more than `span` buckets away, so this is exactly the ring that
- * can hold anything a unit of this kind might be touching.
+ * How far a body of this kind has to look, IN BUCKETS, to find something
+ * it might be touching: its own physics radius plus the widest outer
+ * radius on its own layer, since ground and air pass straight through one
+ * another. That layer split is what keeps the stoop5's 7.25-block hull —
+ * nearly twice the ironhide5, the widest thing that walks — off the ground
+ * swarm's bill entirely.
  *
- * This ROSTER-sized bound now serves only the spawn-spot test, which runs
- * a handful of times a tick; the physics pass takes the tighter per-tick
- * spans updateAliveBounds derives from what is actually on the field.
+ * This ROSTER-sized bound serves only the spawn-spot test, which runs a
+ * handful of times a tick; the physics pass takes the tighter per-tick
+ * spans updateAliveBounds derives from what is actually on the field. It
+ * is computed per call rather than tabled at import because a shape can
+ * be bent after this module loads (hitbox.ts).
  */
-const KIND_SPAN = KIND_REACH.map((r) => Math.ceil(r / HC));
+const kindSpan = (id: number, fly: boolean): number =>
+  Math.ceil(((HB_OUTER[id] + (fly ? HB_RMAX.air : HB_RMAX.ground)) * PHYS_R) / HC);
 // NOTE: a bullet's broad-phase span (how many buckets it looks through for
 // what it flew into) used to be fixed per tower kind off the roster's
 // widest hitbox. It is now derived per tick from the widest hitbox ALIVE
@@ -516,19 +517,11 @@ export interface Aim {
 // is a unit kind (by numeric id) airborne? towers and bullets check this
 // against their targetAir/targetGround and collidesAir/collidesGround flags
 const KIND_FLYING: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].flying);
-/** every kind's collision radius, for the live per-layer bounds below */
-const KIND_RADIUS = Float32Array.from(UNIT_KINDS, (k) => UNIT_STATS[k].radius);
-/**
- * The physics size split: the roster's radii cluster into a numerous small
- * class (10..18.75px — runts to elites, the actual swarm) and a sparse
- * heavy class (25px up — the stoop3 and the T4/T5 hulls).
- * Cut between the clusters. A HEAVY unit owns every pair it is part of in
- * the physics pass, so the swarm's scan window is sized by the widest
- * SMALL unit alive rather than by the ironhide5 three lanes over; the handful
- * of heavies scan the wide window themselves.
- */
-const HEAVY_R = 20;
-const KIND_HEAVY = Uint8Array.from(UNIT_KINDS, (k) => (UNIT_STATS[k].radius > HEAVY_R ? 1 : 0));
+// EVERY KIND'S SIZE LIVES IN hitbox.ts, in tables that are rewritten in
+// place when a shape is overridden: HB_OUTER is the widest half-extent (the
+// broad phase's radius), HB_MEAN the equal-area circle (what urad holds),
+// HB_A / HB_B the two semi-axes the narrow phase reads through Sim.hitR,
+// and HB_HEAVY the physics size split. Nothing here may cache them.
 // the currency ladder (UNIT_STATS.tier, 1-5) — what a Volatile blast reads
 const KIND_TIER = Uint8Array.from(UNIT_KINDS, (k) => UNIT_STATS[k].tier);
 // support fields, indexed like UNIT_KINDS — null for kinds with no ability
@@ -1185,7 +1178,7 @@ export class Sim {
   readonly shots: EnemyShot[] = [];
   /** runts that went off on a structure: gone, and paid for by no one */
   exploded = 0;
-  /** KIND_HEAVY[ukind[i]], same reasoning — the physics split reads it per
+  /** HB_HEAVY[ukind[i]], same reasoning — the physics split reads it per
    * candidate */
   readonly uheavy = new Uint8Array(MAX_UNITS);
   /**
@@ -1626,7 +1619,7 @@ export class Sim {
   /**
    * The largest radius STANDING on each layer this tick, and the per-kind
    * physics spans derived from it (see updateAliveBounds). The static
-   * KIND_SPAN / HIT_SPAN bounds are sized to the biggest unit on the whole
+   * kindSpan / HIT_SPAN bounds are sized to the biggest unit on the whole
    * roster, so every ironhide1's broad phase paid scan area for a weaver5
    * that is almost never on the field; these shrink each bound to what is
    * actually alive, which changes no query's RESULT — only its cost.
@@ -1637,7 +1630,7 @@ export class Sim {
    * heavy scans, since a heavy owns every pair it is in */
   private readonly kindSpanDyn = new Int32Array(UNIT_KINDS.length);
   /** physics span per kind against SMALL live partners only — what the
-   * swarm scans, its heavy pairs being the heavies' job (see HEAVY_R) */
+   * swarm scans, its heavy pairs being the heavies' job (see HB_HEAVY) */
   private readonly kindSpanSDyn = new Int32Array(UNIT_KINDS.length);
   /** live head counts per layer — they let a turret whose target layer is
    * empty skip its scan outright. Snapshots from the top of the tick, so
@@ -4286,10 +4279,11 @@ export class Sim {
   private areaClearOfUnits(gx: number, gy: number, sz: number): boolean {
     const x0 = gx * CELL, y0 = gy * CELL;
     const x1 = x0 + CELL * sz, y1 = y0 + CELL * sz;
-    const hx0 = clamp(((x0 - UNIT_RMAX) / HC) | 0, 0, HCOLS - 1);
-    const hy0 = clamp(((y0 - UNIT_RMAX) / HC) | 0, 0, HROWS - 1);
-    const hx1 = clamp(((x1 + UNIT_RMAX) / HC) | 0, 0, HCOLS - 1);
-    const hy1 = clamp(((y1 + UNIT_RMAX) / HC) | 0, 0, HROWS - 1);
+    const rmax = HB_RMAX.both;
+    const hx0 = clamp(((x0 - rmax) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((y0 - rmax) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((x1 + rmax) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((y1 + rmax) / HC) | 0, 0, HROWS - 1);
     for (let hy = hy0; hy <= hy1; hy++) {
       for (let hx = hx0; hx <= hx1; hx++) {
         const c = hy * HCOLS + hx, e = this.bStart[c + 1];
@@ -4298,7 +4292,9 @@ export class Sim {
           if (i >= this.n) continue;
           const dx = this.upx[i] - clamp(this.upx[i], x0, x1);
           const dy = this.upy[i] - clamp(this.upy[i], y0, y1);
-          if (dx * dx + dy * dy < this.urad[i] * this.urad[i]) return false;
+          const d2 = dx * dx + dy * dy;
+          const r = this.hitR(i, dx, dy, d2);
+          if (d2 < r * r) return false;
         }
       }
     }
@@ -4888,8 +4884,12 @@ export class Sim {
         // spawn never starts mid-shove; only the same layer counts —
         // air and ground never collide
         const dx = this.upx[i] - x, dy = this.upy[i] - y;
-        const rs = (r + this.urad[i]) * PHYS_R;
-        if (dx * dx + dy * dy < rs * rs) return false;
+        const d2 = dx * dx + dy * dy;
+        // the arrival is a circle at its outer radius (see spawnUnit) and
+        // the body already standing there is whatever shape it is, facing
+        // wherever it is facing
+        const rs = (r + this.hitR(i, dx, dy, d2)) * PHYS_R;
+        if (d2 < rs * rs) return false;
       }
     }
     return true;
@@ -4953,11 +4953,17 @@ export class Sim {
     const layer = this.layerOf(kind);
     const pads = brood ? EMPTY_PADS : this.spawnPads(layer);
     if (this.n >= MAX_UNITS || (!brood && pads.length === 0)) return false;
-    const r = stats.radius;
+    // THE ARRIVAL IS TESTED ROUND, at the body's OUTER radius: a spot a
+    // long body fits in nose-first it might not fit in broadside, and a
+    // fresh body has not picked a heading yet. Costing the widest case is
+    // a spawn or two rejected on a crowded pad, which the retry loop below
+    // already handles; the alternative is a champion landing inside a wall
+    // the moment it turns
+    const r = HB_OUTER[UNIT_ID[kind]];
     // the drop-zone test is the same broad-phase query the physics pass
     // runs, so it needs the same reach: a ring of 1 would let two champions
     // land inside one another and start the wave already shoving
-    const span = KIND_SPAN[UNIT_ID[kind]];
+    const span = kindSpan(UNIT_ID[kind], fly);
     const tries = brood ? MITOSIS_TRIES : 8;
     for (let a = 0; a < tries; a++) {
       let x: number, y: number;
@@ -5004,7 +5010,12 @@ export class Sim {
       // rate, the leg cycle — is already looking at the speed this unit
       // actually travels at
       this.uspd[i] = stats.speed * (this.speedyOn ? SPEEDY_SPEED : 1);
-      this.urad[i] = r;
+      // ...but what it CARRIES is the equal-area circle (hitbox.ts
+      // HB_MEAN): urad is the body's nominal size — its mass, its splash
+      // and aura reach, its halo — and a stretched body is no heavier than
+      // the round one with the same area. The DIRECTIONAL radius every hit
+      // test actually uses is Sim.hitR, off the two semi-axes
+      this.urad[i] = HB_MEAN[UNIT_ID[kind]];
       // the core, resolved once here rather than per tick: it is where the
       // air field aims (coreGoal) and where a flyer with no field under it
       // steers by hand (airHeading)
@@ -5106,7 +5117,7 @@ export class Sim {
       this.ukind[i] = UNIT_ID[kind];
       this.ufly[i] = fly ? 1 : 0;
       this.unav[i] = layer === "water" ? 1 : 0;
-      this.uheavy[i] = KIND_HEAVY[UNIT_ID[kind]];
+      this.uheavy[i] = HB_HEAVY[UNIT_ID[kind]];
       // the guns arrive at a random point in their reload, so a wave does
       // not open fire in one volley; the target search is staggered too
       this.utgt[i] = null;
@@ -5270,8 +5281,9 @@ export class Sim {
           const j = this.bUnits[b];
           if (j >= this.n || uhp[j] <= 0) continue;
           const dx = upx[j] - upx[i], dy = upy[j] - upy[i];
-          const rr = range + urad[j];
-          if (dx * dx + dy * dy > rr * rr) continue;
+          const d2 = dx * dx + dy * dy;
+          const rr = range + this.hitR(j, dx, dy, d2);
+          if (d2 > rr * rr) continue;
           if (repair && uhp[j] < uhpmax[j]) {
             // Unit.heal clamps at max health
             uhp[j] = Math.min(uhp[j] + repair.amount, uhpmax[j]);
@@ -5598,8 +5610,9 @@ export class Sim {
         if (uhungry[j] || uspawn[j] > 0 || KIND_BOSS[ukind[j]]) continue;
         if (ufly[j] !== fly || unav[j] !== nav) continue;
         const dx = upx[j] - x, dy = upy[j] - y;
-        const rr = HUNGRY_REACH + urad[j];
-        if (dx * dx + dy * dy > rr * rr) continue;
+        const d2 = dx * dx + dy * dy;
+        const rr = HUNGRY_REACH + this.hitR(j, dx, dy, d2);
+        if (d2 > rr * rr) continue;
         // reservoir sampling: the nth candidate takes the slot 1-in-n of
         // the time, which leaves every candidate equally likely
         if (Math.random() * ++seen < 1) pick = j;
@@ -6268,35 +6281,67 @@ export class Sim {
     for (let k = 0; k < UNIT_KINDS.length; k++) {
       const alive = this.aliveByKind[k];
       if (alive <= 0) continue;
-      const r = KIND_RADIUS[k];
+      const r = HB_OUTER[k];
       if (KIND_FLYING[k]) {
         na += alive;
         if (r > a) a = r;
-        if (!KIND_HEAVY[k] && r > as) as = r;
+        if (!HB_HEAVY[k] && r > as) as = r;
       } else {
         ng += alive;
         if (r > g) g = r;
-        if (!KIND_HEAVY[k] && r > gs) gs = r;
+        if (!HB_HEAVY[k] && r > gs) gs = r;
       }
     }
     this.rmaxAliveGround = g;
     this.rmaxAliveAir = a;
     this.nAliveAir = na;
     this.nAliveGround = ng;
-    // the same reach KIND_SPAN held, with the live rmax in place of the
+    // the same reach kindSpan holds, with the live rmax in place of the
     // roster's: a pair further apart than span * HC cannot be touching
     for (let k = 0; k < UNIT_KINDS.length; k++) {
-      const rk = KIND_RADIUS[k];
+      const rk = HB_OUTER[k];
       const fly = KIND_FLYING[k];
       this.kindSpanDyn[k] = Math.max(1, Math.ceil(((rk + (fly ? a : g)) * PHYS_R) / HC));
       this.kindSpanSDyn[k] = Math.max(1, Math.ceil(((rk + (fly ? as : gs)) * PHYS_R) / HC));
     }
   }
 
-  /** the widest live radius a bullet with these layer flags can meet — the
-   * live-roster stand-in for rmaxFor() in every broad-phase pad */
+  /** the widest live OUTER radius a bullet with these layer flags can meet
+   * — the live-roster stand-in for HB_RMAX in every broad-phase pad */
   private rmaxAliveFor(air: boolean, ground: boolean): number {
     return Math.max(air ? this.rmaxAliveAir : 0, ground ? this.rmaxAliveGround : 0);
+  }
+
+  /**
+   * THE NARROW PHASE'S ONE QUESTION: how far does body `i` reach in the
+   * direction of `(dx, dy)`? For a round kind that is its radius and this
+   * is one array read; for a shaped one it is the ellipse's polar radius
+   * (hitbox.ts), which needs the body's heading and so pays two trig calls
+   * and a square root.
+   *
+   * EVERY HIT TEST IN THE FILE IS WRITTEN THE SAME WAY — take the vector
+   * from the query point to the body, square it, compare against
+   * `(r + urad[i]) ** 2` — so making a body oval is a matter of swapping
+   * `urad[i]` for this call at each of them and nothing else. `d2` is that
+   * squared length, which the caller has always already computed.
+   *
+   * THE BROAD PHASE IS NOT AFFECTED and must not be: a pad sized by the
+   * directional radius would be a pad that shrinks as the body turns, and
+   * a candidate dropped from a bucket sweep is never tested at all. Every
+   * pad stays on the OUTER radius (HB_OUTER, rmaxAliveFor), which is the
+   * widest this can return.
+   */
+  private hitR(i: number, dx: number, dy: number, d2: number): number {
+    const k = this.ukind[i];
+    if (HB_OVAL[k] === 0) return this.urad[i];
+    const a = HB_A[k], b = HB_B[k];
+    if (d2 <= 1e-8) return a < b ? a : b;
+    const inv = 1 / Math.sqrt(d2);
+    const rot = this.urot[i];
+    const c = Math.cos(rot), sn = Math.sin(rot);
+    const lx = ((dx * c + dy * sn) * inv) / a;
+    const ly = ((dy * c - dx * sn) * inv) / b;
+    return 1 / Math.sqrt(lx * lx + ly * ly);
   }
 
   private hashCellOf(i: number): number {
@@ -6379,14 +6424,19 @@ export class Sim {
     const { ukind, kindSpanDyn, kindSpanSDyn, uheavy } = this;
     for (let i = 0; i < n; i++) {
       const fly = ufly[i];
-      // the size split (see HEAVY_R): a heavy owns EVERY pair it is part
+      // the size split (see HB_HEAVY): a heavy owns EVERY pair it is part
       // of and scans the wide window for them; a small unit scans only the
       // small-partner window and skips heavy candidates outright. Each
       // unordered pair still resolves exactly once, and the small window
       // is what keeps an ironhide1 swarm's broad phase priced for runts
       // while an ironhide5 stands on the same field
       const iHeavy = uheavy[i];
-      const ri = urad[i] * PHYS_R;
+      const ki = ukind[i];
+      // the pair's cheap reject rides the OUTER radii, which is the widest
+      // either body can be however it is turned; a shaped pair that gets
+      // past it is measured again against its real axes below
+      const oi = HB_OUTER[ki] * PHYS_R;
+      const ovalI = HB_OVAL[ki];
       const mi = urad[i] * urad[i]; // hitSize^2 * pi — the pi cancels in the ratio
       // the unit's own scratch position rides in locals through the scan —
       // candidates read it every test, and it only moves when a pair
@@ -6394,7 +6444,7 @@ export class Sim {
       let pxi = phx[i], pyi = phy[i];
       const hix = clamp((pxi / HC) | 0, 0, HCOLS - 1);
       const hiy = clamp((pyi / HC) | 0, 0, HROWS - 1);
-      const sp = iHeavy ? kindSpanDyn[ukind[i]] : kindSpanSDyn[ukind[i]];
+      const sp = iHeavy ? kindSpanDyn[ki] : kindSpanSDyn[ki];
       // the counting sort lays a row's buckets out contiguously in bUnits,
       // so each row of the window is ONE range — no per-bucket setup
       const gx0 = Math.max(0, hix - sp), gx1 = Math.min(HCOLS - 1, hix + sp);
@@ -6411,9 +6461,18 @@ export class Sim {
           } else {
             if (j <= i || uheavy[j] !== 0) continue;
           }
-          const rs = ri + urad[j] * PHYS_R;
+          const kj = ukind[j];
           let dx = pxi - phx[j], dy = pyi - phy[j];
           const d2 = dx * dx + dy * dy;
+          const outer = oi + HB_OUTER[kj] * PHYS_R;
+          if (d2 >= outer * outer) continue;
+          // ...and where either body is shaped, the touching distance is
+          // each one's radius ALONG THE CENTRE LINE (Sim.hitR). A round
+          // pair's outer radii ARE its radii, so it never pays for this
+          const rs =
+            ovalI === 0 && HB_OVAL[kj] === 0
+              ? outer
+              : (this.hitR(i, -dx, -dy, d2) + this.hitR(j, dx, dy, d2)) * PHYS_R;
           if (d2 >= rs * rs) continue;
           const dst = Math.sqrt(d2);
           // THE SQUEEZE (mergeSqueezed): a same-kind pair crushed this
@@ -8583,8 +8642,9 @@ export class Sim {
         // distance from the unit to the ray segment
         const tt = clamp((upx[i] - x) * dirx + (upy[i] - y) * diry, 0, length);
         const dx = upx[i] - (x + dirx * tt), dy = upy[i] - (y + diry * tt);
-        const rr = urad[i] + EXPAND;
-        if (dx * dx + dy * dy < rr * rr) splashHits.push(i);
+        const d2 = dx * dx + dy * dy;
+        const rr = this.hitR(i, dx, dy, d2) + EXPAND;
+        if (d2 < rr * rr) splashHits.push(i);
       }
     }
     for (const i of splashHits) {
@@ -8625,7 +8685,7 @@ export class Sim {
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
         const d2 = dx * dx + dy * dy;
-        const rr = urad[i] + brad;
+        const rr = this.hitR(i, dx, dy, d2) + brad;
         if (d2 < rr * rr && d2 < bd) {
           bd = d2;
           best = i;
@@ -8769,7 +8829,12 @@ export class Sim {
             if (j >= this.n || uhp[j] <= 0 || chained.has(this.uid[j])) continue;
             if (KIND_FLYING[ukind[j]] ? !air : !ground) continue;
             const dx = upx[j] - x, dy = upy[j] - y;
-            const reach = half + urad[j]; // Rect vs hitbox, not a circle
+            // Rect vs hitbox, not a circle — and an axis-aligned one, so
+            // this is the only reach test in the file that reads the
+            // NOMINAL radius rather than the shaped one (Sim.hitR): the
+            // bolt is choosing whom to jump to, and the damage it deals
+            // when it lands goes through nearestUnit, which is shaped
+            const reach = half + urad[j];
             if (Math.abs(dx) > reach || Math.abs(dy) > reach) continue;
             const d2 = dx * dx + dy * dy;
             if (d2 > fd) {
@@ -8884,8 +8949,9 @@ export class Sim {
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
         const tt = clamp((upx[i] - x) * dirx + (upy[i] - y) * diry, 0, length);
         const dx = upx[i] - (x + dirx * tt), dy = upy[i] - (y + diry * tt);
-        const rr = urad[i] + EXPAND;
-        if (dx * dx + dy * dy < rr * rr) {
+        const d2 = dx * dx + dy * dy;
+        const rr = this.hitR(i, dx, dy, d2) + EXPAND;
+        if (d2 < rr * rr) {
           hits.push(i);
           const hx2 = upx[i] - x, hy2 = upy[i] - y;
           dists.push(Math.sqrt(hx2 * hx2 + hy2 * hy2));
@@ -9065,8 +9131,9 @@ export class Sim {
       const i = t.targetIdx;
       if (ufly[i] !== 0 ? st.targetAir : st.targetGround) {
         const dx = upx[i] - t.x, dy = upy[i] - t.y;
-        const reach = st.range + urad[i];
-        if (dx * dx + dy * dy <= reach * reach) best = i;
+        const d2 = dx * dx + dy * dy;
+        const reach = st.range + this.hitR(i, dx, dy, d2);
+        if (d2 <= reach * reach) best = i;
       }
     }
     // ...and only a BROKEN lock scans, on BaseTurret's clock so a turret
@@ -9384,8 +9451,9 @@ export class Sim {
         const j = this.bUnits[b];
         if (j >= this.n || j === i) continue;
         const dx = upx[j] - upx[i], dy = upy[j] - upy[i];
-        const rr = range + urad[j];
-        if (dx * dx + dy * dy > rr * rr) continue;
+        const d2 = dx * dx + dy * dy;
+        const rr = range + this.hitR(j, dx, dy, d2);
+        if (d2 > rr * rr) continue;
         if (this.ucloakT[j] < duration) this.ucloakT[j] = duration;
       }
     }
@@ -9486,8 +9554,9 @@ export class Sim {
           // to stay killable or the rule has no answer (see mutation.ts)
           if (KIND_T5[ukind[j]]) continue;
           const dx = upx[j] - upx[i], dy = upy[j] - upy[i];
-          const rr = range + urad[j];
-          if (dx * dx + dy * dy > rr * rr) continue;
+          const d2 = dx * dx + dy * dy;
+          const rr = range + this.hitR(j, dx, dy, d2);
+          if (d2 > rr * rr) continue;
           this.uled[j] = hold;
         }
       }
@@ -9686,8 +9755,9 @@ export class Sim {
             // Bullet.collides: a pierce shot skips whoever it already hit
             if (pr.pierced && pr.pierced.includes(this.uid[i])) continue;
             const dx = upx[i] - pr.x, dy = upy[i] - pr.y;
-            const hr = urad[i] + brad;
-            if (dx * dx + dy * dy < hr * hr) {
+            const d2 = dx * dx + dy * dy;
+            const hr = this.hitR(i, dx, dy, d2) + brad;
+            if (d2 < hr * hr) {
               hits.push(i);
               // Bullet.collision: a plain shot is spent on the first hit,
               // a piercing one is only added to `collided` and flies on
@@ -9837,8 +9907,9 @@ export class Sim {
         if (i >= this.n || uhp[i] <= 0) continue;
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
-        const rr = r + urad[i];
-        if (dx * dx + dy * dy < rr * rr) return true;
+        const d2 = dx * dx + dy * dy;
+        const rr = r + this.hitR(i, dx, dy, d2);
+        if (d2 < rr * rr) return true;
       }
     }
     return false;
@@ -9893,8 +9964,9 @@ export class Sim {
         if (i >= this.n || uhp[i] <= 0) continue;
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
-        const rr = radius + urad[i];
-        if (dx * dx + dy * dy < rr * rr) splashHits.push(i);
+        const d2 = dx * dx + dy * dy;
+        const rr = radius + this.hitR(i, dx, dy, d2);
+        if (d2 < rr * rr) splashHits.push(i);
       }
     }
     // shieldTowers stand in blasts too: the body is a fat circle, so a shell

@@ -341,8 +341,25 @@ export interface UnitStats {
   speed: number;
   /** flat damage shaved off every hit, floored at 10% of the raw shot */
   armor: number;
-  /** collision radius in world px — half the square hitbox edge */
+  /**
+   * Collision radius in world px — half the square hitbox edge, and the
+   * body's size in EVERY direction unless `hitbox` below says otherwise.
+   */
   radius: number;
+  /**
+   * THE BODY'S SHAPE, when a circle is the wrong one: `long` nose to tail
+   * along the facing, `wide` flank to flank across it, both full extents
+   * in px (hitbox.ts). Omit it and the body is the circle `radius` makes,
+   * which is what the whole roster still is — a deer that should be long
+   * and a frog that should be square are what this is for.
+   *
+   * THE HITBOX IS THE SIZE, not a second opinion about it: `radius` stops
+   * being read the moment this is set, and the sim's `urad` (mass, splash
+   * reach, aura reach, the shield halo) becomes the equal-area circle of
+   * the two axes. Reshape a body in the admin Hitboxes tab and it gets
+   * heavier when it gets bigger, exactly as it should.
+   */
+  hitbox?: { long: number; wide: number };
   /**
    * Unit tier, 1-5. A shelf in the unit trees and a weight on the audit
    * (ladder.ts) — NOT a price: the scrap a kill pays comes off `hp` above,
@@ -993,16 +1010,18 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
           ripple: 3,
         }),
   },
-  // stoop1: 70 hp, no armor, 1.125-block hitbox, 15 tiles/s (upstream 20.25).
-  // The fastest thing in the sky still, but the whole line was brought down
-  // to a pace the guns can track — a stoop1 used to cross the flak before
-  // an airburst finished a burst.
+  // stoop1: 70 hp, no armor, 1.125-block hitbox, 8 tiles/s (upstream 20.25).
+  // Still the fastest body in the game — it outruns a weaver1 and laps an
+  // ironhide1, in a straight line over everything — but eight is a pace a
+  // gun can track, and fifteen was not: the runt is the tier the script
+  // sends in the hundreds, and at fifteen a hundred-tile approach was
+  // seven seconds of fire against a walking wave's twenty-seven.
   // THE T1 IS THE FAMILY IN MINIATURE (the Skyfall bombers): no gun, a
   // charge that goes off on the turret it dives at — or wherever it is
   // shot down — for 150 over three and a half tiles
   stoop1: {
     hp: 70,
-    speed: 15 * CELL,
+    speed: 8 * CELL,
     armor: 0,
     radius: UR * 1.125,
     tier: 1,
@@ -1198,25 +1217,39 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // THE LIGHT TIERS ARE FAST AND THE HEAVY ONES ARE NOT. Mindustry's own
   // air tree trades its speed away as it climbs — stoop1 20.25 tiles/s,
   // stoop2 12.4, stoop3 12.75, stoop4 6, stoop5 4.05 — and the shape of
-  // that is right even where the numbers are not. The line reads 15, 10,
-  // 10, 5, 4 here: the T1 and T2 still arrive faster than anything on the
-  // ground, the T3 holds the T2's pace on two and a half times the bulk,
-  // and the T4 and T5 are deliberately heavy — a hull that takes a patch
-  // when it lands is a hull the board should see coming. The stoop1's old
-  // 20.25 was the other end of the problem from the stoop5's 4.05: it
-  // crossed the flak faster than an airburst finished a burst, so the guns
-  // never got their answer either. What the family asks a board for is
-  // guns that reach the sky and answer fast — and now it gives them the
-  // time to, at the tiers where the damage actually is.
+  // that is right even where the numbers are not. The line reads
+  // 8, 7, 6, 5, 4 here.
+  //
+  // IT IS A STRAIGHT RAMP NOW, AND IT USED TO BE A CLIFF. The line read
+  // 15, 10, 10, 5, 4 — which is not a curve, it is the T1 in a category of
+  // its own with the rest of the family behind it. Fifteen was FOUR TIMES
+  // an ironhide1 and twice the quickest thing on the ground, and the
+  // runt is the tier the script sends by the hundred: a hundred bodies
+  // at fifteen tiles a second crossing a hundred tiles of board gave a
+  // line seven seconds of fire where a walking wave gives it
+  // twenty-seven. The board was not being beaten, it was being skipped.
+  //
+  // EIGHT IS STILL THE FASTEST THING IN THE GAME and still a straight
+  // line over every wall and every channel — a stoop1 outruns a weaver1
+  // and laps an ironhide1 — but eight is a pace a gun can track, which
+  // fifteen was not. The ramp down from there is one tile a tier, so
+  // every step up the tree really is a trade of pace for weight rather
+  // than a flat stretch in the middle (the T2 and T3 both sat at ten).
+  // The T4 and T5 are untouched and still deliberately heavy: a hull
+  // that takes a patch when it lands is a hull the board should see
+  // coming.
+  //
+  // WHAT THE FAMILY ASKS A BOARD FOR is unchanged — guns that reach the
+  // sky and answer fast. This is only the time to bring them to bear.
 
-  // stoop2: the T2 — 340 hp, armor 3, 1.375x1.375-block hitbox, 10 tiles/s
+  // stoop2: the T2 — 340 hp, armor 3, 1.375x1.375-block hitbox, 7 tiles/s
   // (upstream 12.375). Slower than a stoop1 but four times the health, and
   // armour 3 blunts the airburst flak that shreds the T1
   // The charge is the bomber's whole reason: 550 over five tiles, which
   // is the old bomb rack's whole rain delivered in one arrival
   stoop2: {
     hp: 340,
-    speed: 10 * CELL,
+    speed: 7 * CELL,
     armor: 3,
     radius: UR * 1.375,
     tier: 2,
@@ -1226,14 +1259,15 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     payload: { splash: 550, radius: 40 * MU },
   },
   // stoop3: the T3 — 700 hp, armor 5, a 2.5x2.5-block hitbox that makes it
-  // the widest thing in the sky below the T4/T5 hulls, at 10 tiles/s
-  // (upstream 12.75) — the stoop2's pace on two and a half times its bulk. THE AFTERBURNER (hasteField): everything within nine
+  // the widest thing in the sky below the T4/T5 hulls, at 6 tiles/s
+  // (upstream 12.75) — a tile under the stoop2 for two and a half times
+  // its bulk, where the two used to share a pace. THE AFTERBURNER (hasteField): everything within nine
   // tiles of it flies four tenths faster — a flight of bombers crossing
   // the flak spends that much less time in it, which for a body whose
   // job is to arrive is the whole game. Its own charge is a stoop2's
   stoop3: {
     hp: 700,
-    speed: 10 * CELL,
+    speed: 6 * CELL,
     armor: 5,
     radius: UR * 2.5,
     tier: 3,
@@ -1840,24 +1874,15 @@ export function dropsForKills(killsByKind: ArrayLike<number>): Drop {
 }
 
 /**
- * Largest unit radius PER LAYER, and over both. Broad-phase bounds have to
- * cover the widest thing a query could actually find, and ground and air
- * never touch each other: a ground-only splash that padded itself by the
- * stoop4's 5.75-block hitbox would sweep more than twice the buckets it
- * can ever hit. So a query that knows its layer uses that layer's number,
- * and only the layer-agnostic ones (a footprint that must be clear of
- * everything) take the overall maximum.
+ * Largest unit radius PER LAYER, and over both, USED TO LIVE HERE. Broad
+ * phase bounds have to cover the widest thing a query could actually find,
+ * and ground and air never touch each other: a ground-only splash that
+ * padded itself by the stoop4's hull would sweep more than twice the
+ * buckets it can ever hit. A body's size is its SHAPE now (UnitStats
+ * hitbox), and a shape can be bent by the admin editor after this module
+ * has been imported, so the three numbers are live fields on HB_RMAX in
+ * hitbox.ts rather than consts derived here at import time.
  */
-const rmaxOf = (fly: boolean): number =>
-  Math.max(
-    ...UNIT_KINDS.filter((k) => !!UNIT_STATS[k].flying === fly).map((k) => UNIT_STATS[k].radius),
-  );
-export const UNIT_RMAX_GROUND = rmaxOf(false);
-export const UNIT_RMAX_AIR = rmaxOf(true);
-export const UNIT_RMAX = Math.max(UNIT_RMAX_GROUND, UNIT_RMAX_AIR);
-/** the widest unit a query touching these layers could turn up */
-export const rmaxFor = (air: boolean, ground: boolean): number =>
-  Math.max(air ? UNIT_RMAX_AIR : 0, ground ? UNIT_RMAX_GROUND : 0);
 
 /** how many of each kind a wave (or one region's share of it) sends */
 export type WaveUnits = Partial<Record<UnitKind, number>>;

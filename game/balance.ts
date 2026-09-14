@@ -1,4 +1,5 @@
 import { allScrapPriceOverrides, applyScrapPriceOverrides } from "./economy";
+import { allHitboxOverrides, applyHitboxOverrides, type HitboxSpec } from "./hitbox";
 import { SHAPE_ODDS } from "./formation";
 import { allRungOverrides, applyRungOverrides, type RungKnobs } from "./ladder";
 import { allChanceOverrides, applyChanceOverrides, MOD_ODDS } from "./mods";
@@ -15,6 +16,11 @@ import { TURRET_ODDS } from "./rarity";
  *   `difficulties`  the per-rung dials (enemy level, the mutator roll's
  *                   count and points, the XP bonus), keyed by a rung's
  *                   1-based ORDINAL, "1" through "10" (rungKey in ladder.ts)
+ *   `hitboxes`      THE SHAPE OF EACH BODY — `long` nose to tail and
+ *                   `wide` flank to flank, in px, keyed by unit kind
+ *                   (hitbox.ts). The admin Hitboxes tab writes it, and a
+ *                   kind missing from it is the circle its authored
+ *                   radius makes
  *   `mutations`     what each mutator is WORTH, keyed by its catalog id
  *                   (mutationCostOf in mutation.ts) — the one dial that
  *                   decides which difficulties can afford which rules
@@ -47,6 +53,7 @@ import { TURRET_ODDS } from "./rarity";
 export interface BalanceDoc {
   prices?: Record<string, number>;
   difficulties?: Record<string, Partial<RungKnobs>>;
+  hitboxes?: Record<string, HitboxSpec>;
   mutations?: Record<string, number>;
   rarities?: {
     turret?: Record<string, number>;
@@ -75,7 +82,7 @@ export async function loadBalanceDoc(): Promise<void> {
     if (!res.ok) return;
     const parsed = (await res.json()) as unknown;
     if (!parsed || typeof parsed !== "object") return;
-    const { prices, difficulties, mutations, rarities } = parsed as BalanceDoc;
+    const { prices, difficulties, hitboxes, mutations, rarities } = parsed as BalanceDoc;
     applyScrapPriceOverrides(prices && typeof prices === "object" ? prices : {});
     applyRungOverrides(
       difficulties && typeof difficulties === "object" ? difficulties : {},
@@ -83,6 +90,10 @@ export async function loadBalanceDoc(): Promise<void> {
     applyMutationCostOverrides(
       mutations && typeof mutations === "object" ? mutations : {},
     );
+    // THE SHAPES, and they have to land before any Sim is built: the
+    // apply refills the tables the sim reads every tick (hitbox.ts), and
+    // a shape dropped from the document goes back to its authored circle
+    applyHitboxOverrides(hitboxes && typeof hitboxes === "object" ? hitboxes : {});
     // THE ODDS, all five tables. Each apply CLEARS what it held first, so
     // a band dropped from the document goes back to the authored weight
     // rather than lingering from the last load
@@ -118,6 +129,8 @@ export function currentBalanceDoc(): BalanceDoc {
   if (Object.keys(diffs).length > 0) doc.difficulties = diffs;
   const muts = allMutationCostOverrides();
   if (Object.keys(muts).length > 0) doc.mutations = muts;
+  const boxes = allHitboxOverrides();
+  if (Object.keys(boxes).length > 0) doc.hitboxes = boxes;
   const rarities: NonNullable<BalanceDoc["rarities"]> = {};
   const turret = TURRET_ODDS.overrides();
   if (Object.keys(turret).length > 0) rarities.turret = turret as Record<string, number>;
