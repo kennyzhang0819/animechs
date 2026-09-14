@@ -2335,7 +2335,7 @@ export class Renderer {
           // is what a downstroke looks like — and sweeps a little forward
           // at the same time
           this.pushWings(dyn, fp, upx[i], upy[i], urot[i], sim.time, sim.uid[i] * 2.399, tint);
-          this.push(dyn, upx[i], upy[i], fp.sprite, fp.sprite, urot[i], fp.body, tint[0], tint[1], tint[2], 1);
+          this.push(dyn, upx[i], upy[i], fp.sprite, fp.spriteH, urot[i], fp.body, tint[0], tint[1], tint[2], 1);
           if (cell) this.pushCell(dyn, cell, upx[i], upy[i], usz, urot[i], this.cellTint);
         } else {
           this.push(dyn, upx[i], upy[i], usz, usz, urot[i], KIND_UV[k], tint[0], tint[1], tint[2], 1);

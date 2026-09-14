@@ -11,9 +11,9 @@
  * Skyfall bombers as STOOP (a bat line, membrane wings that flap, the
  * belly charge growing to the T5 nuke), the harpoon fleet as the SKATES
  * (a manta line on the bat's parts rig) and the wraith fleet as the
- * LIVEWIRES (an eel line on the worm rig). Everything is generated at
- * load (game/animalArt.ts) and packed over the stock cells (game/atlas.ts
- * packAnimalArt), so NOTHING under public/mindustry is touched and
+ * LIVEWIRES (a narwhal line on the same rig, its tusk the arc emitter).
+ * Everything is generated at load (game/animalArt.ts) and packed over
+ * the stock cells (game/atlas.ts packAnimalArt), so NOTHING under public/mindustry is touched and
  * flipping this back restores the shipped look byte for byte.
  *
  * Off, the six lines are exactly what they were: the same sprite files,

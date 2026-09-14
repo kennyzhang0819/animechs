@@ -46,7 +46,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   `public/levels/campaign.json`, loaded by `loadLevelDocs()`. Six unit
   families, each one idea at five sizes: ground mechs, venom spitters,
   Starhart stags, Stoop bats and the two **naval** lines (the Skate
-  mantas, the Livewire eels), which travel on the amphibious water layer. The **family roll**
+  mantas, the Livewire narwhals), which travel on the amphibious water layer. The **family roll**
   (`rollFamilies`, `transformScript`) is what makes one run's swarm differ
   from the next's; `unitDrop` is what a kill pays
 - `game/economy.ts` — **the economy**: scrap (in-run money — a kill drops
@@ -913,7 +913,7 @@ script are forty of whichever family took the first slot. The boss
 | Starhart | stag | Starhart | ground | **star-gold** lasers | every laser pierces; heals and shields |
 | Stoop | bat | Stoop | air | **magenta** charges; no gun, the body is the bomb | goes off on contact or on death; the T5 is a nuke |
 | Skates | manta | Skate | water | **teal** harpoon rails | insane reach, a crawl, and the longer alive the harder it hits |
-| Livewires | eel | Livewire | water | **violet** arcs that short a gun | blinks forward when hit; the top tiers cloak |
+| Livewires | narwhal | Livewire | water | **violet** arcs that short a gun | blinks forward when hit; the top tiers cloak |
 
 **A body is its family and how far up it stands.** There are no proper
 nouns on the roster. A family comes in five ranks, the same five for

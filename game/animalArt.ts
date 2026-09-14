@@ -1,6 +1,6 @@
 /**
  * ANIMAL ART: the Starhart (stag), Stoop (bat), Ironhide (rhino), Weaver
- * (spider), Skate (manta) and Livewire (eel) families, generated as pixel
+ * (spider), Skate (manta) and Livewire (narwhal) families, generated as pixel
  * art at load and packed over the six stock families' atlas cells
  * (atlas.ts packAnimalArt) while game/animalFlag.ts ANIMAL_ART is on.
  *
@@ -39,11 +39,12 @@
  * legs ARE its silhouette, so the one animal that gets its legs out at
  * every size is the one whose body is nothing without them.
  *
- * Skate rides the bat's parts rig on the water: hulls go through the same
- * draw path as flyers, so a manta beats its wings the way a bat does,
- * slower. Livewire is the WORM RIG, new with it: a head, a chain of body
- * segments the sim drags behind it, and a tail (levels.ts SegmentSpec,
- * Sim.updateSegments, Renderer.pushSegments).
+ * Skate and Livewire ride the bat's parts rig on the water: hulls go
+ * through the same draw path as flyers, so a manta beats its wings the way
+ * a bat does, slower, and a narwhal its flippers slower still. The WORM
+ * RIG — a head, a chain of body segments the sim drags behind it, and a
+ * tail (levels.ts SegmentSpec, Sim.updateSegments, Renderer.pushSegments)
+ * — has no rider since the eel went; it waits for the centipede.
  */
 
 // ── the engine: a square grid of colour strings ────────────────────────
@@ -269,6 +270,14 @@ const draw = (n: number, fn: (g: Pen, H: H) => void, mirror = true): Art => {
   if (mirror) symmetrize(px, n); cleanup(px, n); if (mirror) symmetrize(px, n);
   return { n, px };
 };
+export interface Rect { px: Ink[]; w: number; h: number }
+/** the centre `w` columns of a square drawing, for a body cell narrower
+ *  than its grid: a rect `w` wide and `a.n` tall about the grid's centre */
+export const column = (a: Art, w: number): Rect => {
+  const x0 = Math.floor((a.n - w) / 2); const px: Ink[] = [];
+  for (let y = 0; y < a.n; y++) for (let x = 0; x < w; x++) px.push(a.px[y * a.n + x0 + x]);
+  return { px, w, h: a.n };
+};
 /** the family-colour cell: white wherever `fn` paints, on the body's grid */
 const cellOf = (n: number, fn: (g: Pen, H: H) => void): Art => {
   const { px, pen } = grid(n); const H = mk(n);
@@ -400,8 +409,13 @@ export interface StoopTier {
   t: number;
   /** the composed sprite's grid and half wingspan on it */
   n: number; W: number;
-  /** the body-only and wing-only cells */
+  /** the body-only and wing-only grids */
   nb: number; nw: number;
+  /** the body cell's width across the heading, native px, for a body
+   *  much longer than it is wide: the body grid is cropped to a centred
+   *  column this wide on its way into the sheet (atlas.ts column). Absent,
+   *  the body cell is the square grid */
+  bw?: number;
   /** how far the wing folds toward its root (0..1 of its span), the sweep
    *  it adds at the root (rad), and the flap rate (Hz) */
   fold: number; sweep: number; rate: number;
@@ -481,7 +495,6 @@ export interface Tier {
   /** the world-quad overshoot past the cell's nominal size (see HartTier) */
   scale: number;
 }
-export interface Rect { px: Ink[]; w: number; h: number }
 export interface MechParts { body: Art; base: Art; leg: Art; cell: Art; stride: number }
 export interface LegParts {
   body: Art; base: Art; cell: Art;
@@ -703,13 +716,16 @@ export const spiderSmall = (T: SpiderTier): number => (T.t >= 4 ? 127 : 63);
 const TEAL: Tone = ["#0f8a78", "#4dffe0", "#b0fff4"];
 const SKIN: Tone = ["#22303a", "#3a5060", "#5c7e90"];
 /** the same shape of tier as the bat's, on the naval line's cells
- *  (128/128/256/256/384) */
+ *  (128/128/256/256/384). The body runs 1.8 W horn to barb, longer than
+ *  the wing is wide, so its grid is the composed grid — a body cell cut
+ *  to the wing's size clipped the horns and the harpoon's tip — and its
+ *  cell a column 0.56 W wide, which the hips' stacks sit inside */
 export const MANTA_TIERS: readonly StoopTier[] = [
-  { t: 1, n: 127, W: 56, nb: 63, nw: 63, fold: 0.22, sweep: 0.08, rate: 0.9, scale: 1.2 },
-  { t: 2, n: 127, W: 60, nb: 63, nw: 63, fold: 0.22, sweep: 0.08, rate: 0.8, scale: 1.3 },
-  { t: 3, n: 255, W: 115, nb: 127, nw: 127, fold: 0.2, sweep: 0.07, rate: 0.65, scale: 1.1 },
-  { t: 4, n: 255, W: 120, nb: 127, nw: 127, fold: 0.18, sweep: 0.06, rate: 0.5, scale: 1.5 },
-  { t: 5, n: 383, W: 180, nb: 191, nw: 191, fold: 0.16, sweep: 0.05, rate: 0.4, scale: 1.7 },
+  { t: 1, n: 127, W: 56, nb: 127, bw: 33, nw: 63, fold: 0.22, sweep: 0.08, rate: 0.9, scale: 1.2 },
+  { t: 2, n: 127, W: 60, nb: 127, bw: 35, nw: 63, fold: 0.22, sweep: 0.08, rate: 0.8, scale: 1.3 },
+  { t: 3, n: 255, W: 115, nb: 255, bw: 65, nw: 127, fold: 0.2, sweep: 0.07, rate: 0.65, scale: 1.1 },
+  { t: 4, n: 255, W: 120, nb: 255, bw: 69, nw: 127, fold: 0.18, sweep: 0.06, rate: 0.5, scale: 1.5 },
+  { t: 5, n: 383, W: 180, nb: 383, bw: 101, nw: 191, fold: 0.16, sweep: 0.05, rate: 0.4, scale: 1.7 },
 ];
 /** the wing's extent in the body frame, W units: it is what sizes the wing cell */
 const MWING_X0 = 0.12, MWING_X1 = 1.0, MWING_Y0 = -0.42, MWING_Y1 = 0.45;
@@ -772,78 +788,105 @@ export function manta(T: StoopTier): StoopArt {
 
 // ── LIVEWIRE ─────────────────────────────────────────────────────────────
 //
-// The electric eel, for the wraith fleet, and the first body on the roster
-// with no legs and no wings: a head, a chain of body segments the sim
-// drags behind it (levels.ts SegmentSpec, Sim.updateSegments) and a tail
-// fin, each its own sprite, the renderer laying them along the chain with
-// a swimming wave (SEGMENT_ART in atlas.ts). The machine is a steel jaw,
-// armour rings on the segments from T3 and a dorsal plate from T4; the
-// violet is the electric organ, a line down the spine of every part. This
-// is the worm rig: a centipede is the same chain with legs drawn on.
+// The narwhal, for the wraith fleet: a whale from above — a round melon, a
+// body that swells behind the flippers and narrows to a horizontal fluke —
+// and the tusk out front, a ridged steel spike that ends in the violet
+// electrode the family's arcs jump off. Pale mottled hide, the way a
+// narwhal is; the machine is a saddle plate down the back from T2, a
+// collar between melon and body from T3, stacks at the peduncle from T4,
+// and at T5 steel on the fluke's leading edges and the tusk's ridges lit
+// violet. The rig is the manta's: body and one flipper mirrored to both
+// sides (FLYER_PARTS), on a slow, shallow beat. It replaced the eel, which
+// was the worm rig's first rider; the rig stays for the centipede.
 const VOLT: Tone = ["#5a35b8", "#b48cff", "#dcc8ff"];
-const EEL: Tone = ["#262a38", "#454c66", "#69728e"];
-export interface EelTier {
-  t: number;
-  /** the head, body-segment and tail grids (each in a cell one wider) */
-  nh: number; ns: number; nt: number;
-  /** how many segments trail the head, and the chain spacing between
-   *  them in native px (the slab is drawn a hair longer, so each segment
-   *  reads as its own plate with the joint just covered) */
-  count: number; spacing: number;
-}
-/** no overshoot on this one: the head cell is drawn full, and the length
- *  comes from the chain — five to thirty-odd tiles nose to tail */
-export const EEL_TIERS: readonly EelTier[] = [
-  { t: 1, nh: 47, ns: 35, nt: 35, count: 4, spacing: 25 },
-  { t: 2, nh: 71, ns: 51, nt: 51, count: 5, spacing: 36 },
-  { t: 3, nh: 95, ns: 71, nt: 71, count: 7, spacing: 51 },
-  { t: 4, nh: 127, ns: 99, nt: 99, count: 7, spacing: 71 },
-  { t: 5, nh: 183, ns: 139, nt: 139, count: 7, spacing: 99 },
+const NARW: Tone = ["#5b6577", "#8e9aab", "#c4ced9"];
+/** the same shape of tier as the bat's, on the wraith line's cells
+ *  (128/128/256/256/384). W is a length unit here, not a half span: the
+ *  body runs 1.9 W tusk tip to fluke on the composed grid, in a cell a
+ *  column 0.7 W wide (the fluke's span), and only the flipper gets a
+ *  small square cell of its own */
+export const NARWHAL_TIERS: readonly StoopTier[] = [
+  { t: 1, n: 127, W: 62, nb: 127, bw: 45, nw: 31, fold: 0.14, sweep: 0.07, rate: 0.7, scale: 1.2 },
+  { t: 2, n: 127, W: 66, nb: 127, bw: 47, nw: 31, fold: 0.14, sweep: 0.07, rate: 0.6, scale: 1.3 },
+  { t: 3, n: 255, W: 128, nb: 255, bw: 91, nw: 47, fold: 0.13, sweep: 0.06, rate: 0.5, scale: 1.1 },
+  { t: 4, n: 255, W: 134, nb: 255, bw: 95, nw: 47, fold: 0.12, sweep: 0.05, rate: 0.4, scale: 1.5 },
+  { t: 5, n: 383, W: 198, nb: 383, bw: 141, nw: 63, fold: 0.11, sweep: 0.05, rate: 0.35, scale: 1.7 },
 ];
-/** the violet line down the head — last on the head, alone (in white) for the cell */
-function eelAccent(g: Pen, H: H, T: EelTier): void {
-  const { nh, t } = T; const X = (v: number) => v * nh, Y = (v: number) => v * nh;
-  const hw = Math.max(1, 0.04 * nh);
-  g.box(H.p(X(0.5) - hw), H.p(Y(0.38)), H.p(X(0.5) + hw), H.p(Y(1)), VOLT[1]);
-  if (t >= 4) for (const s of [-1, 1]) g.box(H.p(X(0.5 + s * 0.3) - hw), H.p(Y(0.05)), H.p(X(0.5 + s * 0.3) + hw), H.p(Y(0.2)), VOLT[1]);
+/** the flipper's extent in the body frame, W units: it is what sizes the flipper cell */
+const FLIP_X0 = 0.2, FLIP_X1 = 0.5, FLIP_Y0 = -0.06, FLIP_Y1 = 0.26;
+const FLIP_ROOT = { x: 0.2, y: -0.02 } as const;
+/** the body frame against the tusk's: 0.85 as long, and sat 0.04 W aft */
+const BODY_K = 0.85, BODY_Y = 0.04;
+const FLIP: readonly Pt[] = [[0.2, -0.06], [0.38, 0.0], [0.5, 0.14], [0.44, 0.26], [0.28, 0.21], [0.2, 0.1]];
+const FLIP_EDGE: readonly Pt[] = [[0.2, -0.06], [0.38, 0.0], [0.5, 0.14], [0.46, 0.15], [0.37, 0.04], [0.22, -0.02]];
+
+/** one flipper (the right one), drawn about an origin (cx, cy) on the grid */
+function narwhalFlipper(g: Pen, H: H, T: StoopTier, cx: number, cy: number, s: number): void {
+  const { W, t } = T; const X = (v: number) => cx + s * v * W, Y = (v: number) => cy + v * W;
+  H.org(g, { poly: H.P(FLIP.map(([x, y]) => [X(x), Y(y)] as const)) }, NARW, false);
+  // the leading edge, a lighter fold of hide; steel along it from T4
+  const edge = H.P(FLIP_EDGE.map(([x, y]) => [X(x), Y(y)] as const));
+  if (t >= 4) H.mech(g, { poly: edge }, false);
+  else g.over((q) => q.poly(edge, NARW[2]));
 }
-/** the head: a blunt wedge widening off the neck, a steel jaw */
-function eelHead(g: Pen, H: H, T: EelTier): void {
-  const { nh, t } = T; const o = EEL; const X = (v: number) => v * nh, Y = (v: number) => v * nh;
-  const px = (v: number) => Math.max(2, Math.round(v * nh));
-  H.org(g, { poly: H.P([[X(0.5), Y(0)], [X(0.72), Y(0.1)], [X(0.86), Y(0.32)], [X(0.84), Y(0.6)], [X(0.81), Y(1)], [X(0.19), Y(1)], [X(0.16), Y(0.6)], [X(0.14), Y(0.32)], [X(0.28), Y(0.1)]]) }, o, false);
-  // the jaw: a steel plate over the snout from T2, a visor band from T4, electrodes forward at T5
-  if (t >= 2) H.mech(g, { poly: H.P([[X(0.5), Y(0.02)], [X(0.68), Y(0.1)], [X(0.7), Y(0.22)], [X(0.3), Y(0.22)], [X(0.32), Y(0.1)]]) }, false);
-  if (t >= 4) H.mech(g, { poly: H.R(X(0.2), Y(0.42), X(0.8), Y(0.5)) }, false);
-  if (t >= 5) for (const s of [-1, 1]) H.mech(g, { poly: H.rot(X(0.5 + s * 0.3), Y(0.08), px(0.08), px(0.22), s * 15) }, false);
-  eelAccent(g, H, T);
+/** the tusk's reach forward of the body centre, W units, and its half width */
+const tusk = (t: number, W: number): { tip: number; hw: number } => ({ tip: t >= 5 ? 0.94 : t >= 3 ? 0.92 : 0.9, hw: Math.max(2, Math.round(W * (t >= 4 ? 0.04 : 0.032))) });
+/** the tusk's ridges: one every 0.06 W from the melon to near the tip */
+const ridges = (H: H, T: StoopTier, cy: number, fn: (y: number) => void): void => {
+  const { W, t } = T; const { tip } = tusk(t, W); const step = Math.max(4, Math.round(W * 0.06));
+  for (let y = Math.round(cy + (BODY_Y - 0.56 * BODY_K) * W); y > cy - (tip - 0.16) * W; y -= step) fn(y);
+};
+/** the violet: the electrode on the tusk's tip, the seam down the saddle
+ *  from T2, and at T5 the tusk's ridges themselves, charged — last on the
+ *  body, alone (in white) for the cell. Never a pair of anything on the
+ *  head: two dots are eyes */
+function narwhalAccent(g: Pen, H: H, T: StoopTier, cx: number, cy: number): void {
+  const { W, t } = T; const X = (v: number) => cx + v * W, Y = (v: number) => cy + (v * BODY_K + BODY_Y) * W;
+  const { tip, hw } = tusk(t, W); const r = Math.max(2, Math.round(W * (t >= 4 ? 0.045 : 0.035)));
+  g.disc(H.p(cx), H.p(cy - tip * W + r), H.p(r), VOLT[1]);
+  if (t >= 2) g.box(H.p(X(-0.02)), H.p(Y(0.02)), H.p(X(0.02)), H.p(Y(0.42)), VOLT[1]);
+  if (t >= 5) ridges(H, T, cy, (y) => g.box(H.p(cx - hw), H.p(y), H.p(cx + hw), H.p(y + 2), VOLT[1]));
 }
-/** one body segment: a chamfered plate 0.78 of the grid long (the chain
- *  spacing is 0.71, so it just covers the joint) and 0.8 of it wide, the
- *  spine down the middle, the electric line either side; a steel ring at
- *  the front edge from T3, a dorsal plate from T4 */
-function eelSegment(g: Pen, H: H, T: EelTier): void {
-  const { ns, t } = T; const o = EEL; const X = (v: number) => v * ns, Y = (v: number) => v * ns;
-  const px = (v: number) => Math.max(2, Math.round(v * ns));
-  H.org(g, { poly: H.P([[X(0.16), Y(0.11)], [X(0.84), Y(0.11)], [X(0.9), Y(0.22)], [X(0.9), Y(0.78)], [X(0.84), Y(0.89)], [X(0.16), Y(0.89)], [X(0.1), Y(0.78)], [X(0.1), Y(0.22)]]) }, o, false);
-  g.over((q) => q.box(H.p(X(0.5) - px(0.1)), H.p(Y(0.11)), H.p(X(0.5) + px(0.1)), H.p(Y(0.89)), o[2]));
-  for (const s of [-1, 1]) g.box(H.p(X(0.5 + s * 0.27) - px(0.03)), H.p(Y(0.11)), H.p(X(0.5 + s * 0.27) + px(0.03)), H.p(Y(0.89)), VOLT[1]);
-  if (t >= 3) H.mech(g, { poly: H.R(X(0.1), Y(0.15), X(0.9), Y(0.27)) }, false);
-  if (t >= 4) H.mech(g, { poly: H.R(X(0.5) - px(0.06), Y(0.32), X(0.5) + px(0.06), Y(0.84)) }, false);
+/** the body: fluke, then one whale outline — the melon rounds into the
+ *  shoulders with no neck, the way a whale's does — the tusk, steel down
+ *  the back */
+function narwhalBody(g: Pen, H: H, T: StoopTier, cx: number, cy: number): void {
+  const { W, t } = T; const o = NARW; const X = (v: number) => cx + v * W;
+  // the body frame is BODY_K as long as the tusk's, so the tusk is half the
+  // whale, the way it is on the animal; the tusk is drawn in the full frame
+  const Y = (v: number) => cy + (v * BODY_K + BODY_Y) * W;
+  const px = (v: number) => Math.max(2, Math.round(v * W));
+  // the fluke first, under the body: two lobes and a notch
+  H.org(g, { poly: H.P([[X(0), Y(0.66)], [X(0.14), Y(0.7)], [X(0.32), Y(0.8)], [X(0.3), Y(0.92)], [X(0.12), Y(0.86)], [X(0), Y(0.8)], [X(-0.12), Y(0.86)], [X(-0.3), Y(0.92)], [X(-0.32), Y(0.8)], [X(-0.14), Y(0.7)]]) }, o, false);
+  if (t >= 5) for (const s of [-1, 1]) H.mech(g, { poly: H.P([[X(s * 0.12), Y(0.7)], [X(s * 0.32), Y(0.8)], [X(s * 0.3), Y(0.86)], [X(s * 0.12), Y(0.76)]]) }, false);
+  // the body: a round melon, widest behind the flippers, narrowing to the
+  // peduncle; the lit top band is the melon, the mottle the hide's own
+  H.org(g, { poly: H.P([[X(0), Y(-0.56)], [X(0.1), Y(-0.53)], [X(0.18), Y(-0.44)], [X(0.23), Y(-0.28)], [X(0.25), Y(-0.05)], [X(0.23), Y(0.25)], [X(0.15), Y(0.5)], [X(0.08), Y(0.66)], [X(0.06), Y(0.74)], [X(-0.06), Y(0.74)], [X(-0.08), Y(0.66)], [X(-0.15), Y(0.5)], [X(-0.23), Y(0.25)], [X(-0.25), Y(-0.05)], [X(-0.23), Y(-0.28)], [X(-0.18), Y(-0.44)], [X(-0.1), Y(-0.53)]]) }, o);
+  // the tusk: a steel spike off the melon, ridged along its length
+  const { tip, hw } = tusk(t, W); const F = (v: number) => cy + v * W;
+  g.poly(H.P([[cx - hw, Y(-0.5)], [cx + hw, Y(-0.5)], [cx + hw * 0.55, F(-tip + 0.12)], [cx, F(-tip)], [cx - hw * 0.55, F(-tip + 0.12)]]), ST.mid);
+  g.over((q) => q.poly(H.P([[cx - hw * 0.4, Y(-0.5)], [cx + hw * 0.4, Y(-0.5)], [cx, F(-tip + 0.06)]]), ST.lite));
+  ridges(H, T, cy, (y) => g.box(H.p(cx - hw), H.p(y), H.p(cx + hw), H.p(y + 2), ST.deep));
+  // the machine: saddle from T2, collar from T3, stacks from T4
+  if (t >= 2) H.hull(g, { poly: H.R(X(-0.07), Y(-0.02), X(0.07), Y(0.44)) });
+  if (t >= 3) H.mech(g, { poly: H.R(X(-0.17), Y(-0.22), X(0.17), Y(-0.15)) }, false);
+  if (t >= 4) stacks(g, H, [X(-0.09), X(0.09)], Y(0.46), Y(0.64), px(0.045));
+  narwhalAccent(g, H, T, cx, cy);
 }
-/** the tail: a fin flaring past the neck's width and tapering to a point */
-function eelTail(g: Pen, H: H, T: EelTier): void {
-  const { nt } = T; const o = EEL; const X = (v: number) => v * nt, Y = (v: number) => v * nt;
-  const px = (v: number) => Math.max(2, Math.round(v * nt));
-  H.org(g, { poly: H.P([[X(0.16), Y(0)], [X(0.84), Y(0)], [X(0.96), Y(0.4)], [X(0.62), Y(0.88)], [X(0.5), Y(1)], [X(0.38), Y(0.88)], [X(0.04), Y(0.4)]]) }, o, false);
-  g.over((q) => { q.box(H.p(X(0.5) - px(0.06)), H.p(Y(0)), H.p(X(0.5) + px(0.06)), H.p(Y(0.95)), o[2]); });
-  for (const s of [-1, 1]) g.box(H.p(X(0.5 + s * 0.27) - px(0.03)), H.p(Y(0)), H.p(X(0.5 + s * 0.27) + px(0.03)), H.p(Y(0.45)), VOLT[1]);
+/** where the flipper cell sits on its root — pure numbers, no canvas */
+export function narwhalGeom(T: StoopTier): StoopGeom {
+  const { W, nw } = T;
+  const ox = (nw - (FLIP_X1 - FLIP_X0) * W) / 2 - FLIP_X0 * W, oy = (nw - (FLIP_Y1 - FLIP_Y0) * W) / 2 - FLIP_Y0 * W;
+  const rootPx = ox + FLIP_ROOT.x * W, rootPy = oy + FLIP_ROOT.y * W;
+  return { rootX: FLIP_ROOT.x * W, rootY: -FLIP_ROOT.y * W, wingX: nw / 2 - rootPx, wingY: -(nw / 2 - rootPy) };
 }
-export interface EelArt { head: Art; body: Art; tail: Art; cell: Art }
-export function eel(T: EelTier): EelArt {
-  const head = draw(T.nh, (g, H) => eelHead(g, H, T));
-  const body = draw(T.ns, (g, H) => eelSegment(g, H, T));
-  const tail = draw(T.nt, (g, H) => eelTail(g, H, T));
-  const cell = cellOf(T.nh, (g, H) => eelAccent(g, H, T));
-  return { head, body, tail, cell };
+export function narwhal(T: StoopTier): StoopArt {
+  const { n, nb, nw, W } = T; const c = (n - 1) / 2;
+  const full = draw(n, (g, H) => { narwhalFlipper(g, H, T, c, c, -1); narwhalFlipper(g, H, T, c, c, 1); narwhalBody(g, H, T, c, c); });
+  const cb = (nb - 1) / 2;
+  const body = draw(nb, (g, H) => narwhalBody(g, H, T, cb, cb));
+  const ox = (nw - (FLIP_X1 - FLIP_X0) * W) / 2 - FLIP_X0 * W, oy = (nw - (FLIP_Y1 - FLIP_Y0) * W) / 2 - FLIP_Y0 * W;
+  const wing = draw(nw, (g, H) => narwhalFlipper(g, H, T, ox, oy, 1), false);
+  const cell = cellOf(n, (g, H) => narwhalAccent(g, H, T, c, c));
+  return { full, body, wing, cell };
 }

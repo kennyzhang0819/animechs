@@ -57,7 +57,7 @@ export const UNIT_ID: Record<UnitKind, number> = {
  * fire the straight round, the Weavers still rot what they hit. The two
  * six lines are drawn now (game/animalArt.ts), so all six are named for
  * the animal rather than the weapon: the fleets are Skates (manta) and
- * Livewires (eel), not the harpoon and wraith fleets they were while
+ * Livewires (narwhal), not the harpoon and wraith fleets they were while
  * upstream's whales and sea slugs were still on screen.
  *
  * `body` is the SINGULAR the family's five bodies are named off — the
@@ -123,8 +123,6 @@ const HARPOON_VETERAN = { perSecond: 0.025, max: 2 } as const;
 
 /** px per Mindustry world unit — leg geometry is written in those units */
 const MU = CELL / 8;
-/** world px per native sprite px: the sheet's constant scale (atlas.ts PX) */
-const PX_W = 0.625;
 
 /**
  * Mindustry LegsComp/UnitType leg fields: everything the walk cycle of a
@@ -188,7 +186,8 @@ export interface LegSpec {
  * along the path the head took and bends where it turned. It is display
  * only — the hitbox is the head's — and the renderer lays a body sprite
  * on every segment and a tail past the last one (Renderer.pushSegments,
- * SEGMENT_ART in atlas.ts). The eels ride it; a centipede is the same
+ * SEGMENT_ART in atlas.ts). The eels rode it until the narwhal replaced
+ * them; it has no rider now and waits for the centipede, which is the same
  * chain with legs drawn on the segments.
  */
 export interface SegmentSpec {
@@ -209,7 +208,7 @@ export interface SegmentSpec {
   amp: number;
   wavelength: number;
 }
-const worm = (count: number, spacing: number, neck: number, amp: number, wavelength: number): SegmentSpec =>
+export const worm = (count: number, spacing: number, neck: number, amp: number, wavelength: number): SegmentSpec =>
   ({ count, spacing, neck, amp, wavelength });
 
 /** a LegSpec with Mindustry's UnitType defaults filled in */
@@ -1370,9 +1369,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.14,
     rotateSpeed: 5,
     naval: true,
-    // THE ANIMAL TRIAL (animalFlag.ts): the Livewire T1 is an eel on the
-    // worm rig, 4 segments behind the head (SEGMENT_ART in atlas.ts)
-    ...(ANIMAL_ART ? { segments: worm(4, 25 * PX_W, 7, 25 * PX_W * 0.8, 25 * PX_W * 8) } : {}),
     landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
     blink: { dist: 12 * CELL, cooldown: 4 },
@@ -1391,9 +1387,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.14,
     rotateSpeed: 4,
     naval: true,
-    // THE ANIMAL TRIAL (animalFlag.ts): the Livewire T2 is an eel on the
-    // worm rig, 5 segments behind the head (SEGMENT_ART in atlas.ts)
-    ...(ANIMAL_ART ? { segments: worm(5, 36 * PX_W, 11, 36 * PX_W * 0.8, 36 * PX_W * 8) } : {}),
     landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
     blink: { dist: 12 * CELL, cooldown: 3 },
@@ -1417,9 +1410,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.16,
     rotateSpeed: 2.6,
     naval: true,
-    // THE ANIMAL TRIAL (animalFlag.ts): the Livewire T3 is an eel on the
-    // worm rig, 7 segments behind the head (SEGMENT_ART in atlas.ts)
-    ...(ANIMAL_ART ? { segments: worm(7, 51 * PX_W, 15, 51 * PX_W * 0.8, 51 * PX_W * 8) } : {}),
     landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
     blink: { dist: 15 * CELL, cooldown: 3 },
@@ -1447,9 +1437,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.17,
     rotateSpeed: 1.4,
     naval: true,
-    // THE ANIMAL TRIAL (animalFlag.ts): the Livewire T4 is an eel on the
-    // worm rig, 7 segments behind the head (SEGMENT_ART in atlas.ts)
-    ...(ANIMAL_ART ? { segments: worm(7, 71 * PX_W, 20, 71 * PX_W * 0.8, 71 * PX_W * 8) } : {}),
     landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
     blink: { dist: 15 * CELL, cooldown: 4 },
@@ -1480,9 +1467,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.17,
     rotateSpeed: 1.1,
     naval: true,
-    // THE ANIMAL TRIAL (animalFlag.ts): the Livewire T5 is an eel on the
-    // worm rig, 7 segments behind the head (SEGMENT_ART in atlas.ts)
-    ...(ANIMAL_ART ? { segments: worm(7, 99 * PX_W, 28, 99 * PX_W * 0.8, 99 * PX_W * 8) } : {}),
     landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
     blink: { dist: 18 * CELL, cooldown: 4 },

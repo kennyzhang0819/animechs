@@ -5,7 +5,7 @@ This is the direction the enemy art settled on after the animal trial
 down so the next family is drawn to the same rules without re-running the
 trial. The Starhart stags and the Stoop bats are the reference
 implementation, and the Ironhide rhinos, Weaver spiders, Skate mantas
-and Livewire eels were drawn to this page; the pixel engine and the house rules they obey are in
+and Livewire narwhals were drawn to this page; the pixel engine and the house rules they obey are in
 `game/pixelArt.ts`, and the packing in `game/atlas.ts`.
 
 ## 1. The style
@@ -22,8 +22,8 @@ the other way round.
   families are renamed for the animal, the gimmick stays what it was:
   Ironhides (rhino) are the ground mechs, Weavers (spider) the venom
   spitters, Starhart (stag) the starlight mechs, Stoop (bat) the skyfall
-  bombers, Skates (manta) the harpoon fleet, Livewires (electric eel)
-  the wraith fleet. The family accent colours in `PAL` (`game/constants.ts`)
+  bombers, Skates (manta) the harpoon fleet, Livewires (narwhal) the
+  wraith fleet. The family accent colours in `PAL` (`game/constants.ts`)
   carry across: the stag's glows are star-gold, the bat's charge is
   magenta.
 - **A body is its family and how far up it stands. No proper nouns.** The
@@ -68,8 +68,10 @@ the other way round.
   has one (the bat's head against its shoulders).
 - **No eyes.** A pair of dark dots on a top-down body reads as dirt at
   field zoom and as a cartoon up close. The head is a shape: a wedge, a
-  snout, a jaw plate, horns. The spiders and eels shipped with eyes once
-  and lost them; do not put them back on the next animal.
+  snout, a jaw plate, horns. The spiders and the eels shipped with eyes
+  once and lost them, and the narwhal's T5 briefly had a pair of
+  electrodes on its melon that read the same way; do not put a pair of
+  anything on a head. Two of something on a head are eyes.
 - **Symmetric by construction.** Draw the left half, mirror it
   (`symmetrize`). Hand-mirrored art drifts by a pixel and the drift is
   visible at every scale.
@@ -89,8 +91,11 @@ the other way round.
   segment drawn as its own plate along the chain (`SegmentSpec`,
   `SEGMENT_ART`, `pushSegments`). Slow and wide: a cycle every eight
   segments of path. Never animate a chain by offsetting sprites in the
-  renderer; that vibrates. A new family should need a new drawing, not a new
-  renderer path; a centipede is the worm rig with legs drawn on.
+  renderer; that vibrates. The eels rode the worm rig and were replaced
+  by the narwhal, which is a rigid body on the wing rig; the rig has no
+  rider today and stays for the centipede, which is the worm rig with
+  legs drawn on. A new family should need a new drawing, not a new
+  renderer path.
 - **Stock art is never deleted.** `public/mindustry/` is untouched. A
   trial family draws into its own cells and is packed OVER the stock
   family's cells in `packAnimalArt` while the flag is on. Turn the flag
@@ -186,7 +191,16 @@ Weaver, the spider (venom spitters' cells; legged rig at every tier, six legs on
 | T4 | weaver4 | 256 | 1.6 | 256 | 80 | 28.75 |
 | T5 | weaver5 | 256 | 2.0 | 320 | 119 | 32.5 |
 
-Skate, the manta (harpoon fleet's cells; body and two beating wings, as the bat):
+Skate, the manta (harpoon fleet's cells; body and two beating wings, as
+the bat). The body is drawn on the composed grid, not the wing's: the
+manta is longer horn to barb than a wing is wide, and a body cell cut to
+the wing's size clipped both ends in the game while the preview, which
+draws the composed sprite, showed nothing wrong. Preview the parts. On
+the sheet the body is a column (`column()` in `game/atlas.ts`, `bw` on
+the tier), the grid's length by the body's width, and the renderer draws
+it as a quad that long and that wide (`FlyerParts.spriteH`): a square
+cell for a body a quarter as wide as it is long is three quarters air,
+and two families of them did not fit the sheet.
 
 | tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -196,20 +210,22 @@ Skate, the manta (harpoon fleet's cells; body and two beating wings, as the bat)
 | T4 | skate4 | 256 | 1.5 | 240 | 143 | 48.75 |
 | T5 | skate5 | 384 | 1.7 | 408 | 219 | 72.5 |
 
-Livewire, the eel (wraith fleet; the worm rig, no overshoot). Its size is
-the chain's, not a quad's: head, then `count` segments at `spacing`, then
-the tail. Head and segment cells are sized to the art, one px over the grid.
+Livewire, the narwhal (wraith fleet's cells; body and two beating
+flippers on the manta's rig, slower and shallower). The grid is sized by
+the length, tusk tip to fluke, and the body cell is a column 0.7 W wide,
+the fluke's span. The tusk is half the animal.
 
-| tier | kind | head cell | segment cell | count | spacing, world px | nose to tail, tiles |
+| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
 | --- | --- | --- | --- | --- | --- | --- |
-| T1 | livewire1 | 48 | 36 | 4 | 16 | 5 |
-| T2 | livewire2 | 72 | 52 | 5 | 23 | 8 |
-| T3 | livewire3 | 96 | 72 | 7 | 32 | 14 |
-| T4 | livewire4 | 128 | 100 | 7 | 44 | 19 |
-| T5 | livewire5 | 184 | 140 | 7 | 62 | 27 |
+| T1 | livewire1 | 128 | 1.2 | 96 | 49 | 13.75 |
+| T2 | livewire2 | 128 | 1.3 | 104 | 63 | 17.5 |
+| T3 | livewire3 | 256 | 1.1 | 176 | 88 | 25 |
+| T4 | livewire4 | 256 | 1.5 | 240 | 151 | 55 |
+| T5 | livewire5 | 384 | 1.7 | 408 | 229 | 72.5 |
 
-The eel's icon is its head cell, so it reads small on a card next to a
-manta's; that is the price of the chain and was accepted.
+The eel that held this slot before is gone from the code; its numbers
+were the chain's (head cell, segment cell, count and spacing) and are in
+the history if the centipede wants a starting point.
 
 The spider's legs are the size that matters for that family: leg length
 runs 12, 18, 26, 50 and 60 Mindustry units up the ladder against the
