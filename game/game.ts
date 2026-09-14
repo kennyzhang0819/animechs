@@ -12,6 +12,8 @@ import { SHIELD_TOWER_SIZE } from "./mutation";
 import { towerBaseIcon, towerGhostIcon } from "./towerIcons";
 import { BASE_DARK } from "./turretArt";
 import { FOUNDRY_ART } from "./turretFlag";
+import { activeFaction, coreName, setActiveFaction, structName, type Faction } from "./faction";
+import { plantArt, plantTurns } from "./botanicaArt";
 import {
   CELL,
   clamp,
@@ -2192,9 +2194,9 @@ export class Game {
       kind: one,
       unit: null,
       name: one
-        ? TOWERS[one].name
+        ? structName(one)
         : anyCore && picked.length === 1
-          ? "Core"
+          ? coreName()
           : "Structures",
       hp: Math.ceil(hp),
       hpMax: Math.ceil(hpMax),
@@ -3233,15 +3235,24 @@ export class Game {
    * Null until both halves have loaded — the caller draws the washes and
    * nothing else for those few frames.
    */
-  private ghostComposites = new Map<TowerKind, HTMLCanvasElement>();
+  private ghostComposites = new Map<string, HTMLCanvasElement>();
+  /** the faction flipped (faction.ts): the ghosts are composed again on the next draw */
+  setFaction(f: Faction): void {
+    setActiveFaction(f);
+    this.ghostComposites.clear();
+  }
   private ghostArt(kind: TowerKind): HTMLCanvasElement | null {
-    const done = this.ghostComposites.get(kind);
+    const key = `${activeFaction()}:${kind}`;
+    const done = this.ghostComposites.get(key);
     if (done) return done;
     const size = TOWERS[kind].size;
     const top = this.ghostSprite(towerGhostIcon(kind));
     const base = this.ghostSprite(towerBaseIcon(size));
     const loaded = (i: HTMLImageElement) => i.complete && i.naturalWidth > 0;
     if (!loaded(top) || !loaded(base)) return null;
+    // BOTANICA: the plant is the whole stamp — no plate, and a plant that
+    // stands is drawn as authored rather than turned like a head
+    const plant = activeFaction() === "botanica" && plantArt(kind) !== null;
     // at the sprites' own resolution: a quarter turn of a square is
     // lossless, and the stamp is scaled to the footprint at draw time
     const n = Math.max(top.naturalWidth, base.naturalWidth);
@@ -3251,8 +3262,8 @@ export class Game {
     const g = cv.getContext("2d");
     if (!g) return null;
     g.imageSmoothingEnabled = false;
-    g.drawImage(base, 0, 0, n, n);
-    if (FOUNDRY_ART) {
+    if (!plant) g.drawImage(base, 0, 0, n, n);
+    if (!plant && FOUNDRY_ART) {
       // the plate as dark as the sheet packs it (atlas.ts plateArt): a
       // multiply by the same grey, then the plate's own alpha put back
       const v = Math.round(255 * BASE_DARK);
@@ -3266,9 +3277,9 @@ export class Game {
     // THE PLATE NEVER TURNS and the head always does (renderer.ts pushes
     // the base at rotation 0 and the top at the turret's angle)
     g.translate(n / 2, n / 2);
-    g.rotate(Math.PI / 2);
+    if (!plant || plantTurns(kind)) g.rotate(Math.PI / 2);
     g.drawImage(top, -n / 2, -n / 2, n, n);
-    this.ghostComposites.set(kind, cv);
+    this.ghostComposites.set(key, cv);
     return cv;
   }
 }

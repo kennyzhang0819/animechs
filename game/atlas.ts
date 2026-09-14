@@ -12,6 +12,8 @@ import type { UnitKind } from "./levels";
 import { ANIMAL_ART } from "./animalFlag";
 import { FOUNDRY_ART } from "./turretFlag";
 import { BASE_DARK, drawCore, turretHead } from "./turretArt";
+import { drawHeartwood, PLANT_KINDS, PLANT_TURNS, plantArt, type PlantKind } from "./botanicaArt";
+import { activeFaction } from "./faction";
 import { TOWER_ICONS } from "./towerIcons";
 import type { TowerKind } from "./types";
 import {
@@ -633,6 +635,18 @@ export const UV_SPECTRE = top("spectre", 128);
 export const UV_MELTDOWN = top("meltdown", 128);
 export const UV_FORESHADOW = top("foreshadow", 128);
 export const UV_TOWER_BASE4 = flat("tower-base-4", 128);
+// BOTANICA (botanicaArt.ts, faction.ts): a plant a kind, packed beside the
+// Foundry head so the faction flips live. A plant that aims packs like a
+// head (turned to face +x, pushed at the turret's angle); one that
+// stands packs upright and is pushed at rotation 0. No plate under either
+export const UV_PLANTS: Readonly<Record<PlantKind, UVRect>> = Object.fromEntries(
+  PLANT_KINDS.map((k) => {
+    const size = { duo: 1, hail: 1, scorch: 1, arc: 1, salvo: 2, scatter: 2, lancer: 2, wave: 2, parallax: 2, swarmer: 2, fuse: 3, ripple: 3, tsunami: 3, cyclone: 3, spectre: 4, meltdown: 4, foreshadow: 4 }[k] * 32;
+    return [k, PLANT_TURNS[k] ? top(`plant-${k}`, size) : flat(`plant-${k}`, size)];
+  }),
+) as Record<PlantKind, UVRect>;
+/** the heartwood, Botanica's core, at the nucleus's 160 */
+export const UV_HEARTWOOD = flat("heartwood", 160);
 /**
  * The blocks that never turn keep the heading they were drawn at: the
  * shield tower (the Shield Towers mutator, Mindustry's force projector,
@@ -2402,7 +2416,7 @@ export async function turretIcon(url: string): Promise<string> {
  * inspector and the progress screen show the head the board builds.
  */
 export async function towerIcon(kind: TowerKind): Promise<string> {
-  const head = FOUNDRY_ART ? turretHead(kind) : null;
+  const head = activeFaction() === "botanica" ? plantArt(kind) : FOUNDRY_ART ? turretHead(kind) : null;
   if (head) return antialiased(outlined(toCanvas(head), BLOCK_OUTLINE, BLOCK_OUTLINE_R)).toDataURL();
   return turretIcon(TOWER_ICONS[kind]);
 }
@@ -3127,6 +3141,11 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
     const head = FOUNDRY_ART ? turretHead(kind) : null;
     return head ? outlinedBlock(toCanvas(head)) : stock();
   };
+  for (const k of PLANT_KINDS) {
+    const plant = plantArt(k);
+    if (plant) draw(UV_PLANTS[k], outlinedBlock(toCanvas(plant)));
+  }
+  draw(UV_HEARTWOOD, antialiased(toCanvas(drawHeartwood())));
   draw(UV_TOWER_BASE, plateArt(img.towerBase));
   draw(UV_TOWER_BASE1, plateArt(img.towerBase1));
   draw(UV_TOWER_BASE3, plateArt(img.towerBase3));

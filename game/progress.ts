@@ -2,6 +2,7 @@ import { cleanFamilies, WORLD, WORLDS, type FamilyKey } from "./levels";
 import { cleanMutations, type MutationId } from "./mutation";
 import { tierXpBonus, TOP_TIER } from "./ladder";
 import { ADMIN_ENABLED } from "./env";
+import { FACTION_DEFAULT, isFaction, type Faction } from "./faction";
 import { levelForXp, missionXp } from "./economy";
 import { MAX_LEVEL, techStateFor, worldUnlockLevel } from "./track";
 import { type TechState } from "./tech";
@@ -169,6 +170,8 @@ export interface Progress {
   effects?: boolean;
   /** the in-game HUD's size, as the --ui-scale multiplier — one of UI_SCALES */
   uiScale?: number;
+  /** which set of buildings the roster wears (faction.ts). Absent means FACTION_DEFAULT */
+  faction?: Faction;
   /**
    * HOW FAST THE CAMERA PANS — one of PAN_SPEEDS, a multiplier on the
    * rate the keys and the screen's edges move the view at (Game.setPanSpeed).
@@ -320,6 +323,7 @@ export function loadProgress(): Progress {
       // absent means ON — only an explicit false switches them off
       effects: p.effects !== false,
       uiScale: readUiScale(p),
+      faction: isFaction(p.faction) ? p.faction : undefined,
       panSpeed: readPanSpeed(p),
       // absent means ON — only an explicit false switches it off
       allyBars: readBars(p.allyBars),
@@ -422,6 +426,12 @@ export function saveEffects(on: boolean): void {
   const p = loadProgress();
   if ((p.effects ?? true) === on) return;
   saveProgress({ ...p, effects: on });
+}
+
+export function saveFaction(f: Faction): void {
+  const p = loadProgress();
+  if ((p.faction ?? FACTION_DEFAULT) === f) return;
+  saveProgress({ ...p, faction: f });
 }
 
 export function saveUiScale(scale: number): void {

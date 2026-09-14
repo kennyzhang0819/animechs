@@ -5,11 +5,13 @@ export { TOWER_ICONS } from "@/game/towerIcons";
 import { useEffect, useState } from "react";
 
 import { towerIcon } from "@/game/atlas";
+import { activeFaction } from "@/game/faction";
 import { TOWER_ICONS as ICON_PATHS } from "@/game/towerIcons";
 import type { TowerKind } from "@/game/types";
 
-const CACHE = new Map<TowerKind, string>();
-const CARVING = new Map<TowerKind, Promise<void>>();
+const CACHE = new Map<string, string>();
+const CARVING = new Map<string, Promise<void>>();
+const keyOf = (kind: TowerKind) => `${activeFaction()}:${kind}`;
 
 /**
  * THE PICTURE OF ONE TURRET KIND, for a panel that is not handed the
@@ -19,25 +21,26 @@ const CARVING = new Map<TowerKind, Promise<void>>();
  * fallback the card and the inspector use.
  */
 export function useTowerIcon(kind: TowerKind): string {
-  const [url, setUrl] = useState<string>(() => CACHE.get(kind) ?? ICON_PATHS[kind]);
+  const [url, setUrl] = useState<string>(() => CACHE.get(keyOf(kind)) ?? ICON_PATHS[kind]);
   useEffect(() => {
-    const have = CACHE.get(kind);
+    const key = keyOf(kind);
+    const have = CACHE.get(key);
     setUrl(have ?? ICON_PATHS[kind]);
     if (have) return;
-    let job = CARVING.get(kind);
+    let job = CARVING.get(key);
     if (!job) {
       job = towerIcon(kind)
         .then((u) => {
-          CACHE.set(kind, u);
+          CACHE.set(key, u);
         })
         .catch(() => {
           // the path fallback covers it
         });
-      CARVING.set(kind, job);
+      CARVING.set(key, job);
     }
     let alive = true;
     void job.then(() => {
-      if (alive) setUrl(CACHE.get(kind) ?? ICON_PATHS[kind]);
+      if (alive) setUrl(CACHE.get(key) ?? ICON_PATHS[kind]);
     });
     return () => {
       alive = false;

@@ -26,6 +26,7 @@ import {
   type WeightDial,
 } from "@/game/rarity";
 import { TOWERS } from "@/game/constants";
+import { structName } from "@/game/faction";
 import { FIELDED_KINDS, isRetired } from "@/game/types";
 import { Knob } from "./Knob";
 
@@ -187,7 +188,7 @@ export default function RaritiesView() {
         contents={(r) =>
           turretsOfRarity(r)
             .filter((k) => FIELDED_KINDS.includes(k) && !isRetired(k))
-            .map((k) => TOWERS[k].name)
+            .map((k) => structName(k))
             .join(", ") || "nothing in this band"
         }
         onChange={touched}

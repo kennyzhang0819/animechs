@@ -182,6 +182,13 @@ stale tab or a cached bundle looks exactly like a fix not working.
   drawings. The direction, the drawing rules and the alternate
   silhouettes are in [docs/turret-factions.md](docs/turret-factions.md);
   `npm run gen:turrets` renders the sheets into `docs/turret-concepts/`
+- `game/botanicaArt.ts` — the second faction, BOTANICA: every kind as a
+  plant with no plate under it, packed beside the Foundry heads and
+  picked live on the Settings screen (`game/faction.ts`, a saved
+  preference). A faction is a skin over the one roster, so every plant
+  keeps its kind's stats. The roster and the wiring are in
+  [docs/botanica.md](docs/botanica.md); `npm run gen:botanica` renders
+  the set into `docs/botanica/`
 - `game/renderer.ts` — WebGL2 instanced sprites: static terrain, shadow
   and wall batches, one dynamic batch in painter's order, and a shield
   pass. Water is a batch and a program of its own — Mindustry's

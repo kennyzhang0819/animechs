@@ -1,4 +1,5 @@
 import { targetingLine, TOWER_DESC, TOWERS } from "./constants";
+import { structName } from "./faction";
 import { WORLDS } from "./levels";
 import { MODS, modDef, modName, oddsLine, type ModId } from "./mods";
 import { RELICS, relicDef, RELIC_NOTE, type RelicId } from "./relics";
@@ -605,12 +606,12 @@ export function nextRewardLevel(level: number): number | null {
 export function rewardText(r: Reward): string {
   if (r.kind === "world") return `Map: ${WORLDS.find((w) => w.id === r.worldId)?.name ?? "Unknown"}`;
   if (r.kind === "speed") return `${r.mult}x speed`;
-  if (r.kind === "turret") return `Turret: ${TOWER_NAME[r.id]}`;
+  if (r.kind === "turret") return `Turret: ${structName(r.id)}`;
   if (r.kind === "mod") return `Mod: ${modName(modDef(r.id))}`;
   if (r.kind === "relic") return `Relic: ${relicDef(r.id).name}`;
   if (r.kind === "mutator") return `Mutator: ${mutationById(r.id)?.name ?? r.id}`;
   const u = upgradeDef(r.id);
-  return `${TOWER_NAME[u.turret]}: ${u.name}`;
+  return `${structName(u.turret)}: ${u.name}`;
 }
 
 /** ...and what it does, for the hover card */

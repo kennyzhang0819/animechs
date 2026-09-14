@@ -1,19 +1,70 @@
 {
- "sapling": 1,
- "thornbush": 1,
- "puffcap": 1,
- "dewvine": 2,
- "sunflower": 2,
- "pitcher": 2,
- "willow": 3,
- "cannonfig": 2,
- "oak": 3,
- "snapdragon": 2,
- "fireflyreed": 1,
- "kudzu": 3,
- "bombardier": 3,
- "corpseflower": 3,
- "worldash": 4,
- "venuscolossus": 4,
- "solarbloom": 4
+ "duo": {
+  "size": 1,
+  "name": "Sapling"
+ },
+ "hail": {
+  "size": 1,
+  "name": "Pitcher"
+ },
+ "scorch": {
+  "size": 1,
+  "name": "Thornbush"
+ },
+ "arc": {
+  "size": 1,
+  "name": "Firefly Reed"
+ },
+ "salvo": {
+  "size": 2,
+  "name": "Cannon Fig"
+ },
+ "scatter": {
+  "size": 2,
+  "name": "Puffcap"
+ },
+ "lancer": {
+  "size": 2,
+  "name": "Sunflower"
+ },
+ "wave": {
+  "size": 2,
+  "name": "Dewvine"
+ },
+ "parallax": {
+  "size": 2,
+  "name": "Snapdragon"
+ },
+ "swarmer": {
+  "size": 2,
+  "name": "Bombardier"
+ },
+ "fuse": {
+  "size": 3,
+  "name": "Corpse Flower"
+ },
+ "ripple": {
+  "size": 3,
+  "name": "Oak"
+ },
+ "tsunami": {
+  "size": 3,
+  "name": "Willow"
+ },
+ "cyclone": {
+  "size": 3,
+  "name": "Kudzu"
+ },
+ "spectre": {
+  "size": 4,
+  "name": "World Ash"
+ },
+ "meltdown": {
+  "size": 4,
+  "name": "Solar Bloom"
+ },
+ "foreshadow": {
+  "size": 4,
+  "name": "Venus Colossus"
+ }
 }

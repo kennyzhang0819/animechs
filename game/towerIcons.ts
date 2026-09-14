@@ -1,4 +1,6 @@
 import { toCanvas } from "./animalArt";
+import { plantArt } from "./botanicaArt";
+import { activeFaction } from "./faction";
 import { turretHead } from "./turretArt";
 import { FOUNDRY_ART } from "./turretFlag";
 import type { TowerKind } from "./types";
@@ -53,7 +55,7 @@ const TOWER_BASES: readonly string[] = [
 export const towerBaseIcon = (size: number): string =>
   TOWER_BASES[Math.min(TOWER_BASES.length, Math.max(1, Math.floor(size))) - 1];
 
-const GHOST_HEADS = new Map<TowerKind, string>();
+const GHOST_HEADS = new Map<string, string>();
 /**
  * THE GHOST'S HEAD for one kind: the Foundry drawing (turretArt.ts) as
  * a data URL, raw and unoutlined like the stock file the ghost used to
@@ -63,12 +65,14 @@ const GHOST_HEADS = new Map<TowerKind, string>();
  * only ever draws on the client.
  */
 export function towerGhostIcon(kind: TowerKind): string {
-  if (!FOUNDRY_ART || typeof document === "undefined") return TOWER_ICONS[kind];
-  let url = GHOST_HEADS.get(kind);
+  if (typeof document === "undefined") return TOWER_ICONS[kind];
+  const faction = activeFaction();
+  const key = `${faction}:${kind}`;
+  let url = GHOST_HEADS.get(key);
   if (!url) {
-    const head = turretHead(kind);
+    const head = faction === "botanica" ? plantArt(kind) : FOUNDRY_ART ? turretHead(kind) : null;
     url = head ? toCanvas(head).toDataURL() : TOWER_ICONS[kind];
-    GHOST_HEADS.set(kind, url);
+    GHOST_HEADS.set(key, url);
   }
   return url;
 }

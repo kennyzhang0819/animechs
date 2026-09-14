@@ -1,4 +1,5 @@
 import { PAL, TOWERS, type TowerStats } from "./constants";
+import { structName } from "./faction";
 import { RARITIES, weightDial, type Rarity, type RarityWeights, type WeightDial } from "./rarity";
 import type { TowerKind } from "./types";
 import { armored, faster, piercing, reaching, stronger } from "./upgrades";
@@ -897,7 +898,7 @@ export function oddsLine(d: ModDef): string {
   // player is reading mid-wave should be the shortest true ones, and
   // WHAT is rolled against only has to be said where it is not a turret
   if (d.solo) return `${pct}% chance to roll, per card`;
-  if (d.only) return `${pct}% chance to roll, per ${TOWERS[d.only].name.toLowerCase()}`;
+  if (d.only) return `${pct}% chance to roll, per ${structName(d.only).toLowerCase()}`;
   return `${pct}% chance to roll`;
 }
 

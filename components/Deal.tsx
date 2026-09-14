@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode, type RefObject } from "react";
 
 import { TOWER_DESC, TOWERS } from "@/game/constants";
+import { structName } from "@/game/faction";
 import {
   fleetFootprint,
   formationCount,
@@ -335,6 +336,7 @@ function TurretCard({
   const tip = useHoverCard("up");
   const r = rarityDef(card.kind);
   const stats = TOWERS[card.kind];
+  const name = structName(card.kind);
   const f = formationDef(card.form);
   const fr = RARITY[formationRarity(card.form)];
   const n = formationCount(card.form, card.n);
@@ -346,7 +348,7 @@ function TurretCard({
       {...tip.anchorProps}
       onClick={onToggle}
       aria-pressed={aimed}
-      aria-label={`${n} ${stats.name}, ${r.name}, in ${shape}, ${fr.name} shape. ${
+      aria-label={`${n} ${name}, ${r.name}, in ${shape}, ${fr.name} shape. ${
         aimed
           ? `Aimed, turned ${facing * 90} degrees — R turns it, click the board to place it.`
           : "Click to pick it up."
@@ -360,12 +362,12 @@ function TurretCard({
       {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
       <img src={icon} alt="" className="mt-1.5 h-8 w-8 [image-rendering:pixelated]" />
       <span className="max-w-full px-0.5 text-center font-display text-[8px] font-bold uppercase leading-[1.15]">
-        {n}× {stats.name}
+        {n}× {name}
       </span>
       <span className="max-w-full truncate px-0.5 font-display text-[7px] font-bold uppercase leading-none opacity-70">
         {shape}
       </span>
-      <HoverCard tip={tip} title={`${n}× ${stats.name}`} tag={r.name} color={r.color} align="right">
+      <HoverCard tip={tip} title={`${n}× ${name}`} tag={r.name} color={r.color} align="right">
         {TOWER_DESC[card.kind]}
         <span className="mt-1.5 block font-bold" style={{ color: fr.color }}>
           {shape} — {n} turrets, {sw}×{sh} tiles, {fr.name} shape

@@ -72,6 +72,7 @@ import {
   loadProgress,
   resetProgress,
   saveEffects,
+  saveFaction,
   saveUiScale,
   savePanSpeed,
   saveAllyBars,
@@ -98,6 +99,7 @@ import {
   type RunReward,
 } from "@/game/progress";
 import { atlasReady, buildAtlas, towerIcon } from "@/game/atlas";
+import { FACTION_DEFAULT, FACTIONS, setActiveFaction, structName, type Faction } from "@/game/faction";
 import {
   cleanMutations,
   mutationById,
@@ -1250,9 +1252,18 @@ function DealRuleCell({ def }: { def: MutationDef }) {
 const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }> =
   TOWER_KINDS.map((kind) => ({
     kind,
-    name: TOWERS[kind].name,
+    // read live, because the faction (faction.ts) renames every kind
+    get name() {
+      return structName(kind);
+    },
     icon: TOWER_ICONS[kind],
   }));
+
+/** every kind's picture under the faction the board is wearing (atlas.ts towerIcon) */
+const carveTowerIcons = (): Promise<(readonly [TowerKind, string])[]> =>
+  Promise.all(TOWER_MENU.map(async (t) => [t.kind, await towerIcon(t.kind)] as const)).catch(
+    () => [] as (readonly [TowerKind, string])[],
+  );
 
 /** menu entry by kind, for rendering the bar from a list of kinds */
 const MENU_BY_KIND = new Map(TOWER_MENU.map((t) => [t.kind, t]));
@@ -1814,6 +1825,8 @@ export default function Animechs() {
    * first tab the way every other screen opens at its top.
    */
   const [uiScale, setUiScale] = useState(UI_SCALE_DEFAULT);
+  /** which set of buildings the roster wears — a saved preference (Progress.faction), live */
+  const [faction, setFaction] = useState<Faction>(FACTION_DEFAULT);
   /**
    * WHO WEARS A HEALTH BAR on the field, one knob a side (Progress.allyBars,
    * Progress.enemyBars). Saved preferences like `uiScale`, and live: both
@@ -1941,6 +1954,8 @@ export default function Animechs() {
     setMutators(p.mutators ?? []);
     setEffects(p.effects ?? true);
     setUiScale(p.uiScale ?? UI_SCALE_DEFAULT);
+    setFaction(p.faction ?? FACTION_DEFAULT);
+    setActiveFaction(p.faction ?? FACTION_DEFAULT);
     setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
     setAllyBars(p.allyBars ?? HEALTH_BARS_DEFAULT);
     setEnemyBars(p.enemyBars ?? HEALTH_BARS_DEFAULT);
@@ -2047,9 +2062,7 @@ export default function Animechs() {
       // screenful of them popping in after the menu is up is exactly the
       // half-built front of house this screen exists to hide
       const [entries] = await Promise.all([
-        Promise.all(
-          TOWER_MENU.map(async (t) => [t.kind, await towerIcon(t.kind)] as const),
-        ).catch(() => [] as (readonly [TowerKind, string])[]),
+        carveTowerIcons(),
         // the deal stack's family pictures, carved off the same sheet
         buildFamilyIcons(),
       ]);
@@ -2587,6 +2600,22 @@ export default function Animechs() {
 
         {tab === "interface" && (
           <SettingsBox>
+            {/* WHICH SET OF BUILDINGS THE ROSTER WEARS (faction.ts): a skin
+                over the one roster, so every kind keeps its stats and the
+                board, the bar, the card and the ghost change their pictures
+                and their names the moment it is picked */}
+            <ChoiceRow
+              label="Turret faction"
+              choices={FACTIONS}
+              value={faction}
+              onPick={(f) => {
+                setFaction(f);
+                saveFaction(f); // remembered across sessions
+                setActiveFaction(f);
+                gameRef.current?.setFaction(f); // live: the ghosts recompose
+                void carveTowerIcons().then((entries) => setIcons(Object.fromEntries(entries)));
+              }}
+            />
             <StepSlider
               label="UI size"
               steps={UI_SCALES}
