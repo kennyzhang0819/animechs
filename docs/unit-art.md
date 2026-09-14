@@ -71,6 +71,17 @@ the other way round.
   Mindustry rules from `game/pixelArt.ts`: four or five butted colours,
   no dark contour, no bevel. The atlas adds the rim itself (`outlined()`,
   `silhouetted()`), so a drawing that bakes one in gets two.
+- **From above, the animal's own body hides things — draw that.** A top
+  view is not a side view with the legs removed: what is under the
+  silhouette is not on it. The Tusker's tusks grow out of the upper jaw,
+  which from overhead is behind the skull, so they are laid down BEFORE
+  the body and the head covers their roots; what stands out of the front
+  is the part that really projects past the brow. Drawn last they put a
+  full-length ivory bar over the top of the head, which is the one thing
+  an elephant seen from above never shows. The trunk is the opposite case
+  and is drawn last, because it genuinely does lie over the skull. Order
+  the parts by what is over what in the real animal, not by what you want
+  to be visible.
 - **Plating runs down the body, not across.** A horizontal cut on a
   symmetrical body is a face, and the eye finds it instantly. Segment
   along the spine; put the horizontal breaks only where the animal really

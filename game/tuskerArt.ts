@@ -116,13 +116,37 @@ function body(P: Pen, T: IronTier): void {
   // and at 176, instead of as a two-pixel sliver on one and a gap on the
   // other.
   const B = 5 * U;
+  // THE TUSKS GO DOWN FIRST, AND THAT IS ANATOMY AND NOT Z-ORDER. A tusk
+  // grows out of the upper jaw, which from directly overhead is under the
+  // skull: what you can actually see of one is the part that projects
+  // PAST the brow, and the root is behind bone. Drawn last they lay a
+  // full-length ivory bar over the top of the head, which is the one
+  // thing an elephant seen from above never shows. So they are laid down
+  // before the body and the head covers them, and what is left standing
+  // out of the front is the tip.
+  //
+  // Two blocks, because a tusk both TAPERS and CURVES OUT: a 2U root
+  // running back under the skull, and a U tip carrying on forward off its
+  // OUTER half — which is a splay and a taper in the only way a pixel
+  // draws either. What the brow leaves standing is most of the root and
+  // all of the tip, so a bull still shows a long pair of prongs; what it
+  // covers is the part that is really behind bone.
+  //
+  // They are the family's weapon (weapons.ts, fx "melee"): this line
+  // carries no gun, so what it points at you is what it hits you with,
+  // the rhino's horn rule on a bigger animal. A band of iron across the
+  // root from T3, forward of the brow where it can be seen.
+  const tuskL = q(t >= 4 ? 15 : 14);
+  P.box(c - 4 * U, q(3), c - 2 * U, tuskL, IVORY);
+  P.box(c - 4 * U, 0, c - 3 * U, q(4), IVORY);
+  if (t >= 3) P.box(c - 4 * U, q(5), c - 2 * U, q(5) + U, IRON);
   // the body: ONE broad plate from the brow to the tail, pinched at the
   // shoulders by the ears rather than by a cut, with the hip fold across
   // it in the reversed pair. A single mass is what an elephant is from
   // above — there is no neck to draw and no waist — and the brow sits a
   // quarter of the way down the grid, because everything in front of it
   // is trunk and tusk
-  P.octa(c - B, q(8), c + B, q(21), w(3), TUSK_HIDE);
+  P.octa(c - B, q(9), c + B, q(21), w(3), TUSK_HIDE);
   P.octa(c - B, q(15), c + B, n - q(1), w(3), TUSK_HIDE);
   P.box(c - B + U, q(25), c + B - U, q(25) + w(3), HIDE_R);
   // THE EARS: one flared plate each side, in the reversed pair so it
@@ -154,26 +178,18 @@ function body(P: Pen, T: IronTier): void {
     P.box(x - U, n - q(7), x + U, n - q(7) + U, BORE);
     P.box(x - U, n - q(3), x + U, n - q(3) + U, IVORY);
   }
-  // THE THREE PRONGS, and they are the whole of what this animal is from
-  // above: a trunk down the middle with a tusk either side of it, all
-  // three standing clear of the brow with daylight between them. It is
-  // what survives at field zoom when the ears and the howdah are four
-  // grey pixels — a big body with three things sticking out of the front
-  // of it, the middle one long and the outer two ivory.
+  // THE TRUNK, last of everything, because it is the one part of an
+  // elephant that really does lie over the top of the head from above.
+  // 2U wide, out to the grid's front edge and back under the brow to the
+  // shoulders — the longest thing on the animal — and drawn in the
+  // REVERSED pair root to tip so it is lit against the body behind it and
+  // reads as its own limb rather than as a notch in the skull.
   //
-  // The trunk is 2U wide, reaches the grid's front edge and runs back
-  // under the brow to the shoulders. It is drawn in the REVERSED pair
-  // root to tip, so it is lit against the body behind it and reads as its
-  // own limb rather than as a notch in the skull
+  // With the tusk tips either side of it that makes THREE PRONGS off the
+  // front, and they are what survives at field zoom once the ears and the
+  // howdah are four grey pixels: a big body with three things standing
+  // out of it, the middle one long and the outer two ivory
   P.box(c - U, 0, c + U, q(19), HIDE_R);
-  // the tusks: ivory, a unit wide, a unit of daylight either side of the
-  // trunk, and they ARE the weapon — this family has no gun (weapons.ts,
-  // fx "melee"), so what it points at you is what it hits you with. A
-  // collar of gunmetal across each from T3, and they lengthen up the
-  // ladder
-  const tuskL = q(t >= 4 ? 15 : t >= 3 ? 14 : 13);
-  P.box(c - 3 * U, q(2), c - 2 * U, tuskL, IVORY);
-  if (t >= 3) P.box(c - 3 * U, q(10), c - 2 * U, q(10) + U, IRON);
 }
 
 /** the plate the mech rig's pads mount to, under the body */
