@@ -144,8 +144,14 @@ const INK = {
   taintedDeep: "#173840",
   taintedShallow: "#245459",
 } as const;
-/** the carved band along a rock's edge, in logical px of the 16 a tile has */
-export const LINOCUT_BAND = 6;
+/**
+ * HOW OFTEN A FLOOR CARRIES A MARK, under the ink. A land family paints
+ * three variants (atlas.ts FLOOR_GROUPS) and only variant 0 gets a tick,
+ * so two cells in three are plain ground — a mark on two of three read
+ * as a texture over the whole board rather than something on the ground
+ * here and there.
+ */
+const LINOCUT_MARK_EVERY = 3;
 /** how far the shaded band goes toward black, and the lit band toward the ink's highlight */
 const LINOCUT_SHADE = { dark: 0.55, light: 1 } as const;
 
@@ -230,16 +236,19 @@ export function paintFloor(kind: FloorKind, variant: number): Uint8ClampedArray<
   // from above
   if (LINOCUT_TERRAIN) {
     // under the ink the one mark is a carved tick: a short diagonal
-    // stroke two px wide, either way, a shade up or (mostly) down
-    if (variant % FLOOR_VARIANTS === 0) {
-      const len = 4 + Math.floor(rng() * 3), flip = rng() < 0.5 ? 1 : -1;
+    // stroke ONE px wide, either way, a shade up or (mostly) down, and
+    // eased most of the way back to the ground — at full strength and two
+    // px wide it was a scratch on every third cell, which from the air
+    // read as a texture over the whole board rather than as ground
+    if (variant % LINOCUT_MARK_EVERY === 0) {
+      const len = 3 + Math.floor(rng() * 2), flip = rng() < 0.5 ? 1 : -1;
       const x0 = RIM + 1 + Math.floor(rng() * (N - RIM * 2 - 2 - len));
       const y0 = RIM + 1 + (flip < 0 ? len : 0) + Math.floor(rng() * (N - RIM * 2 - 2 - len));
-      const c = rng() < 0.35 ? st.light : dark;
+      const c = mix(rng() < 0.35 ? st.light : dark, st.base, 0.45);
       for (let y = 0; y < N; y++)
         for (let x = 0; x < N; x++) {
           const u = x - x0 + flip * (y - y0), v = x - x0 - flip * (y - y0);
-          if (u >= 0 && u < len * 2 && Math.abs(v) < 1.6) put(x, y, c);
+          if (u >= 0 && u < len * 2 && Math.abs(v) < 1.1) put(x, y, c);
         }
     }
   } else if (variant % FLOOR_VARIANTS === 0)
@@ -356,9 +365,10 @@ const STOCK_WALL_STYLE: Readonly<Record<WallKind, WallStyle>> = {
 };
 
 /** a rock family under the ink: the face burnt umber over the family's
- *  own hue, the lit corner's tone the pale band's, the shaded corner's
- *  the dark band's (paintWall draws the bands' colours nowhere — the
- *  renderer lays them along the hill's edges, see wallBandTones) */
+ *  own hue, its light and dark a step further apart than the stock rock's.
+ *  The hill's edges carry no band of their own — the carved bands the
+ *  concepts drew along every rock/ground border are gone; what shades a
+ *  hill now is the game's own darkness and its shadow */
 const linocutWall = (s: WallStyle): WallStyle => {
   const face = mix(shd(s.face, 0.18), INK.umber, 0.45);
   return {
@@ -373,12 +383,6 @@ export const WALL_STYLE: Readonly<Record<WallKind, WallStyle>> = LINOCUT_TERRAIN
   : STOCK_WALL_STYLE;
 export const WALL_KINDS = Object.keys(WALL_STYLE) as WallKind[];
 
-/** the carved bands' colours for a rock family, as the renderer tints
- *  them: 0..1 RGB, the pale band and the dark one */
-export const wallBandTones = (kind: WallKind): { light: [number, number, number]; dark: [number, number, number] } => {
-  const f = (c: string): [number, number, number] => { const [r, g, b] = hex(c); return [r / 255, g / 255, b / 255]; };
-  return { light: f(WALL_STYLE[kind].light), dark: f(WALL_STYLE[kind].dark) };
-};
 export const WALL_VARIANTS = 2;
 
 /**
@@ -482,36 +486,48 @@ function toRgba(grid: readonly string[], N: number, P: number): Uint8ClampedArra
 
 /* ======================================================================
  * THE WATER UNDER THE INK. Mindustry's water is a 32px tile the swell
- * shader displaces; under the ink the tile is two flat teals with a
- * crest or two cut into it — a short white line with a tick at its end —
- * and the shader moves those the way it moved the ripples. Only drawn
- * while LINOCUT_TERRAIN is on; off, the stock files are the water.
+ * shader displaces; under the ink the tile is one flat teal with, on one
+ * variant in three, a single wave cut into it — a short line a few shades
+ * up from the water with a tick at its end — and the shader moves that
+ * the way it moved the ripples. Only drawn while LINOCUT_TERRAIN is on;
+ * off, the stock files are the water.
+ *
+ * THE VARIANT IS WHY A SEA IS NOT A GRID. One tile is repeated over every
+ * water cell, so a wave in it is a wave every 32px in both directions.
+ * Variant 1 alone carries the wave and the renderer picks a variant per
+ * cell, which puts a wave on a third of them, in a different place on
+ * each kind.
  * ====================================================================== */
 export type WaterKind = "shallowWater" | "deepWater" | "taintedWater" | "deepTaintedWater";
-export function paintWater(kind: WaterKind): Uint8ClampedArray<ArrayBuffer> {
+/** how many painted cells a water kind has, and which of them has the wave */
+export const WATER_VARIANTS = 3;
+const WATER_WAVE_VARIANT = 1;
+export function paintWater(kind: WaterKind, variant = WATER_WAVE_VARIANT): Uint8ClampedArray<ArrayBuffer> {
   const N = TILE_LOGICAL;
   const deep = kind === "deepWater" || kind === "deepTaintedWater";
   const tainted = kind === "taintedWater" || kind === "deepTaintedWater";
   const base = tainted ? (deep ? INK.taintedDeep : INK.taintedShallow) : deep ? INK.deep : INK.shallow;
-  const crest = tainted ? mix(INK.crest, base, 0.3) : INK.crest;
+  // the wave is the water a few shades up, not a white line: at full
+  // strength every one of them read as surf
+  const crest = mix(INK.crest, base, tainted ? 0.82 : 0.72);
   const rng = mulberry32(9000 + (deep ? 17 : 0) + (tainted ? 131 : 0));
   const grid = new Array<string>(N * N).fill(base);
-  // two 16x8 blocks a tile, a crest in each with its own chance
-  for (let by = 0; by < 2; by++) {
-    if (rng() >= (deep ? 0.6 : 0.4)) continue;
-    const x0 = 2 + Math.floor(rng() * 4), y = by * 8 + 3 + Math.floor(rng() * 2);
-    for (let x = x0; x < x0 + 8; x++) grid[y * N + x] = crest;
-    grid[(y - 1) * N + x0 + 7] = crest;
+  if (variant % WATER_VARIANTS === WATER_WAVE_VARIANT) {
+    // one wave a tile: a 7px line somewhere in the middle band, with a
+    // two-px tick lifting off its trailing end
+    const x0 = 2 + Math.floor(rng() * 5), y = 4 + Math.floor(rng() * 8);
+    for (let x = x0; x < x0 + 7; x++) grid[y * N + x] = crest;
     grid[(y - 1) * N + x0 + 6] = crest;
+    grid[(y - 1) * N + x0 + 5] = crest;
   }
   return toRgba(grid, N, TILE_PX);
 }
-export function waterCanvas(kind: WaterKind): HTMLCanvasElement {
+export function waterCanvas(kind: WaterKind, variant = WATER_WAVE_VARIANT): HTMLCanvasElement {
   const c = document.createElement("canvas");
   c.width = c.height = TILE_PX;
   const g = c.getContext("2d");
   if (!g) throw new Error("2d context unavailable for water tile");
-  g.putImageData(new ImageData(paintWater(kind), TILE_PX, TILE_PX), 0, 0);
+  g.putImageData(new ImageData(paintWater(kind, variant), TILE_PX, TILE_PX), 0, 0);
   return c;
 }
 

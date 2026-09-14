@@ -72,14 +72,16 @@ import {
  *     wide enough that a mip-3 texel at its edge reads only its own
  *     transparent margin (MIP_MARGIN), sized from the art it declares.
  *
- * The sheet is 2048x4096. A WebGL2 context only has to guarantee
+ * The sheet is 2560x4096. A WebGL2 context only has to guarantee
  * MAX_TEXTURE_SIZE 2048 and every device that runs the game clears 4096,
  * so 4096 is the longest side allowed. If the roster outgrows it, the
  * packer throws at import with the name of the cell that did not fit,
  * and the one thing to change is ATLAS_W: every UV is a fraction of the
- * sheet, so a wider sheet moves nothing anyone can see.
+ * sheet, so a wider sheet moves nothing anyone can see. It went from 2048
+ * to 2560 when each water kind grew from one painted block to three (see
+ * FLOOR_CELLS) and the boxer's cell no longer fit.
  */
-const ATLAS_W = 2048;
+const ATLAS_W = 2560;
 const ATLAS_H = 4096;
 const TAU = Math.PI * 2;
 
@@ -316,7 +318,13 @@ const FLOOR_GROUPS: readonly ({ kind: FloorKind; slots: number } | { water: Wate
 /** each group's painted cells: one per variant, or the one water block */
 const FLOOR_CELLS: readonly (readonly UVRect[])[] = FLOOR_GROUPS.map((g) =>
   "water" in g
-    ? [reserve(`floor-${g.water}`, WATER_TILE, WATER_TILE, { inset: 64, upright: true })]
+    ? // THREE WATER CELLS, not one. A water kind is one 32px tile repeated
+      // over every water cell on the board, so a wave painted into it is a
+      // wave on EVERY tile — a grid of them, which is what a sea does not
+      // look like. The three cells are the same water with the wave on one
+      // of them, and the renderer picks a cell per map cell (pushTerrain),
+      // so the waves land a third of the time and scattered
+      [0, 1, 2].map((v) => reserve(`floor-${g.water}-${v}`, WATER_TILE, WATER_TILE, { inset: 64, upright: true }))
     : Array.from({ length: g.slots }, (_, s) => tile(`floor-${g.kind}-${s}`, 64, FLOOR_INSET)),
 );
 /**
@@ -2842,7 +2850,10 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
     const cells = FLOOR_CELLS[i];
     // under the ink the water is painted too (tiles.ts paintWater); the
     // swell shader displaces the painted tile exactly as it did the file
-    if ("water" in g) draw(cells[0], waterBlock(LINOCUT_TERRAIN ? waterCanvas(g.water) : img[g.water]));
+    if ("water" in g)
+      cells.forEach((cell, v) =>
+        draw(cell, waterBlock(LINOCUT_TERRAIN ? waterCanvas(g.water, v) : img[g.water])),
+      );
     else cells.forEach((cell, slot) => draw(cell, antialiased(floor(g.kind, slot))));
   });
 
