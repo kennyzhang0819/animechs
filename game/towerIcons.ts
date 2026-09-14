@@ -1,3 +1,6 @@
+import { toCanvas } from "./animalArt";
+import { turretHead } from "./turretArt";
+import { FOUNDRY_ART } from "./turretFlag";
 import type { TowerKind } from "./types";
 
 const T = "/mindustry/sprites/blocks/turrets";
@@ -49,3 +52,23 @@ const TOWER_BASES: readonly string[] = [
  *  four that exist — exactly the renderer's own pick */
 export const towerBaseIcon = (size: number): string =>
   TOWER_BASES[Math.min(TOWER_BASES.length, Math.max(1, Math.floor(size))) - 1];
+
+const GHOST_HEADS = new Map<TowerKind, string>();
+/**
+ * THE GHOST'S HEAD for one kind: the Foundry drawing (turretArt.ts) as
+ * a data URL, raw and unoutlined like the stock file the ghost used to
+ * load, or that stock file's path where a kind has no drawing or the
+ * flag is off. Drawn once per kind and kept; needs a document, so on the
+ * server (a static export's prerender) it is the stock path — the ghost
+ * only ever draws on the client.
+ */
+export function towerGhostIcon(kind: TowerKind): string {
+  if (!FOUNDRY_ART || typeof document === "undefined") return TOWER_ICONS[kind];
+  let url = GHOST_HEADS.get(kind);
+  if (!url) {
+    const head = turretHead(kind);
+    url = head ? toCanvas(head).toDataURL() : TOWER_ICONS[kind];
+    GHOST_HEADS.set(kind, url);
+  }
+  return url;
+}

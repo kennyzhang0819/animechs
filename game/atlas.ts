@@ -10,6 +10,10 @@ import {
 } from "./tiles";
 import type { UnitKind } from "./levels";
 import { ANIMAL_ART } from "./animalFlag";
+import { FOUNDRY_ART } from "./turretFlag";
+import { BASE_DARK, turretHead } from "./turretArt";
+import { TOWER_ICONS } from "./towerIcons";
+import type { TowerKind } from "./types";
 import {
   EEL_TIERS,
   HART_TIERS,
@@ -2275,6 +2279,32 @@ function mendBlock(base: HTMLImageElement, top: HTMLImageElement): HTMLCanvasEle
  * mean color so edges feather instead of ringing dark. Validated pixel-exact
  * (within 1/255 rounding) against the game's own generated ironhide1 sprite.
  */
+/**
+ * THE SAME PICTURE, DARKER: every colour channel times `k`, the alpha
+ * untouched — how the stock base plates go under a Foundry head
+ * (turretArt.ts BASE_DARK). A multiply keeps the plate grey: it moves
+ * every shade down the same ramp rather than tinting it.
+ */
+function darkened(src: Src, k: number): HTMLCanvasElement {
+  const w = src instanceof HTMLImageElement ? src.naturalWidth : src.width;
+  const h = src instanceof HTMLImageElement ? src.naturalHeight : src.height;
+  const cv = document.createElement("canvas");
+  cv.width = w;
+  cv.height = h;
+  const cc = cv.getContext("2d");
+  if (!cc) throw new Error("2d context unavailable for darkening");
+  cc.drawImage(src, 0, 0);
+  const id = cc.getImageData(0, 0, w, h);
+  const d = id.data;
+  for (let i = 0; i < d.length; i += 4) {
+    d[i] = Math.round(d[i] * k);
+    d[i + 1] = Math.round(d[i + 1] * k);
+    d[i + 2] = Math.round(d[i + 2] * k);
+  }
+  cc.putImageData(id, 0, 0);
+  return cv;
+}
+
 function antialiased(src: HTMLImageElement | HTMLCanvasElement): HTMLCanvasElement {
   const w = src instanceof HTMLImageElement ? src.naturalWidth : src.width;
   const h = src instanceof HTMLImageElement ? src.naturalHeight : src.height;
@@ -2363,6 +2393,18 @@ export async function turretIcon(url: string): Promise<string> {
   img.src = url;
   await loaded;
   return antialiased(outlined(img, BLOCK_OUTLINE, BLOCK_OUTLINE_R)).toDataURL();
+}
+
+/**
+ * THE HUD'S PICTURE OF ONE TURRET KIND: the Foundry head (turretArt.ts)
+ * through the same outline + antialias pass the sheet gives it, or the
+ * stock sprite by the path turretIcon takes — so the bar, the card, the
+ * inspector and the progress screen show the head the board builds.
+ */
+export async function towerIcon(kind: TowerKind): Promise<string> {
+  const head = FOUNDRY_ART ? turretHead(kind) : null;
+  if (head) return antialiased(outlined(toCanvas(head), BLOCK_OUTLINE, BLOCK_OUTLINE_R)).toDataURL();
+  return turretIcon(TOWER_ICONS[kind]);
 }
 
 /**
@@ -2700,7 +2742,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   const draw = (uv: UVRect, src: Src, size?: readonly [number, number]): void => drawCell(c, uv, src, size);
   const outlinedUnit = (src: HTMLImageElement): HTMLCanvasElement =>
     antialiased(outlined(src, UNIT_OUTLINE, UNIT_OUTLINE_R));
-  const outlinedBlock = (src: HTMLImageElement): HTMLCanvasElement =>
+  const outlinedBlock = (src: Src): HTMLCanvasElement =>
     antialiased(outlined(src, BLOCK_OUTLINE, BLOCK_OUTLINE_R));
 
   /**
@@ -3075,30 +3117,41 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // turret tops: each preview or head outlined like every block, facing
   // +x, filling its cell (see the UV note on the tops); the bases at
   // their own size, as authored
-  draw(UV_TOWER_BASE, antialiased(img.towerBase));
-  draw(UV_TOWER_BASE1, antialiased(img.towerBase1));
-  draw(UV_TOWER_BASE3, antialiased(img.towerBase3));
-  draw(UV_TOWER_BASE4, antialiased(img.towerBase4));
-  draw(UV_TURRET, outlinedBlock(img.salvoPreview));
-  draw(UV_SCATTER, outlinedBlock(img.scatterPreview));
-  draw(UV_HAIL, outlinedBlock(img.hail));
-  draw(UV_FUSE, outlinedBlock(img.fuse));
-  draw(UV_SCORCH, outlinedBlock(img.scorch));
-  draw(UV_DUO, outlinedBlock(img.duoPreview));
-  draw(UV_ARC, outlinedBlock(img.arc));
-  draw(UV_LANCER, outlinedBlock(img.lancer));
-  draw(UV_PARALLAX, outlinedBlock(img.parallax));
-  draw(UV_RIPPLE, outlinedBlock(img.ripple));
-  draw(UV_SWARMER, outlinedBlock(img.swarmer));
+  // FOUNDRY (turretArt.ts, behind turretFlag.ts): every plate darkened
+  // and every head that has a drawing generated here and put through
+  // the same outline + antialias pass as the stock top it replaces; a
+  // kind without one (the menders) keeps its stock sprite
+  const plateArt = (src: HTMLImageElement): HTMLCanvasElement =>
+    FOUNDRY_ART ? antialiased(darkened(src, BASE_DARK)) : antialiased(src);
+  const headArt = (kind: TowerKind, stock: () => HTMLCanvasElement): HTMLCanvasElement => {
+    const head = FOUNDRY_ART ? turretHead(kind) : null;
+    return head ? outlinedBlock(toCanvas(head)) : stock();
+  };
+  draw(UV_TOWER_BASE, plateArt(img.towerBase));
+  draw(UV_TOWER_BASE1, plateArt(img.towerBase1));
+  draw(UV_TOWER_BASE3, plateArt(img.towerBase3));
+  draw(UV_TOWER_BASE4, plateArt(img.towerBase4));
+  draw(UV_TURRET, headArt("salvo", () => outlinedBlock(img.salvoPreview)));
+  draw(UV_SCATTER, headArt("scatter", () => outlinedBlock(img.scatterPreview)));
+  draw(UV_HAIL, headArt("hail", () => outlinedBlock(img.hail)));
+  draw(UV_FUSE, headArt("fuse", () => outlinedBlock(img.fuse)));
+  draw(UV_SCORCH, headArt("scorch", () => outlinedBlock(img.scorch)));
+  draw(UV_DUO, headArt("duo", () => outlinedBlock(img.duoPreview)));
+  draw(UV_ARC, headArt("arc", () => outlinedBlock(img.arc)));
+  draw(UV_LANCER, headArt("lancer", () => outlinedBlock(img.lancer)));
+  draw(UV_PARALLAX, headArt("parallax", () => outlinedBlock(img.parallax)));
+  draw(UV_RIPPLE, headArt("ripple", () => outlinedBlock(img.ripple)));
+  draw(UV_SWARMER, headArt("swarmer", () => outlinedBlock(img.swarmer)));
   // cyclone's own art is the bare head; its three barrels are separate
   // sprites the preview already has assembled underneath
-  draw(UV_CYCLONE, outlinedBlock(img.cyclonePreview));
-  draw(UV_SPECTRE, outlinedBlock(img.spectre));
-  draw(UV_MELTDOWN, outlinedBlock(img.meltdown));
-  draw(UV_FORESHADOW, outlinedBlock(img.foreshadow));
+  draw(UV_CYCLONE, headArt("cyclone", () => outlinedBlock(img.cyclonePreview)));
+  draw(UV_SPECTRE, headArt("spectre", () => outlinedBlock(img.spectre)));
+  draw(UV_MELTDOWN, headArt("meltdown", () => outlinedBlock(img.meltdown)));
+  draw(UV_FORESHADOW, headArt("foreshadow", () => outlinedBlock(img.foreshadow)));
   // the liquid turrets, composited flat (see liquidTurret)
-  draw(UV_WAVE, antialiased(liquidTurret(img.wave, img.waveLiquid, img.waveTop)));
-  draw(UV_TSUNAMI, antialiased(liquidTurret(img.tsunami, img.tsunamiLiquid, img.tsunamiTop)));
+  // (a Foundry tank carries its water window in the drawing)
+  draw(UV_WAVE, headArt("wave", () => antialiased(liquidTurret(img.wave, img.waveLiquid, img.waveTop))));
+  draw(UV_TSUNAMI, headArt("tsunami", () => antialiased(liquidTurret(img.tsunami, img.tsunamiLiquid, img.tsunamiTop))));
   // parallax's beam: the end glow and the line, each the full source
   // centred on the cell that hugs its opaque part (see the UV note), the
   // line turned so its length runs along the +x axis pushSeg stretches

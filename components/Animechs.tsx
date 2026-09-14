@@ -97,7 +97,7 @@ import {
   type Progress,
   type RunReward,
 } from "@/game/progress";
-import { atlasReady, buildAtlas, turretIcon } from "@/game/atlas";
+import { atlasReady, buildAtlas, towerIcon } from "@/game/atlas";
 import {
   cleanMutations,
   mutationById,
@@ -2048,7 +2048,7 @@ export default function Animechs() {
       // half-built front of house this screen exists to hide
       const [entries] = await Promise.all([
         Promise.all(
-          TOWER_MENU.map(async (t) => [t.kind, await turretIcon(t.icon)] as const),
+          TOWER_MENU.map(async (t) => [t.kind, await towerIcon(t.kind)] as const),
         ).catch(() => [] as (readonly [TowerKind, string])[]),
         // the deal stack's family pictures, carved off the same sheet
         buildFamilyIcons(),
