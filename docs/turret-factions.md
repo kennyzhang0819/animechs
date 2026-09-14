@@ -5,8 +5,9 @@ The seventeen turrets are Mindustry's, sprite for sprite
 swarm has already stopped being Mindustry's (`docs/unit-art.md`). Foundry
 is the first player faction: machine turrets, one metal, every kind its
 own shape, an accent per ammo. The concept heads are in
-`docs/turret-concepts/mill-<kind>.png`, drawn by
-`node scripts/turret-concepts.mjs`; nothing is wired into the game.
+`docs/turret-concepts/mill-<kind>.png`, seeded by
+`node scripts/turret-concepts.mjs` and edited by hand after; those PNGs
+are what the game ships ("How it ships", below).
 
 ## How a head is drawn, read off the stock art
 
@@ -141,23 +142,30 @@ draws at three, so a duo next to a dagger-sized body is small by design
 (`docs/unit-art.md`, "The size").
 ## How it ships
 
-`game/turretArt.ts` is the roster: the engine, the parts vocabulary and
-the seventeen heads, exactly the drawings on the sheet. While
-`FOUNDRY_ART` (`game/turretFlag.ts`) is on, `game/atlas.ts` generates
-every head at load and packs it over the stock turret cell through the
+THE PNGs ON THE SHEET ARE THE ART, not the code that seeded them.
+`game/turretArt.ts` drew them once and they have been edited by hand
+since, so `docs/turret-concepts/mill-<kind>.png` is the source of truth
+and the generator refuses to overwrite one without `FORCE=1`.
+`npm run sync:art` copies the sheet into `public/foundry/`, where the
+browser can fetch it, and runs before every dev server and every build;
+`game/foundryArt.ts` names the files. While `FOUNDRY_ART`
+(`game/turretFlag.ts`) is on, `game/atlas.ts` loads every head with the
+rest of the sprites and packs it over the stock turret cell through the
 same outline + antialias pass the stock top took (`headArt`), draws the
-four stock plates darkened by `BASE_DARK` (`plateArt`), and carves the
-HUD's turret pictures off the same drawings (`towerIcon`); the placement
-ghost composes its stamp from the raw head (`towerGhostIcon`) over the
-plate darkened the same way (`game.ts ghostArt`). A kind with no drawing
+four stock plates darkened by `BASE_DARK` (`plateArt`), and puts the
+HUD's turret pictures through the same pass (`towerIcon`); the placement
+ghost composes its stamp from the head's own file (`towerGhostIcon`)
+over the plate darkened the same way (`game.ts ghostArt`). A kind with no drawing
 (the retired menders) keeps its stock sprite. Nothing under
 `public/mindustry` is touched, and the flag off restores Mindustry's
 turrets byte for byte.
 
 `scripts/turret-concepts.mjs` imports the roster from the game module,
-so the sheet and the board are drawn from one place; `npm run
-gen:turrets` renders all eighteen into `docs/turret-concepts/` and
-reports any one-pixel stroke.
+so a re-render starts from the same parts the heads were built out of;
+`npm run gen:turrets` fills in any of the eighteen that is missing from
+`docs/turret-concepts/` and reports any one-pixel stroke, and
+`FORCE=1 npm run gen:turrets` redraws the lot — which throws away every
+hand edit, so it wants to be a deliberate act.
 
 A faction, when a second comes, is a skin over this one roster, never a
 second roster: the sim, the deal, mods and relics are keyed by

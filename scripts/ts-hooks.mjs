@@ -4,5 +4,6 @@
 // loader wants the `.ts` on them. This resolve hook adds it when a
 // relative specifier has no extension and the `.ts` file exists.
 import { register } from "node:module";
-import { pathToFileURL } from "node:url";
-register(pathToFileURL(new URL("./ts-resolve.mjs", import.meta.url).pathname));
+// the URL's own href, not pathToFileURL(pathname): on Windows that pathname
+// is "/C:/..." and pathToFileURL glues the drive on twice
+register(new URL("./ts-resolve.mjs", import.meta.url).href);

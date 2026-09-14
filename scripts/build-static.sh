@@ -51,6 +51,11 @@ fi
 find "$STAGE" -mindepth 1 -maxdepth 1 ! -name .next -exec rm -rf {} +
 find "$STAGE/.next" -mindepth 1 -maxdepth 1 ! -name cache -exec rm -rf {} +
 
+# The heads and the core are authored in docs/turret-concepts/ and served
+# from public/foundry/ (scripts/sync-foundry-art.mjs); sync before the
+# mirror so the bundle carries the sheet as it stands, not as it stood.
+node scripts/sync-foundry-art.mjs
+
 # The mirror: everything the build reads, nothing it generates. tar rather
 # than rsync because Git Bash ships the one and not the other.
 # .next-* GOES TOO, AND THAT ONE IS LOAD-BEARING. `npm run dev` builds

@@ -1,5 +1,4 @@
-import { toCanvas } from "./animalArt";
-import { turretHead } from "./turretArt";
+import { foundryBaseUrl, foundryHeadUrl } from "./foundryArt";
 import { FOUNDRY_ART } from "./turretFlag";
 import type { TowerKind } from "./types";
 
@@ -49,26 +48,22 @@ const TOWER_BASES: readonly string[] = [
 ];
 
 /** the plate for a footprint this many cells on a side, clamped to the
- *  four that exist — exactly the renderer's own pick */
+ *  four that exist — exactly the renderer's own pick. While the flag is on
+ *  it is the sheet's plate (foundryArt.ts), which comes darkened, so the
+ *  caller does not darken it again. */
 export const towerBaseIcon = (size: number): string =>
-  TOWER_BASES[Math.min(TOWER_BASES.length, Math.max(1, Math.floor(size))) - 1];
+  FOUNDRY_ART ?
+    foundryBaseUrl(size)
+  : TOWER_BASES[Math.min(TOWER_BASES.length, Math.max(1, Math.floor(size))) - 1];
 
-const GHOST_HEADS = new Map<string, string>();
 /**
- * THE GHOST'S HEAD for one kind: the Foundry drawing (turretArt.ts) as
- * a data URL, raw and unoutlined like the stock file the ghost used to
- * load, or that stock file's path where a kind has no drawing or the
- * flag is off. Drawn once per kind and kept; needs a document, so on the
- * server (a static export's prerender) it is the stock path — the ghost
- * only ever draws on the client.
+ * THE GHOST'S HEAD for one kind: the Foundry drawing's own file
+ * (foundryArt.ts), raw and unoutlined like the stock file the ghost
+ * loads, or that stock file where a kind has no drawing or the flag is
+ * off. A path either way, because the ghost loads it as an image
+ * (game.ts ghostSprite) — nothing here needs a document, so the server
+ * side of a static export gets the same answer the browser does.
  */
 export function towerGhostIcon(kind: TowerKind): string {
-  if (typeof document === "undefined") return TOWER_ICONS[kind];
-  let url = GHOST_HEADS.get(kind);
-  if (!url) {
-    const head = FOUNDRY_ART ? turretHead(kind) : null;
-    url = head ? toCanvas(head).toDataURL() : TOWER_ICONS[kind];
-    GHOST_HEADS.set(kind, url);
-  }
-  return url;
+  return (FOUNDRY_ART ? foundryHeadUrl(kind) : null) ?? TOWER_ICONS[kind];
 }

@@ -10,8 +10,6 @@ import {
 } from "./maps";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { towerBaseIcon, towerGhostIcon } from "./towerIcons";
-import { BASE_DARK } from "./turretArt";
-import { FOUNDRY_ART } from "./turretFlag";
 import {
   CELL,
   clamp,
@@ -3251,18 +3249,9 @@ export class Game {
     const g = cv.getContext("2d");
     if (!g) return null;
     g.imageSmoothingEnabled = false;
+    // the plate comes darkened while the flag is on (towerBaseIcon hands
+    // back the sheet's own), so there is nothing to multiply here
     g.drawImage(base, 0, 0, n, n);
-    if (FOUNDRY_ART) {
-      // the plate as dark as the sheet packs it (atlas.ts plateArt): a
-      // multiply by the same grey, then the plate's own alpha put back
-      const v = Math.round(255 * BASE_DARK);
-      g.globalCompositeOperation = "multiply";
-      g.fillStyle = `rgb(${v},${v},${v})`;
-      g.fillRect(0, 0, n, n);
-      g.globalCompositeOperation = "destination-in";
-      g.drawImage(base, 0, 0, n, n);
-      g.globalCompositeOperation = "source-over";
-    }
     // THE PLATE NEVER TURNS and the head always does (renderer.ts pushes
     // the base at rotation 0 and the top at the turret's angle)
     g.translate(n / 2, n / 2);

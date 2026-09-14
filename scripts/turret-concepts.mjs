@@ -3,7 +3,13 @@
 // docs/turret-concepts/, and every render checked for a lone pixel or a
 // one-pixel stroke — the two things the house rules forbid.
 //
-//   node --experimental-strip-types scripts/turret-concepts.mjs
+// IT IS NOT THE SOURCE OF TRUTH ANY MORE. The sheet it writes is edited by
+// hand afterwards and the game ships those PNGs (game/foundryArt.ts), so a
+// re-render throws every hand edit away. It refuses to overwrite a drawing
+// that is already there unless FORCE=1 says to.
+//
+//   npm run gen:turrets                       (skips what exists)
+//   FORCE=1 npm run gen:turrets               (re-renders from the code)
 //   ALL=1 ...   list every flagged pixel      DUMP=1 ...   print its neighbourhood
 //
 // The engine, the parts and the heads come from the game itself
@@ -11,7 +17,7 @@
 // The rules a head is drawn to are written at the top of that file and in
 // docs/turret-factions.md.
 import { deflateSync } from "node:zlib";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { ACCENT, BORE, GUN, GUN_R, HEADS, STEEL, barrel, bars, drawCore, drawHead, plate, rev, stud } from "../game/turretArt.ts";
 
 // ── PNG, by hand ───────────────────────────────────────────────────────
@@ -49,11 +55,16 @@ export const ROSTER = {
 // ── render, and refuse a hairline ──────────────────────────────────────
 const OUT = "docs/turret-concepts";
 mkdirSync(OUT, { recursive: true });
+const FORCE = !!process.env.FORCE;
+let kept = 0;
 let hairlines = 0; const dumped = {};
 const jobs = [];
 for (const kind of Object.keys(ROSTER)) jobs.push([kind, () => drawHead(kind, HEADS)]);
 jobs.push(["core", drawCore]);
 for (const [name, make] of jobs) {
+  const file = `${OUT}/mill-${name}.png`;
+  // the drawing on disk may be a hand edit; only FORCE=1 replaces it
+  if (!FORCE && existsSync(file)) { kept++; continue; }
   const { n, px } = make();
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
     const c = px[y * n + x]; if (c === null) continue;
@@ -74,7 +85,8 @@ for (const [name, make] of jobs) {
       }
     }
   }
-  writeFileSync(`${OUT}/mill-${name}.png`, png(px, n));
+  writeFileSync(file, png(px, n));
 }
 writeFileSync(`${OUT}/roster.json`, JSON.stringify({ roster: ROSTER, accent: ACCENT }, null, 2));
-console.log(`wrote ${jobs.length} drawings to ${OUT}/, ${hairlines} lone pixels`);
+console.log(`wrote ${jobs.length - kept} drawings to ${OUT}/, ${hairlines} lone pixels`);
+if (kept) console.log(`kept ${kept} already on disk — FORCE=1 to re-render them from the code`);

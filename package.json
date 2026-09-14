@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "sync:art": "node scripts/sync-foundry-art.mjs",
+    "predev": "npm run sync:art",
+    "predev:web": "npm run sync:art",
+    "predev:hot": "npm run sync:art",
+    "prebuild": "npm run sync:art",
     "dev": "node scripts/desktop-dev.mjs",
     "dev:web": "node scripts/desktop-dev.mjs --no-shell",
     "build": "next build",
