@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState, type ReactNode, type RefObject } from "react";
 
 import { TOWER_DESC, TOWERS } from "@/game/constants";
-import { structName } from "@/game/faction";
 import {
   fleetFootprint,
   formationCount,
@@ -336,7 +335,7 @@ function TurretCard({
   const tip = useHoverCard("up");
   const r = rarityDef(card.kind);
   const stats = TOWERS[card.kind];
-  const name = structName(card.kind);
+  const name = stats.name;
   const f = formationDef(card.form);
   const fr = RARITY[formationRarity(card.form)];
   const n = formationCount(card.form, card.n);

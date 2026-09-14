@@ -28,6 +28,9 @@ import {
   WET_FX_CHANCE as WET_FX_CHANCE_IMPORT,
   H as H_IMPORT,
   MAX_UNITS,
+  MERGE_HOLD,
+  MERGE_MAX_STACK,
+  MERGE_SQUEEZE,
   PAL,
   TEAM_CRUX_RGB,
   ROWS as ROWS_IMPORT,
@@ -279,6 +282,9 @@ const FX_DEATH = 0.35;
 /** what a DEVOURED body's ring is drawn in (see feedHungry) — the hungry
  *  hue, so a meal never reads as a kill the player's towers scored */
 const HUNGRY_FX_COL: RGB = [1, 0.35, 0.72];
+/** the ring drawn when two squeezed bodies fold into one (mergeSqueezed):
+ *  amber, so a fold never reads as a kill and never as a meal */
+const MERGE_FX_COL: RGB = [1, 0.8, 0.4];
 
 // --- Mindustry unit physics (async/PhysicsProcess.java) ---
 // every unit is a circle of radius hitSize * unitCollisionRadiusScale
@@ -957,6 +963,24 @@ export class Sim {
   readonly ueaten = new Uint8Array(MAX_UNITS);
   private readonly uhungerT = new Float32Array(MAX_UNITS);
   /**
+   * THE SQUEEZE (mergeSqueezed, constants.ts MERGE_*): how many bodies
+   * this row stands for — 1 for every body that walked in through a door,
+   * more once bodies of its kind have been folded into it at a choke. The
+   * weapons pass multiplies every hit by it, killUnit books it as this
+   * many kills and drops, and the renderer swells the sprite by it.
+   *
+   * `usqzT` is the seconds this body has spent squeezed against a partner
+   * of its own kind; `usqzJ`, `usqzU` and `usqzD` are scratch the physics
+   * pass rebuilds every tick — the deepest such partner's index, its uid
+   * (the index alone cannot be trusted across the removals between the
+   * two passes) and how deep the pair sat.
+   */
+  readonly ustack = new Uint8Array(MAX_UNITS);
+  private readonly usqzT = new Float32Array(MAX_UNITS);
+  private readonly usqzJ = new Int32Array(MAX_UNITS);
+  private readonly usqzU = new Int32Array(MAX_UNITS);
+  private readonly usqzD = new Float32Array(MAX_UNITS);
+  /**
    * THE AMPHIBIOUS RULE (mutation.ts), in two bytes a unit.
    *
    * `uwade` is how many times this body has stepped into water, capped at
@@ -1179,6 +1203,14 @@ export class Sim {
    * pays nothing, and the eater still pays exactly its own kind's drop.
    */
   devoured = 0;
+  /**
+   * FOLDS the squeeze has made (mergeSqueezed): rows taken off the field
+   * by folding into a neighbour. Unlike `devoured` this does NOT come off
+   * remaining(): a folded body is still on the field inside its survivor,
+   * whose death counts for the whole stack. It is a report number — how
+   * much a jam had to be thinned.
+   */
+  merged = 0;
   /** kills per unit kind this run, indexed like UNIT_KINDS — the drop payout */
   readonly killsByKind = new Int32Array(UNIT_KINDS.length);
   /**
@@ -1454,7 +1486,7 @@ export class Sim {
    * wave answers for it, and the two clocks (`t` to the rise,
    * `grace` to giving up on a spot that never opens).
    */
-  private corpses: { kind: number; x: number; y: number; wave: number; t: number; grace: number }[] = [];
+  private corpses: { kind: number; x: number; y: number; wave: number; t: number; grace: number; stack: number }[] = [];
 
   /**
    * WHICH CELLS THE HYDROPHOBIC RULE TAXES — 1 where a turret's reload
@@ -1670,6 +1702,7 @@ export class Sim {
     this.time = 0;
     this.kills = 0;
     this.devoured = 0;
+    this.merged = 0;
     this.killsByKind.fill(0);
     this.scrap = SCRAP_START;
     this.scrapEarned = 0;
@@ -2738,6 +2771,10 @@ export class Sim {
     // swallowed as a corpse — and so a meal's health is on the eater before
     // anything shoots at it
     this.feedHungry(dt);
+    // ...and the squeezed fold, on the same footing: a body that died this
+    // tick is gone rather than folded, and a fold's pooled health is on
+    // the survivor before anything shoots at it
+    this.mergeSqueezed(dt);
     // the waders gain AFTER the status pass for the same reason: a body
     // that burned to death this tick is already gone, and a stack taken
     // this tick is on the unit before anything shoots at it
@@ -3492,8 +3529,12 @@ export class Sim {
       // third LONGER than the same run without it — the swarm was eating
       // its own damage. So a meal carries the eaten body's bite as well:
       // what the rule concentrates is the threat, not just the pool
+      // ...TIMES THE STACK (mergeSqueezed): a body standing for N bodies
+      // hits for N of them, which is the other half of a fold losing
+      // nothing the wave sent
       const fed =
-        this.hungryOn && this.uhungry[i] ? 1 + this.ueaten[i] * HUNGRY_DMG_PER_MEAL : 1;
+        (this.hungryOn && this.uhungry[i] ? 1 + this.ueaten[i] * HUNGRY_DMG_PER_MEAL : 1) *
+        this.ustack[i];
       for (let w = 0; w < ws.length && !exploded; w++) {
         const wp = ws[w];
         // what THIS body's copy of the weapon hits for (see `fed` above);
@@ -3689,7 +3730,8 @@ export class Sim {
               if (KIND_PAYLOAD[ukind[i]]) {
                 if (!this.aimReach(tgt, x, y, CONTACT_REACH)) break;
                 this.detonate(i);
-                const half = Math.round((unitDrop(kind).scrap * dropScale(this.relics)) / 2);
+                // half the drop, for every body the stack stood for
+                const half = Math.round((unitDrop(kind).scrap * dropScale(this.relics)) / 2) * this.ustack[i];
                 this.scrap += half;
                 this.scrapEarned += half;
               } else {
@@ -3698,8 +3740,10 @@ export class Sim {
                 this.pushFx(x, y, 40 / 60, FxKind.Pulverize, 0, 0, (Math.random() * 0x7fffffff) | 0);
               }
               this.pushDeathFx(x, y);
+              // a stack that goes off is that many bodies gone — read
+              // before the row is recycled under us
+              this.exploded += this.ustack[i];
               this.removeUnit(i);
-              this.exploded++;
               exploded = true;
             } else if (wp.look) {
               // BombBulletType: dropped where the unit is on its heading, a
@@ -4906,6 +4950,13 @@ export class Sim {
       this.urisen[i] = 0;
       this.ueaten[i] = 0;
       this.uhungerT[i] = HUNGRY_PERIOD;
+      // ...and every body walks in standing for itself alone, with no
+      // squeeze on its clock (mergeSqueezed)
+      this.ustack[i] = 1;
+      this.usqzT[i] = 0;
+      this.usqzJ[i] = -1;
+      this.usqzU[i] = -1;
+      this.usqzD[i] = 0;
       this.uid[i] = this.nextId++;
       this.ukind[i] = UNIT_ID[kind];
       this.ufly[i] = fly ? 1 : 0;
@@ -5324,8 +5375,10 @@ export class Sim {
       this.pushDeathFx(this.upx[j], this.upy[j], HUNGRY_FX_COL);
       // removeUnit keeps the per-kind census itself, exactly as killUnit
       // leaves it to
+      // ...booked as every body the meal stood for (ustack): a folded
+      // stack eaten whole is that many bodies off the field
+      this.devoured += this.ustack[j];
       this.removeUnit(j);
-      this.devoured++;
       // NOTHING TO PATCH UP AFTER THE SWAP. Removal moves the LAST unit
       // into the freed slot, and the last slot is always at or above `i` on
       // a downward scan — so the unit that moves is one this pass has
@@ -5391,6 +5444,76 @@ export class Sim {
     return pick;
   }
 
+  /**
+   * THE SQUEEZE — two bodies of one kind crushed into each other at a
+   * choke fold into one (constants.ts MERGE_*).
+   *
+   * WHY: a choke point packs the swarm into a pile the physics pass can
+   * never relax — every body is shoved from every side, so the pairs sit
+   * deep inside one another and the pile only grows. This turns the pile
+   * back into bodies with room: two of a kind that have spent MERGE_HOLD
+   * seconds squeezed closer than MERGE_SQUEEZE of their combined physics
+   * radius become ONE body carrying BOTH. Health adds, maximum health
+   * adds, the force-field pool adds, and the survivor's weapons hit for
+   * the sum (ustack, read by updateUnitWeapons and detonate). It is a fold
+   * and not a cull: nothing the wave sent is lost, it is standing in one
+   * place instead of two.
+   *
+   * SAME KIND ONLY — which is also same tier and same layer, because a
+   * kind IS a tier (UNIT_STATS.tier). An ironhide1 never folds into an
+   * ironhide2, so a stack is always "N of this" and the survivor is
+   * exactly what it looks like, only heavier. Bosses never fold (a boss is
+   * an authored event with its own bar), nor does a body still inside its
+   * arrival clock, and a stack stops at MERGE_MAX_STACK bodies so the rule
+   * thins a jam rather than collapsing a whole wave into one ball.
+   *
+   * WHAT THE LEDGERS SEE: the folded body leaves through removeUnit, so
+   * its wave books it down at once; the survivor then counts for ustack
+   * kills, drops, explosions or meals when it goes — every tally that
+   * decides "is the wave over" and "what did it pay" sees the same N
+   * bodies it would have without the rule. `merged` is a report number
+   * only and comes off nothing.
+   *
+   * HOW IT IS FOUND: updatePhysics already visits every overlapping pair,
+   * so it notes the deepest same-kind partner on both bodies of any pair
+   * squeezed past the line (usqzJ, with its uid in usqzU so a slot
+   * recycled between the two passes cannot pass for it). This pass keeps
+   * the clock per body: a tick with a partner adds dt, a tick without
+   * resets it, and a knock from a shell is over long before MERGE_HOLD
+   * runs out. Downward like feedHungry, for the same reason: removal swaps
+   * the last row into the freed slot, and on a downward scan that row is
+   * one already visited.
+   */
+  private mergeSqueezed(dt: number): void {
+    const { usqzT, usqzJ, usqzU, ustack, ukind, uhp, uhpmax, ushield, uspawn, uid, upx, upy, urad } = this;
+    for (let i = this.n - 1; i >= 0; i--) {
+      const j = usqzJ[i];
+      if (j < 0) {
+        usqzT[i] = 0;
+        continue;
+      }
+      if ((usqzT[i] += dt) < MERGE_HOLD) continue;
+      // the partner has to still be the body the physics pass saw — alive,
+      // the same kind, both arrived, neither a boss, and room in the stack
+      if (
+        j === i || j >= this.n || uid[j] !== usqzU[i] || ukind[j] !== ukind[i] ||
+        uhp[j] <= 0 || uhp[i] <= 0 || uspawn[i] > 0 || uspawn[j] > 0 ||
+        KIND_BOSS[ukind[i]] || ustack[i] + ustack[j] > MERGE_MAX_STACK
+      ) continue;
+      uhp[i] += uhp[j];
+      uhpmax[i] += uhpmax[j];
+      ushield[i] += ushield[j];
+      ustack[i] += ustack[j];
+      this.merged++;
+      usqzT[i] = 0;
+      usqzJ[i] = -1;
+      // the fold, drawn as a ring closing on the survivor — the folded
+      // body's own last frame would read as a kill nobody scored
+      this.pushFxCol(upx[i], upy[i], 22 / 60, FxKind.ShieldWave, 0, urad[i] * 2.5, MERGE_FX_COL);
+      this.removeUnit(j);
+    }
+  }
+
   /** a tower kill: death puff, removal, and the per-kind drop ledger */
   private killUnit(i: number): void {
     const kind = this.ukind[i];
@@ -5418,14 +5541,22 @@ export class Sim {
       this.waveDown[wave] = (this.waveDown[wave] ?? 1) - 1;
       this.corpses.push({
         kind, x, y, wave, t: RECONSTRUCT_DELAY, grace: RECONSTRUCT_DELAY + RECONSTRUCT_GRACE,
+        // ...and the whole stack lies down with it (mergeSqueezed), or
+        // the bodies folded in would leave every ledger through a door
+        // that never counted them
+        stack: this.ustack[i],
       });
       return;
     }
-    this.killsByKind[kind]++;
+    // A STACK IS THAT MANY KILLS (mergeSqueezed): every body folded into
+    // this one died here, and the ledger, the drop and the HUD's count all
+    // see the bodies the wave actually sent
+    const stack = this.ustack[i];
+    this.killsByKind[kind] += stack;
     // the kill's scrap, into the run — off the kind's health (economy.ts)
     // ...times what the SCAVENGER RIG relics add (mods.ts), which is the
     // one thing in the run that moves what a body is worth
-    const drop = Math.round(unitDrop(UNIT_KINDS[kind]).scrap * dropScale(this.relics));
+    const drop = Math.round(unitDrop(UNIT_KINDS[kind]).scrap * dropScale(this.relics)) * stack;
     this.scrap += drop;
     this.scrapEarned += drop;
     this.pushDeathFx(x, y);
@@ -5456,7 +5587,7 @@ export class Sim {
     // goes off where the player is fighting
     if (this.uvirus[i]) this.infectNear(x, y, null);
     this.removeUnit(i);
-    this.kills++;
+    this.kills += stack;
     // MITOSIS (mutation.ts): what the body breaks into, AFTER the removal
     // rather than before it. Spawning first would append the brood above
     // the dead row and leave removeUnit swapping a live newborn down into
@@ -5587,7 +5718,15 @@ export class Sim {
       // nothing or the wave would be owed a body twice over
       this.waveSpawned[body.wave] = (this.waveSpawned[body.wave] ?? 1) - 1;
       if (this.spawnUnit(UNIT_KINDS[body.kind], { x: body.x, y: body.y }, body.wave)) {
-        this.urisen[this.n - 1] = 1;
+        const r = this.n - 1;
+        this.urisen[r] = 1;
+        // a stack stands back up as the stack it was (mergeSqueezed): the
+        // pooled health and the many-bodies mark, as if it had never fallen
+        if (body.stack > 1) {
+          this.ustack[r] = body.stack;
+          this.uhp[r] *= body.stack;
+          this.uhpmax[r] *= body.stack;
+        }
         // the support line's own green on a BODY: the one thing on the
         // field that says "this did not stay dead"
         this.pushFx(body.x, body.y, 0.5, FxKind.HealWave, 0, this.urad[this.n - 1] * 2.2);
@@ -5598,11 +5737,11 @@ export class Sim {
       this.waveSpawned[body.wave] = (this.waveSpawned[body.wave] ?? 0) + 1;
       if (body.grace > 0) continue;
       // nowhere to stand, and no more time to wait: it was a kill after all
-      this.killsByKind[body.kind]++;
-      const drop = Math.round(unitDrop(UNIT_KINDS[body.kind]).scrap * dropScale(this.relics));
+      this.killsByKind[body.kind] += body.stack;
+      const drop = Math.round(unitDrop(UNIT_KINDS[body.kind]).scrap * dropScale(this.relics)) * body.stack;
       this.scrap += drop;
       this.scrapEarned += drop;
-      this.kills++;
+      this.kills += body.stack;
       this.waveDown[body.wave] = (this.waveDown[body.wave] ?? 0) + 1;
       this.corpses[c] = this.corpses[this.corpses.length - 1];
       this.corpses.pop();
@@ -5701,6 +5840,14 @@ export class Sim {
     this.uhungry[i] = this.uhungry[n];
     this.ueaten[i] = this.ueaten[n];
     this.uhungerT[i] = this.uhungerT[n];
+    this.ustack[i] = this.ustack[n];
+    this.usqzT[i] = this.usqzT[n];
+    // the squeeze scratch travels too: mergeSqueezed removes rows in the
+    // middle of reading it, and the body swapped down must keep the
+    // partner the physics pass noted on it
+    this.usqzJ[i] = this.usqzJ[n];
+    this.usqzU[i] = this.usqzU[n];
+    this.usqzD[i] = this.usqzD[n];
     this.ubrood[i] = this.ubrood[n];
     this.urisen[i] = this.urisen[n];
     this.uled[i] = this.uled[n];
@@ -6034,6 +6181,7 @@ export class Sim {
    */
   private updatePhysics(): void {
     const { upx, upy, urad, ufly, unav, uvx, uvy, uhx, uhy, uid, phx, phy, bStart, bUnits } = this;
+    const { usqzJ, usqzU, usqzD } = this;
     const { clear } = this.field;
     // the naval tanks' clearance map, so the sideways re-aim below asks
     // how much room a tank has beside it on its OWN mask — deep water
@@ -6059,6 +6207,9 @@ export class Sim {
         ] >= SPREAD_CLEAR;
       uhx[i] = room ? vx / vl : 0;
       uhy[i] = room ? vy / vl : 0;
+      // the squeeze scratch is this tick's alone (mergeSqueezed)
+      usqzJ[i] = -1;
+      usqzD[i] = 0;
     }
     const { ukind, kindSpanDyn, kindSpanSDyn, uheavy } = this;
     for (let i = 0; i < n; i++) {
@@ -6100,6 +6251,22 @@ export class Sim {
           const d2 = dx * dx + dy * dy;
           if (d2 >= rs * rs) continue;
           const dst = Math.sqrt(d2);
+          // THE SQUEEZE (mergeSqueezed): a same-kind pair crushed this
+          // deep is noted on both bodies — the deepest such partner each
+          // has this tick, by index and by uid
+          if (dst < rs * MERGE_SQUEEZE && ukind[j] === ukind[i]) {
+            const depth = rs - dst;
+            if (depth > usqzD[i]) {
+              usqzD[i] = depth;
+              usqzJ[i] = j;
+              usqzU[i] = uid[j];
+            }
+            if (depth > usqzD[j]) {
+              usqzD[j] = depth;
+              usqzJ[j] = i;
+              usqzU[j] = uid[i];
+            }
+          }
           if (dst < 1e-4) {
             const a = Math.random() * Math.PI * 2;
             dx = Math.cos(a);
@@ -8962,6 +9129,9 @@ export class Sim {
     const pl = KIND_PAYLOAD[this.ukind[i]];
     if (!pl) return;
     const x = this.upx[i], y = this.upy[i];
+    // a stack goes off for every body in it (mergeSqueezed) — the blast's
+    // reach is the kind's, its bite is the bodies'
+    const stack = this.ustack[i];
     if (pl.bomblets) {
       const b = pl.bomblets;
       for (let k = 0; k < b.count; k++) {
@@ -8969,7 +9139,7 @@ export class Sim {
         const sp = (b.spread * (0.4 + Math.random() * 0.6)) / 0.5;
         this.shots.push({
           x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-          life: 0.5, age: 0, damage: 0, splash: b.splash, splashRadius: b.radius,
+          life: 0.5, age: 0, damage: 0, splash: b.splash * stack, splashRadius: b.radius,
           look: BOMBLET_LOOK, collide: false, trailT: 0, poison: 0, poisonChance: 1,
         });
       }
@@ -8977,13 +9147,13 @@ export class Sim {
     if (pl.fuse) {
       this.shots.push({
         x, y, vx: 0, vy: 0,
-        life: pl.fuse, age: 0, damage: 0, splash: pl.splash, splashRadius: pl.radius,
+        life: pl.fuse, age: 0, damage: 0, splash: pl.splash * stack, splashRadius: pl.radius,
         look: NUKE_LOOK, collide: false, trailT: 0, poison: 0, poisonChance: 1,
       });
       this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, pl.radius * 0.35);
       return;
     }
-    this.splashStructures(x, y, pl.splash, pl.radius);
+    this.splashStructures(x, y, pl.splash * stack, pl.radius);
     // the ring at the blast's reach is the heavy tiers' — a T1 that goes
     // off by the hundred goes off as a small burst and no more
     if (KIND_TIER[this.ukind[i]] >= 4) this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, pl.radius);

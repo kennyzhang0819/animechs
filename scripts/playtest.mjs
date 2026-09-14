@@ -520,7 +520,7 @@ function play() {
     scale: SCALE, start: E.SCRAP_START, unitDamage: WP.unitDamageScale(),
     outcome: won ? "WON" : sim.lost() ? "LOST" : "TIMEOUT",
     wave: sim.currentWave(), time: Math.round(sim.time), core: Math.round((100 * sim.core.hp) / sim.core.hpMax),
-    kills: sim.kills, loopLevel: sim.loopLevel,
+    kills: sim.kills, merged: sim.merged, loopLevel: sim.loopLevel,
     // the objectives met and what they bank before the rung bonus: a win
     // is every wave, however the last one ended (grantRunReward)
     cleared: won ? sim.totalWaves : sim.wavesCleared(), waves: sim.totalWaves,
@@ -542,7 +542,7 @@ if (JSON_OUT) {
       `${r.families ? ` — families ${r.families.join(", ")}` : ""}${r.seed !== null ? ` — seed ${r.seed}` : ""} — field ${r.fieldBudget}`,
   );
   console.log(
-    `${r.outcome} at wave ${r.wave}, ${mmss(r.time)} in — core ${r.core}%, kills ${r.kills}, ${r.cleared}/${r.waves} waves cleared for ${r.xp} xp` +
+    `${r.outcome} at wave ${r.wave}, ${mmss(r.time)} in — core ${r.core}%, kills ${r.kills}, merged ${r.merged}, ${r.cleared}/${r.waves} waves cleared for ${r.xp} xp` +
       `${r.loopLevel ? `, tide +${r.loopLevel} levels` : ""} — ${r.towers} turrets, scrap earned ${r.scrapEarned} (${r.scrapLeft} unspent) — ${r.wall}s wall`,
   );
   console.log(`board: ${Object.entries(r.counts).map(([k, n]) => `${k} ${n}`).join(", ")}`);

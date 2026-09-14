@@ -86,19 +86,15 @@ Triplet, Bellow, Kiln, Sluice, Halo, Quiver, Broadside, Bombard,
 Floodgate, Grindstone, Crucible, Furnace, Railspike) are captions only;
 the stock kind stays the key everywhere in the code.
 
-### Three silhouettes a kind, and the one chosen
+### One silhouette a kind
 
 `mill-<kind>.png` is the roster: the round-leaning set (turntables,
 drums, a tank with the nozzle on top, a round gatling salvo, a tesla
-dome), chosen over the two alternates. The fuse is the one head that
+dome). The fuse is the one head that
 lost its barrels: it throws shards a few tiles, and three gun tubes
 said sniper, so it is a drum with one blast face as wide as itself,
-five slits in it and a heat band where the face meets the drum. The
-alternates kept their tubes that are kept beside it,
-`mill-<kind>-a.png` (the first, angular-leaning set) and
-`mill-<kind>-c.png` (hex plates, prisms, a wedge mortar, a coilgun on a
-round base), so a kind can still be swapped head by head. All fifty-one
-render through the same one-pixel check with none flagged. Two more
+five slits in it and a heat band where the face meets the drum. All
+eighteen render through the same one-pixel check with none flagged. Two more
 things it taught: a pod or pipe that crosses the turntable's rim must
 cover the rim for every row it spans (the rim's inner edge emerging from
 under a vertical edge is a one-pixel step), and a coil or collar laid
@@ -143,25 +139,6 @@ on the board the fix is to warm the rhino, not the turrets. Scale is
 the game's own: a 1x1 turret is one tile of 20 world px and a T1 animal
 draws at three, so a duo next to a dagger-sized body is small by design
 (`docs/unit-art.md`, "The size").
-## Botanica, the second faction as a concept
-
-`scripts/botanica-concepts.mjs` draws the same seventeen roles as
-plants and fruit, on the same grids and to the same rules (it imports
-the engine from `game/turretArt.ts`), into
-`docs/turret-concepts/botanica-<kind>.png`, with the faction's own bed
-(`botanica-base-N.png`: bark with a bevel, moss inside) in place of
-Mindustry's plate. The materials are a plant's — bark for stems and
-trunks, leaf for the hulls, pale for petals and lips, moss for the bed —
-and the accent is what the turret throws, as a fruit: hazelnut for a
-bullet, pumpkin for a shell, chili for flame, blueberry for a beam,
-water, sage for the field, raspberry for a missile. Every role keeps its
-Foundry cue (the twin gun is two pods on stems, the mortar a pitcher's
-mouth, the charge beam a sunflower with a bud, the heavy trunks longer
-than its stump), so a player who learned one faction reads the other.
-It is a concept, not wired in: a second faction is a skin over the one
-roster, and the head lookup and the plate treatment in `atlas.ts` are
-where it would plug in.
-
 ## How it ships
 
 `game/turretArt.ts` is the roster: the engine, the parts vocabulary and
@@ -177,10 +154,10 @@ plate darkened the same way (`game.ts ghostArt`). A kind with no drawing
 `public/mindustry` is touched, and the flag off restores Mindustry's
 turrets byte for byte.
 
-`scripts/turret-concepts.mjs` imports the roster from the game module
-and adds the two alternate sets, so the sheet and the board are drawn
-from one place; `npm run gen:turrets` renders all fifty-one into
-`docs/turret-concepts/` and reports any one-pixel stroke.
+`scripts/turret-concepts.mjs` imports the roster from the game module,
+so the sheet and the board are drawn from one place; `npm run
+gen:turrets` renders all eighteen into `docs/turret-concepts/` and
+reports any one-pixel stroke.
 
 A faction, when a second comes, is a skin over this one roster, never a
 second roster: the sim, the deal, mods and relics are keyed by

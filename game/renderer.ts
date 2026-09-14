@@ -1,6 +1,4 @@
 import { FLOOR_STYLE, type FloorKind } from "./tiles";
-import { activeFaction } from "./faction";
-import { plantTurns } from "./botanicaArt";
 import {
   FLYER_PARTS,
   LEG_ART,
@@ -49,8 +47,6 @@ import {
   UV_TOWER_BASE1,
   UV_TOWER_BASE3,
   UV_TOWER_BASE4,
-  UV_PLANTS,
-  UV_HEARTWOOD,
   UV_SHIELD_TOWER,
   UV_DISC_BIG,
   UV_SCORCH,
@@ -89,6 +85,7 @@ import {
   HP_TINT as HP_TINT_IMPORT,
   LANCER_CHARGE_SPARK,
   MAX_UNITS,
+  MERGE_GROWTH,
   NCELLS,
   PAL as PAL_IMPORT,
   ROWS as ROWS_IMPORT,
@@ -2055,7 +2052,7 @@ export class Renderer {
       baseSz,
       baseSz,
       0,
-      activeFaction() === "botanica" ? UV_HEARTWOOD : UV_BASE,
+      UV_BASE,
       1, 1, 1, 1,
     );
     this.draw(dyn, true);
@@ -2217,7 +2214,7 @@ export class Renderer {
   private pushUnitPass(dyn: Batch, sim: Sim, pass: number): void {
     const { vx0, vy0, vx1, vy1 } = this;
     const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
-    const { ushield, ushieldAlpha, urad, uwet, uhungry, ufly, ueaten, uwade, ucloakT } = sim;
+    const { ushield, ushieldAlpha, urad, uwet, uhungry, ufly, ueaten, uwade, ucloakT, ustack } = sim;
     // pass 1 is nothing but the flyers' drop shadows — a whole second
     // quad per flyer, and the first decoration to go with the effects
     // switched off (see setEffects)
@@ -2236,7 +2233,11 @@ export class Renderer {
       // see that it is: on Quagmire a fed, five-times-forded weaver1 is
       // the single most dangerous thing in the lane and it must not look
       // like either one of those alone
-      const swell = ueaten[i] * HUNGRY_GROWTH + uwade[i] * AMPHIBIOUS_GROWTH;
+      // ...and a folded stack (Sim.mergeSqueezed) MERGE_GROWTH bigger per
+      // body it stands for, for the same reason: it is that many bodies,
+      // and the player has to be able to read that it is
+      const swell =
+        ueaten[i] * HUNGRY_GROWTH + uwade[i] * AMPHIBIOUS_GROWTH + (ustack[i] - 1) * MERGE_GROWTH;
       const grow = swell > 0 ? 1 + swell : 1;
       const cm = grow === 1 ? KIND_CULL[k] : KIND_CULL[k] * grow;
       if (upx[i] < vx0 - cm || upx[i] > vx1 + cm || upy[i] < vy0 - cm || upy[i] > vy1 + cm)
@@ -2428,11 +2429,8 @@ export class Renderer {
       if (t.x < vx0 - px || t.x > vx1 + px || t.y < vy0 - px || t.y > vy1 + px) continue;
       // ONE ROSTER, ONE DRAWING: the swarm's lancer is the lancer's own
       // sprite on the lancer's own base
-      // BOTANICA (faction.ts): the plant is the whole building — no plate,
-      // and only a plant that aims turns
-      const plant = activeFaction() === "botanica" ? (UV_PLANTS as Partial<Record<TowerKind, UVRect>>)[t.kind] : undefined;
-      const top = plant ?? UV_TURRETS[t.kind];
-      const angle = plant && !plantTurns(t.kind) ? 0 : t.angle;
+      const top = UV_TURRETS[t.kind];
+      const angle = t.angle;
       const base =
         sz >= 4 ? UV_TOWER_BASE4
         : sz === 3 ? UV_TOWER_BASE3
@@ -2453,7 +2451,7 @@ export class Renderer {
       const r = own ? tint[0] : tint[0] * TEAM_CRUX_RGB[0];
       const g = own ? tint[1] : tint[1] * TEAM_CRUX_RGB[1];
       const b = own ? tint[2] : tint[2] * TEAM_CRUX_RGB[2];
-      if (!plant) this.push(dyn, t.x, t.y, px, px, 0, base, r, g, b, 1);
+      this.push(dyn, t.x, t.y, px, px, 0, base, r, g, b, 1);
       this.push(dyn, t.x, t.y, px, px, angle, top, r, g, b, 1);
       // THE FALLBACK MUZZLE FLASH (Sim, Tower.flashT): this turret fired
       // and the effect pool refused its muzzle effect, so the shot has
@@ -2899,7 +2897,7 @@ export class Renderer {
       const baseSz = core.size * CELL;
       const hurt = Math.max(0, Math.min(1, core.hp / core.hpMax));
       const tint = 1 - (1 - hurt) * 0.55;
-      this.push(dyn, core.x, core.y, baseSz, baseSz, 0, activeFaction() === "botanica" ? UV_HEARTWOOD : UV_BASE, tint, tint, tint, 1);
+      this.push(dyn, core.x, core.y, baseSz, baseSz, 0, UV_BASE, tint, tint, tint, 1);
     }
     this.draw(dyn, true);
     // Layer.shields is above every one of those, the base included, and it

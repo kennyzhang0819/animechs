@@ -1944,5 +1944,28 @@ export const SHORT_FX_LIFE = 0.22;
  */
 export const AURA_LINGER = 1.35;
 
+/**
+ * THE SQUEEZE (Sim.mergeSqueezed): two bodies of one kind crushed into
+ * each other at a choke fold into ONE that carries both — health, maximum
+ * health, shield and weapon damage all add, so nothing the wave sent is
+ * lost; it is just standing in one place instead of two.
+ *
+ * MERGE_SQUEEZE is how deep the crush has to be: the pair's centres closer
+ * than this fraction of their combined PHYSICS radius. Half is well past
+ * anything a flowing crowd shows — the physics pass parts an ordinary
+ * overlap by four fifths every tick, so only a pile pressed from every side
+ * holds a pair that deep.
+ * MERGE_HOLD is how long it has to stay that deep, in seconds. A shove from
+ * a shell's knockback is over in a few ticks; a jam is not.
+ * MERGE_MAX_STACK is the most bodies one survivor may stand for, so the
+ * rule thins a jam rather than collapsing a whole wave into one ball.
+ * MERGE_GROWTH is how much bigger a stack is DRAWN per folded body. The
+ * hitbox never moves, exactly as under the hungry rule (mutation.ts).
+ */
+export const MERGE_SQUEEZE = 0.5;
+export const MERGE_HOLD = 0.5;
+export const MERGE_MAX_STACK = 8;
+export const MERGE_GROWTH = 0.12;
+
 export const clamp = (v: number, a: number, b: number): number =>
   v < a ? a : v > b ? b : v;
