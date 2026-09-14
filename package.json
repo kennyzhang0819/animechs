@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "gen:tiles": "node --experimental-strip-types scripts/gen-tiles.mjs",
     "gen:turrets": "node --experimental-transform-types --import ./scripts/ts-hooks.mjs scripts/turret-concepts.mjs",
+    "gen:terrain": "node --experimental-transform-types --import ./scripts/ts-hooks.mjs scripts/terrain-concepts.mjs",
     "playtest": "node scripts/playtest.mjs",
     "build:static": "bash scripts/build-static.sh",
     "desktop": "npm run build:static && npm --prefix desktop run start",
