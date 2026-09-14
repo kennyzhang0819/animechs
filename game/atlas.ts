@@ -11,7 +11,7 @@ import {
 import type { UnitKind } from "./levels";
 import { ANIMAL_ART } from "./animalFlag";
 import { FOUNDRY_ART } from "./turretFlag";
-import { BASE_DARK, turretHead } from "./turretArt";
+import { BASE_DARK, drawCore, turretHead } from "./turretArt";
 import { TOWER_ICONS } from "./towerIcons";
 import type { TowerKind } from "./types";
 import {
@@ -1574,9 +1574,7 @@ export const FLYER_PARTS: Partial<Record<UnitKind, FlyerParts>> = {};
  * THE WORM RIG'S SPRITES (levels.ts SegmentSpec, Sim.usegX): a head on the
  * hull's own position, one body sprite on every segment of the chain and
  * a tail past the last one, each drawn along the chain's direction there.
- * Sizes are world px; the wave is the swim the renderer adds on top of
- * the chain — lateral amplitude at the tail (world px), cycles a second,
- * and the phase lag per segment.
+ * Sizes are world px. The swim is the sim's (SegmentSpec), not drawn on.
  */
 export interface SegmentArt {
   head: UVRect;
@@ -1585,9 +1583,6 @@ export interface SegmentArt {
   headSprite: number;
   bodySprite: number;
   tailSprite: number;
-  amp: number;
-  rate: number;
-  phase: number;
 }
 /** the segmented kinds — empty unless the animal art is on */
 export const SEGMENT_ART: Partial<Record<UnitKind, SegmentArt>> = {};
@@ -1819,9 +1814,6 @@ if (ANIMAL_ART) {
       headSprite: cellPx(head) * PX,
       bodySprite: cellPx(body) * PX,
       tailSprite: cellPx(tail) * PX,
-      amp: T.amp * PX,
-      rate: T.rate,
-      phase: T.phase,
     };
     delete UNIT_ENGINES[k];
   });
@@ -3172,19 +3164,25 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
 
   // the base building at native 160px: the block, then the team overlay
   // tinted sharded-yellow the way Mindustry composites team regions
-  draw(UV_BASE, antialiased(img.base));
-  const baseTeam = antialiased(img.baseTeam);
-  const team = document.createElement("canvas");
-  team.width = team.height = 160;
-  const tc = team.getContext("2d");
-  if (!tc) throw new Error("2d context unavailable");
-  tc.drawImage(baseTeam, 0, 0, 160, 160);
-  tc.globalCompositeOperation = "multiply";
-  tc.fillStyle = TEAM_COLOR;
-  tc.fillRect(0, 0, 160, 160);
-  tc.globalCompositeOperation = "destination-in";
-  tc.drawImage(baseTeam, 0, 0, 160, 160);
-  draw(UV_BASE, team);
+  if (FOUNDRY_ART) {
+    // FOUNDRY's core (turretArt.ts drawCore): the same plating as the
+    // heads, the team's colour drawn into it, no overlay to composite
+    draw(UV_BASE, antialiased(toCanvas(drawCore())));
+  } else {
+    draw(UV_BASE, antialiased(img.base));
+    const baseTeam = antialiased(img.baseTeam);
+    const team = document.createElement("canvas");
+    team.width = team.height = 160;
+    const tc = team.getContext("2d");
+    if (!tc) throw new Error("2d context unavailable");
+    tc.drawImage(baseTeam, 0, 0, 160, 160);
+    tc.globalCompositeOperation = "multiply";
+    tc.fillStyle = TEAM_COLOR;
+    tc.fillRect(0, 0, 160, 160);
+    tc.globalCompositeOperation = "destination-in";
+    tc.drawImage(baseTeam, 0, 0, 160, 160);
+    draw(UV_BASE, team);
+  }
 
   // the animal trial goes over the stock cells it replaces, once they are
   // all drawn and before the team cells are packed, since it requeues its own

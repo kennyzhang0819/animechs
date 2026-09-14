@@ -13,7 +13,7 @@
 // written at the top of that file and in docs/turret-factions.md.
 import { deflateSync } from "node:zlib";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { ACCENT, BORE, GUN, GUN_R, HEADS, STEEL, barrel, bars, drawHead, plate, rev, stud } from "../game/turretArt.ts";
+import { ACCENT, BORE, GUN, GUN_R, HEADS, STEEL, barrel, bars, drawCore, drawHead, plate, rev, stud } from "../game/turretArt.ts";
 
 // ── PNG, by hand ───────────────────────────────────────────────────────
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -440,10 +440,11 @@ export const ROSTER = {
 const OUT = "docs/turret-concepts";
 mkdirSync(OUT, { recursive: true });
 let hairlines = 0; const dumped = {};
-for (const [tag, set] of [["", HEADS], ["-a", HEADS_A], ["-c", HEADS_C]]) for (const [kind, [size]] of Object.entries(ROSTER)) {
-  const n = 32 * size;
-  const px = drawHead(kind, set).px;
-  const name = kind + tag;
+const jobs = [];
+for (const [tag, set] of [["", HEADS], ["-a", HEADS_A], ["-c", HEADS_C]]) for (const kind of Object.keys(ROSTER)) jobs.push([kind + tag, () => drawHead(kind, set)]);
+jobs.push(["core", drawCore]);
+for (const [name, make] of jobs) {
+  const { n, px } = make();
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
     const c = px[y * n + x]; if (c === null) continue;
     const at = (X, Y) => (X < 0 || Y < 0 || X >= n || Y >= n ? null : px[Y * n + X]);
@@ -466,4 +467,4 @@ for (const [tag, set] of [["", HEADS], ["-a", HEADS_A], ["-c", HEADS_C]]) for (c
   writeFileSync(`${OUT}/mill-${name}.png`, png(px, n));
 }
 writeFileSync(`${OUT}/roster.json`, JSON.stringify({ roster: ROSTER, accent: ACCENT }, null, 2));
-console.log(`wrote ${Object.keys(ROSTER).length * 3} heads to ${OUT}/, ${hairlines} lone pixels`);
+console.log(`wrote ${jobs.length} drawings to ${OUT}/, ${hairlines} lone pixels`);

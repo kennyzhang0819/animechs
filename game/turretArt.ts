@@ -282,11 +282,12 @@ export const HEADS: Record<TurretArtKind, HeadFn> = {
     P.box(20, 48, 44, 55, A);                             // the reload rail
   },
   // 3x3, 96 px ───────────────────────────────────────────────────────
-  fuse(P, A) {                                           // a round shotgun, three barrels, shell racks
+  fuse(P, A) {                                           // a round shotgun: one wide blast face, no tubes
     P.disc(48, 52, 36, GUN);
     P.ring(48, 52, 36, 6, GUN_R);
-    barrel(P, 18, 32, 6, 40, A, { lip: 3, brake: 6, bands: [22], collar: 7, bore: 4 });
-    barrel(P, 41, 55, 6, 40, A, { lip: 3, brake: 6, bands: [22], collar: 7, bore: 4 });
+    plate(P, 14, 8, 82, 32, 8, STEEL, 4);                 // the blast face, as wide as the drum
+    P.box(20, 12, 26, 28, BORE); P.box(32, 12, 38, 28, BORE); P.box(44, 12, 52, 28, BORE);   // its slits
+    P.box(16, 30, 80, 38, A);                             // the heat band where the face meets the drum
     P.disc(48, 58, 12, A);                                // the breech
     P.disc(48, 58, 6, STEEL);
     P.disc(48, 58, 2, BORE);
@@ -374,6 +375,57 @@ export const HEADS: Record<TurretArtKind, HeadFn> = {
     stud(P, 34, 74, 3);
   },
 };
+
+/** the team's colour as a material: Mindustry's sharded yellow, and a
+ *  darker step of it for the shaded half */
+export const TEAM: Mat = ["#d9a85a", "#ffd37f"];
+
+/**
+ * THE CORE, drawn to the same rules as the heads: one gunmetal plate,
+ * five cells square (160 px, the nucleus's size), that never turns. A
+ * reactor ring in the middle wearing the team's colour, four intake
+ * silos at the corners, conduits between, vents along the rim. Symmetric
+ * on both axes, since a building the swarm walks at from every side has
+ * no front.
+ */
+export function drawCore(): Art {
+  const n = 160;
+  const g = grid(n);
+  const P = g.pen;
+  plate(P, 4, 4, 156, 156, 24, GUN, 8);
+  // the corner silos, top and bottom (the mirror does the right)
+  for (const y0 of [16, 112]) {
+    plate(P, 16, y0, 48, y0 + 32, 6, STEEL, 3);
+    P.disc(32, y0 + 16, 8, GUN_R);                        // the intake
+    P.disc(32, y0 + 16, 3, BORE);
+  }
+  // the conduits from the silos to the reactor
+  P.box(48, 28, 62, 36, STEEL); P.box(48, 124, 62, 132, STEEL);
+  P.box(28, 48, 36, 62, STEEL); P.box(28, 98, 36, 112, STEEL);
+  P.box(50, 30, 60, 34, GUN_R); P.box(50, 126, 60, 130, GUN_R);
+  P.box(30, 50, 34, 60, GUN_R); P.box(30, 100, 34, 110, GUN_R);
+  // the reactor
+  P.ring(80, 80, 44, 8, STEEL);
+  P.ring(80, 80, 36, 4, GUN_R);
+  P.disc(80, 80, 32, GUN);
+  P.disc(80, 80, 26, TEAM);                               // the team's colour, where the stock overlay put it
+  P.ring(80, 80, 26, 3, rev(TEAM));
+  P.disc(80, 80, 10, STEEL);
+  P.disc(80, 80, 4, BORE);
+  // vents along the top and bottom rims, and studs on the plate
+  bars(P, 60, 76, 8, 1, 4, 0); bars(P, 60, 76, 148, 1, 4, 0);
+  stud(P, 12, 80, 3);
+  stud(P, 56, 12, 3); stud(P, 56, 147, 3);
+  return finish(g.mat, n);
+}
+
+/** any drawing on an n grid through the same mirror-and-shade finish —
+ *  what a concept sheet uses for a plate or another faction's heads */
+export function draw(n: number, fn: (P: Pen) => void): Art {
+  const g = grid(n);
+  fn(g.pen);
+  return finish(g.mat, n);
+}
 
 /** draw one head of `set` (the roster by default) at its native size */
 export function drawHead(kind: TurretArtKind, set: Record<TurretArtKind, HeadFn> = HEADS): Art {

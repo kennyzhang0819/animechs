@@ -196,8 +196,21 @@ export interface SegmentSpec {
   count: number;
   /** the distance each keeps from the one ahead, world px */
   spacing: number;
+  /** how far behind the head's centre the chain hangs from (the neck), world px */
+  neck: number;
+  /**
+   * THE SWIM. The neck sways across the heading as the head moves — a
+   * sine whose phase advances with distance travelled, one full cycle
+   * per `wavelength` of path — so the body is pulled along a sinuous
+   * path and the curve travels back down it, the way an eel's does.
+   * `amp` is the sway's half width, world px. A standing body is
+   * straight but for a slow idle sway (a cycle every few seconds).
+   */
+  amp: number;
+  wavelength: number;
 }
-const worm = (count: number, spacing: number): SegmentSpec => ({ count, spacing });
+const worm = (count: number, spacing: number, neck: number, amp: number, wavelength: number): SegmentSpec =>
+  ({ count, spacing, neck, amp, wavelength });
 
 /** a LegSpec with Mindustry's UnitType defaults filled in */
 const legs = (o: Partial<LegSpec> & Pick<LegSpec, "count" | "length">): LegSpec => ({
@@ -1359,7 +1372,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     naval: true,
     // THE ANIMAL TRIAL (animalFlag.ts): the Livewire T1 is an eel on the
     // worm rig, 4 segments behind the head (SEGMENT_ART in atlas.ts)
-    ...(ANIMAL_ART ? { segments: worm(4, 25 * PX_W) } : {}),
+    ...(ANIMAL_ART ? { segments: worm(4, 25 * PX_W, 7, 25 * PX_W * 0.8, 25 * PX_W * 8) } : {}),
     landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
     blink: { dist: 12 * CELL, cooldown: 4 },
@@ -1380,7 +1393,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     naval: true,
     // THE ANIMAL TRIAL (animalFlag.ts): the Livewire T2 is an eel on the
     // worm rig, 5 segments behind the head (SEGMENT_ART in atlas.ts)
-    ...(ANIMAL_ART ? { segments: worm(5, 36 * PX_W) } : {}),
+    ...(ANIMAL_ART ? { segments: worm(5, 36 * PX_W, 11, 36 * PX_W * 0.8, 36 * PX_W * 8) } : {}),
     landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
     blink: { dist: 12 * CELL, cooldown: 3 },
@@ -1406,7 +1419,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     naval: true,
     // THE ANIMAL TRIAL (animalFlag.ts): the Livewire T3 is an eel on the
     // worm rig, 7 segments behind the head (SEGMENT_ART in atlas.ts)
-    ...(ANIMAL_ART ? { segments: worm(7, 51 * PX_W) } : {}),
+    ...(ANIMAL_ART ? { segments: worm(7, 51 * PX_W, 15, 51 * PX_W * 0.8, 51 * PX_W * 8) } : {}),
     landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
     blink: { dist: 15 * CELL, cooldown: 3 },
@@ -1436,7 +1449,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     naval: true,
     // THE ANIMAL TRIAL (animalFlag.ts): the Livewire T4 is an eel on the
     // worm rig, 7 segments behind the head (SEGMENT_ART in atlas.ts)
-    ...(ANIMAL_ART ? { segments: worm(7, 71 * PX_W) } : {}),
+    ...(ANIMAL_ART ? { segments: worm(7, 71 * PX_W, 20, 71 * PX_W * 0.8, 71 * PX_W * 8) } : {}),
     landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
     blink: { dist: 15 * CELL, cooldown: 4 },
@@ -1469,7 +1482,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     naval: true,
     // THE ANIMAL TRIAL (animalFlag.ts): the Livewire T5 is an eel on the
     // worm rig, 7 segments behind the head (SEGMENT_ART in atlas.ts)
-    ...(ANIMAL_ART ? { segments: worm(7, 99 * PX_W) } : {}),
+    ...(ANIMAL_ART ? { segments: worm(7, 99 * PX_W, 28, 99 * PX_W * 0.8, 99 * PX_W * 8) } : {}),
     landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
     blink: { dist: 18 * CELL, cooldown: 4 },
