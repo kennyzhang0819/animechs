@@ -1668,7 +1668,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // line on the field, and the apex turns at 1.3 degrees a tick. A Tusker
   // wave is a deadline you watch walking toward you.
 
-  // tusker1: the runt — 260 hp, armour 3, a 1.75x1.75-block hitbox, 3
+  // tusker1: the runt — 260 hp, armour 6, a 1.75x1.75-block hitbox, 3
   // tiles/s. THE T1 IS THE FAMILY IN MINIATURE and nothing more than
   // that: it is big, it is plated, it charges and it mauls, and it is the
   // ONE TIER OF THE SEVEN THAT CARRIES NO FIELD AT ALL. The fields start
@@ -1677,25 +1677,32 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // WHAT IT IS WORTH IS SET AGAINST WAVE 1, and that is not a footnote.
   // A run opens with nothing on the board and answers the first wave with
   // whatever the first card happens to be, which is usually a wall of
-  // tackers; a tacker's 9-damage bolt lands 6 here against 9 on an ironhide1,
-  // so a runt is about two and a half times the body the ground line
-  // opens with. The first cut of this row was 380 hp behind armour 6 and
-  // a personal shield bar — eight times an ironhide1 — and measured
-  // against sixteen tackers it was not a hard opening but an unanswerable
-  // one: forty ironhide1s died to the wall and left it standing at
-  // two-thirds, forty tuskers took the wall to zero and lost seven. A
-  // family whose premise is "bring calibre" still has to let wave 1 be
-  // answered with what wave 1 hands you.
+  // tackers; a tacker's 9-damage bolt lands 3 here against 9 on an
+  // ironhide1, so the runt eats about five times the bolts the body the
+  // ground line opens with does. The first cut of this row was 380 hp
+  // behind armour 6 and a personal shield bar — and measured against
+  // sixteen tackers it was not a hard opening but an unanswerable one:
+  // forty ironhide1s died to the wall and left it standing at two-thirds,
+  // forty tuskers took the wall to zero and lost seven.
+  //
+  // WHAT IS HERE NOW CARRIES THAT CUT'S ARMOUR ON THE SMALLER BODY and
+  // without the shield bar, so the same nine-damage bolt is at the ten
+  // per cent floor against it. Armour is the family's one dial — the
+  // whole ladder was doubled at once, on purpose — and this is the tier
+  // where that decision is felt hardest, because wave 1 is answered with
+  // what wave 1 hands you and a tacker is what it usually hands you.
+  // If an opening ever plays as unanswerable again, the number to move
+  // is this one.
   tusker1: {
     hp: 260,
     speed: 3 * CELL,
-    armor: 3,
+    armor: 6,
     radius: UR * 1.75,
     tier: 1,
     rotateSpeed: 3.2,
     charge: { range: 14 * CELL },
   },
-  // tusker2: the brute — 900 hp, armour 12, a 2.25x2.25-block hitbox,
+  // tusker2: the brute — 900 hp, armour 24, a 2.25x2.25-block hitbox,
   // 2.8 tiles/s. THE TIER THE FIELDS START, and it starts with both at
   // once: a 5-tile force field holding 220, which EATS absorbable shots
   // outright rather than soaking them (Sim.updateAbilities), and a shield
@@ -1704,7 +1711,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   tusker2: {
     hp: 900,
     speed: 2.8 * CELL,
-    armor: 12,
+    armor: 24,
     radius: UR * 2.25,
     tier: 2,
     rotateSpeed: 2.8,
@@ -1712,7 +1719,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     forceField: { radius: 5 * CELL, regen: 20, max: 220, cooldown: 6 },
     shieldField: { amount: 25, max: 150, reload: 3, range: 5 * CELL },
   },
-  // tusker3: the elite — 2200 hp, armour 22, a 3x3-block hitbox (an
+  // tusker3: the elite — 2200 hp, armour 44, a 3x3-block hitbox (an
   // ironhide4's, at T3), 2.6 tiles/s. Its bubble is the starhart3's in
   // everything but the pool, and the bar behind it is deeper: this is the
   // tier a Tusker push stops being a body and starts being a front.
@@ -1722,7 +1729,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   tusker3: {
     hp: 2200,
     speed: 2.6 * CELL,
-    armor: 22,
+    armor: 44,
     radius: UR * 3,
     tier: 3,
     rotateSpeed: 2.4,
@@ -1730,7 +1737,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     forceField: { radius: 7 * CELL, regen: 32, max: 550, cooldown: 6 },
     shieldField: { amount: 40, max: 260, reload: 3, range: 7 * CELL },
   },
-  // tusker4: the champion — 10500 hp, armour 38, a 4.25x4.25-block hitbox
+  // tusker4: the champion — 10500 hp, armour 76, a 4.25x4.25-block hitbox
   // (wider than the ironhide5, one tier below the top), 2.45 tiles/s and
   // rotateSpeed 1.7. A 1500-point bubble over nine and a half tiles with
   // the whole herd inside it
@@ -1762,7 +1769,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   tusker4: {
     hp: 10500,
     speed: 2.45 * CELL,
-    armor: 38,
+    armor: 76,
     radius: UR * 4.25,
     tier: 4,
     rotateSpeed: 1.7,
@@ -1783,10 +1790,12 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     }),
   },
   // tusker5: the apex, and the largest body that walks — 25000 hp, armour
-  // 52, a 5.5x5.5-block hitbox, 2.3 tiles/s, rotateSpeed 1.3. More health
-  // than the ironhide5 on a box half again its size, and nearly twice its
-  // plating: at 52 every gun under 58 a hit is reduced to the 10% floor,
-  // which is most of the catalogue.
+  // 104, a 5.5x5.5-block hitbox, 2.3 tiles/s, rotateSpeed 1.3. More
+  // health than the ironhide5 on a box half again its size, and over
+  // three times its plating: at 104 every gun whose shot lands under 116
+  // damage is cut to the 10% floor (`max(dmg - armor, 0.1 * dmg)`), which
+  // is very nearly the whole catalogue. What gets through this body is
+  // calibre per shot, not fire rate, and there is not much of it.
   //
   // Four pillars and the same amble as the champion, scaled up: see the
   // note on the tusker4 for what each number is doing
@@ -1799,7 +1808,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   tusker5: {
     hp: 25000,
     speed: 2.3 * CELL,
-    armor: 52,
+    armor: 104,
     radius: UR * 5.5,
     tier: 5,
     rotateSpeed: 1.3,
