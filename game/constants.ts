@@ -165,6 +165,18 @@ export const PAL = {
    * also simply what an elephant's tusks are.
    */
   tusk: pal(0xfff3de),
+  /**
+   * THE EIGHTH FAMILY'S: copper, for the Grapnels (levels.ts, the
+   * starfish). The hue nothing else on the board carries — the swarm owns
+   * rose, lime, gold, magenta, teal, violet and bone, and the turrets own
+   * orange at the muzzle, so a warm metal that is neither the sky's
+   * orange nor the ground mechs' rose is what is left. It is the winch on
+   * the body, the hook line when it is thrown, and the five lit arm tips
+   * on the apex.
+   */
+  hook: pal(0xe59a55),
+  /** ...and its shade, the star's back sprite under the front one */
+  hookDark: pal(0xa35a2a),
   tuskDark: pal(0x8a7a5e),
 } as const;
 
@@ -2064,6 +2076,38 @@ export const SHORT_FX_LIFE = 0.22;
  * for that long and no longer.
  */
 export const AURA_LINGER = 1.35;
+
+/**
+ * THE GRAPNELS' WINCH (levels.ts UnitStats.grapple, Sim.updateGrapples).
+ *
+ * GRAPPLE_REEL_TIME is how long a hooked body spends being dragged to
+ * where its hook bit — a third of a second whatever the distance, because
+ * what the player has to read is a winch snapping taut rather than a body
+ * walking faster. GRAPPLE_REEL_SPEED is what its own pace is multiplied
+ * by while that runs, and the two together are what decide how far a
+ * throw actually carries: the ray picks a point up to the kind's `reach`,
+ * and the reel is fast enough to cover it.
+ *
+ * GRAPPLE_ANCHOR_TIME is the OTHER end of the mechanic and the reason it
+ * is not oppressive: a building that has been dragged cannot be dragged
+ * again for this long (Tower.pullT), so a wave of forty starfish cannot
+ * walk one turret across the map — the first one takes it, and every body
+ * behind it finds the gun anchored and spends its hook on the ground. It
+ * is the same minute the winch itself takes, on purpose: one gun per body
+ * per minute, one pull per gun per minute.
+ *
+ * 
+GRAPPLE_SETTLE is the winch SPOOLING UP: the seconds a freshly arrived
+ * body may not throw at all. It is not flavour — a body picks its first
+ * target a few tenths of a second after it goes live, and without this a
+ * starfish that lands within reach of a turret throws its hook at the
+ * empty ground ahead on its very first tick, because it has not looked at
+ * anything yet. Two seconds is several target picks.
+ */
+export const GRAPPLE_SETTLE = 2;
+export const GRAPPLE_REEL_TIME = 0.35;
+export const GRAPPLE_REEL_SPEED = 7;
+export const GRAPPLE_ANCHOR_TIME = 60;
 
 /**
  * THE SQUEEZE (Sim.mergeSqueezed): two bodies of one kind crushed into

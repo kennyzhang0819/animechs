@@ -61,6 +61,7 @@ export type StatusId =
   | "blinks"
   | "vanishes"
   | "charges"
+  | "grapples"
   | "bomb"
   | "immune"
   | "wet"
@@ -75,6 +76,7 @@ export type StatusId =
   | "virus"
   | "rot"
   | "short"
+  | "anchored"
   | "jam"
   | "boost"
   | "regen"
@@ -275,6 +277,14 @@ export const STATUSES: readonly StatusDef[] = [
     field: false,
   },
   {
+    id: "grapples",
+    name: "Grapple",
+    color: PAL.hook,
+    blurb:
+      "IT CARRIES A HOOK, and throws it once a minute. With nothing in reach it winches ITSELF up its own route, which is how a body this slow crosses open ground; with one of your turrets in reach it hooks THAT and drags it toward the swarm instead. The gun keeps its health, its mods and its cooldown — all it loses is where you built it.",
+    field: false,
+  },
+  {
     id: "bomb",
     name: "Payload",
     color: PAL.bomber,
@@ -385,6 +395,14 @@ export const STATUSES: readonly StatusDef[] = [
     color: PAL.wraith,
     blurb:
       "A Wraith arc put this gun out. It neither reloads nor fires nor mends while this lasts; a fresh short re-times it rather than stacking.",
+    field: true,
+  },
+  {
+    id: "anchored",
+    name: "Anchored",
+    color: PAL.hook,
+    blurb:
+      "A Grapnel has already dragged this building, and nothing may drag it again until this runs out. One body spends its winch on one gun, and the rest of the wave has to take the board as it now stands.",
     field: true,
   },
   {
@@ -591,6 +609,11 @@ function unitTraits(kind: UnitKind): StatusChip[] {
         (u.cloak.veil ? ` — and takes everything within ${tiles(u.cloak.veil)} with it` : ""),
     );
   if (u.charge) add("charges", `leaves the route for any structure within ${tiles(u.charge.range)}`);
+  if (u.grapple)
+    add(
+      "grapples",
+      `hooks itself ${tiles(u.grapple.reach)} up its route, or drags a turret within ${tiles(u.grapple.range)} back ${tiles(u.grapple.pull)} — once every ${u.grapple.cooldown}s`,
+    );
   if (u.payload)
     add(
       "bomb",
@@ -675,11 +698,11 @@ export function unitStatusChips(sim: Sim, i: number): StatusChip[] {
  * nothing, and cannot change sides.
  */
 /**
- * THE NINE SYMBOLS A BUILDING CAN WEAR, in the order they are drawn.
+ * THE TEN SYMBOLS A BUILDING CAN WEAR, in the order they are drawn.
  *
  * The order is the wire format as well as the catalogue: a building's row
  * crosses to the drawing side as one bitmask over this list (see
- * structStatusMask), which is nine clocks' worth of answer in one number —
+ * structStatusMask), which is ten clocks' worth of answer in one number —
  * and keeps the RULE about what counts as a status on the side that owns
  * the clocks, rather than copying nine of them across to be re-judged.
  */
@@ -687,6 +710,10 @@ export const STRUCT_FIELD_STATUSES: readonly StatusId[] = [
   "virus",
   "rot",
   "short",
+  // the Grapnels' hook has had this one and cannot have it again
+  // (Tower.pullT) — beside the short, because both are something a body
+  // did TO the gun rather than something the gun is
+  "anchored",
   "jam",
   "boost",
   "regen",
@@ -702,12 +729,13 @@ export function structStatusMask(s: Structure): number {
     (s.virus ? 1 : 0) |
     (s.poison > 0 ? 2 : 0) |
     (s.shortT > 0 ? 4 : 0) |
-    (s.jamT > 0 ? 8 : 0) |
-    (s.boostT > 0 ? 16 : 0) |
-    (s.regen > 0 ? 32 : 0) |
-    (s.revives > 0 ? 64 : 0) |
-    (s.fireRate < 1 ? 128 : 0) |
-    (s.team === "enemy" ? 256 : 0)
+    (s.pullT > 0 ? 8 : 0) |
+    (s.jamT > 0 ? 16 : 0) |
+    (s.boostT > 0 ? 32 : 0) |
+    (s.regen > 0 ? 64 : 0) |
+    (s.revives > 0 ? 128 : 0) |
+    (s.fireRate < 1 ? 256 : 0) |
+    (s.team === "enemy" ? 512 : 0)
   );
 }
 
@@ -796,7 +824,7 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
   const tally = new Map<StatusId, number>();
   // the single-pick numbers. Summed or maxed so they stay meaningful for
   // one building, which is the only case that ever reads them back
-  let poison = 0, boostT = 0, regen = 0, revives = 0, rate = 1, shortT = 0, jamRate = 1;
+  let poison = 0, boostT = 0, regen = 0, revives = 0, rate = 1, shortT = 0, jamRate = 1, pullT = 0;
   let virusDps = 0;
   for (const s of picked) {
     if (isCore(s)) {
@@ -805,6 +833,7 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
     }
     poison += s.poison;
     shortT = Math.max(shortT, s.shortT);
+    pullT = Math.max(pullT, s.pullT);
     if (s.jamT > 0) jamRate = Math.min(jamRate, s.jamRate);
     virusDps += s.virus ? s.hpMax * VIRUS_DPS : 0;
     boostT = Math.max(boostT, s.boostT);
@@ -820,6 +849,7 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
     if (s.virus) bump("virus");
     if (s.poison > 0) bump("rot");
     if (s.shortT > 0) bump("short");
+    if (s.pullT > 0) bump("anchored");
     if (s.jamT > 0) bump("jam");
     if (s.boostT > 0) bump("boost");
     if (s.regen > 0) bump("regen");
@@ -847,6 +877,7 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
   );
   on("rot", null, `${num(poison)} health a second`);
   on("short", null, secs(shortT));
+  on("anchored", null, `cannot be dragged again — ${secs(pullT)}`);
   on("jam", null, `reloads at ${Math.round(jamRate * 100)}%`);
   on("boost", null, secs(boostT));
   on("regen", null, `${num(regen)} health a second`);

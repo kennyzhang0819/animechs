@@ -21,6 +21,10 @@ import {
   BURN_DPS as BURN_DPS_IMPORT,
   BURN_FX_CHANCE as BURN_FX_CHANCE_IMPORT,
   AURA_LINGER,
+  GRAPPLE_ANCHOR_TIME,
+  GRAPPLE_REEL_SPEED,
+  GRAPPLE_REEL_TIME,
+  GRAPPLE_SETTLE,
   DAMAGE_SMOKE_BELOW,
   DAMAGE_SMOKE_LIFE,
   DAMAGE_SMOKE_RATE,
@@ -626,8 +630,16 @@ const KIND_PAYLOAD = UNIT_KINDS.map((k) => UNIT_STATS[k].payload ?? null);
  */
 const KIND_CHARGE = Float64Array.from(UNIT_KINDS, (k) => UNIT_STATS[k].charge?.range ?? 0);
 const HAS_CHARGE = KIND_CHARGE.some((r) => r > 0);
+/**
+ * THE GRAPPLE (levels.ts UnitStats.grapple), the Grapnels' trait: the
+ * hook's reach up its own route, the reach it will take a GUN at instead,
+ * how far that gun is dragged, and the minute between throws. Null for
+ * every kind that carries no hook, which is every kind but five.
+ */
+const KIND_GRAPPLE = UNIT_KINDS.map((k) => UNIT_STATS[k].grapple ?? null);
+const HAS_GRAPPLE = KIND_GRAPPLE.some((g) => g !== null);
 const KIND_SEEK = Float64Array.from(UNIT_KINDS, (k) =>
-  Math.max(UNIT_REACH[k], UNIT_STATS[k].charge?.range ?? 0),
+  Math.max(UNIT_REACH[k], UNIT_STATS[k].charge?.range ?? 0, UNIT_STATS[k].grapple?.range ?? 0),
 );
 const KIND_BOSS: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].boss);
 const BOSS_KINDS = KIND_BOSS.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
@@ -1051,6 +1063,21 @@ export class Sim {
   readonly ureachT = new Float32Array(MAX_UNITS);
   /** BLINK (levels.ts blink): seconds until the body may jump again */
   readonly ublinkCd = new Float32Array(MAX_UNITS);
+  /**
+   * THE GRAPNELS' WINCH (levels.ts grapple): seconds until the hook may be
+   * thrown again — one minute, whichever way it was spent.
+   */
+  readonly ugrapCd = new Float32Array(MAX_UNITS);
+  /**
+   * ...and the throw in progress: where the hook is planted and how many
+   * seconds of winching are left. While `ureelT` runs the body drops the
+   * flow field and is dragged straight at that point at several times its
+   * own pace (updateUnits), which is the whole of how this family covers
+   * ground. Zero is a body walking normally.
+   */
+  readonly ureelT = new Float32Array(MAX_UNITS);
+  readonly ureelX = new Float32Array(MAX_UNITS);
+  readonly ureelY = new Float32Array(MAX_UNITS);
   /** CLOAK (levels.ts cloak): seconds still hidden, and seconds until the
    *  next time it hides */
   readonly ucloakT = shared.f32(MAX_UNITS);
@@ -2877,8 +2904,10 @@ export class Sim {
       poison: 0,
       poisonUnit: 0,
       poisonT: 0,
-      // ...nor shorted (the Wraith fleet's EMP) nor jammed (the sky's T4)
+      // ...nor shorted (the Wraith fleet's EMP) nor jammed (the sky's T4),
+      // and nothing has had a hook on it (the Grapnels', Tower.pullT)
       shortT: 0,
+      pullT: 0,
       jamT: 0,
       jamRate: 1,
       // ...and nothing is infected the moment it is built: the Mech Virus
@@ -2993,6 +3022,10 @@ export class Sim {
     this.fireTowers(dt);
     this.updateProjectiles(dt);
     this.updateUnitWeapons(dt);
+    // THE HOOKS, after the targets are picked and before the shots move:
+    // a starfish spends its winch on the target updateUnitWeapons just
+    // handed it, or on the ground ahead when there is none
+    if (HAS_GRAPPLE) this.updateGrapples(dt);
     this.updateEnemyShots(dt);
     // CASCADE CHARGES (relics.ts): the heavy hulls that fell this tick,
     // going off — after every pass that can kill, so nothing is halfway
@@ -3946,7 +3979,16 @@ export class Sim {
           case "bullet":
           case "missile":
           case "shell": {
-            for (let k = 0; k < shots; k++) this.fireUnitShot(x, y, tgt, wp, k, fed);
+            // THE STAR (weapons.ts UnitWeapon.radial): the volley leaves
+            // the body evenly spaced round the whole circle, on the
+            // heading the body happens to be facing, with none of the
+            // aim's jitter. The target is what pulled the trigger and
+            // nothing more — four of a starfish's five rounds usually fly
+            // off into the map, and the fifth takes everything on its line
+            if (wp.radial) {
+              for (let k = 0; k < shots; k++)
+                this.fireUnitShotAt(x, y, urot[i] + (k * Math.PI * 2) / shots, wp, fed);
+            } else for (let k = 0; k < shots; k++) this.fireUnitShot(x, y, tgt, wp, k, fed);
             break;
           }
           case "gun": {
@@ -4092,6 +4134,7 @@ export class Sim {
                 look: wp.look, collide: wp.look.collide !== false, trailT: 0,
                 poison: wp.poison ?? 0,
                 poisonChance: wp.poisonChance ?? 1,
+                pierced: null,
               });
             }
             break;
@@ -4243,8 +4286,7 @@ export class Sim {
 
   /** a bullet, missile or shell leaves the unit for the structure */
   private fireUnitShot(x: number, y: number, tgt: Aim, wp: UnitWeapon, k: number, fed = 1): void {
-    const look = wp.look;
-    if (!look) return;
+    if (!wp.look) return;
     const half = tgt.half;
     // aim at the footprint, with a little spread so a burst is a burst
     const ax = tgt.x + (Math.random() * 2 - 1) * half * 0.6;
@@ -4252,14 +4294,26 @@ export class Sim {
     const dx = ax - x, dy = ay - y;
     const d = Math.max(1, Math.sqrt(dx * dx + dy * dy));
     const a = Math.atan2(dy, dx) + (Math.random() * 2 - 1) * 0.05 + (k - ((wp.shots ?? 1) - 1) / 2) * 0.06;
-    const sp = wp.speed;
     // a shell lives exactly long enough to reach where it was aimed; a
     // bullet flies its full range and stops at what it hits on the way
-    const life = wp.fx === "shell" ? d / sp : wp.range / sp;
+    this.fireUnitShotAt(x, y, a, wp, fed, wp.fx === "shell" ? d / wp.speed : undefined);
+  }
+
+  /**
+   * ONE ROUND ON A HEADING — what fireUnitShot resolves to once it has
+   * decided where to point, and what the radial volley (weapons.ts
+   * UnitWeapon.radial) uses directly, since it never aims at anything.
+   * `life` overrides the flight time for a shell, which lives exactly long
+   * enough to reach where it was lobbed.
+   */
+  private fireUnitShotAt(x: number, y: number, a: number, wp: UnitWeapon, fed = 1, life?: number): void {
+    const look = wp.look;
+    if (!look) return;
+    const sp = wp.speed;
     this.shots.push({
       x, y,
       vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-      life, age: 0,
+      life: life ?? wp.range / sp, age: 0,
       // ...at what the BODY hits for, not what the weapon says: a fed
       // Hungry mech's shells carry its meals exactly as its direct hits do
       // (see `fed` in updateUnitWeapons)
@@ -4274,6 +4328,10 @@ export class Sim {
       // when it was fired (weapons.ts UnitWeapon.poison)
       poison: wp.poison ?? 0,
       poisonChance: wp.poisonChance ?? 1,
+      // a piercing round carries the list of what it has already bitten
+      // (weapons.ts pierce); every other shot dies on the first thing it
+      // touches and never allocates one
+      pierced: wp.pierce ? [] : null,
     });
     // the bullet's own shootEffect and smokeEffect, in its hitColor (what
     // Effect.at is handed for a shootEffect) — sparkShoot ramps into it
@@ -4410,7 +4468,20 @@ export class Sim {
       }
       const off = sh.x < 0 || sh.y < 0 || sh.x >= W || sh.y >= H;
       const t = off || !sh.collide ? null : this.structureAt(sh.x, sh.y);
-      if (t) {
+      // A PIERCING ROUND IS NOT STOPPED BY WHAT IT HITS (weapons.ts
+      // UnitWeapon.pierce, the Grapnels' star): it bites a structure ONCE
+      // — the list is what keeps a footprint it spends four cells
+      // crossing from being charged four times — and flies on until its
+      // flight runs out. A row of turrets on its line is a row of turrets
+      if (t && sh.pierced) {
+        if (!sh.pierced.includes(t)) {
+          sh.pierced.push(t);
+          this.hitStructure(t, sh.damage, sh.poison, sh.poisonChance);
+          if (sh.splash > 0)
+            this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison, sh.poisonChance);
+          this.shotHitFx(sh);
+        }
+      } else if (t) {
         this.hitStructure(t, sh.damage, sh.poison, sh.poisonChance);
         if (sh.splash > 0)
           this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison, sh.poisonChance);
@@ -4431,7 +4502,9 @@ export class Sim {
           this.shotHitFx(sh);
         } else if (under || look.hit === FxKind.HitLaser) this.shotHitFx(sh);
       }
-      if (t || off || sh.life <= 0) {
+      // ...so a piercing round only leaves the list when it flies off the
+      // board or its flight is spent
+      if ((t && !sh.pierced) || off || sh.life <= 0) {
         shots[p] = shots[shots.length - 1];
         shots.pop();
       }
@@ -5266,6 +5339,13 @@ export class Sim {
       this.ureachMul[i] = 1;
       this.ureachT[i] = 0;
       this.ublinkCd[i] = 0;
+      // a body arrives with its hook LOADED BUT NOT YET AIMED: the winch
+      // spools for a moment first (GRAPPLE_SETTLE), which is the two
+      // seconds it takes to pick a first target. Without it every
+      // starfish throws at the ground on the tick it arrives, having
+      // looked at nothing
+      this.ugrapCd[i] = GRAPPLE_SETTLE;
+      this.ureelT[i] = 0;
       // a cloaking kind walks in visible and hides for the first time a
       // full period in — a door that spat out ghosts would be a door with
       // no answer
@@ -5617,6 +5697,7 @@ export class Sim {
         }
       }
       if (HAS_BLINK && this.ublinkCd[i] > 0) this.ublinkCd[i] -= dt;
+      if (HAS_GRAPPLE && this.ugrapCd[i] > 0) this.ugrapCd[i] -= dt;
       // THE CLOAK CYCLE (levels.ts cloak): hidden for `duration`, then
       // seen for the rest of `period`, from the first period in. The
       // flagship's veil hides the bodies round it for the same spell —
@@ -6202,6 +6283,10 @@ export class Sim {
     this.ureachMul[i] = this.ureachMul[n];
     this.ureachT[i] = this.ureachT[n];
     this.ublinkCd[i] = this.ublinkCd[n];
+    this.ugrapCd[i] = this.ugrapCd[n];
+    this.ureelT[i] = this.ureelT[n];
+    this.ureelX[i] = this.ureelX[n];
+    this.ureelY[i] = this.ureelY[n];
     this.ucloakT[i] = this.ucloakT[n];
     this.ucloakCd[i] = this.ucloakCd[n];
     this.uhungry[i] = this.uhungry[n];
@@ -6806,6 +6891,26 @@ export class Sim {
           flowTmp.y = ty / tl;
         } else mf.sample(upx[i], upy[i], flowTmp);
       }
+      // A HOOKED BODY IS BEING WINCHED (levels.ts grapple, Sim.hookSelf):
+      // for the third of a second the line is taut it drops the route and
+      // is dragged straight at where the hook bit, at several times its
+      // own pace. It is the charge's override with a point instead of a
+      // target — and it keeps every force below it, so the reel still
+      // slides along walls and still shoves through a crowd rather than
+      // teleporting past either
+      let reeling = false;
+      if (HAS_GRAPPLE && this.ureelT[i] > 0) {
+        this.ureelT[i] -= dt;
+        const tx = this.ureelX[i] - upx[i], ty = this.ureelY[i] - upy[i];
+        const tl = Math.sqrt(tx * tx + ty * ty);
+        // arrived, or the clock ran out: the line goes slack
+        if (this.ureelT[i] <= 0 || tl < CELL * 0.4) this.ureelT[i] = 0;
+        else {
+          reeling = true;
+          flowTmp.x = tx / tl;
+          flowTmp.y = ty / tl;
+        }
+      }
       // StatusEffects.unmoving is a speedMultiplier of 0, not a freeze: a
       // unit still materialising cannot drive itself anywhere, but the
       // crowd shove below still lands on it. Wet is the other multiplier
@@ -6840,12 +6945,16 @@ export class Sim {
       // soaked body under a weaver3 is slowed and hurried at once, and the
       // product is the honest answer to both.
       const haste = HAS_HASTE_AURA && this.uhasteT[i] > 0 ? this.uhasteMul[i] : 1;
+      // ...and a FIFTH, which is the only one that can be bigger than one:
+      // the winch (GRAPPLE_REEL_SPEED). A hooked body covers ground at
+      // several times its walk for as long as the line is taut
+      const reel = reeling ? GRAPPLE_REEL_SPEED : 1;
       const spd =
         uspawn[i] > SPAWN_INVINCIBLE - SPAWN_UNMOVING
           ? 0
           : uwet[i] > 0
-            ? uspd[i] * uwetSlow[i] * land * haste
-            : uspd[i] * land * haste;
+            ? uspd[i] * uwetSlow[i] * land * haste * reel
+            : uspd[i] * land * haste * reel;
       uvx[i] += (flowTmp.x * spd - uvx[i]) * steer;
       uvy[i] += (flowTmp.y * spd - uvy[i]) * steer;
 
@@ -8116,6 +8225,13 @@ export class Sim {
       // runs — no reload, no volley, no mending, no beam — until the clock
       // is out. The sparks are the only sign, on the rot's own footprint
       // rule, so a shorted repeater reads from across the field
+      // ANCHORED (Tower.pullT): the minute a dragged gun spends immune to
+      // the next hook. It runs while the turret is shorted, jammed or
+      // anything else — it is a fact about the ground, not about the gun
+      if (t.pullT > 0) {
+        t.pullT -= dt;
+        if (t.pullT <= 0) t.pullT = 0;
+      }
       if (t.shortT > 0) {
         t.shortT -= dt;
         if (t.shortT <= 0) t.shortT = 0;
@@ -9576,6 +9692,183 @@ export class Sim {
   }
 
   /**
+   * THE HOOK (levels.ts UnitStats.grapple), once a minute a body.
+   *
+   * ONE ACTION POINTED AT TWO THINGS. A starfish with a turret inside its
+   * grapple range drags THE TURRET; with nothing there it throws the hook
+   * up its own route and drags ITSELF. Both spend the same winch, so a
+   * body that has just crossed a field cannot also take a gun when it
+   * arrives, and that is most of what keeps the family fair: the hook is
+   * either how it got here or what it does when it does.
+   *
+   * WHAT IT WILL NOT TAKE: the core (a goal cell, and the run's whole
+   * stake), a building already carrying its own no-pull clock
+   * (Tower.pullT), and anything it cannot see — a ground body may only
+   * hold a target it has a clear line to, which updateUnitWeapons has
+   * already tested for the target this reads.
+   */
+  private updateGrapples(dt: number): void {
+    void dt;
+    for (let i = 0; i < this.n; i++) {
+      const g = KIND_GRAPPLE[this.ukind[i]];
+      if (!g || this.uhp[i] <= 0 || this.uspawn[i] > 0) continue;
+      // reeling, or the winch is still turning: nothing to decide
+      if (this.ureelT[i] > 0 || this.ugrapCd[i] > 0) continue;
+      const x = this.upx[i], y = this.upy[i];
+      const aim = this.utgt[i];
+      // A GUN IN REACH IS THE HOOK'S FIRST CHOICE
+      if (aim && !isCore(aim.s)) {
+        const t = aim.s as Tower;
+        const dx = t.x - x, dy = t.y - y;
+        if (dx * dx + dy * dy <= g.range * g.range && t.pullT <= 0 && t.hp > 0) {
+          if (this.pullTower(t, x, y, g.pull)) {
+            this.ugrapCd[i] = g.cooldown;
+            continue;
+          }
+        }
+        // A BODY WITH A BUILDING IN SIGHT HOLDS ITS HOOK, which is the
+        // whole of what makes this family's headline a thing that ever
+        // happens. Left to throw it the moment it could, a starfish
+        // spends the winch on open ground the instant it spawns and
+        // arrives at your line every time with a minute still to run —
+        // measured, the drag fired on none of a ninety-second approach.
+        // It is also the reading a player would expect: the hook is for
+        // the gun when there is a gun, and for the ground when there is
+        // not.
+        continue;
+      }
+      // ...and the ground ahead is what it settles for
+      this.hookSelf(i, g.reach, g.cooldown);
+    }
+  }
+
+  /**
+   * THE WINCH ON ITSELF: the hook goes up the body's own route as far as
+   * `reach`, stopping short of the first cell its layer cannot enter and
+   * of any building — the blink's ray, walked the same way — and what it
+   * finds is where the body is dragged over the next fraction of a second
+   * (updateUnits reads ureelT). A throw that finds less than a tile of
+   * clear line is not worth a minute of winch, so it is not spent.
+   */
+  private hookSelf(i: number, reach: number, cooldown: number): void {
+    const mf = this.unav[i] !== 0 ? this.navalField : this.field;
+    const x0 = this.upx[i], y0 = this.upy[i];
+    mf.sample(x0, y0, flowTmpBlink);
+    const dx = flowTmpBlink.x, dy = flowTmpBlink.y;
+    if (dx * dx + dy * dy < 0.01) return;
+    const step = CELL * 0.5;
+    let d = 0;
+    for (let t = step; t <= reach; t += step) {
+      const px = x0 + dx * t, py = y0 + dy * t;
+      const cx = (px / CELL) | 0, cy = (py / CELL) | 0;
+      if (cx < 1 || cy < 1 || cx >= COLS - 1 || cy >= ROWS - 1) break;
+      const ci = cy * COLS + cx;
+      if (mf.walk[ci] || this.cellTower[ci]) break;
+      d = t;
+    }
+    if (d < CELL) return;
+    this.ugrapCd[i] = cooldown;
+    this.ureelX[i] = x0 + dx * d;
+    this.ureelY[i] = y0 + dy * d;
+    // the reel is over in about a third of a second whatever the distance:
+    // this is a winch snapping taut, not a walk
+    this.ureelT[i] = GRAPPLE_REEL_TIME;
+    // the line itself, drawn from the body to where the hook bit
+    this.pushFxCol(x0, y0, GRAPPLE_REEL_TIME, FxKind.Sap, Math.atan2(dy, dx), d, PAL.hook, 0, true);
+  }
+
+  /**
+   * THE WINCH ON A BUILDING: `dist` px of it, toward (hx, hy), onto the
+   * first footprint on that line that will hold it.
+   *
+   * IT IS A MOVE AND NOT A REBUILD. The structure keeps its health, its
+   * mods, its resolved stats, its cooldown and its target; what changes is
+   * the ground it stands on — claimGround gives its old cells back and
+   * takes the new ones, which is also what marks the routes dirty and the
+   * aim boxes stale, so the swarm re-solves round the gun's new position
+   * the way it would round a fresh one.
+   *
+   * THE LANDING IS TESTED FROM THE FAR END BACK. The hook wants the whole
+   * `dist`; where that footprint would sit on rock, on a spawn tile, on
+   * another building or off the board, it takes the longest shorter pull
+   * that fits, and where nothing fits at all the throw is refused (false)
+   * and the body keeps its winch for the next thing it meets.
+   *
+   * Returns true if the building actually moved.
+   */
+  private pullTower(t: Tower, hx: number, hy: number, dist: number): boolean {
+    if (t.hp <= 0) return false;
+    const dx = hx - t.x, dy = hy - t.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1) return false;
+    const ux = dx / len, uy = dy / len;
+    const sz = this.sizeOf(t);
+    // never past the body doing the pulling: a gun dragged through a
+    // starfish would land on top of it
+    const most = Math.min(dist, Math.max(0, len - (sz * CELL) / 2));
+    if (most < CELL) return false;
+    for (let d = most; d >= CELL * 0.5; d -= CELL * 0.5) {
+      const nx = t.x + ux * d, ny = t.y + uy * d;
+      const gx = Math.round(nx / CELL - sz / 2), gy = Math.round(ny / CELL - sz / 2);
+      if (gx === t.gx && gy === t.gy) continue;
+      if (!this.canStand(gx, gy, sz, t)) continue;
+      const ox = t.x, oy = t.y;
+      this.claimGround(t, false);
+      t.gx = gx;
+      t.gy = gy;
+      t.x = (gx + sz / 2) * CELL;
+      t.y = (gy + sz / 2) * CELL;
+      this.claimGround(t, true);
+      // the ground under it is new ground: a gun dragged to the water's
+      // edge fires slowed from now on, and one dragged off it recovers
+      // (Hydrophobic, mutation.ts)
+      t.fireRate = this.isWaterlogged(gx, gy, t.kind, sz) ? HYDROPHOBIC_RATE : 1;
+      // ...and the board has one fewer turret where it was, which the
+      // count-dependent rungs read
+      this.refreshSpecs();
+      // THE GUN IS ANCHORED FOR A MINUTE (Tower.pullT). Without it the
+      // second, third and fortieth starfish in a wave would walk the same
+      // turret across the board a pull at a time; with it, one body takes
+      // one gun and everything behind it has to spend its hook on the
+      // ground instead
+      t.pullT = GRAPPLE_ANCHOR_TIME;
+      // the line, and the dust where it landed
+      this.pushFxCol(hx, hy, GRAPPLE_REEL_TIME, FxKind.Sap, Math.atan2(oy - hy, ox - hx),
+        Math.sqrt((ox - hx) * (ox - hx) + (oy - hy) * (oy - hy)), PAL.hook, 0, true);
+      this.pushFx(t.x, t.y, 24 / 60, FxKind.Pulverize, 0, 0, (Math.random() * 0x7fffffff) | 0);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * COULD THIS FOOTPRINT HOLD THIS BUILDING? canPlace's ground test with
+   * the tech gate, the price and the crowd left out, and with the
+   * building's OWN cells treated as free — a structure is never in its own
+   * way when it is the thing being moved. Units standing where it lands
+   * are not asked about either: claimGround raises `unstickPending`, and
+   * the same shove that clears a fresh building's cells clears these.
+   */
+  private canStand(gx: number, gy: number, sz: number, self: Structure): boolean {
+    if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
+    const { blocked } = this.terrain;
+    const { isGoal } = this.field;
+    for (let y = gy; y < gy + sz; y++)
+      for (let x = gx; x < gx + sz; x++) {
+        const i = y * COLS + x;
+        if (blocked[i] || isGoal[i] || this.terrain.spawn[i]) return false;
+        const occ = this.cellTower[i];
+        if (occ && occ !== self) return false;
+      }
+    for (const s of this.shieldTowers) {
+      if (s.hp <= 0) continue;
+      if (gx < s.gx + SHIELD_TOWER_SIZE && s.gx < gx + sz && gy < s.gy + SHIELD_TOWER_SIZE && s.gy < gy + sz)
+        return false;
+    }
+    return true;
+  }
+
+  /**
    * THE JUMP (levels.ts blink): `dist` px along the route the body is on,
    * half a cell at a time, stopping short of the first cell its layer
    * cannot enter and of any building's cell — a wraith blinks past a
@@ -9668,7 +9961,7 @@ export class Sim {
         this.shots.push({
           x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
           life: 0.5, age: 0, damage: 0, splash: b.splash * stack, splashRadius: b.radius,
-          look: BOMBLET_LOOK, collide: false, trailT: 0, poison: 0, poisonChance: 1,
+          look: BOMBLET_LOOK, collide: false, trailT: 0, poison: 0, poisonChance: 1, pierced: null,
         });
       }
     }
@@ -9676,7 +9969,7 @@ export class Sim {
       this.shots.push({
         x, y, vx: 0, vy: 0,
         life: pl.fuse, age: 0, damage: 0, splash: pl.splash * stack, splashRadius: pl.radius,
-        look: NUKE_LOOK, collide: false, trailT: 0, poison: 0, poisonChance: 1,
+        look: NUKE_LOOK, collide: false, trailT: 0, poison: 0, poisonChance: 1, pierced: null,
       });
       this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, pl.radius * 0.35);
       return;

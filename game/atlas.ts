@@ -45,6 +45,7 @@ import {
 } from "./familyArt";
 import { IRON_TIERS, ironLegged, ironMech, type IronTier } from "./ironhideArt";
 import { TUSK_TIERS, tuskLegged, tuskMech } from "./tuskerArt";
+import { STARFISH_TIERS, starfishMech } from "./starfishArt";
 
 /**
  * THE SHEET IS PACKED AT LOAD. Nothing in this file names a pixel
@@ -1046,6 +1047,32 @@ export const TUSK4_CELLS = tuskLegCells(4, TUSK4, 256, 64);
 export const TUSK5_CELLS = tuskLegCells(5, TUSK5, 256, 128);
 
 /**
+ * THE GRAPNELS' CELLS, and the second family to ask the packer for room of
+ * its own rather than draw over a Mindustry tree (the Tuskers were the
+ * first, above). There is no upstream `starfish3` and no sprite file for
+ * one, so with ANIMAL_ART off these cells are never painted and the family
+ * sits on the shelf (levels.ts SHELVED_FAMILIES).
+ *
+ * Every tier is the mech rig's three parts on one cell: a body drawn at
+ * its hitbox in native px (36, 52, 72, 116, 148 — starfishArt.ts) on the
+ * smallest 64-multiple cell that holds it, so the world px per native px
+ * is the same 0.625 the rest of the sheet has.
+ */
+const sfMechCells = (t: number, n: number, cell: number) => ({
+  body: sprite(`starfish${t}`, cell, n),
+  base: sprite(`starfish${t}-base`, cell, n),
+  leg: sprite(`starfish${t}-leg`, cell, n),
+  bodySil: sprite(`starfish${t}-sil`, cell, n),
+  baseSil: sprite(`starfish${t}-base-sil`, cell, n),
+  legSil: sprite(`starfish${t}-leg-sil`, cell, n),
+});
+export const SF1_CELLS = sfMechCells(1, STARFISH_TIERS[0].n, 64);
+export const SF2_CELLS = sfMechCells(2, STARFISH_TIERS[1].n, 64);
+export const SF3_CELLS = sfMechCells(3, STARFISH_TIERS[2].n, 128);
+export const SF4_CELLS = sfMechCells(4, STARFISH_TIERS[3].n, 128);
+export const SF5_CELLS = sfMechCells(5, STARFISH_TIERS[4].n, 256);
+
+/**
  * WHERE A BODY'S TEAM CELL RIDES ON ITS BODY QUAD, filled in at pack time
  * (packTeamCells) and read by the renderer.
  *
@@ -1123,6 +1150,11 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   tusker3: { uv: TUSK3_CELLS.body, sprite: UNIT_SPRITE * 2 },
   tusker4: { uv: TUSK4_CELLS.body, sprite: UNIT_SPRITE * 4 },
   tusker5: { uv: TUSK5_CELLS.body, sprite: UNIT_SPRITE * 4 },
+  starfish1: { uv: SF1_CELLS.body, sprite: UNIT_SPRITE },
+  starfish2: { uv: SF2_CELLS.body, sprite: UNIT_SPRITE },
+  starfish3: { uv: SF3_CELLS.body, sprite: UNIT_SPRITE * 2 },
+  starfish4: { uv: SF4_CELLS.body, sprite: UNIT_SPRITE * 2 },
+  starfish5: { uv: SF5_CELLS.body, sprite: UNIT_SPRITE * 4 },
 };
 
 // Mindustry world units → px (CELL / 8, see constants.ts)
@@ -1873,6 +1905,26 @@ if (ANIMAL_ART) {
   };
   tuskLegArt("tusker4", TUSK4_CELLS, TUSK4, 1);
   tuskLegArt("tusker5", TUSK5_CELLS, TUSK5, 2);
+
+  // ---- Grapnels ----
+  // the starfish on the mech rig at every tier, because it has no legs to
+  // plant: what slides with the walk is a fringe of tube feet. No guns —
+  // the star volley is drawn live as shots in flight, never off a sprite —
+  // and no front sway, since nothing about a starfish lurches forward
+  const sfMechArt = (c: typeof SF1_CELLS, T: IronTier, cellScale: 1 | 2 | 4): MechArt => ({
+    leg: c.leg,
+    base: c.base,
+    body: c.body,
+    guns: [],
+    stride: T.stride * PX,
+    sprite: UNIT_SPRITE * cellScale,
+    sil: { leg: c.legSil, base: c.baseSil, body: c.bodySil },
+  });
+  MECH_ART.starfish1 = sfMechArt(SF1_CELLS, STARFISH_TIERS[0], 1);
+  MECH_ART.starfish2 = sfMechArt(SF2_CELLS, STARFISH_TIERS[1], 1);
+  MECH_ART.starfish3 = sfMechArt(SF3_CELLS, STARFISH_TIERS[2], 2);
+  MECH_ART.starfish4 = sfMechArt(SF4_CELLS, STARFISH_TIERS[3], 2);
+  MECH_ART.starfish5 = sfMechArt(SF5_CELLS, STARFISH_TIERS[4], 4);
 }
 
 const ENV = "/mindustry/sprites/blocks/environment";
@@ -2757,6 +2809,13 @@ function packAnimalArt(
       sil: { body: TUSK5_CELLS.bodySil, base: TUSK5_CELLS.baseSil, joint: TUSK5_CELLS.jointSil, baseJoint: TUSK5_CELLS.baseJointSil, foot: TUSK5_CELLS.footSil } },
   ];
   tuskLegCellSets.forEach((cells, i) => packLegged(cells, tuskLegged(TUSK_TIERS[3 + i]), TUSK_TIERS[3 + i].n));
+  // ---- the Grapnels: five mech tiers, body, base plate and tube feet ----
+  const sfCellSets: readonly MechCells[] = [SF1_CELLS, SF2_CELLS, SF3_CELLS, SF4_CELLS, SF5_CELLS].map((c, i) => ({
+    kind: `starfish${i + 1}` as UnitKind,
+    body: c.body, base: c.base, leg: c.leg,
+    sil: { body: c.bodySil, base: c.baseSil, leg: c.legSil },
+  }));
+  sfCellSets.forEach((cells, i) => packMech(cells, starfishMech(STARFISH_TIERS[i]), STARFISH_TIERS[i].n));
 
   // ---- Stoop, Skate, Livewire ----
   // the wing rig: the composed sprite in the kind's own cell, the body

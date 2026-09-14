@@ -243,13 +243,16 @@ const FLOOR_DUST: readonly RGB[] = [
 /** Pal.piercerLaser #a9d8ff — coil's bolt and piercer's beam are both drawn
  * in it, and both wash out to white as they fade */
 const PAL_PIERCER = PAL.piercerLaser;
+/** radians a second the Grapnels' star turns as it flies */
+const STAR_SPIN = 3.2;
 /**
  * The region pair behind each of the swarm's ShotLook sprites (weapons.ts):
  * `-back` first, front over it, exactly as BULLET_REGIONS does for the
  * turrets. The boss missile is a unit's own coloured art and has no
- * back; an orb is no sprite at all (LiquidBulletType.draw is a disc).
+ * back; an orb is no sprite at all (LiquidBulletType.draw is a disc), and
+ * a STAR is the bullet pair laid five times round a turning centre.
  */
-const SHOT_REGIONS: Record<Exclude<ShotRegion, "orb">, readonly [UVRect | null, UVRect]> = {
+const SHOT_REGIONS: Record<Exclude<ShotRegion, "orb" | "star">, readonly [UVRect | null, UVRect]> = {
   bullet: [UV_BULLET_BACK, UV_BULLET],
   shell: [UV_SHELL_BACK, UV_SHELL],
   missile: [UV_MISSILE_BACK, UV_MISSILE],
@@ -2289,6 +2292,23 @@ export class Renderer {
       const look = sh.look;
       // a bomb has no velocity: it keeps the heading it was dropped on, 0
       const rot = sh.vx === 0 && sh.vy === 0 ? 0 : Math.atan2(sh.vy, sh.vx);
+      if (look.region === "star") {
+        // THE GRAPNELS' ROUND: five arms of the ordinary bullet sprite
+        // laid round a centre that turns as the shot flies, so what
+        // crosses the field is a little spinning copper star. It is drawn
+        // rather than packed because five quads cost less than a sprite
+        // cell and the spin has to be live
+        const spin = rot + sh.age * STAR_SPIN;
+        const [sback, sfront] = SHOT_REGIONS.bullet;
+        const arm = look.height * 0.55, out = look.height * 0.28;
+        for (let k = 0; k < 5; k++) {
+          const a = spin + (k * Math.PI * 2) / 5;
+          const px = sh.x + Math.cos(a) * out, py = sh.y + Math.sin(a) * out;
+          if (sback) this.push(dyn, px, py, arm, look.width, a, sback, look.back[0], look.back[1], look.back[2], 1);
+          this.push(dyn, px, py, arm, look.width, a, sfront, look.front[0], look.front[1], look.front[2], 1);
+        }
+        continue;
+      }
       if (look.region === "orb") {
         // LiquidBulletType.draw: Fill.circle in the liquid's colour — and
         // where the shot carries a distinct `front`, a brighter core over

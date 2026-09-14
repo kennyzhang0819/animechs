@@ -6,7 +6,7 @@ import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // import must never become a value one or the two files form a cycle
 import type { MutationId } from "./mutation";
 
-export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "weaver1", "weaver2", "weaver3", "weaver4", "weaver5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss"] as const;
+export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "weaver1", "weaver2", "weaver3", "weaver4", "weaver5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "starfish1", "starfish2", "starfish3", "starfish4", "starfish5"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -48,6 +48,11 @@ export const UNIT_ID: Record<UnitKind, number> = {
   tusker4: 33,
   tusker5: 34,
   boss: 35,
+  starfish1: 36,
+  starfish2: 37,
+  starfish3: 38,
+  starfish4: 39,
+  starfish5: 40,
 };
 
 /**
@@ -83,6 +88,9 @@ export const FAMILY_NAMES = {
   // it: it is the elephant or it is nothing, so it keeps its name off the
   // switch too (there is no upstream weapon to name it for)
   tusker: { name: "Tuskers", body: "Tusker" },
+  // the eighth family, and the second with no upstream hull under it: the
+  // starfish (game/starfishArt.ts), named for the thing on its back
+  starfish: { name: "Grapnels", body: "Grapnel" },
 } as const satisfies Record<string, { name: string; body: string }>;
 
 /**
@@ -587,6 +595,37 @@ export interface UnitStats {
    */
   charge?: { range: number };
   /**
+   * THE GRAPPLE — the Grapnels' family trait, and the only thing in the
+   * game that MOVES A BUILDING THAT IS STILL STANDING.
+   *
+   * A starfish carries one hook and one winch, and the hook has two uses
+   * that are the same action pointed at different things
+   * (Sim.updateGrapples):
+   *
+   *   - NOTHING IN REACH: it throws the hook up its own route, as far as
+   *     `reach` and no further than the first rock or building on the
+   *     line, and winches ITSELF there. That is how this family crosses
+   *     open ground it is otherwise slow over — the bodies are the
+   *     slowest walkers on the roster and they arrive in lurches.
+   *   - A TURRET INSIDE `range`: it hooks the GUN instead and drags it
+   *     `pull` px toward itself, onto the first footprint that will hold
+   *     it. The building keeps its health, its mods and its cooldown; all
+   *     it loses is where it was standing — out of the crossfire it was
+   *     built into, and that much nearer the swarm.
+   *
+   * ONE THROW A MINUTE, BOTH WAYS. `cooldown` is the winch's, so a body
+   * that has just dragged itself forward cannot also take a gun, and a
+   * crowd of forty cannot walk a turret across the board: every building
+   * carries its own no-pull clock afterwards (Tower.pullT, the same
+   * seconds), so the second starfish to arrive finds the gun anchored and
+   * has to spend its hook on the ground instead.
+   *
+   * IT IS NEVER THE CORE. The core is the run's whole stake and it is a
+   * goal cell besides — dragging it would move the map, so the hook does
+   * not take it, exactly as the rend does not bite it.
+   */
+  grapple?: { reach: number; range: number; pull: number; cooldown: number };
+  /**
    * CLOAK — every `period` seconds the body vanishes for `duration`, and
    * it is drawn as a ghost of itself. `veil` is the flagship's: when it
    * cloaks, every body within that radius cloaks with it for the same
@@ -680,9 +719,9 @@ const wake = (o: Partial<WakeSpec> & Pick<WakeSpec, "x" | "length" | "scl">): Wa
 /**
  * THE TANKINESS LADDER, and it is the shape of the whole roster: how long
  * a body lives under fire is the FIRST thing a family says about itself,
- * so the seven lines are ordered and the order is deliberate.
+ * so the eight lines are ordered and the order is deliberate.
  *
- *   elephant  >  rhino  >>  manta  >  frog  >  stag  >  narwhal  >  bat
+ *   elephant > rhino >> manta > frog > stag > starfish > narwhal > bat
  *
  * The two walkers at the front are the wall — the Tusker by plating above
  * everything else (armour 104 at the apex puts nearly the whole catalogue
@@ -698,8 +737,14 @@ const wake = (o: Partial<WakeSpec> & Pick<WakeSpec, "x" | "length" | "scl">): Wa
  * Read it off `hp` at the champion and the apex, which is where a family
  * is actually fought:
  *
- *   T4   10500  9000  8600  8000  7800  7000  6500
- *   T5   25000 24000 20000 18000 17000 15000 14000
+ *   T4   10500  9000  8600  8000  7800  7400  7000  6500
+ *   T5   25000 24000 20000 18000 17000 16000 15000 14000
+ *
+ * The starfish took the seat under the stag rather than one further up
+ * for a reason that is not its role: it is the SLOWEST body in the game
+ * and it spends the whole approach in the open, so every second of its
+ * crawl is a second under fire. A family that is easy to shoot at for
+ * longer does not also get to be hard to kill.
  *
  * Armour bends this against HEAVY guns — a 60-damage shot meets the
  * stag's plate before the frog's, so those two swap at the apex — and
@@ -1870,6 +1915,75 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
       ripple: 4,
     }),
   },
+
+  // ── THE GRAPNELS, the starfish (game/starfishArt.ts) ──────────────────
+  //
+  // THE SLOWEST WALKERS ON THE ROSTER, and the only ones that do not
+  // really walk: every tier crawls at about two tiles a second and makes
+  // its ground up in LURCHES, throwing a hook up its own route and
+  // winching itself to it (UnitStats.grapple). A body that has just
+  // grappled is a body that cannot grapple again for a minute, so a wave
+  // of them comes in as a shoal that surges and then trudges.
+  //
+  // WHAT THEY POSE is not on this table at all: it is where your guns
+  // are standing. A starfish that reaches a turret with a loaded winch
+  // DRAGS IT — the gun keeps everything but its position, and a position
+  // is most of what a turret is worth on a board built around crossfire
+  // and reach. Answer it by killing them on the approach, by spreading
+  // the line so a dragged gun still has friends, or by letting one take
+  // a cheap turret and paying the minute for it (Tower.pullT).
+  //
+  // THE MIDDLE OF THE TANKINESS LADDER, deliberately: tougher than the
+  // fleets that blink and cloak, softer than anything that is meant to
+  // be a wall. It is slow and it is in the open — plating it like a
+  // rhino would make a family nothing answers in time.
+  starfish1: {
+    hp: 240,
+    speed: 1.9 * CELL,
+    armor: 2,
+    radius: UR * 1.125,
+    tier: 1,
+    rotateSpeed: 3.5,
+    grapple: { reach: 7 * CELL, range: 4 * CELL, pull: 1.5 * CELL, cooldown: 60 },
+  },
+  starfish2: {
+    hp: 780,
+    speed: 1.95 * CELL,
+    armor: 4,
+    radius: UR * 1.625,
+    tier: 2,
+    rotateSpeed: 3.2,
+    grapple: { reach: 8 * CELL, range: 5 * CELL, pull: 2 * CELL, cooldown: 60 },
+  },
+  starfish3: {
+    hp: 2100,
+    speed: 2 * CELL,
+    armor: 7,
+    radius: UR * 2.25,
+    tier: 3,
+    rotateSpeed: 2.8,
+    grapple: { reach: 9 * CELL, range: 6 * CELL, pull: 2.5 * CELL, cooldown: 60 },
+  },
+  // the champion drags a gun a full three tiles, which is a turret out of
+  // one patch and into the next
+  starfish4: {
+    hp: 7400,
+    speed: 2.05 * CELL,
+    armor: 13,
+    radius: UR * 3.625,
+    tier: 4,
+    rotateSpeed: 2.2,
+    grapple: { reach: 11 * CELL, range: 7 * CELL, pull: 3 * CELL, cooldown: 60 },
+  },
+  starfish5: {
+    hp: 16000,
+    speed: 2.1 * CELL,
+    armor: 19,
+    radius: UR * 4.625,
+    tier: 5,
+    rotateSpeed: 1.8,
+    grapple: { reach: 13 * CELL, range: 9 * CELL, pull: 4 * CELL, cooldown: 60 },
+  },
 };
 
 /**
@@ -1892,6 +2006,8 @@ export const UNIT_TREES = [
   { key: "navalSupport", name: FAMILY_NAMES.navalSupport.name, kinds: ["livewire1", "livewire2", "livewire3", "livewire4", "livewire5"] },
   // the seventh row: the heavy melee line, on the walkers' layer
   { key: "tusker", name: FAMILY_NAMES.tusker.name, kinds: ["tusker1", "tusker2", "tusker3", "tusker4", "tusker5"] },
+  // the eighth row: the grapple line, on the walkers' layer
+  { key: "starfish", name: FAMILY_NAMES.starfish.name, kinds: ["starfish1", "starfish2", "starfish3", "starfish4", "starfish5"] },
   // not an upgrade path: the boss row holds the kinds that arrive as an
   // event rather than a stream, so its slots do not read as tiers
   { key: "boss", name: "Boss", kinds: ["boss"] },
@@ -2094,6 +2210,26 @@ export const FAMILIES = [
   // approach — there is no answering a Tusker that has arrived.
   { key: "tusker", name: FAMILY_NAMES.tusker.name, layer: "ground", icon: "tusker1",
     kinds: ["tusker1", "tusker2", "tusker3", "tusker4", "tusker5"] },
+  // THE GRAPNELS: the starfish — starfish1 to starfish5 — and the only
+  // family that attacks the BOARD rather than the buildings on it. Every
+  // one of them carries a hook (UnitStats.grapple): with nothing in reach
+  // it winches itself up its own route, and with a turret in reach it
+  // drags THAT instead, one gun a minute per body and one minute per gun.
+  //
+  // ITS GUN IS A STAR. Every tier fires the same thing and nothing else:
+  // five heavy rounds at once, seventy-two degrees apart, flying straight
+  // out from the body with no homing and no arc, each one PIERCING every
+  // structure on its line until its flight runs out (weapons.ts
+  // starfish-star). Ten seconds between volleys — the longest reload on
+  // the roster — so what a starfish does to a board is decided in the
+  // moment it fires, by where it is standing and which way it is facing.
+  //
+  // WHAT IT POSES: a line that is no longer where you built it, and a
+  // round that does not stop at the first turret. The answer is killing
+  // them on the crawl — they are the slowest bodies in the game — and
+  // spacing the guns so one star cannot take a whole row.
+  { key: "starfish", name: FAMILY_NAMES.starfish.name, layer: "ground", icon: "starfish1",
+    kinds: ["starfish1", "starfish2", "starfish3", "starfish4", "starfish5"] },
 ] as const satisfies readonly {
   key: string;
   name: string;
@@ -2122,6 +2258,7 @@ export const FAMILY_ACCENT: Readonly<Record<FamilyKey, RGB>> = {
   naval: PAL.harpoon,
   navalSupport: PAL.wraith,
   tusker: PAL.tusk,
+  starfish: PAL.hook,
 };
 
 /**
@@ -2146,7 +2283,7 @@ export const FAMILY_ACCENT: Readonly<Record<FamilyKey, RGB>> = {
  * empty sprites. They sit on the shelf instead, which keeps the promise
  * exact: off, the game is the six lines it shipped with.
  */
-export const SHELVED_FAMILIES: readonly FamilyKey[] = ANIMAL_ART ? [] : ["tusker"];
+export const SHELVED_FAMILIES: readonly FamilyKey[] = ANIMAL_ART ? [] : ["tusker", "starfish"];
 
 /** the families in play: the table, less the shelf */
 export const ACTIVE_FAMILIES: readonly FamilyKey[] = FAMILIES.map((f) => f.key).filter(
@@ -2306,7 +2443,7 @@ export const UNIT_NAMES: Record<UnitKind, string> = (() => {
     // have no upstream anything to fall back to (they are shelved off the
     // switch, SHELVED_FAMILIES), so they are named off the table either
     // way rather than reading as `Tusker3` in the level editor.
-    if (!ANIMAL_ART && f.key !== "tusker") continue;
+    if (!ANIMAL_ART && f.key !== "tusker" && f.key !== "starfish") continue;
     f.kinds.forEach((k, i) => {
       out[k] = `${FAMILY_NAMES[f.key].body} (${UNIT_RANKS[i]})`;
     });

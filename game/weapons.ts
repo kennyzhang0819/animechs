@@ -101,7 +101,11 @@ export type ShotRegion =
   | "circle-bullet"
   | "mine-bullet"
   | "boss-missile"
-  | "orb";
+  | "orb"
+  // the Grapnels' round and nothing else: five arms of the sprite laid
+  // round a centre that turns as it flies, so what crosses the field is a
+  // little spinning star (renderer.ts, the swarm's shots)
+  | "star";
 
 /**
  * BasicBulletType.draw, for a shot in flight: the `-back` region under the
@@ -306,6 +310,22 @@ export interface UnitWeapon {
    * structure under it every interval.
    */
   pierce?: boolean;
+  /**
+   * THE STAR — the Grapnels' volley, and the one weapon in the game that
+   * does not care where its target is standing. `shots` rounds leave the
+   * body at once, evenly spaced round the full circle (the five of a
+   * starfish's arms, seventy-two degrees apart), on the heading the body
+   * happens to be facing and with none of the aim jitter an aimed burst
+   * takes. A target inside `range` is only what makes it PULL THE
+   * TRIGGER — nothing about the volley is aimed at it, so four of the
+   * five rounds usually fly off into the map and the fifth takes whatever
+   * happens to be on its line.
+   *
+   * It is why this family's reload is ten seconds and its damage is what
+   * it is: a shot that lands by geometry rather than by aim has to be
+   * worth a great deal when it does.
+   */
+  radial?: boolean;
   /**
    * fx "scatter": the CONE — half-angle in radians either side of the aim.
    * Every structure whose footprint edge is within `range` and inside the
@@ -592,6 +612,28 @@ const basic = (width: number, height: number, o: Partial<ShotLook> = {}): ShotLo
  * `size` is the diameter in world units, and it is the whole tier ladder of
  * the family's look: a weaver1's spit is 7 across, a weaver5's bomb 22.
  */
+/**
+ * THE GRAPNELS' STAR: a five-armed round in the family's copper, drawn as
+ * the bullet sprite laid five times round a spinning centre (renderer.ts).
+ * `size` is the star's full span in world units, so the arms are half of
+ * it. No trail — five of these leave the body at once and a trail on each
+ * would put a copper asterisk over a quarter of the board.
+ */
+const star = (size: number): ShotLook => ({
+  region: "star",
+  width: u(size * 0.42),
+  height: u(size),
+  // it does not shrink: the round is the same star the whole way out, and
+  // what says it is running out of flight is that it stops
+  shrinkX: 0,
+  shrinkY: 0,
+  back: PAL.hookDark,
+  front: PAL.hook,
+  shoot: FxKind.ShootBig,
+  hit: FxKind.BulletHit,
+  hitColor: PAL.hook,
+});
+
 const venomOrb = (size: number, o: { trail?: boolean } = {}): ShotLook => ({
   region: "orb",
   width: u(size),
@@ -1186,6 +1228,41 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
       range: u(38), speed: 0, fx: "melee", rend: 0.012,
     },
   ],
+
+  // ---- THE GRAPNELS, the starfish: one weapon, five rounds, no aim ----
+  //
+  // THE WHOLE FAMILY FIRES THE SAME SHOT and only the numbers move: five
+  // copper stars at once, seventy-two degrees apart (UnitWeapon.radial),
+  // straight out from the body with no homing and no arc, each one going
+  // THROUGH every structure on its line until its flight runs out
+  // (UnitWeapon.pierce). A structure inside `range` is only what pulls the
+  // trigger; where the rounds actually go is decided by which way the body
+  // happens to be pointing, which is decided by the route it is crawling.
+  //
+  // TEN SECONDS IS THE LONGEST RELOAD ON THE ROSTER, and the damage is
+  // sized for it: a volley that mostly misses by construction has to be
+  // worth a great deal on the arm that connects. One starfish5 star down
+  // a row of tackers is the row.
+  starfish1: [
+    { name: "starfish1-star", reload: 10, mounts: 1, shots: 5, radial: true, pierce: true,
+      damage: 120, range: u(72), speed: spd(2.4), fx: "bullet", look: star(9) },
+  ],
+  starfish2: [
+    { name: "starfish2-star", reload: 10, mounts: 1, shots: 5, radial: true, pierce: true,
+      damage: 260, range: u(84), speed: spd(2.4), fx: "bullet", look: star(11) },
+  ],
+  starfish3: [
+    { name: "starfish3-star", reload: 10, mounts: 1, shots: 5, radial: true, pierce: true,
+      damage: 480, range: u(96), speed: spd(2.5), fx: "bullet", look: star(13) },
+  ],
+  starfish4: [
+    { name: "starfish4-star", reload: 10, mounts: 1, shots: 5, radial: true, pierce: true,
+      damage: 900, range: u(112), speed: spd(2.5), fx: "bullet", look: star(16) },
+  ],
+  starfish5: [
+    { name: "starfish5-star", reload: 10, mounts: 1, shots: 5, radial: true, pierce: true,
+      damage: 1500, range: u(128), speed: spd(2.6), fx: "bullet", look: star(20) },
+  ],
 };
 
 /** the most weapon slots any unit carries — the per-unit cooldown stride in the sim */
@@ -1226,7 +1303,15 @@ for (const [k, ws] of Object.entries(UNIT_WEAPONS)) {
     if (w.fx === "lightning" && !w.bolt) throw new Error(`${k}/${w.name} is lightning with no bolt`);
     if (w.fx === "scatter" && w.cone === undefined) throw new Error(`${k}/${w.name} is a scatter with no cone`);
     if (w.fx === "arc" && !w.arc) throw new Error(`${k}/${w.name} is an arc with no chain`);
-    if (w.pierce && w.fx !== "laser" && w.fx !== "rail") throw new Error(`${k}/${w.name} pierces but is neither laser nor rail`);
+    // a pierce is a beam that takes everything on its length, a rail that
+    // punches through, or a BULLET that is not stopped by what it hits
+    // (the Grapnels' star) — never a shell, a bomb or anything instant
+    if (w.pierce && w.fx !== "laser" && w.fx !== "rail" && w.fx !== "bullet")
+      throw new Error(`${k}/${w.name} pierces but is neither laser, rail nor bullet`);
+    // a radial volley leaves the body on fixed headings, so it has to be
+    // something that flies and there has to be more than one of them
+    if (w.radial && (w.fx !== "bullet" || (w.shots ?? 1) < 2))
+      throw new Error(`${k}/${w.name} is radial but is not a volley of bullets`);
     // the rend is the melee bite and nothing else's: a percentage of a
     // turret's pool arriving from across the board would be a different
     // game, and the family's whole cost is having to walk up to it

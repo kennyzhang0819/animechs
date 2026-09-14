@@ -2,18 +2,21 @@
 
 This is the direction the enemy art settled on after the animal trial
 (behind `ANIMAL_ART` in `game/animalFlag.ts`), written down so the next
-family is drawn to the same rules without re-running the trial. All seven
+family is drawn to the same rules without re-running the trial. All eight
 families are on the turrets' grammar now (section 1b): the Ironhide rhino
 in `game/ironhideArt.ts`, the Starhart stag, Stoop bat, Dartback poison frog,
 Skate manta and Livewire narwhal in `game/familyArt.ts`, the Tusker
-elephant in `game/tuskerArt.ts`, on the turret
+elephant in `game/tuskerArt.ts`, the Grapnel starfish in
+`game/starfishArt.ts`, on the turret
 engine in `game/turretArt.ts`, with what they share in
 `game/animalArt.ts` and the packing in `game/atlas.ts`.
 
 The Tusker is the first family drawn from nothing rather than over a
 Mindustry tree — there is no upstream hull under it and no sprite file to
 fall back to — so it is also the first proof that section 3 below is
-enough to add a family with.
+enough to add a family with. The Grapnel starfish is the second, and it
+is the one that tested the rules from the other end: a RADIALLY symmetric
+animal, where every other body on the sheet is bilateral.
 
 ## 1. The style
 
@@ -154,6 +157,17 @@ the other way round.
   symmetrical body is a face, and the eye finds it instantly. Segment
   along the spine; put the horizontal breaks only where the animal really
   has one (the bat's head against its shoulders).
+- **An ODD number of limbs has no pair in it, and that is why the
+  starfish works.** Five arms — one forward on the midline, two a side,
+  drawn on the left and mirrored — cannot read as eyes, as a pair of ears
+  or as a crab's claws, and thick arms that lie flat cannot read as legs;
+  the thing the legged rig kept producing was a bent knee standing outside
+  a silhouette, and a starfish has no knee. It is also the only body on
+  the sheet whose LEG CELL IS EMPTY (`game/starfishArt.ts`): its feet are
+  all on the underside, so from above there is nothing to draw, and every
+  pass that drew some anyway put two blocks in the notches between the
+  arms that read as cargo strapped to a star. A rig part with nothing to
+  show is left blank rather than filled.
 - **No eyes.** A pair of dark dots on a top-down body reads as dirt at
   field zoom and as a cartoon up close. The head is a shape: a wedge, a
   snout, a jaw plate, horns. The spiders and the eels shipped with eyes
@@ -275,6 +289,7 @@ footprint gets.
 | Skate, the manta | `game/familyArt.ts` | body and two fins, wider than tall, tapered to the tip | 40, 52, 80, 156, 232 |
 | Livewire, the narwhal | `game/familyArt.ts` | body and two flippers | 44, 56, 80, 176, 232 |
 | Tusker, the elephant | `game/tuskerArt.ts` | mech to T3, four legs from T4 | 56, 72, 96, 136, 176 |
+| Grapnel, the starfish | `game/starfishArt.ts` | mech at every tier, and the leg cell is empty | 36, 52, 72, 116, 148 |
 
 **A family may be big, and the Tusker is the one that is.** Every other
 line opens on about a tile — a 32 grid, a tacker's own footprint — because
