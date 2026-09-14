@@ -15,6 +15,24 @@ export const CELL = 20; // one Mindustry ground tile
 export const W = COLS * CELL;
 export const H = ROWS * CELL;
 export const NCELLS = COLS * ROWS;
+
+/**
+ * THE BROAD PHASE'S CELL, in world px, and the grid it makes (Sim.buildHash).
+ *
+ * It lives here rather than in sim.ts because a PLACEMENT reads the same
+ * hash — "is there a body standing under this footprint" is a window query
+ * over it (board.ts) — and the placement test has to be answerable from the
+ * side the sim is not on.
+ *
+ * 32px (1.6 cells) puts the common span at 96px; the rare wide units take a
+ * larger span, which is what the span machinery is for. Must divide W and H
+ * evenly.
+ */
+export const HC = 32;
+export const HCOLS = (W / HC) | 0;
+export const HROWS = (H / HC) | 0;
+export const HN = HCOLS * HROWS;
+
 export const INF = 1e9;
 
 /**

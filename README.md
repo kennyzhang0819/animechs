@@ -13,7 +13,7 @@ npm install
 npm run dev       # the desktop app: a PRODUCTION build served inside the Electron shell
 npm run dev:web   # the same production server, in a bare browser tab
 npm run dev:hot   # Next's dev server with hot reload — slow, and not what ships; only when you need it
-npm run check     # the crash gate, about fifteen seconds — run this, and only this
+npm run check     # the crash gate, about twenty seconds — run this, and only this
 ```
 
 **The game is a desktop game**, shipped to Steam as an Electron app
@@ -34,7 +34,7 @@ on first run, or `cd desktop && npm install` by hand); see
 npm run check
 ```
 
-**One command, about fifteen seconds, and it is the only one anybody is
+**One command, about twenty seconds, and it is the only one anybody is
 asked to run.** It is a CRASH GATE: every question it asks has a right
 answer that needs no opinion about how the game should feel, so it can be
 run after every edit instead of saved up for the end. Non-zero exit means
@@ -47,6 +47,7 @@ something is broken.
 | `docs` | every level and map document under `public/` parses and applies |
 | `worlds` | all nine worlds construct: terrain, script, core |
 | `sim` | the swarm is let out on world 1, a dozen tackers go down on its route, and a round has to connect |
+| `frames` | the ladder's heaviest three waves, on a board built out as far as the map allows, timed — one sim step has to fit its share of a 60fps frame |
 
 The sim leg **asks for a hit, not a kill**. A hit is the whole pipeline in
 one fact — a body was made, it moved, a turret found it, a round reached it
@@ -54,6 +55,29 @@ and the damage landed — and unlike a kill it does not move when somebody
 tunes a price or a hit point. It runs on a fixed seed (the sim rolls off
 `Math.random` directly, so an unseeded gate would be a coin flip), and it
 stops the moment the round lands, which is usually about five seconds in.
+
+The frames leg is the one that **asks how fast**, and the reason the gate
+is twenty seconds rather than ten. It stands up the worst honest hour of a
+campaign — waves 34 to 36 at the count the top of the ladder sends them at,
+every body rolled independently out of all twenty-eight T1-4 kinds, fed in
+through the map's own mouths and given four seconds to walk into a line of
+a couple of thousand turrets — and then times two seconds of `Sim.update`.
+The verdict is the MIDDLE step of the sample, which is the number a frame
+counter shows.
+
+It checks the scenario before it believes the clock: a run whose core fell,
+or whose board was eaten, was timing a lighter field than it claims, and
+says so instead of reporting a fast step.
+
+**It measures the sim and not a frame.** A frame is the step plus the draw,
+and a headless process has no renderer to time, so the budget is the frame
+*less what the draw was measured to cost* — `DRAW_MS` in the script. That
+number is a measurement and not a guess: driven from the console at this
+check's own load, the field costs 1.7ms, the HUD overlay 0.1ms and the
+corner minimap 2.9ms, against a sim step of 7.9ms. So the draw is under a
+third of the frame, the sim gets the other 11.7ms, and a pass means the
+simulation left room for the drawing — not that the game ran at sixty.
+Re-measure `DRAW_MS` the same way if the renderer or the HUD changes shape.
 
 The typecheck and the sim transpile run as two tsc processes side by side,
 and the transpile is skipped outright when nothing under `game/` is newer

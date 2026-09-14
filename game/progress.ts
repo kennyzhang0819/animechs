@@ -254,8 +254,14 @@ function readClearedByMap(p: { clearedByMap?: unknown; cleared?: unknown }): Rec
   return out;
 }
 
-/** every pace a save might have stored — the track's, plus what sandbox offers */
-const ALL_SPEEDS: readonly number[] = [1, 2, 4, 8, 16];
+/**
+ * Every pace a save might have stored. The list is SHORTER than it used to
+ * be — 4x, 8x and 16x have come off the sandbox strip — and an old save
+ * holding one of them reads back as "no stored pace" rather than as a
+ * speed with no button to leave it by. startingSpeed would clamp it down
+ * anyway; dropping it here means the next save written forgets it.
+ */
+const ALL_SPEEDS: readonly number[] = [1, 2];
 
 function readSpeed(p: { speed?: unknown }): number | undefined {
   const s = p.speed;

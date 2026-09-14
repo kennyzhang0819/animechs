@@ -80,12 +80,16 @@ import { FIELDED_KINDS, isRetired, TOWER_KINDS } from "./types";
 import { GAME_LAYERS, Renderer } from "./renderer";
 import { fitZoom } from "./fit";
 import { PICK_LENIENT, PICK_STRUCT_PAD, Sim } from "./sim";
+import { LocalHost, type SimHost } from "./simhost";
+// the minimap is draw-side too, so it reads the world through the same
+// one window the renderer does (simview.ts)
+import type { CoreView, SimView, TowerView } from "./simview";
+import { DrawView, emptySnapshot, packSnapshot, type Snapshot } from "./snapshot";
 import { type TechState } from "./tech";
 import { isCore, type Structure, type Tower } from "./types";
 import { statusSprite } from "./statusArt";
 import {
-  structFieldStatuses,
-  structHasFieldStatus,
+  statusesFromMask,
   structSelectionChips,
   unitFieldStatuses,
   unitHasFieldStatus,
@@ -298,8 +302,14 @@ export interface Stats {
   zoom: number;
 }
 
-/** the speeds the HUD toggle offers */
-export const SPEEDS: readonly number[] = [1, 2, 4, 8, 16];
+/**
+ * THE SPEEDS THE HUD TOGGLE OFFERS. 4x, 8x and 16x used to be here, as
+ * sandbox tools for reaching a late wave without sitting through the early
+ * ones — which is a thing the sandbox strip now does directly and exactly
+ * (skipToWave), instead of approximately and at sixteen times the risk of
+ * the sim drifting from what a real run does at 1x.
+ */
+export const SPEEDS: readonly number[] = [1, 2];
 
 /** every turret's scrap price, read fresh so a dashboard edit shows at once */
 const PRICES = (): Record<TowerKind, number> =>
@@ -311,7 +321,7 @@ const REFUNDS = (): Record<TowerKind, number> =>
  * The multipliers a save has BEFORE the track hands it any — just the
  * pace the game runs at. 2x is a level reward (track.ts), so what a
  * player gets is read off their save (TechState.speeds) rather than
- * written here; 4x, 8x and 16x are sandbox tools and never earned.
+ * written here; the sandbox lifts the gate and offers both.
  */
 export const BASE_SPEEDS: readonly number[] = [1];
 
@@ -462,6 +472,25 @@ const SIM_DT = 1 / 60;
 // frames has to break somewhere, and losing banked time is the cheap end
 const SIM_STEPS_MAX = 3;
 /**
+ * HOW LONG A GAP CAN BE and still be a frame at all (see frame). rAF does
+ * not fire in a hidden tab and stops on a sleeping device, so the first
+ * frame back carries the whole of however long the player was away. Half a
+ * second is longer than any frame this game has actually taken and shorter
+ * than any alt-tab, which is the line between "we were drawing slowly" and
+ * "we were not drawing".
+ */
+const FPS_BLIND = 0.5;
+/**
+ * THE FRAME COUNTER'S MEMORY, in seconds — how long it takes a change in
+ * the frame rate to mostly show up in the corner. The smoothing is a time
+ * constant rather than a flat share of each frame because a per-frame share
+ * is only worth what the frame rate is: at 0.05 a frame it settled in a
+ * second at sixty and took six at ten, which is the counter being slowest
+ * to tell the truth exactly when the truth is worth having. A third of a
+ * second is what 0.05 a frame came to at sixty.
+ */
+const FPS_TAU = 1 / 3;
+/**
  * THE PAN RATE: how much of the viewport the camera crosses per second
  * under a held key or a cursor at the screen's edge, at the default
  * setting. The Controls tab multiplies it (setPanSpeed), and the same
@@ -495,6 +524,27 @@ const MM_SCALE = 1;
  */
 const MM_UNIT_PX = 3.75;
 const MM_STRUCT_PX = 4.5;
+/**
+ * THE MINIMAP'S MARKS, PACKED A PIXEL AT A TIME instead of a byte.
+ *
+ * ImageData is bytes in R,G,B,A order, and a Uint32 view over the same
+ * buffer writes all four in one store — which is the difference between
+ * four stores and one on the several hundred thousand pixels a frame the
+ * corner map paints (drawMinimap). Whether the four bytes land in that
+ * order depends on the machine's byte order, so it is asked once here
+ * rather than assumed: every browser this ships to is little-endian, and a
+ * wrong guess would be a map painted in the wrong colours.
+ */
+const MM_LE = (() => {
+  const probe = new ArrayBuffer(4);
+  new Uint32Array(probe)[0] = 0x0a0b0c0d;
+  return new Uint8Array(probe)[0] === 0x0d;
+})();
+const mmColor = (r: number, g: number, b: number): number =>
+  (MM_LE ? 0xff000000 | (b << 16) | (g << 8) | r : (r << 24) | (g << 16) | (b << 8) | 0xff) >>> 0;
+/** the swarm's red and everything of ours in white — see drawMinimap */
+const MM_RED = mmColor(0xf2, 0x55, 0x55);
+const MM_WHITE = mmColor(0xff, 0xff, 0xff);
 /**
  * HOW DARK A HILL IS ON THE MINIMAP, as a factor on the rock's true tone.
  *
@@ -653,6 +703,8 @@ const PAN_KEYS: Record<string, readonly [number, number]> = {
  */
 export class Game {
   readonly sim: Sim;
+  /** the way in to changing the world — see simhost.ts */
+  private readonly host: SimHost;
   private readonly renderer: Renderer;
   private readonly uictx: CanvasRenderingContext2D;
 
@@ -733,6 +785,9 @@ export class Game {
    *  frame is sixty megabytes a second of garbage for a buffer that is
    *  wiped and refilled anyway. Re-made only when the map's size changes */
   private mmPixels: ImageData | null = null;
+  /** the same buffer as mmPixels, a pixel at a time (see MM_LE) — made with
+   *  it and replaced with it, so the two can never be over different bytes */
+  private mmPx32: Uint32Array | null = null;
   /** the minimap's CSS width in px and the countdown to measuring it
    *  again (MM_CSS_EVERY) — what a dilated mark's size is worked out from */
   private mmCssW = 0;
@@ -886,7 +941,14 @@ export class Game {
    * callback because the HUD is already a poll, and a placement that
    * happened between two polls must not be missed.
    */
-  private built = 0;
+
+  /**
+   * THE WORLD AS THE DRAWING SIDE HOLDS IT (snapshot.ts), and the buffer
+   * the sim publishes into. Rebuilt with the board, because a new map is
+   * new terrain and a fresh set of arrays behind it.
+   */
+  private view!: DrawView;
+  private readonly snapshot: Snapshot = emptySnapshot();
 
   private raf = 0;
   private last = 0;
@@ -911,7 +973,7 @@ export class Game {
       if (this.menuOpen || this.sim.lost() || this.won()) return;
       if (e.target instanceof HTMLElement && e.target.closest("input, textarea, [contenteditable]")) return;
       e.preventDefault();
-      this.sim.sellSelected();
+      this.host.sellSelected();
       return;
     }
     if (e.code === "Space" && !e.repeat) {
@@ -925,6 +987,11 @@ export class Game {
       return;
     }
     if (!PAN_KEYS[e.code]) return;
+    // ...but not while a field holds the caret. The arrows belong to what
+    // is being typed there — the sandbox's wave field is a number input,
+    // where up and down step the value — and a camera that slid sideways
+    // under the player mid-edit would be answering a key twice
+    if (e.target instanceof HTMLElement && e.target.closest("input, textarea, [contenteditable]")) return;
     e.preventDefault(); // arrows would scroll the page
     this.keysDown.add(e.code);
   };
@@ -992,7 +1059,6 @@ export class Game {
         // ghost showed them exactly which cells they were making it about
         const n = this.placeFormation(p);
         if (n > 0) {
-          this.built += n;
           this.heldCard = null;
           this.buildKind = null;
           this.buildForm = null;
@@ -1043,7 +1109,7 @@ export class Game {
       // the left button builds on press and chains from there
       this.selling = true;
       this.sellFrom = p;
-      this.sim.sellTowerAt(p.x, p.y);
+      this.host.sellTowerAt(p.x, p.y);
     } else if (e.button === 1) {
       e.preventDefault();
       this.building = false;
@@ -1061,7 +1127,7 @@ export class Game {
     // this was a ghost the hand was still aiming
     if (wasBuilding && this.ruler && this.buildKind) {
       const q = this.mouseWorld(e);
-      this.sim.placeRuler(this.rulerFrom.x, this.rulerFrom.y, q.x, q.y, this.buildKind);
+      this.host.placeRuler(this.rulerFrom.x, this.rulerFrom.y, q.x, q.y, this.buildKind);
     }
     this.ruler = false;
     if (!this.selecting) return;
@@ -1070,7 +1136,7 @@ export class Game {
     // A DRAG IS A REGION, a click is a point. The threshold is in screen
     // px so it means the same thing at every zoom
     if (this.selDragPx > SEL_DRAG_PX) {
-      this.sim.structsInRect(this.selFrom.x, this.selFrom.y, p.x, p.y, this.selAdd);
+      this.host.structsInRect(this.selFrom.x, this.selFrom.y, p.x, p.y, this.selAdd);
       return;
     }
     // ctrl, or the second click of a double: everything like the thing under
@@ -1112,7 +1178,7 @@ export class Game {
       if (!ruler) this.buildTo(p, true);
     }
     if (this.selling && !this.panning) {
-      this.sim.sellLine(this.sellFrom.x, this.sellFrom.y, p.x, p.y);
+      this.host.sellLine(this.sellFrom.x, this.sellFrom.y, p.x, p.y);
       this.sellFrom = p;
     }
     this.setHover(p);
@@ -1248,7 +1314,7 @@ export class Game {
     // it restarts here, so a drag that leaves the map and comes back does
     // not paint a stripe across everything it skipped
     if (chain && this.inWorld(this.buildFrom)) {
-      this.sim.placeLine(this.buildFrom.x, this.buildFrom.y, p.x, p.y, kind);
+      this.host.placeLine(this.buildFrom.x, this.buildFrom.y, p.x, p.y, kind);
     } else {
       this.placeOne(p);
     }
@@ -1332,16 +1398,15 @@ export class Game {
     // is three hundred and sixty footprints, and the spec table they all
     // compose against is worth rebuilding once at the end rather than
     // once per turret
-    return this.sim.batchPlacement(() => {
-      const solo = this.sim.rollSoloMod();
-      if (solo) {
-        const one = this.sim.placeSolo(cells, kind, solo);
-        if (one > 0) return one;
-      }
-      let n = 0;
-      for (const c of cells) if (this.sim.placeTower(c.gx, c.gy, kind) === "ok") n++;
-      return n;
-    });
+    // WILL ANYTHING LAND? The hand is this thread's, and whether the card
+    // leaves it cannot wait for the sim to answer — so the BOARD is asked
+    // instead, with the same test over the same grids the placement itself
+    // will use (board.ts). That is not a guess: it is the same answer, at
+    // the same instant. If any cell will take it then at least one turret
+    // lands, which is the whole of what the hand needs to know.
+    if (!cells.some((c) => this.view.canPlace(c.gx, c.gy, kind))) return 0;
+    this.host.placeFormation(cells, kind);
+    return 1;
   }
 
   /**
@@ -1403,7 +1468,7 @@ export class Game {
     this.buildForm = form;
     this.buildFacing = 0; // a new card is a new question about the ground
 
-    this.sim.clearStructSelection();
+    this.host.clearStructSelection();
     return { kind, form, n };
   }
 
@@ -1452,7 +1517,7 @@ export class Game {
       const id = rollMod(MOD_ODDS.live(), Math.random, this.modPool());
       if (!id) break; // the save has opened no mod at all
       if (!this.sim.spend(each)) break;
-      this.sim.takeMod(id);
+      this.host.takeMod(id);
       got.push(id);
     }
     if (got.length === 0) return [];
@@ -1472,7 +1537,7 @@ export class Game {
       const id = rollRelic(this.sim.relicsHeld, RELIC_ODDS.live(), Math.random, this.relicPool());
       if (!id) break; // the half is owned out mid-press: stop, charge for the rest
       if (!this.sim.spend(each)) break;
-      this.sim.takeRelic(id);
+      this.host.takeRelic(id);
       got.push(id);
     }
     if (got.length === 0) return [];
@@ -1552,7 +1617,7 @@ export class Game {
     }
     this.buildKind = this.heldCard.kind;
     this.buildForm = this.heldCard.form;
-    this.sim.clearStructSelection();
+    this.host.clearStructSelection();
   }
 
   /** what the deal may turn over: the track's roster, minus the retired
@@ -1701,13 +1766,18 @@ export class Game {
     // twice on every single level start, the second solve throwing the
     // first away
     this.sim = new Sim(level);
+    // every CHANGE to the world goes through here from now on, so that the
+    // day the sim is on a worker the calls are already the shape a message
+    // is (simhost.ts). Reads have not moved and still ask the sim directly.
+    this.host = new LocalHost(this.sim);
     this.renderer = new Renderer(glCanvas, atlas);
     const ctx = uiCanvas.getContext("2d");
     if (!ctx) throw new Error("2d context unavailable");
     this.uictx = ctx;
 
     this.fitToMap();
-    this.renderer.rebuildTerrain(this.sim, GAME_LAYERS);
+    this.remakeView();
+    this.renderer.rebuildTerrain(this.view, GAME_LAYERS);
 
     window.addEventListener("resize", this.onResize);
     window.addEventListener("keydown", this.onKeyDown);
@@ -1736,14 +1806,15 @@ export class Game {
    * to wait.
    */
   private warmup(): void {
+    this.publish();
     this.renderer.render(
-      this.sim,
+      this.view,
       this.zoom,
       -this.tlx * this.zoom,
       -this.tly * this.zoom,
       this.scale,
     );
-    this.drawOverlay();
+    this.drawOverlay(this.view);
     // getContext with the same type returns the context the Renderer
     // already created — it does NOT make a second one — which is how a
     // sync point is reached without widening the Renderer's surface
@@ -1774,7 +1845,7 @@ export class Game {
     this.buildForm = kind ? form : null;
     // a building picked up puts the inspected one down: the ring the hand
     // was reading belongs to a decision it has moved on from
-    if (kind) this.sim.clearStructSelection();
+    if (kind) this.host.clearStructSelection();
   }
 
   /**
@@ -1921,13 +1992,27 @@ export class Game {
   /** apply the save's tower unlocks and caps; null lifts them (editor, dev) */
   setTech(tech: TechState | null): void {
     this.tech = tech;
-    this.sim.setTech(tech);
+    this.host.setTech(tech);
   }
 
   /** the admin view's unlimited income (Sim.setRich) — everything else
    *  about the economy, prices and odds included, stays where it was */
   setRich(on: boolean): void {
-    this.sim.setRich(on);
+    this.host.setRich(on);
+  }
+
+  /**
+   * THE SANDBOX'S JUMP (Sim.skipToWave): put wave `n` on the field now,
+   * clearing whatever the skipped waves left walking. Forward only, and
+   * never past the script's last wave; a number outside that does nothing
+   * rather than erroring, because the control it comes from is a field a
+   * player types into.
+   *
+   * Like every other command it answers nothing — the wave the run is on
+   * arrives with the next `ui()` poll, same as it always has.
+   */
+  skipToWave(n: number): void {
+    this.host.skipToWave(n);
   }
 
 
@@ -1943,7 +2028,7 @@ export class Game {
    * what was already on screen.
    */
   setEffects(on: boolean): void {
-    this.sim.setEffects(on);
+    this.host.setEffects(on);
     this.renderer.setEffects(on);
   }
 
@@ -2086,7 +2171,7 @@ export class Game {
       modDeal: this.modDeal(),
       relicDeal: this.relicDeal(),
       inspect: this.inspect(),
-      built: this.built,
+      built: this.sim.placed,
       // off the sim's live stats (statsFor), never the static table: the
       // whole point of deriving the line is that an upgrade moves it
       targeting: Object.fromEntries(
@@ -2253,7 +2338,7 @@ export class Game {
   }
 
   reset(): void {
-    this.sim.reset();
+    this.host.reset();
     // the run's modules went with the sim's reset (Sim.mods, Sim.relics), so
     // the odds Ascendancy was bending go back to the opening table and the
     // reveal empties
@@ -2265,7 +2350,42 @@ export class Game {
     this.mmBase = null; // ...and a new ground under the minimap
     this.menuOpen = false;
     this.fitToMap();
-    this.renderer.rebuildTerrain(this.sim, GAME_LAYERS);
+    this.remakeView();
+    this.renderer.rebuildTerrain(this.view, GAME_LAYERS);
+  }
+
+  /**
+   * STAND THE DRAWING SIDE'S WORLD UP. Done at the board's birth and again
+   * whenever it is replaced (reset), because a new map is new terrain — and
+   * because the flat arrays are captured by reference here, once, rather
+   * than every frame.
+   */
+  private remakeView(): void {
+    this.view = new DrawView(
+      this.sim,
+      this.sim.terrain,
+      (k, f) => this.sim.bulletFor(k, f),
+      this.sim.boardGrids(),
+      this.sim,
+      () => this.sim.shieldTowers,
+      () => this.sim.techUnlocked(),
+      this.sim.airRoutes(),
+    );
+    this.publish();
+  }
+
+  /**
+   * HAND THE DRAWING SIDE THIS FRAME'S WORLD. The flat arrays it already
+   * holds by reference and nothing has to be done for them; this flattens
+   * the object half (snapshot.ts) and moves the three live counts across.
+   *
+   * It is one call, in one place, and that is deliberate: it is the seam the
+   * sim will move through. Today both sides of it run in this thread back to
+   * back; tomorrow `packSnapshot` runs on the worker and what arrives here
+   * is a message, and the renderer does not find out either way.
+   */
+  private publish(): void {
+    this.view.read(packSnapshot(this.sim, this.snapshot), this.sim.n, this.sim.fxN);
   }
 
   stats(): Stats {
@@ -2377,7 +2497,15 @@ export class Game {
 
   private readonly frame = (now: number): void => {
     if (this.destroyed) return;
-    const dt = clamp((now - this.last) / 1000, 0, 0.05) || 0.016;
+    // A FRAME HAS TWO ELAPSED TIMES AND THEY ARE NOT THE SAME NUMBER.
+    // `raw` is how long the frame took. `dt` is how much of that the SIM is
+    // allowed to hear about, capped so a tab that was hidden for a minute
+    // does not come back owing a minute of catch-up (see SIM_STEPS_MAX).
+    // The counter at the bottom of this function reads `raw`: it is
+    // reporting the frame, not the step.
+    const gap = (now - this.last) / 1000;
+    const raw = gap > 0 ? gap : 0.016;
+    const dt = Math.min(raw, 0.05);
     this.last = now;
 
     // keyboard pan: PAN_RATE of a viewport per second, times the setting
@@ -2406,7 +2534,7 @@ export class Game {
       this.simAcc += dt;
       for (let s = 0; this.simAcc >= SIM_DT && s < SIM_STEPS_MAX; s++) {
         this.simAcc -= SIM_DT;
-        for (let i = 0; i < this.speed; i++) this.sim.update(SIM_DT);
+        for (let i = 0; i < this.speed; i++) this.host.step(SIM_DT);
       }
       // time the step cap refused is forfeit, not owed (see SIM_STEPS_MAX)
       if (this.simAcc >= SIM_DT) this.simAcc = 0;
@@ -2417,6 +2545,11 @@ export class Game {
     }
     const simMs = performance.now() - t0;
 
+    // THE FRAME'S WORLD, HANDED OVER. Between here and the draw below there
+    // is nothing of the sim left in the picture — only what publish() put
+    // across, which is the whole point of the exercise.
+    this.publish();
+
     if (this.diagZooms.length) {
       // each scan looks at the middle of the map, not wherever the camera
       // happened to be — the spawn corner at a close zoom is mostly void
@@ -2426,17 +2559,25 @@ export class Game {
       this.tly = (this.worldH - this.glCanvas.height / k) / 2;
     }
     this.renderer.render(
-      this.sim,
+      this.view,
       this.zoom,
       -this.tlx * this.zoom,
       -this.tly * this.zoom,
       this.scale,
     );
     if (this.diagZooms.length) this.diagScan();
-    this.drawOverlay();
-    this.drawMinimap();
+    this.drawOverlay(this.view);
+    this.drawMinimap(this.view);
 
-    this.fpsEma += (1 / Math.max(dt, 1e-4) - this.fpsEma) * 0.05;
+    // THE COUNTER READS THE FRAME. It used to measure off `dt`, which is
+    // capped at 0.05s for the sim's sake — so the lowest number the corner
+    // could print was 1/0.05, and a genuine eight-fps crawl read as a
+    // comfortable twenty. A gap past FPS_BLIND is DROPPED rather than
+    // folded in: the page was not drawing at all, and a counter parked at
+    // zero for a second after every alt-tab would be the same lie the other
+    // way up.
+    if (raw <= FPS_BLIND)
+      this.fpsEma += (1 / raw - this.fpsEma) * (1 - Math.exp(-raw / FPS_TAU));
     this.simEma += (simMs - this.simEma) * 0.1;
     this.raf = requestAnimationFrame(this.frame);
   };
@@ -2520,10 +2661,10 @@ export class Game {
    * nothing at all. Skipped entirely while
    * React has not handed a canvas over (attachMinimap).
    */
-  private drawMinimap(): void {
+  private drawMinimap(view: SimView): void {
     const mm = this.mmCanvas;
     if (!mm) return;
-    const T = this.sim.terrain;
+    const T = view.terrain;
     const cols = T.cols, rows = T.rows;
     const w = cols * MM_SCALE, h = rows * MM_SCALE;
     if (mm.width !== w || mm.height !== h) {
@@ -2546,20 +2687,30 @@ export class Game {
     // the layer is repainted whole every frame, so the buffer is reused
     // and cleared rather than re-allocated (see mmPixels)
     let img = this.mmPixels;
-    if (!img || img.width !== cols || img.height !== rows)
+    if (!img || img.width !== cols || img.height !== rows || !this.mmPx32) {
       img = this.mmPixels = lc.createImageData(cols, rows);
-    const d = img.data;
-    d.fill(0);
-    const dot = (x: number, y: number, r: number, g: number, b: number): void => {
-      if (x < 0 || y < 0 || x >= cols || y >= rows) return;
-      const o = (y * cols + x) * 4;
-      d[o] = r;
-      d[o + 1] = g;
-      d[o + 2] = b;
-      d[o + 3] = 255;
-    };
-    const box = (gx: number, gy: number, sz: number, r: number, g: number, b: number): void => {
-      for (let y = gy; y < gy + sz; y++) for (let x = gx; x < gx + sz; x++) dot(x, y, r, g, b);
+      this.mmPx32 = new Uint32Array(img.data.buffer);
+    }
+    const px = this.mmPx32;
+    px.fill(0);
+    /**
+     * ONE MARK. It is CLIPPED ONCE and then laid down a ROW AT A TIME: a
+     * mark is nine or eleven cells a side at the corner's usual size (see
+     * MM_UNIT_PX), there are several thousand of them, and testing every
+     * pixel of every one against the four edges — then storing it a byte at
+     * a time — was the most expensive thing in the frame, ahead of the
+     * renderer and very nearly ahead of the sim. A row of a clipped box is
+     * a fill of a typed array, which is a memset.
+     */
+    const box = (gx: number, gy: number, sz: number, col: number): void => {
+      const x0 = gx < 0 ? 0 : gx;
+      const y0 = gy < 0 ? 0 : gy;
+      const x1 = gx + sz > cols ? cols : gx + sz;
+      const y1 = gy + sz > rows ? rows : gy + sz;
+      for (let y = y0; y < y1; y++) {
+        const row = y * cols;
+        px.fill(col, row + x0, row + x1);
+      }
     };
     // HOW MANY CELLS A MARK SPANS so that it reads at MM_*_PX on screen
     // (see those). The CSS width is measured rarely and kept, and the
@@ -2574,31 +2725,31 @@ export class Game {
     const structSz = Math.max(1, Math.round(MM_STRUCT_PX / perCell));
     /** a structure's mark: its own footprint, grown to structSz if that is
      *  bigger, and kept centred on the footprint either way */
-    const struct = (gx: number, gy: number, sz: number, r: number, g: number, b: number): void => {
+    const struct = (gx: number, gy: number, sz: number, col: number): void => {
       const s = Math.max(sz, structSz), off = (s - sz) >> 1;
-      box(gx - off, gy - off, s, r, g, b);
+      box(gx - off, gy - off, s, col);
     };
     // the swarm red, and everything of ours white, so the map answers
     // "us or them" at a glance
     // instead of asking for three colours to be told apart at a pixel each
-    const { upx, upy, n } = this.sim;
+    const { upx, upy, n } = view;
     const uoff = (unitSz - 1) >> 1;
     for (let i = 0; i < n; i++) {
       const gx = (upx[i] / CELL) | 0, gy = (upy[i] / CELL) | 0;
-      box(gx - uoff, gy - uoff, unitSz, 0xf2, 0x55, 0x55);
+      box(gx - uoff, gy - uoff, unitSz, MM_RED);
     }
     // the map's shield towers, wherever they have been seen
-    for (const s of this.sim.shieldTowers) {
+    for (const s of view.shieldTowers) {
       if (s.hp <= 0) continue;
-      struct(s.gx, s.gy, SHIELD_TOWER_SIZE, 0xf2, 0x55, 0x55);
+      struct(s.gx, s.gy, SHIELD_TOWER_SIZE, MM_RED);
     }
     // ...and the player's, over everything: the line is what the map is read
     // for — with the swarm's conquered turrets (Conquest) in its own red,
     // so a lost emplacement is visible on the minimap as a hole in the line
-    for (const t of this.sim.towers)
-      if (t.team === "player") struct(t.gx, t.gy, t.size, 0xff, 0xff, 0xff);
-      else struct(t.gx, t.gy, t.size, 0xf2, 0x55, 0x55);
-    struct(T.base.x, T.base.y, T.base.size, 0xff, 0xff, 0xff);
+    for (const t of view.towers)
+      if (t.team === "player") struct(t.gx, t.gy, t.size, MM_WHITE);
+      else struct(t.gx, t.gy, t.size, MM_RED);
+    struct(T.base.x, T.base.y, T.base.size, MM_WHITE);
     lc.putImageData(img, 0, 0);
 
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -2913,19 +3064,18 @@ export class Game {
    * THE CORE gets the mining bar too, since it ships on the same clock
    * (Sim.coreMineT) — it is the run's first and largest earner, and a bar
    */
-  private drawStructureBars(c: CanvasRenderingContext2D): void {
+  private drawStructureBars(view: SimView, c: CanvasRenderingContext2D): void {
     const bars: { v: number; col: string }[] = [];
     // A BUILDING IN THE SELECTION COUNTS AS PICKED, exactly as a body in it
-    // does (barsOn): asked for only when there is a selection to ask about,
-    // since selectedStructs copies the set to answer
-    const picked = this.sim.selectedStructN > 0 ? new Set(this.sim.selectedStructs) : null;
+    // does (barsOn). Each building carries the answer now (TowerView.selected)
+    // rather than a set of them being built here to be asked.
     const symbols = this.statusOn();
     // on `selected`, a building wears its row when it is in hand or when
     // it is the one the last click marked — a taken turret is marked
     // rather than selected (pickAt), and it is exactly the thing whose
     // row a player is asking after
     const onlyPicked = this.statusMarks === "selected";
-    const marked = onlyPicked ? this.sim.inspectedTower : null;
+
     // ...and the same window test the bodies get: a board can be three
     // hundred turrets and the window holds a fraction of them
     const x0 = this.tlx - VIEW_PAD, y0 = this.tly - VIEW_PAD;
@@ -2933,14 +3083,14 @@ export class Game {
     const off = (x: number, y: number): boolean => x < x0 || x > x1 || y < y0 || y > y1;
     // the core's shipment, and what is left of the thing the whole run is
     // spent defending — one body, both bars, on the player's own terms
-    const core = this.sim.core;
+    const core = view.core;
     const csz = core.size * CELL;
     bars.length = 0;
     const cf = clamp(core.hp / Math.max(1, core.hpMax), 0, 1);
-    if (this.barsOn(true, cf, picked?.has(core) === true))
+    if (this.barsOn(true, cf, core.selected))
       bars.push({ v: cf, col: hpColor(cf) });
     this.drawBars(c, core.x, core.y - csz / 2, csz - 2, bars);
-    for (const t of this.sim.towers) {
+    for (const t of view.towers) {
       if (off(t.x, t.y)) continue;
       const st = structStats(t.kind);
       const sz = st.size * CELL;
@@ -2952,7 +3102,7 @@ export class Game {
       // bodies' are, so "how much is left of that" reads the same whether
       // the thing standing there walks or not
       const own = t.team === "player";
-      if (this.barsOn(own, f, own && picked?.has(t) === true))
+      if (this.barsOn(own, f, own && t.selected))
         bars.push({ v: f, col: own ? hpColor(f) : ENEMY_HP });
       const top = this.drawBars(c, t.x, t.y - sz / 2, sz - 2, bars);
       // ...and WHAT IS BEING DONE TO IT (status.ts) over the bar: the rot
@@ -2960,9 +3110,11 @@ export class Game {
       // built into, the fact that it is not ours any more. Gated the same
       // way a body's is, and answering no for the plain turret a board is
       // mostly made of
-      const mine = !onlyPicked || t === marked || picked?.has(t) === true;
-      if (symbols && mine && structHasFieldStatus(t))
-        this.queueStatusRow(t.x, top, this.statusBuf, structFieldStatuses(t, this.statusBuf));
+      const mine = !onlyPicked || t.inspected || t.selected;
+      // the row itself was decided where the clocks are and crossed as one
+      // mask (status.ts STRUCT_FIELD_STATUSES); this just unpacks it
+      if (symbols && mine && t.statuses !== 0)
+        this.queueStatusRow(t.x, top, this.statusBuf, statusesFromMask(t.statuses, this.statusBuf));
       // THE MOD PIP (mods.ts): a turret that won one of the
       // rolls at its placement wears a dot in the corner of its footprint,
       // in the band of the BEST attribute it carries. It is drawn always
@@ -2988,7 +3140,7 @@ export class Game {
     // say; the dome over it is the renderer's business and is drawn as
     // what it is, a dome
     const ssz = SHIELD_TOWER_SIZE * CELL;
-    for (const s of this.sim.shieldTowers) {
+    for (const s of view.shieldTowers) {
       if (s.hp <= 0 || off(s.x, s.y)) continue;
       const f = clamp(s.hp / Math.max(1, s.hpMax), 0, 1);
       if (!this.barsOn(false, f, false)) continue;
@@ -2996,7 +3148,7 @@ export class Game {
     }
   }
 
-  private drawOverlay(): void {
+  private drawOverlay(view: SimView): void {
     const c = this.uictx;
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.clearRect(0, 0, this.uiCanvas.width, this.uiCanvas.height);
@@ -3006,7 +3158,7 @@ export class Game {
 
     // THE TAXED SHORE, while a turret is in hand. Under the routes and the
     // ghost, both of which are decisions being made ON TOP of it
-    if (this.buildKind && this.sim.hydrophobicOn) {
+    if (this.buildKind && view.hydrophobicOn) {
       const layer = this.soakLayer ?? (this.soakLayer = this.buildSoakLayer());
       if (layer) {
         c.globalAlpha = 0.3;
@@ -3022,7 +3174,7 @@ export class Game {
     // ROUTES, under everything else so a selection ring still reads on top
     if (this.showRoutes) {
       const col = SPAWN_STYLE.css;
-      for (const r of this.sim.airRoutes()) {
+      for (const r of view.airRoutes) {
         const p = r.pts;
         if (p.length < 4) continue;
         c.strokeStyle = col;
@@ -3073,14 +3225,23 @@ export class Game {
     // not have an answer to anyway. The sim drops a building from the
     // selection as it leaves the board (removeTower), so nothing here can
     // be drawn over bare ground
-    const ring = this.sim.selectedStructN === 1;
-    for (const st of this.sim.selectedStructs) {
+    const ring = view.selectedN === 1;
+    // THE PICKED BUILDINGS, found by asking each one rather than by holding a
+    // list of them: the flag rides on the building (see TowerView.selected),
+    // because a list would be a list of references and those do not cross a
+    // thread. The core is a building here like any other.
+    const picked: (TowerView | CoreView)[] = view.towers.filter((t) => t.selected);
+    if (view.core.selected) picked.push(view.core);
+    for (const st of picked) {
       const size = st.size;
-      if (ring && !isCore(st)) {
+      // a TURRET wears a range ring; the core has no range to draw. `kind`
+      // is what tells the two apart once they are views rather than
+      // structures (isCore reads a field the view does not carry)
+      if (ring && "kind" in st) {
         // the LIVE range, not the table's: an upgrade branch that lengthened
         // this turret's reach has to move the ring it is drawn with, or the
         // ring becomes a lie about what the turret can shoot (Sim.statsFor)
-        const range = (st as Tower).spec.range;
+        const range = st.spec.range;
         if (range > 0) {
           c.beginPath();
           c.arc(st.x, st.y, range, 0, Math.PI * 2);
@@ -3103,9 +3264,9 @@ export class Game {
     // not a hostile red, because it is a cursor and not an order. Rides
     // sim time, so it holds still under pause and keeps pace at 4x exactly
     // as its target does
-    const mark = this.sim.inspectMark();
+    const mark = view.inspectMark;
     if (mark) {
-      const bob = Math.sin(this.sim.time * 6) * 3;
+      const bob = Math.sin(view.time * 6) * 3;
       const ax = mark.x, ay = mark.top - 12 + bob;
       c.beginPath();
       c.moveTo(ax, ay + 10); // the tip, pointing down at the target
@@ -3121,7 +3282,7 @@ export class Game {
     }
 
     // WHAT EVERY STRUCTURE IS DOING, as a stack of bars over it (drawBars)
-    this.drawStructureBars(c);
+    this.drawStructureBars(view, c);
     // ...and what every BODY has left, on the Interface tab's terms
     this.drawUnitBars(c);
     // ...and the STATUS SYMBOLS both passes queued, every one of them in a
@@ -3139,9 +3300,9 @@ export class Game {
       // exactly which of them the ground will take
       const cells =
         this.ruler && this.building
-          ? this.sim.rulerCells(this.rulerFrom.x, this.rulerFrom.y, this.hoverX, this.hoverY, this.buildKind)
+          ? view.rulerCells(this.rulerFrom.x, this.rulerFrom.y, this.hoverX, this.hoverY, this.buildKind)
           : this.heldCells({ x: this.hoverX, y: this.hoverY });
-      this.drawGhosts(c, cells, this.buildKind);
+      this.drawGhosts(view, c, cells, this.buildKind);
     }
   }
 
@@ -3157,6 +3318,7 @@ export class Game {
    * the line still shows exactly which of them the ground will take.
    */
   private drawGhosts(
+    view: SimView,
     c: CanvasRenderingContext2D,
     cells: readonly { gx: number; gy: number }[],
     kind: TowerKind,
@@ -3171,8 +3333,8 @@ export class Game {
     // most of a turret's damage is worth a colour of its own
     const buckets: { gx: number; gy: number }[][] = [[], [], []];
     for (const cell of cells) {
-      const ok = this.sim.canPlace(cell.gx, cell.gy, kind);
-      const b = !ok ? 0 : this.sim.isWaterlogged(cell.gx, cell.gy, kind) ? 1 : 2;
+      const ok = view.canPlace(cell.gx, cell.gy, kind);
+      const b = !ok ? 0 : view.isWaterlogged(cell.gx, cell.gy, kind) ? 1 : 2;
       buckets[b].push(cell);
     }
     // THE WHOLE TURRET, ONCE PER FOOTPRINT — plate and head, pointing the

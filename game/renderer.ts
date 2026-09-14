@@ -127,7 +127,11 @@ import {
   SHIELD_TOWER_COL,
   SHIELD_TOWER_SIZE,
 } from "./mutation";
-import { MAX_LEGS, MAX_SEGS, MUZZLE_FLASH_LIFE, WAKE_PTS, type Sim } from "./sim";
+import { MAX_LEGS, MAX_SEGS, MUZZLE_FLASH_LIFE, WAKE_PTS } from "./sim";
+// THE WORLD, THROUGH THE ONE WINDOW THE DRAWING SIDE HAS (simview.ts).
+// Not `Sim` itself: what the picture is allowed to know is a written-down
+// list, and reaching past it has to go through that list first.
+import type { SimView, TowerView } from "./simview";
 import {
   BEAM_STYLES,
   EXPLOSION_STYLES,
@@ -744,6 +748,30 @@ export const GAME_LAYERS: TerrainLayers = {
 // flyer drop shadow: painter's offset + premultiplied black tint
 const SHADOW_OFF = 6;
 const SHADOW_ALPHA = 0.22;
+/**
+ * THE GROUND CROWD'S OWN SHADOW. A flyer is high enough that its shadow
+ * is a whole second body on the ground beside it; a walker is not, and
+ * the shadow it wants is the thin dark rim a solid thing has where it
+ * meets the ground it is standing on. Without one the roster reads as
+ * stickers laid on the map — the hills have a shadow, the walls have a
+ * shadow, and the bodies walking between them had none.
+ *
+ * The offset is a FRACTION OF THE BODY'S OWN QUAD rather than a fixed
+ * number of pixels, which is Mindustry's shadowTX * elevation with the
+ * elevation read off the unit's size: a taller thing throws its shadow
+ * further, so every body on the roster gets a rim of the same width
+ * RELATIVE TO ITSELF instead of a 64px runt wearing the same 6px smear
+ * as a 256px flagship. It falls on the bearing every other shadow here
+ * falls on (SHADOW_TX/TY, and the flyers' offset above): down and right,
+ * from a light up and to the left.
+ *
+ * Stronger than the flyers' 0.22 because almost all of it is hidden: the
+ * body is drawn over its own shadow, so what is left is the crescent
+ * past its lower-right edge, and at the flyers' alpha that crescent
+ * disappeared at play zoom.
+ */
+const GROUND_SHADOW_ELEV = 0.035;
+const GROUND_SHADOW_ALPHA = 0.35;
 
 /**
  * How far past a unit's centre anything drawn FOR it can reach, per kind:
@@ -1150,13 +1178,14 @@ export class Renderer {
     this.dark = this.makeBatch(4);
     // a swarm budget, not a worst case: 12 quads is a walking mech with one
     // mirrored gun drawn twice (silhouette rim under, art over), which is
-    // what MAX_UNITS of anything is ever actually made of. The heavies cost
-    // more — an ironhide4's three mounts make 20, a six-legged weaver3 closer
-    // to 50, and a naval hull 15 (one for the boat, fourteen for the two
-    // sides of its wake) — and a field that was somehow ALL heavies would
-    // run this dry; they arrive in tens, among thousands of the cheap
-    // kinds that do not
-    this.dyn = this.makeBatch(MAX_UNITS * 12 + 2048);
+    // what MAX_UNITS of anything is ever actually made of, and the 13th is
+    // the shadow every body throws (GROUND_SHADOW_ALPHA, and the flyers'
+    // drop shadow before it). The heavies cost more — an ironhide4's three
+    // mounts make 20, a six-legged weaver3 closer to 50, and a naval hull 15
+    // (one for the boat, fourteen for the two sides of its wake) — and a
+    // field that was somehow ALL heavies would run this dry; they arrive in
+    // tens, among thousands of the cheap kinds that do not
+    this.dyn = this.makeBatch(MAX_UNITS * 13 + 2048);
     // one quad per hexagonal bubble; a polygon of any other side count
     // takes one per side, so this holds a wave's worth either way
     this.shields = this.makeBatch(2048);
@@ -1400,7 +1429,7 @@ export class Renderer {
     b: Batch,
     art: LegArt,
     L: LegSpec,
-    sim: Sim,
+    sim: SimView,
     i: number,
     tint: readonly [number, number, number],
     cell: CellArt | null,
@@ -1531,7 +1560,7 @@ export class Renderer {
    * The live position is the head of the path — the trail joins the hull
    * rather than the last sample, exactly as Trail.draw's lastX/lastY do.
    */
-  private pushWake(b: Batch, sim: Sim, i: number, w: WakeSpec): void {
+  private pushWake(b: Batch, sim: SimView, i: number, w: WakeSpec): void {
     const m = sim.uwakeN[i];
     if (m < 1) return;
     const off = i * WAKE_PTS;
@@ -1966,7 +1995,7 @@ export class Renderer {
    * faint the sprite over it still is. A DEAD SHIELD TOWER CASTS NOTHING —
    * its ground is open again, which is what the rest of the drawing says.
    */
-  private syncBuildShadow(sim: Sim): void {
+  private syncBuildShadow(sim: SimView): void {
     // the line as it stands, packed cell-and-size in field order, so a
     // footprint appearing, moving, resizing or being replaced by another
     // in the same frame all read as a change. FOUR bits for the size: it
@@ -2167,7 +2196,7 @@ export class Renderer {
    * It runs after the flyers for the same reason it runs after the
    * darkness — a bullet is above the thing it is flying at.
    */
-  private pushBullets(dyn: Batch, sim: Sim): void {
+  private pushBullets(dyn: Batch, sim: SimView): void {
     const { vx0, vy0, vx1, vy1 } = this;
     const { fxN, fxX, fxY, fxAge, fxTtl, fxKind, fxLen, fxHasCol, fxColR, fxColG, fxColB } = sim;
     // Layer.bullet - 0.01: an artillery shell's trail is laid UNDER the
@@ -2293,21 +2322,27 @@ export class Renderer {
   }
 
   /**
-   * One painter's pass over the crowd (drawFrame): 0 is the ground units
-   * and hulls, 1 the flyers' drop shadows over them, 2 the flyers
-   * themselves. Passes 0 and 1 go into the frame's batch under the
-   * bullets and effects; pass 2 is drawn on its own AFTER the hill
-   * darkness, because a flyer is above the terrain, never inside it.
+   * One painter's pass over the crowd (drawFrame): 0 is the ground
+   * crowd's contact shadows, 1 the ground units and hulls over them, 2
+   * the flyers' drop shadows over all of that, 3 the flyers themselves.
+   *
+   * EVERY SHADOW IS ITS OWN PASS so that no body is ever drawn on top of
+   * a neighbour: the ground crowd's shadows all go down before the first
+   * walker does, exactly as the flyers' all go down before the first
+   * flyer. Passes 0 to 2 go into the frame's batch under the bullets and
+   * effects; pass 3 is drawn on its own AFTER the hill darkness, because
+   * a flyer is above the terrain, never inside it.
    */
-  private pushUnitPass(dyn: Batch, sim: Sim, pass: number): void {
+  private pushUnitPass(dyn: Batch, sim: SimView, pass: number): void {
     const { vx0, vy0, vx1, vy1 } = this;
     const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
     const { ushield, ushieldAlpha, urad, uwet, uhungry, ufly, ueaten, uwade, ucloakT, ustack } = sim;
-    // pass 1 is nothing but the flyers' drop shadows — a whole second
-    // quad per flyer, and the first decoration to go with the effects
-    // switched off (see setEffects)
-    if (pass === 1 && !this.fxOn) return;
-    const wantFly = pass > 0;
+    // the two shadow passes are nothing but shadows — a whole second quad
+    // per body, and the first decoration to go with the effects switched
+    // off (see setEffects)
+    const shadow = pass === 0 || pass === 2;
+    if (shadow && !this.fxOn) return;
+    const wantFly = pass > 1;
     for (let i = 0; i < n; i++) {
       const k = ukind[i];
       if (KIND_FLYING[k] !== wantFly) continue;
@@ -2332,8 +2367,22 @@ export class Renderer {
         continue;
       const usz = KIND_SPRITE[k];
       if (grow !== 1) this.beginScale(upx[i], upy[i], grow);
-      if (pass === 1) {
-        this.push(dyn, upx[i] + SHADOW_OFF, upy[i] + SHADOW_OFF, usz, usz, urot[i], KIND_UV[k], 0, 0, 0, SHADOW_ALPHA);
+      if (shadow) {
+        // the body's own quad, flattened to black and thrown down-right:
+        // clear of the flyer it hangs under, a rim under the walker it
+        // belongs to (GROUND_SHADOW_ELEV). A mech's and a walker's body is
+        // drawn from this same cell at this same size on this same
+        // heading (MECH_ART.body, LEG_ART.body), so the shape that lands
+        // on the ground is the shape that is standing on it — the legs
+        // and the guns are not in it, and at a rim's width nothing of
+        // them would show past the body anyway.
+        const off = wantFly ? SHADOW_OFF : usz * GROUND_SHADOW_ELEV;
+        // A GHOST CASTS A GHOST'S SHADOW: the Wraith hulls cloak (levels.ts)
+        // and a full-strength shadow under a body drawn at a fifth would
+        // hold the fleet's position through every cloak it spends
+        const fade = ucloakT[i] > 0 ? 0.2 : 1;
+        this.push(dyn, upx[i] + off, upy[i] + off, usz, usz, urot[i], KIND_UV[k],
+          0, 0, 0, (wantFly ? SHADOW_ALPHA : GROUND_SHADOW_ALPHA) * fade);
         this.endScale();
         continue;
       }
@@ -2478,7 +2527,7 @@ export class Renderer {
     this.fxOn = on;
   }
 
-  render(sim: Sim, zoom = 1, offX = 0, offY = 0, kPx = this.canvas.width / W): void {
+  render(sim: SimView, zoom = 1, offX = 0, offY = 0, kPx = this.canvas.width / W): void {
     // the sea rides SIM time, so pausing the game stills it and the speed
     // switcher moves it, exactly like everything else on the field
     this.waterTime = sim.time;
@@ -2599,20 +2648,22 @@ export class Renderer {
           continue;
           this.pushWake(dyn, sim, i, w);
       }
-    // painter's order in three passes: ground units, then flyer shadows on
-    // top of the crowd, then the flyers themselves above everything — the
-    // last of those is not here: it is drawn after the darkness at the
-    // end of the frame (pushUnitPass), so a flyer crossing a range is not
-    // swallowed by it
+    // painter's order in four passes: the ground crowd's contact shadows,
+    // the ground units over them, then the flyer shadows on top of the
+    // crowd, then the flyers themselves above everything — the last of
+    // those is not here: it is drawn after the darkness at the end of the
+    // frame (pushUnitPass), so a flyer crossing a range is not swallowed
+    // by it
     this.pushUnitPass(dyn, sim, 0);
     this.pushUnitPass(dyn, sim, 1);
+    this.pushUnitPass(dyn, sim, 2);
     // WHAT A UNIT IS DOING RIGHT NOW, drawn off the unit rather than the
     // effect pool: a starhart4's held beam for as long as it burns, the green
     // ring a starhart5 gathers before its shot, and the energy field's orbit
     // round a livewire4. Each follows its hull as Mindustry's do
     // (parentizeEffects), which a pooled effect at a fixed point cannot
     {
-      const { ubeamT, ucharge, uheldRot, utgt, urot } = sim;
+      const { ubeamT, ucharge, uheldRot, aiming, urot } = sim;
       for (let i = 0; i < n; i++) {
         const k = ukind[i];
         const held = KIND_HELD[k], field = KIND_FIELD[k];
@@ -2620,7 +2671,7 @@ export class Renderer {
         const reach = Math.max(held?.range ?? 0, field?.range ?? 0) + 40;
         if (upx[i] < vx0 - reach || upx[i] > vx1 + reach || upy[i] < vy0 - reach || upy[i] > vy1 + reach)
           continue;
-          if (field) this.drawEnergyField(dyn, upx[i], upy[i], urot[i], field.range, field.color, sim.time, !!utgt[i]);
+          if (field) this.drawEnergyField(dyn, upx[i], upy[i], urot[i], field.range, field.color, sim.time, aiming[i] !== 0);
         if (!held) continue;
         if (ubeamT[i] > 0 && held.beam && held.beamStyle) {
           // ContinuousLaserBulletType: held at full, then out over fadeTime (16 ticks)
@@ -3003,7 +3054,7 @@ export class Renderer {
     // (pushBullets): a shot flies across rock no walker can stand on, and
     // one that went dark halfway there was a shot the player lost
     dyn.n = 0;
-    this.pushUnitPass(dyn, sim, 2);
+    this.pushUnitPass(dyn, sim, 3);
     // ...and the shots over them, above the darkness as well (pushBullets)
     this.pushBullets(dyn, sim);
     this.draw(dyn, true);
@@ -3025,7 +3076,7 @@ export class Renderer {
    * screen — no wobble, and two overlapping fields keep both their
    * outlines rather than merging.
    */
-  private drawForceFields(sim: Sim, buffered: boolean): void {
+  private drawForceFields(sim: SimView, buffered: boolean): void {
     const { upx, upy, ushield, ushieldAlpha, uforceScale, ukind, n } = sim;
     const { vx0, vy0, vx1, vy1 } = this;
     const b = this.shields;
@@ -3883,7 +3934,7 @@ export class Renderer {
    * px (2.5 world px, docs/unit-art.md 1b), and a beam that just caught
    * its target used to be a hairline under that.
    */
-  private drawLockBeam(dyn: Batch, t: Tower): void {
+  private drawLockBeam(dyn: Batch, t: TowerView): void {
     const scale = Math.max(BEAM_MIN_SCALE, t.beamStr * 0.2); // TractorBeamTurret.laserWidth, thinned and floored (see above)
     const x1 = t.x + Math.cos(t.angle) * 5 * MU; // shootLength
     const y1 = t.y + Math.sin(t.angle) * 5 * MU;
@@ -3958,8 +4009,8 @@ export class Renderer {
    */
   private drawContinuousBeam(
     dyn: Batch,
-    t: Tower,
-    cont: BulletStats["continuous"],
+    t: TowerView,
+    cont: TowerView["spec"]["bullet"]["continuous"],
   ): void {
     if (!cont) return;
     // held at full, then linearly out over fadeTime
@@ -4059,7 +4110,7 @@ export class Renderer {
    * is what makes a stone canyon read as grit and a meadow as clippings —
    * so the tile under the foot is looked up per puff, not per unit.
    */
-  private drawFootfall(dyn: Batch, sim: Sim, e: Effect, t: number): void {
+  private drawFootfall(dyn: Batch, sim: SimView, e: Effect, t: number): void {
     const ripple = e.rot ?? 1;
     const cx = clamp((e.x / CELL) | 0, 0, COLS - 1);
     const cy = clamp((e.y / CELL) | 0, 0, ROWS - 1);
@@ -4229,7 +4280,7 @@ export class Renderer {
     dyn: Batch,
     art: SegmentArt,
     S: SegmentSpec,
-    sim: Sim,
+    sim: SimView,
     i: number,
     tint: readonly [number, number, number],
     alpha: number,

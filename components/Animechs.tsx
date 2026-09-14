@@ -1788,6 +1788,24 @@ export default function Animechs() {
   // sandbox-only pace steps down to the fastest speed the save owns (see
   // the effect below)
   const [admin, setAdmin] = useState(false);
+  /** what is typed into the sandbox's wave field, as typed — a string so
+   *  the field can be EMPTY, which "0" is not: a number state would put a
+   *  zero in the box the moment it was cleared and make it unclearable */
+  const [skipField, setSkipField] = useState("");
+  /**
+   * THE WAVE THAT FIELD IS ASKING FOR, or null when what is typed is not a
+   * wave this run can jump to. Both limits are the sim's own
+   * (Sim.skipToWave): FORWARD ONLY, because no ledger here runs backwards,
+   * and no further than the script's last wave. Derived rather than
+   * validated on change, so the Skip button and the sim never disagree
+   * about whether a number is a jump.
+   */
+  const skipTarget = ((): number | null => {
+    if (!hud || skipField.trim() === "") return null;
+    const n = Math.floor(Number(skipField));
+    if (!Number.isFinite(n)) return null;
+    return n > hud.currentWave && n <= hud.totalWaves ? n : null;
+  })();
   // the campaign save (bank, cleared levels, tech nodes) — localStorage,
   // so it loads in an effect; null only for the first client frame
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -2181,7 +2199,7 @@ export default function Animechs() {
         // after a toggle must not come up with last render's value
         g.setEffects(save.effects ?? true);
         // the pace carries across runs and across sessions — a player who
-        // plays at 4x wants 4x again after a loss, not 1x and a click
+        // plays at 2x wants 2x again after a loss, not 1x and a click
         g.setSpeed(startingSpeed(save, admin ? SPEEDS : techOf(save).speeds));
         // the controls, off the save for the same reason as the effects
         g.setPanSpeed(save.panSpeed ?? PAN_SPEED_DEFAULT);
@@ -2555,7 +2573,7 @@ export default function Animechs() {
                 onClick={async () => {
                   const ok = await confirm({
                     title: "Wipe all progress?",
-                    body: "Resources, tech and every cleared rung go back to nothing. This cannot be undone.",
+                    body: "Resources, tech and every cleared tier go back to nothing. This cannot be undone.",
                     confirmLabel: "Wipe",
                   });
                   if (ok) {
@@ -3233,8 +3251,8 @@ export default function Animechs() {
                 corner that holds what is true of the run for good. */}
             <RelicShelf relics={hud.shelfRelics} mods={hud.shelfMods} />
             {admin && !hud.lost && !hud.won && !hud.menuOpen && (
-              /* THE PACE STRIP IS SANDBOX'S, and nothing else on the field
-                 is. A campaign run plays at 1x — the multipliers have
+              /* THE SANDBOX'S OWN CONTROLS, and nothing else on the field
+                 has them. A campaign run plays at 1x — the multipliers have
                  always been admin-only — and the pause button beside them
                  was the whole strip for everyone else: one button, sitting
                  over the field for a whole run, for a thing SPACE does and
@@ -3243,8 +3261,9 @@ export default function Animechs() {
                  has no space bar). A control that duplicates two others
                  earns its corner from nobody.
                  They live directly under the wave panel so the whole run
-                 reads off one corner — and self-start keeps the strip its
+                 reads off one corner — and self-start keeps each strip its
                  own width rather than the stack's. */
+              <>
               <div
                 role="group"
                 aria-label="speed controls"
@@ -3288,6 +3307,78 @@ export default function Animechs() {
                   </button>
                 ))}
               </div>
+              {/* THE JUMP. What 4x, 8x and 16x were actually for was
+                  getting to wave forty to look at wave forty, and running
+                  the first thirty-nine at speed is a slow, approximate way
+                  of doing that: the fight still has to be survived, and a
+                  sim stepped sixteen times a frame is not the sim a real
+                  run plays. This asks for the wave directly.
+                  A FORM rather than a button beside a field, so ENTER out
+                  of the box does the thing the box is for — and the button
+                  says where it is going rather than "Go", because the
+                  number is typed above the field's own placeholder and the
+                  two must not be read as one sentence.
+                  AND IT IS GONE ON THE LAST WAVE, where there is nothing in
+                  front of the run to jump to. A survive mission brings it
+                  back by itself: its script loops and totalWaves grows
+                  (Sim.loadStep), so the last wave stops being the last
+                  one. */}
+              {hud.currentWave < hud.totalWaves && (
+              <form
+                aria-label="skip to wave"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const g = gameRef.current;
+                  if (!g || !skipTarget) return;
+                  g.skipToWave(skipTarget);
+                  // the field empties behind the jump: what it held is on
+                  // the wave panel now, and a target already reached is a
+                  // press that would do nothing the second time
+                  setSkipField("");
+                  setHud(g.ui());
+                }}
+                className="ms-seg self-start"
+              >
+                <span className="flex items-center px-2 text-[15px] uppercase tracking-widest text-[#71717C]">
+                  Wave
+                </span>
+                <input
+                  type="number"
+                  min={hud.currentWave + 1}
+                  max={hud.totalWaves}
+                  step={1}
+                  inputMode="numeric"
+                  aria-label="wave to skip to"
+                  /* the next wave up, so the box says what a jump is
+                     measured from without putting a value in it */
+                  placeholder={String(hud.currentWave + 1)}
+                  value={skipField}
+                  onChange={(e) => setSkipField(e.target.value)}
+                  /* the run is listening on `window` for arrows, letters
+                     and space (Game.onKeyDown, the build grid): every one
+                     of those belongs to the caret while it is in here */
+                  onKeyDown={(e) => e.stopPropagation()}
+                  className="w-[4.5rem] border-0 bg-[#0B0B0D] px-2 py-1.5 text-right text-[15px] font-bold text-[#EDEDEF] placeholder:font-normal placeholder:text-[#4a4a52] focus:outline-none focus:ring-1 focus:ring-inset focus:ring-[#FFD37F] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+                <button
+                  type="submit"
+                  /* FORWARD ONLY, and never past the last wave the script
+                     holds — the same two limits Sim.skipToWave enforces,
+                     said here as a button that will not press rather than
+                     as a press that quietly does nothing */
+                  disabled={skipTarget === null}
+                  title={
+                    skipTarget === null
+                      ? `A wave between ${hud.currentWave + 1} and ${hud.totalWaves}`
+                      : `Skip to wave ${skipTarget} — the waves passed are not cleared`
+                  }
+                  className="ms-btn px-3 py-1.5 text-[15px] disabled:cursor-default disabled:opacity-40"
+                >
+                  Skip
+                </button>
+              </form>
+              )}
+              </>
             )}
           </div>
         )}

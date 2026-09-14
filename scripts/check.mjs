@@ -8,8 +8,9 @@
  * This is the one an agent runs, and the only one. It is a CRASH GATE, not
  * a balance gate: every check here has a right answer that needs no
  * knowledge of what the game is supposed to feel like, and the whole thing
- * is over in about ten seconds, so it can be run after every edit rather
- * than saved up for the end.
+ * is over in under twenty seconds, so it can be run after every edit rather
+ * than saved up for the end. (`frames` is most of the back half of that: it
+ * is the only check that has to run the game at load to learn anything.)
  *
  * What it asks:
  *
@@ -21,6 +22,9 @@
  *   worlds   all nine worlds construct: terrain, script, core
  *   sim      thirty sim-seconds of world 1 with turrets on the spawn —
  *            bodies spawn, walk, get shot and die, and nothing goes NaN
+ *   frames   the heaviest three waves the ladder sends, on a board full of
+ *            turrets, timed: does one sim step still fit its share of a
+ *            60fps frame
  *
  * WHAT IT DELIBERATELY DOES NOT DO IS PLAY THE GAME. It never reports a
  * wave reached or a core percentage, because those are numbers somebody
@@ -147,6 +151,13 @@ if (!existsSync(built)) {
 // a module loads, exactly as the playtest does it for the same reason. The
 // seed is arbitrary and fixed: change it and the numbers below move.
 let rand = 7;
+/**
+ * PUT THE DICE BACK. Every check that rolls any opens with its own call,
+ * so a draw taken by one can never move another: without it, adding a
+ * single `Math.random()` to the sim check would silently re-roll the whole
+ * enemy mix the frames check below is timed against.
+ */
+const reseed = (seed) => { rand = seed >>> 0; };
 Math.random = () => {
   rand = (rand + 0x6d2b79f5) >>> 0;
   let t = rand;
@@ -157,9 +168,50 @@ Math.random = () => {
 
 const R = (m) => require(path.join(DIST, m));
 const L = R("levels.js"), M = R("maps.js"), LA = R("ladder.js"), C = R("constants.js");
-const TR = R("track.js"), FA = R("foundryArt.js");
+const TR = R("track.js"), FA = R("foundryArt.js"), T = R("types.js");
+/** the most turrets the frames check will stand up. Every world we ship runs
+ *  out of legal ground long before this, so it is a stop against a future
+ *  map that does not, never a target. */
+const MAX_BOARD = 4000;
 const { Sim } = R("sim.js");
 const pub = (...p) => path.join(ROOT, "public", ...p);
+const { COLS, ROWS, CELL } = C;
+
+/**
+ * THE ROAD FROM A CELL TO THE CORE, cell by cell down the flow field's
+ * gradient — the line the swarm walks, which is also the line a player
+ * builds along. Both checks below want it and neither can guess it: the
+ * map decides where the route runs, and `canPlace` decides how much of it
+ * will take a turret.
+ *
+ * It stops at the goal, at a dead end, or on a cell it has already stood
+ * on, so a field with a flat patch in it ends the walk instead of looping.
+ */
+const roadToCore = (sim, from) => {
+  const route = [];
+  const seen = new Set();
+  let cur = from;
+  for (let n = 0; n < COLS * ROWS; n++) {
+    if (seen.has(cur)) break;
+    seen.add(cur);
+    route.push(cur);
+    if (sim.field.isGoal[cur]) break;
+    const x = cur % COLS, y = (cur / COLS) | 0;
+    let best = cur, bd = sim.field.dist[cur];
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+        const ni = ny * COLS + nx;
+        if (sim.field.walk[ni]) continue;
+        if (sim.field.dist[ni] < bd) { bd = sim.field.dist[ni]; best = ni; }
+      }
+    if (best === cur) break;
+    cur = best;
+  }
+  return route;
+};
 
 // ---------- art: a head the code names with no drawing behind it ----------
 
@@ -240,7 +292,7 @@ report("worlds", worldProblems, `${L.WORLDS.length} construct`);
 const simProblems = [];
 let simDetail = "";
 try {
-  const { COLS, ROWS, CELL } = C;
+  reseed(7);
   const sim = new Sim(LA.specForTier(L.WORLDS[0], 0));
   // the field solves whole, so a re-route cannot depend on how loaded the
   // machine is — see FIELD_BUDGET_MS in sim.ts
@@ -264,28 +316,7 @@ try {
   let placed = 0;
   if (sim.n > 0) {
     const from = Math.round(sim.upy[0] / CELL) * COLS + Math.round(sim.upx[0] / CELL);
-    const route = [];
-    const seen = new Set();
-    let cur = from;
-    for (let n = 0; n < 6000; n++) {
-      if (seen.has(cur)) break;
-      seen.add(cur);
-      route.push(cur);
-      if (sim.field.isGoal[cur]) break;
-      const x = cur % COLS, y = (cur / COLS) | 0;
-      let best = cur, bd = sim.field.dist[cur];
-      for (let dy = -1; dy <= 1; dy++)
-        for (let dx = -1; dx <= 1; dx++) {
-          if (!dx && !dy) continue;
-          const nx = x + dx, ny = y + dy;
-          if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
-          const ni = ny * COLS + nx;
-          if (sim.field.walk[ni]) continue;
-          if (sim.field.dist[ni] < bd) { bd = sim.field.dist[ni]; best = ni; }
-        }
-      if (best === cur) break;
-      cur = best;
-    }
+    const route = roadToCore(sim, from);
     if (route.length < 2) simProblems.push("no route from a live body to the core");
 
     // 3. the earliest legal cells beside it
@@ -325,6 +356,192 @@ try {
   simProblems.push(e.stack?.split("\n").slice(0, 3).join(" / ") ?? e.message);
 }
 report("sim", simProblems, simDetail);
+
+// ---------- frames: does a late wave still fit in a frame ----------
+
+/**
+ * THE ONE CHECK THAT ASKS HOW FAST, and the reason the whole thing is
+ * twenty seconds rather than ten.
+ *
+ * WHAT IT BUILDS is the worst honest hour of a campaign: the heaviest
+ * stretch of the script (LOAD_WAVES), at the count the TOP OF THE LADDER
+ * sends it at, walking into a board that has been built out as far as the
+ * map allows. Every body is rolled independently out of the whole T1-4
+ * roster rather than copied — twenty-eight kinds across seven families, so
+ * the step being timed is running every drive, every weapon and every
+ * hitbox the swarm has, which one kind repeated five thousand times would
+ * not. T5 and the boss are left out on purpose: they are authored events,
+ * not what a wave is made of.
+ *
+ * THE SWARM COMES IN THROUGH THE DOORS AND WALKS. It is not scattered over
+ * the map by hand, because the cost of a step is mostly a question of how
+ * closely packed the bodies are, and a hand-laid pile answers that question
+ * by fiat — spread them thin and the same five thousand bodies run at 100
+ * fps, pack them on the road and they run at 40. Fed through the mouths and
+ * given MARCH seconds to walk, the swarm arranges itself the way the game
+ * arranges it: a column down the road, folding at the chokes
+ * (Sim.mergeSqueezed), meeting the line where the line happens to be.
+ *
+ * WHAT IT MEASURES IS ONE Sim.update, and NOT a whole frame — this process
+ * has no GPU, no canvas and no renderer, so the drawing half of a frame is
+ * not here to be timed. The budget is therefore the frame LESS what the
+ * drawing was measured to cost (DRAW_MS below), and a pass means the
+ * simulation left room for the drawing, NOT that the game ran at sixty.
+ *
+ * THE SCENARIO IS CHECKED BEFORE THE CLOCK IS BELIEVED. A run whose core
+ * fell, or whose board was eaten, was timing a lighter field than the one it
+ * claims — so those come back as problems in their own right rather than as
+ * a fast step.
+ */
+
+/** the whole of a 60fps frame */
+const FRAME_MS = 1000 / 60;
+/**
+ * ...AND WHAT THE OTHER HALF OF IT COSTS. Game.frame does two things with a
+ * frame: it steps the sim, and it draws the result — the field
+ * (Renderer.render), the overlay, and the corner map (Game.drawMinimap).
+ * The pair is what has to fit in FRAME_MS, so the sim's budget is the frame
+ * less the draw.
+ *
+ * THIS NUMBER WAS MEASURED, not assumed. It began life as "half the frame,
+ * because neither half may eat the other", which was a guess standing in for
+ * a measurement, and the guess was wrong in both directions at once. Driven
+ * from the console at this check's own load — 5,200 bodies and 3,200 turrets
+ * on a 1298x1215 canvas, at the zoom a run opens at:
+ *
+ *     Renderer.render   1.7ms
+ *     drawOverlay       0.1ms
+ *     drawMinimap       2.9ms
+ *     ------------------------
+ *     the draw          4.7ms      ...against a sim step of 7.9ms
+ *
+ * So the draw is under a third of the frame and not half of it — most of
+ * the field is off screen at a playing zoom and never reaches the GPU. What
+ * it is NOT is free: the corner map was 7.1ms of that 4.7 before it was
+ * fixed to lay its marks down a row at a time, which is to say the minimap
+ * alone used to cost more than everything the renderer did.
+ *
+ * Five rather than 4.7 because a measurement on one machine at one moment
+ * is not a constant, and the number a budget is built on should round the
+ * wrong way. Re-measure it the same way if the renderer or the HUD changes
+ * shape; a whole-map zoom is the other end of the range (11ms of draw) and
+ * is deliberately not what this is set from, because a frame spent looking
+ * at the whole board is a frame nobody is playing.
+ */
+const DRAW_MS = 5;
+const SIM_BUDGET_MS = FRAME_MS - DRAW_MS;
+
+/** the stretch of the script to load the field with, 1-based and inclusive */
+const LOAD_WAVES = [34, 36];
+/** how far either side of the road the board is built out, in cells */
+const BELT_REACH = 30;
+/** seconds the swarm walks before the clock starts — long enough that it is
+ *  a column in contact with the line rather than a crowd at the doors */
+const MARCH = 4;
+/** ...and seconds of it timed. Every step is recorded and the MIDDLE one is
+ *  the verdict: that is the number a frame counter shows, and it does not
+ *  move when one step in fifty goes long. */
+const SAMPLE = 2;
+
+const frameProblems = [];
+let frameDetail = "";
+try {
+  reseed(29);
+  // the top of the ladder: tierCountScale plateaus at Nemesis, so this is
+  // simply the most the script is ever asked to send
+  const spec = LA.specForTier(L.WORLDS[0], LA.RUNG_COUNT - 1);
+  const want = LA.waveGuide(spec)
+    .filter((r) => r.wave >= LOAD_WAVES[0] && r.wave <= LOAD_WAVES[1])
+    .reduce((a, r) => a + r.units, 0);
+  const sim = new Sim(spec);
+  // the save that has everything, so the board is built out of the whole
+  // catalogue rather than the opening tier
+  sim.setTech(TR.techStateFor(60));
+  // ...and the SHIPPED field budget, deliberately: setFieldBudget(Infinity)
+  // is right for the sim check, which wants one settled field and does not
+  // care what it cost, and wrong here, where a re-route solved whole would
+  // drop a 200ms spike into the sample that no player ever sees —
+  // FIELD_BUDGET_MS spreads that cost over frames instead.
+
+  const route = roadToCore(sim, sim.field.spawnPts[0]);
+  if (route.length < 2) frameProblems.push("no road from the spawn to the core");
+
+  // THE BOARD, ring by ring OUT from the road, one pass over the whole road
+  // per ring — so the line thickens evenly end to end instead of piling up
+  // at the spawn and leaving the core bare, which is what a greedy walk
+  // does. The kinds are dealt round-robin so no single turret's targeting
+  // or bullet is the whole of what is being timed.
+  const kinds = T.FIELDED_KINDS;
+  let ki = 0;
+  build:
+  for (let ring = 1; ring <= BELT_REACH; ring++)
+    for (const c of route) {
+      const cx = c % COLS, cy = (c / COLS) | 0;
+      for (let dy = -ring; dy <= ring; dy++)
+        for (let dx = -ring; dx <= ring; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
+          const k = kinds[ki % kinds.length];
+          if (!sim.canPlace(cx + dx, cy + dy, k)) continue;
+          sim.placeTower(cx + dx, cy + dy, k);
+          ki++;
+          if (sim.towers.length >= MAX_BOARD) break build;
+        }
+    }
+  const built = sim.towers.length;
+
+  // THE SWARM, through the mouths the map paints, as many as they will take
+  // each step. `stuck` is the doors saying no — a pad is crowded, or the
+  // spot a long body wanted is half in rock (Sim.spawnUnit) — and forty
+  // refusals running means let a step pass and come back with room.
+  const pool = L.UNIT_KINDS.filter((k) => k !== "boss" && L.UNIT_STATS[k].tier <= 4);
+  let fed = 0;
+  for (let f = 0; fed < want && f < 60 * 60; f++) {
+    for (let stuck = 0; fed < want && stuck < 40; )
+      if (sim.spawnUnit(pool[(Math.random() * pool.length) | 0])) { fed++; stuck = 0; }
+      else stuck++;
+    sim.update(1 / 60);
+  }
+  const onField = new Set();
+  for (let i = 0; i < sim.n; i++) onField.add(sim.ukind[i]);
+
+  const coreBefore = sim.core.hp;
+  for (let f = 0; f < MARCH * 60; f++) sim.update(1 / 60);
+
+  const ms = [];
+  for (let f = 0; f < SAMPLE * 60; f++) {
+    const a = performance.now();
+    sim.update(1 / 60);
+    ms.push(performance.now() - a);
+  }
+  ms.sort((a, b) => a - b);
+  const step = ms[ms.length >> 1];
+  const worst = ms[Math.floor(ms.length * 0.95)];
+
+  // the scenario first: a clock read off a collapsed board says nothing
+  if (fed < want) frameProblems.push(`the doors took only ${fed} of the ${want} bodies`);
+  if (onField.size < pool.length)
+    frameProblems.push(`only ${onField.size} of the ${pool.length} T1-4 kinds reached the field`);
+  if (sim.lost()) frameProblems.push("the core fell — the board was too thin to time anything");
+  else if (sim.core.hp < coreBefore)
+    frameProblems.push(
+      `the core took ${Math.round(coreBefore - sim.core.hp)} damage — the swarm is through the line`,
+    );
+  if (sim.towers.length * 2 < built)
+    frameProblems.push(`${built - sim.towers.length} of ${built} turrets were eaten — half a board is not the board`);
+  // ...and then the clock
+  if (step > SIM_BUDGET_MS)
+    frameProblems.push(
+      `a sim step takes ${step.toFixed(1)}ms of the ${SIM_BUDGET_MS.toFixed(1)}ms it has ` +
+        `(${(1000 / step).toFixed(0)} fps if the draw were free, and it is not)`,
+    );
+
+  frameDetail =
+    `${sim.n} bodies of ${onField.size} kinds, ${sim.towers.length} turrets, ` +
+    `${step.toFixed(1)}ms a step (p95 ${worst.toFixed(1)}ms) in a ${SIM_BUDGET_MS.toFixed(1)}ms budget`;
+} catch (e) {
+  frameProblems.push(e.stack?.split("\n").slice(0, 3).join(" / ") ?? e.message);
+}
+report("frames", frameProblems, frameDetail);
 
 print();
 process.exit(failed ? 1 : 0);

@@ -739,23 +739,31 @@ export class FlowField {
     const gx = px / CELL - 0.5, gy = py / CELL - 0.5;
     const x0 = Math.floor(gx), y0 = Math.floor(gy);
     const tx = gx - x0, ty = gy - y0;
+    // THE FOUR CORNERS, WRITTEN OUT. Every body on the field reads its
+    // field once a tick and this was most of that read: a loop of four
+    // whose body is two clamp calls, an index and a branch does not come
+    // out of the loop nearly as well as four straight lines do, and the
+    // rows are shared between the pairs rather than multiplied out twice.
+    const cx0 = x0 < 0 ? 0 : x0 > COLS - 1 ? COLS - 1 : x0;
+    const cx1 = x0 + 1 < 0 ? 0 : x0 + 1 > COLS - 1 ? COLS - 1 : x0 + 1;
+    const r0 = (y0 < 0 ? 0 : y0 > ROWS - 1 ? ROWS - 1 : y0) * COLS;
+    const r1 = (y0 + 1 < 0 ? 0 : y0 + 1 > ROWS - 1 ? ROWS - 1 : y0 + 1) * COLS;
+    const wx = 1 - tx, wy = 1 - ty;
     let sx = 0, sy = 0;
-    for (let j = 0; j <= 1; j++) {
-      for (let i = 0; i <= 1; i++) {
-        const cx = clamp(x0 + i, 0, COLS - 1), cy = clamp(y0 + j, 0, ROWS - 1);
-        const ci = cy * COLS + cx;
-        if (walk[ci]) continue;
-        const w = (i ? tx : 1 - tx) * (j ? ty : 1 - ty);
-        sx += dirX[ci] * w;
-        sy += dirY[ci] * w;
-      }
-    }
+    let ci = r0 + cx0;
+    if (!walk[ci]) { const w = wx * wy; sx += dirX[ci] * w; sy += dirY[ci] * w; }
+    ci = r0 + cx1;
+    if (!walk[ci]) { const w = tx * wy; sx += dirX[ci] * w; sy += dirY[ci] * w; }
+    ci = r1 + cx0;
+    if (!walk[ci]) { const w = wx * ty; sx += dirX[ci] * w; sy += dirY[ci] * w; }
+    ci = r1 + cx1;
+    if (!walk[ci]) { const w = tx * ty; sx += dirX[ci] * w; sy += dirY[ci] * w; }
     const len = Math.sqrt(sx * sx + sy * sy);
     if (len < 0.05) {
-      const ci =
+      const at =
         clamp((py / CELL) | 0, 0, ROWS - 1) * COLS + clamp((px / CELL) | 0, 0, COLS - 1);
-      out.x = dirX[ci];
-      out.y = dirY[ci];
+      out.x = dirX[at];
+      out.y = dirY[at];
     } else {
       out.x = sx / len;
       out.y = sy / len;

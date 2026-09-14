@@ -674,30 +674,58 @@ export function unitStatusChips(sim: Sim, i: number): StatusChip[] {
  * The core answers no to all of it: it wears no attributes, rots under
  * nothing, and cannot change sides.
  */
-export function structHasFieldStatus(s: Structure): boolean {
-  if (isCore(s)) return false;
-  const t = s;
+/**
+ * THE NINE SYMBOLS A BUILDING CAN WEAR, in the order they are drawn.
+ *
+ * The order is the wire format as well as the catalogue: a building's row
+ * crosses to the drawing side as one bitmask over this list (see
+ * structStatusMask), which is nine clocks' worth of answer in one number —
+ * and keeps the RULE about what counts as a status on the side that owns
+ * the clocks, rather than copying nine of them across to be re-judged.
+ */
+export const STRUCT_FIELD_STATUSES: readonly StatusId[] = [
+  "virus",
+  "rot",
+  "short",
+  "jam",
+  "boost",
+  "regen",
+  "revive",
+  "soaked",
+  "conquered",
+];
+
+/** which of them this building is wearing, as a bitmask over the list above */
+export function structStatusMask(s: Structure): number {
+  if (isCore(s)) return 0;
   return (
-    t.virus ||
-    t.poison > 0 || t.shortT > 0 || t.jamT > 0 || t.boostT > 0 || t.regen > 0 || t.revives > 0 ||
-    t.fireRate < 1 || t.team === "enemy"
+    (s.virus ? 1 : 0) |
+    (s.poison > 0 ? 2 : 0) |
+    (s.shortT > 0 ? 4 : 0) |
+    (s.jamT > 0 ? 8 : 0) |
+    (s.boostT > 0 ? 16 : 0) |
+    (s.regen > 0 ? 32 : 0) |
+    (s.revives > 0 ? 64 : 0) |
+    (s.fireRate < 1 ? 128 : 0) |
+    (s.team === "enemy" ? 256 : 0)
   );
+}
+
+/** ...and back out of one, catalog order, into a reused array */
+export function statusesFromMask(mask: number, out: StatusId[]): number {
+  out.length = 0;
+  for (let i = 0; i < STRUCT_FIELD_STATUSES.length; i++)
+    if (mask & (1 << i)) out.push(STRUCT_FIELD_STATUSES[i]);
+  return out.length;
+}
+
+export function structHasFieldStatus(s: Structure): boolean {
+  return structStatusMask(s) !== 0;
 }
 
 /** this building's field symbols, catalog order, into a reused array */
 export function structFieldStatuses(s: Structure, out: StatusId[]): number {
-  out.length = 0;
-  if (isCore(s)) return 0;
-  if (s.virus) out.push("virus");
-  if (s.poison > 0) out.push("rot");
-  if (s.shortT > 0) out.push("short");
-  if (s.jamT > 0) out.push("jam");
-  if (s.boostT > 0) out.push("boost");
-  if (s.regen > 0) out.push("regen");
-  if (s.revives > 0) out.push("revive");
-  if (s.fireRate < 1) out.push("soaked");
-  if (s.team === "enemy") out.push("conquered");
-  return out.length;
+  return statusesFromMask(structStatusMask(s), out);
 }
 
 /**
