@@ -516,24 +516,15 @@ const STARHART2_LASER = laserStyle({
   lifetime: t(12),
 });
 
-/**
- * ContinuousLaserBulletType.colors — furnace's, style 0, REPAINTED BLUE.
- * The class's shape is untouched: a deep wash twice over at rising alpha,
- * a light one at full, and a white filament down the middle. Only the two
- * hues move — Mindustry's ec7458/ff9c5a for the blue a furnace's own line
- * already fires in, since coil and piercer stand below it. The hull itself
- * is upstream's gunmetal again; the beam keeps the line's blue.
- *
- * 6974c4 is piercer.png's own plating shade, so the beam's base is the
- * colour of the turret throwing it; Pal.piercerLaser is what coil's bolt and
- * piercer's beam are already drawn in, and it takes the third wash.
- */
-const PIERCER_HULL: RGB = [0x69 / 255, 0x74 / 255, 0xc4 / 255];
+/** the furnace's beam, and it is HOT: the deep orange at .33 and .67, the
+ *  pale flame face, then white. It was piercer's blue while the turret was
+ *  electric; the beam ignites now (constants.ts furnace, `burn`), and the
+ *  four washes say so */
 export const FURNACE_BEAM = beamStyle({
   colors: [
-    [PIERCER_HULL, 0x55 / 255],
-    [PIERCER_HULL, 0xaa / 255],
-    [PAL.piercerLaser, 1],
+    [PAL.lightOrange, 0x55 / 255],
+    [PAL.lightOrange, 0xaa / 255],
+    [PAL.furnaceHit, 1],
     [WHITE, 1],
   ],
   width: 9,

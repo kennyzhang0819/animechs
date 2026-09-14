@@ -45,7 +45,7 @@ export type StatusId =
   | "nonbullet"
   | "ignites"
   | "soaks"
-  | "shocks"
+  | "electric"
   // ...and the BODY TRAITS, on the same terms: what a unit can DO, as
   // against what is being done to it. Same place in the row for the same
   // reason — a player clicking a body is asking what it is
@@ -64,7 +64,6 @@ export type StatusId =
   | "bomb"
   | "immune"
   | "wet"
-  | "shocked"
   | "burning"
   | "shield"
   | "arriving"
@@ -151,11 +150,11 @@ export const STATUSES: readonly StatusDef[] = [
     field: false,
   },
   {
-    id: "shocks",
+    id: "electric",
     name: "Electric",
     color: PAL.spark,
     blurb:
-      "Its shot is electric. It marks what it hits, which on its own does nothing — but against a SOAKED body an electric shot is worth double. Put one of these behind a douser.",
+      "Its shot conducts. Against a SOAKED body it is worth double, and against a dry one it is worth nothing extra. Put one of these behind a douser.",
     field: false,
   },
   // ---- THE BODY TRAITS --------------------------------------------------
@@ -297,15 +296,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Soaked",
     color: PAL.waterLite,
     blurb:
-      "Water, off a douser or a deluge. It drives slower for as long as this lasts, and a fresh soak re-times it rather than stacking. Takes more damage from electric shots.",
-    field: true,
-  },
-  {
-    id: "shocked",
-    name: "Shocked",
-    color: PAL.spark,
-    blurb:
-      "Marked by the blue line — a coil, a piercer or a furnace. It does nothing by itself; it is only the sign that an electric gun is on this body. What the electricity is worth is written on SOAKED, because that is where it is paid.",
+      "Water, off a douser or a deluge. It drives slower for as long as this lasts, a fresh soak re-times it rather than stacking, and while it is wet an ELECTRIC shot on it is worth double. That is the whole of the pairing: the water is on the body, the electricity is on the gun.",
     field: true,
   },
   {
@@ -481,7 +472,6 @@ const dur = (v: number): string => num(v) + "s";
 export function unitHasFieldStatus(sim: Sim, i: number): boolean {
   return (
     sim.uwet[i] > 0 ||
-    sim.ushockT[i] > 0 ||
     sim.uburn[i] > 0 ||
     sim.ushield[i] > 0 ||
     sim.uspawn[i] > 0 ||
@@ -499,7 +489,6 @@ export function unitHasFieldStatus(sim: Sim, i: number): boolean {
 export function unitFieldStatuses(sim: Sim, i: number, out: StatusId[]): number {
   out.length = 0;
   if (sim.uwet[i] > 0) out.push("wet");
-  if (sim.ushockT[i] > 0) out.push("shocked");
   if (sim.uburn[i] > 0) out.push("burning");
   if (sim.ushield[i] > 0) out.push("shield");
   if (sim.uspawn[i] > 0) out.push("arriving");
@@ -625,19 +614,12 @@ export function unitStatusChips(sim: Sim, i: number): StatusChip[] {
       id: "wet",
       n: null,
       // the slow is what a soak DOES and the conducting is what it SETS
-      // UP, so the note carries both and the clock follows. The electric
-      // half lives here rather than on the shocked chip because it is a
-      // property of being WET — a soaked body takes it from the first
-      // electric shot that lands, whether or not it has ever been marked
+      // UP, so the note carries both and the clock follows. THE ELECTRIC
+      // HALF LIVES HERE AND NOWHERE ELSE: being wet is the whole of what
+      // the swarm carries, and a soaked body takes the multiple from the
+      // first electric shot that lands on it
       note: `drives at ${Math.round(sim.uwetSlow[i] * 100)}% — takes x${WET_SHOCK_MUL} from electric shots — ${secs(sim.uwet[i])}`,
     });
-  // ...and the electric mark right behind the soak, which is the order
-  // that teaches the pairing: the soaked chip states the rule, this one
-  // says an electric gun is here to use it. The multiplier is NOT
-  // repeated here — one fact, one place, and that place is the status the
-  // fact is about
-  if (sim.ushockT[i] > 0)
-    out.push({ id: "shocked", n: null, note: `an electric gun is on it — ${secs(sim.ushockT[i])}` });
   if (sim.uburn[i] > 0) out.push({ id: "burning", n: null, note: secs(sim.uburn[i]) });
   if (sim.ushield[i] > 0) {
     const s = Math.ceil(sim.ushield[i]);
@@ -758,7 +740,7 @@ export function structFieldStatuses(s: Structure, out: StatusId[]): number {
  */
 function turretTraits(picked: readonly Structure[]): StatusChip[] {
   let n = 0;
-  let nonbullet = true, ignites = true, soaks = true, shocks = true;
+  let nonbullet = true, ignites = true, soaks = true, electric = true;
   for (const st of picked) {
     if (isCore(st)) return [];
     const t = st as Tower;
@@ -766,7 +748,7 @@ function turretTraits(picked: readonly Structure[]): StatusChip[] {
     if (firesBullets(t.kind)) nonbullet = false;
     if (t.spec.bullet.burn === undefined) ignites = false;
     if (t.spec.bullet.wet === undefined) soaks = false;
-    if (t.spec.bullet.shock === undefined) shocks = false;
+    if (!t.spec.bullet.electric) electric = false;
   }
   if (n === 0) return [];
   const out: StatusChip[] = [];
@@ -774,8 +756,8 @@ function turretTraits(picked: readonly Structure[]): StatusChip[] {
     out.push({ id: "nonbullet", n: null, note: "a cloaked hull does not stop it" });
   if (ignites) out.push({ id: "ignites", n: null, note: "what it hits catches fire" });
   if (soaks) out.push({ id: "soaks", n: null, note: "what it hits comes away wet" });
-  if (shocks)
-    out.push({ id: "shocks", n: null, note: `x${WET_SHOCK_MUL} on anything soaked` });
+  if (electric)
+    out.push({ id: "electric", n: null, note: `x${WET_SHOCK_MUL} on anything soaked` });
   return out;
 }
 

@@ -195,16 +195,6 @@ export interface BulletSprite {
 }
 
 /**
- * HOW LONG THE ELECTRIC MARK LASTS, in seconds (BulletStats.shock).
- *
- * Long enough to still be on a body when the gun that laid it comes round
- * again — coil reloads in about half a second and piercer in a third of
- * this — so a lane under the blue line reads as a lane of shocked bodies
- * rather than as a symbol that flickers once a shot.
- */
-export const SHOCK_SECONDS = 3;
-
-/**
  * WHAT A SOAKED BODY IS WORTH TO AN ELECTRIC SHOT — the multiplier on the
  * hit, and the one reason the liquid turrets sit on a board next to the
  * blue line.
@@ -361,23 +351,23 @@ export interface BulletStats {
   // force (see Sim.applyWet). Wet and burning are opposites(): each lands
   // on the other as a quench/dry rather than taking hold
   wet?: { duration: number; slow: number };
-  // SHOCKED (status.ts), for this many seconds on every hit — the mark an
-  // ELECTRIC shot leaves, and the flag that says a shot IS electric.
+  // ELECTRIC (status.ts "electric"): this shot conducts. It is a FLAG and
+  // not a duration, because there is nothing to time — an electric shot
+  // leaves no mark of its own on the body it hits.
   //
-  // THE STATUS ITSELF DOES NOTHING, deliberately. It is not a debuff with a
-  // number; it is the sign over a body that the blue line — coil, piercer,
-  // furnace — has been on it. What the electricity actually buys is paid on
-  // the WET body it lands on (WET_SHOCK_MUL): water conducts, so an
-  // electric hit on a soaked body is worth double. That is a combo between
-  // two turrets rather than a property of one, which is why the mark is
-  // worth drawing: a player who can see which bodies are soaked and which
-  // are shocked can see the pairing they are being offered.
+  // WHAT IT BUYS IS PAID ON A SOAKED BODY (WET_SHOCK_MUL): water
+  // conducts, so an electric hit on a wet one is worth double. That is
+  // the whole of the mechanic, and it is a combo between TWO turrets
+  // rather than a property of one — a douser or a deluge lays the water,
+  // a coil or a piercer collects on it.
   //
-  // IT IS READ AS THE SHOT'S NATURE, not as a duration to tune. Every
-  // path that can carry electricity checks for this field's PRESENCE to
-  // decide whether the soaked bonus applies (Sim.damageUnit), so setting
-  // it on a bullet is what makes that bullet electric.
-  shock?: number;
+  // It used to be `shock: SHOCK_SECONDS`, which laid a "shocked" status
+  // on the body for three seconds. That status did nothing: it was a
+  // second symbol on the panel, a second clock in the sim and a second
+  // parameter threaded through every damage path, all to say what this
+  // one boolean says. The pairing is legible from the water alone —
+  // a soaked body is the one the blue line wants.
+  electric?: boolean;
   // LiquidBulletType.orbSize: the shot is not an atlas sprite but a filled
   // disc of the liquid's own colour at this radius in px —
   // Fill.circle(b.x, b.y, orbSize), drawn in fxColor
@@ -952,7 +942,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       // the node bullet is a plain BulletType, hitSize 4
       hitRadius: (4 / 2) * MU,
       lightning: { length: 25 },
-      shock: SHOCK_SECONDS, // the blue line is electric (BulletStats.shock)
+      electric: true, // the blue line conducts (BulletStats.electric)
       // the turret names Fx.lightningShoot but leaves smokeEffect alone,
       // so BulletType's stock puff comes along with the sparks
       shootFx: FxKind.SparkShoot,
@@ -996,7 +986,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       collidesGround: true,
       armorMultiplier: 4,
       laser: { length: 173 * MU, pierceCap: 4, width: 15 * MU },
-      shock: SHOCK_SECONDS, // the blue line is electric (BulletStats.shock)
+      electric: true, // the blue line conducts (BulletStats.electric)
       // the turret names Fx.piercerLaserShoot and sets smokeEffect to none:
       // a piercer fires clean, with two blue wings and no powder at all
       shootFx: FxKind.PiercerShoot,
@@ -1580,7 +1570,16 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       collidesAir: true,
       collidesGround: true,
       hitRadius: (4 / 2) * MU, // hitSize 4
-      shock: SHOCK_SECONDS, // the blue line is electric (BulletStats.shock)
+      // A FURNACE SETS THINGS ON FIRE, which is what a furnace is and what
+      // this turret's own blurb has always said it does. It was electric
+      // — the end of coil's and piercer's blue line — and electricity is
+      // the one thing it should NOT have been: an electric shot is only
+      // worth its bonus on a SOAKED body, and fire dries a soaked body
+      // (Sim.applyBurn spends the flame on the water first). A gun that
+      // both ignited and conducted would have been undoing its own combo
+      // every tick. So the beam ignites, the burn runs six seconds, and
+      // the blue line is coil and piercer — the two that pair with water
+      burn: 6,
       continuous: {
         length: 200 * MU,
         damageInterval: 5 / TICK,
@@ -1590,19 +1589,20 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       },
       // Upstream the TURRET names Fx.shootBigSmoke2 and the bullet none,
       // so the block's orange powder cloud is what plays. A laser throws
-      // no powder, and this one ends piercer's line, so it lights up the
-      // way a piercer fires instead: the two blue wings off the muzzle,
-      // square to the beam. No other TURRET fired the cloud; the swarm's
-      // artillery and its spark guns still do (weapons.ts)
+      // no powder, so it lights up the way a piercer fires instead: two
+      // wings off the muzzle, square to the beam. No other TURRET fired
+      // the cloud; the swarm's artillery and its spark guns still do
+      // (weapons.ts)
       shootFx: FxKind.PiercerShoot,
       hitFx: FxKind.HitFurnace,
-      // THE BEAM IS PIERCER'S BLUE, not Mindustry's orange — a furnace
-      // ends coil's and piercer's line and now wears its
-      // plating, so it burns in its colour too. This entry carries the
-      // muzzle cloud and the bars flicking off whatever the beam rests on;
-      // the four washes of the beam itself are FURNACE_BEAM (weapons.ts),
-      // which is repainted to match
-      fxColor: PAL.piercerLaser,
+      // AND THE BEAM IS HOT, not blue. It was painted piercer's blue when
+      // it ended piercer's line; it ignites now, and a gun's colour is
+      // the fastest thing a player reads off a board — a blue beam that
+      // sets bodies alight is the board lying about what it does. This
+      // entry carries the muzzle cloud and the bars flicking off whatever
+      // the beam rests on; the four washes of the beam itself are
+      // FURNACE_BEAM (weapons.ts), repainted to match
+      fxColor: PAL.furnaceHit,
     },
   },
   // Railhead, from mindustry/content/Blocks.java with surge ammo (a
@@ -1698,7 +1698,7 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   fixer: "Repairs nearby buildings every few seconds.",
   restorer: "Repairs nearby buildings faster and over a wider area.",
   repeater: "Shoots heavy bullets from two barrels without stopping.",
-  furnace: "Holds a laser that burns everything in its path.",
+  furnace: "Holds a laser that sets everything in its path on fire.",
   railhead: "Shoots one huge railgun shot with a long reload.",
 };
 

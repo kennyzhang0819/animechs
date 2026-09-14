@@ -73,8 +73,10 @@ function flame(g: Pen): void {
 }
 
 /**
- * THE BOLT the two electric chips are cut from — `shocked`, the body the
- * blue line has been on, and `shocks`, the gun that puts it there.
+ * THE BOLT the `electric` chip is cut from — the gun whose shot conducts.
+ * There was a second bolt beside it once, for a "shocked" mark on the
+ * body; the mark did nothing and is gone, and the rule it half-stated is
+ * written on SOAKED, which is the status that pays it.
  *
  * IT IS A BOLT IN SPARK BLUE, and the catalog already holds two other
  * bolts: `short` in the Wraith fleet's violet and `boost` in flame. That
@@ -221,9 +223,8 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
    *  drawn as the water it leaves (see `drop`). */
   soaks: (g) => drop(g),
 
-  /** ELECTRIC — the bolt: the gun whose shot is electric, drawn as the
-   *  mark it lays (see `bolt`). */
-  shocks: (g) => bolt(g),
+  /** ELECTRIC — the bolt: the gun whose shot conducts (see `bolt`). */
+  electric: (g: Pen) => bolt(g),
 
   // ---- THE BODY TRAITS (status.ts) ------------------------------------
   //
@@ -340,9 +341,6 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
   },
 
   wet: (g) => drop(g),
-
-  /** SHOCKED — the bolt: a body the blue line has been on (see `bolt`). */
-  shocked: (g) => bolt(g),
 
   /**
    * BURNING — a flame, drawn as the same teardrop twice: a cool outer

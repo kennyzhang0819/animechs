@@ -569,13 +569,13 @@ const DMG_NEITHER = 0;
 /**
  * EVERY TURRET'S NATURE, precomputed by kind. `firesBullets` is the roster
  * list (constants.ts) and the electric bit is read off the ammo, because
- * `shock` on a bullet IS what makes that bullet electric.
+ * `electric` on a bullet IS what makes that bullet electric.
  */
 const TOWER_NATURE: Record<TowerKind, number> = Object.fromEntries(
   TOWER_KINDS.map((k) => [
     k,
     (firesBullets(k) ? DMG_BULLET : 0) |
-      (TOWERS_IMPORT[k].bullet.shock !== undefined ? DMG_ELECTRIC : 0),
+      (TOWERS_IMPORT[k].bullet.electric ? DMG_ELECTRIC : 0),
   ]),
 ) as Record<TowerKind, number>;
 
@@ -941,20 +941,6 @@ export class Sim {
    * status map, which keeps one entry per effect
    */
   readonly uburn = new Float32Array(MAX_UNITS);
-  /**
-   * SHOCKED (constants.ts BulletStats.shock): seconds of the electric mark
-   * left, reapplied rather than stacked exactly as burning is.
-   *
-   * NOTHING READS IT BUT THE PANEL AND THE OVERLAY, and that is the whole
-   * design (status.ts): the mark says the blue line has been on this body
-   * and does nothing else. The damage the electricity actually buys is
-   * paid against the body's WETNESS at the moment of the hit
-   * (WET_SHOCK_MUL in damageUnit), not against this clock — so a shocked
-   * body that has dried is worth nothing extra, and a soaked body that has
-   * never been shocked takes the bonus on the first electric hit it eats.
-   * The clock is a TELL, not a term in the arithmetic.
-   */
-  readonly ushockT = new Float32Array(MAX_UNITS);
   /**
    * THE TWO STAMPED AURAS (constants.ts AURA_LINGER), each a value and the
    * seconds it has left to run: extra armour from an ironhide5, a speed
@@ -5057,7 +5043,6 @@ export class Sim {
       this.uburn[i] = 0;
       this.uwet[i] = 0;
       this.uwetSlow[i] = 1;
-      this.ushockT[i] = 0;
       // a body walks in unstamped: the ironhide5's plating and the weaver3's
       // pace are both things it has to be standing near something to have
       this.uarmorAdd[i] = 0;
@@ -5442,10 +5427,6 @@ export class Sim {
       // ...and the ORDER (Leadership, mutation.ts), which is the same
       // shape of thing with nothing but a clock behind it
       if (this.uled[i] > 0 && (this.uled[i] -= dt) <= 0) this.uled[i] = 0;
-      // ...and the electric mark, which is a clock and nothing else
-      // (ushockT): no damage, no flicker, no second term — it expires and
-      // the symbol goes
-      if (this.ushockT[i] > 0 && (this.ushockT[i] -= dt) <= 0) this.ushockT[i] = 0;
       if (uwet[i] > 0) {
         uwet[i] -= dt;
         if (uwet[i] <= 0) {
@@ -6000,7 +5981,6 @@ export class Sim {
     this.uburn[i] = this.uburn[n];
     this.uwet[i] = this.uwet[n];
     this.uwetSlow[i] = this.uwetSlow[n];
-    this.ushockT[i] = this.ushockT[n];
     this.uarmorAdd[i] = this.uarmorAdd[n];
     this.uarmorT[i] = this.uarmorT[n];
     this.uhasteMul[i] = this.uhasteMul[n];
@@ -8325,7 +8305,6 @@ export class Sim {
     // decided for itself would be a second place the roster's judgement
     // about what counts as a bullet could drift from the first
     const nature = TOWER_NATURE[t.kind];
-    const shock = st.bullet.shock ?? 0;
     if (st.bullet.lightning) {
       if (hostile) {
         this.unitBolt(x, y, a, st.bullet.lightning.length, st.bullet.fxColor ?? PAL.piercerLaser);
@@ -8342,7 +8321,6 @@ export class Sim {
         st.bullet.hitFx,
         st.bullet.fxColor,
         nature,
-        shock,
       );
       this.pushBolt(x, y, st.bullet.lifetime, pts, true); // the bolt IS coil's shot
       hitAimed();
@@ -8362,7 +8340,6 @@ export class Sim {
             st.bullet.hitFx,
             st.bullet.fxColor,
             nature,
-            shock,
           );
       // forced: the beam is piercer's entire visible shot (damage is instant)
       this.pushFx(x, y, st.bullet.lifetime, FxKind.Laser, a, reached, 0, 0, true);
@@ -8786,7 +8763,6 @@ export class Sim {
     hitFx: BulletFx | undefined,
     fxColor: RGB | undefined,
     nature: number,
-    shock: number,
   ): number[] {
     const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
     const HIT_RANGE = 30 * MU; // Lightning.hitRange
@@ -8804,12 +8780,8 @@ export class Sim {
       const victim = this.nearestUnit(x, y, brad, air, ground);
       if (victim >= 0) {
         this.damageUnit(victim, damage, false, 1, nature);
-        // the mark lands on what SURVIVED the node, as every status in
-        // the game does — shocking a corpse is a symbol nobody reads
-        if (uhp[victim] > 0) {
-          if (shock > 0) this.applyShock(victim, shock);
-          this.bulletFx(hitFx, x, y, rot, fxColor);
-        } else if (!hits.includes(victim)) hits.push(victim);
+        if (uhp[victim] > 0) this.bulletFx(hitFx, x, y, rot, fxColor);
+        else if (!hits.includes(victim)) hits.push(victim);
       }
       pts.push(x + (Math.random() * 2 - 1) * 3 * MU, y + (Math.random() * 2 - 1) * 3 * MU);
 
@@ -8884,7 +8856,6 @@ export class Sim {
     hitFx: BulletFx | undefined,
     fxColor: RGB | undefined,
     nature: number,
-    shock: number,
   ): number {
     const { upx, upy, uhp } = this;
     const dirx = Math.cos(angle), diry = Math.sin(angle);
@@ -8902,10 +8873,8 @@ export class Sim {
     for (let k = 0; k < order.length && (pierceCap <= 0 || k < pierceCap); k++) {
       const i = hits[order[k]];
       this.damageUnit(i, damage, false, armorMult, nature);
-      if (uhp[i] > 0) {
-        if (shock > 0) this.applyShock(i, shock);
-        this.bulletFx(hitFx, upx[i], upy[i], angle, fxColor);
-      } else dead.push(i);
+      if (uhp[i] > 0) this.bulletFx(hitFx, upx[i], upy[i], angle, fxColor);
+      else dead.push(i);
     }
     dead.sort((a, b) => b - a);
     for (const i of dead) if (uhp[i] <= 0) this.killUnit(i);
@@ -9007,7 +8976,11 @@ export class Sim {
           i, b.damage, b.pierceArmor ?? false, b.armorMultiplier ?? 1, TOWER_NATURE[t.kind],
         );
         if (uhp[i] > 0) {
-          if (b.shock) this.applyShock(i, b.shock);
+          // THE BEAM LIGHTS WHAT IT RAKES (constants.ts furnace, `burn`).
+          // Every damage interval re-times the fire rather than stacking
+          // it, so a body held under the beam burns for the full term
+          // from the moment it leaves — which is the point of a furnace
+          if (b.burn && !KIND_BURN_IMMUNE[this.ukind[i]]) this.applyBurn(i, b.burn);
           this.bulletFx(b.hitFx, upx[i], upy[i], t.beamRot, b.fxColor);
         } else dead.push(i);
       }
@@ -9212,7 +9185,6 @@ export class Sim {
     }
     // damageContinuousPierce: armour never applies, but a shield still eats it
     this.damageUnit(best, dmg, st.bullet.pierceArmor ?? false, 1, TOWER_NATURE[t.kind]);
-    if (st.bullet.shock && this.uhp[best] > 0) this.applyShock(best, st.bullet.shock);
     if (uhp[best] <= 0) this.killUnit(best);
   }
 
@@ -9227,20 +9199,6 @@ export class Sim {
    * it, and torch and the liquid turrets covering one lane fight each
    * other for the status slot exactly as they do upstream.
    */
-  /**
-   * THE ELECTRIC MARK (constants.ts BulletStats.shock). Reapplied rather
-   * than stacked, like every other clock in the status map.
-   *
-   * IT HAS NO OPPOSITE, which is the difference between it and the fire /
-   * water pair above. Burning and soaked fight each other for the one
-   * status slot because upstream declares them opposites and because they
-   * mean opposite things; electricity means neither, and a body can
-   * perfectly well be soaked AND shocked — indeed that is the pairing the
-   * whole mark exists to advertise. So this one just lands.
-   */
-  private applyShock(i: number, duration: number): void {
-    if (this.ushockT[i] < duration) this.ushockT[i] = duration;
-  }
 
   private applyBurn(i: number, duration: number): void {
     if (this.uwet[i] > 0) {
@@ -9338,11 +9296,17 @@ export class Sim {
     // because it is the round hitting harder and not the plate mattering
     // less — Monofilament below is the other one
     let hit = this.titanOn ? raw * TITAN_MUL[KIND_TIER[this.ukind[i]]] : raw;
-    // WATER CONDUCTS (constants.ts WET_SHOCK_MUL): an electric hit on a
-    // SOAKED body is worth the multiple. It sits beside Titan, above
-    // plating, for Titan's reason — the shot lands harder, the plate does
-    // not matter less — and it keys off the body being wet RIGHT NOW
-    // rather than off the shocked mark, which is only the tell (ushockT)
+    // WATER CONDUCTS (constants.ts WET_SHOCK_MUL): an electric shot on a
+    // SOAKED body is worth the multiple, and THAT IS THE WHOLE OF THE
+    // ELECTRIC MECHANIC — two things, a flag on the gun (bullet.electric,
+    // read into DMG_ELECTRIC) and the water already on the body. There is
+    // no third piece: the "shocked" mark this used to lay did nothing but
+    // print a second symbol, and it is gone.
+    //
+    // It sits beside Titan, above plating, for Titan's reason — the shot
+    // lands harder, the plate does not matter less — and it keys off the
+    // body being wet RIGHT NOW, so a soak that has dried is worth nothing
+    // and a body soaked a tick ago pays in full
     if (nature & DMG_ELECTRIC && this.uwet[i] > 0) hit *= WET_SHOCK_MUL;
     // MONOFILAMENT ROUNDS (relics.ts): armour stops applying, to every
     // damage path in the game at once. It is here rather than on
@@ -9789,7 +9753,6 @@ export class Sim {
           }
           if (uhp[i] > 0 && b.burn && !KIND_BURN_IMMUNE[this.ukind[i]]) this.applyBurn(i, b.burn);
           if (uhp[i] > 0 && b.wet && !KIND_WET_IMMUNE[this.ukind[i]]) this.applyWet(i, b.wet);
-          if (uhp[i] > 0 && b.shock) this.applyShock(i, b.shock);
           // BulletType.hitEffect, at the bullet rather than the victim.
           // A splash shot skips it — the blast in the `dead` branch below
           // is its hit effect — and so does a killing blow, whose death
@@ -9875,7 +9838,6 @@ export class Sim {
             b.burn,
             b.wet,
             TOWER_NATURE[pr.kind],
-            b.shock ?? 0,
           );
         }
         // BulletType.despawned, and only that: a shot spent on a direct
@@ -9947,7 +9909,6 @@ export class Sim {
      *  hull coming apart (Cascade) has no gun behind it and keeps the
      *  default, which is the behaviour it always had */
     nature = DMG_BULLET,
-    shock = 0,
   ): void {
     const { upx, upy, uhp, uarmor, urad, ukind, bStart, bUnits, splashHits } = this;
     splashHits.length = 0;
@@ -10005,7 +9966,6 @@ export class Sim {
       if (uhp[i] > 0) {
         if (burn && !KIND_BURN_IMMUNE[ukind[i]]) this.applyBurn(i, burn);
         if (wet && !KIND_WET_IMMUNE[ukind[i]]) this.applyWet(i, wet);
-        if (shock > 0) this.applyShock(i, shock);
       }
     }
     splashHits.sort((a, b) => b - a);
