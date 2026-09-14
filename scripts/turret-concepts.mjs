@@ -161,11 +161,11 @@ function bars(P, x0, x1, y, n, h, gap, m = BORE) {
 }
 const stud = (P, x, y, r = 2, m = BORE) => P.diamond(x, y, r, m);
 
-// ── the roster ─────────────────────────────────────────────────────────
+// ── the A set: the first, angular-leaning silhouettes ──────────────────
 // Every head faces up and is drawn left half and centre only; finish()
 // mirrors x → n-1-x and shades. `A` is the accent pair. The margin is the
 // stock one: 4 px on a 32 grid, 8 on 64, 6 on 96 and 128.
-const HEADS = {
+const HEADS_A = {
   // 1x1, 32 px ───────────────────────────────────────────────────────
   duo(P, A) {                                            // two barrels on a copper receiver
     plate(P, 4, 12, 28, 29, 4, GUN);
@@ -362,8 +362,8 @@ const HEADS = {
   },
 };
 
-// ── VARIANTS: two more silhouettes a kind, same construction ───────────
-const HEADS_B = {
+// ── THE ROSTER (the round set, chosen), then the two alternates ───────
+const HEADS = {
   duo(P, A) {                                            // a round turret, a drum between the barrels
     P.disc(16, 18, 10, GUN);
     P.disc(16, 20, 6, GUN_R);                             // the bevel under the drum
@@ -756,7 +756,7 @@ export const ROSTER = {
 const OUT = "docs/turret-concepts";
 mkdirSync(OUT, { recursive: true });
 let hairlines = 0; const dumped = {};
-for (const [tag, set] of [["", HEADS], ["-b", HEADS_B], ["-c", HEADS_C]]) for (const [kind, [size, group]] of Object.entries(ROSTER)) {
+for (const [tag, set] of [["", HEADS], ["-a", HEADS_A], ["-c", HEADS_C]]) for (const [kind, [size, group]] of Object.entries(ROSTER)) {
   const n = 32 * size;
   const g = grid(n); set[kind](pixelPen(g.pen, n), ACCENT[group]);
   const px = finish(g.mat, n);
