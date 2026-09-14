@@ -28,10 +28,14 @@
  * the reversed pair. The machine grows up the ladder: a gunmetal saddle
  * down the spine from T2 with the crimson seam on it, steel strakes down
  * the flanks and a second horn from T3, pauldrons over the shoulders and
- * a stack at the hip from T4, a crest plate over the head and twin stacks
- * at T5. T1-T3 ride the mech rig (base plate, body, one sprite of
- * near-side hooves slid by the walk); T4 and T5 the legged rig on four
- * stout legs (caps, hoof, two stretched segments).
+ * a stack at the hip from T4, and at T5 a crest plate over the head, twin
+ * stacks, and the CRIMSON OFF THE HORN ONTO THE ARMOUR — a blaze in each
+ * pauldron and a cap on each strake, which is the apex's own tell and the
+ * quickest way to tell this champion from the Tusker's.
+ *
+ * T1-T3 ride the mech rig (base plate, body, one sprite of near-side
+ * hooves slid by the walk); T4 and T5 the legged rig on four stout legs
+ * (caps, hoof, two stretched segments).
  */
 import type { Art } from "./animalArt";
 import type { LegParts, MechParts, Rect } from "./animalArt";
@@ -103,8 +107,17 @@ function body(P: Pen, T: IronTier): void {
   // strakes: steel down each flank from T3, inside the back's edge; from
   // T4 they start below the pauldron, a clear gap between
   if (t >= 3) P.box(q(5), q(t >= 4 ? 22 : 16), q(5) + w(3), n - q(6), STEEL);
+  // the apex is PAINTED, which is the one thing no other tier is: the
+  // crimson runs off the horn's tip onto the armour, a blaze filling each
+  // pauldron's flat and a cap on the tail of each strake. It is the read
+  // that separates this champion from the Tusker's at field zoom — two
+  // grey masses otherwise, one with red on its shoulders
+  if (t >= 5) P.box(q(5), n - q(6) - w(2), q(5) + w(3), n - q(6), CRIM);
   // pauldrons: a gunmetal plate over each shoulder from T4, square to the back
   if (t >= 4) P.octa(q(3), q(11), q(3) + w(9), q(11) + w(7), w(2), GUN);
+  // the blaze sits inside the pauldron's FLAT (a chamfer's width in on
+  // every side), so it never ends against a diagonal and leaves no wedge
+  if (t >= 5) P.box(q(3) + w(2), q(11) + w(2), q(3) + w(9) - w(2), q(11) + w(7) - w(2), CRIM);
   // the saddle: a gunmetal plate down the spine from T2, the crimson seam on it
   if (t >= 2) {
     P.box(c - w(4), q(14), c + w(4), n - q(4), GUN);

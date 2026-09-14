@@ -35,8 +35,10 @@
  * animal. The machine grows up the ladder and all of it runs LENGTHWAYS:
  * an ivory seam down the spine on the runt, a gunmetal howdah under it
  * from T2, the howdah run forward to the brow and a collar on each tusk
- * from T3, steel rims on the ears and a stack at the tail from T4, twin
- * stacks at T5. Nothing on this body runs across it.
+ * from T3, steel rims on the ears and a stack at the tail from T4, and at
+ * T5 twin stacks, a howdah a unit wider either side with a steel rail
+ * down each edge of it, and the ivory run along the leading edge of each
+ * ear — the apex's own tell. Nothing on this body runs across it.
  *
  * T1-T3 ride the mech rig (base plate, body, one sprite of near-side
  * pads slid by the walk — the legs stay tucked, docs/unit-art.md); T4 and
@@ -167,8 +169,12 @@ function body(P: Pen, T: IronTier): void {
   // the silhouette to its widest across the shoulders
   const ear = t >= 4 ? q(27) : q(26);
   P.octa(q(1), q(11), c - 4 * U, ear, U, HIDE_R);
-  // ...rimmed in steel along the leading edge from T4
+  // ...rimmed in steel along the leading edge from T4, and on the apex the
+  // ivory runs the outer edge of each ear as well, outboard of the steel:
+  // a bull's ears are the widest thing on it, so that is where this
+  // champion's colour goes. It runs LENGTHWAYS like everything else here
   if (t >= 4) P.box(q(1) + U, q(11) + 2 * U, q(1) + 2 * U, ear - 2 * U, STEEL);
+  if (t >= 5) P.box(q(1), q(11) + 2 * U, q(1) + U, ear - 2 * U, IVORY);
   // the machine, and it rides the SPINE on this family and never the
   // flanks, so the mass either side of it stays one dark block. NOTHING
   // ON IT RUNS ACROSS: a band over a symmetrical body is a mouth, and on
@@ -176,8 +182,16 @@ function body(P: Pen, T: IronTier): void {
   // ladder is therefore all length — the ivory seam alone on the runt, a
   // gunmetal howdah under it from T2, and the howdah run forward to the
   // brow from T3
+  //
+  // On the apex the howdah is a unit WIDER either side and carries a
+  // STEEL rail along each of its edges. The rails are steel and not ivory
+  // on purpose: a third and a fourth cream line down the back read as two
+  // more tusks lying on it, where a cold rail either side of the warm seam
+  // reads as what it is, more gear than any other tier carries. All of it
+  // runs lengthways, and nothing on it is under a unit wide
   if (t >= 2) {
-    P.box(c - 2 * U, q(t >= 3 ? 14 : 19), c + 2 * U, n - q(3), IRON);
+    P.box(c - (t >= 5 ? 3 : 2) * U, q(t >= 3 ? 14 : 19), c + (t >= 5 ? 3 : 2) * U, n - q(3), IRON);
+    if (t >= 5) P.box(c - 3 * U, q(16), c - 2 * U, n - q(5), STEEL);
     P.box(c - U, q(t >= 3 ? 16 : 21), c + U, n - q(5), IVORY);
   } else P.box(c - U, q(20), c + U, q(27), IVORY);
   // a stack at the tail from T4, twin stacks either side of the seam at

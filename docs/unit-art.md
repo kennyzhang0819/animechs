@@ -57,6 +57,19 @@ the other way round.
   scale, stance and ornament: the stag's crown gains beams and tines, the
   bat's wingspan outgrows its body. Never introduce a new body plan
   mid-family.
+- **The apex carries one tell of its own.** A T5 that is only a T4 drawn
+  bigger is the tier a player never notices arriving, so each line's last
+  step adds a mark or two nothing below it wears — not a new body plan,
+  the same animal with its own thing on it. The rhino is painted, crimson
+  filling each pauldron and capping each strake; the stag gilds the
+  shoulder yokes and burns gold in the crest; the frog wears a second,
+  shorter warning band out on each thigh; the elephant's howdah widens
+  onto steel rails and the ivory runs the leading edge of each ear; the
+  bat carries a second charge cell down each wing and magenta on the tail
+  stacks; the manta's cowl grows the two cephalic prongs it leads with;
+  the narwhal is harnessed, a steel girth across the shoulders and a
+  violet cell on each flipper. Everything in that list is a box inside a
+  flat, which is the only way an added mark stays clear of a chamfer.
 - **Legs stay tucked until T4.** T1 to T3 are small and concise: a compact
   body, tiny feet peeking out, nothing splayed. Only T4 and T5 open their
   stance out, and those two are the only ones that ride the legged rig
