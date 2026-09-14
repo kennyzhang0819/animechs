@@ -113,7 +113,8 @@ export const PAL = {
   // Each is a pair — the bright face a round is drawn in and the dark rim
   // behind it — and six hues spread round the wheel so no two families
   // sit next to each other: crimson, acid, star-gold, magenta, teal,
-  // violet.
+  // violet. The seventh, the Tuskers' ivory, is the one that is not a hue
+  // at all; its note below says why.
   /** Ground mechs: crimson — the wall that walks */
   mech: pal(0xff4d6d),
   mechDark: pal(0x8c1c3a),
@@ -132,6 +133,21 @@ export const PAL = {
   /** Wraith fleet: violet — the arcs, a short's sparks, a blink, a cloak */
   wraith: pal(0xb48cff),
   wraithDark: pal(0x5a35b8),
+  /**
+   * Tuskers: IVORY — the tusks, the maul that lands on a turret, the dust
+   * a rend takes off it.
+   *
+   * IT IS THE ONE FAMILY THAT IS NOT A HUE. Six hues are already spread
+   * round the wheel above and the seat left between any two of them is
+   * somewhere the turrets already sit — the missile orange, the lancer
+   * blue, the heal green — and the rule over this table is that a family
+   * colour is never one of the board's. So the seventh reads by
+   * SATURATION instead: a bone white on a slate body, which is the one
+   * thing no gun on the field and no other body in the swarm wears. It is
+   * also simply what an elephant's tusks are.
+   */
+  tusk: pal(0xfff3de),
+  tuskDark: pal(0x8a7a5e),
 } as const;
 
 /**

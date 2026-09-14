@@ -1,7 +1,7 @@
 /**
  * THE ANIMAL ART SWITCH.
  *
- * On, all six families draw as animals instead of Mindustry's hulls, and
+ * On, the six Mindustry trees draw as animals instead of its hulls, and
  * they are NAMED for the animal rather than for the weapon (levels.ts
  * FAMILY_NAMES, UNIT_NAMES): the ground mechs as the IRONHIDES (a rhino
  * line, the horn is the barrel, four planted legs from the T4), the venom
@@ -16,8 +16,17 @@
  * the stock cells (game/atlas.ts packAnimalArt), so NOTHING under public/mindustry is touched and
  * flipping this back restores the shipped look byte for byte.
  *
- * Off, the six lines are exactly what they were: the same sprite files,
- * the same rigs, and Mindustry's own names on every panel that prints one
- * (UNIT_NAMES falls back to the kind, capitalised).
+ * IT ALSO GATES THE ONE FAMILY THAT IS NOT A MINDUSTRY TREE. The TUSKERS
+ * (an elephant line, game/tuskerArt.ts: no gun, a melee maul, and bodies
+ * that open at nearly twice every other family's T1) have no upstream
+ * hull behind them and no sprite file to fall back to — they draw into
+ * cells of their own that only the animal pass paints. Off the switch
+ * they would be five empty sprites, so they are shelved there instead
+ * (levels.ts SHELVED_FAMILIES) and never rolled into a wave.
+ *
+ * Off, then, the six Mindustry lines are exactly what they were: the same
+ * sprite files, the same rigs, and Mindustry's own names on every panel
+ * that prints one (UNIT_NAMES falls back to the kind, capitalised), with
+ * the seventh off the board.
  */
 export const ANIMAL_ART = true;

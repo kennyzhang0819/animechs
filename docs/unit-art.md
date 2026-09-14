@@ -2,12 +2,18 @@
 
 This is the direction the enemy art settled on after the animal trial
 (behind `ANIMAL_ART` in `game/animalFlag.ts`), written down so the next
-family is drawn to the same rules without re-running the trial. All six
+family is drawn to the same rules without re-running the trial. All seven
 families are on the turrets' grammar now (section 1b): the Ironhide rhino
 in `game/ironhideArt.ts`, the Starhart stag, Stoop bat, Dartback poison frog,
-Skate manta and Livewire narwhal in `game/familyArt.ts`, on the turret
+Skate manta and Livewire narwhal in `game/familyArt.ts`, the Tusker
+elephant in `game/tuskerArt.ts`, on the turret
 engine in `game/turretArt.ts`, with what they share in
 `game/animalArt.ts` and the packing in `game/atlas.ts`.
+
+The Tusker is the first family drawn from nothing rather than over a
+Mindustry tree — there is no upstream hull under it and no sprite file to
+fall back to — so it is also the first proof that section 3 below is
+enough to add a family with.
 
 ## 1. The style
 
@@ -65,6 +71,17 @@ the other way round.
   Mindustry rules from `game/pixelArt.ts`: four or five butted colours,
   no dark contour, no bevel. The atlas adds the rim itself (`outlined()`,
   `silhouetted()`), so a drawing that bakes one in gets two.
+- **From above, the animal's own body hides things — draw that.** A top
+  view is not a side view with the legs removed: what is under the
+  silhouette is not on it. The Tusker's tusks grow out of the upper jaw,
+  which from overhead is behind the skull, so they are laid down BEFORE
+  the body and the head covers their roots; what stands out of the front
+  is the part that really projects past the brow. Drawn last they put a
+  full-length ivory bar over the top of the head, which is the one thing
+  an elephant seen from above never shows. The trunk is the opposite case
+  and is drawn last, because it genuinely does lie over the skull. Order
+  the parts by what is over what in the real animal, not by what you want
+  to be visible.
 - **Plating runs down the body, not across.** A horizontal cut on a
   symmetrical body is a face, and the eye finds it instantly. Segment
   along the spine; put the horizontal breaks only where the animal really
@@ -113,7 +130,16 @@ stricter grammar than the trial above, and every family is drawn to it
 
 - **Every colour is a pair, dark and light.** The dark on the left half
   of the sprite, the light on the right, and that is the whole of the
-  lighting: no lit top, no dark underside, no third tone, no dither. A
+  lighting: no lit top, no dark underside, no third tone, no dither.
+  The rule is the SHAPE of a pair and never which pairs: nothing here
+  ties a body's colours to the turret palette, and every family invents
+  its own (`HIDE`/`CRIM`, `HART`/`STAR`, `FROG`/`ACID`, `SKIN`/`TEAL`,
+  `TUSK_HIDE`/`IVORY`). The six Mindustry lines draw their HARDWARE in
+  the turrets' `GUN`/`STEEL`/`BORE` because it was already there — a
+  convention, not a constraint. The Tusker's plating is its own warm
+  `IRON` for exactly that reason: gunmetal on a cool grey hide was two
+  greys arguing, and the family reads better with its gear a different
+  temperature from its animal. A
   part is drawn once in its material and the shade falls on it after
   (`finish`), so the shape is symmetric by construction and the shade is
   never. A part in the REVERSED pair (`rev`) catches light the other way,
@@ -161,6 +187,20 @@ footprint gets.
 | Stoop, the bat | `game/familyArt.ts` | body and two wings | 36, 44, 80, 184, 232 |
 | Skate, the manta | `game/familyArt.ts` | body and two fins, wider than tall, tapered to the tip | 40, 52, 80, 156, 232 |
 | Livewire, the narwhal | `game/familyArt.ts` | body and two flippers | 44, 56, 80, 176, 232 |
+| Tusker, the elephant | `game/tuskerArt.ts` | mech to T3, four legs from T4 | 56, 72, 96, 136, 176 |
+
+**A family may be big, and the Tusker is the one that is.** Every other
+line opens on about a tile — a 32 grid, a duo's own footprint — because
+every other line is one of Mindustry's trees and inherited its hitbox. The
+elephants were authored here, so their boxes were chosen rather than
+inherited: the runt is a 1.75x1.75 on a 56 grid, half again the widest T1
+anywhere, and the apex a 5.5x5.5 on 176, the largest thing that walks.
+Nothing about the grammar bends for it — the quad is still the box, the
+unit is still the scaler's `w()`, nothing is still under four pixels — the
+numbers in the table are simply larger, and that is the whole of how a
+family is made to feel heavy. Drawing a normal-sized body at a larger
+scale would have broken the one rule (section 1b) that keeps a T1 the same
+kind of drawing as the 1x1 turret beside it.
 
 The ground tiers (`IronTier`) carry the mech rig's stride, the legged
 rig's small grid and the two leg segment heights; a segment is a flat
@@ -185,6 +225,12 @@ the whole width rather than most of it.
 
 ### Legs
 
+The elephant's are the other end of the range: 15 and 18 units on mounts
+12 and 16 out, on bodies 85 and 110 world px across — the only line whose
+mount offset is most of the leg, because an elephant's legs are pillars
+under the body rather than a stance around it. Its leg strokes (15/12 and
+20/16 native px) are the widest on the sheet for the same reason.
+
 The frog's four legs run 14, 16, 24 and 30 Mindustry units from T2 on
 mounts 6 to 12 out, so every tier crouches on legs a little past its
 body and the apex strides. The rhino's are 14 and 19 units on
@@ -206,9 +252,18 @@ art. Turret fire aimed at a silhouette now hits it.
 1. Pick the animal and draw the T5 first on the turret engine, facing
    up, left half only, on its hitbox grid. If it does not read as that
    animal in silhouette, stop there.
-2. Scale the same layout to the T1 (a 32 grid for a 1x1) with the legs
+2. Scale the same layout to the T1 (a 32 grid for a 1x1, or whatever box
+   the family is authored at — the Tusker's runt is a 56) with the legs
    tucked. If it still reads as the animal in four-pixel blocks, the
    family works. Fill in T2 to T4 between.
+   Three passes is a normal number here. The elephant's ears came out as
+   detached diamonds the first time (an `octa` chamfer wider than half the
+   shape is a diamond, not a rounded plate) and as a face the second (two
+   lobes level with the head, with a bright seam down the middle between
+   them); what fixed it was moving the ears BACK onto the shoulders and
+   putting three prongs — tusk, trunk, tusk, with daylight between them —
+   off the front. Draw it, look at it at 3x on a dark ground, and change
+   the layout rather than the detail.
 3. Decide the rig per tier (mech for the small ground tiers, legged for
    T4 and T5 ground, body plus wings for a flyer) and draw the parts the
    rig needs: hoof sprite, or body, base, caps and foot, or body and one
@@ -217,6 +272,12 @@ art. Turret fire aimed at a silhouette now hits it.
    `flat()` or `partCells`, pack them in `packAnimalArt` through
    `packMech`, `packLegged` or `packWinged`, and wire the rig in the
    `if (ANIMAL_ART)` block. No scale: the grid is the hitbox.
+   A family drawn over a Mindustry tree reuses that tree's cells; one
+   drawn from nothing asks the packer for its own (the Tusker's, above
+   `UNIT_ART`), which must be declared BEFORE `UNIT_ART` reads them —
+   module consts, not hoisted functions. Such a family also has no
+   fallback with `ANIMAL_ART` off, so shelve it there
+   (`SHELVED_FAMILIES`) rather than shipping five empty sprites.
 5. Name it, which is two words. `FAMILY_NAMES` (`game/levels.ts`) takes
    the family's `name` and the singular `body` its tiers are called
    after, and its five kinds are `<body><1..5>` in lower case. The ranks
