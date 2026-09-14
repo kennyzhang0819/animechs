@@ -4,15 +4,13 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { ADMIN_ENABLED } from "@/game/env";
 import { useConfirm } from "./ConfirmDialog";
 import { MapEditor, PATH_WIDTHS, type BrushShape } from "@/game/editor";
-import { LEGACY_COLS, SPAWN_RADII, SPAWN_RADIUS_DEFAULT } from "@/game/maps";
-import { ZONE_KINDS } from "@/game/constants";
 import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
 import {
+  LEGACY_COLS,
   PALETTE,
   paletteSections,
   saveMap,
-  zoneStyle,
-  ZONE_LABELS,
+  SPAWN_STYLE,
   type MapData,
   type PaletteSet,
 } from "@/game/maps";
@@ -20,7 +18,7 @@ import {
 const LAYER_ROWS: ReadonlyArray<[keyof TerrainLayers, string]> = [
   ["wall", "Hills"],
   ["props", "Props"],
-  ["spawn", "Spawn pads"],
+  ["spawn", "Spawn tiles"],
   ["base", "Base"],
 ];
 
@@ -207,7 +205,6 @@ export default function MapEditorView({
   const [brush, setBrush] = useState(1);
   const [brushShape, setBrushShape] = useState<BrushShape>("square");
   const [pathWidth, setPathWidth] = useState(1);
-  const [spawnRadius, setSpawnRadius] = useState(SPAWN_RADIUS_DEFAULT);
   /**
    * The map's height in rows — mirrored out of the editor so the control can
    * show it, and pushed back in on every change. Seeded from the document,
@@ -274,7 +271,6 @@ export default function MapEditorView({
     ed.brush = brush;
     ed.brushShape = brushShape;
     ed.pathWidth = pathWidth;
-    ed.spawnRadius = spawnRadius;
     if (
       ed.layers.wall !== layers.wall ||
       ed.layers.props !== layers.props ||
@@ -549,43 +545,6 @@ export default function MapEditorView({
               A hidden layer is locked: paint straight over the ground beneath it
             </div>
           </div>
-          {isSpawn && (
-            <label className="flex items-center justify-between gap-3">
-              <span className="text-[15px] uppercase tracking-widest text-[#71717C]">Radius</span>
-              <span className="flex gap-1">
-                {SPAWN_RADII.map((r) => (
-                  <button
-                    key={r}
-                    aria-pressed={spawnRadius === r}
-                    onClick={() => setSpawnRadius(r)}
-                    className={`h-6 w-7 rounded border text-sm ${
-                      spawnRadius === r
-                        ? "border-[#FFD37F] bg-[#222227] text-[#EDEDEF]"
-                        : "border-[#2E2E36] text-[#71717C] hover:border-[#4A4A55]"
-                    }`}
-                  >
-                    {r}
-                  </button>
-                ))}
-                {/* the presets are the common sizes; this is for any other.
-                    Clamped to something that can actually hold a drop zone —
-                    a radius of 0 would be a zone nothing ever spawns in */}
-                <input
-                  type="number"
-                  min={1}
-                  max={64}
-                  step={1}
-                  value={spawnRadius}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    if (Number.isFinite(v)) setSpawnRadius(Math.max(1, Math.min(64, Math.round(v))));
-                  }}
-                  title="Radius in cells — applies to the next zone you place"
-                  className="h-6 w-14 rounded border border-[#2E2E36] bg-[#101013] px-1.5 text-right text-sm text-[#EDEDEF] focus:border-[#FFD37F] focus:outline-none"
-                />
-              </span>
-            </label>
-          )}
           {isPath && (
             <label className="flex items-center justify-between gap-3">
               <span className="text-[15px] uppercase tracking-widest text-[#71717C]">Path</span>
@@ -611,7 +570,7 @@ export default function MapEditorView({
             {isPath
               ? "Drag to carve an enemy road · edges wobble on their own"
               : isSpawn
-                ? "Click to drop a zone · click inside one to move it · erase removes it"
+                ? "Paint where the swarm comes in · never on a hill · erase lifts them"
                 : "LMB paint · RMB pan · wheel zoom · ⌘Z undo"}
           </div>
           </div>
@@ -650,10 +609,9 @@ export default function MapEditorView({
                       (icon, v) => {
                         const active =
                           setId === set.id && ((randomize && !set.noRandom) || variant === v);
-                        const zone = set.kind === "spawn" ? ZONE_KINDS[v] : null;
-                        const name = zone
-                          ? `${ZONE_LABELS[zone]} drop zone`
-                            : randomize && set.icons.length > 1
+                        const spawn = set.kind === "spawn";
+                        const name =
+                          randomize && set.icons.length > 1
                             ? `${set.label} (random of ${set.icons.length})`
                             : `${set.label}${set.icons.length > 1 ? ` ${v + 1}` : ""}`;
                         return (
@@ -675,10 +633,10 @@ export default function MapEditorView({
                               alt=""
                               className="h-8 w-8 [image-rendering:pixelated]"
                             />
-                            {zone && (
+                            {spawn && (
                               <span
                                 className="absolute inset-x-1 bottom-0.5 h-1 rounded-sm"
-                                style={{ background: zoneStyle(zone).css }}
+                                style={{ background: SPAWN_STYLE.css }}
                               />
                             )}
                             {randomize && !set.noRandom && set.icons.length > 1 && (
@@ -702,8 +660,6 @@ export default function MapEditorView({
           <div className="mt-1.5 border-t border-[#2E2E36] pt-1 text-[13px] text-[#A6A6AF]">
             {(() => {
               const set = PALETTE.find((p) => p.id === setId) ?? PALETTE[0];
-              if (set.kind === "spawn")
-                return `${ZONE_LABELS[ZONE_KINDS[Math.min(variant, ZONE_KINDS.length - 1)]]} drop zone`;
               return set.label;
             })()}
           </div>

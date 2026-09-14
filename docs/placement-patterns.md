@@ -304,7 +304,7 @@ work of one.
 | **steam vent** | steam attribute, animated | **meltdown's heat side**, and a visible landmark |
 
 Slag is the interesting one. The wave-authoring doc calls armour "a permanent
-multiplier" that "never scales with level" — a fortress costs a duo line ten
+multiplier" that "never scales with level" — an ironhide3 costs a duo line ten
 times its printed health at every tier forever. A floor that shaves armour is
 the first terrain in the game that answers a stat the ladder cannot touch, and
 it belongs in exactly one place per map.

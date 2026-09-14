@@ -6,8 +6,8 @@ roll** the deploy makes: the script is authored in three unit families
 (ground, ground support, air), those are its three slots, and every run
 rolls three families from the six and deals them into the slots, tier for
 tier (`rollFamilies`, `transformScript` in `game/levels.ts`). Forty
-daggers in the script are forty of whichever family took the first slot.
-The boss (Disrupt) is in no family and is never swapped. The deal is shown
+runts in the script are forty of whichever family took the first slot.
+The boss (Boss) is in no family and is never swapped. The deal is shown
 on the field in the bottom-right corner.
 
 ## The documents
@@ -55,12 +55,18 @@ script a new save cannot hold.
 Rules of thumb for the counts:
 
 - **Keep sending tier-1 units.** They are the line's body and nearly free
-  in the health budget — a dagger is 150 hp against a scepter's 9,000.
+  in the health budget — a runt is 150 hp against a champion's 9,000.
   Padding a wave with them is what makes a swarm look like one, and the
-  drop is per tier, so a wave of daggers pays what it looks like it pays.
-- **Spend the budget on T3/T4/T5.** One reign weighs as much as sixty
-  daggers, and the late script is where the phase-tier turrets earn
+  drop is per tier, so a wave of runts pays what it looks like it pays.
+- **Spend the budget on T3/T4/T5.** One apex weighs as much as sixty
+  runts, and the late script is where the phase-tier turrets earn
   their price.
+- **A wave's keys are IDS, not names.** A body is called after its family
+  and how far up it stands — `Ironhide (runt)` to `Ironhide (apex)`,
+  five ranks shared by every family (levels.ts `UNIT_RANKS`) — but the
+  document holds the KIND: `ironhide1`, `starhart1`, `stoop1`, what the sim and the
+  sprite files use. A wave of forty runts of the first ground family is
+  `{ "ironhide1": 40 }`, and the editor prints the name beside the picture.
 - **Naval waves want water, and play without it.** The ten hulls travel
   the amphibious layer: half again their stat afloat and a third down on
   it ashore (`NAVAL_WATER_SPEED`, `NAVAL_LAND_SPEED`), so a naval family

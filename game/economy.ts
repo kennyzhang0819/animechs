@@ -8,7 +8,7 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * kill drops SCRAP OFF ITS OWN HEALTH POOL (SCRAP_PER_HP, a boss its lump
  * on top), and that is the WHOLE income: the core pays nothing, nothing is
  * mined, no wave pays for being survived, and a sale returns nothing
- * (SELL_REFUND). Drops are fixed per KIND — a dagger always pays this, on
+ * (SELL_REFUND). Drops are fixed per KIND — an ironhide1 always pays this, on
  * every rung, on every map — so the roll fee can be authored against the
  * script (the stage table in ladder.ts).
  *
@@ -33,15 +33,15 @@ export const isEmptyDrop = (d: Drop): boolean => d.scrap === 0;
 
 /**
  * WHAT A KILL PAYS, PER POINT OF HEALTH. The drop used to be one number a
- * tier — ten for a dagger, five hundred for a reign — and a tier is far too
- * coarse a bucket to price a body by: a scepter carries sixty daggers'
- * health and paid twenty daggers' scrap, so the late script, where the T4
+ * tier — ten for an ironhide1, five hundred for an ironhide5 — and a tier is far too
+ * coarse a bucket to price a body by: an ironhide4 carries sixty runts'
+ * health and paid twenty runts' scrap, so the late script, where the T4
  * and T5 hulls are, was the part of the run that paid worst for the work it
  * asked. Reading the kind's OWN health pool fixes that at the root, and it
  * fixes it for every kind at once — a stats edit moves the drop with it,
  * and a new kind is priced the moment its health is written.
  *
- * The rate is anchored on the dagger, which is the unit every other number
+ * The rate is anchored on the ironhide1, which is the unit every other number
  * in this game is anchored on: 150 health at a fifteenth is the ten scrap
  * it has always paid.
  *
@@ -60,13 +60,13 @@ export const SCRAP_PER_HP = 1 / 15;
  * the late game's scale. The unit trees do not climb smoothly: a T3 hull
  * is nine hundred health and the T4 above it is nine THOUSAND, so the step
  * from the middle of the script to the end of it multiplied the income by
- * ten in one shelf. A reign paid 1,600 — a card and a half for one body —
+ * ten in one shelf. An ironhide5 paid 1,600 — a card and a half for one body —
  * and a late wave is hundreds of bodies, so by wave 40 the bank stopped
  * being a constraint at all: everything was affordable, every roll was
  * free, and the only decision left was where to put what fell out.
  *
  * So health under the knee pays the full rate and health above it pays a
- * shrinking one: the drop is the dagger-anchored rate applied to `hp`
+ * shrinking one: the drop is the ironhide1-anchored rate applied to `hp`
  * raised to DROP_HEAVY_EXP past DROP_KNEE_HP. A heavier kind is still
  * strictly worth more than a lighter one — that is the whole reason the
  * drop reads health, and it is untouched — but the curve is flatter than
@@ -99,7 +99,7 @@ export function dropForUnit(hp: number, boss = false): Drop {
 }
 
 /** every run opens with this much in the bank */
-export const SCRAP_START = 7500;
+export const SCRAP_START = 10000;
 
 /**
  * WHAT THE ADMIN VIEW'S BOTTOMLESS PURSE READS ON THE COUNTER. Large

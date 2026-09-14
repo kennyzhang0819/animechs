@@ -34,6 +34,8 @@ import {
   missionText,
   rollFamilies,
   transformScript,
+  unitName,
+  unitRank,
   waveGroups,
   WORLD,
   worldById,
@@ -41,6 +43,7 @@ import {
   type FamilyKey,
   type LevelSpec,
   type TowerKind,
+  type UnitKind,
 } from "@/game/levels";
 import {
   audit,
@@ -94,7 +97,7 @@ import {
   type Progress,
   type RunReward,
 } from "@/game/progress";
-import { atlasReady, buildAtlas, turretIcon, unitIcon } from "@/game/atlas";
+import { atlasReady, buildAtlas, turretIcon } from "@/game/atlas";
 import {
   cleanMutations,
   mutationById,
@@ -136,6 +139,7 @@ import MenuBackground from "./MenuBackground";
 import { useEscapeBack } from "./Board";
 import { DealCorner, useDeal } from "./Deal";
 import { Inspector } from "./Inspector";
+import { BLANK_ICON, carveUnitIcon, unitIconOf } from "./unitIcons";
 import { RelicShelf } from "./Relics";
 import { useConfirm } from "./ConfirmDialog";
 
@@ -349,7 +353,7 @@ const runSpec = (
   // a slot the OPENING WAVE sends (levels.ts rollFamilies), and which
   // slots those are is a property of this tier's expanded script. Rolling
   // outside and passing the result in let a caller hand over a deal that
-  // opens wave 1 with flares, which is an opening with one legal answer.
+  // opens wave 1 with runts, which is an opening with one legal answer.
   // A custom hand goes through the same call and is dealt under the same
   // rule — what it changes is which families are in the pile, never how
   // they are laid into the slots.
@@ -447,7 +451,7 @@ function PickerDialog({
    * HOW WIDE THE ROWS ARE, and the whole of why it is a knob: a row is
    * ONE LINE and a truncated one is a row a player cannot read. The map
    * and difficulty lists hold short proper nouns and fit the default;
-   * the factions and the mutators are two-word names ("Starlight mechs",
+   * the factions and the mutators run to two words ("Harpoon fleet",
    * "Armored Swarms") that need the wider column, and the dialog widens
    * with them so the detail pane does not pay for it.
    */
@@ -934,7 +938,7 @@ function FactionPicker({
         <div className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
           <img
-            src={FAMILY_ICONS.get(family.key) ?? `/mindustry/sprites/units/${family.icon}.png`}
+            src={unitIconOf(family.icon) ?? BLANK_ICON}
             alt=""
             className="h-10 w-10 shrink-0 object-contain [image-rendering:pixelated]"
           />
@@ -949,10 +953,13 @@ function FactionPicker({
           {familyFlies(family.key) ? "air" : family.layer === "water" ? "water" : "ground"}
         </DetailLine>
         {/* the five bodies in tier order — a family IS one idea at five
-            sizes (see FAMILIES), and the names are how a player who has
-            met them recognises which one this is */}
+            sizes (see FAMILIES), and a body is named for its family and
+            how far up it stands (levels.ts UNIT_NAMES). The family's own
+            name is the line above, so these are the RANKS alone: five
+            rows of "Ironhide" under a heading reading IRONHIDES is the
+            same word six times. */}
         <p className="text-[14px] leading-snug text-[#A6A6AF]">
-          {family.kinds.join(" · ")}
+          {family.kinds.map(unitRank).join(" · ")}
         </p>
         <SelectButton
           label={on ? "Remove" : full ? `Hand is full — ${FAMILIES_PER_RUN}` : "Add"}
@@ -1144,35 +1151,25 @@ function MutatorPicker({
 const DEAL_COLOR = "#FFD37F";
 
 /**
- * THE FAMILY PICTURES, one per family, carved off the PACKED SHEET rather
- * than loaded from /mindustry/sprites/units (atlas.ts unitIcon).
+ * THE FAMILY PICTURES, one per family: its T1, carved off the PACKED SHEET
+ * rather than loaded from /mindustry/sprites/units
+ * (components/unitIcons.ts, atlas.ts unitIcon).
  *
- * The raw sprite file is not the body the game draws: the packed one is
- * outlined, antialiased, and wears its family's colour on its team cell,
- * so a thumbnail off the file showed a picture of upstream's unit — right
- * silhouette, wrong edges, and Mindustry's crux red where the hue that
- * tells a player which family this is belongs.
+ * The raw sprite file is not the body the game draws, and for four of the
+ * six families there is no file at all — the rhinos, spiders, stags and
+ * bats are generated at load (game/animalArt.ts) and packed over the
+ * stock cells, so a thumbnail off public/mindustry showed a picture of
+ * upstream's unit: wrong animal, wrong edges, and Mindustry's crux red
+ * where the hue that tells a player which family this is belongs.
  *
- * Built ONCE per page, memoised on the promise so overlapping callers
- * share one build, and primed by the boot warm-up so the squares are not
- * empty on the first wave. A failure leaves the map short an entry and
+ * Built ONCE per page and shared with every other panel that wants a
+ * body's portrait, and primed by the boot warm-up so the squares are not
+ * empty on the first wave. A failure leaves the cache short an entry and
  * the cell falls back to the sprite file.
  */
-const FAMILY_ICONS = new Map<FamilyKey, string>();
-let familyIconBuild: Promise<void> | null = null;
+const buildFamilyIcons = (): Promise<void> =>
+  Promise.all(FAMILIES.map((f) => carveUnitIcon(f.icon))).then(() => undefined);
 
-function buildFamilyIcons(): Promise<void> {
-  familyIconBuild ??= Promise.all(
-    FAMILIES.map(async (f) => {
-      try {
-        FAMILY_ICONS.set(f.key, await unitIcon(f.icon, FAMILY_ACCENT[f.key]));
-      } catch {
-        // the fallback in DealFamiliesCell covers it
-      }
-    }),
-  ).then(() => undefined);
-  return familyIconBuild;
-}
 
 /** the bottom square: which families the die dealt this map */
 function DealFamiliesCell({ families }: { families: readonly FamilyKey[] }) {
@@ -1202,10 +1199,7 @@ function DealFamiliesCell({ families }: { families: readonly FamilyKey[] }) {
       {families.map((f) => (
         <img
           key={f}
-          src={
-            FAMILY_ICONS.get(f) ??
-            `/mindustry/sprites/units/${familyByKey(f).icon}.png`
-          }
+          src={unitIconOf(familyByKey(f).icon) ?? BLANK_ICON}
           alt=""
           className="h-4 w-4 object-contain [image-rendering:pixelated]"
         />
@@ -1480,30 +1474,120 @@ function StepSlider({
   steps,
   value,
   onPick,
+  settleOnRelease = false,
 }: {
   label: string;
   steps: readonly number[];
   value: number;
   onPick: (v: number) => void;
+  /**
+   * FOR THE ONE SLIDER THAT MOVES ITSELF. UI size is set from inside a
+   * `.ui-zoom` panel, so applying it mid-drag resizes the slider under the
+   * pointer — and a range input reads the pointer against its own box, so
+   * the new box gives a new value, which gives a new box. That is a
+   * feedback loop, and it shows as the panel flickering between two sizes
+   * and the knob refusing to be put anywhere.
+   *
+   * The cure is to let the knob be dragged without the value following it:
+   * the track and the percentage move live, the game is set once, when the
+   * button comes up. The arrow keys still step it one at a time and settle
+   * on each press — a key press is not measured against the box, so there
+   * is nothing there to loop.
+   *
+   * Every other slider sets something the panel's own layout does not
+   * depend on (pan speed), and those stay live.
+   */
+  settleOnRelease?: boolean;
 }) {
   const at = Math.max(0, steps.indexOf(value));
   const text = (v: number): string => `${Math.round(v * 100)}%`;
+  const rowRef = useRef<HTMLDivElement>(null);
+  /** where the knob has been dragged to, while the value is still `at` */
+  const [held, setHeld] = useState<number | null>(null);
+  const heldRef = useRef<number | null>(null);
+  /** the drag's window listeners, so an unmount mid-drag does not leak them */
+  const dropRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => dropRef.current?.(), []);
+  const shown = held ?? at;
+
+  /**
+   * SET IT, AND KEEP THE ROW WHERE THE HAND LEFT IT. A bigger HUD is a
+   * taller panel, and the rows above this one grow with it, so the slider
+   * itself slides down the screen and out from under the cursor — which
+   * makes a second nudge a hunt. Measure the row, let the new size land,
+   * and scroll by the difference.
+   */
+  const settle = (i: number): void => {
+    if (steps[i] === value) return;
+    const before = rowRef.current?.getBoundingClientRect().top ?? null;
+    onPick(steps[i]);
+    if (before === null) return;
+    requestAnimationFrame(() => {
+      const after = rowRef.current?.getBoundingClientRect().top;
+      if (after === undefined) return;
+      const drift = after - before;
+      if (Math.abs(drift) < 1) return;
+      let el: HTMLElement | null = rowRef.current;
+      while (el && el !== document.body) {
+        const style = getComputedStyle(el);
+        if (/(auto|scroll)/.test(style.overflowY) && el.scrollHeight > el.clientHeight) {
+          el.scrollTop += drift;
+          return;
+        }
+        el = el.parentElement;
+      }
+      window.scrollBy(0, drift);
+    });
+  };
+
+  const grab = (): void => {
+    if (!settleOnRelease) return;
+    const release = (): void => {
+      dropRef.current?.();
+      const i = heldRef.current;
+      heldRef.current = null;
+      setHeld(null);
+      if (i !== null) settle(i);
+    };
+    const drop = (): void => {
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", release);
+      dropRef.current = null;
+    };
+    dropRef.current = drop;
+    // on the window, not the input: a drag that ends off the knob is still
+    // the end of the drag, and not every browser captures the pointer
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
+    heldRef.current = at;
+    setHeld(at);
+  };
+
   return (
     <SettingRow label={label}>
-      <div className="flex shrink-0 items-center gap-3">
+      <div ref={rowRef} className="flex shrink-0 items-center gap-3">
         <input
           type="range"
           className="ms-slider w-40"
           min={0}
           max={steps.length - 1}
           step={1}
-          value={at}
+          value={shown}
           aria-label={label}
-          aria-valuetext={text(steps[at])}
-          onChange={(e) => onPick(steps[Number(e.target.value)])}
+          aria-valuetext={text(steps[shown])}
+          onPointerDown={grab}
+          onChange={(e) => {
+            const i = Number(e.target.value);
+            if (dropRef.current) {
+              heldRef.current = i;
+              setHeld(i);
+            } else {
+              settle(i);
+            }
+          }}
         />
         <div className="w-12 text-right text-[15px] font-bold tabular-nums text-[#EDEDEF]">
-          {text(steps[at])}
+          {text(steps[shown])}
         </div>
       </div>
     </SettingRow>
@@ -2507,6 +2591,9 @@ export default function Animechs() {
               label="UI size"
               steps={UI_SCALES}
               value={uiScale}
+              // the knob that resizes the panel the knob is on — see
+              // StepSlider.settleOnRelease
+              settleOnRelease
               onPick={(scale) => {
                 setUiScale(scale);
                 saveUiScale(scale); // remembered across sessions
@@ -3035,7 +3122,7 @@ export default function Animechs() {
             {hud.bosses.map((b) => (
               <div key={b.id}>
                 <div className="mb-0.5 text-center text-[12px] font-bold uppercase tracking-widest text-[#F25555] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
-                  {b.kind}
+                  {unitName(b.kind)}
                 </div>
                 <div className="ms-bar w-full">
                   <div

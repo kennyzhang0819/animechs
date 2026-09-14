@@ -9,6 +9,7 @@ import {
   levelDocOf,
   missionText,
   saveLevel,
+  unitName,
   waveGroups,
   WAVE_RELEASE_SECONDS,
   type LevelSpec,
@@ -17,19 +18,19 @@ import {
   type WaveUnits,
 } from "@/game/levels";
 import { waveGuide, type WaveRow } from "@/game/ladder";
+import { BLANK_ICON, unitIconOf, useUnitIcons } from "./unitIcons";
 import {
   drawThumb,
   loadMap,
   OFFICIAL_MAP_IDS,
-  zoneKindsOf,
-  zoneStyle,
-  ZONE_LABELS,
+  spawnTilesOf,
+  SPAWN_STYLE,
 } from "@/game/maps";
-import type { ZoneKind } from "@/game/constants";
+import { COLS } from "@/game/constants";
+import { isWaterFloor } from "@/game/terrain";
 
 /* eslint-disable @next/next/no-img-element -- raw pixel sprites, no optimization wanted */
 
-const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
 
 /** health runs to nine figures at the top rung; a table cell wants
  * three characters and a suffix, not 20,276,477 */
@@ -49,9 +50,9 @@ const compactHp = (hp: number): string =>
  *
  * A WAVE IS ONE GROUP OF COUNTS. It used to be a LIST of groups, each aimed
  * at a numbered spawn region, because that was the only way to say "the
- * flyers come in over there and the walkers up this lane". A drop zone
- * carries its movement layer now (MOVE_LAYERS in constants.ts) and every
- * unit finds its own door, so the region dropdown was answering a question
+ * flyers come in over there and the walkers up this lane". The map paints
+ * one spawn layer now and every unit picks its own tiles out of it
+ * (Sim.padMaskFor), so the region dropdown was answering a question
  * nobody has to ask any more — and the split into groups existed only to
  * hold it. A wave is what it always read as on disk: kinds and counts.
  *
@@ -193,6 +194,12 @@ export default function LevelEditorView({
   // why the last save was refused — null when the last attempt succeeded
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // the whole roster's portraits, carved off the packed sheet once for the
+  // page — every wave card's slots read them out of the same cache
+  // (components/unitIcons.ts), and until they land the slots draw the
+  // stock sprite file
+  useUnitIcons(UNIT_KINDS);
+
   // reloading a different level through the same mounted component has to
   // reset the buffer — an unsaved edit must not ride silently into another
   // world's view
@@ -208,17 +215,29 @@ export default function LevelEditorView({
   const mapId = level.map ?? OFFICIAL_MAP_IDS[0];
 
   /**
-   * WHICH MOVEMENT LAYERS THIS LEVEL'S MAP HAS DOORS FOR.
+   * HOW MANY SPAWN TILES THIS LEVEL'S MAP PAINTS, and how many of them are
+   * wet.
    *
-   * A wave sending units of a layer the map never opens is the one
-   * map/script mismatch left — nothing else about a wave refers to the map
-   * at all now that regions are gone — so the editor reports which doors
-   * exist and the sim warns on the console when a script outruns them.
+   * A map with no tiles at all lands nothing and is the one map/script
+   * mismatch left — nothing else about a wave refers to the map. The wet
+   * count is the other half of the picture: the hulls prefer those tiles
+   * and the walkers and flyers use the dry ones (Sim.padMaskFor), so a map
+   * painted entirely along its shoreline is worth seeing before a script
+   * sends a wave of walkers into it.
    */
-  const mapZones = useMemo<ZoneKind[]>(() => {
+  const mapSpawn = useMemo<{ tiles: number; wet: number }>(() => {
     const doc = loadMap(mapId);
-    if (!doc) return [];
-    return [...zoneKindsOf(doc, Uint8Array.from(doc.blocked))].sort();
+    if (!doc) return { tiles: 0, wet: 0 };
+    const w = doc.w ?? COLS;
+    const spawn = spawnTilesOf(doc, Uint8Array.from(doc.blocked), Uint8Array.from(doc.wall));
+    let tiles = 0, wet = 0;
+    for (let i = 0; i < spawn.length; i++) {
+      if (!spawn[i]) continue;
+      tiles++;
+      const at = ((i / COLS) | 0) * w + (i % COLS);
+      if (isWaterFloor(doc.floor[at] ?? 0)) wet++;
+    }
+    return { tiles, wet };
   }, [mapId]);
 
   const edit = (fn: (draft: EditStep[]) => EditStep[]): void => {
@@ -327,7 +346,7 @@ export default function LevelEditorView({
           {/* ---- left rail: level settings, map doors, rollup ---- */}
           <aside className="space-y-4 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <RampChart waves={waves} />
-            <ZoneKey mapId={mapId} zones={mapZones} />
+            <SpawnKey mapId={mapId} spawn={mapSpawn} />
 
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
               <h2 className="mb-2 text-[14px] font-bold uppercase tracking-widest text-[#71717C]">
@@ -336,7 +355,7 @@ export default function LevelEditorView({
               <p className="mb-3 text-[15px] leading-snug text-[#71717C]">
                 Every wave walks on over {WAVE_RELEASE_SECONDS}s whatever its
                 size, so a bigger wave arrives harder rather than later. Waves
-                the drop zones cannot pass that fast simply queue.
+                the spawn tiles cannot pass that fast simply queue.
               </p>
               <label className="flex items-center justify-between gap-2 text-[16px] text-[#A6A6AF]">
                 Time between waves
@@ -440,7 +459,7 @@ export default function LevelEditorView({
 }
 
 function makeStep(): EditStep {
-  return { uid: uid(), counts: { dagger: 10 } };
+  return { uid: uid(), counts: { ironhide1: 10 } };
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -585,7 +604,7 @@ function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement
 }
 
 
-function ZoneKey({ mapId, zones }: { mapId: string; zones: readonly ZoneKind[] }) {
+function SpawnKey({ mapId, spawn }: { mapId: string; spawn: { tiles: number; wet: number } }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const doc = loadMap(mapId);
@@ -594,22 +613,26 @@ function ZoneKey({ mapId, zones }: { mapId: string; zones: readonly ZoneKind[] }
   return (
     <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
       <h2 className="mb-2 text-[14px] font-bold uppercase tracking-widest text-[#71717C]">
-        Drop zones
+        Spawn tiles
       </h2>
       <canvas ref={ref} className="w-full rounded border border-[#2E2E36] [image-rendering:pixelated]" />
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[15px]">
-        {zones.length === 0 ? (
-          <span className="text-[#FF8A8A]">no drop zones — paint some in the map editor</span>
+        {spawn.tiles === 0 ? (
+          <span className="text-[#FF8A8A]">no spawn tiles — paint some in the map editor</span>
         ) : (
-          zones.map((z) => (
-            <span key={z} className="flex items-center gap-1.5">
+          <>
+            <span className="flex items-center gap-1.5">
               <span
                 className="inline-block h-2.5 w-2.5 rounded-sm"
-                style={{ background: zoneStyle(z).css }}
+                style={{ background: SPAWN_STYLE.css }}
               />
-              <span className="text-[#A6A6AF]">{ZONE_LABELS[z]}</span>
+              <span className="text-[#A6A6AF]">{spawn.tiles.toLocaleString()} tiles</span>
             </span>
-          ))
+            {/* the hulls' share, and the walkers' and flyers' by subtraction */}
+            <span className="text-[#71717C]">
+              {spawn.wet.toLocaleString()} wet · {(spawn.tiles - spawn.wet).toLocaleString()} dry
+            </span>
+          </>
         )}
       </div>
     </section>
@@ -704,7 +727,7 @@ function StepCard({
           so a wave is just counts.
 
           The slots stay in the same place whatever the wave holds, so its
-          ground/air/crawler mix is readable at a glance instead of being a
+          ground/air/weaver1 mix is readable at a glance instead of being a
           bag of chips. */}
       <div className="mt-1.5 space-y-1">
         {UNIT_TREES.map((tree) => (
@@ -752,13 +775,13 @@ function UnitSlot({
       <button
         onClick={() => onChange(on ? 0 : 10)}
         disabled={disabled}
-        title={`${kind} — T${UNIT_STATS[kind].tier}${on && !disabled ? " — click to clear" : ""}`}
-        aria-label={on ? `Clear ${kind}` : `Add ${kind}`}
+        title={`${unitName(kind)} — T${UNIT_STATS[kind].tier}${on && !disabled ? " — click to clear" : ""}`}
+        aria-label={on ? `Clear ${unitName(kind)}` : `Add ${unitName(kind)}`}
         className="shrink-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] disabled:cursor-default"
       >
         <img
-          src={unitIcon(kind)}
-          alt={kind}
+          src={unitIconOf(kind) ?? BLANK_ICON}
+          alt={unitName(kind)}
           className={`h-5 w-5 object-contain [image-rendering:pixelated] ${on ? "" : "opacity-25"}`}
         />
       </button>
@@ -768,7 +791,7 @@ function UnitSlot({
         width="w-full min-w-0"
         blankZero
         disabled={disabled}
-        label={`${kind} count`}
+        label={`${unitName(kind)} count`}
       />
     </span>
   );

@@ -6,7 +6,7 @@ import {
   OFFICIAL_MAPS,
   paintThumb,
   refreshMap,
-  zoneStyle,
+  SPAWN_STYLE,
 } from "./maps";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { TOWER_ICONS, towerBaseIcon } from "./towerIcons";
@@ -26,6 +26,7 @@ import { loadBalanceDoc } from "./balance";
 import {
   loadLevelDocs,
   UNIT_KINDS,
+  unitName,
   type LevelSpec,
   type Mission,
   type TowerKind,
@@ -76,7 +77,7 @@ import {
   type TowerPlacement,
 } from "./progress";
 import { FIELDED_KINDS, isRetired, TOWER_KINDS } from "./types";
-import { Renderer } from "./renderer";
+import { GAME_LAYERS, Renderer } from "./renderer";
 import { fitZoom } from "./fit";
 import { PICK_LENIENT, PICK_STRUCT_PAD, Sim } from "./sim";
 import { type TechState } from "./tech";
@@ -243,8 +244,8 @@ export interface UiState {
      *  be a lie about the rest */
     kind: TowerKind | null;
     /** the BODY this is, when what was tapped is one of the swarm's —
-     *  null for everything the player built. It is what puts a dagger's
-     *  own picture over a dagger's name */
+     *  null for everything the player built. It is what puts an ironhide1's
+     *  own picture over an ironhide1's name */
     unit: UnitKind | null;
     /** what to call it: the turret's name, the body's kind, "Core", or
      *  "Structures" */
@@ -675,6 +676,15 @@ export class Game {
    * rebuild once.
    */
   private soakLayer: HTMLCanvasElement | null = null;
+  /**
+   * THE SPAWN LAYER'S EDGE as one path, for the route overlay — built on
+   * demand, dropped with the map, exactly like the soak layer above.
+   *
+   * A path rather than a walk over the cells because the overlay is drawn
+   * every frame it is up and the layer is thousands of tiles: the cells are
+   * visited once, per map, and the stroke afterwards is one canvas call.
+   */
+  private spawnOutline: Path2D | null = null;
   // the same hover in world px: the placement ghost wants the grid cell, but
   // the demolish highlight has to ask the sim what is actually under there
   private hoverX = -1;
@@ -816,7 +826,8 @@ export class Game {
   private readonly keysDown = new Set<string>();
   private paused = false;
   /**
-   * The route overlay: drop zones, and the lines flyers fly out of them.
+   * The route overlay: the spawn layer's edge, and the lines flyers fly
+   * out of its mouths.
    * OFF by default — it is an answer to "where is that coming from", not
    * something to leave on top of the field all game.
    */
@@ -1688,7 +1699,7 @@ export class Game {
     this.uictx = ctx;
 
     this.fitToMap();
-    this.renderer.rebuildTerrain(this.sim);
+    this.renderer.rebuildTerrain(this.sim, GAME_LAYERS);
 
     window.addEventListener("resize", this.onResize);
     window.addEventListener("keydown", this.onKeyDown);
@@ -2102,9 +2113,11 @@ export class Game {
         n: 1,
         kind: null,
         unit: UNIT_KINDS[sim.ukind[ui]],
-        // the kind IS the name — the roster is Mindustry's and every one
-        // of them is called what it is called (levels.ts UNIT_KINDS)
-        name: UNIT_KINDS[sim.ukind[ui]],
+        // THE NAME, NOT THE ID (levels.ts UNIT_NAMES). The kind keys the
+        // sim's arrays and the sprite files; what a body is CALLED is the
+        // animal its family draws as, and the panel is the one place a
+        // player ever reads it
+        name: unitName(UNIT_KINDS[sim.ukind[ui]]),
         hp: Math.ceil(sim.uhp[ui]),
         hpMax: Math.ceil(sim.uhpmax[ui]),
         statuses: unitStatusChips(sim, ui),
@@ -2225,7 +2238,7 @@ export class Game {
     return placed;
   }
 
-  /** show or hide the drop zones and the air routes out of them */
+  /** show or hide the spawn layer's outline and the air routes off it */
   toggleRoutes(): void {
     this.showRoutes = !this.showRoutes;
   }
@@ -2239,10 +2252,11 @@ export class Game {
     this.lastDraw = null;
     this.modDraws = 0;
     this.soakLayer = null; // a new level is a new coastline
+    this.spawnOutline = null; // ...and new mouths
     this.mmBase = null; // ...and a new ground under the minimap
     this.menuOpen = false;
     this.fitToMap();
-    this.renderer.rebuildTerrain(this.sim);
+    this.renderer.rebuildTerrain(this.sim, GAME_LAYERS);
   }
 
   stats(): Stats {
@@ -2430,6 +2444,28 @@ export class Game {
    * (mutationFace.tsx) — a player who has read the card should recognise
    * the colour on the ground without being told twice.
    */
+  /**
+   * The OUTLINE of the painted spawn layer: every edge a spawn cell shares
+   * with a cell that is not one. Interior edges are left out, so a solid
+   * mouth is drawn as its own silhouette rather than as a grid of boxes.
+   */
+  private buildSpawnOutline(): Path2D {
+    const p = new Path2D();
+    const spawn = this.sim.terrain.spawn;
+    const at = (x: number, y: number): number =>
+      x < 0 || y < 0 || x >= COLS || y >= ROWS ? 0 : spawn[y * COLS + x];
+    for (let y = 0; y < ROWS; y++)
+      for (let x = 0; x < COLS; x++) {
+        if (!spawn[y * COLS + x]) continue;
+        const x0 = x * CELL, y0 = y * CELL;
+        if (!at(x, y - 1)) { p.moveTo(x0, y0); p.lineTo(x0 + CELL, y0); }
+        if (!at(x, y + 1)) { p.moveTo(x0, y0 + CELL); p.lineTo(x0 + CELL, y0 + CELL); }
+        if (!at(x - 1, y)) { p.moveTo(x0, y0); p.lineTo(x0, y0 + CELL); }
+        if (!at(x + 1, y)) { p.moveTo(x0 + CELL, y0); p.lineTo(x0 + CELL, y0 + CELL); }
+      }
+    return p;
+  }
+
   private buildSoakLayer(): HTMLCanvasElement | null {
     const mask = this.sim.waterloggedMask();
     if (!mask) return null;
@@ -2974,14 +3010,12 @@ export class Game {
       }
     }
 
-    // ROUTES, under everything else so a selection ring still reads on top.
-    // Drop zones are rings rather than discs: the ground inside one is
-    // ordinary floor a player may want to look at and build near
+    // ROUTES, under everything else so a selection ring still reads on top
     if (this.showRoutes) {
+      const col = SPAWN_STYLE.css;
       for (const r of this.sim.airRoutes()) {
         const p = r.pts;
         if (p.length < 4) continue;
-        const col = zoneStyle(r.zone).css;
         c.strokeStyle = col;
         c.globalAlpha = 0.5;
         c.lineWidth = 2;
@@ -3006,14 +3040,19 @@ export class Game {
         c.fillStyle = col;
         c.fill();
       }
-      for (const z of this.sim.terrain.spawns) {
-        c.strokeStyle = zoneStyle(z.zone).css;
-        c.globalAlpha = 0.9;
-        c.lineWidth = 2;
-        c.beginPath();
-        c.arc(z.x * CELL, z.y * CELL, z.r * CELL, 0, Math.PI * 2);
-        c.stroke();
-      }
+      // THE SPAWN TILES THEMSELVES, outlined rather than filled. The pads
+      // the author painted are not drawn in a match (GAME_LAYERS) — a
+      // board permanently splashed red is not what a player should be
+      // staring at — so this outline is the whole answer to "where does
+      // the swarm come from", and it is here only while the routes are up.
+      //
+      // Built once per terrain into a Path2D and stroked from there: a map
+      // may paint thousands of tiles, and walking them per frame is the one
+      // thing this overlay must not do.
+      c.strokeStyle = col;
+      c.globalAlpha = 0.9;
+      c.lineWidth = 2;
+      c.stroke(this.spawnOutline ?? (this.spawnOutline = this.buildSpawnOutline()));
       c.globalAlpha = 1;
     }
 

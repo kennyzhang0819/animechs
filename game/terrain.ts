@@ -1,6 +1,5 @@
-import { ALL_MOVE_BITS, BASE, CELL, clamp, COLS, LAYER_BIT, NCELLS, ROWS } from "./constants";
+import { BASE, CELL, clamp, COLS, NCELLS, ROWS } from "./constants";
 import { DECOR_TILES, WATER_FLOOR_GROUPS } from "./atlas";
-import { fitSpawnCircles, rasterizeSpawns, type SpawnCircle } from "./maps";
 
 export interface Prop {
   x: number; // world px, sprite center
@@ -49,6 +48,21 @@ export const WALL_DEEP = 7;
  */
 export const isBuildableWall = (wall: number): boolean =>
   wall !== WALL_PINE && wall !== WALL_DEEP;
+
+/**
+ * MAY A SPAWN TILE BE PAINTED HERE? Open ground, and deep water.
+ *
+ * "Enemies cannot spawn on hills" is the whole rule, and the deep is not
+ * one: it is the naval layer's own road (navalWalkMask), so a fleet coming
+ * in out at sea is a door and not a body dropped inside a wall. Rock and
+ * forest are walls to everything that walks and a place no flyer should
+ * ever be dropped into, so they hold no pads.
+ *
+ * Read by the loader (maps.ts clampSpawn), by the brush (MapEditor) and by
+ * nothing else — those two are the only places a spawn tile is created.
+ */
+export const canHoldSpawn = (blocked: number, wall: number): boolean =>
+  !blocked || wall === WALL_DEEP;
 
 /** does this cell show its floor rather than a wall sprite? true for open
  *  ground and for both sentinels — a pine's prop and the water's surface
@@ -122,21 +136,17 @@ export interface Terrain {
   floor: Uint8Array; // UV_FLOORS index per cell (pine cells: the grass underneath)
   wall: Uint8Array; // per blocked cell: UV_WALLS index, or WALL_PINE
   /**
-   * the authored drop zones. This is the SOURCE: `spawn` below is burned
-   * from it (and from `blocked`) by rasterizeSpawns, so anything that moves
-   * a circle or paints over one must re-derive the layer, never patch it
-   */
-  spawns: SpawnCircle[];
-  /**
-   * Where the swarm ENTERS, as a per-cell LAYER MASK of the same LAYER_BIT
-   * bits the goal layer uses, plus LAYER_BIT.boss for the boss door. Zero
-   * is "no zone covers this cell".
+   * WHERE THE SWARM ENTERS: the painted spawn layer, 1 a cell.
    *
-   * A data layer — nothing paints these cells; the editor shows each zone
-   * as its circle overlay, and this is burned from `spawns` by
-   * rasterizeSpawns. A mask rather than an id because zones of different
-   * layers may overlap, and a byte holding one id could only remember
-   * whichever circle was painted last.
+   * The layer itself, not a cache of something else — it is what the map
+   * document carries (MapData.spawnTiles) and what the brush paints. One
+   * flat layer with no kinds in it: every unit picks its own tiles out of
+   * it by its movement layer (Sim.padMaskFor), so nothing here has to know
+   * that hulls like the wet ones.
+   *
+   * INVARIANT: a set cell is open ground (see maps.ts clampSpawn). The
+   * loader clips the layer against `blocked` and every editor stroke that
+   * raises rock takes its tiles back.
    */
   spawn: Uint8Array;
   pines: Prop[]; // blocking tree cells, drawn as overhanging props
@@ -430,20 +440,17 @@ export function generateTerrain(seed: number): Terrain {
     });
   }
 
-  // the drop zone: the open ground of the western strip, the same mouth the
-  // spawner has always used, expressed as a circle covering it (region 1 —
-  // place further zones in the editor)
-  const strip = new Uint8Array(NCELLS);
+  // the spawn tiles: the open ground of the western strip, the same mouth
+  // the spawner has always used — paint more of them in the editor
+  const spawn = new Uint8Array(NCELLS);
   for (let y = 1; y < ROWS - 1; y++)
     for (let x = 0; x < 6; x++) {
       const i = y * COLS + x;
-      if (!blocked[i]) strip[i] = 1;
+      if (!blocked[i]) spawn[i] = 1;
     }
-  const spawns = fitSpawnCircles(strip);
-  const spawn = rasterizeSpawns(spawns, { blocked, floor });
 
   return {
-    blocked, floor, wall, spawns, spawn, pines, decor, valleyY,
+    blocked, floor, wall, spawn, pines, decor, valleyY,
     base: { ...BASE }, rows: ROWS, cols: COLS,
   };
 }

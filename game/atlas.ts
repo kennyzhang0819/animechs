@@ -11,19 +11,22 @@ import {
 import type { UnitKind } from "./levels";
 import { ANIMAL_ART } from "./animalFlag";
 import {
-  FROG_TIERS,
+  EEL_TIERS,
   HART_TIERS,
+  MANTA_TIERS,
   RHINO_TIERS,
+  SPIDER_TIERS,
   STOOP_TIERS,
-  frogLegged,
-  frogMech,
-  frogSeg,
+  eel,
   hartLegged,
   hartMech,
   hartSeg,
+  manta,
+  mantaGeom,
   rhinoLegged,
   rhinoMech,
   rhinoSeg,
+  spiderLegged,
   stoop,
   stoopGeom,
   toCanvas,
@@ -562,8 +565,8 @@ export const DECOR_TILES: readonly number[] = [
 // STRUCTURES, EFFECTS AND THE ODD SHAPES
 // ---------------------------------------------------------------------
 
-// mechanical spawn-pad tile — currently unused: drop zones are shown as
-// overlay circles, and no terrain pass paints spawn cells any more
+// mechanical spawn-pad tile: one of these is drawn on every painted spawn
+// cell, tinted by SPAWN_STYLE (Renderer.rebuildTerrain)
 export const UV_SPAWN = tile("spawn-pad", 64, 2);
 // a stroked ring, procedural
 export const UV_RING = reserve("ring", 64, 64, { art: 54, upright: true });
@@ -690,10 +693,10 @@ export const UV_MISSILE_BACK = sprite("missile-back", 36, 36);
  * THE SWARM'S OWN BULLET SPRITES, on the same rule — white, source size,
  * facing +x, the `-back` beside its front:
  *
- *   - circle-bullet (48): navanax's emp round;
- *   - mine-bullet (64): the retusa's torpedo;
- *   - missile-large (56): cyerce's plasma missile;
- *   - disrupt-missile (39x60): the disrupt's missile UNIT, which is drawn as
+ *   - circle-bullet (48): livewire5's emp round;
+ *   - mine-bullet (64): the livewire1's torpedo;
+ *   - missile-large (56): livewire3's plasma missile;
+ *   - boss-missile (39x60): the boss's missile UNIT, which is drawn as
  *     itself — coloured art with Pal.darkOutline, so it takes the outline
  *     pass a unit sprite does and is pushed untinted;
  *   - laser (4x48) and laser-end (72): what Drawf.laser draws a sap beam
@@ -707,7 +710,7 @@ export const UV_MINE_BULLET = sprite("mine-bullet", 64, 64);
 export const UV_MINE_BULLET_BACK = sprite("mine-bullet-back", 64, 64);
 export const UV_MISSILE_LARGE = sprite("missile-large", 56, 56);
 export const UV_MISSILE_LARGE_BACK = sprite("missile-large-back", 56, 56);
-export const UV_DISRUPT_MISSILE = sprite("disrupt-missile", 64, [39, 60]);
+export const UV_BOSS_MISSILE = sprite("boss-missile", 64, [39, 60]);
 export const UV_LASER_END = flat("laser-end", 72);
 export const UV_LASER = flat("laser", 4, 48);
 
@@ -732,62 +735,62 @@ export const UV_LASER = flat("laser", 4, 48);
 // stroke is the rect's height (Lines.stroke(legRegion.height)).
 
 // the ground line
-export const UV_DAGGER_LEG = sprite("dagger-leg", 64, 48);
-export const UV_DAGGER_BASE = sprite("dagger-base", 64, 48);
-export const UV_DAGGER_BODY = sprite("dagger", 64, 48);
+export const UV_IRONHIDE1_LEG = sprite("ironhide1-leg", 64, 48);
+export const UV_IRONHIDE1_BASE = sprite("ironhide1-base", 64, 48);
+export const UV_IRONHIDE1_BODY = sprite("ironhide1", 64, 48);
 export const UV_LARGE_WEAPON = sprite("large-weapon", 64, 48);
-export const UV_MACE_LEG = sprite("mace-leg", 64, 64);
-export const UV_MACE_BASE = sprite("mace-base", 64, 64);
-export const UV_MACE_BODY = sprite("mace", 64, 64);
+export const UV_IRONHIDE2_LEG = sprite("ironhide2-leg", 64, 64);
+export const UV_IRONHIDE2_BASE = sprite("ironhide2-base", 64, 64);
+export const UV_IRONHIDE2_BODY = sprite("ironhide2", 64, 64);
 export const UV_FLAMETHROWER = sprite("flamethrower", 64, [48, 56]);
-export const UV_DAGGER_LEG_SIL = sprite("dagger-leg-sil", 64, 48);
-export const UV_DAGGER_BASE_SIL = sprite("dagger-base-sil", 64, 48);
-export const UV_DAGGER_BODY_SIL = sprite("dagger-sil", 64, 48);
+export const UV_IRONHIDE1_LEG_SIL = sprite("ironhide1-leg-sil", 64, 48);
+export const UV_IRONHIDE1_BASE_SIL = sprite("ironhide1-base-sil", 64, 48);
+export const UV_IRONHIDE1_BODY_SIL = sprite("ironhide1-sil", 64, 48);
 export const UV_LARGE_WEAPON_SIL = sprite("large-weapon-sil", 64, 48);
-export const UV_MACE_LEG_SIL = sprite("mace-leg-sil", 64, 64);
-export const UV_MACE_BASE_SIL = sprite("mace-base-sil", 64, 64);
-export const UV_MACE_BODY_SIL = sprite("mace-sil", 64, 64);
+export const UV_IRONHIDE2_LEG_SIL = sprite("ironhide2-leg-sil", 64, 64);
+export const UV_IRONHIDE2_BASE_SIL = sprite("ironhide2-base-sil", 64, 64);
+export const UV_IRONHIDE2_BODY_SIL = sprite("ironhide2-sil", 64, 64);
 export const UV_FLAMETHROWER_SIL = sprite("flamethrower-sil", 64, [48, 56]);
 // the T3 outgrows 64px cells (body 100x80, leg 80x60 at native scale)
-export const UV_FORTRESS_LEG = sprite("fortress-leg", 128, [80, 60]);
-export const UV_FORTRESS_BASE = sprite("fortress-base", 128, 64);
-export const UV_FORTRESS_BODY = sprite("fortress", 128, [100, 80]);
+export const UV_IRONHIDE3_LEG = sprite("ironhide3-leg", 128, [80, 60]);
+export const UV_IRONHIDE3_BASE = sprite("ironhide3-base", 128, 64);
+export const UV_IRONHIDE3_BODY = sprite("ironhide3", 128, [100, 80]);
 export const UV_ARTILLERY = sprite("artillery", 128, [48, 56]);
-export const UV_FORTRESS_LEG_SIL = sprite("fortress-leg-sil", 128, [80, 60]);
-export const UV_FORTRESS_BASE_SIL = sprite("fortress-base-sil", 128, 64);
-export const UV_FORTRESS_BODY_SIL = sprite("fortress-sil", 128, [100, 80]);
+export const UV_IRONHIDE3_LEG_SIL = sprite("ironhide3-leg-sil", 128, [80, 60]);
+export const UV_IRONHIDE3_BASE_SIL = sprite("ironhide3-base-sil", 128, 64);
+export const UV_IRONHIDE3_BODY_SIL = sprite("ironhide3-sil", 128, [100, 80]);
 export const UV_ARTILLERY_SIL = sprite("artillery-sil", 128, [48, 56]);
 /**
- * The T4: scepter's hull alone is a 170x140 source, half again as wide as
+ * The T4: ironhide4's hull alone is a 170x140 source, half again as wide as
  * the 128px cells the T3s sit in, so the whole line rides 256px cells.
  */
-export const UV_SCEPTER_BODY = sprite("scepter", 256, [170, 140]);
-export const UV_SCEPTER_BODY_SIL = sprite("scepter-sil", 256, [170, 140]);
-export const UV_SCEPTER_LEG = sprite("scepter-leg", 256, 128);
-export const UV_SCEPTER_LEG_SIL = sprite("scepter-leg-sil", 256, 128);
-export const UV_SCEPTER_BASE = sprite("scepter-base", 256, 128);
-export const UV_SCEPTER_BASE_SIL = sprite("scepter-base-sil", 256, 128);
-export const UV_SCEPTER_WEAPON = sprite("scepter-weapon", 256, [56, 102]);
-export const UV_SCEPTER_WEAPON_SIL = sprite("scepter-weapon-sil", 256, [56, 102]);
-export const UV_SCEPTER_MOUNT = sprite("scepter-mount", 256, 48);
-export const UV_SCEPTER_MOUNT_SIL = sprite("scepter-mount-sil", 256, 48);
+export const UV_IRONHIDE4_BODY = sprite("ironhide4", 256, [170, 140]);
+export const UV_IRONHIDE4_BODY_SIL = sprite("ironhide4-sil", 256, [170, 140]);
+export const UV_IRONHIDE4_LEG = sprite("ironhide4-leg", 256, 128);
+export const UV_IRONHIDE4_LEG_SIL = sprite("ironhide4-leg-sil", 256, 128);
+export const UV_IRONHIDE4_BASE = sprite("ironhide4-base", 256, 128);
+export const UV_IRONHIDE4_BASE_SIL = sprite("ironhide4-base-sil", 256, 128);
+export const UV_IRONHIDE4_WEAPON = sprite("ironhide4-weapon", 256, [56, 102]);
+export const UV_IRONHIDE4_WEAPON_SIL = sprite("ironhide4-weapon-sil", 256, [56, 102]);
+export const UV_IRONHIDE4_MOUNT = sprite("ironhide4-mount", 256, 48);
+export const UV_IRONHIDE4_MOUNT_SIL = sprite("ironhide4-mount-sil", 256, 48);
 // the T5: the same four-part mech, one tier heavier
-export const UV_REIGN_BODY = sprite("reign", 256, [214, 140]);
-export const UV_REIGN_BODY_SIL = sprite("reign-sil", 256, [214, 140]);
-export const UV_REIGN_BASE = sprite("reign-base", 256, [152, 124]);
-export const UV_REIGN_BASE_SIL = sprite("reign-base-sil", 256, [152, 124]);
-export const UV_REIGN_LEG = sprite("reign-leg", 256, [152, 124]);
-export const UV_REIGN_LEG_SIL = sprite("reign-leg-sil", 256, [152, 124]);
-export const UV_REIGN_WEAPON = sprite("reign-weapon", 256, [83, 138]);
-export const UV_REIGN_WEAPON_SIL = sprite("reign-weapon-sil", 256, [83, 138]);
+export const UV_IRONHIDE5_BODY = sprite("ironhide5", 256, [214, 140]);
+export const UV_IRONHIDE5_BODY_SIL = sprite("ironhide5-sil", 256, [214, 140]);
+export const UV_IRONHIDE5_BASE = sprite("ironhide5-base", 256, [152, 124]);
+export const UV_IRONHIDE5_BASE_SIL = sprite("ironhide5-base-sil", 256, [152, 124]);
+export const UV_IRONHIDE5_LEG = sprite("ironhide5-leg", 256, [152, 124]);
+export const UV_IRONHIDE5_LEG_SIL = sprite("ironhide5-leg-sil", 256, [152, 124]);
+export const UV_IRONHIDE5_WEAPON = sprite("ironhide5-weapon", 256, [83, 138]);
+export const UV_IRONHIDE5_WEAPON_SIL = sprite("ironhide5-weapon-sil", 256, [83, 138]);
 
-// the crawler line: the T1 a mech, the rest legged
-export const UV_CRAWLER_LEG = sprite("crawler-leg", 64, 48);
-export const UV_CRAWLER_BASE = sprite("crawler-base", 64, 48);
-export const UV_CRAWLER_BODY = sprite("crawler", 64, 48);
-export const UV_CRAWLER_LEG_SIL = sprite("crawler-leg-sil", 64, 48);
-export const UV_CRAWLER_BASE_SIL = sprite("crawler-base-sil", 64, 48);
-export const UV_CRAWLER_BODY_SIL = sprite("crawler-sil", 64, 48);
+// the weaver1 line: the T1 a mech, the rest legged
+export const UV_WEAVER1_LEG = sprite("weaver1-leg", 64, 48);
+export const UV_WEAVER1_BASE = sprite("weaver1-base", 64, 48);
+export const UV_WEAVER1_BODY = sprite("weaver1", 64, 48);
+export const UV_WEAVER1_LEG_SIL = sprite("weaver1-leg-sil", 64, 48);
+export const UV_WEAVER1_BASE_SIL = sprite("weaver1-base-sil", 64, 48);
+export const UV_WEAVER1_BODY_SIL = sprite("weaver1-sil", 64, 48);
 /**
  * The legged T2 and T3: body, mount plate and guns face +x on 128px
  * cells, feet the same on 64px ones. A JOINT is drawn with no rotation at
@@ -797,136 +800,136 @@ export const UV_CRAWLER_BODY_SIL = sprite("crawler-sil", 64, 48);
  * as in Mindustry's own packer, and the leg art carries its dark edging
  * hand-drawn anyway.
  */
-export const UV_ATRAX_BODY = sprite("atrax", 128, [88, 64]);
-export const UV_ATRAX_BASE = sprite("atrax-base", 128, 64);
-export const UV_ATRAX_WEAPON = sprite("atrax-weapon", 128, [48, 56]);
-export const UV_ATRAX_BODY_SIL = sprite("atrax-sil", 128, [88, 64]);
-export const UV_ATRAX_BASE_SIL = sprite("atrax-base-sil", 128, 64);
-export const UV_ATRAX_WEAPON_SIL = sprite("atrax-weapon-sil", 128, [48, 56]);
-export const UV_ATRAX_JOINT = upright("atrax-joint", 64, 26);
-export const UV_ATRAX_FOOT = sprite("atrax-foot", 64, 40);
-export const UV_ATRAX_JOINT_SIL = upright("atrax-joint-sil", 64, 26);
-export const UV_ATRAX_FOOT_SIL = sprite("atrax-foot-sil", 64, 40);
-export const UV_ATRAX_LEG = flat("atrax-leg", 36, 26);
-export const UV_ATRAX_LEG_BASE = flat("atrax-leg-base", 36, 26);
-export const UV_SPIROCT_BODY = sprite("spiroct", 128, [94, 75]);
-export const UV_SPIROCT_WEAPON = sprite("spiroct-weapon", 128, [48, 56]);
-export const UV_SPIROCT_MOUNT = sprite("spiroct-mount", 128, 48);
-export const UV_SPIROCT_BODY_SIL = sprite("spiroct-sil", 128, [94, 75]);
-export const UV_SPIROCT_WEAPON_SIL = sprite("spiroct-weapon-sil", 128, [48, 56]);
-export const UV_SPIROCT_MOUNT_SIL = sprite("spiroct-mount-sil", 128, 48);
-export const UV_SPIROCT_JOINT = upright("spiroct-joint", 64, 32);
-export const UV_SPIROCT_FOOT = sprite("spiroct-foot", 64, 46);
-export const UV_SPIROCT_JOINT_SIL = upright("spiroct-joint-sil", 64, 32);
-export const UV_SPIROCT_FOOT_SIL = sprite("spiroct-foot-sil", 64, 46);
-export const UV_SPIROCT_LEG = flat("spiroct-leg", 48, 34);
-export const UV_SPIROCT_LEG_BASE = flat("spiroct-leg-base", 48, 34);
+export const UV_WEAVER2_BODY = sprite("weaver2", 128, [88, 64]);
+export const UV_WEAVER2_BASE = sprite("weaver2-base", 128, 64);
+export const UV_WEAVER2_WEAPON = sprite("weaver2-weapon", 128, [48, 56]);
+export const UV_WEAVER2_BODY_SIL = sprite("weaver2-sil", 128, [88, 64]);
+export const UV_WEAVER2_BASE_SIL = sprite("weaver2-base-sil", 128, 64);
+export const UV_WEAVER2_WEAPON_SIL = sprite("weaver2-weapon-sil", 128, [48, 56]);
+export const UV_WEAVER2_JOINT = upright("weaver2-joint", 64, 26);
+export const UV_WEAVER2_FOOT = sprite("weaver2-foot", 64, 40);
+export const UV_WEAVER2_JOINT_SIL = upright("weaver2-joint-sil", 64, 26);
+export const UV_WEAVER2_FOOT_SIL = sprite("weaver2-foot-sil", 64, 40);
+export const UV_WEAVER2_LEG = flat("weaver2-leg", 36, 26);
+export const UV_WEAVER2_LEG_BASE = flat("weaver2-leg-base", 36, 26);
+export const UV_WEAVER3_BODY = sprite("weaver3", 128, [94, 75]);
+export const UV_WEAVER3_WEAPON = sprite("weaver3-weapon", 128, [48, 56]);
+export const UV_WEAVER3_MOUNT = sprite("weaver3-mount", 128, 48);
+export const UV_WEAVER3_BODY_SIL = sprite("weaver3-sil", 128, [94, 75]);
+export const UV_WEAVER3_WEAPON_SIL = sprite("weaver3-weapon-sil", 128, [48, 56]);
+export const UV_WEAVER3_MOUNT_SIL = sprite("weaver3-mount-sil", 128, 48);
+export const UV_WEAVER3_JOINT = upright("weaver3-joint", 64, 32);
+export const UV_WEAVER3_FOOT = sprite("weaver3-foot", 64, 46);
+export const UV_WEAVER3_JOINT_SIL = upright("weaver3-joint-sil", 64, 32);
+export const UV_WEAVER3_FOOT_SIL = sprite("weaver3-foot-sil", 64, 46);
+export const UV_WEAVER3_LEG = flat("weaver3-leg", 48, 34);
+export const UV_WEAVER3_LEG_BASE = flat("weaver3-leg-base", 48, 34);
 /**
- * The T4: hull and guns on 256px cells — the sap gun is the spiroct's own
+ * The T4: hull and guns on 256px cells — the sap gun is the weaver3's own
  * weapon sprite packed a second time, because a legged unit draws every
- * gun at its own LegArt.sprite and arkyid's is 256. Its feet and shoulder
+ * gun at its own LegArt.sprite and weaver4's is 256. Its feet and shoulder
  * plates ride 128px cells (their 70px sources keep a wide margin there),
  * and its two leg segments the exact rects their art occupies.
  */
-export const UV_ARKYID_BODY = sprite("arkyid", 256, 128);
-export const UV_ARKYID_BODY_SIL = sprite("arkyid-sil", 256, 128);
-export const UV_ARKYID_WEAPON = sprite("arkyid-weapon", 256, [48, 56]);
-export const UV_ARKYID_WEAPON_SIL = sprite("arkyid-weapon-sil", 256, [48, 56]);
-export const UV_ARKYID_MOUNT = sprite("arkyid-mount", 256, [70, 97]);
-export const UV_ARKYID_MOUNT_SIL = sprite("arkyid-mount-sil", 256, [70, 97]);
-export const UV_ARKYID_FOOT = sprite("arkyid-foot", 128, 70);
-export const UV_ARKYID_FOOT_SIL = sprite("arkyid-foot-sil", 128, 70);
-export const UV_ARKYID_JOINT_BASE = sprite("arkyid-joint-base", 128, 70);
-export const UV_ARKYID_JOINT_BASE_SIL = sprite("arkyid-joint-base-sil", 128, 70);
-export const UV_ARKYID_LEG = flat("arkyid-leg", 56, 56);
-export const UV_ARKYID_LEG_BASE = flat("arkyid-leg-base", 104, 64);
-// the T5: the arkyid's frame with two more legs, and the one centred
-// cannon. toxopid's lower segment is 270px of art for a 150px upper one:
+export const UV_WEAVER4_BODY = sprite("weaver4", 256, 128);
+export const UV_WEAVER4_BODY_SIL = sprite("weaver4-sil", 256, 128);
+export const UV_WEAVER4_WEAPON = sprite("weaver4-weapon", 256, [48, 56]);
+export const UV_WEAVER4_WEAPON_SIL = sprite("weaver4-weapon-sil", 256, [48, 56]);
+export const UV_WEAVER4_MOUNT = sprite("weaver4-mount", 256, [70, 97]);
+export const UV_WEAVER4_MOUNT_SIL = sprite("weaver4-mount-sil", 256, [70, 97]);
+export const UV_WEAVER4_FOOT = sprite("weaver4-foot", 128, 70);
+export const UV_WEAVER4_FOOT_SIL = sprite("weaver4-foot-sil", 128, 70);
+export const UV_WEAVER4_JOINT_BASE = sprite("weaver4-joint-base", 128, 70);
+export const UV_WEAVER4_JOINT_BASE_SIL = sprite("weaver4-joint-base-sil", 128, 70);
+export const UV_WEAVER4_LEG = flat("weaver4-leg", 56, 56);
+export const UV_WEAVER4_LEG_BASE = flat("weaver4-leg-base", 104, 64);
+// the T5: the weaver4's frame with two more legs, and the one centred
+// cannon. weaver5's lower segment is 270px of art for a 150px upper one:
 // legExtension 20 runs it back over its own knee
-export const UV_TOXOPID_BODY = sprite("toxopid", 256, [160, 190]);
-export const UV_TOXOPID_BODY_SIL = sprite("toxopid-sil", 256, [160, 190]);
-export const UV_TOXOPID_CANNON = sprite("toxopid-cannon", 256, [206, 220]);
-export const UV_TOXOPID_CANNON_SIL = sprite("toxopid-cannon-sil", 256, [206, 220]);
-export const UV_TOXOPID_JOINT_BASE = sprite("toxopid-joint-base", 128, 70);
-export const UV_TOXOPID_JOINT_BASE_SIL = sprite("toxopid-joint-base-sil", 128, 70);
-export const UV_TOXOPID_FOOT = sprite("toxopid-foot", 128, 90);
-export const UV_TOXOPID_FOOT_SIL = sprite("toxopid-foot-sil", 128, 90);
-export const UV_TOXOPID_LEG = flat("toxopid-leg", 150, 72);
-export const UV_TOXOPID_LEG_BASE = flat("toxopid-leg-base", 270, 64);
+export const UV_WEAVER5_BODY = sprite("weaver5", 256, [160, 190]);
+export const UV_WEAVER5_BODY_SIL = sprite("weaver5-sil", 256, [160, 190]);
+export const UV_WEAVER5_CANNON = sprite("weaver5-cannon", 256, [206, 220]);
+export const UV_WEAVER5_CANNON_SIL = sprite("weaver5-cannon-sil", 256, [206, 220]);
+export const UV_WEAVER5_JOINT_BASE = sprite("weaver5-joint-base", 128, 70);
+export const UV_WEAVER5_JOINT_BASE_SIL = sprite("weaver5-joint-base-sil", 128, 70);
+export const UV_WEAVER5_FOOT = sprite("weaver5-foot", 128, 90);
+export const UV_WEAVER5_FOOT_SIL = sprite("weaver5-foot-sil", 128, 90);
+export const UV_WEAVER5_LEG = flat("weaver5-leg", 150, 72);
+export const UV_WEAVER5_LEG_BASE = flat("weaver5-leg-base", 270, 64);
 
-// the support line: T1 and T2 on 64px cells. pulsar's 68x58 body and
+// the support line: T1 and T2 on 64px cells. starhart2's 68x58 body and
 // 64px leg overhang their cells with transparent padding only, which the
 // clip takes off
-export const UV_NOVA_LEG = sprite("nova-leg", 64, 48);
-export const UV_NOVA_BASE = sprite("nova-base", 64, 48);
-export const UV_NOVA_BODY = sprite("nova", 64, 56);
+export const UV_STARHART1_LEG = sprite("starhart1-leg", 64, 48);
+export const UV_STARHART1_BASE = sprite("starhart1-base", 64, 48);
+export const UV_STARHART1_BODY = sprite("starhart1", 64, 56);
 export const UV_HEAL_WEAPON = sprite("heal-weapon", 64, 48);
-export const UV_NOVA_LEG_SIL = sprite("nova-leg-sil", 64, 48);
-export const UV_NOVA_BASE_SIL = sprite("nova-base-sil", 64, 48);
-export const UV_NOVA_BODY_SIL = sprite("nova-sil", 64, 56);
+export const UV_STARHART1_LEG_SIL = sprite("starhart1-leg-sil", 64, 48);
+export const UV_STARHART1_BASE_SIL = sprite("starhart1-base-sil", 64, 48);
+export const UV_STARHART1_BODY_SIL = sprite("starhart1-sil", 64, 56);
 export const UV_HEAL_WEAPON_SIL = sprite("heal-weapon-sil", 64, 48);
-export const UV_PULSAR_LEG = sprite("pulsar-leg", 64, 64);
-export const UV_PULSAR_BASE = sprite("pulsar-base", 64, 48);
-export const UV_PULSAR_BODY = sprite("pulsar", 64, [68, 58]);
+export const UV_STARHART2_LEG = sprite("starhart2-leg", 64, 64);
+export const UV_STARHART2_BASE = sprite("starhart2-base", 64, 48);
+export const UV_STARHART2_BODY = sprite("starhart2", 64, [68, 58]);
 export const UV_HEAL_SHOTGUN = sprite("heal-shotgun", 64, 50);
-export const UV_PULSAR_LEG_SIL = sprite("pulsar-leg-sil", 64, 64);
-export const UV_PULSAR_BASE_SIL = sprite("pulsar-base-sil", 64, 48);
-export const UV_PULSAR_BODY_SIL = sprite("pulsar-sil", 64, [68, 58]);
+export const UV_STARHART2_LEG_SIL = sprite("starhart2-leg-sil", 64, 64);
+export const UV_STARHART2_BASE_SIL = sprite("starhart2-base-sil", 64, 48);
+export const UV_STARHART2_BODY_SIL = sprite("starhart2-sil", 64, [68, 58]);
 export const UV_HEAL_SHOTGUN_SIL = sprite("heal-shotgun-sil", 64, 50);
-// the T3 outgrows those: every quasar part ships on an 80x80 source (its
+// the T3 outgrows those: every starhart3 part ships on an 80x80 source (its
 // leg alone reaches 35px off centre, past the 32px a 64 cell can hold)
-export const UV_QUASAR_LEG = sprite("quasar-leg", 128, 80);
-export const UV_QUASAR_BASE = sprite("quasar-base", 128, 80);
-export const UV_QUASAR_BODY = sprite("quasar", 128, 80);
+export const UV_STARHART3_LEG = sprite("starhart3-leg", 128, 80);
+export const UV_STARHART3_BASE = sprite("starhart3-base", 128, 80);
+export const UV_STARHART3_BODY = sprite("starhart3", 128, 80);
 export const UV_BEAM_WEAPON = sprite("beam-weapon", 128, 80);
-export const UV_QUASAR_LEG_SIL = sprite("quasar-leg-sil", 128, 80);
-export const UV_QUASAR_BASE_SIL = sprite("quasar-base-sil", 128, 80);
-export const UV_QUASAR_BODY_SIL = sprite("quasar-sil", 128, 80);
+export const UV_STARHART3_LEG_SIL = sprite("starhart3-leg-sil", 128, 80);
+export const UV_STARHART3_BASE_SIL = sprite("starhart3-base-sil", 128, 80);
+export const UV_STARHART3_BODY_SIL = sprite("starhart3-sil", 128, 80);
 export const UV_BEAM_WEAPON_SIL = sprite("beam-weapon-sil", 128, 80);
 // the T4. Its main gun has NO sprite (see the MECH_ART note) — the pair
 // of repair-beam pods is all there is to bolt on
-export const UV_VELA_BODY = sprite("vela", 256, [170, 140]);
-export const UV_VELA_BODY_SIL = sprite("vela-sil", 256, [170, 140]);
-export const UV_VELA_LEG = sprite("vela-leg", 256, 128);
-export const UV_VELA_LEG_SIL = sprite("vela-leg-sil", 256, 128);
-export const UV_VELA_BASE = sprite("vela-base", 256, 128);
-export const UV_VELA_BASE_SIL = sprite("vela-base-sil", 256, 128);
+export const UV_STARHART4_BODY = sprite("starhart4", 256, [170, 140]);
+export const UV_STARHART4_BODY_SIL = sprite("starhart4-sil", 256, [170, 140]);
+export const UV_STARHART4_LEG = sprite("starhart4-leg", 256, 128);
+export const UV_STARHART4_LEG_SIL = sprite("starhart4-leg-sil", 256, 128);
+export const UV_STARHART4_BASE = sprite("starhart4-base", 256, 128);
+export const UV_STARHART4_BASE_SIL = sprite("starhart4-base-sil", 256, 128);
 export const UV_REPAIR_BEAM = sprite("repair-beam", 256, 48);
 export const UV_REPAIR_BEAM_SIL = sprite("repair-beam-sil", 256, 48);
 /**
  * The T5, the only legged unit wearing the full set of leg parts: a mount
- * plate like the atrax, a knee cap like the atrax and spiroct, AND a
- * shoulder plate like the arkyid and toxopid. Four legs of 14 world units
+ * plate like the weaver2, a knee cap like the weaver2 and weaver3, AND a
+ * shoulder plate like the weaver4 and weaver5. Four legs of 14 world units
  * on mounts 11 out: almost the whole span is the mount offset, so the
  * segments are stubby and very broad — a 68px stroke on a 30px segment.
  */
-export const UV_CORVUS_BODY = sprite("corvus", 256, [214, 140]);
-export const UV_CORVUS_BODY_SIL = sprite("corvus-sil", 256, [214, 140]);
-export const UV_CORVUS_BASE = sprite("corvus-base", 256, [152, 124]);
-export const UV_CORVUS_BASE_SIL = sprite("corvus-base-sil", 256, [152, 124]);
-export const UV_CORVUS_JOINT = upright("corvus-joint", 128, 60);
-export const UV_CORVUS_JOINT_SIL = upright("corvus-joint-sil", 128, 60);
-export const UV_CORVUS_JOINT_BASE = sprite("corvus-joint-base", 128, 70);
-export const UV_CORVUS_JOINT_BASE_SIL = sprite("corvus-joint-base-sil", 128, 70);
-export const UV_CORVUS_FOOT = sprite("corvus-foot", 128, 90);
-export const UV_CORVUS_FOOT_SIL = sprite("corvus-foot-sil", 128, 90);
-export const UV_CORVUS_LEG = flat("corvus-leg", 30, 68);
-export const UV_CORVUS_LEG_BASE = flat("corvus-leg-base", 30, 64);
+export const UV_STARHART5_BODY = sprite("starhart5", 256, [214, 140]);
+export const UV_STARHART5_BODY_SIL = sprite("starhart5-sil", 256, [214, 140]);
+export const UV_STARHART5_BASE = sprite("starhart5-base", 256, [152, 124]);
+export const UV_STARHART5_BASE_SIL = sprite("starhart5-base-sil", 256, [152, 124]);
+export const UV_STARHART5_JOINT = upright("starhart5-joint", 128, 60);
+export const UV_STARHART5_JOINT_SIL = upright("starhart5-joint-sil", 128, 60);
+export const UV_STARHART5_JOINT_BASE = sprite("starhart5-joint-base", 128, 70);
+export const UV_STARHART5_JOINT_BASE_SIL = sprite("starhart5-joint-base-sil", 128, 70);
+export const UV_STARHART5_FOOT = sprite("starhart5-foot", 128, 90);
+export const UV_STARHART5_FOOT_SIL = sprite("starhart5-foot-sil", 128, 90);
+export const UV_STARHART5_LEG = flat("starhart5-leg", 30, 68);
+export const UV_STARHART5_LEG_BASE = flat("starhart5-leg-base", 30, 64);
 
 /**
  * THE FLYERS: a flying unit is one sprite — no legs, no chassis, no
  * silhouette under-layer — outlined at pack time and turned to the
- * heading the sim gave it. flare's 48px art rides a 64 cell at dagger
- * scale; horizon (72) and zenith (112) take 128s; antumbra at 216x240 and
- * the disrupt boss at 243x243 take 256s; eclipse, 320x321, the largest
+ * heading the sim gave it. stoop1's 48px art rides a 64 cell at ironhide1
+ * scale; stoop2 (72) and stoop3 (112) take 128s; stoop4 at 216x240 and
+ * the boss boss at 243x243 take 256s; stoop5, 320x321, the largest
  * single piece of art on the sheet, the only 384.
  */
-export const UV_FLARE = sprite("flare", 64, 48);
-export const UV_HORIZON = sprite("horizon", 128, 72);
-export const UV_ZENITH = sprite("zenith", 128, 112);
-export const UV_ANTUMBRA = sprite("antumbra", 256, [216, 240]);
-export const UV_DISRUPT = sprite("disrupt", 256, 243);
-export const UV_ECLIPSE = sprite("eclipse", 384, [320, 321]);
+export const UV_STOOP1 = sprite("stoop1", 64, 48);
+export const UV_STOOP2 = sprite("stoop2", 128, 72);
+export const UV_STOOP3 = sprite("stoop3", 128, 112);
+export const UV_STOOP4 = sprite("stoop4", 256, [216, 240]);
+export const UV_BOSS = sprite("boss", 256, 243);
+export const UV_STOOP5 = sprite("stoop5", 384, [320, 321]);
 
 /**
  * THE NAVAL HULLS — the ten of the two water trees. A naval tank is drawn
@@ -937,16 +940,16 @@ export const UV_ECLIPSE = sprite("eclipse", 384, [320, 321]);
  * usual way: the two T5 hulls are 264x351 and 258x366 of art, and a 256
  * cell would have had to scale them down.
  */
-export const UV_RISSO = sprite("risso", 128, [70, 78]);
-export const UV_MINKE = sprite("minke", 128, [88, 101]);
-export const UV_RETUSA = sprite("retusa", 128, [70, 78]);
-export const UV_OXYNOE = sprite("oxynoe", 128, [88, 101]);
-export const UV_BRYDE = sprite("bryde", 256, 140);
-export const UV_CYERCE = sprite("cyerce", 256, 140);
-export const UV_SEI = sprite("sei", 256, [198, 228]);
-export const UV_AEGIRES = sprite("aegires", 256, [218, 241]);
-export const UV_OMURA = sprite("omura", 384, [264, 351]);
-export const UV_NAVANAX = sprite("navanax", 384, [258, 366]);
+export const UV_SKATE1 = sprite("skate1", 128, [70, 78]);
+export const UV_SKATE2 = sprite("skate2", 128, [88, 101]);
+export const UV_LIVEWIRE1 = sprite("livewire1", 128, [70, 78]);
+export const UV_LIVEWIRE2 = sprite("livewire2", 128, [88, 101]);
+export const UV_SKATE3 = sprite("skate3", 256, 140);
+export const UV_LIVEWIRE3 = sprite("livewire3", 256, 140);
+export const UV_SKATE4 = sprite("skate4", 256, [198, 228]);
+export const UV_LIVEWIRE4 = sprite("livewire4", 256, [218, 241]);
+export const UV_SKATE5 = sprite("skate5", 384, [264, 351]);
+export const UV_LIVEWIRE5 = sprite("livewire5", 384, [258, 366]);
 
 /**
  * WHERE A BODY'S TEAM CELL RIDES ON ITS BODY QUAD, filled in at pack time
@@ -971,52 +974,52 @@ export interface CellArt {
 export const UNIT_CELL: Partial<Record<UnitKind, CellArt>> = {};
 
 // per-kind unit art: atlas cell + world quad size. Both ride at true
-// Mindustry scale — dagger 48px art = 1.5 tiles, mace 64px art = 2 tiles
+// Mindustry scale — ironhide1 48px art = 1.5 tiles, ironhide2 64px art = 2 tiles
 export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
-  dagger: { uv: UV_DAGGER_BODY, sprite: UNIT_SPRITE },
-  mace: { uv: UV_MACE_BODY, sprite: UNIT_SPRITE },
-  fortress: { uv: UV_FORTRESS_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
-  scepter: { uv: UV_SCEPTER_BODY, sprite: UNIT_SPRITE * 4 }, // 256px cell, same px scale
-  reign: { uv: UV_REIGN_BODY, sprite: UNIT_SPRITE * 4 },
-  crawler: { uv: UV_CRAWLER_BODY, sprite: UNIT_SPRITE },
-  // 128px cells, like the fortress: the legged pair's bodies outgrow 64
-  atrax: { uv: UV_ATRAX_BODY, sprite: UNIT_SPRITE * 2 },
-  spiroct: { uv: UV_SPIROCT_BODY, sprite: UNIT_SPRITE * 2 },
-  arkyid: { uv: UV_ARKYID_BODY, sprite: UNIT_SPRITE * 4 }, // 256px cell, same px scale
-  toxopid: { uv: UV_TOXOPID_BODY, sprite: UNIT_SPRITE * 4 },
-  nova: { uv: UV_NOVA_BODY, sprite: UNIT_SPRITE },
-  pulsar: { uv: UV_PULSAR_BODY, sprite: UNIT_SPRITE },
-  quasar: { uv: UV_QUASAR_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
-  vela: { uv: UV_VELA_BODY, sprite: UNIT_SPRITE * 4 }, // 256px cell, same px scale
-  corvus: { uv: UV_CORVUS_BODY, sprite: UNIT_SPRITE * 4 },
-  flare: { uv: UV_FLARE, sprite: UNIT_SPRITE }, // 48px art in a 64 cell, dagger scale
+  ironhide1: { uv: UV_IRONHIDE1_BODY, sprite: UNIT_SPRITE },
+  ironhide2: { uv: UV_IRONHIDE2_BODY, sprite: UNIT_SPRITE },
+  ironhide3: { uv: UV_IRONHIDE3_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
+  ironhide4: { uv: UV_IRONHIDE4_BODY, sprite: UNIT_SPRITE * 4 }, // 256px cell, same px scale
+  ironhide5: { uv: UV_IRONHIDE5_BODY, sprite: UNIT_SPRITE * 4 },
+  weaver1: { uv: UV_WEAVER1_BODY, sprite: UNIT_SPRITE },
+  // 128px cells, like the ironhide3: the legged pair's bodies outgrow 64
+  weaver2: { uv: UV_WEAVER2_BODY, sprite: UNIT_SPRITE * 2 },
+  weaver3: { uv: UV_WEAVER3_BODY, sprite: UNIT_SPRITE * 2 },
+  weaver4: { uv: UV_WEAVER4_BODY, sprite: UNIT_SPRITE * 4 }, // 256px cell, same px scale
+  weaver5: { uv: UV_WEAVER5_BODY, sprite: UNIT_SPRITE * 4 },
+  starhart1: { uv: UV_STARHART1_BODY, sprite: UNIT_SPRITE },
+  starhart2: { uv: UV_STARHART2_BODY, sprite: UNIT_SPRITE },
+  starhart3: { uv: UV_STARHART3_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
+  starhart4: { uv: UV_STARHART4_BODY, sprite: UNIT_SPRITE * 4 }, // 256px cell, same px scale
+  starhart5: { uv: UV_STARHART5_BODY, sprite: UNIT_SPRITE * 4 },
+  stoop1: { uv: UV_STOOP1, sprite: UNIT_SPRITE }, // 48px art in a 64 cell, ironhide1 scale
   // 128px cells: double the cell means double the sprite box, which keeps
   // world px per native px identical to every other unit
-  horizon: { uv: UV_HORIZON, sprite: UNIT_SPRITE * 2 },
-  zenith: { uv: UV_ZENITH, sprite: UNIT_SPRITE * 2 },
-  antumbra: { uv: UV_ANTUMBRA, sprite: UNIT_SPRITE * 4 },
+  stoop2: { uv: UV_STOOP2, sprite: UNIT_SPRITE * 2 },
+  stoop3: { uv: UV_STOOP3, sprite: UNIT_SPRITE * 2 },
+  stoop4: { uv: UV_STOOP4, sprite: UNIT_SPRITE * 4 },
   // the boss draws HALF AGAIN its native scale ON PURPOSE — the one unit
   // allowed to break the px-per-px convention, because presence is its
-  // job. At x6 it fills the same quad as eclipse, the widest thing on the
+  // job. At x6 it fills the same quad as stoop5, the widest thing on the
   // roster. The hitbox grew with it (UNIT_STATS radius, UR * 7), so shots
   // land where the art says they should
-  disrupt: { uv: UV_DISRUPT, sprite: UNIT_SPRITE * 6 },
+  boss: { uv: UV_BOSS, sprite: UNIT_SPRITE * 6 },
   // 320x321 on a 7.25-block hitbox: the sheet's biggest single piece, and
   // the only 384px cell on it — hence the odd multiplier, which is just
   // 384/64 like every other one here
-  eclipse: { uv: UV_ECLIPSE, sprite: UNIT_SPRITE * 6 },
+  stoop5: { uv: UV_STOOP5, sprite: UNIT_SPRITE * 6 },
   // the naval tanks: one quad apiece, like the flyers, on the band's three
   // cell sizes (see the UV note there)
-  risso: { uv: UV_RISSO, sprite: UNIT_SPRITE * 2 },
-  minke: { uv: UV_MINKE, sprite: UNIT_SPRITE * 2 },
-  bryde: { uv: UV_BRYDE, sprite: UNIT_SPRITE * 4 },
-  sei: { uv: UV_SEI, sprite: UNIT_SPRITE * 4 },
-  omura: { uv: UV_OMURA, sprite: UNIT_SPRITE * 6 },
-  retusa: { uv: UV_RETUSA, sprite: UNIT_SPRITE * 2 },
-  oxynoe: { uv: UV_OXYNOE, sprite: UNIT_SPRITE * 2 },
-  cyerce: { uv: UV_CYERCE, sprite: UNIT_SPRITE * 4 },
-  aegires: { uv: UV_AEGIRES, sprite: UNIT_SPRITE * 4 },
-  navanax: { uv: UV_NAVANAX, sprite: UNIT_SPRITE * 6 },
+  skate1: { uv: UV_SKATE1, sprite: UNIT_SPRITE * 2 },
+  skate2: { uv: UV_SKATE2, sprite: UNIT_SPRITE * 2 },
+  skate3: { uv: UV_SKATE3, sprite: UNIT_SPRITE * 4 },
+  skate4: { uv: UV_SKATE4, sprite: UNIT_SPRITE * 4 },
+  skate5: { uv: UV_SKATE5, sprite: UNIT_SPRITE * 6 },
+  livewire1: { uv: UV_LIVEWIRE1, sprite: UNIT_SPRITE * 2 },
+  livewire2: { uv: UV_LIVEWIRE2, sprite: UNIT_SPRITE * 2 },
+  livewire3: { uv: UV_LIVEWIRE3, sprite: UNIT_SPRITE * 4 },
+  livewire4: { uv: UV_LIVEWIRE4, sprite: UNIT_SPRITE * 4 },
+  livewire5: { uv: UV_LIVEWIRE5, sprite: UNIT_SPRITE * 6 },
 };
 
 // Mindustry world units → px (CELL / 8, see constants.ts)
@@ -1031,8 +1034,8 @@ const MU = 2.5;
  * flyer here), which is the second place the crux red shows on a unit.
  *
  * A type that sets none gets one on its axis at (0, -engineOffset) of
- * engineSize, rotation -90 (UnitType.init); the disrupt sets two mirrored
- * pairs and so gets none on its axis. The disrupt draws half again its
+ * engineSize, rotation -90 (UnitType.init); the boss sets two mirrored
+ * pairs and so gets none on its axis. The boss draws half again its
  * native scale (UNIT_ART), so its offsets are scaled with it.
  */
 export interface UnitEngine {
@@ -1053,12 +1056,12 @@ const mirrored = (x: number, y: number, radius: number, rotDeg: number, scl: num
   engine(-x, y, radius, (180 - rotDeg + 360) % 360, scl),
 ];
 export const UNIT_ENGINES: Partial<Record<UnitKind, readonly UnitEngine[]>> = {
-  flare: axial(5.75, 2.5), // engineOffset 5.75, engineSize default 2.5
-  horizon: axial(7.8, 2.5),
-  zenith: axial(12, 3),
-  antumbra: axial(21, 5.3),
-  eclipse: axial(38, 7.3),
-  disrupt: [
+  stoop1: axial(5.75, 2.5), // engineOffset 5.75, engineSize default 2.5
+  stoop2: axial(7.8, 2.5),
+  stoop3: axial(12, 3),
+  stoop4: axial(21, 5.3),
+  stoop5: axial(38, 7.3),
+  boss: [
     ...mirrored(95 / 4, -56 / 4, 5, 330, 1.5),
     ...mirrored(89 / 4, -95 / 4, 4, 315, 1.5),
   ],
@@ -1072,7 +1075,7 @@ export interface MechArt {
   /**
    * every Weapon bolted to the chassis, each mirrored to both sides
    * (Weapon.mirror, true on all of them). Empty when the type's weapons
-   * have no sprite at all — crawler's explosion IS its weapon — and more
+   * have no sprite at all — weaver1's explosion IS its weapon — and more
    * than one once a hull carries mounts as well as a main gun.
    */
   guns: readonly LegGun[];
@@ -1088,150 +1091,150 @@ export interface MechArt {
 
 // stride is Mindustry's default 4 + (hitSize - 8) / 2.1 world units; gun
 // mounts come from each type's Weapon (large-weapon x=4 y=2, flamethrower
-// x=5 y=0). Flare's weapon has no sprite, so flyers stay single-quad.
+// x=5 y=0). Stoop1's weapon has no sprite, so flyers stay single-quad.
 export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
-  dagger: {
-    leg: UV_DAGGER_LEG,
-    base: UV_DAGGER_BASE,
-    body: UV_DAGGER_BODY,
+  ironhide1: {
+    leg: UV_IRONHIDE1_LEG,
+    base: UV_IRONHIDE1_BASE,
+    body: UV_IRONHIDE1_BODY,
     guns: [{ uv: UV_LARGE_WEAPON, sil: UV_LARGE_WEAPON_SIL, x: 4 * MU, y: 2 * MU, top: false }],
     stride: 4 * MU,
     sprite: UNIT_SPRITE,
-    sil: { leg: UV_DAGGER_LEG_SIL, base: UV_DAGGER_BASE_SIL, body: UV_DAGGER_BODY_SIL },
+    sil: { leg: UV_IRONHIDE1_LEG_SIL, base: UV_IRONHIDE1_BASE_SIL, body: UV_IRONHIDE1_BODY_SIL },
   },
-  mace: {
-    leg: UV_MACE_LEG,
-    base: UV_MACE_BASE,
-    body: UV_MACE_BODY,
+  ironhide2: {
+    leg: UV_IRONHIDE2_LEG,
+    base: UV_IRONHIDE2_BASE,
+    body: UV_IRONHIDE2_BODY,
     guns: [{ uv: UV_FLAMETHROWER, sil: UV_FLAMETHROWER_SIL, x: 5 * MU, y: 0, top: false }],
     stride: (4 + (10 - 8) / 2.1) * MU,
     sprite: UNIT_SPRITE,
-    sil: { leg: UV_MACE_LEG_SIL, base: UV_MACE_BASE_SIL, body: UV_MACE_BODY_SIL },
+    sil: { leg: UV_IRONHIDE2_LEG_SIL, base: UV_IRONHIDE2_BASE_SIL, body: UV_IRONHIDE2_BODY_SIL },
   },
   // artillery weapon x=9 y=1, mirrored; mechFrontSway 0.55 is 5.5x the
   // default — the heavy visibly lumbers nose-first with every stride
-  fortress: {
-    leg: UV_FORTRESS_LEG,
-    base: UV_FORTRESS_BASE,
-    body: UV_FORTRESS_BODY,
+  ironhide3: {
+    leg: UV_IRONHIDE3_LEG,
+    base: UV_IRONHIDE3_BASE,
+    body: UV_IRONHIDE3_BODY,
     guns: [{ uv: UV_ARTILLERY, sil: UV_ARTILLERY_SIL, x: 9 * MU, y: 1 * MU, top: false }],
     stride: (4 + (13 - 8) / 2.1) * MU,
     frontSway: 0.55 * MU,
     sprite: UNIT_SPRITE * 2,
-    sil: { leg: UV_FORTRESS_LEG_SIL, base: UV_FORTRESS_BASE_SIL, body: UV_FORTRESS_BODY_SIL },
+    sil: { leg: UV_IRONHIDE3_LEG_SIL, base: UV_IRONHIDE3_BASE_SIL, body: UV_IRONHIDE3_BODY_SIL },
   },
   /**
    * The T4: the first hull on the roster carrying more than one kind of
-   * gun. scepter-weapon x=16 y=1 rides UNDER the body like every mech gun
-   * before it; the two scepter-mount turrets (x=8.5, y=6 and y=-7) leave
+   * gun. ironhide4-weapon x=16 y=1 rides UNDER the body like every mech gun
+   * before it; the two ironhide4-mount turrets (x=8.5, y=6 and y=-7) leave
    * `top` at its default and sit ON it — which is the whole reason
    * MechArt.guns is a list and pushMech sorts by that flag.
    *
    * mechFrontSway 1 is ten times the stock lean: at 0.36 px/tick it plants
    * one foot at a time and the hull pitches forward onto each of them.
    */
-  scepter: {
-    leg: UV_SCEPTER_LEG,
-    base: UV_SCEPTER_BASE,
-    body: UV_SCEPTER_BODY,
+  ironhide4: {
+    leg: UV_IRONHIDE4_LEG,
+    base: UV_IRONHIDE4_BASE,
+    body: UV_IRONHIDE4_BODY,
     guns: [
-      { uv: UV_SCEPTER_WEAPON, sil: UV_SCEPTER_WEAPON_SIL, x: 16 * MU, y: 1 * MU, top: false },
-      { uv: UV_SCEPTER_MOUNT, sil: UV_SCEPTER_MOUNT_SIL, x: 8.5 * MU, y: 6 * MU, top: true },
-      { uv: UV_SCEPTER_MOUNT, sil: UV_SCEPTER_MOUNT_SIL, x: 8.5 * MU, y: -7 * MU, top: true },
+      { uv: UV_IRONHIDE4_WEAPON, sil: UV_IRONHIDE4_WEAPON_SIL, x: 16 * MU, y: 1 * MU, top: false },
+      { uv: UV_IRONHIDE4_MOUNT, sil: UV_IRONHIDE4_MOUNT_SIL, x: 8.5 * MU, y: 6 * MU, top: true },
+      { uv: UV_IRONHIDE4_MOUNT, sil: UV_IRONHIDE4_MOUNT_SIL, x: 8.5 * MU, y: -7 * MU, top: true },
     ],
     stride: (4 + (22 - 8) / 2.1) * MU,
     frontSway: 1 * MU,
     sprite: UNIT_SPRITE * 4,
-    sil: { leg: UV_SCEPTER_LEG_SIL, base: UV_SCEPTER_BASE_SIL, body: UV_SCEPTER_BODY_SIL },
+    sil: { leg: UV_IRONHIDE4_LEG_SIL, base: UV_IRONHIDE4_BASE_SIL, body: UV_IRONHIDE4_BODY_SIL },
   },
   // support T1: heal-weapon x=4.5 mirrored, top=false so it rides under the
-  // body like the dagger's. hitSize 8 gives it the dagger's 4-unit stride
-  nova: {
-    leg: UV_NOVA_LEG,
-    base: UV_NOVA_BASE,
-    body: UV_NOVA_BODY,
+  // body like the ironhide1's. hitSize 8 gives it the ironhide1's 4-unit stride
+  starhart1: {
+    leg: UV_STARHART1_LEG,
+    base: UV_STARHART1_BASE,
+    body: UV_STARHART1_BODY,
     guns: [{ uv: UV_HEAL_WEAPON, sil: UV_HEAL_WEAPON_SIL, x: 4.5 * MU, y: 0, top: false }],
     stride: 4 * MU,
     sprite: UNIT_SPRITE,
-    sil: { leg: UV_NOVA_LEG_SIL, base: UV_NOVA_BASE_SIL, body: UV_NOVA_BODY_SIL },
+    sil: { leg: UV_STARHART1_LEG_SIL, base: UV_STARHART1_BASE_SIL, body: UV_STARHART1_BODY_SIL },
   },
   // support T2: heal-shotgun-weapon x=5 y=0.5, mirrored and under the body
-  pulsar: {
-    leg: UV_PULSAR_LEG,
-    base: UV_PULSAR_BASE,
-    body: UV_PULSAR_BODY,
+  starhart2: {
+    leg: UV_STARHART2_LEG,
+    base: UV_STARHART2_BASE,
+    body: UV_STARHART2_BODY,
     guns: [{ uv: UV_HEAL_SHOTGUN, sil: UV_HEAL_SHOTGUN_SIL, x: 5 * MU, y: 0.5 * MU, top: false }],
     stride: (4 + (11 - 8) / 2.1) * MU,
     sprite: UNIT_SPRITE,
-    sil: { leg: UV_PULSAR_LEG_SIL, base: UV_PULSAR_BASE_SIL, body: UV_PULSAR_BODY_SIL },
+    sil: { leg: UV_STARHART2_LEG_SIL, base: UV_STARHART2_BASE_SIL, body: UV_STARHART2_BODY_SIL },
   },
   // support T3: beam-weapon x=6.5, top=false, and mechFrontSway 0.55 — the
-  // same nose-first lumber the fortress walks with. hitSize 13 gives it the
+  // same nose-first lumber the ironhide3 walks with. hitSize 13 gives it the
   // heavy's stride, which reads right under a bubble this wide
-  quasar: {
-    leg: UV_QUASAR_LEG,
-    base: UV_QUASAR_BASE,
-    body: UV_QUASAR_BODY,
+  starhart3: {
+    leg: UV_STARHART3_LEG,
+    base: UV_STARHART3_BASE,
+    body: UV_STARHART3_BODY,
     guns: [{ uv: UV_BEAM_WEAPON, sil: UV_BEAM_WEAPON_SIL, x: 6.5 * MU, y: 0, top: false }],
     stride: (4 + (13 - 8) / 2.1) * MU,
     frontSway: 0.55 * MU,
     sprite: UNIT_SPRITE * 2,
-    sil: { leg: UV_QUASAR_LEG_SIL, base: UV_QUASAR_BASE_SIL, body: UV_QUASAR_BODY_SIL },
+    sil: { leg: UV_STARHART3_LEG_SIL, base: UV_STARHART3_BASE_SIL, body: UV_STARHART3_BODY_SIL },
   },
   /**
    * The support T4. Its main gun has NO sprite at all: Mindustry's
-   * Weapon("vela-weapon") finds no such region and Weapon.draw skips a
+   * Weapon("starhart4-weapon") finds no such region and Weapon.draw skips a
    * region it cannot find, so the plasma cannon you see is painted into
    * the hull itself. What is left to bolt on is the pair of repair-beam
-   * pods (x=11, y=-7.5), and those ride ON the body like the scepter's
+   * pods (x=11, y=-7.5), and those ride ON the body like the ironhide4's
    * mounts rather than under it.
    *
-   * mechFrontSway 1 matches the scepter's ten-times-stock lean, on a hull
+   * mechFrontSway 1 matches the ironhide4's ten-times-stock lean, on a hull
    * that walks even slower — it plants each foot and rocks over it.
    */
-  vela: {
-    leg: UV_VELA_LEG,
-    base: UV_VELA_BASE,
-    body: UV_VELA_BODY,
+  starhart4: {
+    leg: UV_STARHART4_LEG,
+    base: UV_STARHART4_BASE,
+    body: UV_STARHART4_BODY,
     guns: [{ uv: UV_REPAIR_BEAM, sil: UV_REPAIR_BEAM_SIL, x: 11 * MU, y: -7.5 * MU, top: true }],
     stride: (4 + (24 - 8) / 2.1) * MU,
     frontSway: 1 * MU,
     sprite: UNIT_SPRITE * 4,
-    sil: { leg: UV_VELA_LEG_SIL, base: UV_VELA_BASE_SIL, body: UV_VELA_BODY_SIL },
+    sil: { leg: UV_STARHART4_LEG_SIL, base: UV_STARHART4_BASE_SIL, body: UV_STARHART4_BODY_SIL },
   },
   /**
-   * The ground line's T5 — the same four-part mech as the scepter, one
-   * tier heavier. Weapon("reign-weapon") is top=false at x=21.5, y=1: the
+   * The ground line's T5 — the same four-part mech as the ironhide4, one
+   * tier heavier. Weapon("ironhide5-weapon") is top=false at x=21.5, y=1: the
    * widest mount on the roster, slung under a chassis 30 world units
    * across, so the pair sits almost clear of the hull's own outline.
    *
    * mechFrontSway 1.9 is nineteen times stock and the largest on any unit
-   * (the scepter's 1 was the previous high); mechSideSway 0.6 is barely
+   * (the ironhide4's 1 was the previous high); mechSideSway 0.6 is barely
    * over the 0.54 default. So it pitches nose-down hard over each step
-   * without rolling — a heavy lurch rather than the dagger's swagger.
+   * without rolling — a heavy lurch rather than the ironhide1's swagger.
    */
-  reign: {
-    leg: UV_REIGN_LEG,
-    base: UV_REIGN_BASE,
-    body: UV_REIGN_BODY,
-    guns: [{ uv: UV_REIGN_WEAPON, sil: UV_REIGN_WEAPON_SIL, x: 21.5 * MU, y: 1 * MU, top: false }],
+  ironhide5: {
+    leg: UV_IRONHIDE5_LEG,
+    base: UV_IRONHIDE5_BASE,
+    body: UV_IRONHIDE5_BODY,
+    guns: [{ uv: UV_IRONHIDE5_WEAPON, sil: UV_IRONHIDE5_WEAPON_SIL, x: 21.5 * MU, y: 1 * MU, top: false }],
     stride: (4 + (30 - 8) / 2.1) * MU,
     frontSway: 1.9 * MU,
     sideSway: 0.6 * MU,
     sprite: UNIT_SPRITE * 4,
-    sil: { leg: UV_REIGN_LEG_SIL, base: UV_REIGN_BASE_SIL, body: UV_REIGN_BODY_SIL },
+    sil: { leg: UV_IRONHIDE5_LEG_SIL, base: UV_IRONHIDE5_BASE_SIL, body: UV_IRONHIDE5_BODY_SIL },
   },
   // no gun sprite — its Weapon fires only via shootOnDeath. mechSideSway
   // 0.25 is under half the default: it scuttles rather than swaggers
-  crawler: {
-    leg: UV_CRAWLER_LEG,
-    base: UV_CRAWLER_BASE,
-    body: UV_CRAWLER_BODY,
+  weaver1: {
+    leg: UV_WEAVER1_LEG,
+    base: UV_WEAVER1_BASE,
+    body: UV_WEAVER1_BODY,
     guns: [],
     stride: 4 * MU,
     sideSway: 0.25 * MU,
     sprite: UNIT_SPRITE,
-    sil: { leg: UV_CRAWLER_LEG_SIL, base: UV_CRAWLER_BASE_SIL, body: UV_CRAWLER_BODY_SIL },
+    sil: { leg: UV_WEAVER1_LEG_SIL, base: UV_WEAVER1_BASE_SIL, body: UV_WEAVER1_BODY_SIL },
   },
 };
 
@@ -1251,7 +1254,7 @@ export interface LegGun {
    * Weapon.mirror, true on nearly every stock weapon: the mount is drawn
    * on BOTH sides of the hull, the far one from the same sprite flipped.
    * false draws it once, and is what a single centered gun wants —
-   * toxopid's cannon sits at x=0, so mirroring it would stack two quads in
+   * weaver5's cannon sits at x=0, so mirroring it would stack two quads in
    * the same place and double-composite the sprite's feathered rim.
    */
   mirror?: boolean;
@@ -1260,9 +1263,9 @@ export interface LegGun {
 /** part art for a legged (LegsUnit) ground unit — see LegSpec for its gait */
 export interface LegArt {
   body: UVRect;
-  /** Mindustry baseRegion, the plate the legs mount to; spiroct has none */
+  /** Mindustry baseRegion, the plate the legs mount to; weaver3 has none */
   base?: UVRect;
-  /** Mindustry jointRegion, the cap over the KNEE — arkyid has none, and
+  /** Mindustry jointRegion, the cap over the KNEE — weaver4 has none, and
    * its elbow is left as the bare overlap of the two segments */
   joint?: UVRect;
   /**
@@ -1290,102 +1293,102 @@ export interface LegArt {
 }
 
 export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
-  // atrax-weapon x=7, top=false: a pair of slag guns slung under the shell
-  atrax: {
-    body: UV_ATRAX_BODY,
-    base: UV_ATRAX_BASE,
-    joint: UV_ATRAX_JOINT,
-    foot: UV_ATRAX_FOOT,
-    leg: UV_ATRAX_LEG,
-    legBase: UV_ATRAX_LEG_BASE,
+  // weaver2-weapon x=7, top=false: a pair of slag guns slung under the shell
+  weaver2: {
+    body: UV_WEAVER2_BODY,
+    base: UV_WEAVER2_BASE,
+    joint: UV_WEAVER2_JOINT,
+    foot: UV_WEAVER2_FOOT,
+    leg: UV_WEAVER2_LEG,
+    legBase: UV_WEAVER2_LEG_BASE,
     legStroke: 26 * PX,
     legBaseStroke: 26 * PX,
-    guns: [{ uv: UV_ATRAX_WEAPON, sil: UV_ATRAX_WEAPON_SIL, x: 7 * MU, y: 0, top: false }],
+    guns: [{ uv: UV_WEAVER2_WEAPON, sil: UV_WEAVER2_WEAPON_SIL, x: 7 * MU, y: 0, top: false }],
     sprite: UNIT_SPRITE * 2,
     small: UNIT_SPRITE,
     sil: {
-      body: UV_ATRAX_BODY_SIL,
-      base: UV_ATRAX_BASE_SIL,
-      joint: UV_ATRAX_JOINT_SIL,
-      foot: UV_ATRAX_FOOT_SIL,
+      body: UV_WEAVER2_BODY_SIL,
+      base: UV_WEAVER2_BASE_SIL,
+      joint: UV_WEAVER2_JOINT_SIL,
+      foot: UV_WEAVER2_FOOT_SIL,
     },
   },
   // two weapon pairs over the body: the long sap gun (x=8.5, y=-1.5) and
   // the small purple mount (x=4, y=3). Both rotate to track a target in
   // Mindustry; these enemies never shoot, so they ride the body's facing
-  spiroct: {
-    body: UV_SPIROCT_BODY,
-    joint: UV_SPIROCT_JOINT,
-    foot: UV_SPIROCT_FOOT,
-    leg: UV_SPIROCT_LEG,
-    legBase: UV_SPIROCT_LEG_BASE,
+  weaver3: {
+    body: UV_WEAVER3_BODY,
+    joint: UV_WEAVER3_JOINT,
+    foot: UV_WEAVER3_FOOT,
+    leg: UV_WEAVER3_LEG,
+    legBase: UV_WEAVER3_LEG_BASE,
     legStroke: 34 * PX,
     legBaseStroke: 34 * PX,
     guns: [
-      { uv: UV_SPIROCT_WEAPON, sil: UV_SPIROCT_WEAPON_SIL, x: 8.5 * MU, y: -1.5 * MU, top: true },
-      { uv: UV_SPIROCT_MOUNT, sil: UV_SPIROCT_MOUNT_SIL, x: 4 * MU, y: 3 * MU, top: true },
+      { uv: UV_WEAVER3_WEAPON, sil: UV_WEAVER3_WEAPON_SIL, x: 8.5 * MU, y: -1.5 * MU, top: true },
+      { uv: UV_WEAVER3_MOUNT, sil: UV_WEAVER3_MOUNT_SIL, x: 4 * MU, y: 3 * MU, top: true },
     ],
     sprite: UNIT_SPRITE * 2,
     small: UNIT_SPRITE,
-    sil: { body: UV_SPIROCT_BODY_SIL, joint: UV_SPIROCT_JOINT_SIL, foot: UV_SPIROCT_FOOT_SIL },
+    sil: { body: UV_WEAVER3_BODY_SIL, joint: UV_WEAVER3_JOINT_SIL, foot: UV_WEAVER3_FOOT_SIL },
   },
   /**
-   * The crawler line's T4 — the same six-leg frame as the spiroct at more
+   * The weaver1 line's T4 — the same six-leg frame as the weaver3 at more
    * than twice the reach, and the first unit on the roster whose knee has
-   * no cap: arkyid ships an arkyid-joint-base instead, a shoulder plate
+   * no cap: weaver4 ships a weaver4-joint-base instead, a shoulder plate
    * drawn over all six MOUNTS once every leg is down.
    *
-   * Its guns are the spiroct's sap weapon three times over (x=4/9/14 down
+   * Its guns are the weaver3's sap weapon three times over (x=4/9/14 down
    * the flank, each mirrored) topped by one large purple artillery mount
-   * at x=9, y=-7 — eight gun quads, where the spiroct carries four.
+   * at x=9, y=-7 — eight gun quads, where the weaver3 carries four.
    */
-  arkyid: {
-    body: UV_ARKYID_BODY,
-    baseJoint: UV_ARKYID_JOINT_BASE,
-    foot: UV_ARKYID_FOOT,
-    leg: UV_ARKYID_LEG,
-    legBase: UV_ARKYID_LEG_BASE,
+  weaver4: {
+    body: UV_WEAVER4_BODY,
+    baseJoint: UV_WEAVER4_JOINT_BASE,
+    foot: UV_WEAVER4_FOOT,
+    leg: UV_WEAVER4_LEG,
+    legBase: UV_WEAVER4_LEG_BASE,
     legStroke: 56 * PX,
     legBaseStroke: 64 * PX,
     guns: [
-      { uv: UV_ARKYID_WEAPON, sil: UV_ARKYID_WEAPON_SIL, x: 4 * MU, y: 8 * MU, top: true },
-      { uv: UV_ARKYID_WEAPON, sil: UV_ARKYID_WEAPON_SIL, x: 9 * MU, y: 6 * MU, top: true },
-      { uv: UV_ARKYID_WEAPON, sil: UV_ARKYID_WEAPON_SIL, x: 14 * MU, y: 0, top: true },
-      { uv: UV_ARKYID_MOUNT, sil: UV_ARKYID_MOUNT_SIL, x: 9 * MU, y: -7 * MU, top: true },
+      { uv: UV_WEAVER4_WEAPON, sil: UV_WEAVER4_WEAPON_SIL, x: 4 * MU, y: 8 * MU, top: true },
+      { uv: UV_WEAVER4_WEAPON, sil: UV_WEAVER4_WEAPON_SIL, x: 9 * MU, y: 6 * MU, top: true },
+      { uv: UV_WEAVER4_WEAPON, sil: UV_WEAVER4_WEAPON_SIL, x: 14 * MU, y: 0, top: true },
+      { uv: UV_WEAVER4_MOUNT, sil: UV_WEAVER4_MOUNT_SIL, x: 9 * MU, y: -7 * MU, top: true },
     ],
     sprite: UNIT_SPRITE * 4,
     small: UNIT_SPRITE * 2,
     sil: {
-      body: UV_ARKYID_BODY_SIL,
-      baseJoint: UV_ARKYID_JOINT_BASE_SIL,
-      foot: UV_ARKYID_FOOT_SIL,
+      body: UV_WEAVER4_BODY_SIL,
+      baseJoint: UV_WEAVER4_JOINT_BASE_SIL,
+      foot: UV_WEAVER4_FOOT_SIL,
     },
   },
   /**
-   * The crawler line's T5 — the arkyid's frame with two more legs and two
+   * The weaver1 line's T5 — the weaver4's frame with two more legs and two
    * and a half times the reach, and the only unit that carries BOTH gun
-   * kinds at once: the arkyid's large purple mount, mirrored to x=11,
-   * y=-5, and one toxopid-cannon dead on the centreline at y=-14. That
+   * kinds at once: the weaver4's large purple mount, mirrored to x=11,
+   * y=-5, and one weaver5-cannon dead on the centreline at y=-14. That
    * cannon is Weapon.mirror=false, the roster's only unmirrored gun with a
    * sprite, so it draws once rather than twice over itself.
    *
-   * The mount cell is the arkyid's own UV_ARKYID_MOUNT: same sprite, same
+   * The mount cell is the weaver4's own UV_WEAVER4_MOUNT: same sprite, same
    * 256px cell, same world scale, so there is nothing to gain by packing a
-   * second copy. Like the arkyid it has no knee cap, only a shoulder plate.
+   * second copy. Like the weaver4 it has no knee cap, only a shoulder plate.
    */
-  toxopid: {
-    body: UV_TOXOPID_BODY,
-    baseJoint: UV_TOXOPID_JOINT_BASE,
-    foot: UV_TOXOPID_FOOT,
-    leg: UV_TOXOPID_LEG,
-    legBase: UV_TOXOPID_LEG_BASE,
+  weaver5: {
+    body: UV_WEAVER5_BODY,
+    baseJoint: UV_WEAVER5_JOINT_BASE,
+    foot: UV_WEAVER5_FOOT,
+    leg: UV_WEAVER5_LEG,
+    legBase: UV_WEAVER5_LEG_BASE,
     legStroke: 72 * PX,
     legBaseStroke: 64 * PX,
     guns: [
-      { uv: UV_ARKYID_MOUNT, sil: UV_ARKYID_MOUNT_SIL, x: 11 * MU, y: -5 * MU, top: true },
+      { uv: UV_WEAVER4_MOUNT, sil: UV_WEAVER4_MOUNT_SIL, x: 11 * MU, y: -5 * MU, top: true },
       {
-        uv: UV_TOXOPID_CANNON,
-        sil: UV_TOXOPID_CANNON_SIL,
+        uv: UV_WEAVER5_CANNON,
+        sil: UV_WEAVER5_CANNON_SIL,
         x: 0,
         y: -14 * MU,
         top: true,
@@ -1395,45 +1398,45 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
     sprite: UNIT_SPRITE * 4,
     small: UNIT_SPRITE * 2,
     sil: {
-      body: UV_TOXOPID_BODY_SIL,
-      baseJoint: UV_TOXOPID_JOINT_BASE_SIL,
-      foot: UV_TOXOPID_FOOT_SIL,
+      body: UV_WEAVER5_BODY_SIL,
+      baseJoint: UV_WEAVER5_JOINT_BASE_SIL,
+      foot: UV_WEAVER5_FOOT_SIL,
     },
   },
   /**
    * The support line's T5, and the only legged unit on the roster wearing
-   * the full set of leg parts: a mount plate (baseRegion) like the atrax,
-   * a knee cap (jointRegion) like the atrax and spiroct, AND a shoulder
-   * plate (baseJointRegion) like the arkyid and toxopid.
+   * the full set of leg parts: a mount plate (baseRegion) like the weaver2,
+   * a knee cap (jointRegion) like the weaver2 and weaver3, AND a shoulder
+   * plate (baseJointRegion) like the weaver4 and weaver5.
    *
-   * It carries no gun at all. Mindustry's Weapon("corvus-weapon") names a
+   * It carries no gun at all. Mindustry's Weapon("starhart5-weapon") names a
    * region the sprite set does not contain — only a -heat overlay exists —
    * and Weapon.draw skips a region it cannot find, so the charged laser is
-   * painted into the hull, exactly as the vela's plasma cannon is.
+   * painted into the hull, exactly as the starhart4's plasma cannon is.
    *
    * Four legs of 14 world units on mounts 11 out: almost the whole span is
    * the mount offset, so the segments are stubby and very broad — a 68px
    * stroke against a 30px segment, the widest leg-to-length ratio here.
    */
-  corvus: {
-    body: UV_CORVUS_BODY,
-    base: UV_CORVUS_BASE,
-    joint: UV_CORVUS_JOINT,
-    baseJoint: UV_CORVUS_JOINT_BASE,
-    foot: UV_CORVUS_FOOT,
-    leg: UV_CORVUS_LEG,
-    legBase: UV_CORVUS_LEG_BASE,
+  starhart5: {
+    body: UV_STARHART5_BODY,
+    base: UV_STARHART5_BASE,
+    joint: UV_STARHART5_JOINT,
+    baseJoint: UV_STARHART5_JOINT_BASE,
+    foot: UV_STARHART5_FOOT,
+    leg: UV_STARHART5_LEG,
+    legBase: UV_STARHART5_LEG_BASE,
     legStroke: 68 * PX,
     legBaseStroke: 64 * PX,
     guns: [],
     sprite: UNIT_SPRITE * 4,
     small: UNIT_SPRITE * 2,
     sil: {
-      body: UV_CORVUS_BODY_SIL,
-      base: UV_CORVUS_BASE_SIL,
-      joint: UV_CORVUS_JOINT_SIL,
-      baseJoint: UV_CORVUS_JOINT_BASE_SIL,
-      foot: UV_CORVUS_FOOT_SIL,
+      body: UV_STARHART5_BODY_SIL,
+      base: UV_STARHART5_BASE_SIL,
+      joint: UV_STARHART5_JOINT_SIL,
+      baseJoint: UV_STARHART5_JOINT_BASE_SIL,
+      foot: UV_STARHART5_FOOT_SIL,
     },
   },
 };
@@ -1442,26 +1445,26 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
 //
 // The cells the trial needs beyond the ones the two lines already own.
 // Everything else the animals draw into is a cell the stock art owns
-// (nova's leg/base/body, corvus's caps and feet, the flyers' single
+// (starhart1's leg/base/body, starhart5's caps and feet, the flyers' single
 // cells) and is cleared and redrawn at pack time — see packAnimalArt.
 // The animal art is generated, so its size is not declared: these cells
 // take the full gutter and the pack pass draws whatever size comes out.
-/** vela's legged parts, the ones its mech rig never had: caps and a hoof
+/** starhart4's legged parts, the ones its mech rig never had: caps and a hoof
  *  small enough for 64px cells (hartSmall) */
-export const UV_VELA_FOOT = sprite("vela-foot", 64, 64);
-export const UV_VELA_FOOT_SIL = sprite("vela-foot-sil", 64, 64);
-export const UV_VELA_JOINT = upright("vela-joint", 64, 64);
-export const UV_VELA_JOINT_SIL = upright("vela-joint-sil", 64, 64);
-export const UV_VELA_JOINT_BASE = sprite("vela-joint-base", 64, 64);
-export const UV_VELA_JOINT_BASE_SIL = sprite("vela-joint-base-sil", 64, 64);
+export const UV_STARHART4_FOOT = sprite("starhart4-foot", 64, 64);
+export const UV_STARHART4_FOOT_SIL = sprite("starhart4-foot-sil", 64, 64);
+export const UV_STARHART4_JOINT = upright("starhart4-joint", 64, 64);
+export const UV_STARHART4_JOINT_SIL = upright("starhart4-joint-sil", 64, 64);
+export const UV_STARHART4_JOINT_BASE = sprite("starhart4-joint-base", 64, 64);
+export const UV_STARHART4_JOINT_BASE_SIL = sprite("starhart4-joint-base-sil", 64, 64);
 /** the stag's leg segments on exact rects: thigh then shin, T4 then T5.
  *  A stretched segment samples its rect corner to corner, mount on the
  *  left, so the height IS the stroke */
 const HART_SEG4 = hartSeg(HART_TIERS[3]), HART_SEG5 = hartSeg(HART_TIERS[4]);
-export const UV_VELA_LEG_SEG = flat("vela-leg-seg", 64, HART_SEG4.th);
-export const UV_VELA_LEG_BASE_SEG = flat("vela-leg-base-seg", 64, HART_SEG4.sh);
-export const UV_CORVUS_LEG_SEG = flat("corvus-leg-seg", 64, HART_SEG5.th);
-export const UV_CORVUS_LEG_BASE_SEG = flat("corvus-leg-base-seg", 64, HART_SEG5.sh);
+export const UV_STARHART4_LEG_SEG = flat("starhart4-leg-seg", 64, HART_SEG4.th);
+export const UV_STARHART4_LEG_BASE_SEG = flat("starhart4-leg-base-seg", 64, HART_SEG4.sh);
+export const UV_STARHART5_LEG_SEG = flat("starhart5-leg-seg", 64, HART_SEG5.th);
+export const UV_STARHART5_LEG_BASE_SEG = flat("starhart5-leg-base-seg", 64, HART_SEG5.sh);
 /** the bats' bodies and wings, apart; the composed sprite goes in each
  *  flyer's own cell. 64px cells for the two small tiers, 128 for the
  *  middle two, 192 for the T5 (STOOP_TIERS nb/nw) */
@@ -1477,40 +1480,66 @@ export const UV_STOOP2_BODY = sprite("stoop2-body", 64, 64);
 export const UV_STOOP2_WING = sprite("stoop2-wing", 64, 64);
 /** the rhino's T4 and T5 leave the mech rig for the legged one: caps, hoof
  *  and segments of their own, on 64 cells for the T4 and 128 for the T5;
- *  the body and base go on in the scepter's and reign's own cells */
-export const UV_SCEPTER_FOOT = sprite("scepter-foot", 64, 64);
-export const UV_SCEPTER_JOINT = upright("scepter-joint", 64, 64);
-export const UV_SCEPTER_JOINT_BASE = sprite("scepter-joint-base", 64, 64);
-export const UV_SCEPTER_FOOT_SIL = sprite("scepter-foot-sil", 64, 64);
-export const UV_SCEPTER_JOINT_SIL = upright("scepter-joint-sil", 64, 64);
-export const UV_SCEPTER_JOINT_BASE_SIL = sprite("scepter-joint-base-sil", 64, 64);
-export const UV_REIGN_FOOT = sprite("reign-foot", 128, 128);
-export const UV_REIGN_JOINT = upright("reign-joint", 128, 128);
-export const UV_REIGN_JOINT_BASE = sprite("reign-joint-base", 128, 128);
-export const UV_REIGN_FOOT_SIL = sprite("reign-foot-sil", 128, 128);
-export const UV_REIGN_JOINT_SIL = upright("reign-joint-sil", 128, 128);
-export const UV_REIGN_JOINT_BASE_SIL = sprite("reign-joint-base-sil", 128, 128);
+ *  the body and base go on in the ironhide4's and ironhide5's own cells */
+export const UV_IRONHIDE4_FOOT = sprite("ironhide4-foot", 64, 64);
+export const UV_IRONHIDE4_JOINT = upright("ironhide4-joint", 64, 64);
+export const UV_IRONHIDE4_JOINT_BASE = sprite("ironhide4-joint-base", 64, 64);
+export const UV_IRONHIDE4_FOOT_SIL = sprite("ironhide4-foot-sil", 64, 64);
+export const UV_IRONHIDE4_JOINT_SIL = upright("ironhide4-joint-sil", 64, 64);
+export const UV_IRONHIDE4_JOINT_BASE_SIL = sprite("ironhide4-joint-base-sil", 64, 64);
+export const UV_IRONHIDE5_FOOT = sprite("ironhide5-foot", 128, 128);
+export const UV_IRONHIDE5_JOINT = upright("ironhide5-joint", 128, 128);
+export const UV_IRONHIDE5_JOINT_BASE = sprite("ironhide5-joint-base", 128, 128);
+export const UV_IRONHIDE5_FOOT_SIL = sprite("ironhide5-foot-sil", 128, 128);
+export const UV_IRONHIDE5_JOINT_SIL = upright("ironhide5-joint-sil", 128, 128);
+export const UV_IRONHIDE5_JOINT_BASE_SIL = sprite("ironhide5-joint-base-sil", 128, 128);
 const RHINO_SEG4 = rhinoSeg(RHINO_TIERS[3]), RHINO_SEG5 = rhinoSeg(RHINO_TIERS[4]);
-export const UV_SCEPTER_LEG_SEG = flat("scepter-leg-seg", 64, RHINO_SEG4.th);
-export const UV_SCEPTER_LEG_BASE_SEG = flat("scepter-leg-base-seg", 64, RHINO_SEG4.sh);
-export const UV_REIGN_LEG_SEG = flat("reign-leg-seg", 64, RHINO_SEG5.th);
-export const UV_REIGN_LEG_BASE_SEG = flat("reign-leg-base-seg", 64, RHINO_SEG5.sh);
-/** the frog's knees on the two big tiers (the arkyid and toxopid ship
- *  none), and every legged tier's segments; the rest of its parts go on
- *  in the venom line's own cells */
-export const UV_ARKYID_JOINT = upright("arkyid-joint", 128, 128);
-export const UV_ARKYID_JOINT_SIL = upright("arkyid-joint-sil", 128, 128);
-export const UV_TOXOPID_JOINT = upright("toxopid-joint", 128, 128);
-export const UV_TOXOPID_JOINT_SIL = upright("toxopid-joint-sil", 128, 128);
-const FROG_SEG = FROG_TIERS.map((T) => frogSeg(T));
-export const UV_ATRAX_LEG_SEG = flat("atrax-leg-seg", 64, FROG_SEG[1].th);
-export const UV_ATRAX_LEG_BASE_SEG = flat("atrax-leg-base-seg", 64, FROG_SEG[1].sh);
-export const UV_SPIROCT_LEG_SEG = flat("spiroct-leg-seg", 64, FROG_SEG[2].th);
-export const UV_SPIROCT_LEG_BASE_SEG = flat("spiroct-leg-base-seg", 64, FROG_SEG[2].sh);
-export const UV_ARKYID_LEG_SEG = flat("arkyid-leg-seg", 64, FROG_SEG[3].th);
-export const UV_ARKYID_LEG_BASE_SEG = flat("arkyid-leg-base-seg", 64, FROG_SEG[3].sh);
-export const UV_TOXOPID_LEG_SEG = flat("toxopid-leg-seg", 64, FROG_SEG[4].th);
-export const UV_TOXOPID_LEG_BASE_SEG = flat("toxopid-leg-base-seg", 64, FROG_SEG[4].sh);
+export const UV_IRONHIDE4_LEG_SEG = flat("ironhide4-leg-seg", 64, RHINO_SEG4.th);
+export const UV_IRONHIDE4_LEG_BASE_SEG = flat("ironhide4-leg-base-seg", 64, RHINO_SEG4.sh);
+export const UV_IRONHIDE5_LEG_SEG = flat("ironhide5-leg-seg", 64, RHINO_SEG5.th);
+export const UV_IRONHIDE5_LEG_BASE_SEG = flat("ironhide5-leg-base-seg", 64, RHINO_SEG5.sh);
+/** the spider's parts the venom line's rigs never had — a knee cap and a
+ *  foot for the weaver1, which leaves the mech rig, and knees for the
+ *  weaver4 and weaver5 — and every tier's steel segments, both the same
+ *  stroke; the rest of its parts go on in the venom line's own cells */
+export const UV_WEAVER1_JOINT = upright("weaver1-joint", 64, 64);
+export const UV_WEAVER1_JOINT_SIL = upright("weaver1-joint-sil", 64, 64);
+export const UV_WEAVER1_FOOT = sprite("weaver1-foot", 64, 64);
+export const UV_WEAVER1_FOOT_SIL = sprite("weaver1-foot-sil", 64, 64);
+export const UV_WEAVER4_JOINT = upright("weaver4-joint", 128, 128);
+export const UV_WEAVER4_JOINT_SIL = upright("weaver4-joint-sil", 128, 128);
+export const UV_WEAVER5_JOINT = upright("weaver5-joint", 128, 128);
+export const UV_WEAVER5_JOINT_SIL = upright("weaver5-joint-sil", 128, 128);
+export const UV_WEAVER1_LEG_SEG = flat("weaver1-leg-seg", 64, SPIDER_TIERS[0].stroke);
+export const UV_WEAVER1_LEG_BASE_SEG = flat("weaver1-leg-base-seg", 64, SPIDER_TIERS[0].stroke);
+export const UV_WEAVER2_LEG_SEG = flat("weaver2-leg-seg", 64, SPIDER_TIERS[1].stroke);
+export const UV_WEAVER2_LEG_BASE_SEG = flat("weaver2-leg-base-seg", 64, SPIDER_TIERS[1].stroke);
+export const UV_WEAVER3_LEG_SEG = flat("weaver3-leg-seg", 64, SPIDER_TIERS[2].stroke);
+export const UV_WEAVER3_LEG_BASE_SEG = flat("weaver3-leg-base-seg", 64, SPIDER_TIERS[2].stroke);
+export const UV_WEAVER4_LEG_SEG = flat("weaver4-leg-seg", 64, SPIDER_TIERS[3].stroke);
+export const UV_WEAVER4_LEG_BASE_SEG = flat("weaver4-leg-base-seg", 64, SPIDER_TIERS[3].stroke);
+export const UV_WEAVER5_LEG_SEG = flat("weaver5-leg-seg", 64, SPIDER_TIERS[4].stroke);
+export const UV_WEAVER5_LEG_BASE_SEG = flat("weaver5-leg-base-seg", 64, SPIDER_TIERS[4].stroke);
+/** the mantas' bodies and wings, apart, on the same cell sizes as the
+ *  bats' (MANTA_TIERS nb/nw); the composed sprite goes in each hull's own cell */
+export const UV_MANTA1_BODY = sprite("manta1-body", 64, 64);
+export const UV_MANTA1_WING = sprite("manta1-wing", 64, 64);
+export const UV_MANTA2_BODY = sprite("manta2-body", 64, 64);
+export const UV_MANTA2_WING = sprite("manta2-wing", 64, 64);
+export const UV_MANTA3_BODY = sprite("manta3-body", 128, 128);
+export const UV_MANTA3_WING = sprite("manta3-wing", 128, 128);
+export const UV_MANTA4_BODY = sprite("manta4-body", 128, 128);
+export const UV_MANTA4_WING = sprite("manta4-wing", 128, 128);
+export const UV_MANTA5_BODY = sprite("manta5-body", 192, 192);
+export const UV_MANTA5_WING = sprite("manta5-wing", 192, 192);
+/** the eels' head, body segment and tail, each on a cell one px wider
+ *  than its grid (EEL_TIERS nh/ns/nt): the head cell is the hull's icon
+ *  and team cell, the stock hull cell stays as it was */
+const eelCells = (i: number) => {
+  const T = EEL_TIERS[i];
+  return [sprite(`eel${T.t}-head`, T.nh + 1, T.nh + 1), sprite(`eel${T.t}-body`, T.ns + 1, T.ns + 1), sprite(`eel${T.t}-tail`, T.nt + 1, T.nt + 1)] as const;
+};
+export const UV_EEL_CELLS: readonly (readonly [UVRect, UVRect, UVRect])[] = [eelCells(0), eelCells(1), eelCells(2), eelCells(3), eelCells(4)];
 
 /**
  * A flyer drawn in parts: a body quad and one wing quad mirrored to both
@@ -1536,7 +1565,38 @@ export interface FlyerParts {
 }
 /** the flyers that draw in parts — empty unless the animal art is on */
 export const FLYER_PARTS: Partial<Record<UnitKind, FlyerParts>> = {};
-const STOOP_KINDS: readonly UnitKind[] = ["flare", "horizon", "zenith", "antumbra", "eclipse"];
+
+/**
+ * THE WORM RIG'S SPRITES (levels.ts SegmentSpec, Sim.usegX): a head on the
+ * hull's own position, one body sprite on every segment of the chain and
+ * a tail past the last one, each drawn along the chain's direction there.
+ * Sizes are world px; the wave is the swim the renderer adds on top of
+ * the chain — lateral amplitude at the tail (world px), cycles a second,
+ * and the phase lag per segment.
+ */
+export interface SegmentArt {
+  head: UVRect;
+  body: UVRect;
+  tail: UVRect;
+  headSprite: number;
+  bodySprite: number;
+  tailSprite: number;
+  amp: number;
+  rate: number;
+  phase: number;
+}
+/** the segmented kinds — empty unless the animal art is on */
+export const SEGMENT_ART: Partial<Record<UnitKind, SegmentArt>> = {};
+const MANTA_KINDS: readonly UnitKind[] = ["skate1", "skate2", "skate3", "skate4", "skate5"];
+const MANTA_CELLS: readonly (readonly [UVRect, UVRect])[] = [
+  [UV_MANTA1_BODY, UV_MANTA1_WING],
+  [UV_MANTA2_BODY, UV_MANTA2_WING],
+  [UV_MANTA3_BODY, UV_MANTA3_WING],
+  [UV_MANTA4_BODY, UV_MANTA4_WING],
+  [UV_MANTA5_BODY, UV_MANTA5_WING],
+];
+const EEL_KINDS: readonly UnitKind[] = ["livewire1", "livewire2", "livewire3", "livewire4", "livewire5"];
+const STOOP_KINDS: readonly UnitKind[] = ["stoop1", "stoop2", "stoop3", "stoop4", "stoop5"];
 const STOOP_CELLS: readonly (readonly [UVRect, UVRect])[] = [
   [UV_STOOP1_BODY, UV_STOOP1_WING],
   [UV_STOOP2_BODY, UV_STOOP2_WING],
@@ -1573,7 +1633,7 @@ if (ANIMAL_ART) {
   });
   // the stag's T1-T3 keep the mech rig and its cells; the guns go (the
   // beams are drawn live off the held weapon, never off a sprite), the
-  // hooves shuffle a shorter stride than a dagger's, and the quad
+  // hooves shuffle a shorter stride than an ironhide1's, and the quad
   // overshoots by the tier's scale
   const hartStride = (t: number): number => [0, 2.5, 3, 4][t] * MU;
   const hartMechArt = (k: UnitKind, i: number): MechArt => {
@@ -1581,40 +1641,40 @@ if (ANIMAL_ART) {
     UNIT_ART[k] = { uv: UNIT_ART[k].uv, sprite: UNIT_ART[k].sprite * T.scale };
     return { ...MECH_ART[k]!, guns: [], stride: hartStride(T.t), sprite: MECH_ART[k]!.sprite * T.scale };
   };
-  MECH_ART.nova = hartMechArt("nova", 0);
-  MECH_ART.pulsar = hartMechArt("pulsar", 1);
-  MECH_ART.quasar = hartMechArt("quasar", 2);
+  MECH_ART.starhart1 = hartMechArt("starhart1", 0);
+  MECH_ART.starhart2 = hartMechArt("starhart2", 1);
+  MECH_ART.starhart3 = hartMechArt("starhart3", 2);
   // the T4 leaves the mech rig for the legged one, on the cells above; the
   // T5 was legged already and keeps its own caps and feet
-  delete MECH_ART.vela;
+  delete MECH_ART.starhart4;
   const S4 = HART_TIERS[3].scale, S5 = HART_TIERS[4].scale;
-  UNIT_ART.vela = { uv: UNIT_ART.vela.uv, sprite: UNIT_ART.vela.sprite * S4 };
-  UNIT_ART.corvus = { uv: UNIT_ART.corvus.uv, sprite: UNIT_ART.corvus.sprite * S5 };
-  LEG_ART.vela = {
-    body: UV_VELA_BODY,
-    base: UV_VELA_BASE,
-    joint: UV_VELA_JOINT,
-    baseJoint: UV_VELA_JOINT_BASE,
-    foot: UV_VELA_FOOT,
-    leg: UV_VELA_LEG_SEG,
-    legBase: UV_VELA_LEG_BASE_SEG,
+  UNIT_ART.starhart4 = { uv: UNIT_ART.starhart4.uv, sprite: UNIT_ART.starhart4.sprite * S4 };
+  UNIT_ART.starhart5 = { uv: UNIT_ART.starhart5.uv, sprite: UNIT_ART.starhart5.sprite * S5 };
+  LEG_ART.starhart4 = {
+    body: UV_STARHART4_BODY,
+    base: UV_STARHART4_BASE,
+    joint: UV_STARHART4_JOINT,
+    baseJoint: UV_STARHART4_JOINT_BASE,
+    foot: UV_STARHART4_FOOT,
+    leg: UV_STARHART4_LEG_SEG,
+    legBase: UV_STARHART4_LEG_BASE_SEG,
     legStroke: HART_SEG4.th * PX * S4,
     legBaseStroke: HART_SEG4.sh * PX * S4,
     guns: [],
     sprite: UNIT_SPRITE * 4 * S4,
     small: UNIT_SPRITE * S4,
     sil: {
-      body: UV_VELA_BODY_SIL,
-      base: UV_VELA_BASE_SIL,
-      joint: UV_VELA_JOINT_SIL,
-      baseJoint: UV_VELA_JOINT_BASE_SIL,
-      foot: UV_VELA_FOOT_SIL,
+      body: UV_STARHART4_BODY_SIL,
+      base: UV_STARHART4_BASE_SIL,
+      joint: UV_STARHART4_JOINT_SIL,
+      baseJoint: UV_STARHART4_JOINT_BASE_SIL,
+      foot: UV_STARHART4_FOOT_SIL,
     },
   };
-  LEG_ART.corvus = {
-    ...LEG_ART.corvus!,
-    leg: UV_CORVUS_LEG_SEG,
-    legBase: UV_CORVUS_LEG_BASE_SEG,
+  LEG_ART.starhart5 = {
+    ...LEG_ART.starhart5!,
+    leg: UV_STARHART5_LEG_SEG,
+    legBase: UV_STARHART5_LEG_BASE_SEG,
     legStroke: HART_SEG5.th * PX * S5,
     legBaseStroke: HART_SEG5.sh * PX * S5,
     sprite: UNIT_SPRITE * 4 * S5,
@@ -1629,95 +1689,142 @@ if (ANIMAL_ART) {
     UNIT_ART[k] = { uv: UNIT_ART[k].uv, sprite: UNIT_ART[k].sprite * T.scale };
     return { ...MECH_ART[k]!, guns: [], stride: [0, 3, 3.5, 4.5][T.t] * MU, sprite: MECH_ART[k]!.sprite * T.scale };
   };
-  MECH_ART.dagger = rhinoMechArt("dagger", 0);
-  MECH_ART.mace = rhinoMechArt("mace", 1);
-  MECH_ART.fortress = rhinoMechArt("fortress", 2);
+  MECH_ART.ironhide1 = rhinoMechArt("ironhide1", 0);
+  MECH_ART.ironhide2 = rhinoMechArt("ironhide2", 1);
+  MECH_ART.ironhide3 = rhinoMechArt("ironhide3", 2);
   // the T4 and T5 leave the mech rig for four stout planted legs
-  delete MECH_ART.scepter;
-  delete MECH_ART.reign;
+  delete MECH_ART.ironhide4;
+  delete MECH_ART.ironhide5;
   const R4 = RHINO_TIERS[3].scale, R5 = RHINO_TIERS[4].scale;
-  UNIT_ART.scepter = { uv: UNIT_ART.scepter.uv, sprite: UNIT_ART.scepter.sprite * R4 };
-  UNIT_ART.reign = { uv: UNIT_ART.reign.uv, sprite: UNIT_ART.reign.sprite * R5 };
-  LEG_ART.scepter = {
-    body: UV_SCEPTER_BODY,
-    base: UV_SCEPTER_BASE,
-    joint: UV_SCEPTER_JOINT,
-    baseJoint: UV_SCEPTER_JOINT_BASE,
-    foot: UV_SCEPTER_FOOT,
-    leg: UV_SCEPTER_LEG_SEG,
-    legBase: UV_SCEPTER_LEG_BASE_SEG,
+  UNIT_ART.ironhide4 = { uv: UNIT_ART.ironhide4.uv, sprite: UNIT_ART.ironhide4.sprite * R4 };
+  UNIT_ART.ironhide5 = { uv: UNIT_ART.ironhide5.uv, sprite: UNIT_ART.ironhide5.sprite * R5 };
+  LEG_ART.ironhide4 = {
+    body: UV_IRONHIDE4_BODY,
+    base: UV_IRONHIDE4_BASE,
+    joint: UV_IRONHIDE4_JOINT,
+    baseJoint: UV_IRONHIDE4_JOINT_BASE,
+    foot: UV_IRONHIDE4_FOOT,
+    leg: UV_IRONHIDE4_LEG_SEG,
+    legBase: UV_IRONHIDE4_LEG_BASE_SEG,
     legStroke: RHINO_SEG4.th * PX * R4,
     legBaseStroke: RHINO_SEG4.sh * PX * R4,
     guns: [],
     sprite: UNIT_SPRITE * 4 * R4,
     small: UNIT_SPRITE * R4,
     sil: {
-      body: UV_SCEPTER_BODY_SIL,
-      base: UV_SCEPTER_BASE_SIL,
-      joint: UV_SCEPTER_JOINT_SIL,
-      baseJoint: UV_SCEPTER_JOINT_BASE_SIL,
-      foot: UV_SCEPTER_FOOT_SIL,
+      body: UV_IRONHIDE4_BODY_SIL,
+      base: UV_IRONHIDE4_BASE_SIL,
+      joint: UV_IRONHIDE4_JOINT_SIL,
+      baseJoint: UV_IRONHIDE4_JOINT_BASE_SIL,
+      foot: UV_IRONHIDE4_FOOT_SIL,
     },
   };
-  LEG_ART.reign = {
-    body: UV_REIGN_BODY,
-    base: UV_REIGN_BASE,
-    joint: UV_REIGN_JOINT,
-    baseJoint: UV_REIGN_JOINT_BASE,
-    foot: UV_REIGN_FOOT,
-    leg: UV_REIGN_LEG_SEG,
-    legBase: UV_REIGN_LEG_BASE_SEG,
+  LEG_ART.ironhide5 = {
+    body: UV_IRONHIDE5_BODY,
+    base: UV_IRONHIDE5_BASE,
+    joint: UV_IRONHIDE5_JOINT,
+    baseJoint: UV_IRONHIDE5_JOINT_BASE,
+    foot: UV_IRONHIDE5_FOOT,
+    leg: UV_IRONHIDE5_LEG_SEG,
+    legBase: UV_IRONHIDE5_LEG_BASE_SEG,
     legStroke: RHINO_SEG5.th * PX * R5,
     legBaseStroke: RHINO_SEG5.sh * PX * R5,
     guns: [],
     sprite: UNIT_SPRITE * 4 * R5,
     small: UNIT_SPRITE * 2 * R5,
     sil: {
-      body: UV_REIGN_BODY_SIL,
-      base: UV_REIGN_BASE_SIL,
-      joint: UV_REIGN_JOINT_SIL,
-      baseJoint: UV_REIGN_JOINT_BASE_SIL,
-      foot: UV_REIGN_FOOT_SIL,
+      body: UV_IRONHIDE5_BODY_SIL,
+      base: UV_IRONHIDE5_BASE_SIL,
+      joint: UV_IRONHIDE5_JOINT_SIL,
+      baseJoint: UV_IRONHIDE5_JOINT_BASE_SIL,
+      foot: UV_IRONHIDE5_FOOT_SIL,
     },
   };
 
-  // ---- Spitter ----
-  // the frog's T1 keeps the crawler's mech rig and cells, its toes on a
-  // short shuffle; T2 up ride the venom line's legged rig on four legs,
-  // guns off (the mouth is the barrel), with segments of their own and,
-  // on the two big tiers, a knee the stock rig never had
-  const F1 = FROG_TIERS[0].scale;
-  UNIT_ART.crawler = { uv: UNIT_ART.crawler.uv, sprite: UNIT_ART.crawler.sprite * F1 };
-  MECH_ART.crawler = { ...MECH_ART.crawler!, guns: [], stride: 2 * MU, sprite: MECH_ART.crawler!.sprite * F1 };
-  const frogLegArt = (k: UnitKind, i: number, parts: Omit<LegArt, "legStroke" | "legBaseStroke" | "guns" | "sprite" | "small">, big: boolean): void => {
-    const T = FROG_TIERS[i];
-    const cellScale = big ? 4 : 2;
+  // ---- Weaver ----
+  // the spider is legged at every tier: the weaver1 leaves the mech rig
+  // for six legs on a knee and foot of its own, weaver2 up keep the venom
+  // line's legged rig on eight, guns off (there are none on a spider),
+  // with steel segments of their own and a knee the weaver4 and weaver5
+  // never had
+  delete MECH_ART.weaver1;
+  const spiderLegArt = (k: UnitKind, i: number, parts: Omit<LegArt, "legStroke" | "legBaseStroke" | "guns" | "sprite" | "small">, cellScale: 1 | 2 | 4): void => {
+    const T = SPIDER_TIERS[i];
     UNIT_ART[k] = { uv: UNIT_ART[k].uv, sprite: UNIT_ART[k].sprite * T.scale };
     LEG_ART[k] = {
       ...parts,
-      legStroke: FROG_SEG[i].th * PX * T.scale,
-      legBaseStroke: FROG_SEG[i].sh * PX * T.scale,
+      legStroke: T.stroke * PX * T.scale,
+      legBaseStroke: T.stroke * PX * T.scale,
       guns: [],
       sprite: UNIT_SPRITE * cellScale * T.scale,
-      small: UNIT_SPRITE * (cellScale / 2) * T.scale,
+      small: UNIT_SPRITE * Math.max(1, cellScale / 2) * T.scale,
     };
   };
-  frogLegArt("atrax", 1, {
-    body: UV_ATRAX_BODY, base: UV_ATRAX_BASE, joint: UV_ATRAX_JOINT, foot: UV_ATRAX_FOOT, leg: UV_ATRAX_LEG_SEG, legBase: UV_ATRAX_LEG_BASE_SEG,
-    sil: { body: UV_ATRAX_BODY_SIL, base: UV_ATRAX_BASE_SIL, joint: UV_ATRAX_JOINT_SIL, foot: UV_ATRAX_FOOT_SIL },
-  }, false);
-  frogLegArt("spiroct", 2, {
-    body: UV_SPIROCT_BODY, joint: UV_SPIROCT_JOINT, foot: UV_SPIROCT_FOOT, leg: UV_SPIROCT_LEG_SEG, legBase: UV_SPIROCT_LEG_BASE_SEG,
-    sil: { body: UV_SPIROCT_BODY_SIL, joint: UV_SPIROCT_JOINT_SIL, foot: UV_SPIROCT_FOOT_SIL },
-  }, false);
-  frogLegArt("arkyid", 3, {
-    body: UV_ARKYID_BODY, joint: UV_ARKYID_JOINT, baseJoint: UV_ARKYID_JOINT_BASE, foot: UV_ARKYID_FOOT, leg: UV_ARKYID_LEG_SEG, legBase: UV_ARKYID_LEG_BASE_SEG,
-    sil: { body: UV_ARKYID_BODY_SIL, joint: UV_ARKYID_JOINT_SIL, baseJoint: UV_ARKYID_JOINT_BASE_SIL, foot: UV_ARKYID_FOOT_SIL },
-  }, true);
-  frogLegArt("toxopid", 4, {
-    body: UV_TOXOPID_BODY, joint: UV_TOXOPID_JOINT, baseJoint: UV_TOXOPID_JOINT_BASE, foot: UV_TOXOPID_FOOT, leg: UV_TOXOPID_LEG_SEG, legBase: UV_TOXOPID_LEG_BASE_SEG,
-    sil: { body: UV_TOXOPID_BODY_SIL, joint: UV_TOXOPID_JOINT_SIL, baseJoint: UV_TOXOPID_JOINT_BASE_SIL, foot: UV_TOXOPID_FOOT_SIL },
-  }, true);
+  spiderLegArt("weaver1", 0, {
+    body: UV_WEAVER1_BODY, base: UV_WEAVER1_BASE, joint: UV_WEAVER1_JOINT, foot: UV_WEAVER1_FOOT, leg: UV_WEAVER1_LEG_SEG, legBase: UV_WEAVER1_LEG_BASE_SEG,
+    sil: { body: UV_WEAVER1_BODY_SIL, base: UV_WEAVER1_BASE_SIL, joint: UV_WEAVER1_JOINT_SIL, foot: UV_WEAVER1_FOOT_SIL },
+  }, 1);
+  spiderLegArt("weaver2", 1, {
+    body: UV_WEAVER2_BODY, base: UV_WEAVER2_BASE, joint: UV_WEAVER2_JOINT, foot: UV_WEAVER2_FOOT, leg: UV_WEAVER2_LEG_SEG, legBase: UV_WEAVER2_LEG_BASE_SEG,
+    sil: { body: UV_WEAVER2_BODY_SIL, base: UV_WEAVER2_BASE_SIL, joint: UV_WEAVER2_JOINT_SIL, foot: UV_WEAVER2_FOOT_SIL },
+  }, 2);
+  spiderLegArt("weaver3", 2, {
+    body: UV_WEAVER3_BODY, joint: UV_WEAVER3_JOINT, foot: UV_WEAVER3_FOOT, leg: UV_WEAVER3_LEG_SEG, legBase: UV_WEAVER3_LEG_BASE_SEG,
+    sil: { body: UV_WEAVER3_BODY_SIL, joint: UV_WEAVER3_JOINT_SIL, foot: UV_WEAVER3_FOOT_SIL },
+  }, 2);
+  spiderLegArt("weaver4", 3, {
+    body: UV_WEAVER4_BODY, joint: UV_WEAVER4_JOINT, baseJoint: UV_WEAVER4_JOINT_BASE, foot: UV_WEAVER4_FOOT, leg: UV_WEAVER4_LEG_SEG, legBase: UV_WEAVER4_LEG_BASE_SEG,
+    sil: { body: UV_WEAVER4_BODY_SIL, joint: UV_WEAVER4_JOINT_SIL, baseJoint: UV_WEAVER4_JOINT_BASE_SIL, foot: UV_WEAVER4_FOOT_SIL },
+  }, 4);
+  // ---- Skate ----
+  // the manta rides the bat's parts rig on the harpoon fleet's cells; the
+  // engines go (a manta has no jets), the wake stays
+  MANTA_TIERS.forEach((T, i) => {
+    const g = mantaGeom(T);
+    const [body, wing] = MANTA_CELLS[i];
+    const k = MANTA_KINDS[i];
+    const sc = PX * T.scale;
+    UNIT_ART[k] = { uv: UNIT_ART[k].uv, sprite: UNIT_ART[k].sprite * T.scale };
+    FLYER_PARTS[k] = {
+      body,
+      wing,
+      sprite: cellPx(body) * sc,
+      wingSprite: cellPx(wing) * sc,
+      rootX: g.rootX * sc,
+      rootY: g.rootY * sc,
+      wingX: g.wingX * sc,
+      wingY: g.wingY * sc,
+      fold: T.fold,
+      sweep: T.sweep,
+      rate: T.rate,
+    };
+    delete UNIT_ENGINES[k];
+  });
+  // ---- Livewire ----
+  // the eel is the worm rig: its icon and team cell move to the head
+  // cell, the chain's sprites are its own, no overshoot (the length is
+  // the chain's), and no engines
+  EEL_TIERS.forEach((T, i) => {
+    const [head, body, tail] = UV_EEL_CELLS[i];
+    const k = EEL_KINDS[i];
+    UNIT_ART[k] = { uv: head, sprite: cellPx(head) * PX };
+    SEGMENT_ART[k] = {
+      head,
+      body,
+      tail,
+      headSprite: cellPx(head) * PX,
+      bodySprite: cellPx(body) * PX,
+      tailSprite: cellPx(tail) * PX,
+      amp: T.amp * PX,
+      rate: T.rate,
+      phase: T.phase,
+    };
+    delete UNIT_ENGINES[k];
+  });
+  spiderLegArt("weaver5", 4, {
+    body: UV_WEAVER5_BODY, joint: UV_WEAVER5_JOINT, baseJoint: UV_WEAVER5_JOINT_BASE, foot: UV_WEAVER5_FOOT, leg: UV_WEAVER5_LEG_SEG, legBase: UV_WEAVER5_LEG_BASE_SEG,
+    sil: { body: UV_WEAVER5_BODY_SIL, joint: UV_WEAVER5_JOINT_SIL, baseJoint: UV_WEAVER5_JOINT_BASE_SIL, foot: UV_WEAVER5_FOOT_SIL },
+  }, 4);
 }
 
 const ENV = "/mindustry/sprites/blocks/environment";
@@ -1741,98 +1848,98 @@ const SPRITES = {
   // (the band's land floors are painted from game/tiles.ts, like row 0's)
   taintedWater: `${ENV}/tainted-water.png`,
   deepTaintedWater: `${ENV}/deep-tainted-water.png`,
-  daggerBase: "/mindustry/sprites/units/dagger-base.png",
-  dagger: "/mindustry/sprites/units/dagger.png",
-  daggerLeg: "/mindustry/sprites/units/dagger-leg.png",
-  maceBase: "/mindustry/sprites/units/mace-base.png",
-  mace: "/mindustry/sprites/units/mace.png",
-  maceLeg: "/mindustry/sprites/units/mace-leg.png",
-  atrax: "/mindustry/sprites/units/atrax.png",
-  atraxBase: "/mindustry/sprites/units/atrax-base.png",
-  atraxLeg: "/mindustry/sprites/units/atrax-leg.png",
-  atraxLegBase: "/mindustry/sprites/units/atrax-leg-base.png",
-  atraxJoint: "/mindustry/sprites/units/atrax-joint.png",
-  atraxFoot: "/mindustry/sprites/units/atrax-foot.png",
-  atraxWeapon: "/mindustry/sprites/units/weapons/atrax-weapon.png",
-  spiroct: "/mindustry/sprites/units/spiroct.png",
-  spiroctLeg: "/mindustry/sprites/units/spiroct-leg.png",
-  spiroctLegBase: "/mindustry/sprites/units/spiroct-leg-base.png",
-  spiroctJoint: "/mindustry/sprites/units/spiroct-joint.png",
-  spiroctFoot: "/mindustry/sprites/units/spiroct-foot.png",
-  spiroctWeapon: "/mindustry/sprites/units/weapons/spiroct-weapon.png",
-  spiroctMount: "/mindustry/sprites/units/weapons/mount-purple-weapon.png",
-  crawlerBase: "/mindustry/sprites/units/crawler-base.png",
-  crawler: "/mindustry/sprites/units/crawler.png",
-  crawlerLeg: "/mindustry/sprites/units/crawler-leg.png",
-  fortressBase: "/mindustry/sprites/units/fortress-base.png",
-  fortress: "/mindustry/sprites/units/fortress.png",
-  fortressLeg: "/mindustry/sprites/units/fortress-leg.png",
-  flare: "/mindustry/sprites/units/flare.png",
-  horizon: "/mindustry/sprites/units/horizon.png",
-  zenith: "/mindustry/sprites/units/zenith.png",
+  ironhide1Base: "/mindustry/sprites/units/dagger-base.png",
+  ironhide1: "/mindustry/sprites/units/dagger.png",
+  ironhide1Leg: "/mindustry/sprites/units/dagger-leg.png",
+  ironhide2Base: "/mindustry/sprites/units/mace-base.png",
+  ironhide2: "/mindustry/sprites/units/mace.png",
+  ironhide2Leg: "/mindustry/sprites/units/mace-leg.png",
+  weaver2: "/mindustry/sprites/units/atrax.png",
+  weaver2Base: "/mindustry/sprites/units/atrax-base.png",
+  weaver2Leg: "/mindustry/sprites/units/atrax-leg.png",
+  weaver2LegBase: "/mindustry/sprites/units/atrax-leg-base.png",
+  weaver2Joint: "/mindustry/sprites/units/atrax-joint.png",
+  weaver2Foot: "/mindustry/sprites/units/atrax-foot.png",
+  weaver2Weapon: "/mindustry/sprites/units/weapons/atrax-weapon.png",
+  weaver3: "/mindustry/sprites/units/spiroct.png",
+  weaver3Leg: "/mindustry/sprites/units/spiroct-leg.png",
+  weaver3LegBase: "/mindustry/sprites/units/spiroct-leg-base.png",
+  weaver3Joint: "/mindustry/sprites/units/spiroct-joint.png",
+  weaver3Foot: "/mindustry/sprites/units/spiroct-foot.png",
+  weaver3Weapon: "/mindustry/sprites/units/weapons/spiroct-weapon.png",
+  weaver3Mount: "/mindustry/sprites/units/weapons/mount-purple-weapon.png",
+  weaver1Base: "/mindustry/sprites/units/crawler-base.png",
+  weaver1: "/mindustry/sprites/units/crawler.png",
+  weaver1Leg: "/mindustry/sprites/units/crawler-leg.png",
+  ironhide3Base: "/mindustry/sprites/units/fortress-base.png",
+  ironhide3: "/mindustry/sprites/units/fortress.png",
+  ironhide3Leg: "/mindustry/sprites/units/fortress-leg.png",
+  stoop1: "/mindustry/sprites/units/flare.png",
+  stoop2: "/mindustry/sprites/units/horizon.png",
+  stoop3: "/mindustry/sprites/units/zenith.png",
   largeWeapon: "/mindustry/sprites/units/weapons/large-weapon.png",
   flamethrower: "/mindustry/sprites/units/weapons/flamethrower.png",
   artillery: "/mindustry/sprites/units/weapons/artillery.png",
-  nova: "/mindustry/sprites/units/nova.png",
-  novaBase: "/mindustry/sprites/units/nova-base.png",
-  novaLeg: "/mindustry/sprites/units/nova-leg.png",
+  starhart1: "/mindustry/sprites/units/nova.png",
+  starhart1Base: "/mindustry/sprites/units/nova-base.png",
+  starhart1Leg: "/mindustry/sprites/units/nova-leg.png",
   healWeapon: "/mindustry/sprites/units/weapons/heal-weapon.png",
-  pulsar: "/mindustry/sprites/units/pulsar.png",
-  pulsarBase: "/mindustry/sprites/units/pulsar-base.png",
-  pulsarLeg: "/mindustry/sprites/units/pulsar-leg.png",
+  starhart2: "/mindustry/sprites/units/pulsar.png",
+  starhart2Base: "/mindustry/sprites/units/pulsar-base.png",
+  starhart2Leg: "/mindustry/sprites/units/pulsar-leg.png",
   healShotgun: "/mindustry/sprites/units/weapons/heal-shotgun-weapon.png",
-  quasar: "/mindustry/sprites/units/quasar.png",
-  quasarBase: "/mindustry/sprites/units/quasar-base.png",
-  quasarLeg: "/mindustry/sprites/units/quasar-leg.png",
+  starhart3: "/mindustry/sprites/units/quasar.png",
+  starhart3Base: "/mindustry/sprites/units/quasar-base.png",
+  starhart3Leg: "/mindustry/sprites/units/quasar-leg.png",
   beamWeapon: "/mindustry/sprites/units/weapons/beam-weapon.png",
-  scepter: "/mindustry/sprites/units/scepter.png",
-  scepterBase: "/mindustry/sprites/units/scepter-base.png",
-  scepterLeg: "/mindustry/sprites/units/scepter-leg.png",
-  scepterWeapon: "/mindustry/sprites/units/weapons/scepter-weapon.png",
-  scepterMount: "/mindustry/sprites/units/weapons/scepter-mount.png",
-  vela: "/mindustry/sprites/units/vela.png",
-  velaBase: "/mindustry/sprites/units/vela-base.png",
-  velaLeg: "/mindustry/sprites/units/vela-leg.png",
+  ironhide4: "/mindustry/sprites/units/scepter.png",
+  ironhide4Base: "/mindustry/sprites/units/scepter-base.png",
+  ironhide4Leg: "/mindustry/sprites/units/scepter-leg.png",
+  ironhide4Weapon: "/mindustry/sprites/units/weapons/scepter-weapon.png",
+  ironhide4Mount: "/mindustry/sprites/units/weapons/scepter-mount.png",
+  starhart4: "/mindustry/sprites/units/vela.png",
+  starhart4Base: "/mindustry/sprites/units/vela-base.png",
+  starhart4Leg: "/mindustry/sprites/units/vela-leg.png",
   repairBeam: "/mindustry/sprites/units/weapons/repair-beam-weapon-center-large.png",
-  arkyid: "/mindustry/sprites/units/arkyid.png",
-  arkyidFoot: "/mindustry/sprites/units/arkyid-foot.png",
-  arkyidJointBase: "/mindustry/sprites/units/arkyid-joint-base.png",
-  arkyidLeg: "/mindustry/sprites/units/arkyid-leg.png",
-  arkyidLegBase: "/mindustry/sprites/units/arkyid-leg-base.png",
+  weaver4: "/mindustry/sprites/units/arkyid.png",
+  weaver4Foot: "/mindustry/sprites/units/arkyid-foot.png",
+  weaver4JointBase: "/mindustry/sprites/units/arkyid-joint-base.png",
+  weaver4Leg: "/mindustry/sprites/units/arkyid-leg.png",
+  weaver4LegBase: "/mindustry/sprites/units/arkyid-leg-base.png",
   purpleMount: "/mindustry/sprites/units/weapons/large-purple-mount.png",
-  antumbra: "/mindustry/sprites/units/antumbra.png",
-  disrupt: "/mindustry/sprites/units/disrupt.png",
-  reign: "/mindustry/sprites/units/reign.png",
-  reignBase: "/mindustry/sprites/units/reign-base.png",
-  reignLeg: "/mindustry/sprites/units/reign-leg.png",
-  reignWeapon: "/mindustry/sprites/units/weapons/reign-weapon.png",
-  corvus: "/mindustry/sprites/units/corvus.png",
-  corvusBase: "/mindustry/sprites/units/corvus-base.png",
-  corvusLeg: "/mindustry/sprites/units/corvus-leg.png",
-  corvusLegBase: "/mindustry/sprites/units/corvus-leg-base.png",
-  corvusJoint: "/mindustry/sprites/units/corvus-joint.png",
-  corvusJointBase: "/mindustry/sprites/units/corvus-joint-base.png",
-  corvusFoot: "/mindustry/sprites/units/corvus-foot.png",
-  toxopid: "/mindustry/sprites/units/toxopid.png",
-  toxopidLeg: "/mindustry/sprites/units/toxopid-leg.png",
-  toxopidLegBase: "/mindustry/sprites/units/toxopid-leg-base.png",
-  toxopidJointBase: "/mindustry/sprites/units/toxopid-joint-base.png",
-  toxopidFoot: "/mindustry/sprites/units/toxopid-foot.png",
-  toxopidCannon: "/mindustry/sprites/units/weapons/toxopid-cannon.png",
-  eclipse: "/mindustry/sprites/units/eclipse.png",
+  stoop4: "/mindustry/sprites/units/antumbra.png",
+  boss: "/mindustry/sprites/units/disrupt.png",
+  ironhide5: "/mindustry/sprites/units/reign.png",
+  ironhide5Base: "/mindustry/sprites/units/reign-base.png",
+  ironhide5Leg: "/mindustry/sprites/units/reign-leg.png",
+  ironhide5Weapon: "/mindustry/sprites/units/weapons/reign-weapon.png",
+  starhart5: "/mindustry/sprites/units/corvus.png",
+  starhart5Base: "/mindustry/sprites/units/corvus-base.png",
+  starhart5Leg: "/mindustry/sprites/units/corvus-leg.png",
+  starhart5LegBase: "/mindustry/sprites/units/corvus-leg-base.png",
+  starhart5Joint: "/mindustry/sprites/units/corvus-joint.png",
+  starhart5JointBase: "/mindustry/sprites/units/corvus-joint-base.png",
+  starhart5Foot: "/mindustry/sprites/units/corvus-foot.png",
+  weaver5: "/mindustry/sprites/units/toxopid.png",
+  weaver5Leg: "/mindustry/sprites/units/toxopid-leg.png",
+  weaver5LegBase: "/mindustry/sprites/units/toxopid-leg-base.png",
+  weaver5JointBase: "/mindustry/sprites/units/toxopid-joint-base.png",
+  weaver5Foot: "/mindustry/sprites/units/toxopid-foot.png",
+  weaver5Cannon: "/mindustry/sprites/units/weapons/toxopid-cannon.png",
+  stoop5: "/mindustry/sprites/units/eclipse.png",
   // the naval tanks. Each is a single hull sprite — the naval types' own
   // weapons all sit on turret mounts Mindustry draws from the weapon
   // sheets, and a hull with no assembled parts needs none of them here
-  risso: "/mindustry/sprites/units/risso.png",
-  minke: "/mindustry/sprites/units/minke.png",
-  bryde: "/mindustry/sprites/units/bryde.png",
-  sei: "/mindustry/sprites/units/sei.png",
-  omura: "/mindustry/sprites/units/omura.png",
-  retusa: "/mindustry/sprites/units/retusa.png",
-  oxynoe: "/mindustry/sprites/units/oxynoe.png",
-  cyerce: "/mindustry/sprites/units/cyerce.png",
-  aegires: "/mindustry/sprites/units/aegires.png",
-  navanax: "/mindustry/sprites/units/navanax.png",
+  skate1: "/mindustry/sprites/units/risso.png",
+  skate2: "/mindustry/sprites/units/minke.png",
+  skate3: "/mindustry/sprites/units/bryde.png",
+  skate4: "/mindustry/sprites/units/sei.png",
+  skate5: "/mindustry/sprites/units/omura.png",
+  livewire1: "/mindustry/sprites/units/retusa.png",
+  livewire2: "/mindustry/sprites/units/oxynoe.png",
+  livewire3: "/mindustry/sprites/units/cyerce.png",
+  livewire4: "/mindustry/sprites/units/aegires.png",
+  livewire5: "/mindustry/sprites/units/navanax.png",
   spawnPad: `${ENV}/dark-panel-2.png`,
   towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
   towerBase1: "/mindustry/sprites/blocks/turrets/bases/block-1.png",
@@ -1890,51 +1997,51 @@ const SPRITES = {
   bullet: "/mindustry/sprites/effects/bullet.png",
   bulletBack: "/mindustry/sprites/effects/bullet-back.png",
   // the swarm's own bullet sprites beyond the turrets' three pairs (see
-  // UV_CIRCLE_BULLET): the emp round, the retusa torpedo, cyerce's plasma
-  // missile, the disrupt's missile unit, and the sap beam's line and cap
+  // UV_CIRCLE_BULLET): the emp round, the livewire1 torpedo, livewire3's plasma
+  // missile, the boss's missile unit, and the sap beam's line and cap
   circleBullet: "/mindustry/sprites/effects/circle-bullet.png",
   circleBulletBack: "/mindustry/sprites/effects/circle-bullet-back.png",
   mineBullet: "/mindustry/sprites/effects/mine-bullet.png",
   mineBulletBack: "/mindustry/sprites/effects/mine-bullet-back.png",
   missileLarge: "/mindustry/sprites/effects/missile-large.png",
   missileLargeBack: "/mindustry/sprites/effects/missile-large-back.png",
-  disruptMissile: "/mindustry/sprites/units/weapons/disrupt-missile.png",
+  bossMissile: "/mindustry/sprites/units/weapons/disrupt-missile.png",
   laser: "/mindustry/sprites/effects/laser.png",
   laserEnd: "/mindustry/sprites/effects/laser-end.png",
   // THE TEAM CELLS: every unit's `-cell` region, the part of its hull
   // Mindustry paints in the owning team's colour (UnitType.drawCell). The
-  // dagger and the flare have none of their own and fall back to
+  // ironhide1 and the stoop1 have none of their own and fall back to
   // power-cell, exactly as UnitType.load does
   powerCell: "/mindustry/sprites/units/power-cell.png",
-  maceCell: "/mindustry/sprites/units/mace-cell.png",
-  fortressCell: "/mindustry/sprites/units/fortress-cell.png",
-  scepterCell: "/mindustry/sprites/units/scepter-cell.png",
-  reignCell: "/mindustry/sprites/units/reign-cell.png",
-  crawlerCell: "/mindustry/sprites/units/crawler-cell.png",
-  atraxCell: "/mindustry/sprites/units/atrax-cell.png",
-  spiroctCell: "/mindustry/sprites/units/spiroct-cell.png",
-  arkyidCell: "/mindustry/sprites/units/arkyid-cell.png",
-  toxopidCell: "/mindustry/sprites/units/toxopid-cell.png",
-  novaCell: "/mindustry/sprites/units/nova-cell.png",
-  pulsarCell: "/mindustry/sprites/units/pulsar-cell.png",
-  quasarCell: "/mindustry/sprites/units/quasar-cell.png",
-  velaCell: "/mindustry/sprites/units/vela-cell.png",
-  corvusCell: "/mindustry/sprites/units/corvus-cell.png",
-  horizonCell: "/mindustry/sprites/units/horizon-cell.png",
-  zenithCell: "/mindustry/sprites/units/zenith-cell.png",
-  antumbraCell: "/mindustry/sprites/units/antumbra-cell.png",
-  eclipseCell: "/mindustry/sprites/units/eclipse-cell.png",
-  disruptCell: "/mindustry/sprites/units/disrupt-cell.png",
-  rissoCell: "/mindustry/sprites/units/risso-cell.png",
-  minkeCell: "/mindustry/sprites/units/minke-cell.png",
-  brydeCell: "/mindustry/sprites/units/bryde-cell.png",
-  seiCell: "/mindustry/sprites/units/sei-cell.png",
-  omuraCell: "/mindustry/sprites/units/omura-cell.png",
-  retusaCell: "/mindustry/sprites/units/retusa-cell.png",
-  oxynoeCell: "/mindustry/sprites/units/oxynoe-cell.png",
-  cyerceCell: "/mindustry/sprites/units/cyerce-cell.png",
-  aegiresCell: "/mindustry/sprites/units/aegires-cell.png",
-  navanaxCell: "/mindustry/sprites/units/navanax-cell.png",
+  ironhide2Cell: "/mindustry/sprites/units/mace-cell.png",
+  ironhide3Cell: "/mindustry/sprites/units/fortress-cell.png",
+  ironhide4Cell: "/mindustry/sprites/units/scepter-cell.png",
+  ironhide5Cell: "/mindustry/sprites/units/reign-cell.png",
+  weaver1Cell: "/mindustry/sprites/units/crawler-cell.png",
+  weaver2Cell: "/mindustry/sprites/units/atrax-cell.png",
+  weaver3Cell: "/mindustry/sprites/units/spiroct-cell.png",
+  weaver4Cell: "/mindustry/sprites/units/arkyid-cell.png",
+  weaver5Cell: "/mindustry/sprites/units/toxopid-cell.png",
+  starhart1Cell: "/mindustry/sprites/units/nova-cell.png",
+  starhart2Cell: "/mindustry/sprites/units/pulsar-cell.png",
+  starhart3Cell: "/mindustry/sprites/units/quasar-cell.png",
+  starhart4Cell: "/mindustry/sprites/units/vela-cell.png",
+  starhart5Cell: "/mindustry/sprites/units/corvus-cell.png",
+  stoop2Cell: "/mindustry/sprites/units/horizon-cell.png",
+  stoop3Cell: "/mindustry/sprites/units/zenith-cell.png",
+  stoop4Cell: "/mindustry/sprites/units/antumbra-cell.png",
+  stoop5Cell: "/mindustry/sprites/units/eclipse-cell.png",
+  bossCell: "/mindustry/sprites/units/disrupt-cell.png",
+  harpoon1Cell: "/mindustry/sprites/units/risso-cell.png",
+  harpoon2Cell: "/mindustry/sprites/units/minke-cell.png",
+  harpoon3Cell: "/mindustry/sprites/units/bryde-cell.png",
+  harpoon4Cell: "/mindustry/sprites/units/sei-cell.png",
+  harpoon5Cell: "/mindustry/sprites/units/omura-cell.png",
+  wraith1Cell: "/mindustry/sprites/units/retusa-cell.png",
+  wraith2Cell: "/mindustry/sprites/units/oxynoe-cell.png",
+  wraith3Cell: "/mindustry/sprites/units/cyerce-cell.png",
+  wraith4Cell: "/mindustry/sprites/units/aegires-cell.png",
+  wraith5Cell: "/mindustry/sprites/units/navanax-cell.png",
 } as const;
 
 // Mindustry's sharded (player) team color — the team overlay multiplies by it
@@ -2040,14 +2147,14 @@ function outlined(src: HTMLImageElement | HTMLCanvasElement, color: string, radi
  * UnitType.drawCell's art, ALONE on a canvas the size of the body it rides:
  * the unit's `-cell` region, untinted, centred on the hull exactly as
  * Mindustry centres it — `Draw.rect(cellRegion, unit.x, unit.y)`, both
- * regions on the same point, whatever their sizes (a risso's cell is
- * packed on a 96px square around a 70x78 hull, and a dagger's is 56px of
+ * regions on the same point, whatever their sizes (a skate1's cell is
+ * packed on a 96px square around a 70x78 hull, and an ironhide1's is 56px of
  * power-cell over a 48px body, clipped by it).
  *
  * IT USED TO BE BAKED INTO THE HULL in the swarm's red, which was the
  * whole team read and cost nothing — right up until the player got bodies
  * of their own out of the factories. The two sides draw from ONE set of
- * sprites, so a baked cell made every dagger on the field the swarm's.
+ * sprites, so a baked cell made every ironhide1 on the field the swarm's.
  * The cell is therefore packed on its own (see the team-cell blocks) and
  * drawn over the hull in the owning team's colour, which is what
  * UnitType.drawCell does in the first place. The source art is white, so
@@ -2174,7 +2281,7 @@ function mendBlock(base: HTMLImageElement, top: HTMLImageElement): HTMLCanvasEle
  * pixel it picks Scale2x-style edge candidates from the 3x3 neighborhood,
  * then averages all nine, pulling transparent slots toward the alpha-weighted
  * mean color so edges feather instead of ringing dark. Validated pixel-exact
- * (within 1/255 rounding) against the game's own generated dagger sprite.
+ * (within 1/255 rounding) against the game's own generated ironhide1 sprite.
  */
 function antialiased(src: HTMLImageElement | HTMLCanvasElement): HTMLCanvasElement {
   const w = src instanceof HTMLImageElement ? src.naturalWidth : src.width;
@@ -2340,8 +2447,8 @@ export async function unitIcon(
   // and the quarter turn back, so the body points up the way the sprite
   // files it was composited from do — CROPPED TO WHAT IT COVERS on the
   // way, because a sheet cell is bigger than the art in it by a different
-  // margin for every kind (a flare's 48px body sits in a 64px cell, a
-  // risso's in a 128) and the HUD scales an icon to a fixed square. Left
+  // margin for every kind (a stoop1's 48px body sits in a 64px cell, a
+  // skate1's in a 128) and the HUD scales an icon to a fixed square. Left
   // uncropped, a family's picture came out the size of its own padding
   // and a row of them read as a row of different-sized units
   const crop = opaqueBounds(flat) ?? { x: 0, y: 0, w: size, h: size };
@@ -2367,7 +2474,7 @@ export async function unitIcon(
  * fill it, or at its native size centred in it; as authored, or turned
  * a quarter turn clockwise so Mindustry's up-facing sprites face +x.
  * The context is CLIPPED to the cell first, so nothing a draw does can
- * land on a neighbour — an overhang (pulsar's 68px body in a 64 cell,
+ * land on a neighbour — an overhang (starhart2's 68px body in a 64 cell,
  * the film round a trimmed beam sprite) is simply cut off.
  *
  * `size` overrides the native size for art whose extent the cell does
@@ -2451,9 +2558,9 @@ function packAnimalArt(
 
   // ---- Starhart ----
   const mechCells = [
-    { kind: "nova" as const, body: UV_NOVA_BODY, base: UV_NOVA_BASE, leg: UV_NOVA_LEG, sil: { body: UV_NOVA_BODY_SIL, base: UV_NOVA_BASE_SIL, leg: UV_NOVA_LEG_SIL } },
-    { kind: "pulsar" as const, body: UV_PULSAR_BODY, base: UV_PULSAR_BASE, leg: UV_PULSAR_LEG, sil: { body: UV_PULSAR_BODY_SIL, base: UV_PULSAR_BASE_SIL, leg: UV_PULSAR_LEG_SIL } },
-    { kind: "quasar" as const, body: UV_QUASAR_BODY, base: UV_QUASAR_BASE, leg: UV_QUASAR_LEG, sil: { body: UV_QUASAR_BODY_SIL, base: UV_QUASAR_BASE_SIL, leg: UV_QUASAR_LEG_SIL } },
+    { kind: "starhart1" as const, body: UV_STARHART1_BODY, base: UV_STARHART1_BASE, leg: UV_STARHART1_LEG, sil: { body: UV_STARHART1_BODY_SIL, base: UV_STARHART1_BASE_SIL, leg: UV_STARHART1_LEG_SIL } },
+    { kind: "starhart2" as const, body: UV_STARHART2_BODY, base: UV_STARHART2_BASE, leg: UV_STARHART2_LEG, sil: { body: UV_STARHART2_BODY_SIL, base: UV_STARHART2_BASE_SIL, leg: UV_STARHART2_LEG_SIL } },
+    { kind: "starhart3" as const, body: UV_STARHART3_BODY, base: UV_STARHART3_BASE, leg: UV_STARHART3_LEG, sil: { body: UV_STARHART3_BODY_SIL, base: UV_STARHART3_BASE_SIL, leg: UV_STARHART3_LEG_SIL } },
   ];
   mechCells.forEach((cells, i) => {
     const T = HART_TIERS[i];
@@ -2465,10 +2572,10 @@ function packAnimalArt(
     teamCell(cells.kind, body, toCanvas(a.cell), cells.body, T.n);
   });
   const legCells = [
-    { kind: "vela" as const, body: UV_VELA_BODY, base: UV_VELA_BASE, joint: UV_VELA_JOINT, baseJoint: UV_VELA_JOINT_BASE, foot: UV_VELA_FOOT, leg: UV_VELA_LEG_SEG, legBase: UV_VELA_LEG_BASE_SEG,
-      sil: { body: UV_VELA_BODY_SIL, base: UV_VELA_BASE_SIL, joint: UV_VELA_JOINT_SIL, baseJoint: UV_VELA_JOINT_BASE_SIL, foot: UV_VELA_FOOT_SIL } },
-    { kind: "corvus" as const, body: UV_CORVUS_BODY, base: UV_CORVUS_BASE, joint: UV_CORVUS_JOINT, baseJoint: UV_CORVUS_JOINT_BASE, foot: UV_CORVUS_FOOT, leg: UV_CORVUS_LEG_SEG, legBase: UV_CORVUS_LEG_BASE_SEG,
-      sil: { body: UV_CORVUS_BODY_SIL, base: UV_CORVUS_BASE_SIL, joint: UV_CORVUS_JOINT_SIL, baseJoint: UV_CORVUS_JOINT_BASE_SIL, foot: UV_CORVUS_FOOT_SIL } },
+    { kind: "starhart4" as const, body: UV_STARHART4_BODY, base: UV_STARHART4_BASE, joint: UV_STARHART4_JOINT, baseJoint: UV_STARHART4_JOINT_BASE, foot: UV_STARHART4_FOOT, leg: UV_STARHART4_LEG_SEG, legBase: UV_STARHART4_LEG_BASE_SEG,
+      sil: { body: UV_STARHART4_BODY_SIL, base: UV_STARHART4_BASE_SIL, joint: UV_STARHART4_JOINT_SIL, baseJoint: UV_STARHART4_JOINT_BASE_SIL, foot: UV_STARHART4_FOOT_SIL } },
+    { kind: "starhart5" as const, body: UV_STARHART5_BODY, base: UV_STARHART5_BASE, joint: UV_STARHART5_JOINT, baseJoint: UV_STARHART5_JOINT_BASE, foot: UV_STARHART5_FOOT, leg: UV_STARHART5_LEG_SEG, legBase: UV_STARHART5_LEG_BASE_SEG,
+      sil: { body: UV_STARHART5_BODY_SIL, base: UV_STARHART5_BASE_SIL, joint: UV_STARHART5_JOINT_SIL, baseJoint: UV_STARHART5_JOINT_BASE_SIL, foot: UV_STARHART5_FOOT_SIL } },
   ];
   legCells.forEach((cells, i) => {
     const T = HART_TIERS[3 + i];
@@ -2483,7 +2590,7 @@ function packAnimalArt(
     teamCell(cells.kind, body, toCanvas(a.cell), cells.body, T.n);
   });
 
-  // ---- Ironhide and Spitter ----
+  // ---- Ironhide and Weaver ----
   // the same two rigs, packed by one pair of helpers: a mech tier is body,
   // base and the near-side legs; a legged tier is body, foot, the caps and
   // segments it has cells for, and a base where the stock rig kept one
@@ -2512,36 +2619,58 @@ function packAnimalArt(
     teamCell(cells.kind, body, toCanvas(a.cell), cells.body, n);
   };
   const rhinoMechCells: readonly MechCells[] = [
-    { kind: "dagger", body: UV_DAGGER_BODY, base: UV_DAGGER_BASE, leg: UV_DAGGER_LEG, sil: { body: UV_DAGGER_BODY_SIL, base: UV_DAGGER_BASE_SIL, leg: UV_DAGGER_LEG_SIL } },
-    { kind: "mace", body: UV_MACE_BODY, base: UV_MACE_BASE, leg: UV_MACE_LEG, sil: { body: UV_MACE_BODY_SIL, base: UV_MACE_BASE_SIL, leg: UV_MACE_LEG_SIL } },
-    { kind: "fortress", body: UV_FORTRESS_BODY, base: UV_FORTRESS_BASE, leg: UV_FORTRESS_LEG, sil: { body: UV_FORTRESS_BODY_SIL, base: UV_FORTRESS_BASE_SIL, leg: UV_FORTRESS_LEG_SIL } },
+    { kind: "ironhide1", body: UV_IRONHIDE1_BODY, base: UV_IRONHIDE1_BASE, leg: UV_IRONHIDE1_LEG, sil: { body: UV_IRONHIDE1_BODY_SIL, base: UV_IRONHIDE1_BASE_SIL, leg: UV_IRONHIDE1_LEG_SIL } },
+    { kind: "ironhide2", body: UV_IRONHIDE2_BODY, base: UV_IRONHIDE2_BASE, leg: UV_IRONHIDE2_LEG, sil: { body: UV_IRONHIDE2_BODY_SIL, base: UV_IRONHIDE2_BASE_SIL, leg: UV_IRONHIDE2_LEG_SIL } },
+    { kind: "ironhide3", body: UV_IRONHIDE3_BODY, base: UV_IRONHIDE3_BASE, leg: UV_IRONHIDE3_LEG, sil: { body: UV_IRONHIDE3_BODY_SIL, base: UV_IRONHIDE3_BASE_SIL, leg: UV_IRONHIDE3_LEG_SIL } },
   ];
   rhinoMechCells.forEach((cells, i) => packMech(cells, rhinoMech(RHINO_TIERS[i]), RHINO_TIERS[i].n));
   const rhinoLegCells: readonly LegCells[] = [
-    { kind: "scepter", body: UV_SCEPTER_BODY, base: UV_SCEPTER_BASE, joint: UV_SCEPTER_JOINT, baseJoint: UV_SCEPTER_JOINT_BASE, foot: UV_SCEPTER_FOOT, leg: UV_SCEPTER_LEG_SEG, legBase: UV_SCEPTER_LEG_BASE_SEG,
-      sil: { body: UV_SCEPTER_BODY_SIL, base: UV_SCEPTER_BASE_SIL, joint: UV_SCEPTER_JOINT_SIL, baseJoint: UV_SCEPTER_JOINT_BASE_SIL, foot: UV_SCEPTER_FOOT_SIL } },
-    { kind: "reign", body: UV_REIGN_BODY, base: UV_REIGN_BASE, joint: UV_REIGN_JOINT, baseJoint: UV_REIGN_JOINT_BASE, foot: UV_REIGN_FOOT, leg: UV_REIGN_LEG_SEG, legBase: UV_REIGN_LEG_BASE_SEG,
-      sil: { body: UV_REIGN_BODY_SIL, base: UV_REIGN_BASE_SIL, joint: UV_REIGN_JOINT_SIL, baseJoint: UV_REIGN_JOINT_BASE_SIL, foot: UV_REIGN_FOOT_SIL } },
+    { kind: "ironhide4", body: UV_IRONHIDE4_BODY, base: UV_IRONHIDE4_BASE, joint: UV_IRONHIDE4_JOINT, baseJoint: UV_IRONHIDE4_JOINT_BASE, foot: UV_IRONHIDE4_FOOT, leg: UV_IRONHIDE4_LEG_SEG, legBase: UV_IRONHIDE4_LEG_BASE_SEG,
+      sil: { body: UV_IRONHIDE4_BODY_SIL, base: UV_IRONHIDE4_BASE_SIL, joint: UV_IRONHIDE4_JOINT_SIL, baseJoint: UV_IRONHIDE4_JOINT_BASE_SIL, foot: UV_IRONHIDE4_FOOT_SIL } },
+    { kind: "ironhide5", body: UV_IRONHIDE5_BODY, base: UV_IRONHIDE5_BASE, joint: UV_IRONHIDE5_JOINT, baseJoint: UV_IRONHIDE5_JOINT_BASE, foot: UV_IRONHIDE5_FOOT, leg: UV_IRONHIDE5_LEG_SEG, legBase: UV_IRONHIDE5_LEG_BASE_SEG,
+      sil: { body: UV_IRONHIDE5_BODY_SIL, base: UV_IRONHIDE5_BASE_SIL, joint: UV_IRONHIDE5_JOINT_SIL, baseJoint: UV_IRONHIDE5_JOINT_BASE_SIL, foot: UV_IRONHIDE5_FOOT_SIL } },
   ];
   rhinoLegCells.forEach((cells, i) => packLegged(cells, rhinoLegged(RHINO_TIERS[3 + i]), RHINO_TIERS[3 + i].n));
-  packMech(
-    { kind: "crawler", body: UV_CRAWLER_BODY, base: UV_CRAWLER_BASE, leg: UV_CRAWLER_LEG, sil: { body: UV_CRAWLER_BODY_SIL, base: UV_CRAWLER_BASE_SIL, leg: UV_CRAWLER_LEG_SIL } },
-    frogMech(FROG_TIERS[0]), FROG_TIERS[0].n,
-  );
-  const frogLegCells: readonly LegCells[] = [
-    { kind: "atrax", body: UV_ATRAX_BODY, base: UV_ATRAX_BASE, joint: UV_ATRAX_JOINT, foot: UV_ATRAX_FOOT, leg: UV_ATRAX_LEG_SEG, legBase: UV_ATRAX_LEG_BASE_SEG,
-      sil: { body: UV_ATRAX_BODY_SIL, base: UV_ATRAX_BASE_SIL, joint: UV_ATRAX_JOINT_SIL, foot: UV_ATRAX_FOOT_SIL } },
-    { kind: "spiroct", body: UV_SPIROCT_BODY, joint: UV_SPIROCT_JOINT, foot: UV_SPIROCT_FOOT, leg: UV_SPIROCT_LEG_SEG, legBase: UV_SPIROCT_LEG_BASE_SEG,
-      sil: { body: UV_SPIROCT_BODY_SIL, joint: UV_SPIROCT_JOINT_SIL, foot: UV_SPIROCT_FOOT_SIL } },
-    { kind: "arkyid", body: UV_ARKYID_BODY, joint: UV_ARKYID_JOINT, baseJoint: UV_ARKYID_JOINT_BASE, foot: UV_ARKYID_FOOT, leg: UV_ARKYID_LEG_SEG, legBase: UV_ARKYID_LEG_BASE_SEG,
-      sil: { body: UV_ARKYID_BODY_SIL, joint: UV_ARKYID_JOINT_SIL, baseJoint: UV_ARKYID_JOINT_BASE_SIL, foot: UV_ARKYID_FOOT_SIL } },
-    { kind: "toxopid", body: UV_TOXOPID_BODY, joint: UV_TOXOPID_JOINT, baseJoint: UV_TOXOPID_JOINT_BASE, foot: UV_TOXOPID_FOOT, leg: UV_TOXOPID_LEG_SEG, legBase: UV_TOXOPID_LEG_BASE_SEG,
-      sil: { body: UV_TOXOPID_BODY_SIL, joint: UV_TOXOPID_JOINT_SIL, baseJoint: UV_TOXOPID_JOINT_BASE_SIL, foot: UV_TOXOPID_FOOT_SIL } },
+  const spiderLegCells: readonly LegCells[] = [
+    { kind: "weaver1", body: UV_WEAVER1_BODY, base: UV_WEAVER1_BASE, joint: UV_WEAVER1_JOINT, foot: UV_WEAVER1_FOOT, leg: UV_WEAVER1_LEG_SEG, legBase: UV_WEAVER1_LEG_BASE_SEG,
+      sil: { body: UV_WEAVER1_BODY_SIL, base: UV_WEAVER1_BASE_SIL, joint: UV_WEAVER1_JOINT_SIL, foot: UV_WEAVER1_FOOT_SIL } },
+    { kind: "weaver2", body: UV_WEAVER2_BODY, base: UV_WEAVER2_BASE, joint: UV_WEAVER2_JOINT, foot: UV_WEAVER2_FOOT, leg: UV_WEAVER2_LEG_SEG, legBase: UV_WEAVER2_LEG_BASE_SEG,
+      sil: { body: UV_WEAVER2_BODY_SIL, base: UV_WEAVER2_BASE_SIL, joint: UV_WEAVER2_JOINT_SIL, foot: UV_WEAVER2_FOOT_SIL } },
+    { kind: "weaver3", body: UV_WEAVER3_BODY, joint: UV_WEAVER3_JOINT, foot: UV_WEAVER3_FOOT, leg: UV_WEAVER3_LEG_SEG, legBase: UV_WEAVER3_LEG_BASE_SEG,
+      sil: { body: UV_WEAVER3_BODY_SIL, joint: UV_WEAVER3_JOINT_SIL, foot: UV_WEAVER3_FOOT_SIL } },
+    { kind: "weaver4", body: UV_WEAVER4_BODY, joint: UV_WEAVER4_JOINT, baseJoint: UV_WEAVER4_JOINT_BASE, foot: UV_WEAVER4_FOOT, leg: UV_WEAVER4_LEG_SEG, legBase: UV_WEAVER4_LEG_BASE_SEG,
+      sil: { body: UV_WEAVER4_BODY_SIL, joint: UV_WEAVER4_JOINT_SIL, baseJoint: UV_WEAVER4_JOINT_BASE_SIL, foot: UV_WEAVER4_FOOT_SIL } },
+    { kind: "weaver5", body: UV_WEAVER5_BODY, joint: UV_WEAVER5_JOINT, baseJoint: UV_WEAVER5_JOINT_BASE, foot: UV_WEAVER5_FOOT, leg: UV_WEAVER5_LEG_SEG, legBase: UV_WEAVER5_LEG_BASE_SEG,
+      sil: { body: UV_WEAVER5_BODY_SIL, joint: UV_WEAVER5_JOINT_SIL, baseJoint: UV_WEAVER5_JOINT_BASE_SIL, foot: UV_WEAVER5_FOOT_SIL } },
   ];
-  frogLegCells.forEach((cells, i) => packLegged(cells, frogLegged(FROG_TIERS[1 + i]), FROG_TIERS[1 + i].n));
+  spiderLegCells.forEach((cells, i) => packLegged(cells, spiderLegged(SPIDER_TIERS[i]), SPIDER_TIERS[i].n));
+
+  // ---- Skate ----
+  const hullCells: readonly UVRect[] = [UV_SKATE1, UV_SKATE2, UV_SKATE3, UV_SKATE4, UV_SKATE5];
+  MANTA_TIERS.forEach((T, i) => {
+    const a = manta(T);
+    const full = toCanvas(a.full);
+    part(hullCells[i], full);
+    const [bodyUV, wingUV] = MANTA_CELLS[i];
+    part(bodyUV, toCanvas(a.body));
+    part(wingUV, toCanvas(a.wing));
+    dropCell(MANTA_KINDS[i]);
+    teamCell(MANTA_KINDS[i], full, toCanvas(a.cell), hullCells[i], T.n);
+  });
+  // ---- Livewire ----
+  EEL_TIERS.forEach((T, i) => {
+    const a = eel(T);
+    const [headUV, bodyUV, tailUV] = UV_EEL_CELLS[i];
+    const head = toCanvas(a.head);
+    part(headUV, head);
+    part(bodyUV, toCanvas(a.body));
+    part(tailUV, toCanvas(a.tail));
+    dropCell(EEL_KINDS[i]);
+    teamCell(EEL_KINDS[i], head, toCanvas(a.cell), headUV, T.nh);
+  });
 
   // ---- Stoop ----
-  const fullCells: readonly UVRect[] = [UV_FLARE, UV_HORIZON, UV_ZENITH, UV_ANTUMBRA, UV_ECLIPSE];
+  const fullCells: readonly UVRect[] = [UV_STOOP1, UV_STOOP2, UV_STOOP3, UV_STOOP4, UV_STOOP5];
   STOOP_TIERS.forEach((T, i) => {
     const a = stoop(T);
     const full = toCanvas(a.full);
@@ -2755,130 +2884,130 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
 
   // the ground line
   parts([
-    [UV_DAGGER_LEG, UV_DAGGER_LEG_SIL, img.daggerLeg],
-    [UV_DAGGER_BASE, UV_DAGGER_BASE_SIL, img.daggerBase],
-    [UV_DAGGER_BODY, UV_DAGGER_BODY_SIL, img.dagger],
+    [UV_IRONHIDE1_LEG, UV_IRONHIDE1_LEG_SIL, img.ironhide1Leg],
+    [UV_IRONHIDE1_BASE, UV_IRONHIDE1_BASE_SIL, img.ironhide1Base],
+    [UV_IRONHIDE1_BODY, UV_IRONHIDE1_BODY_SIL, img.ironhide1],
     [UV_LARGE_WEAPON, UV_LARGE_WEAPON_SIL, img.largeWeapon],
-    [UV_MACE_LEG, UV_MACE_LEG_SIL, img.maceLeg],
-    [UV_MACE_BASE, UV_MACE_BASE_SIL, img.maceBase],
-    [UV_MACE_BODY, UV_MACE_BODY_SIL, img.mace],
+    [UV_IRONHIDE2_LEG, UV_IRONHIDE2_LEG_SIL, img.ironhide2Leg],
+    [UV_IRONHIDE2_BASE, UV_IRONHIDE2_BASE_SIL, img.ironhide2Base],
+    [UV_IRONHIDE2_BODY, UV_IRONHIDE2_BODY_SIL, img.ironhide2],
     [UV_FLAMETHROWER, UV_FLAMETHROWER_SIL, img.flamethrower],
-    [UV_FORTRESS_LEG, UV_FORTRESS_LEG_SIL, img.fortressLeg],
-    [UV_FORTRESS_BASE, UV_FORTRESS_BASE_SIL, img.fortressBase],
-    [UV_FORTRESS_BODY, UV_FORTRESS_BODY_SIL, img.fortress],
+    [UV_IRONHIDE3_LEG, UV_IRONHIDE3_LEG_SIL, img.ironhide3Leg],
+    [UV_IRONHIDE3_BASE, UV_IRONHIDE3_BASE_SIL, img.ironhide3Base],
+    [UV_IRONHIDE3_BODY, UV_IRONHIDE3_BODY_SIL, img.ironhide3],
     [UV_ARTILLERY, UV_ARTILLERY_SIL, img.artillery],
-    [UV_SCEPTER_BODY, UV_SCEPTER_BODY_SIL, img.scepter],
-    [UV_SCEPTER_LEG, UV_SCEPTER_LEG_SIL, img.scepterLeg],
-    [UV_SCEPTER_BASE, UV_SCEPTER_BASE_SIL, img.scepterBase],
-    [UV_SCEPTER_WEAPON, UV_SCEPTER_WEAPON_SIL, img.scepterWeapon],
-    [UV_SCEPTER_MOUNT, UV_SCEPTER_MOUNT_SIL, img.scepterMount],
-    [UV_REIGN_BODY, UV_REIGN_BODY_SIL, img.reign],
-    [UV_REIGN_BASE, UV_REIGN_BASE_SIL, img.reignBase],
-    [UV_REIGN_LEG, UV_REIGN_LEG_SIL, img.reignLeg],
-    [UV_REIGN_WEAPON, UV_REIGN_WEAPON_SIL, img.reignWeapon],
+    [UV_IRONHIDE4_BODY, UV_IRONHIDE4_BODY_SIL, img.ironhide4],
+    [UV_IRONHIDE4_LEG, UV_IRONHIDE4_LEG_SIL, img.ironhide4Leg],
+    [UV_IRONHIDE4_BASE, UV_IRONHIDE4_BASE_SIL, img.ironhide4Base],
+    [UV_IRONHIDE4_WEAPON, UV_IRONHIDE4_WEAPON_SIL, img.ironhide4Weapon],
+    [UV_IRONHIDE4_MOUNT, UV_IRONHIDE4_MOUNT_SIL, img.ironhide4Mount],
+    [UV_IRONHIDE5_BODY, UV_IRONHIDE5_BODY_SIL, img.ironhide5],
+    [UV_IRONHIDE5_BASE, UV_IRONHIDE5_BASE_SIL, img.ironhide5Base],
+    [UV_IRONHIDE5_LEG, UV_IRONHIDE5_LEG_SIL, img.ironhide5Leg],
+    [UV_IRONHIDE5_WEAPON, UV_IRONHIDE5_WEAPON_SIL, img.ironhide5Weapon],
   ]);
-  teamCell("dagger", img.dagger, img.powerCell, UV_DAGGER_BODY, 48);
-  teamCell("mace", img.mace, img.maceCell, UV_MACE_BODY, 64);
-  teamCell("fortress", img.fortress, img.fortressCell, UV_FORTRESS_BODY, 100, 80);
-  teamCell("scepter", img.scepter, img.scepterCell, UV_SCEPTER_BODY, 170, 140);
-  teamCell("reign", img.reign, img.reignCell, UV_REIGN_BODY, 214, 140);
+  teamCell("ironhide1", img.ironhide1, img.powerCell, UV_IRONHIDE1_BODY, 48);
+  teamCell("ironhide2", img.ironhide2, img.ironhide2Cell, UV_IRONHIDE2_BODY, 64);
+  teamCell("ironhide3", img.ironhide3, img.ironhide3Cell, UV_IRONHIDE3_BODY, 100, 80);
+  teamCell("ironhide4", img.ironhide4, img.ironhide4Cell, UV_IRONHIDE4_BODY, 170, 140);
+  teamCell("ironhide5", img.ironhide5, img.ironhide5Cell, UV_IRONHIDE5_BODY, 214, 140);
 
-  // the crawler line. The legged units' segments are drawn unrotated at
+  // the weaver1 line. The legged units' segments are drawn unrotated at
   // native size onto rects that ARE the art (see the UV note), and a
   // knee cap is packed upright because it is drawn unrotated
   parts([
-    [UV_CRAWLER_LEG, UV_CRAWLER_LEG_SIL, img.crawlerLeg],
-    [UV_CRAWLER_BASE, UV_CRAWLER_BASE_SIL, img.crawlerBase],
-    [UV_CRAWLER_BODY, UV_CRAWLER_BODY_SIL, img.crawler],
-    [UV_ATRAX_BODY, UV_ATRAX_BODY_SIL, img.atrax],
-    [UV_ATRAX_BASE, UV_ATRAX_BASE_SIL, img.atraxBase],
-    [UV_ATRAX_WEAPON, UV_ATRAX_WEAPON_SIL, img.atraxWeapon],
-    [UV_ATRAX_JOINT, UV_ATRAX_JOINT_SIL, img.atraxJoint],
-    [UV_ATRAX_FOOT, UV_ATRAX_FOOT_SIL, img.atraxFoot],
-    [UV_SPIROCT_BODY, UV_SPIROCT_BODY_SIL, img.spiroct],
-    [UV_SPIROCT_WEAPON, UV_SPIROCT_WEAPON_SIL, img.spiroctWeapon],
-    [UV_SPIROCT_MOUNT, UV_SPIROCT_MOUNT_SIL, img.spiroctMount],
-    [UV_SPIROCT_JOINT, UV_SPIROCT_JOINT_SIL, img.spiroctJoint],
-    [UV_SPIROCT_FOOT, UV_SPIROCT_FOOT_SIL, img.spiroctFoot],
-    [UV_ARKYID_BODY, UV_ARKYID_BODY_SIL, img.arkyid],
-    [UV_ARKYID_WEAPON, UV_ARKYID_WEAPON_SIL, img.spiroctWeapon],
-    [UV_ARKYID_MOUNT, UV_ARKYID_MOUNT_SIL, img.purpleMount],
-    [UV_ARKYID_FOOT, UV_ARKYID_FOOT_SIL, img.arkyidFoot],
-    [UV_ARKYID_JOINT_BASE, UV_ARKYID_JOINT_BASE_SIL, img.arkyidJointBase],
-    [UV_TOXOPID_BODY, UV_TOXOPID_BODY_SIL, img.toxopid],
-    [UV_TOXOPID_CANNON, UV_TOXOPID_CANNON_SIL, img.toxopidCannon],
-    [UV_TOXOPID_JOINT_BASE, UV_TOXOPID_JOINT_BASE_SIL, img.toxopidJointBase],
-    [UV_TOXOPID_FOOT, UV_TOXOPID_FOOT_SIL, img.toxopidFoot],
+    [UV_WEAVER1_LEG, UV_WEAVER1_LEG_SIL, img.weaver1Leg],
+    [UV_WEAVER1_BASE, UV_WEAVER1_BASE_SIL, img.weaver1Base],
+    [UV_WEAVER1_BODY, UV_WEAVER1_BODY_SIL, img.weaver1],
+    [UV_WEAVER2_BODY, UV_WEAVER2_BODY_SIL, img.weaver2],
+    [UV_WEAVER2_BASE, UV_WEAVER2_BASE_SIL, img.weaver2Base],
+    [UV_WEAVER2_WEAPON, UV_WEAVER2_WEAPON_SIL, img.weaver2Weapon],
+    [UV_WEAVER2_JOINT, UV_WEAVER2_JOINT_SIL, img.weaver2Joint],
+    [UV_WEAVER2_FOOT, UV_WEAVER2_FOOT_SIL, img.weaver2Foot],
+    [UV_WEAVER3_BODY, UV_WEAVER3_BODY_SIL, img.weaver3],
+    [UV_WEAVER3_WEAPON, UV_WEAVER3_WEAPON_SIL, img.weaver3Weapon],
+    [UV_WEAVER3_MOUNT, UV_WEAVER3_MOUNT_SIL, img.weaver3Mount],
+    [UV_WEAVER3_JOINT, UV_WEAVER3_JOINT_SIL, img.weaver3Joint],
+    [UV_WEAVER3_FOOT, UV_WEAVER3_FOOT_SIL, img.weaver3Foot],
+    [UV_WEAVER4_BODY, UV_WEAVER4_BODY_SIL, img.weaver4],
+    [UV_WEAVER4_WEAPON, UV_WEAVER4_WEAPON_SIL, img.weaver3Weapon],
+    [UV_WEAVER4_MOUNT, UV_WEAVER4_MOUNT_SIL, img.purpleMount],
+    [UV_WEAVER4_FOOT, UV_WEAVER4_FOOT_SIL, img.weaver4Foot],
+    [UV_WEAVER4_JOINT_BASE, UV_WEAVER4_JOINT_BASE_SIL, img.weaver4JointBase],
+    [UV_WEAVER5_BODY, UV_WEAVER5_BODY_SIL, img.weaver5],
+    [UV_WEAVER5_CANNON, UV_WEAVER5_CANNON_SIL, img.weaver5Cannon],
+    [UV_WEAVER5_JOINT_BASE, UV_WEAVER5_JOINT_BASE_SIL, img.weaver5JointBase],
+    [UV_WEAVER5_FOOT, UV_WEAVER5_FOOT_SIL, img.weaver5Foot],
   ]);
-  draw(UV_ATRAX_LEG, antialiased(img.atraxLeg));
-  draw(UV_ATRAX_LEG_BASE, antialiased(img.atraxLegBase));
-  draw(UV_SPIROCT_LEG, antialiased(img.spiroctLeg));
-  draw(UV_SPIROCT_LEG_BASE, antialiased(img.spiroctLegBase));
-  draw(UV_ARKYID_LEG, antialiased(img.arkyidLeg));
-  draw(UV_ARKYID_LEG_BASE, antialiased(img.arkyidLegBase));
-  draw(UV_TOXOPID_LEG, antialiased(img.toxopidLeg));
-  draw(UV_TOXOPID_LEG_BASE, antialiased(img.toxopidLegBase));
-  teamCell("crawler", img.crawler, img.crawlerCell, UV_CRAWLER_BODY, 48);
-  teamCell("atrax", img.atrax, img.atraxCell, UV_ATRAX_BODY, 88, 64);
-  teamCell("spiroct", img.spiroct, img.spiroctCell, UV_SPIROCT_BODY, 94, 75);
-  teamCell("arkyid", img.arkyid, img.arkyidCell, UV_ARKYID_BODY, 128);
-  teamCell("toxopid", img.toxopid, img.toxopidCell, UV_TOXOPID_BODY, 160, 190);
+  draw(UV_WEAVER2_LEG, antialiased(img.weaver2Leg));
+  draw(UV_WEAVER2_LEG_BASE, antialiased(img.weaver2LegBase));
+  draw(UV_WEAVER3_LEG, antialiased(img.weaver3Leg));
+  draw(UV_WEAVER3_LEG_BASE, antialiased(img.weaver3LegBase));
+  draw(UV_WEAVER4_LEG, antialiased(img.weaver4Leg));
+  draw(UV_WEAVER4_LEG_BASE, antialiased(img.weaver4LegBase));
+  draw(UV_WEAVER5_LEG, antialiased(img.weaver5Leg));
+  draw(UV_WEAVER5_LEG_BASE, antialiased(img.weaver5LegBase));
+  teamCell("weaver1", img.weaver1, img.weaver1Cell, UV_WEAVER1_BODY, 48);
+  teamCell("weaver2", img.weaver2, img.weaver2Cell, UV_WEAVER2_BODY, 88, 64);
+  teamCell("weaver3", img.weaver3, img.weaver3Cell, UV_WEAVER3_BODY, 94, 75);
+  teamCell("weaver4", img.weaver4, img.weaver4Cell, UV_WEAVER4_BODY, 128);
+  teamCell("weaver5", img.weaver5, img.weaver5Cell, UV_WEAVER5_BODY, 160, 190);
 
   // the support line
   parts([
-    [UV_NOVA_LEG, UV_NOVA_LEG_SIL, img.novaLeg],
-    [UV_NOVA_BASE, UV_NOVA_BASE_SIL, img.novaBase],
-    [UV_NOVA_BODY, UV_NOVA_BODY_SIL, img.nova],
+    [UV_STARHART1_LEG, UV_STARHART1_LEG_SIL, img.starhart1Leg],
+    [UV_STARHART1_BASE, UV_STARHART1_BASE_SIL, img.starhart1Base],
+    [UV_STARHART1_BODY, UV_STARHART1_BODY_SIL, img.starhart1],
     [UV_HEAL_WEAPON, UV_HEAL_WEAPON_SIL, img.healWeapon],
-    [UV_PULSAR_LEG, UV_PULSAR_LEG_SIL, img.pulsarLeg],
-    [UV_PULSAR_BASE, UV_PULSAR_BASE_SIL, img.pulsarBase],
-    [UV_PULSAR_BODY, UV_PULSAR_BODY_SIL, img.pulsar],
+    [UV_STARHART2_LEG, UV_STARHART2_LEG_SIL, img.starhart2Leg],
+    [UV_STARHART2_BASE, UV_STARHART2_BASE_SIL, img.starhart2Base],
+    [UV_STARHART2_BODY, UV_STARHART2_BODY_SIL, img.starhart2],
     [UV_HEAL_SHOTGUN, UV_HEAL_SHOTGUN_SIL, img.healShotgun],
-    [UV_QUASAR_LEG, UV_QUASAR_LEG_SIL, img.quasarLeg],
-    [UV_QUASAR_BASE, UV_QUASAR_BASE_SIL, img.quasarBase],
-    [UV_QUASAR_BODY, UV_QUASAR_BODY_SIL, img.quasar],
+    [UV_STARHART3_LEG, UV_STARHART3_LEG_SIL, img.starhart3Leg],
+    [UV_STARHART3_BASE, UV_STARHART3_BASE_SIL, img.starhart3Base],
+    [UV_STARHART3_BODY, UV_STARHART3_BODY_SIL, img.starhart3],
     [UV_BEAM_WEAPON, UV_BEAM_WEAPON_SIL, img.beamWeapon],
-    [UV_VELA_BODY, UV_VELA_BODY_SIL, img.vela],
-    [UV_VELA_LEG, UV_VELA_LEG_SIL, img.velaLeg],
-    [UV_VELA_BASE, UV_VELA_BASE_SIL, img.velaBase],
+    [UV_STARHART4_BODY, UV_STARHART4_BODY_SIL, img.starhart4],
+    [UV_STARHART4_LEG, UV_STARHART4_LEG_SIL, img.starhart4Leg],
+    [UV_STARHART4_BASE, UV_STARHART4_BASE_SIL, img.starhart4Base],
     [UV_REPAIR_BEAM, UV_REPAIR_BEAM_SIL, img.repairBeam],
-    [UV_CORVUS_BODY, UV_CORVUS_BODY_SIL, img.corvus],
-    [UV_CORVUS_BASE, UV_CORVUS_BASE_SIL, img.corvusBase],
-    [UV_CORVUS_JOINT, UV_CORVUS_JOINT_SIL, img.corvusJoint],
-    [UV_CORVUS_JOINT_BASE, UV_CORVUS_JOINT_BASE_SIL, img.corvusJointBase],
-    [UV_CORVUS_FOOT, UV_CORVUS_FOOT_SIL, img.corvusFoot],
+    [UV_STARHART5_BODY, UV_STARHART5_BODY_SIL, img.starhart5],
+    [UV_STARHART5_BASE, UV_STARHART5_BASE_SIL, img.starhart5Base],
+    [UV_STARHART5_JOINT, UV_STARHART5_JOINT_SIL, img.starhart5Joint],
+    [UV_STARHART5_JOINT_BASE, UV_STARHART5_JOINT_BASE_SIL, img.starhart5JointBase],
+    [UV_STARHART5_FOOT, UV_STARHART5_FOOT_SIL, img.starhart5Foot],
   ]);
-  draw(UV_CORVUS_LEG, antialiased(img.corvusLeg));
-  draw(UV_CORVUS_LEG_BASE, antialiased(img.corvusLegBase));
-  teamCell("nova", img.nova, img.novaCell, UV_NOVA_BODY, 56);
-  teamCell("pulsar", img.pulsar, img.pulsarCell, UV_PULSAR_BODY, 68, 58);
-  teamCell("quasar", img.quasar, img.quasarCell, UV_QUASAR_BODY, 80);
-  teamCell("vela", img.vela, img.velaCell, UV_VELA_BODY, 170, 140);
-  teamCell("corvus", img.corvus, img.corvusCell, UV_CORVUS_BODY, 214, 140);
+  draw(UV_STARHART5_LEG, antialiased(img.starhart5Leg));
+  draw(UV_STARHART5_LEG_BASE, antialiased(img.starhart5LegBase));
+  teamCell("starhart1", img.starhart1, img.starhart1Cell, UV_STARHART1_BODY, 56);
+  teamCell("starhart2", img.starhart2, img.starhart2Cell, UV_STARHART2_BODY, 68, 58);
+  teamCell("starhart3", img.starhart3, img.starhart3Cell, UV_STARHART3_BODY, 80);
+  teamCell("starhart4", img.starhart4, img.starhart4Cell, UV_STARHART4_BODY, 170, 140);
+  teamCell("starhart5", img.starhart5, img.starhart5Cell, UV_STARHART5_BODY, 214, 140);
 
-  // the flyers and the naval hulls: one outlined quad each. The flare
-  // and the dagger have no cell art of their own and fall back to
+  // the flyers and the naval hulls: one outlined quad each. The stoop1
+  // and the ironhide1 have no cell art of their own and fall back to
   // power-cell, exactly as UnitType.load does
   const hull = (kind: UnitKind, src: HTMLImageElement, cell: HTMLImageElement, uv: UVRect): void => {
     draw(uv, outlinedUnit(src));
     teamCell(kind, src, cell, uv, srcW(src), srcH(src));
   };
-  hull("flare", img.flare, img.powerCell, UV_FLARE);
-  hull("horizon", img.horizon, img.horizonCell, UV_HORIZON);
-  hull("zenith", img.zenith, img.zenithCell, UV_ZENITH);
-  hull("antumbra", img.antumbra, img.antumbraCell, UV_ANTUMBRA);
-  hull("disrupt", img.disrupt, img.disruptCell, UV_DISRUPT);
-  hull("eclipse", img.eclipse, img.eclipseCell, UV_ECLIPSE);
-  hull("risso", img.risso, img.rissoCell, UV_RISSO);
-  hull("minke", img.minke, img.minkeCell, UV_MINKE);
-  hull("retusa", img.retusa, img.retusaCell, UV_RETUSA);
-  hull("oxynoe", img.oxynoe, img.oxynoeCell, UV_OXYNOE);
-  hull("bryde", img.bryde, img.brydeCell, UV_BRYDE);
-  hull("cyerce", img.cyerce, img.cyerceCell, UV_CYERCE);
-  hull("sei", img.sei, img.seiCell, UV_SEI);
-  hull("aegires", img.aegires, img.aegiresCell, UV_AEGIRES);
-  hull("omura", img.omura, img.omuraCell, UV_OMURA);
-  hull("navanax", img.navanax, img.navanaxCell, UV_NAVANAX);
+  hull("stoop1", img.stoop1, img.powerCell, UV_STOOP1);
+  hull("stoop2", img.stoop2, img.stoop2Cell, UV_STOOP2);
+  hull("stoop3", img.stoop3, img.stoop3Cell, UV_STOOP3);
+  hull("stoop4", img.stoop4, img.stoop4Cell, UV_STOOP4);
+  hull("boss", img.boss, img.bossCell, UV_BOSS);
+  hull("stoop5", img.stoop5, img.stoop5Cell, UV_STOOP5);
+  hull("skate1", img.skate1, img.harpoon1Cell, UV_SKATE1);
+  hull("skate2", img.skate2, img.harpoon2Cell, UV_SKATE2);
+  hull("livewire1", img.livewire1, img.wraith1Cell, UV_LIVEWIRE1);
+  hull("livewire2", img.livewire2, img.wraith2Cell, UV_LIVEWIRE2);
+  hull("skate3", img.skate3, img.harpoon3Cell, UV_SKATE3);
+  hull("livewire3", img.livewire3, img.wraith3Cell, UV_LIVEWIRE3);
+  hull("skate4", img.skate4, img.harpoon4Cell, UV_SKATE4);
+  hull("livewire4", img.livewire4, img.wraith4Cell, UV_LIVEWIRE4);
+  hull("skate5", img.skate5, img.harpoon5Cell, UV_SKATE5);
+  hull("livewire5", img.livewire5, img.wraith5Cell, UV_LIVEWIRE5);
 
   // ---------- the bullets ----------
   // white and at source size, facing +x. See the UV_BULLET note: the
@@ -2897,8 +3026,8 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   draw(UV_MINE_BULLET_BACK, antialiased(img.mineBulletBack));
   draw(UV_MISSILE_LARGE, antialiased(img.missileLarge));
   draw(UV_MISSILE_LARGE_BACK, antialiased(img.missileLargeBack));
-  // the disrupt missile is a unit: outlined like one
-  draw(UV_DISRUPT_MISSILE, antialiased(outlined(img.disruptMissile, "#2d2f39", UNIT_OUTLINE_R)));
+  // the boss missile is a unit: outlined like one
+  draw(UV_BOSS_MISSILE, antialiased(outlined(img.bossMissile, "#2d2f39", UNIT_OUTLINE_R)));
   // the sap beam's cap, unrotated — a disc — and its 4x48 cross-section
   // strip exactly on its rect
   draw(UV_LASER_END, antialiased(img.laserEnd));

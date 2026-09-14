@@ -1,14 +1,11 @@
 import {
-  ALL_MOVE_BITS,
   CORE_HP,
   INF,
-  LAYER_BIT,
   MOVE_LAYERS,
   NAVAL_LAND_SPEED,
   NAVAL_WATER_SPEED,
   NCELLS,
   type MoveLayer,
-  type ZoneKind,
   BURN_DPS as BURN_DPS_IMPORT,
   BURN_FX_CHANCE as BURN_FX_CHANCE_IMPORT,
   AURA_LINGER,
@@ -81,6 +78,7 @@ import {
   WAVE_GAP_OPENING,
   WAVE_RELEASE_SECONDS,
   type LegSpec,
+  type SegmentSpec,
   type LevelSpec,
   type UnitKind,
   waveSpawnRate,
@@ -150,7 +148,7 @@ import {
   VOLATILE_DMG,
   VOLATILE_RADIUS,
 } from "./mutation";
-import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap, type SpawnCircle } from "./maps";
+import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
 import {
   applyTurretMods,
@@ -181,7 +179,7 @@ import {
   type RelicsHeld,
 } from "./relics";
 import { RICH_SCRAP, SCRAP_START, sellValue } from "./economy";
-import { airWalkMask, isBuildableWall, isWaterFloor, navalWalkMask, WALL_DEEP, type Terrain } from "./terrain";
+import { airWalkMask, isBuildableWall, isWaterFloor, navalWalkMask, type Terrain } from "./terrain";
 import {
   BOMBLET_LOOK,
   MAX_WEAPONS,
@@ -295,7 +293,7 @@ const PHYS_SCL = 1.25;
  * How far a unit of each kind has to look to find something it might be
  * touching: its own physics radius plus the widest ON ITS OWN LAYER, since
  * ground and air pass straight through one another. That layer split is
- * what keeps the eclipse's 7.25-block hitbox — nearly twice the reign, the
+ * what keeps the stoop5's 7.25-block hitbox — nearly twice the ironhide5, the
  * widest thing that walks — off the ground swarm's bill entirely.
  */
 const KIND_REACH = UNIT_KINDS.map(
@@ -313,8 +311,8 @@ const KIND_REACH = UNIT_KINDS.map(
  * candidate set toward what is actually in reach but walks more buckets.
  *
  * This used to be the smallest KIND_REACH (~83px), which is still sized
- * by the widest unit on the ROSTER's layer: a dagger checking neighbours
- * within ~30px swept a 250px window for them, and in a thousand-dagger
+ * by the widest unit on the ROSTER's layer: an ironhide1 checking neighbours
+ * within ~30px swept a 250px window for them, and in a thousand-ironhide1
  * crowd the physics pass was mostly distance tests that could never hit.
  * 32px (1.6 cells) puts the common span at 96px instead; the rare wide
  * units simply take a larger span, which is what the span machinery is
@@ -514,11 +512,11 @@ const KIND_FLYING: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].fl
 const KIND_RADIUS = Float32Array.from(UNIT_KINDS, (k) => UNIT_STATS[k].radius);
 /**
  * The physics size split: the roster's radii cluster into a numerous small
- * class (10..18.75px — daggers to spirocts, the actual swarm) and a sparse
- * heavy class (25px up — the zenith and the T4/T5 hulls).
+ * class (10..18.75px — runts to elites, the actual swarm) and a sparse
+ * heavy class (25px up — the stoop3 and the T4/T5 hulls).
  * Cut between the clusters. A HEAVY unit owns every pair it is part of in
  * the physics pass, so the swarm's scan window is sized by the widest
- * SMALL unit alive rather than by the reign three lanes over; the handful
+ * SMALL unit alive rather than by the ironhide5 three lanes over; the handful
  * of heavies scan the wide window themselves.
  */
 const HEAVY_R = 20;
@@ -530,16 +528,16 @@ const KIND_REPAIR = UNIT_KINDS.map((k) => UNIT_STATS[k].repairField ?? null);
 const KIND_SHIELD = UNIT_KINDS.map((k) => UNIT_STATS[k].shieldField ?? null);
 const KIND_ENERGY = UNIT_KINDS.map((k) => UNIT_STATS[k].energyField ?? null);
 const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
-/** the two STAMP auras (levels.ts armorField / hasteField): the reign's
- *  plating and the spiroct's pace, one carrier each at the moment */
+/** the two STAMP auras (levels.ts armorField / hasteField): the ironhide5's
+ *  plating and the weaver3's pace, one carrier each at the moment */
 const KIND_ARMOR_F = UNIT_KINDS.map((k) => UNIT_STATS[k].armorField ?? null);
 const KIND_HASTE_F = UNIT_KINDS.map((k) => UNIT_STATS[k].hasteField ?? null);
 /** ...and the two the sky and the sea carry (levels.ts jamField /
- *  wakeField): the antumbra's stamp on the BUILDINGS under it, and the
- *  sei's on the hulls around it */
+ *  wakeField): the stoop4's stamp on the BUILDINGS under it, and the
+ *  skate4's on the hulls around it */
 const KIND_JAM_F = UNIT_KINDS.map((k) => UNIT_STATS[k].jamField ?? null);
 const KIND_WAKE_F = UNIT_KINDS.map((k) => UNIT_STATS[k].wakeField ?? null);
-/** the Harpoon fleet's two stamps: the bryde's reach and the sei's drill */
+/** the Harpoon fleet's two stamps: the skate3's reach and the skate4's drill */
 const KIND_SPOTTER_F = UNIT_KINDS.map((k) => UNIT_STATS[k].spotterField ?? null);
 const KIND_DRILL_F = UNIT_KINDS.map((k) => UNIT_STATS[k].drillField ?? null);
 /** the three families' own traits (levels.ts): veterancy, blink, cloak,
@@ -553,10 +551,12 @@ const BOSS_KINDS = KIND_BOSS.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
 /** the pad list a brood spawn is handed — it picks its own spot, so there
  *  are no doors to draw from and nothing to allocate per body */
 const EMPTY_PADS: readonly number[] = [];
+/** how many spawn mouths the route overlay draws a line from (Sim.spawnMouths) */
+const MAX_MOUTHS = 12;
 /**
  * MITOSIS (mutation.ts): the tier-1 kinds a death may break into, grouped
- * by the movement layer they travel on — ground gets dagger, crawler and
- * nova, air gets flare, water gets risso and retusa.
+ * by the movement layer they travel on — ground gets ironhide1, weaver1 and
+ * starhart1, air gets stoop1, water gets skate1 and livewire1.
  *
  * THE LAYER IS THE WHOLE FILTER and it is not a convenience. A brood is
  * dropped where its parent fell, so a kind that cannot stand there is a
@@ -565,7 +565,7 @@ const EMPTY_PADS: readonly number[] = [];
  * parent's own layer means the brood always has somewhere to walk.
  *
  * Bosses are out of the roster (never of the brood — a boss is an
- * authored event, not something a mace leaves behind), which today
+ * authored event, not something an ironhide2 leaves behind), which today
  * removes nothing: the one boss kind is T5.
  */
 const MITOSIS_KINDS: Record<MoveLayer, readonly number[]> = (() => {
@@ -624,14 +624,16 @@ const KIND_LAND_SPEED = Float32Array.from(
 /** the gait of every legged kind, indexed like UNIT_KINDS — null for the
  * mechs and flyers, whose animation is one sliding pair of leg sprites */
 const KIND_LEGS = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
+/** the worm rig of every segmented kind (levels.ts SegmentSpec), null for the rest */
+const KIND_SEGS = UNIT_KINDS.map((k) => UNIT_STATS[k].segments ?? null);
 /** the wake of every naval kind, indexed like UNIT_KINDS — null for
  *  everything that is not a hull */
 const KIND_WAKE = UNIT_KINDS.map((k) => UNIT_STATS[k].wake ?? null);
 /**
  * How many points of a hull's wake the sim actually keeps.
  *
- * Mindustry's Trail holds one point PER TICK — 20 for a risso, 70 for an
- * omura — and redraws the lot every frame. That is a fine deal for the
+ * Mindustry's Trail holds one point PER TICK — 20 for a skate1, 70 for an
+ * skate5 — and redraws the lot every frame. That is a fine deal for the
  * handful of boats a Mindustry sector fields and a poor one for a wave of
  * them here, so the path is SUBSAMPLED: eight points spread over the same
  * span of history the original keeps, which is 8 quads a side instead of
@@ -653,11 +655,13 @@ const KIND_WAKE_DT = Float32Array.from(UNIT_KINDS, (k) => {
 /** widest leg count on the roster: the stride of the per-leg arrays */
 export const MAX_LEGS = Math.max(1, ...KIND_LEGS.map((l) => l?.count ?? 0));
 // ulegMove packs one swing bit per leg into a Uint8Array, so eight legs is
-// the roster's ceiling — and the toxopid sits exactly on it. A ninth would
+// the roster's ceiling — and the weaver5 sits exactly on it. A ninth would
 // not fail anywhere: the bit would truncate silently, that leg would never
 // register a landing, and it would simply stop throwing dust. Widen
 // ulegMove to a Uint16Array if a unit ever needs more.
 if (MAX_LEGS > 8) throw new Error(`MAX_LEGS ${MAX_LEGS} > 8: widen Sim.ulegMove past Uint8Array`);
+/** longest chain on the roster: the stride of the per-segment arrays */
+export const MAX_SEGS = Math.max(1, ...KIND_SEGS.map((s) => s?.count ?? 0));
 const TAU = Math.PI * 2;
 
 /**
@@ -736,7 +740,7 @@ const HAS_ABILITIES =
 const HAS_ARMOR_AURA = KIND_ARMOR_F.some(Boolean);
 
 /** LEADERSHIP (mutation.ts): the bodies that give the order. Tier five is
- *  the roster's top rung — the reigns, toxopids, correspondingly huge
+ *  the roster's top rung — the apexs, apexs, correspondingly huge
  *  hulls and flyers, and the boss — so the rule turns itself on exactly
  *  where a wave is at its heaviest and is dead weight everywhere else */
 const KIND_T5 = Uint8Array.from(UNIT_KINDS, (k) => (UNIT_STATS[k].tier === 5 ? 1 : 0));
@@ -756,8 +760,8 @@ const HAS_CLOAK = KIND_CLOAK.some(Boolean);
 const ROT_SPD = ((5 * Math.PI) / 180) * 60;
 /**
  * UnitType.rotateSpeed per kind, rad/s — how fast the TORSO comes round.
- * Much of the roster above the T1s overrides it (fortress, atrax and
- * spiroct at 3, the horizon at 4.5); kinds that state none take the
+ * Much of the roster above the T1s overrides it (ironhide3, weaver2 and
+ * weaver3 at 3, the stoop2 at 4.5); kinds that state none take the
  * default, and the chassis under all of them keeps baseRotateSpeed
  * either way
  */
@@ -884,8 +888,8 @@ export class Sim {
   readonly uburn = new Float32Array(MAX_UNITS);
   /**
    * THE TWO STAMPED AURAS (constants.ts AURA_LINGER), each a value and the
-   * seconds it has left to run: extra armour from a reign, a speed
-   * multiplier from a spiroct. A carrier's pulse writes both; nothing else
+   * seconds it has left to run: extra armour from an ironhide5, a speed
+   * multiplier from a weaver3. A carrier's pulse writes both; nothing else
    * ever does, and a body with an expired clock reads as if it had never
    * been stamped.
    *
@@ -894,7 +898,7 @@ export class Sim {
    * every body pays one float compare — the other way round is 22,000
    * searches a frame for a buff almost nobody is in range of.
    *
-   * THEY ARE MAXIMA, NOT SUMS. Two reigns walking together do not stack
+   * THEY ARE MAXIMA, NOT SUMS. Two apexs walking together do not stack
    * their plating: the stronger stamp wins and the clock refreshes. An
    * aura that summed would make a T5 pair the answer to every board, and
    * the family trait is meant to be a rule about calibre rather than a
@@ -975,7 +979,7 @@ export class Sim {
    *
    * IT IS THE TERMINATION GUARANTEE, and it is a property of the body
    * rather than arithmetic on the tier table. A brood that could brood
-   * again is a chain with no upper bound — one dagger, one dagger, forever
+   * again is a chain with no upper bound — one ironhide1, one ironhide1, forever
    * — and a wave that can never be finished is not a harder wave. Saying
    * it here says it once and says it for good: whatever the table is
    * edited to, whatever tiers are added, whatever a dashboard bends, the
@@ -1064,9 +1068,9 @@ export class Sim {
   private readonly utT = new Float32Array(MAX_UNITS);
   /**
    * The held beam's clock and the charge's — public, because the renderer
-   * draws both LIVE off the unit rather than off the effect pool: a vela's
+   * draws both LIVE off the unit rather than off the effect pool: a starhart4's
    * beam is a thing the unit is doing for two and a half seconds, and the
-   * ring a corvus gathers before it fires follows the hull. `ubeamT` is
+   * ring a starhart5 gathers before it fires follows the hull. `ubeamT` is
    * seconds of beam left, `ucharge` seconds of charge left (weapons.ts
    * `charge`); `uheldRot` the heading the beam or charge is aimed on,
    * fixed when it began. UNIT_HELD names the weapon
@@ -1085,7 +1089,7 @@ export class Sim {
   private readonly cellTower: (Structure | null)[] = new Array<Structure | null>(NCELLS).fill(null);
   /** the swarm's bullets, missiles and shells in flight (see EnemyShot) */
   readonly shots: EnemyShot[] = [];
-  /** crawlers that went off on a structure: gone, and paid for by no one */
+  /** runts that went off on a structure: gone, and paid for by no one */
   exploded = 0;
   /** KIND_HEAVY[ukind[i]], same reasoning — the physics split reads it per
    * candidate */
@@ -1133,6 +1137,11 @@ export class Sim {
    * the direction of travel, so feet land ahead of a walking body */
   readonly ulegOX = new Float32Array(MAX_UNITS);
   readonly ulegOY = new Float32Array(MAX_UNITS);
+  /** THE WORM RIG'S CHAIN (levels.ts SegmentSpec): every segment's world
+   *  position, MAX_SEGS per unit, dragged behind the head by
+   *  updateSegments and read back by Renderer.pushSegments */
+  readonly usegX = new Float32Array(MAX_UNITS * MAX_SEGS);
+  readonly usegY = new Float32Array(MAX_UNITS * MAX_SEGS);
   // --- naval hulls (UnitStats.wake) ---
   // The path the hull has taken, WAKE_PTS world points per unit, oldest
   // first: the wake is drawn along it. Like a leg's foot these are world
@@ -1514,7 +1523,7 @@ export class Sim {
    * The largest radius STANDING on each layer this tick, and the per-kind
    * physics spans derived from it (see updateAliveBounds). The static
    * KIND_SPAN / HIT_SPAN bounds are sized to the biggest unit on the whole
-   * roster, so every dagger's broad phase paid scan area for a toxopid
+   * roster, so every ironhide1's broad phase paid scan area for a weaver5
    * that is almost never on the field; these shrink each bound to what is
    * actually alive, which changes no query's RESULT — only its cost.
    */
@@ -1561,26 +1570,23 @@ export class Sim {
    */
   readonly navalField = new FlowField();
   /**
-   * The air layer's doors: every cell an air zone covers, rock included.
+   * The air layer's doors: the spawn tiles a flyer may use (padMaskFor).
    * Flyers keep their pads here rather than in `airField.spawnPts` because
-   * a door is not a route — nothing about the terrain constrains where a
-   * flyer may be DROPPED, and a pad on a peak is a perfectly good one. The
-   * field below decides where it goes from there, not whether it may land.
+   * a door is not a route — what stops a flyer flying is nothing, so the
+   * field below decides where it goes from a tile, not whether it may land
+   * on one.
    */
   private airPads: number[] = [];
   /**
    * ...and the part of that list that is OPEN SKY: a pad the air field has
-   * a heading at. A drop zone is rasterized terrain-blind, so a circle
-   * painted over the rim or across a massif has cells buried in rock, and a
-   * flyer entering on one would fly the fallback straight line out of the
-   * mountain before its route ever began. Entering on the open part of the
-   * same circle puts it on its road at once — which is what the other two
-   * layers already do (FlowField.spawnPts drops a pad that cannot reach a
-   * goal). A zone with NO open cell keeps every cell it has: a door that
-   * only opens inside a peak is still a door.
+   * a heading at. Spawn tiles are open ground by construction (maps.ts
+   * clampSpawn), so this is rarely smaller — what it still catches is a
+   * pocket of tiles ringed by rock, which would drop a flyer with no route
+   * out of it and leave it flying the fallback straight line. A layer with
+   * NO open pad keeps every pad it has: a door that only opens inside a
+   * pocket is still a door.
    */
   private airOpen: number[] = [];
-  private bossAirOpen: number[] = [];
   /**
    * THE FLYERS' FIELD — the third of the three, over airWalkMask: hills
    * are its walls, and nothing else on the map is. A flyer used to hold
@@ -1608,14 +1614,6 @@ export class Sim {
   private hills: Uint8Array = new Uint8Array(NCELLS);
   /** the player's BUILDINGS currently selected — a gathered row to sell or inspect */
   private readonly selStructs = new Set<Structure>();
-  /**
-   * The boss door's cells, split by the layer that may use them: a boss
-   * zone is terrain-blind like an air zone, but a WALKING boss still has to
-   * land on ground it can stand on, so the filtering happens per layer here
-   * rather than in the rasterizer.
-   */
-  private bossPads: Record<MoveLayer, number[]> = { ground: [], air: [], water: [] };
-
   // seal-test cache: hover asks canPlace every frame, and the test costs two
   // flow-field recomputes — remember the verdict for the last cell asked
   /**
@@ -1657,8 +1655,6 @@ export class Sim {
    * however long the route behind it takes to catch up.
    */
   private unstickPending = false;
-  /** the ground drop zones, as a mask — nothing may be built on one */
-  private groundPads: Uint8Array = new Uint8Array(NCELLS);
 
   /** a Sim is always born on a level — building a default world and then
    * calling loadLevel solved the flow field twice and threw the first away */
@@ -1759,16 +1755,21 @@ export class Sim {
     for (let y = b.y; y < b.y + b.size; y++)
       for (let x = b.x; x < b.x + b.size; x++) this.cellTower[y * COLS + x] = this.core;
     this.buildPads();
-    // the walkers' field: rock and structures block it, it enters by the
-    // ground zones, and it aims at the core (coreGoal)
-    this.groundPads = this.padMaskFor("ground");
+    // a new map is a new set of mouths, and a new pad list for the hulls
+    // to be cut from (waterPads)
+    this.mouths = null;
+    this.routes = null;
+    this.navalPadsFrom = null;
     // a new map is a new board: nothing is pending on it
     this.fieldDirty = false;
     this.navalDirty = false;
     this.unstickPending = false;
     this.fieldQuiet = 0;
     this.fieldStale = 0;
-    this.field.rebuildWalk(this.footprints(), this.terrain.blocked, this.groundPads, this.coreGoal());
+    // the walkers' field: rock and structures block it, it enters on the
+    // dry spawn tiles, and it aims at the core (coreGoal)
+    this.field.rebuildWalk(this.footprints(), this.terrain.blocked,
+      this.padMaskFor("ground"), this.coreGoal());
     // THE NAVAL TANKS' FIELD. It used to be the mirror image of the
     // walkers' — dry land its wall, the water nearest the core its goal,
     // and no field at all on a map with no sea. It is a SUPERSET of the
@@ -1793,11 +1794,10 @@ export class Sim {
     // rather than in buildPads: a pad is open sky only once there is a
     // field to ask
     this.airOpen = this.openSky(this.airPads);
-    this.bossAirOpen = this.openSky(this.bossPads.air);
     // fail LOUDLY on a broken map: with zero doors nothing ever spawns and
     // a wave script stalls forever, which reads as a scheduler bug
     if (this.airPads.length === 0 && this.field.spawnPts.length === 0)
-      throw new Error('map "' + doc.id + '" has no drop zones — paint some in the editor');
+      throw new Error('map "' + doc.id + '" has no spawn tiles — paint some in the editor');
     // a core sitting on rock is always an authoring slip (a map that moved
     // its base without carving the basin, say) and it reads as "the waves
     // never finish" rather than as a broken map — so say it out loud
@@ -1820,22 +1820,21 @@ export class Sim {
       ["air", this.airPads.length],
       ["water", this.navalField.spawnPts.length],
     ];
-    // ...and an AIR door with no open sky in it. Not broken — a flyer
-    // entering inside a peak still gets out, it just flies the fallback
-    // straight line to do it, which is the one case where the swarm's route
-    // is not the route the overlay and the map imply. Worth saying: moving
-    // the circle a few cells off the rim is all it takes.
+    // ...and an AIR door with no open sky in it. Not broken — a flyer in a
+    // rock pocket still gets out, it just flies the fallback straight line
+    // to do it, which is the one case where the swarm's route is not the
+    // route the overlay and the map imply.
     if (this.airPads.length > 0 && this.airOpen.length === 0 && this.scriptSends("air"))
       console.warn(
         'map "' + doc.id +
-          '": every air drop zone is buried in rock — flyers will enter inside it and fly straight out' +
-          " before they pick up a route. Move the circles onto open sky.",
+          '": every spawn tile is walled in — flyers will enter inside the pocket and fly straight out' +
+          " before they pick up a route. Paint some tiles on open ground.",
       );
     for (const [layer, pads] of doors)
       if (pads === 0 && this.scriptSends(layer))
         console.warn(
           'map "' + doc.id + '" has no ' + layer +
-            " drop zone that reaches an exit, but its script sends " + layer + " units",
+            " spawn tile that reaches an exit, but its script sends " + layer + " units",
         );
     this.stageScript();
     this.aliveByKind.fill(0);
@@ -1966,67 +1965,87 @@ export class Sim {
   }
 
   /**
-   * THE DOORS ONE LAYER MAY ENTER BY, as a mask a FlowField can take.
+   * THE SPAWN TILES ONE LAYER MAY ENTER ON, as a mask a FlowField takes.
    *
-   * A layer's own zones — and THE NAVAL LAYER ALSO TAKES THE GROUND'S: an
-   * amphibious tank drives out of a ground door as readily as it swims out
-   * of a water one, so a map with its sea in one corner and its doors on
-   * the road still sends its tanks up the road.
+   * The map paints ONE spawn layer and the layer sorts itself out of it:
    *
-   * Every layer then falls back to every non-boss zone the map paints when
-   * its own come to nothing. THAT IS WHAT MAKES EVERY FAMILY LANDABLE ON
-   * EVERY MAP: a map with no water zone still lands naval tanks, one with
-   * no air zone still lands flyers. The field filters the mask against its
-   * own passability and its own reachability afterwards
-   * (FlowField.spawnPts), so a fallback pad the layer cannot actually use
-   * is dropped rather than stranding whatever enters on it. The boss door
-   * stays out of the fallback — it is a door held back from the ordinary
-   * swarm, and a fallback that swallowed it would hand it to everything.
+   *  - a WALKER or a FLYER takes the DRY tiles. Sending them in over the
+   *    water was never what a shoreline of pads meant — the wet tiles are
+   *    the channel, and a walker wading out of one enters the map already
+   *    in the sea.
+   *  - a HULL takes them all, and PREFERS the wet ones once the field has
+   *    said which of them it can actually sail from (navalWaterPads). It
+   *    is amphibious, so a beach is a door it can use; the water is just
+   *    the door it would rather have.
+   *
+   * Each falls back to the whole layer when its own share is empty, so a
+   * map painted entirely on its shallows still lands walkers and a map
+   * with no water at all still lands hulls. THAT IS WHAT MAKES EVERY
+   * FAMILY LANDABLE ON EVERY MAP. The field filters the mask against its
+   * own passability and reachability afterwards (FlowField.spawnPts), so a
+   * fallback tile the layer cannot actually use is dropped rather than
+   * stranding whatever entered on it.
    */
   private padMaskFor(layer: MoveLayer): Uint8Array {
     const src = this.terrain.spawn;
-    const bits = layer === "water" ? LAYER_BIT.water | LAYER_BIT.ground : LAYER_BIT[layer];
+    const { floor } = this.terrain;
     const out = new Uint8Array(NCELLS);
+    if (layer === "water") {
+      out.set(src);
+      return out;
+    }
     let any = false;
     for (let i = 0; i < NCELLS; i++)
-      if (src[i] & bits) {
+      if (src[i] && !isWaterFloor(floor[i])) {
         out[i] = 1;
         any = true;
       }
-    if (!any) for (let i = 0; i < NCELLS; i++) if (src[i] & ALL_MOVE_BITS) out[i] = 1;
+    if (!any) out.set(src);
     return out;
   }
 
   /**
-   * The pad lists the two field-less cases need: the flyers' doors, and the
-   * boss's door split by layer.
+   * THE HULLS' PREFERRED DOORS: the wet ones among the naval field's, cut
+   * from the pad list the field just published.
    *
-   * The air doors come through padMaskFor, so they take the same fallback
-   * every layer does — a map with no air zone lands its flyers on whatever
-   * doors it does paint rather than sending nothing at all.
+   * Derived rather than masked because the preference has to survive the
+   * field's own filtering: a mask of "water tiles only" would leave a map
+   * whose channel is walled off from the core with no naval door at all,
+   * where this leaves it with the dry ones the field did accept.
    *
-   * A boss zone is rasterized terrain-blind, so a walking boss's pads are
-   * filtered here against the ground it would have to stand on, and a naval
-   * one's against the ground plus the deep water: the same set its field is
-   * solved over (navalWalkMask), which is what stops a naval boss being the
-   * one body on the map that still needs a sea. Doing it per layer rather
-   * than in the rasterizer is what lets ONE boss zone serve whatever kind
-   * of boss a map fields.
+   * Kept BY THE IDENTITY of the list it was cut from. FlowField.publish
+   * swaps a fresh array in on every solve, so the check is a pointer
+   * compare per spawn and the walk happens once per re-route — which is
+   * the difference between a wave of five thousand costing one pass over
+   * a couple of thousand pads and costing five thousand of them.
+   */
+  private navalWaterPads: number[] = [];
+  private navalPadsFrom: readonly number[] | null = null;
+
+  private waterPads(): number[] {
+    const pads = this.navalField.spawnPts;
+    if (this.navalPadsFrom === pads) return this.navalWaterPads;
+    const { floor } = this.terrain;
+    const wet: number[] = [];
+    for (const i of pads) if (isWaterFloor(floor[i])) wet.push(i);
+    this.navalPadsFrom = pads;
+    this.navalWaterPads = wet;
+    return wet;
+  }
+
+  /**
+   * THE FLYERS' DOORS, the one pad list no field builds: a flyer is
+   * stopped by nothing, so its doors are simply the spawn tiles its mask
+   * offers (padMaskFor — the dry ones, with the whole layer as fallback).
+   *
+   * The boss lists that used to sit beside it are gone with the boss zone:
+   * a map paints one kind of spawn tile, so a boss comes in on its own
+   * layer's tiles like every other body.
    */
   private buildPads(): void {
-    const spawn = this.terrain.spawn;
-    const { blocked, wall } = this.terrain;
     const air = this.padMaskFor("air");
     this.airPads = [];
-    this.bossPads = { ground: [], air: [], water: [] };
-    for (let i = 0; i < NCELLS; i++) {
-      if (air[i]) this.airPads.push(i);
-      if (spawn[i] & LAYER_BIT.boss) {
-        this.bossPads.air.push(i);
-        if (!blocked[i]) this.bossPads.ground.push(i);
-        if (!blocked[i] || wall[i] === WALL_DEEP) this.bossPads.water.push(i);
-      }
-    }
+    for (let i = 0; i < NCELLS; i++) if (air[i]) this.airPads.push(i);
   }
 
   /** the cells of an air pad list the air field actually has a road from */
@@ -2058,62 +2077,95 @@ export class Sim {
   }
 
   /**
-   * THE LINES FLYERS ACTUALLY FLY, one polyline per drop zone — what the
-   * route overlay draws. It is the air field walked from the zone's centre,
+   * THE LINES FLYERS ACTUALLY FLY, one polyline per MOUTH — what the route
+   * overlay draws. Each is the air field walked from the mouth's middle,
    * the same way a flyer walks it, so the curve on screen bends round the
    * same mountains the swarm will.
    *
-   * It was one straight segment while a flyer flew one straight line, and
-   * the whole point of drawing it was that the line was the truth. The
-   * flyers route now (airField), so the truth is a route.
+   * A MOUTH IS A PATCH OF SPAWN TILES, not a tile (spawnMouths). One line a
+   * tile would be two thousand curves over the map and not one of them
+   * readable; the patch is the thing a player recognises as "where they
+   * come in", and its middle is the middle of the fan the patch throws.
    *
-   * Traced from each zone's CENTRE. A flyer entering at the rim starts on a
-   * neighbouring streamline and arrives by a slightly different road, so
-   * this is the middle of a fan rather than a rail.
+   * ONLY WHAT ACTUALLY FLIES GETS A LINE. Walkers and hulls read fields
+   * the terrain itself already shows the shape of.
    */
-  airRoutes(): { pts: number[]; zone: ZoneKind }[] {
-    // ONLY WHAT ACTUALLY FLIES GETS A LINE. Walkers and hulls read fields
-    // the terrain itself already shows the shape of, and a drawn route per
-    // zone would be three quarters redundant overlay.
-    //
-    // A boss zone earns a line only if this level's boss flies. Nothing
-    // about the zone says which — a boss zone is rasterized terrain-blind
-    // precisely so one door can serve whatever kind of boss a map fields —
-    // so the script is what settles it.
-    const flying = (z: ZoneKind) => z === "air" || (z === "boss" && this.bossFlies());
-    return this.terrain.spawns
-      .filter((z) => flying(z.zone))
-      .map((z) => {
-        const from = this.airDoor(z);
-        return { pts: this.airTrace(from.x, from.y), zone: z.zone };
-      });
+  airRoutes(): { pts: number[] }[] {
+    // TRACED ONCE PER MAP. The air field is solved at load and never again
+    // — no building changes it (see airField) — and the mouths and the
+    // goal are fixed with it, so every frame of the overlay would retrace
+    // the same curves. reset() drops this with the rest of the map.
+    if (this.routes) return this.routes;
+    this.routes = this.spawnMouths().map((i) => {
+      const x = ((i % COLS) + 0.5) * CELL, y = (((i / COLS) | 0) + 0.5) * CELL;
+      return { pts: this.airTrace(x, y) };
+    });
+    return this.routes;
   }
+  private routes: { pts: number[] }[] | null = null;
 
   /**
-   * Where a zone's flyers actually come out, in world px: its centre when
-   * that is open sky, and otherwise the open cell of the circle nearest to
-   * it. A door painted across a massif or over the map's rock rim has its
-   * middle buried, and spawnPads hands those flyers the open part of the
-   * circle (airOpen) — so tracing the overlay from the buried centre would
-   * draw a road out of a mountain nothing takes.
+   * THE MAP'S MOUTHS: one representative cell per connected patch of
+   * flyer-usable spawn tiles, biggest patch first, capped at MAX_MOUTHS.
+   *
+   * Solved once per map — the overlay asks for it every frame it is up,
+   * and a flood fill over a quarter of a million cells is not a per-frame
+   * cost. The representative is the patch cell nearest its own centroid,
+   * so a crescent painted round a headland is marked ON the paint rather
+   * than in the bay it curls around.
+   *
+   * The cap is an overlay decision and nothing else: a map may paint as
+   * many patches as it likes and the swarm uses every one of them. Past a
+   * dozen curves the picture stops being information.
    */
-  private airDoor(z: SpawnCircle): { x: number; y: number } {
-    const cx = z.x * CELL, cy = z.y * CELL;
-    const gi = clamp(z.y | 0, 0, ROWS - 1) * COLS + clamp(z.x | 0, 0, COLS - 1);
-    if (!this.airField.walk[gi]) return { x: cx, y: cy };
-    const pads = z.zone === "boss" ? this.bossAirOpen : this.airOpen;
-    const r2 = (z.r + 1) * (z.r + 1);
-    let bx = cx, by = cy, best = Infinity;
-    for (const i of pads) {
-      const x = (i % COLS) + 0.5, y = ((i / COLS) | 0) + 0.5;
-      const d = (x - z.x) * (x - z.x) + (y - z.y) * (y - z.y);
-      if (d > r2 || d >= best) continue;
-      best = d;
-      bx = x * CELL;
-      by = y * CELL;
+  private spawnMouths(): number[] {
+    if (this.mouths) return this.mouths;
+    const pad = new Uint8Array(NCELLS);
+    for (const i of this.airPads) pad[i] = 1;
+    const seen = new Uint8Array(NCELLS);
+    const stack: number[] = [];
+    const patches: { cells: number[]; sx: number; sy: number }[] = [];
+    for (const start of this.airPads) {
+      if (seen[start]) continue;
+      seen[start] = 1;
+      stack.length = 0;
+      stack.push(start);
+      const cells: number[] = [];
+      let sx = 0, sy = 0;
+      while (stack.length > 0) {
+        const i = stack.pop() as number;
+        const x = i % COLS, y = (i / COLS) | 0;
+        cells.push(i);
+        sx += x;
+        sy += y;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+            const j = ny * COLS + nx;
+            if (pad[j] && !seen[j]) {
+              seen[j] = 1;
+              stack.push(j);
+            }
+          }
+      }
+      patches.push({ cells, sx, sy });
     }
-    return { x: bx, y: by };
+    patches.sort((p, q) => q.cells.length - p.cells.length);
+    this.mouths = patches.slice(0, MAX_MOUTHS).map(({ cells, sx, sy }) => {
+      const cx = sx / cells.length, cy = sy / cells.length;
+      let best = Infinity, at = cells[0];
+      for (const i of cells) {
+        const dx = (i % COLS) - cx, dy = ((i / COLS) | 0) - cy;
+        const d = dx * dx + dy * dy;
+        if (d < best) { best = d; at = i; }
+      }
+      return at;
+    });
+    return this.mouths;
   }
+  /** spawnMouths' answer for the terrain currently loaded — null until asked */
+  private mouths: number[] | null = null;
 
   /**
    * One flyer's road from a point to the core, as flat x,y pairs: step
@@ -2141,20 +2193,6 @@ export class Sim {
       pts.push(x, y);
     }
     return pts;
-  }
-
-  /** does this level's script send a boss that flies? */
-  private bossFlies(): boolean {
-    for (const step of this.level.script) {
-      if (!("wave" in step)) continue;
-      for (const g of waveGroups(step.wave))
-        for (let k = 0; k < g.counts.length; k++) {
-          if (g.counts[k] <= 0) continue;
-          const s = UNIT_STATS[UNIT_KINDS[k]];
-          if (s.boss && s.flying) return true;
-        }
-    }
-    return false;
   }
 
   /** the goal cell nearest a point, in world px — a flyer's destination */
@@ -2556,8 +2594,8 @@ export class Sim {
    * has finished entering and every body it put on the field, brood
    * included, is down: killed, devoured or blown up. Counted over every
    * wave staged rather than as a prefix, because waves overlap on a long
-   * field — a wave 8 whose last fortress is still walking must not hold
-   * wave 9's payout back once wave 9 is dead to the last dagger.
+   * field — a wave 8 whose last ironhide3 is still walking must not hold
+   * wave 9's payout back once wave 9 is dead to the last ironhide1.
    */
   wavesCleared(): number {
     let n = 0;
@@ -3153,9 +3191,9 @@ export class Sim {
    * of it a cell at a time, reading the occupancy grid at each sample;
    * each structure is taken once, in the order the beam reaches it.
    *
-   * IT IS A GRID WALK AND NOT A SEARCH: a corvus's 57-tile beam is some
+   * IT IS A GRID WALK AND NOT A SEARCH: a starhart5's 57-tile beam is some
    * hundred and fifteen samples down the line and nine across, a thousand
-   * array reads, once every seven seconds. A nova's is fifteen. It costs
+   * array reads, once every seven seconds. A starhart1's is fifteen. It costs
    * what it looks like it costs.
    */
   private structuresAlong(
@@ -3262,7 +3300,7 @@ export class Sim {
    * would make every sweep silently re-tune the venom family twice.
    *
    * A HIT THAT DOES NO DAMAGE STILL POISONS. The rot rides on the shot
-   * CONNECTING, not on the damage surviving armour: a crawler's 8-point
+   * CONNECTING, not on the damage surviving armour: a weaver1's 8-point
    * spit against a foreshadow's plating lands 0.8 and six full seconds of
    * rot, which is the entire reason that body is on the field.
    */
@@ -3391,7 +3429,7 @@ export class Sim {
    *
    * Instant weapons (beams, bolts, flames, saps, fields, bombs) land the
    * moment they fire; the rest put a shot in flight (shots, updateEnemyShots).
-   * A crawler's weapon is itself: it goes off on the structure and is gone.
+   * A weaver1's weapon is itself: it goes off on the structure and is gone.
    */
   private updateUnitWeapons(dt: number): void {
     const { upx, upy, urot, ukind, uspawn, ucd, utT, ubeamT, ucharge, uheldRot, utgt } = this;
@@ -3446,9 +3484,9 @@ export class Sim {
       let exploded = false;
       // HUNGRY MECHS (mutation.ts): A MEAL IS WORTH WHAT IT ATE, NOT JUST
       // WHAT IT WEIGHED. The rule used to move health alone, and health
-      // alone is what made it a GIFT: twenty daggers walking at a line do
-      // twenty daggers' worth of damage to it, and one body carrying their
-      // health does one dagger's. Measured, a run under the rule lasted a
+      // alone is what made it a GIFT: twenty runts walking at a line do
+      // twenty runts' worth of damage to it, and one body carrying their
+      // health does one ironhide1's. Measured, a run under the rule lasted a
       // third LONGER than the same run without it — the swarm was eating
       // its own damage. So a meal carries the eaten body's bite as well:
       // what the rule concentrates is the threat, not just the pool
@@ -3471,7 +3509,7 @@ export class Sim {
             ubeamT[i] -= dt;
             ucd[slot] -= dt;
             // the mount is fixed to the hull (rotate = false), and the hull
-            // turns onto its target at the type's rotateSpeed — the vela's
+            // turns onto its target at the type's rotateSpeed — the starhart4's
             // 1.8 degrees a tick; the beam swings with it
             if (tgt) {
               const want = Math.atan2(tgt.y - y, tgt.x - x);
@@ -3522,7 +3560,7 @@ export class Sim {
           continue;
         }
         if (wp.charge) {
-          // a charged shot (corvus): the glow gathers for firstShotDelay
+          // a charged shot (starhart5): the glow gathers for firstShotDelay
           // on the heading it was aimed on, then the beam goes down it
           if (ucharge[i] > 0) {
             ucharge[i] -= dt;
@@ -3561,7 +3599,7 @@ export class Sim {
             // A ROUND WITH NO BODY: the hit lands the moment the trigger is
             // pulled and the only thing drawn is the gun's own splash at
             // the muzzle — no projectile crosses the field (weapons.ts:
-            // the dagger's and the boats' copper rounds, the retusa's
+            // the ironhide1's and the boats' copper rounds, the livewire1's
             // torpedo). Splash, where a row carries it, bursts on the
             // target the way the round would have
             for (let k = 0; k < shots; k++) {
@@ -3573,7 +3611,7 @@ export class Sim {
             break;
           }
           case "laser": {
-            // a volley of them fans by ShootSpread (the pulsar's three)
+            // a volley of them fans by ShootSpread (the starhart2's three)
             for (let k = 0; k < shots; k++)
               this.fireUnitLaser(x, y, aim + (k - (shots - 1) / 2) * (wp.spread ?? 0), tgt, wp, wrange, KIND_TIER[ukind[i]] >= 4, fed);
             break;
@@ -3636,7 +3674,7 @@ export class Sim {
               // seeks to `range` and goes off on CONTACT — the last
               // stretch is flown at the target (updateUnits) and the
               // charge is the payload's; a kind without one is the old
-              // crawler charge, the row's own splash centred on itself.
+              // weaver1 charge, the row's own splash centred on itself.
               // Either way it is gone, and no kill goes on the ledger.
               //
               // AN ARRIVAL PAYS HALF. A bomber shot down pays its kill
@@ -3688,7 +3726,7 @@ export class Sim {
             // A THIN LINE AND NOTHING ELSE. The rail used to throw a muzzle
             // splash, a blade every sixty units down its length and a
             // spike on what it struck, every one of them forced past the
-            // effect cap — which on a thousand rissos was thousands of
+            // effect cap — which on a thousand runts was thousands of
             // uncapped quads a second and a frame that stalled. It is ONE
             // effect now: the whole line as a hair-thin streak carrying its
             // length (FxKind.RailShoot, `len`), a small hit flick, and only
@@ -3869,7 +3907,7 @@ export class Sim {
    * LaserBulletType: an instant beam its FULL length down the aim —
    * Mindustry stops a laser only at a block that absorbs lasers, so it runs
    * through the structure it hit and on to its length. The target takes
-   * the damage; the shootEffect (Fx.hitLancer, or eclipse's shockwave)
+   * the damage; the shootEffect (Fx.hitLancer, or stoop5's shockwave)
    * goes off at the muzzle
    */
   private fireUnitLaser(
@@ -3893,7 +3931,7 @@ export class Sim {
     }
     if (!st) return;
     // only a heavy tier's beam is forced past the effect cap (`big`): a
-    // thousand novas' lances are a thousand small effects that fall under
+    // thousand runts' lances are a thousand small effects that fall under
     // it like any other, or the cap means nothing on the wave that needs it
     this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, range, 0, st.id, big);
     if (wp.shoot === FxKind.Shockwave) this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, wp.shootLen ?? 0);
@@ -4040,7 +4078,7 @@ export class Sim {
           (Math.random() * 0x7fffffff) | 0, look.hitStyle ?? 0);
         break;
       case FxKind.GreenCloud:
-        // the retusa torpedo: MultiEffect(blastExplosion, greenCloud)
+        // the livewire1 torpedo: MultiEffect(blastExplosion, greenCloud)
         this.pushFx(sh.x, sh.y, fxLife(FxKind.BlastExplosion), FxKind.BlastExplosion, 0, 0, (Math.random() * 0x7fffffff) | 0);
         this.pushFxCol(sh.x, sh.y, 80 / 60, FxKind.GreenCloud, 0, 0, look.hitColor ?? PAL.heal, 0, false,
           (Math.random() * 0x7fffffff) | 0);
@@ -4258,13 +4296,13 @@ export class Sim {
     // GROUND LEVEL ONLY. A structure stands on open ground, in the swarm's
     // way, where it is a wall as well as a gun — never on a hill, a forest
     // or deep water (every blocked cell), never on another structure — the
-    // core included — never on a drop zone (a corked door spawns nothing).
+    // core included — never on a spawn tile (a corked door spawns nothing).
     // Shallow water is ground, as it is in Mindustry: a naval map's
     // shallows are most of the floor it has
     for (let y = gy; y < gy + sz; y++)
       for (let x = gx; x < gx + sz; x++) {
         const i = y * COLS + x;
-        if (blocked[i] || isGoal[i] || this.groundPads[i] || this.cellTower[i]) return false;
+        if (blocked[i] || isGoal[i] || this.terrain.spawn[i] || this.cellTower[i]) return false;
       }
     // a LIVE shield tower owns its ground: it rose on free rock and holds
     // it, so nothing builds inside its footprint until it is dead
@@ -4668,23 +4706,34 @@ export class Sim {
   }
 
   /**
-   * The doors one movement layer may enter by — and, for a boss, the boss
-   * door instead when the map paints one.
+   * THE SPAWN TILES ONE MOVEMENT LAYER ENTERS ON — a plain array, picked
+   * from at random, and the whole of what a spawn costs to place.
    *
-   * This is where the region system used to live: a wave group named a
-   * number, the pads were looked up by that number, and an unknown number
-   * fell back to "anywhere". A unit's LAYER answers the same question
-   * without anyone authoring anything, so the only special case left is the
-   * boss, which is not a layer but a door reserved from the ordinary swarm.
+   * Every list here is BUILT WHEN THE MAP OR THE ROUTES CHANGE and read
+   * straight: no filtering, no allocation, no scan of the map per body. A
+   * map with two thousand painted tiles and a script sending five thousand
+   * units therefore pays for two thousand cells once per re-route and one
+   * array index per arrival (see spawnUnit).
+   *
+   *  - AIR: its own tiles, narrowed to the ones the air field has a
+   *    heading at, with the unnarrowed list as the fallback.
+   *  - WATER: the wet tiles the naval field accepted, else the dry ones it
+   *    accepted, else the walkers' — a hull is amphibious, so the last
+   *    fallback is a real door and not a compromise.
+   *  - GROUND: the walkers' field's own, which is the mask already
+   *    filtered for passability and for reaching an exit.
+   *
+   * A boss has no special door any more: the boss zone went with the other
+   * three kinds, so a boss comes in on its layer's tiles like every other
+   * body. Hold one back by painting its tiles somewhere only it can use.
    */
-  private spawnPads(layer: MoveLayer, boss: boolean): number[] {
-    // A BOSS IGNORES ITS LAYER'S ZONES when the map paints a boss door —
-    // that is the door's whole meaning. A map WITHOUT one leaves the boss
-    // on its layer's own zones rather than falling back to "anywhere".
-    if (boss && this.bossPads[layer].length > 0)
-      return layer === "air" && this.bossAirOpen.length > 0 ? this.bossAirOpen : this.bossPads[layer];
+  private spawnPads(layer: MoveLayer): number[] {
     if (layer === "air") return this.airOpen.length > 0 ? this.airOpen : this.airPads;
-    if (layer === "water") return this.navalField.spawnPts;
+    if (layer === "water") {
+      const wet = this.waterPads();
+      if (wet.length > 0) return wet;
+      return this.navalField.spawnPts.length > 0 ? this.navalField.spawnPts : this.field.spawnPts;
+    }
     return this.field.spawnPts;
   }
 
@@ -4712,11 +4761,11 @@ export class Sim {
     const stats = UNIT_STATS[kind];
     const fly = !!stats.flying;
     const layer = this.layerOf(kind);
-    const pads = brood ? EMPTY_PADS : this.spawnPads(layer, !!stats.boss);
+    const pads = brood ? EMPTY_PADS : this.spawnPads(layer);
     if (this.n >= MAX_UNITS || (!brood && pads.length === 0)) return false;
     const r = stats.radius;
     // the drop-zone test is the same broad-phase query the physics pass
-    // runs, so it needs the same reach: a ring of 1 would let two antumbras
+    // runs, so it needs the same reach: a ring of 1 would let two champions
     // land inside one another and start the wave already shoving
     const span = KIND_SPAN[UNIT_ID[kind]];
     const tries = brood ? MITOSIS_TRIES : 8;
@@ -4733,7 +4782,7 @@ export class Sim {
       } else {
         const ci = pads[(Math.random() * pads.length) | 0];
         // jitter within the pad, but keep the hitbox inside the cell when it
-        // fits (a mace is wider than a tile — it spawns pad-centered)
+        // fits (an ironhide2 is wider than a tile — it spawns pad-centered)
         const j = Math.max(0, CELL / 2 - r - 1);
         x = ((ci % COLS) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
         y = (((ci / COLS) | 0) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
@@ -4800,14 +4849,14 @@ export class Sim {
       // THE ARRIVAL CLOCK IS A DOOR RULE, so a brood does not get one: the
       // invincibility is there to stop a drop zone being camped, and a body
       // that broke out of another body in the middle of the kill zone is
-      // already past every door on the map. Twelve untouchable daggers a
-      // reign would be a gift rather than a mutator — a brood is killable
+      // already past every door on the map. Twelve untouchable runts a
+      // ironhide5 would be a gift rather than a mutator — a brood is killable
       // the instant it lands, by the same splash that killed its parent
       this.uspawn[i] = brood ? 0 : SPAWN_INVINCIBLE;
       this.uburn[i] = 0;
       this.uwet[i] = 0;
       this.uwetSlow[i] = 1;
-      // a body walks in unstamped: the reign's plating and the spiroct's
+      // a body walks in unstamped: the ironhide5's plating and the weaver3's
       // pace are both things it has to be standing near something to have
       this.uarmorAdd[i] = 0;
       this.uarmorT[i] = 0;
@@ -4880,6 +4929,7 @@ export class Sim {
       this.ubrot[i] = a0;
       this.urot[i] = a0;
       if (stats.legs) this.resetLegs(i, stats.legs);
+      if (stats.segments) this.resetSegments(i, stats.segments);
       // a hull arrives with no wake at all: one point under it, and the
       // trail grows out behind as it sails. Mindustry's Trail.clear on add
       // does the same thing, and it is what stops a fresh boat from being
@@ -5120,7 +5170,7 @@ export class Sim {
       // THE TWO STAMPED AURAS running down (constants.ts AURA_LINGER). No
       // effect on the way out: an aura is a thing a body has while it is
       // near the carrier, and a puff announcing that it no longer is would
-      // be noise on every body leaving a reign's wake
+      // be noise on every body leaving an ironhide5's wake
       if (this.uarmorT[i] > 0 && (this.uarmorT[i] -= dt) <= 0) {
         this.uarmorT[i] = 0;
         this.uarmorAdd[i] = 0;
@@ -5183,8 +5233,8 @@ export class Sim {
       // DAMAGE SMOKE: a body under DAMAGE_SMOKE_BELOW of its pool sheds
       // soot, and the lower it gets the thicker it pours — the tint has
       // gone grey (HP_TINT), and this is the other half of "that one is
-      // nearly dead". Scaled by the hitbox so a toxopid smokes like the
-      // building it is and a dagger like a dagger. pushFx refuses it with
+      // nearly dead". Scaled by the hitbox so a weaver5 smokes like the
+      // building it is and an ironhide1 like an ironhide1. pushFx refuses it with
       // effects off (setEffects), which is the whole of that switch — no
       // second gate here
       if (uhp[i] < uhpmax[i] * DAMAGE_SMOKE_BELOW) {
@@ -5228,8 +5278,8 @@ export class Sim {
    *
    * WHAT DOES NOT CROSS OVER IS EVERYTHING ELSE. Shields, force fields,
    * repair and shield auras, burning, wet, armour, speed, layer, kind — a
-   * meal moves one number and nothing else, so a hungry dagger that has
-   * eaten a quasar is a very fat dagger and not a quasar.
+   * meal moves one number and nothing else, so a hungry ironhide1 that has
+   * eaten a starhart3 is a very fat ironhide1 and not a starhart3.
    *
    * THE HITBOX NEVER MOVES EITHER. urad is what the physics pass, the
    * projectile pass and every targeting scan read; growing it would quietly
@@ -5300,7 +5350,7 @@ export class Sim {
    * event with its own health bar, not a snack), finished arriving (a unit
    * inside its spawn invincibility is untouchable by every weapon on the
    * map and this is no exception), and on the SAME movement layer — a
-   * walker does not pluck a flare out of the sky, and nothing eats a hull
+   * walker does not pluck a stoop1 out of the sky, and nothing eats a hull
    * off the water it cannot stand on.
    *
    * The broad phase is the frame's own hash, so the stale-index guard is
@@ -5445,7 +5495,7 @@ export class Sim {
       const half = (this.sizeOf(t) * CELL) / 2;
       const dx = t.x - x, dy = t.y - y;
       // centre to the footprint's EDGE, the reach every building test in
-      // this file uses: a fortress is in range as soon as its wall is
+      // this file uses: an ironhide3 is in range as soon as its wall is
       const d = Math.sqrt(dx * dx + dy * dy) - half;
       if (d <= reach && d < bd) {
         bd = d;
@@ -5681,6 +5731,14 @@ export class Sim {
       this.ulegOX[i] = this.ulegOX[n];
       this.ulegOY[i] = this.ulegOY[n];
     }
+    // the chain too: world positions, so they travel with the head
+    if (KIND_SEGS[this.ukind[i]]) {
+      const a = i * MAX_SEGS, b = n * MAX_SEGS;
+      for (let k = 0; k < MAX_SEGS; k++) {
+        this.usegX[a + k] = this.usegX[b + k];
+        this.usegY[a + k] = this.usegY[b + k];
+      }
+    }
     // and the moved hull's wake, for the same reason its feet move
     if (KIND_WAKE[this.ukind[i]]) {
       const a = i * WAKE_PTS, b = n * WAKE_PTS;
@@ -5699,6 +5757,38 @@ export class Sim {
    * gait clock starts at a random point — a wave of them steps out of
    * phase instead of marching like a chorus line.
    */
+  /** lay the chain out straight behind the head, along the way it faces */
+  private resetSegments(i: number, S: SegmentSpec): void {
+    const off = i * MAX_SEGS;
+    const cx = Math.cos(this.urot[i]), sy = Math.sin(this.urot[i]);
+    for (let k = 0; k < S.count; k++) {
+      this.usegX[off + k] = this.upx[i] - cx * S.spacing * (k + 1);
+      this.usegY[off + k] = this.upy[i] - sy * S.spacing * (k + 1);
+    }
+  }
+  /**
+   * One tick of the chain: each segment is pulled to exactly `spacing`
+   * behind the point ahead of it whenever it has fallen further, and left
+   * where it is otherwise — so the body follows the head's path, bunches
+   * a little when the head turns back on it, and never stretches.
+   */
+  private updateSegments(i: number, S: SegmentSpec): void {
+    const off = i * MAX_SEGS;
+    let lx = this.upx[i], ly = this.upy[i];
+    for (let k = 0; k < S.count; k++) {
+      const p = off + k;
+      const dx = lx - this.usegX[p], dy = ly - this.usegY[p];
+      const d = Math.hypot(dx, dy);
+      if (d > S.spacing) {
+        const f = S.spacing / d;
+        this.usegX[p] = lx - dx * f;
+        this.usegY[p] = ly - dy * f;
+      }
+      lx = this.usegX[p];
+      ly = this.usegY[p];
+    }
+  }
+
   private resetLegs(i: number, L: LegSpec): void {
     const off = i * MAX_LEGS;
     const x = this.upx[i], y = this.upy[i], rot = this.ubrot[i];
@@ -5817,8 +5907,8 @@ export class Sim {
     // a leg is DOWN the moment its group's turn passes on, and that
     // transition is where Mindustry hangs everything a footstep does:
     // Fx.unitLandSmall at the foot, the step shake, and — on the units
-    // that carry it — legSplashDamage. Arkyid (32 over 30 units) and
-    // toxopid (80 over 60) carry that last one on this roster, and
+    // that carry it — legSplashDamage. Weaver4 (32 over 30 units) and
+    // weaver5 (80 over 60) carry that last one on this roster, and
     // neither has anything to land on: it hits enemy units and buildings,
     // and the player here fields no units and builds towers that cannot
     // be damaged. So
@@ -5916,8 +6006,8 @@ export class Sim {
    * Mindustry's PhysicsProcess.PhysicsWorld.update(), ported 1:1: every
    * unit is a circle (radius PHYS_R * urad) with mass = area; overlapping
    * same-layer pairs are pushed apart along their center line by the full
-   * overlap softened by PHYS_SCL, split inversely by mass — a mace plows
-   * through daggers, daggers barely rock the mace. Each unordered pair
+   * overlap softened by PHYS_SCL, split inversely by mass — an ironhide2 plows
+   * through runts, runts barely rock the ironhide2. Each unordered pair
    * resolves exactly once per tick, at its first member's turn (the
    * original's `collided` flag == our ascending-index guard), and later
    * pairs see the already-pushed scratch positions, so a pile relaxes a
@@ -5966,8 +6056,8 @@ export class Sim {
       // of and scans the wide window for them; a small unit scans only the
       // small-partner window and skips heavy candidates outright. Each
       // unordered pair still resolves exactly once, and the small window
-      // is what keeps a dagger swarm's broad phase priced for daggers
-      // while a reign stands on the same field
+      // is what keeps an ironhide1 swarm's broad phase priced for runts
+      // while an ironhide5 stands on the same field
       const iHeavy = uheavy[i];
       const ri = urad[i] * PHYS_R;
       const mi = urad[i] * urad[i]; // hitSize^2 * pi — the pi cancels in the ratio
@@ -6116,7 +6206,7 @@ export class Sim {
       // shortest path and the water is a place a tank is quicker rather
       // than a place it is drawn to.
       // ...AND HALF AGAIN AFLOAT (NAVAL_WATER_SPEED): the water is the road
-      // the family is quick on, and a hull under the sei's bow wave
+      // the family is quick on, and a hull under the skate4's bow wave
       // (ubowT, levels.ts wakeField) keeps its afloat pace ashore too.
       // The tax itself is per KIND (KIND_LAND_SPEED): the Wraith fleet
       // pays a fifth where the Harpoon fleet pays a half, because the
@@ -6128,12 +6218,12 @@ export class Sim {
           : HAS_WAKE_AURA && this.ubowT[i] > 0
             ? 1
             : KIND_LAND_SPEED[ukind[i]];
-      // ...and a FOURTH multiplier: the spiroct's pace stamp (levels.ts
+      // ...and a FOURTH multiplier: the weaver3's pace stamp (levels.ts
       // hasteField). It rides here with the wet slow and the land penalty
       // rather than on uspd, so it is a thing happening TO the body and
       // never a permanent change to what it is — walk out of the field and
       // the next frame is at its own speed again. The two can meet: a
-      // soaked body under a spiroct is slowed and hurried at once, and the
+      // soaked body under a weaver3 is slowed and hurried at once, and the
       // product is the honest answer to both.
       const haste = HAS_HASTE_AURA && this.uhasteT[i] > 0 ? this.uhasteMul[i] : 1;
       const spd =
@@ -6370,6 +6460,8 @@ export class Sim {
       // unit still runs the pass — its feet ease back under it
       const gait = KIND_LEGS[ukind[i]];
       if (gait) this.updateLegs(i, gait, mdx, mdy, len, dt);
+      const chain = KIND_SEGS[ukind[i]];
+      if (chain) this.updateSegments(i, chain);
       if (nav) this.updateWake(i, dt, water[ci] !== 0);
     }
   }
@@ -6431,7 +6523,7 @@ export class Sim {
    * blocked could only be one on the shore of its own mirror-image field,
    * and shoving it to the nearest open GROUND cell would have beached it
    * for good. A tank shares the walkers' ground, so a building can land on
-   * top of one exactly as it can on a dagger — and the cell it is moved to
+   * top of one exactly as it can on an ironhide1 — and the cell it is moved to
    * is one its own mask calls open, which is ground or water either way.
    * Flyers stay out: they are allowed over walls, and nothing should
    * teleport one off a mountain.
@@ -6978,8 +7070,8 @@ export class Sim {
   /**
    * VOLATILE (mutation.ts): the dead body's parting blast, billed to every
    * standing tower whose footprint it reaches. Tier decides the damage and
-   * the body's own hitbox widens the reach — a fortress pops like a shell,
-   * a dagger like a firecracker. Towers only; the swarm never hurts itself.
+   * the body's own hitbox widens the reach — an ironhide3 pops like a shell,
+   * an ironhide1 like a firecracker. Towers only; the swarm never hurts itself.
    */
   private volatileBlast(x: number, y: number, urad: number, kind: number): void {
     // one tier index into both tables: the reach climbs with the tier and
@@ -8186,7 +8278,7 @@ export class Sim {
    * bleeds away, so the shove outlives the frame that dealt it.
    *
    * That mass divisor is the whole character of both weapons that use it:
-   * the same push all but stops a dagger and barely leans on a fortress.
+   * the same push all but stops an ironhide1 and barely leans on an ironhide3.
    */
   private impulse(i: number, wx: number, wy: number): void {
     const hitSize = (this.urad[i] * 2) / MU;
@@ -8213,7 +8305,7 @@ export class Sim {
    * jittered node positions are handed back as the drawn path.
    *
    * ONE DIVERGENCE. In Mindustry each node is a real bullet, and a real
-   * bullet is absorbable — a quasar's force field standing over a node
+   * bullet is absorbable — a starhart3's force field standing over a node
    * would eat it. Here the node damages directly and no field sees it, so
    * a bolt walks through a bubble it should have died in. Arc is a
    * 90-unit ground turret and the bubble is 7.5 tiles, so the two rarely
@@ -8530,7 +8622,7 @@ export class Sim {
    *
    * WHICH BODY IT PICKS is foreshadow's rule (TowerStats.sort
    * "strongest"): the highest CURRENT health in range, because the one
-   * thing a ramp cannot afford is to spend its climb on a crawler. And it
+   * thing a ramp cannot afford is to spend its climb on a weaver1. And it
    * HOLDS that pick — the scan only runs once the lock is broken by death
    * or by the target leaving reach, never to trade up — because re-picking
    * the strongest every interval would ping-pong between two bodies as
@@ -8592,8 +8684,10 @@ export class Sim {
     t.aimShieldTower = shr ? this.shieldTowers.indexOf(shr) : -1;
 
     // `strength` lerps in as the beam catches and out as it lets go, and
-    // the spool rides on top of it: a cold beam is drawn at a third of its
-    // width and a fully spooled one at all of it
+    // the spool rides on top of it: a cold beam is drawn at a FIFTH of its
+    // width and a fully spooled one at all of it. The floor is deliberately
+    // low — the beam is thin (Renderer.drawLockBeam), so the only thing
+    // that thickens it is the ramp, and its width reads as its damage
     const ease = 1 - Math.pow(1 - 0.1, dt * 60);
     if (best < 0 && !shr) {
       t.beamStr += (0 - t.beamStr) * ease;
@@ -8615,7 +8709,7 @@ export class Sim {
     t.angle = Math.abs(diff) <= turn ? targetRot : t.angle + Math.sign(diff) * turn;
     t.beamX = tx;
     t.beamY = ty;
-    t.beamStr += (0.35 + 0.65 * frac - t.beamStr) * ease;
+    t.beamStr += (0.2 + 0.8 * frac - t.beamStr) * ease;
     if (Math.abs(Sim.angleDiff(t.angle, targetRot)) >= st.shootCone) {
       // swung off it, but still HOLDING it: the spool bleeds back at the
       // rate it filled rather than being thrown away
@@ -8698,7 +8792,7 @@ export class Sim {
    * armorMult is BulletType.armorMultiplier, applied the way
    * ShieldComp.damageArmorMult does: it scales the TARGET'S ARMOUR, not the
    * damage, so a lancer's 4 means armour counts quadruple against it and
-   * the same beam is worth far less to a fortress than to a dagger.
+   * the same beam is worth far less to an ironhide3 than to an ironhide1.
    */
   private damageUnit(
     i: number,
@@ -8713,7 +8807,7 @@ export class Sim {
     // ...and on a CLOAKED body (levels.ts cloak) the same: nothing can hit
     // it, splash and beams and bolts included, until it shows again
     if (HAS_CLOAK && this.ucloakT[i] > 0) return;
-    // THE REIGN'S PLATING STAMP rides on top of the body's own armour
+    // THE IRONHIDE5'S PLATING STAMP rides on top of the body's own armour
     // (levels.ts armorField), and it goes through the same armorMult a
     // bullet carries — borrowed plating is plating, so a lancer's
     // armorMultiplier counts it four times over exactly as it counts the
@@ -8725,7 +8819,7 @@ export class Sim {
         : this.uarmor[i];
     // TITAN ROUNDS (relics.ts): the round gains a quarter again for every
     // tier the body stands above the first, so the ramp is worth nothing
-    // against a dagger and DOUBLE against an eclipse. Before armour,
+    // against an ironhide1 and DOUBLE against a stoop5. Before armour,
     // because it is the round hitting harder and not the plate mattering
     // less — Monofilament below is the other one
     const hit = this.titanOn ? raw * TITAN_MUL[KIND_TIER[this.ukind[i]]] : raw;
@@ -9159,7 +9253,7 @@ export class Sim {
           this.damageUnit(i, b.damage);
           // BulletType.hitEntity: an impulse of knockback * 80 world units
           // straight out from the shot. Unit.impulse divides by mass, so
-          // the same shove all but stops a dagger and leans on a fortress
+          // the same shove all but stops an ironhide1 and leans on an ironhide3
           if (b.knockback) {
             const dx = upx[i] - pr.x, dy = upy[i] - pr.y;
             const d = Math.sqrt(dx * dx + dy * dy) || 1;

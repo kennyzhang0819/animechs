@@ -32,14 +32,14 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 
 ## Widths
 
-- Every THROUGH gap is at least `GAP_GROUND` (5) on land and `GAP_WATER` (11) at sea — a reign is four cells across, an omura seven. The opening enforces it; notches are kept as long as they bridge nothing.
-- Every route from a drop zone to its goal is at least 12 wide on land and 16 at sea (`ROUTE_MIN_GROUND`, `ROUTE_MIN_WATER`), measured as the widest way through — a lane two formations fight in, not one a reign threads. An authored ground brush of 8 is 24 on the grid; an authored water brush of 16 is 32.
+- Every THROUGH gap is at least `GAP_GROUND` (5) on land and `GAP_WATER` (11) at sea — an ironhide5 is four cells across, a skate5 seven. The opening enforces it; notches are kept as long as they bridge nothing.
+- Every route from a drop zone to its goal is at least 12 wide on land and 16 at sea (`ROUTE_MIN_GROUND`, `ROUTE_MIN_WATER`), measured as the widest way through — a lane two formations fight in, not one an ironhide5 threads. An authored ground brush of 8 is 24 on the grid; an authored water brush of 16 is 32.
 - Chokes are 9 wide as authored, 27 on the grid; the citadel's gate is the choke's width, and the funnel disc grows with it.
 
 ## Doors and the core
 
 - The map is sealed: every rim cell is rock. The swarm's only destination is the core.
-- Spawns are per layer and independent. Boss zones are terrain-blind.
+- The map paints ONE spawn layer, and a spawn tile is open ground. Each movement layer picks its own tiles out of it (`Sim.padMaskFor`): walkers and flyers take the dry ones, hulls take any and prefer the wet ones. A generator's per-layer circles are a spec convenience — they are unioned into that one layer on load.
 - Every ground zone reaches the core on foot; every water zone reaches the core over the naval mask (rock only), and no pond lies nearer the core than the sea.
 - No gate is a short cut: walks to the core within 50% of each other.
 - The funnel holds: wall it and no ground zone reaches the core.

@@ -62,7 +62,20 @@ export async function POST(req: Request): Promise<NextResponse> {
       );
   }
   if (map.spawns !== undefined && !Array.isArray(map.spawns))
-    return NextResponse.json({ error: "bad spawn regions" }, { status: 400 });
+    return NextResponse.json({ error: "bad spawn circles" }, { status: 400 });
+  // the spawn layer is SPARSE — a list of cell indices, not a cell per
+  // entry (MapData.spawnTiles) — so what it has to satisfy is that every
+  // index is a cell of this document
+  if (map.spawnTiles !== undefined) {
+    if (!Array.isArray(map.spawnTiles))
+      return NextResponse.json({ error: "bad spawn tiles" }, { status: 400 });
+    for (const i of map.spawnTiles)
+      if (!Number.isInteger(i) || i < 0 || i >= len)
+        return NextResponse.json(
+          { error: `spawn tile ${i} is not a cell of this map (0..${len - 1})` },
+          { status: 400 },
+        );
+  }
   if (!Array.isArray(map.pines) || !Array.isArray(map.decor))
     return NextResponse.json({ error: "bad props" }, { status: 400 });
 

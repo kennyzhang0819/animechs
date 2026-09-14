@@ -12,6 +12,7 @@ import { HoverCard, useHoverCard } from "./HoverCard";
 import { Glyph } from "./Relics";
 import { TOWER_ICONS } from "./towerIcons";
 import { tile } from "./tile";
+import { useUnitIcon } from "./unitIcons";
 
 /**
  * THE INSPECTOR — what the thing you just clicked is, along the bottom of
@@ -53,9 +54,6 @@ import { tile } from "./tile";
  * are one hover away, as they are everywhere else.
  */
 
-/** the portrait a body wears — the same sprite the level editor's roster
- *  and the wave script draw it with */
-const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
 
 /**
  * ONE ATTRIBUTE IN THE SELECTION: its glyph on its band's border, and the
@@ -182,10 +180,15 @@ export function Inspector({
 }) {
   const { n, kind, unit, name, hp, hpMax, statuses, mods } = inspect;
   const many = n > 1;
+  const carved = useUnitIcon(unit);
   // the picture, and ONLY when the whole selection is one thing — a duo
   // over a box that also holds spectres would be the one part of this
   // panel that could lie
-  const art = unit ? unitIcon(unit) : kind ? (icons[kind] ?? TOWER_ICONS[kind]) : null;
+  const art = unit
+    ? carved
+    : kind
+      ? (icons[kind] ?? TOWER_ICONS[kind])
+      : null;
   return (
     <div
       className="ms-pane pointer-events-auto flex max-w-[calc(100vw-30rem)] items-center gap-3 px-3 py-2"

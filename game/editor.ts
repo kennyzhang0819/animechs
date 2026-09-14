@@ -1,31 +1,17 @@
 import { buildAtlas, DECOR_TILES, FLOOR_SHALLOW_WATER, SHALLOW_FOR_DEEP } from "./atlas";
 import { fitZoom } from "./fit";
-import {
-  CELL,
-  clamp,
-  COLS,
-  BASE_SIZE,
-  H,
-  ROWS,
-  TOWERS,
-  W,
-  ZONE_KINDS,
-  type ZoneKind,
-} from "./constants";
+import { CELL, clamp, COLS, BASE_SIZE, H, ROWS, TOWERS, W } from "./constants";
 import {
   contentRows,
+  SPAWN_STYLE,
   PALETTE,
-  rasterizeSpawns,
-  zoneStyle,
-  SPAWN_RADIUS_DEFAULT,
   terrainFromMap,
   mapFromTerrain,
   type MapData,
   type PaletteSet,
-  type SpawnCircle,
 } from "./maps";
 import { ALL_LAYERS, Renderer, type TerrainLayers } from "./renderer";
-import { isWaterFloor } from "./terrain";
+import { canHoldSpawn, isWaterFloor } from "./terrain";
 import { WALL_DEEP, WALL_PINE, type Prop, type Terrain } from "./terrain";
 
 // THE ZOOM FLOOR IS NO LONGER COVER. It used to be 1 — "the world fills
@@ -52,7 +38,7 @@ interface Snapshot {
   floor: Uint8Array;
   wall: Uint8Array;
   blocked: Uint8Array;
-  spawns: SpawnCircle[];
+  spawn: Uint8Array;
   pines: Prop[];
   decor: Prop[];
   base: { x: number; y: number; size: number };
@@ -119,8 +105,6 @@ export class MapEditor {
   brushShape: BrushShape = "square";
   /** index into PATH_WIDTHS — how wide the path tool carves */
   pathWidth = 1;
-  /** radius in cells of the next drop zone placed, editable in the panel */
-  spawnRadius = SPAWN_RADIUS_DEFAULT;
   /**
    * Layer visibility, and with it what edits may touch: a HIDDEN layer is
    * left alone by every tool. That is what lets you hide the spawn pads and
@@ -161,9 +145,6 @@ export class MapEditor {
     this.snapshot();
     this.rows = next;
     this.terrain.rows = next;
-    // the drop zones' cells are burned from the circles against the terrain,
-    // and a zone hanging off the new edge covers fewer of them
-    this.resyncSpawn();
     this.renderer.rebuildTerrain(this, this.layers);
     this.clampCamera();
     this.dirty = true;
@@ -181,16 +162,6 @@ export class MapEditor {
   private camPlaced = false;
   private panning = false;
   private painting = false;
-  /**
-   * The drop zone this stroke is dragging, or -1. A stroke grabs ONE circle
-   * when it starts and holds it until the button comes up.
-   *
-   * Re-running the proximity test on every cell of the stroke is what broke:
-   * the moment the cursor outran the circle it had just moved, the test
-   * missed and the tool dropped a FRESH zone on the ground — so one drag
-   * left a trail of them instead of moving the one you grabbed.
-   */
-  private grabbedSpawn = -1;
   private lastCell = { x: -1, y: -1 };
 
   private hoverGx = -1;
@@ -280,11 +251,10 @@ export class MapEditor {
     this.terrain.floor.set(s.floor);
     this.terrain.wall.set(s.wall);
     this.terrain.blocked.set(s.blocked);
-    this.terrain.spawns = s.spawns;
+    this.terrain.spawn.set(s.spawn);
     this.terrain.pines = s.pines;
     this.terrain.decor = s.decor;
     this.terrain.base = s.base;
-    this.resyncSpawn();
     this.dirty = true;
     this.renderer.rebuildTerrain(this, this.layers);
   }
@@ -305,7 +275,7 @@ export class MapEditor {
       floor: this.terrain.floor.slice(),
       wall: this.terrain.wall.slice(),
       blocked: this.terrain.blocked.slice(),
-      spawns: this.terrain.spawns.map((c) => ({ ...c })),
+      spawn: this.terrain.spawn.slice(),
       pines: this.terrain.pines.map((p) => ({ ...p })),
       decor: this.terrain.decor.map((p) => ({ ...p })),
       base: { ...this.terrain.base },
@@ -334,7 +304,13 @@ export class MapEditor {
     // a hidden layer is not just invisible, it is out of reach: these
     // guards are what make "hide it and edit underneath" work
     const L = this.layers;
-    if (set.kind === "floor") {
+    if (set.kind === "spawn") {
+      // A SPAWN TILE CANNOT BE A HILL (terrain.ts canHoldSpawn) — painting
+      // one onto rock or forest is a no-op rather than a pad the loader
+      // would silently take back; carve the ground first. Deep water takes
+      // one, because the deep is where a fleet comes in.
+      if (L.spawn && canHoldSpawn(T.blocked[i], T.wall[i])) T.spawn[i] = 1;
+    } else if (set.kind === "floor") {
       T.floor[i] = pick;
       if (L.wall) {
         T.blocked[i] = 0;
@@ -345,6 +321,7 @@ export class MapEditor {
     } else if (set.kind === "wall") {
       T.blocked[i] = 1;
       T.wall[i] = pick;
+      T.spawn[i] = 0;
       if (L.props) this.removePropsAt(gx, gy);
     } else if (set.kind === "deep") {
       // deep water writes BOTH layers: the floor is the water surface the
@@ -355,11 +332,14 @@ export class MapEditor {
       if (L.wall) {
         T.blocked[i] = 1;
         T.wall[i] = WALL_DEEP;
+        // ...and the pad on it STAYS: the deep is the naval layer's road,
+        // so a door out at sea is a door (terrain.ts canHoldSpawn)
       }
       if (L.props) this.removePropsAt(gx, gy);
     } else if (set.kind === "pine") {
       T.blocked[i] = 1;
       T.wall[i] = WALL_PINE;
+      T.spawn[i] = 0;
       this.removePropsAt(gx, gy);
       // the variant is the forest (UV_PINES) — every pine is 48px art on a
       // 32px tile, so they all overhang by the same half tile
@@ -391,108 +371,12 @@ export class MapEditor {
         T.wall[i] = 0;
       }
       if (L.props) this.removePropsAt(gx, gy);
+      // ...and the pads, which are a layer of their own: hiding the spawn
+      // layer shields them from the eraser exactly as hiding the hills
+      // shields the rock
+      if (L.spawn) T.spawn[i] = 0;
     }
     this.dirty = true;
-  }
-
-  /**
-   * Re-burn the per-cell spawn layer from the circles. Every edit that moves
-   * a circle OR changes what is open ground has to run this — a drop zone
-   * covers the FLOOR inside it, so walling part of one off takes those cells
-   * out of the swarm's entry set and carving new floor inside one adds them.
-   */
-  private resyncSpawn(): void {
-    // written INTO the existing array, not swapped for a new one: the flow
-    // field keeps the spawn mask by reference
-    this.terrain.spawn.set(rasterizeSpawns(this.terrain.spawns, this.terrain));
-  }
-
-  /**
-   * Drop-zone tool.
-   *
-   * A REGION IS ONE ZONE. If the selected region is already on the map,
-   * clicking ANYWHERE moves it there — it is never stacked, never doubled.
-   * The region number is an identity, not a paint colour, and every map
-   * shipped is authored that way: one circle each.
-   *
-   * This used to require clicking INSIDE the existing circle to move it, and
-   * a click on clear ground pushed a second circle carrying the same region
-   * id. Nothing downstream distinguished those two circles — rasterizeSpawns
-   * unions them and the level editor lists the region once — so the only
-   * thing the duplicate did was make the zone impossible to move by clicking
-   * where you wanted it.
-   *
-   * The radius follows the gesture. PICKING A ZONE UP (pressing inside it)
-   * keeps its own radius, because a drag that resized what it was dragging
-   * was the bug that made zones shrink out from under the cursor. SENDING IT
-   * SOMEWHERE (pressing on clear ground) adopts the current radius, which is
-   * also the only way to resize a zone without erasing it first.
-   *
-   * The eraser removes whole circles.
-   */
-  private spawnAt(gx: number, gy: number): void {
-    if (!this.layers.spawn) return; // hidden means out of reach, like every layer
-    const T = this.terrain;
-    const zone = this.spawnZone();
-    const x = gx + 0.5, y = gy + 0.5;
-
-    // already dragging one: it follows the cursor and nothing else happens
-    if (this.grabbedSpawn >= 0 && this.grabbedSpawn < T.spawns.length) {
-      T.spawns[this.grabbedSpawn] = { ...T.spawns[this.grabbedSpawn], x, y };
-      this.resyncSpawn();
-      this.dirty = true;
-      return;
-    }
-
-    // the zone of this KIND, wherever it currently sits — not "a circle
-    // under the cursor", which is what made a second one appear.
-    //
-    // ONE ZONE PER KIND IS NOT THE RULE ANY MORE, though: a map may carry
-    // three ground zones and two air ones. What is still true is that a
-    // click on empty ground with a kind already placed should MOVE the
-    // nearest one of that kind rather than stack another on top, so the
-    // grab looks for the nearest same-kind circle within reach and only
-    // drops a fresh one when the click lands well clear of them all.
-    let hit = -1;
-    let bestD = Infinity;
-    T.spawns.forEach((c, i) => {
-      if (c.zone !== zone) return;
-      const d = Math.hypot(c.x - x, c.y - y);
-      if (d <= c.r && d < bestD) {
-        bestD = d;
-        hit = i;
-      }
-    });
-    if (hit >= 0) {
-      const z = T.spawns[hit];
-      this.grabbedSpawn = hit;
-      T.spawns[hit] = { ...z, x, y };
-    } else {
-      // fresh ground: place one at the current radius and grab it, so the
-      // same press-and-drag puts it exactly where it is wanted
-      this.grabbedSpawn = T.spawns.length;
-      T.spawns.push({ x, y, r: this.spawnRadius, zone });
-    }
-    this.resyncSpawn();
-    this.dirty = true;
-  }
-
-  /** the zone kind the drop-zone tool is painting — the picker's slot */
-  private spawnZone(): ZoneKind {
-    return ZONE_KINDS[Math.min(this.variant, ZONE_KINDS.length - 1)];
-  }
-
-  /** eraser over a drop zone: drop every circle covering this cell */
-  private eraseSpawnAt(gx: number, gy: number): boolean {
-    if (!this.layers.spawn) return false;
-    const T = this.terrain;
-    const x = gx + 0.5, y = gy + 0.5;
-    const keep = T.spawns.filter((c) => Math.hypot(c.x - x, c.y - y) > c.r);
-    if (keep.length === T.spawns.length) return false;
-    T.spawns = keep;
-    this.resyncSpawn();
-    this.dirty = true;
-    return true;
   }
 
   /**
@@ -553,14 +437,14 @@ export class MapEditor {
         const i = y * COLS + x;
         T.blocked[i] = 0;
         T.wall[i] = 0;
+        T.spawn[i] = 0;
         this.removePropsAt(x, y);
         // the base always clears its own ground: a base you cannot reach is
-        // a broken map, so this one ignores layer visibility
+        // a broken map, so this one ignores layer visibility. The pads go
+        // with the rock — a door under the core is a door that has already
+        // arrived
       }
     T.base = { x: x0, y: y0, size: BASE_SIZE };
-    // clearing the base's ground opens cells that a drop zone overhanging it
-    // would now cover, so the entry set has to be re-derived
-    this.resyncSpawn();
     this.dirty = true;
   }
 
@@ -575,13 +459,6 @@ export class MapEditor {
       this.pathAt(gx, gy);
       return;
     }
-    if (this.set.kind === "spawn") {
-      this.spawnAt(gx, gy);
-      return;
-    }
-    // the eraser takes a whole drop zone when it starts on one, rather than
-    // nibbling terrain out from under it
-    if (this.set.kind === "erase" && this.eraseSpawnAt(gx, gy)) return;
     const r = this.brush - 1;
     const round = this.brushShape === "round";
     const rr = (r + 0.5) * (r + 0.5);
@@ -593,7 +470,6 @@ export class MapEditor {
         }
         this.paintCell(x, y);
       }
-    this.resyncSpawn();
   }
 
   /** paint every cell on the segment between two cells — no gaps on fast drags */
@@ -664,7 +540,6 @@ export class MapEditor {
       const p = this.mouseWorld(e);
       this.snapshot();
       this.painting = true;
-      this.grabbedSpawn = -1; // this stroke grabs its own zone, if any
       this.lastCell = { x: -1, y: -1 };
       this.paintStroke(clamp((p.x / CELL) | 0, 0, COLS - 1), clamp((p.y / CELL) | 0, 0, ROWS - 1));
     } else if (e.button === 1 || e.button === 2) {
@@ -678,7 +553,6 @@ export class MapEditor {
   private readonly onMouseUp = (): void => {
     this.panning = false;
     this.painting = false;
-    this.grabbedSpawn = -1;
   };
 
 
@@ -708,7 +582,6 @@ export class MapEditor {
     this.hoverGy = -1;
     this.panning = false;
     this.painting = false;
-    this.grabbedSpawn = -1;
   };
 
   private readonly onContext = (e: Event): void => e.preventDefault();
@@ -852,20 +725,10 @@ export class MapEditor {
     const s = this.scale * this.zoom;
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
 
-    // Every placed drop zone. This ring is the ONLY thing marking a zone —
-    // the floor inside it is drawn as plain ground — so it is drawn before
-    // the hover bail-out below: a zone must not disappear the moment the
-    // pointer leaves the canvas.
-    if (this.layers.spawn) {
-      c.lineWidth = 2 / s;
-      for (const z of this.terrain.spawns) {
-        c.strokeStyle = zoneStyle(z.zone).css;
-        c.beginPath();
-        c.arc(z.x * CELL, z.y * CELL, z.r * CELL, 0, Math.PI * 2);
-        c.stroke();
-      }
-    }
-
+    // NOTHING MARKS THE SPAWN LAYER HERE ANY MORE. It used to be a ring per
+    // drop zone, drawn over plain ground; the tiles are painted now, so the
+    // terrain pass draws them (Renderer.rebuildTerrain) and the overlay is
+    // back to being nothing but the cursor.
     if (this.hoverGx < 0) return;
 
     // THE FORMATION GHOST: the whole outpost under the cursor, turned the
@@ -882,17 +745,6 @@ export class MapEditor {
       c.strokeRect(x0, y0, side, side);
       return;
     }
-    if (this.set.kind === "spawn") {
-      const col = zoneStyle(this.spawnZone()).css;
-      c.beginPath();
-      c.arc((this.hoverGx + 0.5) * CELL, (this.hoverGy + 0.5) * CELL, this.spawnRadius * CELL, 0, Math.PI * 2);
-      c.fillStyle = col + "22";
-      c.fill();
-      c.strokeStyle = col;
-      c.lineWidth = 2 / s;
-      c.stroke();
-      return;
-    }
     if (this.set.kind === "path") {
       const rad = (PATH_WIDTHS[clamp(this.pathWidth, 0, PATH_WIDTHS.length - 1)] / 2) * CELL;
       c.beginPath();
@@ -907,8 +759,13 @@ export class MapEditor {
     const r = this.brush - 1;
     const x = (this.hoverGx - r) * CELL, y = (this.hoverGy - r) * CELL;
     const side = (2 * r + 1) * CELL;
-    c.fillStyle = this.set.kind === "erase" ? "rgba(255,90,90,0.18)" : "rgba(255,211,127,0.14)";
-    c.strokeStyle = this.set.kind === "erase" ? "rgba(255,90,90,0.9)" : "rgba(255,211,127,0.85)";
+    // the spawn brush wears the spawn layer's own colour, so a stroke is
+    // recognisable as pads before it is painted (SPAWN_STYLE)
+    const k = this.set.kind;
+    c.fillStyle = k === "erase" ? "rgba(255,90,90,0.18)"
+      : k === "spawn" ? "rgba(230,83,66,0.22)" : "rgba(255,211,127,0.14)";
+    c.strokeStyle = k === "erase" ? "rgba(255,90,90,0.9)"
+      : k === "spawn" ? SPAWN_STYLE.css : "rgba(255,211,127,0.85)";
     c.lineWidth = 1.5 / s;
     if (this.brushShape === "round") {
       // the same disc the paint loop walks, drawn from the cursor cell's

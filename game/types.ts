@@ -220,8 +220,8 @@ export interface Tower {
    * IN THE SIZE OF THE CROWD.
    *
    * THE NUMBERS PER APPLICATION ARE SMALL AND MOST OF THEM ARE A CHANCE
-   * (weapons.ts poisonChance). A crawler's spit is six health a second, one
-   * roll in four; a toxopid's bomb lands every time. What makes a wave
+   * (weapons.ts poisonChance). A weaver1's spit is six health a second, one
+   * roll in four; a weaver5's bomb lands every time. What makes a wave
    * lethal is that it is a wave.
    *
    * `poisonUnit` IS THE FLOOR — the heaviest single application in force,
@@ -526,21 +526,21 @@ export const enum FxKind {
    *  jittered chain from the unit to each thing its field hit, white
    *  washing into its colour. The path rides fxPts like a bolt's */
   ChainLightning = 43,
-  Pulverize = 44, // Fx.pulverize — the crawler's own burst
+  Pulverize = 44, // Fx.pulverize — the weaver1's own burst
   SapExplosion = 45, // Fx.sapExplosion — the purple artillery's landing
-  MassiveExplosion = 46, // Fx.massiveExplosion — bryde's shell
-  RailShoot = 47, // Fx.railShoot — omura's muzzle
-  RailTrail = 48, // Fx.railTrail — laid every 60 units down omura's line
-  /** navanax's emp burst: the ring at the splash radius (`len`) with ten
+  MassiveExplosion = 46, // Fx.massiveExplosion — skate3's shell
+  RailShoot = 47, // Fx.railShoot — skate5's muzzle
+  RailTrail = 48, // Fx.railTrail — laid every 60 units down skate5's line
+  /** livewire5's emp burst: the ring at the splash radius (`len`) with ten
    *  spikes on its rim, and the flash inside it */
   EmpHit = 49,
   EmpTrail = 50, // the emp round's trailEffect — two wings across its line
   HitLaserBlast = 51, // Fx.hitLaserBlast — a laser's landing, in its colour
   HitMeltHeal = 52, // Fx.hitMeltHeal — where a green beam rests
   HitLaser = 53, // Fx.hitLaser — a heal bolt's landing
-  GreenCloud = 54, // Fx.greenCloud — the retusa torpedo's afterglow
-  /** ExplosionEffect with a style (`sides` into EXPLOSION_STYLES): cyerce's
-   *  plasma missile and the disrupt missile's burst */
+  GreenCloud = 54, // Fx.greenCloud — the livewire1 torpedo's afterglow
+  /** ExplosionEffect with a style (`sides` into EXPLOSION_STYLES): livewire3's
+   *  plasma missile and the boss missile's burst */
   Explosion = 55,
   ShootBig2 = 56, // Fx.shootBig2 — the big artillery's muzzle
   HitEmpSpark = 57, // Fx.hitEmpSpark — the emp cannon's muzzle spray

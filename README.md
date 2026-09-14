@@ -45,8 +45,8 @@ stale tab or a cached bundle looks exactly like a fix not working.
   script itself (50 waves, a 15-second gap — `WAVE_GAP_DEFAULT`) lives in
   `public/levels/campaign.json`, loaded by `loadLevelDocs()`. Six unit
   families, each one idea at five sizes: ground mechs, venom spitters,
-  starlight mechs, skyfall bombers and the two **naval** lines (the harpoon
-  fleet, the wraith fleet), which travel on the amphibious water layer. The **family roll**
+  Starhart stags, Stoop bats and the two **naval** lines (the Skate
+  mantas, the Livewire eels), which travel on the amphibious water layer. The **family roll**
   (`rollFamilies`, `transformScript`) is what makes one run's swarm differ
   from the next's; `unitDrop` is what a kill pays
 - `game/economy.ts` — **the economy**: scrap (in-run money — a kill drops
@@ -361,8 +361,8 @@ authored at level 0. Difficulty is rules, not hit points.
 
 **A wave lands every fifteen seconds** (`waveGap`, `WAVE_GAP_DEFAULT`),
 from the first second of the run, each stronger than the last: a few
-dozen daggers on wave 1, the first fortresses by wave 10, waves in the
-thousands by the forties, and the Disrupt as the boss that closes the
+dozen Ironhide runts on wave 1, the first elites by wave 10, waves in the
+thousands by the forties, and the Boss as the boss that closes the
 script. The gap is shorter than a wave takes to walk the lane, so the
 waves overlap and the field is a tide rather than a series of fights —
 which is the whole reason the sim is built for 10,000 to 15,000 bodies at
@@ -374,7 +374,7 @@ once (`MAX_UNITS`, 22,000). The gap is the document's
 **Scrap is the run's money, and every bit of it comes off the swarm.**
 Every run opens with `SCRAP_START` (7,500), and after that a kill drops
 scrap **off its own health pool** — `SCRAP_PER_HP`, a fifteenth, which is
-the ten scrap a 150-health dagger has always paid — with `BOSS_SCRAP`
+the ten scrap a 150-health runt has always paid — with `BOSS_SCRAP`
 (5,000) on top of a boss. **That is the whole of it.**
 
 Staging a wave used to pay a bonus as well, 250 and 50 more each wave — so
@@ -385,7 +385,7 @@ nothing, nothing is mined, and selling returns nothing (`SELL_REFUND` is
 0): a draw is spent. Nothing carries between runs. There is no gate inside
 a run: whatever the save owns may come out of the deal from wave 1.
 
-**Drops are fixed per kind.** A dagger always pays the same, on every
+**Drops are fixed per kind.** A runt always pays the same, on every
 difficulty, on every map — it reads the AUTHORED health and never the
 difficulty-scaled pool, or a full clear would pay differently on each one.
 Scrap income is therefore a fact about the script, which is what lets the
@@ -740,7 +740,7 @@ of every gun on the field.
 | **Monofilament Rounds** | Rare | 26 | **ARMOUR STOPS APPLYING.** Every hit the board lands is dealt in full, whatever the body is plated in |
 | **Titan Rounds** | Rare | 27 | every hit gains **a quarter again per tier** above the first, so a T5 hull takes **double** |
 | **Undying Legion** | **Ultra** | 28 | **every turret you own stands back up once, at full health — the ones already on the field included** |
-| **Terminal Protocol** | **Ultra** | 29 | **anything knocked to 15% of its own health dies on the spot** — and 15% of an eclipse is three thousand the board never has to grind through |
+| **Terminal Protocol** | **Ultra** | 29 | **anything knocked to 15% of its own health dies on the spot** — and 15% of a Stoop (apex) is three thousand the board never has to grind through |
 | **Ascendancy Protocol** | **Ultra** | 30 | **the turret deal hands over rares 5× and ULTRAS 20× as often, for the rest of the run** |
 
 **And the mutators pull the other way, which is the point of them.**
@@ -767,7 +767,7 @@ deletes the reason the disabled thing was written. **Changing an arithmetic
 is not switching a system off**, which is the line Monofilament sits just
 inside: armour stopping applying changes how a number resolves, and every
 body on the field still does every single thing it was authored to do — the
-support hull still mends, the reign still stamps its plating, the player
+support hull still mends, the apex still stamps its plating, the player
 just has an answer to it.
 
 **The four anti-T5 relics live in the sim, not on a bullet,** and that is
@@ -891,18 +891,45 @@ families** from the six — every layer crosses every map now, and a fleet
 on a map with no channel simply drives — and deals them into the slots,
 tier for tier (`rollFamilies`, `transformScript` in levels.ts). In custom
 mode the hand is named instead, in whole or in part, and whatever is left
-unnamed is still rolled. Forty daggers in the
+unnamed is still rolled. Forty of the first ground body in the
 script are forty of whichever family took the first slot. The boss
-(Disrupt) is in no family and is never swapped.
+(Boss) is in no family and is never swapped.
 
-| family | bodies | layer | one look | one mechanic |
-|---|---|---|---|---|
-| Ground mechs | dagger, mace, fortress, scepter, reign | ground | **crimson** straight bullets | plating and worn shields |
-| Venom spitters | crawler, atrax, spiroct, arkyid, toxopid | ground | **acid** orbs | rot, which ignores plating |
-| Starlight mechs | nova, pulsar, quasar, vela, corvus | ground | **star-gold** lasers | every laser pierces; heals and shields |
-| Skyfall bombers | flare, horizon, zenith, antumbra, eclipse | air | **magenta** charges; no gun, the body is the bomb | goes off on contact or on death; the T5 is a nuke |
-| Harpoon fleet | risso, minke, bryde, sei, omura | water | **teal** harpoon rails | insane reach, a crawl, and the longer alive the harder it hits |
-| Wraith fleet | retusa, oxynoe, cyerce, aegires, navanax | water | **violet** arcs that short a gun | blinks forward when hit; the top tiers cloak |
+| family | animal | one body | layer | one look | one mechanic |
+|---|---|---|---|---|---|
+| Ironhides | rhino | Ironhide | ground | **crimson** straight bullets | plating and worn shields |
+| Weavers | spider | Weaver | ground | **acid** orbs | rot, which ignores plating |
+| Starhart | stag | Starhart | ground | **star-gold** lasers | every laser pierces; heals and shields |
+| Stoop | bat | Stoop | air | **magenta** charges; no gun, the body is the bomb | goes off on contact or on death; the T5 is a nuke |
+| Skates | manta | Skate | water | **teal** harpoon rails | insane reach, a crawl, and the longer alive the harder it hits |
+| Livewires | eel | Livewire | water | **violet** arcs that short a gun | blinks forward when hit; the top tiers cloak |
+
+**A body is its family and how far up it stands.** There are no proper
+nouns on the roster. A family comes in five ranks, the same five for
+every line (`UNIT_RANKS` in levels.ts), so the whole swarm is six words
+and these —
+
+> **runt · brute · elite · champion · apex**
+
+— and a body is `Ironhide (runt)` through `Ironhide (apex)`. It is the
+same animal at five sizes, which is the rule the art is drawn to
+(`docs/unit-art.md`), and it means a player who has met one family can
+read every other family's ladder on sight. The boss is in no family and
+is called Boss.
+
+**The id is the family and the tier, and nothing else.** `UnitKind` runs
+`ironhide1` … `ironhide5`, `weaver1` … `livewire5`, plus `boss` — so the
+kind a wave is authored in (`public/levels/campaign.json`), the key in
+the sim's arrays and the name on screen are all the same fact said three
+ways, and no upstream unit name survives anywhere in the codebase.
+`UNIT_NAMES` and `FAMILY_NAMES` in levels.ts are where the id becomes the
+name, and both follow `ANIMAL_ART`: turn the switch off and the sprites
+and the names are Mindustry's again together.
+
+The one place upstream's vocabulary is still written down is the sprite
+paths in `game/atlas.ts` — `/mindustry/sprites/units/dagger.png` and the
+rest — because those are the actual filenames under `public/`, which the
+animal art packs OVER rather than replaces.
 
 **One hue a family, worn everywhere the family shows** (`PAL.mech` and the
 rest in constants.ts, `FAMILY_ACCENT` in levels.ts): the highlight on the
@@ -927,46 +954,47 @@ looks are Mindustry's classes and palettes where a family kept them and
 this game's own where it did not; the bite is tuned with the stage table
 open.
 
-**Ground mechs — straight bullets, heavy plating, worn shields.** Every
+**Ironhides — straight bullets, heavy plating, worn shields.** Every
 weapon in the line is a round that goes where it is pointed: no arc, no
 beam, no flame. What a tier buys is **calibre** — 18, 26, 55, 70, 80 a
 round — which is the same thing the line's own armour asks the player for,
-read from the other side. The **mace** carries a fast short carbine where
-Mindustry gives it a flamethrower, so the T2 of a bullet family is no
-longer useless until it is standing on the turret. The **fortress** fires
+read from the other side. The **brute** carries a fast short carbine where
+Mindustry gives its ironhide2 a flamethrower, so the T2 of a bullet family is no
+longer useless until it is standing on the turret. The **elite** fires
 its siege shell **flat** rather than lobbing it, at exactly its upstream
 reach (30 tiles) — so it can be blocked, which puts it back inside the rule
-the rest of the line plays by. The mace and the fortress wear a **personal
-shield**; the **scepter** projects one over the crowd; and the **reign**
+the rest of the line plays by. The brute and the elite wear a **personal
+shield**; the **champion** projects one over the crowd; and the **apex**
 hands down its **plating** — +12 armour to everything within nine tiles
-(`armorField`). Armour is a flat shave floored at a tenth, so a reign in
-the crowd does not make it tougher, it makes **small calibre stop working**.
+(`armorField`). Armour is a flat shave floored at a tenth, so an apex in
+the crowd does not make it tougher, it makes **small calibre stop
+working**.
 
 *What it poses:* a wall that walks. The answer is calibre, never volume.
 
-**Venom spitters — one orb, one status, five tiers.** Every weapon on the
+**Weavers — one orb, one status, five tiers.** Every weapon on the
 tree throws the same thing: a filled **purple orb** (`venomOrb`, no sprite
 — the renderer fills a disc, bright core over dark rim) landing **poison**.
 The line used to be four weapon classes wearing one palette — a contact
 bomb, slag orbs, sap beams, shrapnel rays — and read as four families. The
-**crawler**'s suicide charge is gone: a status that works over six seconds
+**runt**'s suicide charge is gone: a status that works over six seconds
 cannot have its opening tier delete itself on arrival. It spits once every
 three seconds instead, and the orb **bursts** from the T2 up — a tile-wide
-splash on the atrax, wider on the spiroct, a thrown bomb at T4 and a
+splash on the brute, wider on the elite, a thrown bomb at T4 and a
 barrage at T5, so the family is one idea growing rather than three tiers of
-pea-shooter and then two of bombardment. The **atrax** is the same gun on
+pea-shooter and then two of bombardment. The **brute** is the same gun on
 four barrels; the
-**spiroct** carries the game's only **haste field** (`hasteField`, ×1.35
+**elite** carries the game's only **haste field** (`hasteField`, ×1.35
 within ten tiles) because rot runs on a clock and the family wants more
-applications inside it; the **arkyid** adds a thrown **poison bomb** that
-rots a whole patch from 25 tiles; and the **toxopid** throws nothing else.
+applications inside it; the **champion** adds a thrown **poison bomb** that
+rots a whole patch from 25 tiles; and the **apex** throws nothing else.
 The bodies are lighter and quicker than upstream's, and the legs are cut to
 about a third of Mindustry's length — the family scuttles rather than
 strides.
 
 *What it poses:* **rot ignores plating** (`Tower.poison`, and
 `damageTower`'s `pierceArmor` door — burning has the same exemption on the
-swarm's side). It is the family a board that out-armoured the ground mechs
+swarm's side). It is the family a board that out-armoured the Ironhides
 still loses turrets to. What a tier buys is **rate and reach, never a
 better status**: the rot is the same six seconds from the T1 and the T5
 (`POISON_TIME`). What a tier buys is **how much of a patch one orb rots at
@@ -980,8 +1008,8 @@ there are, with no ceiling**. Ten bodies is a trickle; three thousand is a
 flood.
 
 **The numbers per application are small and most of them are a chance**
-(`poisonChance`): a crawler's spit is six health a second at one roll in
-four, a toxopid's bomb is ten every time, and the odds are rolled **per
+(`poisonChance`): a runt's spit is six health a second at one roll in
+four, an apex's bomb is ten every time, and the odds are rolled **per
 structure** so a burst across a patch comes out speckled. `rate x chance` is
 the same expected rot as a smaller rate landing every time — what the odds
 buy is a tier ladder that doesn't move the number the player learned.
@@ -998,61 +1026,62 @@ them, or out-mending them.
 
 The two are built to be **opposite problems on purpose**: one is answered
 by bringing a bigger gun, the other by not letting the clock refresh. The
-ground mechs' siege shell was made blockable in the same pass that left the
-venom line's thrown bomb unblockable, so one family is answered by putting
+Ironhides' siege shell was made blockable in the same pass that left the
+Weavers' thrown bomb unblockable, so one family is answered by putting
 something in the way and the other is not.
 
-**Starlight mechs — green lasers that pierce, and a crowd that keeps
+**Starhart — green lasers that pierce, and a crowd that keeps
 mending.** Every weapon on the tree is an instant beam in the family's star-gold (`PAL.star`), and
 every beam hits **every structure along its length** (`pierce`,
-`Sim.structuresAlong`) — the corridor is the style's own width, so a
-nova's thin lance takes the row it points down and the **corvus**'s
-57-tile, nine-cell beam takes the patch. Nothing flies: the nova's bolt is
-a lance now and the pulsar's lightning a **fan of three** thin beams. Every
-tier heals or shields the crowd around it — the nova mends, the pulsar
-shields, the **quasar** stands in its 500-point force field — and the
-**vela** and **corvus** do both at once (a repair field and a shield field
-on one pulse, the corvus's the biggest on the roster), which is what the
-top of the line was missing.
+`Sim.structuresAlong`) — the corridor is the style's own width, so the
+runt's thin lance takes the row it points down and the **apex**'s 57-tile,
+nine-cell beam takes the patch. Nothing flies: the runt's bolt is a lance
+now and the brute's lightning a **fan of three** thin beams. Every tier
+heals or shields the crowd around it — the runt mends, the brute shields,
+the **elite** stands in its 500-point force field — and the **champion**
+and **apex** do both at once (a repair field and a shield field on one
+pulse, the apex's the biggest on the roster), which is what the top of the
+line was missing.
 
 *What it poses:* a wall of green across a patch from behind a crowd that
 does not go down. Kill the carriers before the line reaches the guns.
 
-**Skyfall bombers — the body is the bomb.** No bomber carries a gun.
+**Stoop — the body is the bomb.** No bomber carries a gun.
 Each has one weapon and it is itself (`payload`): it picks the nearest
 structure inside its seek reach, **dives** at it (`Sim.updateUnits`) and
 goes off on contact — and it goes off **the same way when it is shot
 down**, wherever that is (`Sim.killUnit`, `detonate`). A bomber that
 arrives pays no scrap; one shot down does. The line keeps its speed at
-every tier (eclipse 9 tiles/s, not 4). The **zenith** is the afterburner
+every tier (the apex 9 tiles/s, not 4). The **elite** is the afterburner
 (`hasteField`: the flight round it flies four tenths faster), the
-**antumbra** carries a **jam** (`jamField`: guns within eleven tiles reload
-at half pace under it) and a **cluster charge** that throws eight bomblets
-first, and the **eclipse** carries the **small nuke**: where it goes off
+**champion** carries a **jam** (`jamField`: guns within eleven tiles
+reload at half pace under it) and a **cluster charge** that throws eight
+bomblets first, and the **apex** carries the **small nuke**: where it goes
+off
 the charge arms, sits for two and a half seconds as a swelling orange orb,
 and then takes 4,000 off everything within eleven tiles.
 
 *What it poses:* an AA line over the guns it protects detonates bombers
 over them. The answer is reach: kill them over nothing.
 
-**Harpoon fleet — snipers that grow old.** Every gun on the fleet is a
+**Skates — snipers that grow old.** Every gun on the fleet is a
 **rail** (`fx: "rail"`, in the fleet's teal) from **beyond the
-board's reach**: fifty tiles on the risso, ninety on the omura, past the
-foreshadow's sixty-two — and the omura's **pierces** everything on its
+board's reach**: fifty tiles on the runt, ninety on the apex, past the
+foreshadow's sixty-two — and the apex's **pierces** everything on its
 line. The hulls crawl ashore (`NAVAL_PACE`, `NAVAL_LAND_SPEED` at half)
 and are half again as quick afloat, and every one carries **veterancy**
 (`veteran`, `Sim.uvet`): every hit is multiplied by how long the hull has
 been alive, to triple after eighty seconds — the rows are set light against
 that, so a fresh fleet is a nuisance and an old one is a siege. The
-**bryde** is the **spotter** (`spotterField`: the hulls round it reach half
-again as far) and the **sei** the **drill** (`drillField`: they age two and
-a half times as fast).
+**elite** is the **spotter** (`spotterField`: the hulls round it reach half
+again as far) and the **champion** the **drill** (`drillField`: they age
+two and a half times as fast).
 
 *What it poses:* it is shooting you long before you can shoot it, and it
 is getting stronger. The answer is the long guns, and killing them young —
 the spotter and the drill first.
 
-**Wraith fleet — arcs that short the guns, off hulls that cannot be
+**Livewires — arcs that short the guns, off hulls that cannot be
 held.** Every weapon is **chain lightning** in the wraiths' violet (`PAL.wraith`,
 fx `arc`): the target first, then the nearest structure the last one
 struck can reach, hop after hop — and every structure it connects with
@@ -1062,8 +1091,8 @@ down. Every hull **blinks** (`blink`, `Sim.blinkUnit`): a hit that lands
 throws it four to six tiles up its route, past the gun that landed it,
 stopping short of rock and of any building. The top three **cloak**
 (`cloak`): three to five seconds gone in every nine to twelve, untargetable
-and untouchable and drawn as a ghost; the **navanax**'s cloak **veils**
-every body within ten tiles. The **aegires**'s field shorts everything in
+and untouchable and drawn as a ghost; the **apex**'s cloak **veils**
+every body within ten tiles. The **champion**'s field shorts everything in
 twenty-two tiles and heals the fleet by a share of its health.
 
 *What it poses:* a line that cannot hold a target. The answer is bursts

@@ -26,7 +26,7 @@
  *   --tier <n>       rung, 0-based (default 0 — no rolled mutators)
  *   --mutators a,b   mutators to play under (default none; intrinsic ones always apply)
  *   --families a,b,c the three families to deal into the script's slots, by key
- *                    (ground, crawler, groundSupport, air, naval, navalSupport) —
+ *                    (ground, weaver1, groundSupport, air, naval, navalSupport) —
  *                    default: the script as authored, which is ground, groundSupport, air
  *   --level <n>      player level: which turrets the track has opened (default 15 — the whole roster)
  *   --scale <x>      multiply the roll fee and every turret price (default 1)
@@ -317,8 +317,8 @@ function play() {
 
   // THE ROUTES, one per movement layer, and WHAT EACH IS WORTH: the share
   // of the script's health that walks, flies or drives amphibious. A
-  // naval wave-1 of rissos is the water route's business, and a bot that
-  // spread its opening board along an empty crawler corridor would lose
+  // naval wave-1 of runts is the water route's business, and a bot that
+  // spread its opening board along an empty weaver1 corridor would lose
   // the map before learning that
   // the routes as walked (heatRoutes), falling back to the traced gradient
   // where the probe saw nothing on a layer the script sends later

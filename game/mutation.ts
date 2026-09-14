@@ -646,7 +646,7 @@ export const HUNGRY_MAX_MEALS = 20;
  *
  * NOTHING ELSE CROSSES OVER. Not the shield pool, not a force field, not a
  * repair or shield aura, not burning or wet, not armour, not speed — a
- * dagger that eats a quasar does not come out mending its neighbours. Only
+ * ironhide1 that eats a starhart3 does not come out mending its neighbours. Only
  * the number moves.
  */
 export const HUNGRY_HP_PER_MEAL = 2;
@@ -657,9 +657,9 @@ export const HUNGRY_HP_PER_MEAL = 2;
  *
  * THE RULE USED TO BE A GIFT AND THIS IS WHY. A meal moved HEALTH and
  * nothing else, so the rule spent the swarm's numbers to buy one body a
- * pool — and numbers are what a swarm hurts a line with. Twenty daggers
- * walking into a board do twenty daggers' worth of damage to it; one body
- * carrying all twenty pools does ONE dagger's. Measured on a fixed board
+ * pool — and numbers are what a swarm hurts a line with. Twenty runts
+ * walking into a board do twenty runts' worth of damage to it; one body
+ * carrying all twenty pools does ONE ironhide1's. Measured on a fixed board
  * at a fixed seed, a run under Hungry Mechs lasted THIRTY PER CENT LONGER
  * than the same run without it: the mutator was eating the swarm's own
  * damage and handing the player the difference.
@@ -671,8 +671,8 @@ export const HUNGRY_HP_PER_MEAL = 2;
  * instead of deleting it, which is what the card has always promised.
  *
  * IT IS A SHARE OF ITS OWN WEAPON, NOT OF WHAT IT ATE, for the reason the
- * health is not: a dagger that eats a quasar does not come out firing a
- * quasar's gun. It comes out firing a great many daggers' worth of its
+ * health is not: an ironhide1 that eats a starhart3 does not come out firing a
+ * starhart3's gun. It comes out firing a great many runts' worth of its
  * own.
  */
 export const HUNGRY_DMG_PER_MEAL = 1;
@@ -699,7 +699,7 @@ export const HUNGRY_HUE: readonly [number, number, number] = [1, 0.55, 0.86];
 // ---------- ARMORED -----------------------------------------------------
 //
 // EVERY TIER 1-3 BODY GAINS ARMORED_ARMOR FLAT ARMOUR. The heavies take
-// none: a fortress and a zenith already carry the plating that matters,
+// none: an ironhide3 and a stoop3 already carry the plating that matters,
 // and doubling down on them would only make the rule "the same fight, but
 // longer". What it hardens is the SWARM — the bodies the script sends by
 // the thousand and the player kills with the cheap, fast, small-calibre
@@ -874,10 +874,10 @@ export const HYDROPHOBIC_RATE = 0.3;
 // walking through them worse.
 //
 // EACH BONUS IS A SHARE OF THE UNIT'S OWN NUMBERS, not a flat amount, so
-// one rule reads the same on a 150-hp crawler and a 22,000-hp toxopid: a
+// one rule reads the same on a 150-hp weaver1 and a 22,000-hp weaver5: a
 // stack is always "a fifth again of what you were", never "+30 hp", which
 // would be everything to the first and nothing to the second. The one
-// exception is ARMOUR, and it is a deliberate one — the crawler line's T1
+// exception is ARMOUR, and it is a deliberate one — the weaver1 line's T1
 // has armour 0, so a percentage of it is a percentage of nothing, and the
 // rule would skip the very body it is most about. Armour is therefore a
 // flat step on the same scale ARMORED_ARMOR uses.
@@ -896,7 +896,7 @@ export const HYDROPHOBIC_RATE = 0.3;
 // number anyone can tune.
 //
 // WHAT IT DOES NOT TOUCH: the hitbox, the layer, the kind. A waded
-// crawler is a fast fat crawler, and it still cannot swim — deep water is
+// weaver1 is a fast fat weaver1, and it still cannot swim — deep water is
 // impassable to it exactly as before, and the rule only ever fires on the
 // shallow ground the map already lets it walk on.
 
@@ -912,10 +912,10 @@ export const AMPHIBIOUS_HP = 0.15;
  * (Speedy's doubling included — a share of what it actually walks at).
  *
  * FIVE STACKS IS +50%, short of Speedy's doubling on purpose. It was
- * +250% — a crawler that forded every crossing on Quagmire arrived at
+ * +250% — a weaver1 that forded every crossing on Quagmire arrived at
  * three and a half times its pace — and that was a swarm no tier-1 board
  * could catch: the headless playtest lost the map on wave 4 with every
- * leak a crawler, at half the authored counts. The rule keeps its teeth
+ * leak a weaver1, at half the authored counts. The rule keeps its teeth
  * in the health and the plating; the speed is what a kill zone can still
  * answer. It still has to be WALKED for, one crossing at a time, and only
  * the bodies that took the long way in arrive carrying it.
@@ -925,8 +925,8 @@ export const AMPHIBIOUS_SPEED = 0.1;
 /** armour added per stack, FLAT — see the note above on why this one is
  *  not a percentage. Five stacks is two and a half plates — it was ten,
  *  the whole of ARMORED_ARMOR, and a body wearing ten plates is a body a
- *  duo hits for its floor, which on Quagmire was every crawler by wave
- *  four and every mace by wave twelve. The health is the rule's weight
+ *  duo hits for its floor, which on Quagmire was every weaver1 by wave
+ *  four and every ironhide2 by wave twelve. The health is the rule's weight
  *  now; the plating is the edge that makes a hail worth more than a duo */
 export const AMPHIBIOUS_ARMOR = 0.5;
 
@@ -943,7 +943,7 @@ export const AMPHIBIOUS_GROWTH = 0.04;
 // ---------- OVERSHIELDS -------------------------------------------------
 //
 // EVERY FORCE FIELD IS FIVE TIMES THE POOL IT WAS — the unit bubbles a
-// quasar walks in with, and the shield tower domes if Shield Towers is rolled
+// starhart3 walks in with, and the shield tower domes if Shield Towers is rolled
 // alongside. Pool, cap and regen all carry the factor, so a scaled field
 // breaks later, refills proportionally faster, and is dark for exactly the
 // same `cooldown` seconds when it pops.
@@ -964,7 +964,7 @@ export const AMPHIBIOUS_GROWTH = 0.04;
 // the audit arithmetic and no bodies to the script; it delays the damage a
 // board was already going to do, which is the same audit-invisible
 // currency Speedy and Volatile tax. Priced at 3 because the swarm's force
-// fields are carried by one kind — a quasar's bubble shelters what stands
+// fields are carried by one kind — a starhart3's bubble shelters what stands
 // near it — so a board that can break one is inconvenienced rather than
 // beaten. Rolled beside Shield Towers it is worth considerably more than
 // three, and that is the catalog working as intended: rules that compound
@@ -981,7 +981,7 @@ export const OVERSHIELD_SCALE = 5;
 // dead field into a mechanic: nothing else in the game hurts a tower.
 //
 // IT TAXES POINT-BLANK PLAY SPECIFICALLY. A blast reaches from a little
-// over two cells (a dagger) to six (a tier-5 body), so the emplacements
+// over two cells (an ironhide1) to six (a tier-5 body), so the emplacements
 // built against the lane — scorch, fuse, arc, a duo wall on the choke —
 // feel it hardest, and they feel it in proportion to how many bodies die
 // at their feet and how heavy those bodies were. A long-range board is
@@ -990,22 +990,22 @@ export const OVERSHIELD_SCALE = 5;
 // the front row", which is a layout problem rather than a stat problem.
 //
 // THE REACH CLIMBS WITH THE TIER (VOLATILE_RADIUS) and that is what gives
-// the rule its shape rather than just its strength. A dagger's pop only
-// ever costs the turret it died on top of; a reign's takes the whole
+// the rule its shape rather than just its strength. An ironhide1's pop only
+// ever costs the turret it died on top of; an ironhide5's takes the whole
 // second rank behind the choke with it, so spacing a line off the lane
 // by one turret buys immunity from the chaff and none at all from the
 // thing that was worth killing — which is the point, because one turret
 // of clearance was a habit rather than a decision.
 //
-// A WRECKED TOWER IS GONE. What a swarm of detonating daggers costs the
+// A WRECKED TOWER IS GONE. What a swarm of detonating runts costs the
 // player is turrets — the scrap to stand them back up, and the silence in
 // the kill zone until they do — which is the same currency the coming
 // enemy attacks will spend, and the reason this rule is priced as a
 // preview of them rather than as a mutator of its own.
 //
 // THE DAMAGE SCALES WITH THE BODY'S TIER, NOT ITS LEVEL. Tier is the
-// currency ladder (UNIT_STATS.tier, 1-5): a dagger's pop is a scratch and
-// a fortress's is a real dent, at every difficulty alike. Scaling with
+// currency ladder (UNIT_STATS.tier, 1-5): an ironhide1's pop is a scratch and
+// an ironhide3's is a real dent, at every difficulty alike. Scaling with
 // level would make the rule unpayable at the top difficulty for the same reason
 // armour is never level-scaled — tower health does not climb the ladder,
 // so neither may the thing that spends it.
@@ -1013,7 +1013,7 @@ export const OVERSHIELD_SCALE = 5;
 /**
  * BLAST REACH from the dead body's centre, in px, BY THE DEAD UNIT'S TIER
  * (index 0 unused) — plus the body's own hitbox radius on top, so a
- * fortress's boom is wider than a flare's even within a tier. Literals
+ * ironhide3's boom is wider than a stoop1's even within a tier. Literals
  * rather than CELL because this file deliberately imports nothing.
  *
  *   tier     1      2      3      4      5
@@ -1024,7 +1024,7 @@ export const OVERSHIELD_SCALE = 5;
  * hard each tower in reach is hit, this says how many towers are in
  * reach, and a heavy body is worse on both. A tier-5 dying inside the
  * kill zone is meant to be an EVENT — six cells is a whole emplacement,
- * not a front row — while a dagger's pop stays the firecracker it was.
+ * not a front row — while an ironhide1's pop stays the firecracker it was.
  *
  * THE RING DRAWN FOR THE POP IS SIZED FROM THIS. Sim.volatileBlast hands
  * the reach to the shockwave effect, so what a player sees is exactly
@@ -1048,24 +1048,24 @@ if (VOLATILE_RADIUS.length !== VOLATILE_DMG.length)
 // ---------- MITOSIS -----------------------------------------------------
 //
 // EVERY BODY THE PLAYER KILLS BREAKS INTO TIER-1 BODIES, more of them the
-// heavier the thing that died. A mace leaves two daggers behind, a reign
+// heavier the thing that died. An ironhide2 leaves two runts behind, an ironhide5
 // leaves twelve — so a kill stops being the end of a fight and becomes the
 // start of a smaller one, and the board that could only just clear the
 // wave now has to clear it twice.
 //
 // IT IS A RULE ABOUT THROUGHPUT, NOT ABOUT HEALTH. The brood is the
-// cheapest thing in the game: a dagger at whatever the level curve says,
+// cheapest thing in the game: an ironhide1 at whatever the level curve says,
 // no armour, no shield, no ability. A turret that can kill things fast
 // barely notices it. What it takes apart is the board built to kill a few
 // EXPENSIVE things — the long-reload heavies, the single-target snipers,
-// the lancer line whose whole answer to a fortress is one shot that is
-// worth it. Those turrets spend the same reload on a dagger, and the
+// the lancer line whose whole answer to an ironhide3 is one shot that is
+// worth it. Those turrets spend the same reload on an ironhide1, and the
 // mutator hands them eleven more of them to spend it on.
 //
 // IT TERMINATES BECAUSE A BROOD BODY DOES NOT BROOD. That is a property
 // of the BODY, carried on the unit itself (Sim.ubrood) and read once when
 // it dies — not a zero in the table below. A brood that bred in its turn
-// would be a chain reaction with no upper bound: one dagger, one dagger,
+// would be a chain reaction with no upper bound: one ironhide1, one ironhide1,
 // forever, and a wave that can never be finished is not a harder wave.
 //
 // PUTTING THE GUARANTEE ON THE UNIT IS WHAT LETS THE TABLE BE A DIAL. It
@@ -1100,7 +1100,7 @@ if (VOLATILE_RADIUS.length !== VOLATILE_DMG.length)
 // THE BROOD KEEPS ITS PARENT'S LAYER. A flyer leaves flyers, a hull
 // leaves hulls, a walker leaves walkers — the sim picks the T1 kinds that
 // travel on the dead unit's movement layer (MITOSIS_KINDS in sim.ts).
-// Anything else would drop daggers into deep water and flares onto a lane
+// Anything else would drop runts into deep water and runts onto a lane
 // they have no business on, and a brood that cannot walk where it landed
 // is a brood the player never has to answer.
 
@@ -1109,15 +1109,15 @@ if (VOLATILE_RADIUS.length !== VOLATILE_DMG.length)
  * unused).
  *
  * The curve is roughly the tier's own weight rather than a flat number: a
- * T2 is worth a couple of daggers and a T5 is worth a small wave, which is
+ * T2 is worth a couple of runts and a T5 is worth a small wave, which is
  * about what those bodies cost to kill in the first place. Twelve at the
- * top is the number this was set to — enough that a reign dying inside the
+ * top is the number this was set to — enough that an ironhide5 dying inside the
  * kill zone visibly refills it, and few enough that a board with any
  * splash at all is not simply overrun by its own success.
  *
  * TIER 1 BREAKS INTO ONE, which is what makes the card's "every enemy"
  * literally true rather than nearly true. It is the cheapest row here and
- * the one the player meets most: a killed dagger leaves a dagger, so
+ * the one the player meets most: a killed ironhide1 leaves an ironhide1, so
  * clearing the T1 stream costs twice the shots it used to and no more —
  * and it costs it ONCE, because the body it left is brood and brood does
  * not brood (see above). A player watching the swarm should never have to
@@ -1464,7 +1464,7 @@ if (RECONSTRUCT_DELAY <= 0 || RECONSTRUCT_GRACE <= 0)
 // THE BIG ONES LEAD, AND NOTHING NEAR THEM CAN BE HIT HARD. Every body
 // within LEADERSHIP_TILES of a LIVE TIER FIVE takes at most
 // LEADERSHIP_CAP off any one hit — not a share of the hit, a CEILING on
-// it — so the escort around a reign stops caring what is being fired at
+// it — so the escort around an ironhide5 stops caring what is being fired at
 // it and starts caring only how often.
 //
 // IT INVALIDATES A WAY OF PLAYING, WHICH IS WHAT FIVE POINTS BUYS. A board
@@ -1539,7 +1539,7 @@ if (LEADERSHIP_CAP <= 0 || LEADERSHIP_TILES <= 0 || LEADERSHIP_PERIOD <= 0)
 //
 // AND IT DOES NOT STOP WHEN THE TURRET DOES. A building the virus kills
 // hands it on to the nearest turret in range, and that one to the next:
-// what starts as one dead dagger walks through a dense line one gun at a
+// what starts as one dead ironhide1 walks through a dense line one gun at a
 // time until it runs out of neighbours. THE GAP IS THE COUNTER — a line
 // with air in it is a line the virus cannot cross, and the player's own
 // spacing is the whole defence.

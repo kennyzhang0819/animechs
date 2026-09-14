@@ -462,9 +462,9 @@ const TURRET_MODS: readonly ModDef[] = [
     rarity: "rare",
     glyph: "shield",
     chance: 0.1,
-    // the +2 is half a mace's plate — a copy is not the difference
-    // between a dagger biting and bouncing off any more, but four are
-    blurb: "A chance for a new turret to be born armoured: more health, plating a dagger has to get through, and it mends itself.",
+    // the +2 is half an ironhide2's plate — a copy is not the difference
+    // between an ironhide1 biting and bouncing off any more, but four are
+    blurb: "A chance for a new turret to be born armoured: more health, plating an ironhide1 has to get through, and it mends itself.",
     apply: (t, n) => armored(tougher(t, per(1.25, n)), 2 * Math.max(1, n)),
     regen: 0.008,
   },

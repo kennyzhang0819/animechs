@@ -179,6 +179,18 @@
         "4300"
       ],
       "port": 4300
+    },
+    {
+      "name": "animechs-4402",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:hot",
+        "--",
+        "-p",
+        "4402"
+      ],
+      "port": 4402
     }
   ]
 }
