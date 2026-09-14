@@ -13,6 +13,7 @@ import {
   UNIT_CELL,
   UV_SOLID,
   UV_BASE,
+  DECOR_DRAWN,
   UV_DECOR,
   UV_FLOORS,
   UV_PINE,
@@ -1861,6 +1862,9 @@ export class Renderer {
       // a boulder stands in the hill's shadow like anything else on the
       // ground; a pine is the hill (its cell casts), so it is not shaded
       for (const d of T.decor) {
+        // the stones and the spore crystals are off (atlas.ts DECOR_DRAWN);
+        // a map that has them keeps them, they are simply not drawn
+        if (!DECOR_DRAWN[d.kind]) continue;
         const lit = this.litAt(d.x, d.y);
         this.push(w, d.x, d.y, d.size, d.size, d.rot, UV_DECOR[d.kind], lit, lit, lit, 1);
       }

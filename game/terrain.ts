@@ -422,15 +422,18 @@ export function generateTerrain(seed: number): Terrain {
       wall[i] = fringe && mountain[i] === 1 && rng() < 0.6 ? 2 + h : h;
     }
 
-  // boulders and shrubs sprinkled on open ground (purely decorative)
+  // shrubs sprinkled on open ground (purely decorative). It sowed
+  // boulders on the cells that were not grass too; the stones are off
+  // (atlas.ts DECOR_DRAWN), so a generated board grows things or it grows
+  // nothing
   const propTries = 130;
   for (let n = 0; n < propTries; n++) {
     const x = 7 + ((rng() * (COLS - 14)) | 0), y = 1 + ((rng() * (ROWS - 2)) | 0);
     const i = y * COLS + x;
     if (blocked[i]) continue;
     if (x >= BASE.x - 6 && y >= BASE.y - 4 && y < BASE.y + BASE.size + 4) continue;
-    const shrub = floor[i] < 3 && rng() < 0.45; // shrubs only look right on grass
-    const kind = shrub ? 2 : (rng() * 2) | 0;
+    if (floor[i] >= 3 || rng() >= 0.45) continue; // shrubs only look right on grass
+    const kind = rng() < 0.5 ? 2 : 11;
     decor.push({
       x: (x + 0.5) * CELL,
       y: (y + 0.5) * CELL,

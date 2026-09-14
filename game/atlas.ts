@@ -587,6 +587,23 @@ export const UV_DECOR: readonly UVRect[] = DECOR_KINDS.map(([k, cell]) => prop(k
 export const DECOR_TILES: readonly number[] = [
   1.5, 1.5, 1, 1.25, 1.25, 1.25, 1, 1, 1, 1.5, 1.5, 1, 1, 1,
 ];
+/**
+ * WHICH GROUND CLUTTER IS STILL DRAWN. The boulders of every family and
+ * the spore clusters are OFF: a board strewn with stones and crystals was
+ * reading as scatter over the ground rather than as ground, and what is
+ * wanted on it is the growing things — the shrubs and the purple bush.
+ *
+ * It is a mask over DECOR_KINDS rather than a deletion, because a decor
+ * kind is an INDEX baked into every saved map document: dropping the
+ * boulders out of the table would renumber the shrubs and turn every
+ * shrub on disk into something else. The maps keep their stones, the
+ * renderer skips them (pushTerrain), the generator stops sowing them
+ * (terrain.ts) and the editor stops offering them (maps.ts PALETTE), and
+ * turning one back on is one `true` here.
+ */
+export const DECOR_DRAWN: readonly boolean[] = DECOR_KINDS.map(
+  ([k]) => !/^(?:.*[Bb]oulder\d|sporeCluster\d)$/.test(k),
+);
 
 // ---------------------------------------------------------------------
 // STRUCTURES, EFFECTS AND THE ODD SHAPES

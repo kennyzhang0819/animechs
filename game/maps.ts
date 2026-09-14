@@ -370,20 +370,14 @@ export const PALETTE: readonly PaletteSet[] = [
   // snowfield in snow pines without a second blocking brush
   { id: "pine", label: "Pine", kind: "pine", variants: [0, 1, 2], noRandom: true,
     icons: [propIcon("pine"), propIcon("sporePine"), propIcon("snowPine")] },
-  { id: "boulder", label: "Boulder", kind: "decor", variants: [0, 1],
-    icons: [propIcon("boulder0"), propIcon("boulder1")] },
+  // THE ONLY CLUTTER LEFT IS WHAT GROWS. The boulder, spore-cluster,
+  // shale/snow/sand-boulder brushes were deleted with the art they paint
+  // (atlas.ts DECOR_DRAWN); their decor INDICES are still in the table
+  // there, so the maps that carry stones carry them undisturbed
   { id: "shrub", label: "Shrub", kind: "decor", variants: [2, 11],
     icons: [propIcon("shrubs"), propIcon("shrubs2")] },
-  { id: "spore-cluster", label: "Spore cluster", kind: "decor", variants: [3, 4, 5],
-    icons: [propIcon("sporeCluster0"), propIcon("sporeCluster1"), propIcon("sporeCluster2")] },
   { id: "pur-bush", label: "Purple bush", kind: "decor", variants: [6],
     icons: [propIcon("purBush")] },
-  { id: "shale-boulder", label: "Shale boulder", kind: "decor", variants: [7, 8],
-    icons: [propIcon("shaleBoulder0"), propIcon("shaleBoulder1")] },
-  { id: "snow-boulder", label: "Snow boulder", kind: "decor", variants: [9, 10],
-    icons: [propIcon("snowBoulder0"), propIcon("snowBoulder1")] },
-  { id: "sand-boulder", label: "Sand boulder", kind: "decor", variants: [12, 13],
-    icons: [propIcon("sandBoulder0"), propIcon("sandBoulder1")] },
   // SPAWN TILES: ONE brush, painted like a floor — the brush size and the
   // round/square shape are the ordinary ones, so a mouth is a stroke and a
   // shoreline of doors is a drag along it.
@@ -427,8 +421,10 @@ export const PALETTE_SECTIONS: readonly { label: string; ids: readonly string[] 
   { label: "Walls", ids: ["stone-wall", "dirt-wall", "dark-wall", "spore-wall", "shale-wall",
     "dacite-wall", "sand-wall", "dune-wall", "snow-wall", "ice-wall", "salt-wall", "pine"] },
   { label: "Paths", ids: ["path-dirt", "path-darksand", "path-mud"] },
-  { label: "Props", ids: ["boulder", "shrub", "spore-cluster", "pur-bush", "shale-boulder",
-    "snow-boulder", "sand-boulder"] },
+  // the boulders and the spore clusters are gone from the palette with the
+  // art (atlas.ts DECOR_DRAWN): a brush that paints something the renderer
+  // will not draw is a brush that does nothing
+  { label: "Props", ids: ["shrub", "pur-bush"] },
   // the veins are their own group rather than a stray swatch among the
   // floors: ore is not a floor tile at all but a layer over one (T.ore),
   // and it is the only brush that decides what a run EARNS
