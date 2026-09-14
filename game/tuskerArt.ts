@@ -47,10 +47,24 @@ import type { LegParts, MechParts } from "./animalArt";
 import { BORE, GUN, STEEL, draw, drawWithCell, rev, type Mat, type Pen } from "./turretArt";
 import { scaler, segment, type IronTier } from "./ironhideArt";
 
-/** the hide — a cold slate, darker and bluer than the rhino's grey-mauve
- *  so the two heavy ground lines are never each other at a glance — and
- *  the IVORY the family wears (PAL.tusk is the light) */
-export const TUSK_HIDE: Mat = ["#39383e", "#63626c"];
+/**
+ * The hide, and the IVORY the family wears (PAL.tusk is the light).
+ *
+ * IT IS A MID GREY, WHICH IS WHAT AN ELEPHANT IS. The first cut was a
+ * near-black slate, picked to be sure the two heavy ground lines were
+ * never mistaken for each other — and it made the animal read as
+ * armour-plate rather than as hide. This pair is a clear step LIGHTER
+ * than the rhino's and cooler than its grey-mauve, which separates them
+ * on tone instead of on darkness and costs nothing: at field zoom the
+ * rhino is a dark body with one crimson-tipped horn and the Tusker is a
+ * pale one with three prongs, two of them ivory.
+ *
+ * Everything the machine is drawn in (GUN, BORE) is now DARKER than the
+ * hide rather than lighter, so the howdah reads as plating laid on the
+ * animal — which is the right way round and was the other thing the dark
+ * cut got backwards.
+ */
+export const TUSK_HIDE: Mat = ["#67666f", "#a3a2ad"];
 export const IVORY: Mat = ["#a89372", "#fff3de"];
 const HIDE_R = rev(TUSK_HIDE);
 
