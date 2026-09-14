@@ -86,21 +86,47 @@ Triplet, Bellow, Kiln, Sluice, Halo, Quiver, Broadside, Bombard,
 Floodgate, Grindstone, Crucible, Furnace, Railspike) are captions only;
 the stock kind stays the key everywhere in the code.
 
-### Three silhouettes a kind
+### Three silhouettes a kind, and the one chosen
 
-`mill-<kind>.png` is the A set; `mill-<kind>-b.png` and `mill-<kind>-c.png`
-are two more silhouettes for every kind, same plating and accent,
-different construction, so the roster can be picked head by head. In
-broad strokes: the B set leans round (turntables, drums, a tank with the
-nozzle on top, a round gatling salvo, a tesla dome), the C set leans
-angular (hex plates, prisms, a wedge mortar, a boxy salvo with a wide
-magazine, a coilgun on a round base). All fifty-one render through the
-same one-pixel check with none flagged. Two more things it taught: a
-pod or pipe that crosses the turntable's rim must cover the rim for
-every row it spans (the rim's inner edge emerging from under a vertical
-edge is a one-pixel step), and a coil or collar laid across a round
-base has to start above where the base's interior first appears.
+`mill-<kind>.png` is the roster: the round-leaning set (turntables,
+drums, a tank with the nozzle on top, a round gatling salvo, a tesla
+dome), chosen over the two alternates that are kept beside it,
+`mill-<kind>-a.png` (the first, angular-leaning set) and
+`mill-<kind>-c.png` (hex plates, prisms, a wedge mortar, a coilgun on a
+round base), so a kind can still be swapped head by head. All fifty-one
+render through the same one-pixel check with none flagged. Two more
+things it taught: a pod or pipe that crosses the turntable's rim must
+cover the rim for every row it spans (the rim's inner edge emerging from
+under a vertical edge is a one-pixel step), and a coil or collar laid
+across a round base has to start above where the base's interior first
+appears.
 
+### The plate
+
+The heads sit on Mindustry's block plates with every channel at 0.8
+(`base-N.png`, written by `scripts/turret-concepts.mjs`): still grey, a
+step darker, so a head reads as standing on something. In the game that
+is one multiply on the base draw in `renderer.ts` (the plate already
+takes the hp tint as an RGB, so a constant 0.8 folds into it) and the
+same on `towerBaseIcon`'s PNGs for the placement ghost.
+
+### Against the swarm
+
+The animals (`game/animalArt.ts`) and these heads are the same kind of
+drawing: flat plates, four or five colours, no outline, nothing under
+two pixels, symmetric by construction. Two things differ, both on
+purpose. The heads carry Mindustry's turret lighting, dark left and
+light right, and the animals do not: a building is lit like a machine
+and a body is not, which is one more cue that separates the two sides
+at a glance. And the animals carry a family hue on a dark body (gold,
+crux red, acid, magenta) while the heads carry a muted ammo accent on
+gunmetal, so nothing on the player's side reads as a family. The one
+near-collision is the rhino, whose body grey sits close to the gunmetal
+ramp; its crux red keeps it on the right side, and if that ever fails
+on the board the fix is to warm the rhino, not the turrets. Scale is
+the game's own: a 1x1 turret is one tile of 20 world px and a T1 animal
+draws at three, so a duo next to a dagger-sized body is small by design
+(`docs/unit-art.md`, "The size").
 ## Shipping it
 
 A faction is a skin over the one roster, never a second roster: the sim,
