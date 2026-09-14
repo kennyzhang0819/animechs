@@ -30,6 +30,7 @@ import {
   WALL_SPORE,
 } from "./atlas";
 import { FLOOR_STYLE, propIcon, tileIcon, wallIcon, WALL_STYLE } from "./tiles";
+import { LINOCUT_TERRAIN } from "./terrainFlag";
 import { explain, type SaveResult } from "./types";
 
 /**
@@ -718,8 +719,8 @@ const FLOOR_TONES = [
     const t = FLOOR_STYLE[k].base;
     return [t, t, t];
   }),
-  "#4c6b9c", "#4c6b9c", "#4c6b9c", // shallow water
-  "#2f4d7a", "#2f4d7a", "#2f4d7a", // deep water
+  ...(LINOCUT_TERRAIN ? ["#2f6b74", "#2f6b74", "#2f6b74"] : ["#4c6b9c", "#4c6b9c", "#4c6b9c"]), // shallow water
+  ...(LINOCUT_TERRAIN ? ["#1f4a55", "#1f4a55", "#1f4a55"] : ["#2f4d7a", "#2f4d7a", "#2f4d7a"]), // deep water
   // the second environment band (see the ENV2 note in atlas.ts)
   ...(["moss", "sporeMoss", "mud", "shale", "snow", "salt", "ice", "basalt"] as const).flatMap(
     (k) => {
@@ -727,8 +728,8 @@ const FLOOR_TONES = [
       return [t, t, t];
     },
   ),
-  "#604b94", "#604b94", "#604b94", // shallow spore water
-  "#44356b", "#44356b", "#44356b", // deep spore water
+  ...(LINOCUT_TERRAIN ? ["#245459", "#245459", "#245459"] : ["#604b94", "#604b94", "#604b94"]), // shallow spore water
+  ...(LINOCUT_TERRAIN ? ["#173840", "#173840", "#173840"] : ["#44356b", "#44356b", "#44356b"]), // deep spore water
 ];
 // Neither SENTINEL reaches this table: drawThumb tests both first. The
 // pine slot (4) is a placeholder that keeps 5-6 (dark carbon rock)

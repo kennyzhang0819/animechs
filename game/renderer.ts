@@ -1,4 +1,5 @@
-import { FLOOR_STYLE, type FloorKind } from "./tiles";
+import { FLOOR_STYLE, LINOCUT_BAND, TILE_LOGICAL, wallBandTones, type FloorKind } from "./tiles";
+import { LINOCUT_TERRAIN } from "./terrainFlag";
 import {
   FLYER_PARTS,
   LEG_ART,
@@ -70,6 +71,7 @@ import {
   UV_WALLS,
   UV_WALL_LARGE,
   WALL_GROUP,
+  WALL_GROUP_KINDS,
   WATER_UV_UNIT,
   type UVRect,
 } from "./atlas";
@@ -614,6 +616,18 @@ const GROUP_PRI = [
 // yet, so its edge art isn't baked either. The water groups are never in
 // here: nothing is beneath them to fade over.
 const EDGE_ORDER = [4, 2, 0, 10, 14, 12, 13, 11, 9, 7, 8] as const;
+/**
+ * THE CARVED BANDS (LINOCUT_TERRAIN, docs/terrain-directions.md): along
+ * every edge a hill shows to open ground, a band LINOCUT_BAND logical px
+ * deep inside the rock cell — pale on the north and east faces, dark on
+ * the south and west, the top-right light the whole game uses — and a
+ * square of the same in a cell whose diagonal neighbour alone is open.
+ * One tinted white quad each, pushed after the wall cell in the same
+ * static batch, so they cost nothing per frame. Per wall family, in the
+ * family's own ink (tiles.ts wallBandTones)
+ */
+const WALL_BANDS: readonly { light: RGB; dark: RGB }[] = WALL_GROUP_KINDS.map((k) => wallBandTones(k));
+const BAND_W = (CELL * LINOCUT_BAND) / TILE_LOGICAL;
 // wall shadow strength: BlockRenderer.shadowColor is black at 0.71 — the
 // premultiplied blend of a black quad at this alpha equals its multiply
 export const WALL_SHADOW_A = 0.71;
@@ -1070,7 +1084,9 @@ export class Renderer {
     // one quad per water cell — a map that is all sea is the worst case
     this.water = this.makeBatch(NCELLS + 64);
     // wall tiles + decor/pine props
-    this.walls = this.makeBatch(NCELLS * 2 + 2048);
+    // under the ink every rock cell on an edge pushes up to six band quads
+    // after its own (see the wall pass), so the batch is sized for it
+    this.walls = this.makeBatch(NCELLS * (LINOCUT_TERRAIN ? 4 : 2) + 2048);
     this.shadow = this.makeBatch(4);
     this.dark = this.makeBatch(4);
     // a swarm budget, not a worst case: 12 quads is a walking mech with one
@@ -1821,6 +1837,25 @@ export class Renderer {
             uvr = quads[y & 1][x & 1];
         }
         this.push(w, (x + 0.5) * CELL, (y + 0.5) * CELL, CELL, CELL, 0, uvr, 1, 1, 1, 1);
+        if (LINOCUT_TERRAIN && g >= 0) {
+          // the carved bands (WALL_BANDS): a side is "open" when the cell
+          // past it shows its floor — ground, water, a pine; off the map
+          // is rock. The dark bands go down first, the pale over them,
+          // so a corner both sides claim is lit
+          const open = (xx: number, yy: number): boolean =>
+            xx >= 0 && yy >= 0 && xx < mapCols && yy < mapRows && showsFloor(yy * COLS + xx);
+          const { light, dark } = WALL_BANDS[g]!;
+          const cx = (x + 0.5) * CELL, cy = (y + 0.5) * CELL, bw = BAND_W;
+          const n = open(x, y - 1), e = open(x + 1, y), so = open(x, y + 1), we = open(x - 1, y);
+          if (so) this.push(w, cx, (y + 1) * CELL - bw / 2, CELL, bw, 0, UV_SOLID, dark[0], dark[1], dark[2], 1);
+          if (we) this.push(w, x * CELL + bw / 2, cy, bw, CELL, 0, UV_SOLID, dark[0], dark[1], dark[2], 1);
+          if (!so && !we && open(x - 1, y + 1))
+            this.push(w, x * CELL + bw / 2, (y + 1) * CELL - bw / 2, bw, bw, 0, UV_SOLID, dark[0], dark[1], dark[2], 1);
+          if (n) this.push(w, cx, y * CELL + bw / 2, CELL, bw, 0, UV_SOLID, light[0], light[1], light[2], 1);
+          if (e) this.push(w, (x + 1) * CELL - bw / 2, cy, bw, CELL, 0, UV_SOLID, light[0], light[1], light[2], 1);
+          if (!n && !e && open(x + 1, y - 1))
+            this.push(w, (x + 1) * CELL - bw / 2, y * CELL + bw / 2, bw, bw, 0, UV_SOLID, light[0], light[1], light[2], 1);
+        }
       }
     }
     if (layers.props) {

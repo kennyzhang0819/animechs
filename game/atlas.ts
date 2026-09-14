@@ -1,7 +1,9 @@
 import { UNIT_SPRITE } from "./constants";
+import { LINOCUT_TERRAIN } from "./terrainFlag";
 import {
   floorCanvas,
   propCanvas,
+  waterCanvas,
   type PropKind,
   wallCanvas,
   WALL_VARIANTS,
@@ -461,6 +463,9 @@ const WALL_CELLS: readonly (readonly UVRect[] | null)[] = WALL_KINDS_IN_ORDER.ma
   k ? Array.from({ length: WALL_VARIANTS }, (_, v) => tile(`wall-${k}-${v}`, 64, WALL_INSET)) : null,
 );
 export const UV_WALLS: readonly UVRect[] = WALL_CELLS.flatMap((cells) => cells ?? [WALL_CELLS[0]![0]]);
+/** the wall family behind each WALL_GROUP index, for whoever needs the
+ *  family's own colours (the renderer's carved bands under the ink) */
+export const WALL_GROUP_KINDS: readonly WallKind[] = WALL_KINDS_IN_ORDER.filter((k): k is WallKind => k !== null);
 // which wall family each UV_WALLS index belongs to (0 stone, 1 dirt,
 // 2 dark rock, then the second band's eight; -1 the pine and deep-water
 // sentinels) — StaticWall's large-draw rule works per block type, so 2x2
@@ -2822,7 +2827,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // quad draws; the ring is the headroom the shader displaces into
   const floor = (kind: FloorKind, slot: number): HTMLCanvasElement =>
     floorCanvas(kind, slot === 0 ? 0 : 1);
-  const waterBlock = (src: HTMLImageElement): HTMLCanvasElement => {
+  const waterBlock = (src: HTMLImageElement | HTMLCanvasElement): HTMLCanvasElement => {
     const reps = WATER_TILE / 64;
     const block = document.createElement("canvas");
     block.width = block.height = 32 * reps;
@@ -2835,7 +2840,9 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   };
   FLOOR_GROUPS.forEach((g, i) => {
     const cells = FLOOR_CELLS[i];
-    if ("water" in g) draw(cells[0], waterBlock(img[g.water]));
+    // under the ink the water is painted too (tiles.ts paintWater); the
+    // swell shader displaces the painted tile exactly as it did the file
+    if ("water" in g) draw(cells[0], waterBlock(LINOCUT_TERRAIN ? waterCanvas(g.water) : img[g.water]));
     else cells.forEach((cell, slot) => draw(cell, antialiased(floor(g.kind, slot))));
   });
 

@@ -212,3 +212,34 @@ the animals and the Foundry heads exactly where they are.
 The first step in any of them is the same and can ship on its own:
 warm the stone off gunmetal and drop the violet marsh. The hill-side
 shading stays.
+
+## How it ships
+
+`game/terrainFlag.ts` — `LINOCUT_TERRAIN`. On, the board is Linocut in
+ochre, the game's own hill-side shading kept over it:
+
+- **The floors and the rock** are painted by `game/tiles.ts` as before,
+  under the ink: every floor family's base is warmed toward ochre and
+  flat, its one mark a carved tick (variant 0; a third of the cells);
+  every rock family's face is burnt umber over its own hue, flat, its
+  one mark a gouge. `FLOOR_STYLE` and `WALL_STYLE` are the shifted
+  tables while the flag is on, so the dust, the map thumbnails and the
+  boulders (which take the wall tones) follow without a second table.
+- **The carved bands** are the renderer's: in the wall pass
+  (`renderer.ts`, after each wall cell) a rock cell pushes one tinted
+  white quad (`UV_SOLID`) per open side — pale on the north and east
+  faces, dark on the south and west, `LINOCUT_BAND` logical px deep — and
+  a square where only a diagonal neighbour is open. A side is open when
+  the cell past it shows its floor (ground, water, a pine); off the map
+  is rock. The bands are in the wall family's own ink
+  (`wallBandTones`), go into the same static batch (sized up for them)
+  and cost nothing per frame. The rim shadow lands on the floor beside
+  them and the darkness over the cells behind them, untouched.
+- **The water** is painted too (`paintWater`): two teals with a crest or
+  two cut into the tile, handed to the same 3x3 block and the same
+  swell shader Mindustry's file went through (`atlas.ts`).
+- **The trees** pull toward the canopy olive (`leaf` in `PROP_STYLE`).
+
+Off, everything is the flat repaint of Mindustry's set it was, and the
+water is Mindustry's, byte for byte. `npm run gen:tiles` writes the
+editor's palette icons from whichever painter the flag picks.

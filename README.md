@@ -163,7 +163,11 @@ stale tab or a cached bundle looks exactly like a fix not working.
   `setUnitDamageScale` is the one dial over the swarm's bite
 - `game/tiles.ts` — the ground tiles and the hill blocks, the game's own
   terrain art, painted at load on a 16-pixel grid; `npm run gen:tiles`
-  writes the palette's PNGs into `public/tiles/`
+  writes the palette's PNGs into `public/tiles/`. While `LINOCUT_TERRAIN`
+  (`game/terrainFlag.ts`) is on they are painted as **Linocut in ochre**
+  — flat warmed floors, umber rock with carved bands along its edges
+  (pushed by the renderer's wall pass), painted teal water under the
+  same swell shader; see [docs/terrain-directions.md](docs/terrain-directions.md)
 - `game/atlas.ts` — the sprite atlas, composited at load time from
   Mindustry sprites in `public/mindustry/` plus procedural regions. The
   sheet is packed at load: a cell is asked for by size with `reserve()`

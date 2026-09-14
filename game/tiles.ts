@@ -24,6 +24,8 @@
  * tones for its thumbnails on the server.
  */
 
+import { LINOCUT_TERRAIN } from "./terrainFlag";
+
 /** logical pixels across a tile, and the scale to the 32px cell */
 export const TILE_LOGICAL = 16;
 export const TILE_SCALE = 2;
@@ -70,7 +72,7 @@ export type FloorKind =
   | "hotrock"
   | "magmarock";
 
-export const FLOOR_STYLE: Readonly<Record<FloorKind, FloorStyle>> = {
+const STOCK_FLOOR_STYLE: Readonly<Record<FloorKind, FloorStyle>> = {
   grass: { base: "#6a9b52", light: "#78a95c", dark: "#5c8a46", mark: "tussock" },
   stone: { base: "#7c7c84", light: "#878790", dark: "#6b6b73", mark: "spotted" },
   dirt: { base: "#8f6b4a", light: "#9b7654", dark: "#7d5c3f", mark: "pebbled" },
@@ -94,7 +96,6 @@ export const FLOOR_STYLE: Readonly<Record<FloorKind, FloorStyle>> = {
   magmarock: { base: "#5a3a30", light: "#66443a", dark: "#4a2e26", accent: "#f08a4a", mark: "ember" },
 };
 
-export const FLOOR_KINDS = Object.keys(FLOOR_STYLE) as FloorKind[];
 
 const mulberry32 = (seed: number) => (): number => {
   seed |= 0;
@@ -119,6 +120,47 @@ const mix = (a: string, b: string, t: number): string => {
       .padStart(2, "0");
   return `#${ch(ar, br)}${ch(ag, bg)}${ch(ab, bb)}`;
 };
+
+const lit = (c: string, t: number): string => mix(c, "#ffffff", t);
+const shd = (c: string, t: number): string => mix(c, "#000000", t);
+
+/* ======================================================================
+ * THE LINOCUT INK — ochre. One carved hand for the whole board: floors
+ * warmed toward ochre and flat, rock as burnt umber with a pale band on
+ * its lit edges and a dark one on its shaded, water two teals. The
+ * numbers are the concept's (scripts/terrain-concepts.mjs,
+ * LINOCUT_PALETTES.ochre); a floor or wall family keeps its own hue
+ * underneath, so a desert is still a desert and a tundra a tundra.
+ * ====================================================================== */
+const INK = {
+  warm: "#c9a45a",
+  umber: "#8a5a34",
+  umberDeep: "#5a3a20",
+  umberLit: "#e2b876",
+  canopy: "#6a7a30",
+  deep: "#1f4a55",
+  shallow: "#2f6b74",
+  crest: "#cfe6d8",
+  taintedDeep: "#173840",
+  taintedShallow: "#245459",
+} as const;
+/** the carved band along a rock's edge, in logical px of the 16 a tile has */
+export const LINOCUT_BAND = 6;
+/** how far the shaded band goes toward black, and the lit band toward the ink's highlight */
+const LINOCUT_SHADE = { dark: 0.55, light: 1 } as const;
+
+/** a floor family under the ink: warmed, its two shades a step further apart */
+const linocutFloor = (s: FloorStyle): FloorStyle => {
+  const base = mix(s.base, INK.warm, 0.15);
+  return { ...s, base, light: lit(base, 0.2), dark: shd(base, 0.22) };
+};
+const mapStyles = <K extends string, V>(t: Readonly<Record<K, V>>, f: (v: V) => V): Readonly<Record<K, V>> =>
+  Object.fromEntries((Object.keys(t) as K[]).map((k) => [k, f(t[k])])) as Record<K, V>;
+
+export const FLOOR_STYLE: Readonly<Record<FloorKind, FloorStyle>> = LINOCUT_TERRAIN
+  ? mapStyles(STOCK_FLOOR_STYLE, linocutFloor)
+  : STOCK_FLOOR_STYLE;
+export const FLOOR_KINDS = Object.keys(FLOOR_STYLE) as FloorKind[];
 
 /**
  * EVERY MARK IS ROUND. Visit each cell inside an ellipse, handing the
@@ -186,7 +228,21 @@ export function paintFloor(kind: FloorKind, variant: number): Uint8ClampedArray<
   // of the cells bare and one mark on the rest, the ground is a colour
   // with something on it here and there, which is what ground looks like
   // from above
-  if (variant % FLOOR_VARIANTS === 0)
+  if (LINOCUT_TERRAIN) {
+    // under the ink the one mark is a carved tick: a short diagonal
+    // stroke two px wide, either way, a shade up or (mostly) down
+    if (variant % FLOOR_VARIANTS === 0) {
+      const len = 4 + Math.floor(rng() * 3), flip = rng() < 0.5 ? 1 : -1;
+      const x0 = RIM + 1 + Math.floor(rng() * (N - RIM * 2 - 2 - len));
+      const y0 = RIM + 1 + (flip < 0 ? len : 0) + Math.floor(rng() * (N - RIM * 2 - 2 - len));
+      const c = rng() < 0.35 ? st.light : dark;
+      for (let y = 0; y < N; y++)
+        for (let x = 0; x < N; x++) {
+          const u = x - x0 + flip * (y - y0), v = x - x0 - flip * (y - y0);
+          if (u >= 0 && u < len * 2 && Math.abs(v) < 1.6) put(x, y, c);
+        }
+    }
+  } else if (variant % FLOOR_VARIANTS === 0)
     switch (st.mark) {
       case "soft":
         blob(st.light, 3 + rng() * 1.5);
@@ -285,7 +341,7 @@ export interface WallStyle {
   grain: "rough" | "soft" | "glassy";
 }
 
-export const WALL_STYLE: Readonly<Record<WallKind, WallStyle>> = {
+const STOCK_WALL_STYLE: Readonly<Record<WallKind, WallStyle>> = {
   stone: { face: "#84848f", light: "#9b9ba6", dark: "#65656f", grain: "rough" },
   dirt: { face: "#9a7250", light: "#b08862", dark: "#7a583b", grain: "soft" },
   dark: { face: "#474c53", light: "#5b6169", dark: "#33373d", grain: "rough" },
@@ -299,7 +355,30 @@ export const WALL_STYLE: Readonly<Record<WallKind, WallStyle>> = {
   dacite: { face: "#9f9fb4", light: "#b9b9cc", dark: "#82829a", grain: "rough" },
 };
 
+/** a rock family under the ink: the face burnt umber over the family's
+ *  own hue, the lit corner's tone the pale band's, the shaded corner's
+ *  the dark band's (paintWall draws the bands' colours nowhere — the
+ *  renderer lays them along the hill's edges, see wallBandTones) */
+const linocutWall = (s: WallStyle): WallStyle => {
+  const face = mix(shd(s.face, 0.18), INK.umber, 0.45);
+  return {
+    ...s,
+    face,
+    light: mix(face, mix(lit(s.face, 0.2), INK.umberLit, 0.35), LINOCUT_SHADE.light),
+    dark: shd(mix(face, INK.umberDeep, 0.4), LINOCUT_SHADE.dark),
+  };
+};
+export const WALL_STYLE: Readonly<Record<WallKind, WallStyle>> = LINOCUT_TERRAIN
+  ? mapStyles(STOCK_WALL_STYLE, linocutWall)
+  : STOCK_WALL_STYLE;
 export const WALL_KINDS = Object.keys(WALL_STYLE) as WallKind[];
+
+/** the carved bands' colours for a rock family, as the renderer tints
+ *  them: 0..1 RGB, the pale band and the dark one */
+export const wallBandTones = (kind: WallKind): { light: [number, number, number]; dark: [number, number, number] } => {
+  const f = (c: string): [number, number, number] => { const [r, g, b] = hex(c); return [r / 255, g / 255, b / 255]; };
+  return { light: f(WALL_STYLE[kind].light), dark: f(WALL_STYLE[kind].dark) };
+};
 export const WALL_VARIANTS = 2;
 
 /**
@@ -321,6 +400,23 @@ export function paintWall(
   const put = (x: number, y: number, c: string): void => {
     if (x >= 0 && y >= 0 && x < N && y < N) grid[y * N + x] = c;
   };
+  if (LINOCUT_TERRAIN) {
+    // under the ink a rock is flat, and the first painting carries one
+    // gouge: a diagonal stroke two px wide a shade up, clear of the rim
+    // the atlas crops (WALL_INSET, four logical px)
+    if (variant % WALL_VARIANTS === 0) {
+      const RIM = 4, len = 5 + Math.floor(rng() * 3), flip = rng() < 0.5 ? 1 : -1;
+      const x0 = RIM + Math.floor(rng() * (N - RIM * 2 - len));
+      const y0 = RIM + (flip < 0 ? len : 0) + Math.floor(rng() * (N - RIM * 2 - len));
+      const c = mix(st.face, "#ffffff", 0.1);
+      for (let y = 0; y < N; y++)
+        for (let x = 0; x < N; x++) {
+          const u = x - x0 + flip * (y - y0), v = x - x0 - flip * (y - y0);
+          if (u >= 0 && u < len * 2 && Math.abs(v) < 1.6) put(x, y, c);
+        }
+    }
+    return toRgba(grid, N, TILE_PX * span);
+  }
   // THE BANDS. `t` runs from -1 at the bottom-left corner to +1 at the
   // top-right; the two thresholds cut the tile into the shaded corner,
   // the mid band and the lit corner, and a slow wobble along each
@@ -366,7 +462,11 @@ export function paintWall(
     ellipse(cx, cy, r, r * 0.9, (x, y) => put(x, y, st.light));
   }
 
-  const P = TILE_PX * span;
+  return toRgba(grid, N, TILE_PX * span);
+}
+
+/** a logical grid of colours as opaque RGBA at `P` px a side, TILE_SCALE up */
+function toRgba(grid: readonly string[], N: number, P: number): Uint8ClampedArray<ArrayBuffer> {
   const out = new Uint8ClampedArray(new ArrayBuffer(P * P * 4));
   for (let y = 0; y < P; y++)
     for (let x = 0; x < P; x++) {
@@ -378,6 +478,41 @@ export function paintWall(
       out[o + 3] = 255;
     }
   return out;
+}
+
+/* ======================================================================
+ * THE WATER UNDER THE INK. Mindustry's water is a 32px tile the swell
+ * shader displaces; under the ink the tile is two flat teals with a
+ * crest or two cut into it — a short white line with a tick at its end —
+ * and the shader moves those the way it moved the ripples. Only drawn
+ * while LINOCUT_TERRAIN is on; off, the stock files are the water.
+ * ====================================================================== */
+export type WaterKind = "shallowWater" | "deepWater" | "taintedWater" | "deepTaintedWater";
+export function paintWater(kind: WaterKind): Uint8ClampedArray<ArrayBuffer> {
+  const N = TILE_LOGICAL;
+  const deep = kind === "deepWater" || kind === "deepTaintedWater";
+  const tainted = kind === "taintedWater" || kind === "deepTaintedWater";
+  const base = tainted ? (deep ? INK.taintedDeep : INK.taintedShallow) : deep ? INK.deep : INK.shallow;
+  const crest = tainted ? mix(INK.crest, base, 0.3) : INK.crest;
+  const rng = mulberry32(9000 + (deep ? 17 : 0) + (tainted ? 131 : 0));
+  const grid = new Array<string>(N * N).fill(base);
+  // two 16x8 blocks a tile, a crest in each with its own chance
+  for (let by = 0; by < 2; by++) {
+    if (rng() >= (deep ? 0.6 : 0.4)) continue;
+    const x0 = 2 + Math.floor(rng() * 4), y = by * 8 + 3 + Math.floor(rng() * 2);
+    for (let x = x0; x < x0 + 8; x++) grid[y * N + x] = crest;
+    grid[(y - 1) * N + x0 + 7] = crest;
+    grid[(y - 1) * N + x0 + 6] = crest;
+  }
+  return toRgba(grid, N, TILE_PX);
+}
+export function waterCanvas(kind: WaterKind): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  c.width = c.height = TILE_PX;
+  const g = c.getContext("2d");
+  if (!g) throw new Error("2d context unavailable for water tile");
+  g.putImageData(new ImageData(paintWater(kind), TILE_PX, TILE_PX), 0, 0);
+  return c;
 }
 
 /** the painted block as a canvas: 32px for one tile, 64px for a 2×2 */
@@ -428,9 +563,11 @@ const rock = (w: WallKind, seed: number, size: 32 | 48 = 48): PropStyle => ({
   seed,
 });
 
+/** a growing thing's tone under the ink: pulled toward the canopy olive */
+const leaf = (c: string): string => (LINOCUT_TERRAIN ? mix(c, INK.canopy, 0.3) : c);
 export const PROP_STYLE = {
-  pine: { size: 48, shape: "tree", seed: 1, tones: { mid: "#5a9c4c", light: "#7dbd68", dark: "#3d7238" } },
-  sporePine: { size: 48, shape: "tree", seed: 2, tones: { mid: "#8f5aa8", light: "#ad7cc4", dark: "#6a3f82" } },
+  pine: { size: 48, shape: "tree", seed: 1, tones: { mid: leaf("#5a9c4c"), light: leaf("#7dbd68"), dark: leaf("#3d7238") } },
+  sporePine: { size: 48, shape: "tree", seed: 2, tones: { mid: leaf("#8f5aa8"), light: leaf("#ad7cc4"), dark: leaf("#6a3f82") } },
   snowPine: { size: 48, shape: "tree", seed: 3, tones: { mid: "#e4ebf2", light: "#ffffff", dark: "#b6c5d6" } },
   boulder0: rock("stone", 11),
   boulder1: rock("stone", 12),
@@ -442,8 +579,8 @@ export const PROP_STYLE = {
   shaleBoulder1: rock("shale", 42, 32),
   sandBoulder0: rock("sand", 51, 32),
   sandBoulder1: rock("sand", 52, 32),
-  shrubs: { size: 32, shape: "thicket", seed: 61, tones: { mid: "#5f9e45", light: "#7fbd5c", dark: "#4a833a" } },
-  shrubs2: { size: 32, shape: "thicket", seed: 62, tones: { mid: "#5f9e45", light: "#7fbd5c", dark: "#4a833a" } },
+  shrubs: { size: 32, shape: "thicket", seed: 61, tones: { mid: leaf("#5f9e45"), light: leaf("#7fbd5c"), dark: leaf("#4a833a") } },
+  shrubs2: { size: 32, shape: "thicket", seed: 62, tones: { mid: leaf("#5f9e45"), light: leaf("#7fbd5c"), dark: leaf("#4a833a") } },
   purBush: { size: 32, shape: "shrub", seed: 71, tones: { mid: "#7561bd", light: "#9a89d9", dark: "#54459a" } },
   sporeCluster0: { size: 40, shape: "pods", seed: 81, tones: { mid: "#7b5bd1", light: "#a48ff0", dark: "#57409c" } },
   sporeCluster1: { size: 40, shape: "pods", seed: 82, tones: { mid: "#7b5bd1", light: "#a48ff0", dark: "#57409c" } },
