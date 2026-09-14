@@ -787,21 +787,18 @@ export interface EelTier {
   /** the head, body-segment and tail grids (each in a cell one wider) */
   nh: number; ns: number; nt: number;
   /** how many segments trail the head, and the chain spacing between
-   *  them in native px (the slab is drawn longer than that, so the joints
-   *  stay covered as the chain bends) */
+   *  them in native px (the slab is drawn a hair longer, so each segment
+   *  reads as its own plate with the joint just covered) */
   count: number; spacing: number;
-  /** the swimming wave: lateral amplitude at the tail in native px,
-   *  cycles per second, and the phase lag per segment (rad) */
-  amp: number; rate: number; phase: number;
 }
 /** no overshoot on this one: the head cell is drawn full, and the length
  *  comes from the chain — five to thirty-odd tiles nose to tail */
 export const EEL_TIERS: readonly EelTier[] = [
-  { t: 1, nh: 47, ns: 35, nt: 35, count: 4, spacing: 25, amp: 4, rate: 1.4, phase: 0.9 },
-  { t: 2, nh: 71, ns: 51, nt: 51, count: 5, spacing: 36, amp: 6, rate: 1.1, phase: 0.9 },
-  { t: 3, nh: 95, ns: 71, nt: 71, count: 7, spacing: 51, amp: 9, rate: 0.9, phase: 0.85 },
-  { t: 4, nh: 127, ns: 99, nt: 99, count: 7, spacing: 71, amp: 13, rate: 0.7, phase: 0.8 },
-  { t: 5, nh: 183, ns: 139, nt: 139, count: 7, spacing: 99, amp: 18, rate: 0.55, phase: 0.75 },
+  { t: 1, nh: 47, ns: 35, nt: 35, count: 4, spacing: 25 },
+  { t: 2, nh: 71, ns: 51, nt: 51, count: 5, spacing: 36 },
+  { t: 3, nh: 95, ns: 71, nt: 71, count: 7, spacing: 51 },
+  { t: 4, nh: 127, ns: 99, nt: 99, count: 7, spacing: 71 },
+  { t: 5, nh: 183, ns: 139, nt: 139, count: 7, spacing: 99 },
 ];
 /** the violet line down the head — last on the head, alone (in white) for the cell */
 function eelAccent(g: Pen, H: H, T: EelTier): void {
@@ -821,17 +818,18 @@ function eelHead(g: Pen, H: H, T: EelTier): void {
   if (t >= 5) for (const s of [-1, 1]) H.mech(g, { poly: H.rot(X(0.5 + s * 0.3), Y(0.08), px(0.08), px(0.22), s * 15) }, false);
   eelAccent(g, H, T);
 }
-/** one body segment: a slab as long as the grid and 0.8 of it wide, the
- *  spine down the middle, the electric line either side; steel rings from
- *  T3, a dorsal plate from T4 */
+/** one body segment: a chamfered plate 0.78 of the grid long (the chain
+ *  spacing is 0.71, so it just covers the joint) and 0.8 of it wide, the
+ *  spine down the middle, the electric line either side; a steel ring at
+ *  the front edge from T3, a dorsal plate from T4 */
 function eelSegment(g: Pen, H: H, T: EelTier): void {
   const { ns, t } = T; const o = EEL; const X = (v: number) => v * ns, Y = (v: number) => v * ns;
   const px = (v: number) => Math.max(2, Math.round(v * ns));
-  H.org(g, { poly: H.P([[X(0.16), Y(0)], [X(0.84), Y(0)], [X(0.9), Y(0.15)], [X(0.9), Y(0.85)], [X(0.84), Y(1)], [X(0.16), Y(1)], [X(0.1), Y(0.85)], [X(0.1), Y(0.15)]]) }, o, false);
-  g.over((q) => q.box(H.p(X(0.5) - px(0.1)), H.p(Y(0)), H.p(X(0.5) + px(0.1)), H.p(Y(1)), o[2]));
-  for (const s of [-1, 1]) g.box(H.p(X(0.5 + s * 0.27) - px(0.03)), H.p(Y(0)), H.p(X(0.5 + s * 0.27) + px(0.03)), H.p(Y(1)), VOLT[1]);
-  if (t >= 3) H.mech(g, { poly: H.R(X(0.1), Y(0.08), X(0.9), Y(0.22)) }, false);
-  if (t >= 4) H.mech(g, { poly: H.R(X(0.5) - px(0.06), Y(0.3), X(0.5) + px(0.06), Y(0.9)) }, false);
+  H.org(g, { poly: H.P([[X(0.16), Y(0.11)], [X(0.84), Y(0.11)], [X(0.9), Y(0.22)], [X(0.9), Y(0.78)], [X(0.84), Y(0.89)], [X(0.16), Y(0.89)], [X(0.1), Y(0.78)], [X(0.1), Y(0.22)]]) }, o, false);
+  g.over((q) => q.box(H.p(X(0.5) - px(0.1)), H.p(Y(0.11)), H.p(X(0.5) + px(0.1)), H.p(Y(0.89)), o[2]));
+  for (const s of [-1, 1]) g.box(H.p(X(0.5 + s * 0.27) - px(0.03)), H.p(Y(0.11)), H.p(X(0.5 + s * 0.27) + px(0.03)), H.p(Y(0.89)), VOLT[1]);
+  if (t >= 3) H.mech(g, { poly: H.R(X(0.1), Y(0.15), X(0.9), Y(0.27)) }, false);
+  if (t >= 4) H.mech(g, { poly: H.R(X(0.5) - px(0.06), Y(0.32), X(0.5) + px(0.06), Y(0.84)) }, false);
 }
 /** the tail: a fin flaring past the neck's width and tapering to a point */
 function eelTail(g: Pen, H: H, T: EelTier): void {

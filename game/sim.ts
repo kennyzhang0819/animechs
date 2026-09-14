@@ -1142,6 +1142,8 @@ export class Sim {
    *  updateSegments and read back by Renderer.pushSegments */
   readonly usegX = new Float32Array(MAX_UNITS * MAX_SEGS);
   readonly usegY = new Float32Array(MAX_UNITS * MAX_SEGS);
+  /** the swim's phase per unit (SegmentSpec.wavelength), rad */
+  readonly usegPh = new Float32Array(MAX_UNITS);
   // --- naval hulls (UnitStats.wake) ---
   // The path the hull has taken, WAKE_PTS world points per unit, oldest
   // first: the wake is drawn along it. Like a leg's foot these are world
@@ -5738,6 +5740,7 @@ export class Sim {
         this.usegX[a + k] = this.usegX[b + k];
         this.usegY[a + k] = this.usegY[b + k];
       }
+      this.usegPh[i] = this.usegPh[n];
     }
     // and the moved hull's wake, for the same reason its feet move
     if (KIND_WAKE[this.ukind[i]]) {
@@ -5762,19 +5765,27 @@ export class Sim {
     const off = i * MAX_SEGS;
     const cx = Math.cos(this.urot[i]), sy = Math.sin(this.urot[i]);
     for (let k = 0; k < S.count; k++) {
-      this.usegX[off + k] = this.upx[i] - cx * S.spacing * (k + 1);
-      this.usegY[off + k] = this.upy[i] - sy * S.spacing * (k + 1);
+      this.usegX[off + k] = this.upx[i] - cx * (S.neck + S.spacing * (k + 1));
+      this.usegY[off + k] = this.upy[i] - sy * (S.neck + S.spacing * (k + 1));
     }
+    this.usegPh[i] = Math.random() * TAU;
   }
   /**
-   * One tick of the chain: each segment is pulled to exactly `spacing`
-   * behind the point ahead of it whenever it has fallen further, and left
-   * where it is otherwise — so the body follows the head's path, bunches
-   * a little when the head turns back on it, and never stretches.
+   * One tick of the chain. The neck — the point the chain hangs from,
+   * behind the head's centre — sways across the heading on a phase that
+   * advances with distance travelled (SegmentSpec.amp, wavelength), with
+   * a slow idle sway on top so a standing body is not a rod. Then each
+   * segment is pulled to exactly `spacing` behind the point ahead of it
+   * whenever it has fallen further, and left where it is otherwise — so
+   * the body follows the neck's sinuous path, bunches a little when the
+   * head turns back on it, and never stretches.
    */
-  private updateSegments(i: number, S: SegmentSpec): void {
+  private updateSegments(i: number, S: SegmentSpec, moved: number, dt: number): void {
     const off = i * MAX_SEGS;
-    let lx = this.upx[i], ly = this.upy[i];
+    this.usegPh[i] = (this.usegPh[i] + (moved / S.wavelength) * TAU + dt * 0.25 * TAU) % TAU;
+    const rot = this.urot[i], cr = Math.cos(rot), sr = Math.sin(rot);
+    const sway = Math.sin(this.usegPh[i]) * S.amp;
+    let lx = this.upx[i] - cr * S.neck - sr * sway, ly = this.upy[i] - sr * S.neck + cr * sway;
     for (let k = 0; k < S.count; k++) {
       const p = off + k;
       const dx = lx - this.usegX[p], dy = ly - this.usegY[p];
@@ -6461,7 +6472,7 @@ export class Sim {
       const gait = KIND_LEGS[ukind[i]];
       if (gait) this.updateLegs(i, gait, mdx, mdy, len, dt);
       const chain = KIND_SEGS[ukind[i]];
-      if (chain) this.updateSegments(i, chain);
+      if (chain) this.updateSegments(i, chain, len, dt);
       if (nav) this.updateWake(i, dt, water[ci] !== 0);
     }
   }

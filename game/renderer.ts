@@ -4120,11 +4120,9 @@ export class Renderer {
   /**
    * The worm rig (SEGMENT_ART, Sim.usegX): the chain the sim dragged
    * behind the head, drawn from the tail forward so the head lands on top.
-   * Each segment's quad faces the point ahead of it, and swims: a sine on
-   * sim time, lagging one phase step per segment down the chain and
-   * growing toward the tail, laid across the chain's direction — the wave
-   * an eel's body carries backward. The seed is the spawn-time walk
-   * offset, so a shoal does not swim in step.
+   * Each segment's quad sits on its chain point and faces the point ahead
+   * of it; the swim is already in the chain (Sim.updateSegments), so
+   * nothing is added here.
    */
   private pushSegments(
     dyn: Batch,
@@ -4137,26 +4135,19 @@ export class Renderer {
     cell: CellArt | null,
     cellCol: RGB,
   ): void {
-    const { usegX, usegY, upx, upy, urot, uwalk } = sim;
+    const { usegX, usegY, upx, upy, urot } = sim;
     const n = S.count, off = i * MAX_SEGS;
-    const t = sim.time * art.rate * Math.PI * 2 + uwalk[i];
     for (let k = n - 1; k >= 0; k--) {
       const sx = usegX[off + k], sy = usegY[off + k];
       const lx = k === 0 ? upx[i] : usegX[off + k - 1];
       const ly = k === 0 ? upy[i] : usegY[off + k - 1];
       const ang = Math.atan2(ly - sy, lx - sx);
-      const nx = -Math.sin(ang), ny = Math.cos(ang);
-      const w = Math.sin(t - k * art.phase) * art.amp * ((k + 1) / n);
       if (k === n - 1) {
-        // the tail fin, past the last segment on its own heading
-        const w2 = Math.sin(t - (k + 1) * art.phase) * art.amp;
+        // the tail fin, past the last segment on its heading
         const back = S.spacing * 0.9;
-        this.push(
-          dyn, sx - Math.cos(ang) * back + nx * w2, sy - Math.sin(ang) * back + ny * w2,
-          art.tailSprite, art.tailSprite, ang, art.tail, tint[0], tint[1], tint[2], alpha,
-        );
+        this.push(dyn, sx - Math.cos(ang) * back, sy - Math.sin(ang) * back, art.tailSprite, art.tailSprite, ang, art.tail, tint[0], tint[1], tint[2], alpha);
       }
-      this.push(dyn, sx + nx * w, sy + ny * w, art.bodySprite, art.bodySprite, ang, art.body, tint[0], tint[1], tint[2], alpha);
+      this.push(dyn, sx, sy, art.bodySprite, art.bodySprite, ang, art.body, tint[0], tint[1], tint[2], alpha);
     }
     this.push(dyn, upx[i], upy[i], art.headSprite, art.headSprite, urot[i], art.head, tint[0], tint[1], tint[2], alpha);
     if (cell) this.pushCell(dyn, cell, upx[i], upy[i], art.headSprite, urot[i], cellCol);

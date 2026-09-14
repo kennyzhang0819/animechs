@@ -1570,9 +1570,7 @@ export const FLYER_PARTS: Partial<Record<UnitKind, FlyerParts>> = {};
  * THE WORM RIG'S SPRITES (levels.ts SegmentSpec, Sim.usegX): a head on the
  * hull's own position, one body sprite on every segment of the chain and
  * a tail past the last one, each drawn along the chain's direction there.
- * Sizes are world px; the wave is the swim the renderer adds on top of
- * the chain — lateral amplitude at the tail (world px), cycles a second,
- * and the phase lag per segment.
+ * Sizes are world px. The swim is the sim's (SegmentSpec), not drawn on.
  */
 export interface SegmentArt {
   head: UVRect;
@@ -1581,9 +1579,6 @@ export interface SegmentArt {
   headSprite: number;
   bodySprite: number;
   tailSprite: number;
-  amp: number;
-  rate: number;
-  phase: number;
 }
 /** the segmented kinds — empty unless the animal art is on */
 export const SEGMENT_ART: Partial<Record<UnitKind, SegmentArt>> = {};
@@ -1815,9 +1810,6 @@ if (ANIMAL_ART) {
       headSprite: cellPx(head) * PX,
       bodySprite: cellPx(body) * PX,
       tailSprite: cellPx(tail) * PX,
-      amp: T.amp * PX,
-      rate: T.rate,
-      phase: T.phase,
     };
     delete UNIT_ENGINES[k];
   });

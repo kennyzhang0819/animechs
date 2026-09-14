@@ -84,9 +84,12 @@ the other way round.
   shoulder cap and knee cap), for flyers and hulls a body plus one
   mirrored wing that folds toward its root on a sine (`pushWings`,
   `FLYER_PARTS`), and for anything long and legless the worm rig: a
-  chain of segments the sim drags behind the head, each drawn along the
-  chain with a swimming wave (`SegmentSpec`, `SEGMENT_ART`,
-  `pushSegments`). A new family should need a new drawing, not a new
+  chain of segments the sim drags behind a neck that sways as the head
+  moves, so the swim is a real curve travelling down the body, each
+  segment drawn as its own plate along the chain (`SegmentSpec`,
+  `SEGMENT_ART`, `pushSegments`). Slow and wide: a cycle every eight
+  segments of path. Never animate a chain by offsetting sprites in the
+  renderer; that vibrates. A new family should need a new drawing, not a new
   renderer path; a centipede is the worm rig with legs drawn on.
 - **Stock art is never deleted.** `public/mindustry/` is untouched. A
   trial family draws into its own cells and is packed OVER the stock
