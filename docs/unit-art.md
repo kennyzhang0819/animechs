@@ -159,7 +159,7 @@ footprint gets.
 | Starhart, the stag | `game/familyArt.ts` | mech to T3, four legs from T4 | 32, 44, 52, 96, 116 |
 | Dartback, the poison frog | `game/familyArt.ts` | mech as a runt, four legs from T2 | 32, 52, 60, 92, 104 |
 | Stoop, the bat | `game/familyArt.ts` | body and two wings | 36, 44, 80, 184, 232 |
-| Skate, the manta | `game/familyArt.ts` | body and two wings | 40, 52, 80, 156, 232 |
+| Skate, the manta | `game/familyArt.ts` | body and two fins, wider than tall, tapered to the tip | 40, 52, 80, 156, 232 |
 | Livewire, the narwhal | `game/familyArt.ts` | body and two flippers | 44, 56, 80, 176, 232 |
 
 The ground tiers (`IronTier`) carry the mech rig's stride, the legged

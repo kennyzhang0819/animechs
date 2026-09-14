@@ -319,8 +319,11 @@ export function stoop(T: FlyerTier): StoopArt {
 // The manta: a long plate of a body with the cephalic fins as one steel
 // cowl forward of it, the harpoon tail steel with its barb the family's
 // teal, the teal seam down the spine from T2, a gunmetal transom at the
-// hips from T4. Broad wings with a fold along the leading edge in the
-// reversed pair, steel from T4, a teal cell at the tip at T5.
+// hips from T4. The wings are FINS, not the bat's pods: wider than they
+// are tall, full height at the root and tapering on 45-degree cuts to a
+// four-pixel tip, with a fold along the leading edge — in the reversed
+// pair to T3, steel from T4 — that follows the taper at one width all
+// the way out. A teal cell on the fin at T5.
 export const SKIN: Mat = ["#28404c", "#5a8090"];
 export const TEAL: Mat = ["#149a86", "#5cffe4"];
 const SKIN_R = rev(SKIN);
@@ -333,9 +336,13 @@ const MANTA_BASE: readonly Base[] = [
   { t: 5, n: 232, fold: 0.16, sweep: 0.05, rate: 0.4 },
 ];
 const mantaHalf = (T: Base): number => 2 * scaler(T.n).w(2);
+/** the fin's rows: q(9) to q(21), an even count so the tip's column is
+ *  exactly four tall once the taper has taken half the height less two
+ *  off each side */
 const mantaWing = (T: Base): Wing => {
   const { n } = T; const { q } = scaler(n); const B = mantaHalf(T);
-  return { rootX: B, rootY: q(11), y0: q(7), y1: q(25), reach: n - q(1) - (n / 2 + B) };
+  const y0 = q(9), h = (q(21) - q(9)) & ~1;
+  return { rootX: B, rootY: q(11), y0, y1: y0 + h, reach: n - q(1) - (n / 2 + B) };
 };
 export const MANTA_TIERS: readonly FlyerTier[] = MANTA_BASE.map((T) => withCells(T, mantaWing(T), 2 * mantaHalf(T) + 2));
 export function mantaGeom(T: FlyerTier): StoopGeom { return flyerGeom(T, mantaWing(T)); }
@@ -345,18 +352,30 @@ export function manta(T: FlyerTier): StoopArt {
   const body = (P: Pen): void => {
     P.octa(cx - B, q(4), cx + B, q(27), w(4), SKIN);
     P.box(cx - B + U, q(1), cx + B - U, q(1) + w(4), STEEL);
-    if (t >= 2) P.box(cx - U, q(9), cx + U, q(23), TEAL);
+    // the seam ends a unit above the harpoon's shaft, never nearer
+    const shaft = q(27) - 1 - (w(4) - U);
+    if (t >= 2) P.box(cx - U, q(9), cx + U, shaft - U, TEAL);
     if (t >= 4) P.box(cx - B, q(24), cx + B, q(24) + w(3), GUN);
     // the harpoon last, over the transom: the shaft and the barb
-    P.box(cx - U, q(26), cx + U, n, STEEL);
+    // the shaft starts on the row where the body's chamfer has narrowed
+    // to the shaft's own width, so no sliver of skin is left beside it
+    P.box(cx - U, shaft, cx + U, n, STEEL);
     const barb = t >= 3 ? w(3) : U;
-    P.box(cx - barb, n - w(4), cx + barb, n, TEAL);
+    P.box(cx - barb, n - U, cx + barb, n, TEAL);
   };
   const wing = (O: Pen): void => {
-    const R = scaler(L.reach);
-    O.octa(0, L.y0, L.reach, L.y1, R.w(7), t >= 4 ? STEEL : SKIN_R);
-    O.octa(0, L.y0 + w(5), L.reach, L.y1, R.w(7), SKIN);
-    if (t >= 5) O.box(R.q(18), q(14), R.q(18) + R.w(6), q(14) + w(4), TEAL);
+    const R = scaler(L.reach); const { y0, y1, reach } = L;
+    // the fin: an octagon whose chamfer c takes the tip down to four
+    // rows, begun c inside the body so its root corners are cut under
+    // the body and the root the wing shows is a straight, full-height
+    // edge. The leading-edge fold is a box along the straight part of
+    // the edge, stopping four short of where the taper begins: a band
+    // that followed the taper would narrow to a point against the
+    // trailing edge. The runt's fin is too short for one
+    const c = (y1 - y0 - 4) / 2, fold = reach - c - 4;
+    O.octa(-c, y0, reach, y1, c, SKIN);
+    if (fold >= 4) O.box(0, y0, fold, y0 + w(4), t >= 4 ? STEEL : SKIN_R);
+    if (t >= 5) O.box(R.q(10), q(14), R.q(10) + R.w(6), q(14) + w(4), TEAL);
   };
   return flyer(T, L, body, wing, TEAL);
 }
