@@ -174,14 +174,16 @@ stale tab or a cached bundle looks exactly like a fix not working.
   (or `sprite()`, `tile()`, `top()`, `flat()`, which are `reserve()`
   with a shape) and drawn into with `drawCell`, which clips to it. No
   pixel coordinate is ever typed, so cells cannot overlap
-- `game/animalArt.ts` — the enemy families as animals, generated pixel
-  art packed over the stock cells while `ANIMAL_ART`
+- `game/animalArt.ts` — what the enemy families share: the drawing type,
+  the canvases the packer makes of it, the part bundles the three rigs
+  take. Packed over the stock cells while `ANIMAL_ART`
   (`game/animalFlag.ts`) is on. The style, the sizing rule and how to
   add a family are in [docs/unit-art.md](docs/unit-art.md)
-- `game/ironhideArt.ts` — the rhino line redrawn on the turrets' engine
-  and grammar: paired colours shaded dark-left light-right, nothing under
-  four pixels, a body drawn at its hitbox on 32 px a tile. The pattern the
-  other families move to, one at a time
+- `game/ironhideArt.ts`, `game/familyArt.ts` — the six families on the
+  turrets' engine and grammar: paired colours shaded dark-left
+  light-right, nothing under four pixels, every body drawn at its hitbox
+  on 32 px a tile. The rhino in the first file, the stag, bat, spider,
+  manta and narwhal in the second
 - `game/turretArt.ts` — the player's turrets as FOUNDRY, one gunmetal
   plating with a silhouette a kind and an accent per ammo, generated the
   same way and packed over the stock turret cells while `FOUNDRY_ART`

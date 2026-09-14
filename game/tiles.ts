@@ -508,18 +508,19 @@ export function paintWater(kind: WaterKind, variant = WATER_WAVE_VARIANT): Uint8
   const deep = kind === "deepWater" || kind === "deepTaintedWater";
   const tainted = kind === "taintedWater" || kind === "deepTaintedWater";
   const base = tainted ? (deep ? INK.taintedDeep : INK.taintedShallow) : deep ? INK.deep : INK.shallow;
-  // the wave is the water a few shades up, not a white line: at full
-  // strength every one of them read as surf
-  const crest = mix(INK.crest, base, tainted ? 0.82 : 0.72);
+  // the wave is the water a shade up, not a white line: at full strength
+  // every one of them read as surf, and at a few shades they still stood
+  // out against the swell
+  const crest = mix(INK.crest, base, tainted ? 0.9 : 0.86);
   const rng = mulberry32(9000 + (deep ? 17 : 0) + (tainted ? 131 : 0));
   const grid = new Array<string>(N * N).fill(base);
   if (variant % WATER_VARIANTS === WATER_WAVE_VARIANT) {
-    // one wave a tile: a 14px line four px deep somewhere in the middle
-    // band, with a four-px block lifting off its trailing end — the
-    // turrets' four, nothing thinner
-    const x0 = 4 + Math.floor(rng() * 10), y = 8 + Math.floor(rng() * 14);
-    for (let yy = y; yy < y + 4; yy++) for (let x = x0; x < x0 + 14; x++) grid[yy * N + x] = crest;
-    for (let yy = y - 4; yy < y; yy++) for (let x = x0 + 10; x < x0 + 14; x++) grid[yy * N + x] = crest;
+    // one wave a tile: a 16px line six px deep somewhere in the middle
+    // band, with a six-px block lifting off its trailing end — thicker
+    // than the turrets' four, so it reads as a swell and not a scratch
+    const x0 = 4 + Math.floor(rng() * 8), y = 8 + Math.floor(rng() * 12);
+    for (let yy = y; yy < y + 6; yy++) for (let x = x0; x < x0 + 16; x++) grid[yy * N + x] = crest;
+    for (let yy = y - 6; yy < y; yy++) for (let x = x0 + 10; x < x0 + 16; x++) grid[yy * N + x] = crest;
   }
   return toRgba(grid, N, TILE_PX);
 }

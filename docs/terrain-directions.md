@@ -249,8 +249,9 @@ editor's palette icons from whichever painter the flag picks.
 The tiles are painted on the turrets' own 32 px a tile now
 (`TILE_LOGICAL` 32, `TILE_SCALE` 1; they were 16 drawn 2x), under the
 turrets' rules (`docs/turret-factions.md`, `docs/unit-art.md` 1b):
-nothing on a tile narrower than four pixels — the carved tick, the
-gouge and the wave crest are all five across — no dither, and every mark
+nothing on a tile narrower than four pixels — the carved tick and the
+gouge are five across, the wave crest six, a shade up from the water
+rather than a white line — no dither, and every mark
 in the family's own light, the pair's other tone and nothing else. The
 props take the turrets' shade: the pair's dark on the left half of the
 square, its light on the right, and a trunk four px across. The ground,

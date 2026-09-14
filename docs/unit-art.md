@@ -1,14 +1,13 @@
 # Unit art: the style, and how big a unit is
 
 This is the direction the enemy art settled on after the animal trial
-(`game/animalArt.ts`, behind `ANIMAL_ART` in `game/animalFlag.ts`), written
-down so the next family is drawn to the same rules without re-running the
-trial. The Starhart stags and the Stoop bats are the reference
-implementation, and the Weaver spiders, Skate mantas and Livewire
-narwhals were drawn to this page; the Ironhide rhinos have since been
-redrawn to the turrets' stricter grammar (section 1b), which is where
-every family goes next; the pixel engine and the house rules they obey are in
-`game/pixelArt.ts`, and the packing in `game/atlas.ts`.
+(behind `ANIMAL_ART` in `game/animalFlag.ts`), written down so the next
+family is drawn to the same rules without re-running the trial. All six
+families are on the turrets' grammar now (section 1b): the Ironhide rhino
+in `game/ironhideArt.ts`, the Starhart stag, Stoop bat, Weaver spider,
+Skate manta and Livewire narwhal in `game/familyArt.ts`, on the turret
+engine in `game/turretArt.ts`, with what they share in
+`game/animalArt.ts` and the packing in `game/atlas.ts`.
 
 ## 1. The style
 
@@ -106,10 +105,9 @@ the other way round.
 ## 1b. The turrets' grammar: where the art is going next
 
 Foundry's heads (`public/foundry`, `docs/turret-factions.md`) set a
-stricter grammar than the trial above, and the Ironhide rhino is the
-first family redrawn to it (`game/ironhideArt.ts`, on the turret engine
-in `game/turretArt.ts`). The rest follow it, one family at a time. Read
-off the shipped heads:
+stricter grammar than the trial above, and every family is drawn to it
+(`game/ironhideArt.ts`, `game/familyArt.ts`, on the turret engine in
+`game/turretArt.ts`). Read off the shipped heads:
 
 - **Every colour is a pair, dark and light.** The dark on the left half
   of the sprite, the light on the right, and that is the whole of the
@@ -139,178 +137,81 @@ off the shipped heads:
   (`game/levels.ts`).
 
 The pixel budget per tier is the hitbox: 32, 40, 52, 88, 120 for the
-rhino. What fits in 32 is what fits in a duo — a body, a head, a horn
+rhino, and section 2 has the rest. What fits in 32 is what fits in a duo — a body, a head, a horn
 and one accent block — and that is the point: a T1 next to a 1x1 turret
 is the same kind of drawing at the same size.
 
-## 2. The size (the trial's rule, for the families not yet on the turrets' grammar)
+## 2. The size: the hitbox, on 32 px a tile
 
-The trial's second finding was that a unit drawn faithfully to its stock
-pixel count looks small, and that a T4 or T5 that is merely "bigger" is
-not enough. **T1 and T2 must be readable at the default zoom, and T4 and
-T5 must be massive, an immediate "oh no" on the screen.** Three things
-set a unit's size, and all three have to move together.
+Every family is on the turrets' grammar now, so a body's grid IS its
+hitbox in native px (`UR` = 10 world px = 16 native px, so a 1x1 is 32)
+and there is no per-tier scale anywhere: the art sits at native size
+inside the stock cell, the quad is the cell's own, and the sheet's 0.625
+world px per native px lands the drawing on its box. The trial's
+"overshoot" rule is retired; what a tier gets is what a turret of its
+footprint gets.
 
-### The three numbers
+| family | file | rig | grids T1..T5 (native px = hitbox) |
+| --- | --- | --- | --- |
+| Ironhide, the rhino | `game/ironhideArt.ts` | mech to T3, four legs from T4 | 32, 40, 52, 88, 120 |
+| Starhart, the stag | `game/familyArt.ts` | mech to T3, four legs from T4 | 32, 44, 52, 96, 116 |
+| Weaver, the spider | `game/familyArt.ts` | legged at every tier | 32, 52, 60, 92, 104 |
+| Stoop, the bat | `game/familyArt.ts` | body and two wings | 36, 44, 80, 184, 232 |
+| Skate, the manta | `game/familyArt.ts` | body and two wings | 40, 52, 80, 156, 232 |
+| Livewire, the narwhal | `game/familyArt.ts` | body and two flippers | 44, 56, 80, 176, 232 |
 
-| what | where | what it does |
-| --- | --- | --- |
-| the cell | `sprite("name", cell, art)` in `game/atlas.ts` | how many native pixels the drawing gets. 64, 128, 192, 256 or 384 |
-| the quad | `UNIT_ART[k].sprite`, `MechArt.sprite`, `LegArt.sprite`, `FlyerParts.sprite` | the drawn size in world px. A cell draws at `cell × 0.625` world px (`PX = UNIT_SPRITE / 64`), so 64 is 40 world px, 128 is 80, 256 is 160 |
-| the hitbox | `radius` in `UNIT_STATS` (`game/levels.ts`), in units of `UR` = 10 world px | half the square collision box. Left where the stock family put it in the trial |
+The ground tiers (`IronTier`) carry the mech rig's stride, the legged
+rig's small grid and the two leg segment heights; a segment is a flat
+band of the family's hide, its top half dark and its bottom light, on the
+exact rect the atlas declares (`flat()`) off the same table. The winged
+tiers (`FlyerTier`) are the composed grid plus the beat, and their cells
+are derived, not declared: the body column's width `bw` and the wing
+cell `nw` come off the layout (`withCells`), and `partCells` in
+`game/atlas.ts` reserves both. The composed sprite goes in the kind's
+own stock cell.
 
-One tile is 20 world px (`CELL`). A 64-cell quad is two tiles across.
+### How a width is chosen
 
-### The rule: fill the cell, then overshoot
+The only unit is the scaler's `w()`, which is a 32-grid value scaled to
+the tier and never under four. Every concentric feature is stacked in
+those units — a seam `±U` on a saddle `±2U` on a body `±3U` — so the
+hide or steel left beside a feature is a unit too, on every grid. A
+feature placed by eye on the 32 layout and scaled leaves a two-pixel
+sliver on some tier; a feature built from units cannot. Where a body is
+too narrow for the stack (the bat's two small tiers), the feature takes
+the whole width rather than most of it.
 
-1. **Draw to the edge of the cell.** A drawing with a quarter of its grid
-   empty is a unit a quarter smaller than the cell already paid for. The
-   stag's body ellipse and the bat's wingspan are sized against the grid
-   (`R`, `W` in the tier tables), not against the stock sprite.
-2. **Pick the smallest cell that holds the art.** 64 for the two small
-   tiers, 128 for the middle, 256 (or a 384) for the two big ones. Every
-   part of one unit takes the same cell size, because the renderer draws
-   them all at one scale; the exception is a leg segment, which is
-   stretched between two points and takes its exact rect (`flat()`).
-3. **Overshoot the quad by a per-tier `scale`.** This is what the trial
-   added: the world quad is the cell's nominal size times the tier's
-   scale, so the drawing lands larger than its pixels say. The scale is
-   applied to EVERYTHING that positions a part of that unit, together, or
-   the parts drift apart from the icon: the icon quad, the mech body,
-   base and hoof, the legged body, caps and foot, the leg stroke widths,
-   the wing quad and its root and centre offsets. See the `if
-   (ANIMAL_ART)` block in `game/atlas.ts`; it is the one place the scale
-   is applied.
-4. **The ladder should be steep.** What ships lands the small tiers at
-   one and a half to two times the stock sprite and the big ground tiers
-   at two and a half, and the scale itself climbs the ladder (the stag
-   runs 1.5, 1.5, 1.4, 1.6, 2.0). Small tiers are scaled up for
-   legibility, big tiers for dread. If a T5 does not look wrong next to
-   its T1, it is not big enough.
-
-### What the trial ships
-
-Native cell, per-tier scale and the quad that results, next to the stock
-sprite's own world size (stock native px × 0.625).
-
-Starhart, the stag (Starlight mechs' cells):
-
-| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
-| --- | --- | --- | --- | --- | --- | --- |
-| T1 | starhart1 | 64 | 1.5 | 60 | 35 | 10 |
-| T2 | starhart2 | 64 | 1.5 | 60 | 42 | 13.75 |
-| T3 | starhart3 | 128 | 1.4 | 112 | 50 | 16.25 |
-| T4 | starhart4 | 256 | 1.6 | 256 | 106 | 30 |
-| T5 | starhart5 | 256 | 2.0 | 320 | 134 | 36.25 |
-
-Stoop, the bat (Skyfall bombers' cells):
-
-| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
-| --- | --- | --- | --- | --- | --- | --- |
-| T1 | stoop1 | 64 | 1.4 | 56 | 30 | 11.25 |
-| T2 | stoop2 | 128 | 1.2 | 96 | 45 | 13.75 |
-| T3 | stoop3 | 128 | 1.5 | 120 | 70 | 25 |
-| T4 | stoop4 | 256 | 1.4 | 224 | 150 | 57.5 |
-| T5 | stoop5 | 384 | 1.6 | 384 | 200 | 72.5 |
-
-Ironhide, the rhino (ground mechs' cells; mech rig to T3, four legs
-from T4; on the turrets' grammar, section 1b, so the grid is the hitbox
-and there is no scale — the art sits at native size inside the stock cell
-and the quad is the cell's own):
-
-| tier | kind | grid | cell | drawn, world px | hitbox, world px | stock, world px |
-| --- | --- | --- | --- | --- | --- | --- |
-| T1 | ironhide1 | 32 | 64 | 20 | 20 | 30 |
-| T2 | ironhide2 | 40 | 64 | 25 | 25 | 40 |
-| T3 | ironhide3 | 52 | 128 | 32.5 | 32.5 | 62 |
-| T4 | ironhide4 | 88 | 256 | 55 | 55 | 106 |
-| T5 | ironhide5 | 120 | 256 | 75 | 75 | 134 |
-
-Weaver, the spider (venom spitters' cells; legged rig at every tier, six legs on the T1 and eight above):
-
-| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
-| --- | --- | --- | --- | --- | --- | --- |
-| T1 | weaver1 | 64 | 1.5 | 60 | 30 | 10 |
-| T2 | weaver2 | 128 | 1.1 | 88 | 55 | 16.25 |
-| T3 | weaver3 | 128 | 1.4 | 112 | 59 | 18.75 |
-| T4 | weaver4 | 256 | 1.6 | 256 | 80 | 28.75 |
-| T5 | weaver5 | 256 | 2.0 | 320 | 119 | 32.5 |
-
-Skate, the manta (harpoon fleet's cells; body and two beating wings, as
-the bat). The body is drawn on the composed grid, not the wing's: the
-manta is longer horn to barb than a wing is wide, and a body cell cut to
-the wing's size clipped both ends in the game while the preview, which
-draws the composed sprite, showed nothing wrong. Preview the parts. On
-the sheet the body is a column (`column()` in `game/atlas.ts`, `bw` on
-the tier), the grid's length by the body's width, and the renderer draws
-it as a quad that long and that wide (`FlyerParts.spriteH`): a square
-cell for a body a quarter as wide as it is long is three quarters air,
-and two families of them did not fit the sheet.
-
-| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
-| --- | --- | --- | --- | --- | --- | --- |
-| T1 | skate1 | 128 | 1.2 | 96 | 49 | 12.5 |
-| T2 | skate2 | 128 | 1.3 | 104 | 63 | 16.25 |
-| T3 | skate3 | 256 | 1.1 | 176 | 88 | 25 |
-| T4 | skate4 | 256 | 1.5 | 240 | 143 | 48.75 |
-| T5 | skate5 | 384 | 1.7 | 408 | 219 | 72.5 |
-
-Livewire, the narwhal (wraith fleet's cells; body and two beating
-flippers on the manta's rig, slower and shallower). The grid is sized by
-the length, tusk tip to fluke, and the body cell is a column 0.7 W wide,
-the fluke's span. The tusk is half the animal.
-
-| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
-| --- | --- | --- | --- | --- | --- | --- |
-| T1 | livewire1 | 128 | 1.2 | 96 | 49 | 13.75 |
-| T2 | livewire2 | 128 | 1.3 | 104 | 63 | 17.5 |
-| T3 | livewire3 | 256 | 1.1 | 176 | 88 | 25 |
-| T4 | livewire4 | 256 | 1.5 | 240 | 151 | 55 |
-| T5 | livewire5 | 384 | 1.7 | 408 | 229 | 72.5 |
-
-The eel that held this slot before is gone from the code; its numbers
-were the chain's (head cell, segment cell, count and spacing) and are in
-the history if the centipede wants a starting point.
+### Legs
 
 The spider's legs are the size that matters for that family: leg length
 runs 12, 18, 26, 50 and 60 Mindustry units up the ladder against the
 stock line's 5 to 20, so the apex spans some twenty tiles foot to foot
-on a body drawn at sixteen.
-
-The rhino's legs went the other way when its body was drawn at the
-hitbox: 14 and 19 Mindustry units, mounted 8 and 11 in, on bodies 55 and
-75 world px across.
-
-The T4 and T5 stags also get longer legs than the stock walkers
-(`LegSpec.length` 26 and 38 Mindustry units against the stock T5's
-14, with `baseOffset` and `elevation` raised to match), because a big
-body on short legs squats. The leg spec lives in `game/levels.ts` next to
+on a body drawn at its 3.25-tile box. The rhino's are 14 and 19 units on
+55 and 75 world px bodies; the stag's 26 and 38 on 60 and 72.5, a
+stag's legs being long. The leg spec lives in `game/levels.ts` next to
 the kind, behind the same flag.
 
 ### Hitboxes
 
-The trial did not touch `radius`. A T5 stag is drawn at 320 world px and
-collides as a 72 px square, which means turret fire aimed at its
-silhouette can miss its box. Whether the box grows to match the art is a
-balance decision (it changes how the horde packs into a choke and what a
-splash catches), not an art one, and is left for whoever tunes the
-families next. If it does grow, grow it with the art's body, not its
-antlers or wingspan.
+`radius` was not touched: the art moved to the box, not the box to the
+art. Turret fire aimed at a silhouette now hits it.
 
 ## 3. Adding a family
 
-1. Pick the animal and draw the T5 first, facing up, symmetric, filling
-   a 256 grid. If it does not read as that animal in silhouette, stop
-   there.
-2. Shrink it to a T1 on a 64 grid with the legs tucked. If it still reads
-   as the animal, the family works. Fill in T2 to T4 between.
+1. Pick the animal and draw the T5 first on the turret engine, facing
+   up, left half only, on its hitbox grid. If it does not read as that
+   animal in silhouette, stop there.
+2. Scale the same layout to the T1 (a 32 grid for a 1x1) with the legs
+   tucked. If it still reads as the animal in four-pixel blocks, the
+   family works. Fill in T2 to T4 between.
 3. Decide the rig per tier (mech for the small ground tiers, legged for
    T4 and T5 ground, body plus wings for a flyer) and draw the parts the
    rig needs: hoof sprite, or body, base, caps and foot, or body and one
    wing.
-4. Declare the cells in `game/atlas.ts` with `sprite()`, `upright()` or
-   `flat()`, pack them in `packAnimalArt`, and set the per-tier scale in
-   the `if (ANIMAL_ART)` block, applied to every part together.
+4. Declare the cells in `game/atlas.ts` with `sprite()`, `upright()`,
+   `flat()` or `partCells`, pack them in `packAnimalArt` through
+   `packMech`, `packLegged` or `packWinged`, and wire the rig in the
+   `if (ANIMAL_ART)` block. No scale: the grid is the hitbox.
 5. Name it, which is two words. `FAMILY_NAMES` (`game/levels.ts`) takes
    the family's `name` and the singular `body` its tiers are called
    after, and its five kinds are `<body><1..5>` in lower case. The ranks

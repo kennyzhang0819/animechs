@@ -17,21 +17,6 @@ import { FOUNDRY_BASE_URLS, FOUNDRY_CORE_URL, FOUNDRY_HEAD_URLS, foundryHeadUrl 
 import { TOWER_ICONS } from "./towerIcons";
 import type { TowerKind } from "./types";
 import {
-  NARWHAL_TIERS,
-  HART_TIERS,
-  MANTA_TIERS,
-  SPIDER_TIERS,
-  STOOP_TIERS,
-  narwhal,
-  hartLegged,
-  hartMech,
-  hartSeg,
-  manta,
-  mantaGeom,
-  narwhalGeom,
-  spiderLegged,
-  stoop,
-  stoopGeom,
   toCanvas,
   toCanvasRect,
   column as bodyColumn,
@@ -39,8 +24,24 @@ import {
   type MechParts,
   type StoopArt,
   type StoopGeom,
-  type StoopTier,
 } from "./animalArt";
+import {
+  HART_TIERS,
+  MANTA_TIERS,
+  NARWHAL_TIERS,
+  SPIDER_TIERS,
+  STOOP_TIERS,
+  hartLegged,
+  hartMech,
+  manta,
+  mantaGeom,
+  narwhal,
+  narwhalGeom,
+  spiderLegged,
+  stoop,
+  stoopGeom,
+  type FlyerTier,
+} from "./familyArt";
 import { IRON_TIERS, ironLegged, ironMech } from "./ironhideArt";
 
 /**
@@ -1491,7 +1492,7 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
 // The animal art is generated, so its size is not declared: these cells
 // take the full gutter and the pack pass draws whatever size comes out.
 /** starhart4's legged parts, the ones its mech rig never had: caps and a hoof
- *  small enough for 64px cells (hartSmall) */
+ *  small enough for 64px cells (HART_TIERS small) */
 export const UV_STARHART4_FOOT = sprite("starhart4-foot", 64, 64);
 export const UV_STARHART4_FOOT_SIL = sprite("starhart4-foot-sil", 64, 64);
 export const UV_STARHART4_JOINT = upright("starhart4-joint", 64, 64);
@@ -1501,24 +1502,11 @@ export const UV_STARHART4_JOINT_BASE_SIL = sprite("starhart4-joint-base-sil", 64
 /** the stag's leg segments on exact rects: thigh then shin, T4 then T5.
  *  A stretched segment samples its rect corner to corner, mount on the
  *  left, so the height IS the stroke */
-const HART_SEG4 = hartSeg(HART_TIERS[3]), HART_SEG5 = hartSeg(HART_TIERS[4]);
-export const UV_STARHART4_LEG_SEG = flat("starhart4-leg-seg", 64, HART_SEG4.th);
-export const UV_STARHART4_LEG_BASE_SEG = flat("starhart4-leg-base-seg", 64, HART_SEG4.sh);
-export const UV_STARHART5_LEG_SEG = flat("starhart5-leg-seg", 64, HART_SEG5.th);
-export const UV_STARHART5_LEG_BASE_SEG = flat("starhart5-leg-base-seg", 64, HART_SEG5.sh);
-/** the bats' bodies and wings, apart; the composed sprite goes in each
- *  flyer's own cell. 64px cells for the two small tiers, 128 for the
- *  middle two, 192 for the T5 (STOOP_TIERS nb/nw) */
-export const UV_STOOP5_BODY = sprite("stoop5-body", 192, 192);
-export const UV_STOOP5_WING = sprite("stoop5-wing", 192, 192);
-export const UV_STOOP4_BODY = sprite("stoop4-body", 128, 128);
-export const UV_STOOP4_WING = sprite("stoop4-wing", 128, 128);
-export const UV_STOOP3_BODY = sprite("stoop3-body", 128, 128);
-export const UV_STOOP3_WING = sprite("stoop3-wing", 128, 128);
-export const UV_STOOP1_BODY = sprite("stoop1-body", 64, 64);
-export const UV_STOOP1_WING = sprite("stoop1-wing", 64, 64);
-export const UV_STOOP2_BODY = sprite("stoop2-body", 64, 64);
-export const UV_STOOP2_WING = sprite("stoop2-wing", 64, 64);
+const HART4 = HART_TIERS[3], HART5 = HART_TIERS[4];
+export const UV_STARHART4_LEG_SEG = flat("starhart4-leg-seg", 64, HART4.th);
+export const UV_STARHART4_LEG_BASE_SEG = flat("starhart4-leg-base-seg", 64, HART4.sh);
+export const UV_STARHART5_LEG_SEG = flat("starhart5-leg-seg", 64, HART5.th);
+export const UV_STARHART5_LEG_BASE_SEG = flat("starhart5-leg-base-seg", 64, HART5.sh);
 /** the rhino's T4 and T5 leave the mech rig for the legged one: caps, hoof
  *  and segments of their own, on 64 cells for the T4 and 128 for the T5;
  *  the body and base go on in the ironhide4's and ironhide5's own cells */
@@ -1551,23 +1539,23 @@ export const UV_WEAVER4_JOINT = upright("weaver4-joint", 128, 128);
 export const UV_WEAVER4_JOINT_SIL = upright("weaver4-joint-sil", 128, 128);
 export const UV_WEAVER5_JOINT = upright("weaver5-joint", 128, 128);
 export const UV_WEAVER5_JOINT_SIL = upright("weaver5-joint-sil", 128, 128);
-export const UV_WEAVER1_LEG_SEG = flat("weaver1-leg-seg", 64, SPIDER_TIERS[0].stroke);
-export const UV_WEAVER1_LEG_BASE_SEG = flat("weaver1-leg-base-seg", 64, SPIDER_TIERS[0].stroke);
-export const UV_WEAVER2_LEG_SEG = flat("weaver2-leg-seg", 64, SPIDER_TIERS[1].stroke);
-export const UV_WEAVER2_LEG_BASE_SEG = flat("weaver2-leg-base-seg", 64, SPIDER_TIERS[1].stroke);
-export const UV_WEAVER3_LEG_SEG = flat("weaver3-leg-seg", 64, SPIDER_TIERS[2].stroke);
-export const UV_WEAVER3_LEG_BASE_SEG = flat("weaver3-leg-base-seg", 64, SPIDER_TIERS[2].stroke);
-export const UV_WEAVER4_LEG_SEG = flat("weaver4-leg-seg", 64, SPIDER_TIERS[3].stroke);
-export const UV_WEAVER4_LEG_BASE_SEG = flat("weaver4-leg-base-seg", 64, SPIDER_TIERS[3].stroke);
-export const UV_WEAVER5_LEG_SEG = flat("weaver5-leg-seg", 64, SPIDER_TIERS[4].stroke);
-export const UV_WEAVER5_LEG_BASE_SEG = flat("weaver5-leg-base-seg", 64, SPIDER_TIERS[4].stroke);
-/** the mantas' and narwhals' bodies and wings, apart, each on a cell one
- *  px over its art (MANTA_TIERS / NARWHAL_TIERS nb/bw/nw): the body is
- *  drawn on the composed grid, since both are longer than a wing is wide,
- *  and packed as a column `bw` wide; the composed sprite goes in each
- *  hull's own cell */
-const partCells = (name: string, T: { t: number; nb: number; bw?: number; nw: number }) =>
-  [column(`${name}${T.t}-body`, T.nb + 1, (T.bw ?? T.nb) + 1), sprite(`${name}${T.t}-wing`, T.nw + 1, T.nw + 1)] as const;
+export const UV_WEAVER1_LEG_SEG = flat("weaver1-leg-seg", 64, SPIDER_TIERS[0].th);
+export const UV_WEAVER1_LEG_BASE_SEG = flat("weaver1-leg-base-seg", 64, SPIDER_TIERS[0].sh);
+export const UV_WEAVER2_LEG_SEG = flat("weaver2-leg-seg", 64, SPIDER_TIERS[1].th);
+export const UV_WEAVER2_LEG_BASE_SEG = flat("weaver2-leg-base-seg", 64, SPIDER_TIERS[1].sh);
+export const UV_WEAVER3_LEG_SEG = flat("weaver3-leg-seg", 64, SPIDER_TIERS[2].th);
+export const UV_WEAVER3_LEG_BASE_SEG = flat("weaver3-leg-base-seg", 64, SPIDER_TIERS[2].sh);
+export const UV_WEAVER4_LEG_SEG = flat("weaver4-leg-seg", 64, SPIDER_TIERS[3].th);
+export const UV_WEAVER4_LEG_BASE_SEG = flat("weaver4-leg-base-seg", 64, SPIDER_TIERS[3].sh);
+export const UV_WEAVER5_LEG_SEG = flat("weaver5-leg-seg", 64, SPIDER_TIERS[4].th);
+export const UV_WEAVER5_LEG_BASE_SEG = flat("weaver5-leg-base-seg", 64, SPIDER_TIERS[4].sh);
+/** the bats', mantas' and narwhals' bodies and wings, apart, each on a
+ *  cell one px over its art (FlyerTier n/bw/nw): the body is drawn on the
+ *  composed grid, since a hull is longer than a wing is wide, and packed
+ *  as a column `bw` wide; the composed sprite goes in each kind's own cell */
+const partCells = (name: string, T: FlyerTier) =>
+  [column(`${name}${T.t}-body`, T.n + 1, T.bw + 1), sprite(`${name}${T.t}-wing`, T.nw + 1, T.nw + 1)] as const;
+export const UV_STOOP_CELLS: readonly (readonly [UVRect, UVRect])[] = STOOP_TIERS.map((T) => partCells("stoop", T));
 export const UV_MANTA_CELLS: readonly (readonly [UVRect, UVRect])[] = MANTA_TIERS.map((T) => partCells("manta", T));
 export const UV_NARWHAL_CELLS: readonly (readonly [UVRect, UVRect])[] = NARWHAL_TIERS.map((T) => partCells("narwhal", T));
 
@@ -1617,61 +1605,26 @@ export const SEGMENT_ART: Partial<Record<UnitKind, SegmentArt>> = {};
 const MANTA_KINDS: readonly UnitKind[] = ["skate1", "skate2", "skate3", "skate4", "skate5"];
 const NARWHAL_KINDS: readonly UnitKind[] = ["livewire1", "livewire2", "livewire3", "livewire4", "livewire5"];
 const STOOP_KINDS: readonly UnitKind[] = ["stoop1", "stoop2", "stoop3", "stoop4", "stoop5"];
-const STOOP_CELLS: readonly (readonly [UVRect, UVRect])[] = [
-  [UV_STOOP1_BODY, UV_STOOP1_WING],
-  [UV_STOOP2_BODY, UV_STOOP2_WING],
-  [UV_STOOP3_BODY, UV_STOOP3_WING],
-  [UV_STOOP4_BODY, UV_STOOP4_WING],
-  [UV_STOOP5_BODY, UV_STOOP5_WING],
-];
 /** a cell's edges in atlas px (every animal cell is packed with no inset) */
 const cellPx = (u: UVRect): number => Math.round((u[2] - u[0]) * ATLAS_W);
 const cellPxH = (u: UVRect): number => Math.round((u[3] - u[1]) * ATLAS_H);
 
+// Every family is drawn at its hitbox on the turrets' scale (ironhideArt.ts,
+// familyArt.ts), so nothing here overshoots: the stock cells and quads
+// stand, the art sits at native size inside them.
 if (ANIMAL_ART) {
-  STOOP_TIERS.forEach((T, i) => {
-    const g = stoopGeom(T);
-    const [body, wing] = STOOP_CELLS[i];
-    const k = STOOP_KINDS[i];
-    // the quad overshoots its cell's nominal world size by the tier's
-    // scale — the composed sprite, the body and the wings all together,
-    // so the parts land where the icon says they are
-    const sc = PX * T.scale;
-    UNIT_ART[k] = { uv: UNIT_ART[k].uv, sprite: UNIT_ART[k].sprite * T.scale };
-    FLYER_PARTS[k] = {
-      body,
-      wing,
-      sprite: cellPx(body) * sc,
-      spriteH: cellPxH(body) * sc,
-      wingSprite: cellPx(wing) * sc,
-      rootX: g.rootX * sc,
-      rootY: g.rootY * sc,
-      wingX: g.wingX * sc,
-      wingY: g.wingY * sc,
-      fold: T.fold,
-      sweep: T.sweep,
-      rate: T.rate,
-    };
-  });
+  // ---- Starhart ----
   // the stag's T1-T3 keep the mech rig and its cells; the guns go (the
   // beams are drawn live off the held weapon, never off a sprite), the
-  // hooves shuffle a shorter stride than an ironhide1's, and the quad
-  // overshoots by the tier's scale
-  const hartStride = (t: number): number => [0, 2.5, 3, 4][t] * MU;
-  const hartMechArt = (k: UnitKind, i: number): MechArt => {
-    const T = HART_TIERS[i];
-    UNIT_ART[k] = { uv: UNIT_ART[k].uv, sprite: UNIT_ART[k].sprite * T.scale };
-    return { ...MECH_ART[k]!, guns: [], stride: hartStride(T.t), sprite: MECH_ART[k]!.sprite * T.scale };
-  };
+  // hooves shuffle a stride sized to the body
+  const hartMechArt = (k: UnitKind, i: number): MechArt =>
+    ({ ...MECH_ART[k]!, guns: [], stride: HART_TIERS[i].stride * PX });
   MECH_ART.starhart1 = hartMechArt("starhart1", 0);
   MECH_ART.starhart2 = hartMechArt("starhart2", 1);
   MECH_ART.starhart3 = hartMechArt("starhart3", 2);
   // the T4 leaves the mech rig for the legged one, on the cells above; the
   // T5 was legged already and keeps its own caps and feet
   delete MECH_ART.starhart4;
-  const S4 = HART_TIERS[3].scale, S5 = HART_TIERS[4].scale;
-  UNIT_ART.starhart4 = { uv: UNIT_ART.starhart4.uv, sprite: UNIT_ART.starhart4.sprite * S4 };
-  UNIT_ART.starhart5 = { uv: UNIT_ART.starhart5.uv, sprite: UNIT_ART.starhart5.sprite * S5 };
   LEG_ART.starhart4 = {
     body: UV_STARHART4_BODY,
     base: UV_STARHART4_BASE,
@@ -1680,11 +1633,11 @@ if (ANIMAL_ART) {
     foot: UV_STARHART4_FOOT,
     leg: UV_STARHART4_LEG_SEG,
     legBase: UV_STARHART4_LEG_BASE_SEG,
-    legStroke: HART_SEG4.th * PX * S4,
-    legBaseStroke: HART_SEG4.sh * PX * S4,
+    legStroke: HART4.th * PX,
+    legBaseStroke: HART4.sh * PX,
     guns: [],
-    sprite: UNIT_SPRITE * 4 * S4,
-    small: UNIT_SPRITE * S4,
+    sprite: UNIT_SPRITE * 4,
+    small: UNIT_SPRITE,
     sil: {
       body: UV_STARHART4_BODY_SIL,
       base: UV_STARHART4_BASE_SIL,
@@ -1697,10 +1650,10 @@ if (ANIMAL_ART) {
     ...LEG_ART.starhart5!,
     leg: UV_STARHART5_LEG_SEG,
     legBase: UV_STARHART5_LEG_BASE_SEG,
-    legStroke: HART_SEG5.th * PX * S5,
-    legBaseStroke: HART_SEG5.sh * PX * S5,
-    sprite: UNIT_SPRITE * 4 * S5,
-    small: UNIT_SPRITE * 2 * S5,
+    legStroke: HART5.th * PX,
+    legBaseStroke: HART5.sh * PX,
+    sprite: UNIT_SPRITE * 4,
+    small: UNIT_SPRITE * 2,
   };
 
   // ---- Ironhide ----
@@ -1768,14 +1721,13 @@ if (ANIMAL_ART) {
   delete MECH_ART.weaver1;
   const spiderLegArt = (k: UnitKind, i: number, parts: Omit<LegArt, "legStroke" | "legBaseStroke" | "guns" | "sprite" | "small">, cellScale: 1 | 2 | 4): void => {
     const T = SPIDER_TIERS[i];
-    UNIT_ART[k] = { uv: UNIT_ART[k].uv, sprite: UNIT_ART[k].sprite * T.scale };
     LEG_ART[k] = {
       ...parts,
-      legStroke: T.stroke * PX * T.scale,
-      legBaseStroke: T.stroke * PX * T.scale,
+      legStroke: T.th * PX,
+      legBaseStroke: T.sh * PX,
       guns: [],
-      sprite: UNIT_SPRITE * cellScale * T.scale,
-      small: UNIT_SPRITE * Math.max(1, cellScale / 2) * T.scale,
+      sprite: UNIT_SPRITE * cellScale,
+      small: UNIT_SPRITE * Math.max(1, cellScale / 2),
     };
   };
   spiderLegArt("weaver1", 0, {
@@ -1794,34 +1746,34 @@ if (ANIMAL_ART) {
     body: UV_WEAVER4_BODY, joint: UV_WEAVER4_JOINT, baseJoint: UV_WEAVER4_JOINT_BASE, foot: UV_WEAVER4_FOOT, leg: UV_WEAVER4_LEG_SEG, legBase: UV_WEAVER4_LEG_BASE_SEG,
     sil: { body: UV_WEAVER4_BODY_SIL, joint: UV_WEAVER4_JOINT_SIL, baseJoint: UV_WEAVER4_JOINT_BASE_SIL, foot: UV_WEAVER4_FOOT_SIL },
   }, 4);
-  // ---- Skate, Livewire ----
-  // the manta and the narwhal ride the bat's parts rig on the two fleets'
-  // cells; the engines go (neither has jets), the wake stays
-  const hullParts = (kinds: readonly UnitKind[], tiers: readonly StoopTier[], cells: readonly (readonly [UVRect, UVRect])[], geom: (T: StoopTier) => StoopGeom): void =>
+  // ---- Stoop, Skate, Livewire ----
+  // the bat, the manta and the narwhal on the wing rig, each on its own
+  // kind's cells; the hulls' engines go (neither has jets), the wake
+  // stays, and the bat keeps its jet
+  const wingParts = (kinds: readonly UnitKind[], tiers: readonly FlyerTier[], cells: readonly (readonly [UVRect, UVRect])[], geom: (T: FlyerTier) => StoopGeom, jets: boolean): void =>
     tiers.forEach((T, i) => {
       const g = geom(T);
       const [body, wing] = cells[i];
       const k = kinds[i];
-      const sc = PX * T.scale;
-      UNIT_ART[k] = { uv: UNIT_ART[k].uv, sprite: UNIT_ART[k].sprite * T.scale };
       FLYER_PARTS[k] = {
         body,
         wing,
-        sprite: cellPx(body) * sc,
-        spriteH: cellPxH(body) * sc,
-        wingSprite: cellPx(wing) * sc,
-        rootX: g.rootX * sc,
-        rootY: g.rootY * sc,
-        wingX: g.wingX * sc,
-        wingY: g.wingY * sc,
+        sprite: cellPx(body) * PX,
+        spriteH: cellPxH(body) * PX,
+        wingSprite: cellPx(wing) * PX,
+        rootX: g.rootX * PX,
+        rootY: g.rootY * PX,
+        wingX: g.wingX * PX,
+        wingY: g.wingY * PX,
         fold: T.fold,
         sweep: T.sweep,
         rate: T.rate,
       };
-      delete UNIT_ENGINES[k];
+      if (!jets) delete UNIT_ENGINES[k];
     });
-  hullParts(MANTA_KINDS, MANTA_TIERS, UV_MANTA_CELLS, mantaGeom);
-  hullParts(NARWHAL_KINDS, NARWHAL_TIERS, UV_NARWHAL_CELLS, narwhalGeom);
+  wingParts(STOOP_KINDS, STOOP_TIERS, UV_STOOP_CELLS, stoopGeom, true);
+  wingParts(MANTA_KINDS, MANTA_TIERS, UV_MANTA_CELLS, mantaGeom, false);
+  wingParts(NARWHAL_KINDS, NARWHAL_TIERS, UV_NARWHAL_CELLS, narwhalGeom, false);
   spiderLegArt("weaver5", 4, {
     body: UV_WEAVER5_BODY, joint: UV_WEAVER5_JOINT, baseJoint: UV_WEAVER5_JOINT_BASE, foot: UV_WEAVER5_FOOT, leg: UV_WEAVER5_LEG_SEG, legBase: UV_WEAVER5_LEG_BASE_SEG,
     sil: { body: UV_WEAVER5_BODY_SIL, joint: UV_WEAVER5_JOINT_SIL, baseJoint: UV_WEAVER5_JOINT_BASE_SIL, foot: UV_WEAVER5_FOOT_SIL },
@@ -2594,43 +2546,9 @@ function packAnimalArt(
     drawCell(c, u, antialiased(art));
   };
 
-  // ---- Starhart ----
-  const mechCells = [
-    { kind: "starhart1" as const, body: UV_STARHART1_BODY, base: UV_STARHART1_BASE, leg: UV_STARHART1_LEG, sil: { body: UV_STARHART1_BODY_SIL, base: UV_STARHART1_BASE_SIL, leg: UV_STARHART1_LEG_SIL } },
-    { kind: "starhart2" as const, body: UV_STARHART2_BODY, base: UV_STARHART2_BASE, leg: UV_STARHART2_LEG, sil: { body: UV_STARHART2_BODY_SIL, base: UV_STARHART2_BASE_SIL, leg: UV_STARHART2_LEG_SIL } },
-    { kind: "starhart3" as const, body: UV_STARHART3_BODY, base: UV_STARHART3_BASE, leg: UV_STARHART3_LEG, sil: { body: UV_STARHART3_BODY_SIL, base: UV_STARHART3_BASE_SIL, leg: UV_STARHART3_LEG_SIL } },
-  ];
-  mechCells.forEach((cells, i) => {
-    const T = HART_TIERS[i];
-    const a = hartMech(T);
-    const body = toCanvas(a.body), base = toCanvas(a.base), leg = toCanvas(a.leg);
-    part(cells.body, body); part(cells.base, base); part(cells.leg, leg);
-    part(cells.sil.body, body, true); part(cells.sil.base, base, true); part(cells.sil.leg, leg, true);
-    dropCell(cells.kind);
-    teamCell(cells.kind, body, toCanvas(a.cell), cells.body, T.n);
-  });
-  const legCells = [
-    { kind: "starhart4" as const, body: UV_STARHART4_BODY, base: UV_STARHART4_BASE, joint: UV_STARHART4_JOINT, baseJoint: UV_STARHART4_JOINT_BASE, foot: UV_STARHART4_FOOT, leg: UV_STARHART4_LEG_SEG, legBase: UV_STARHART4_LEG_BASE_SEG,
-      sil: { body: UV_STARHART4_BODY_SIL, base: UV_STARHART4_BASE_SIL, joint: UV_STARHART4_JOINT_SIL, baseJoint: UV_STARHART4_JOINT_BASE_SIL, foot: UV_STARHART4_FOOT_SIL } },
-    { kind: "starhart5" as const, body: UV_STARHART5_BODY, base: UV_STARHART5_BASE, joint: UV_STARHART5_JOINT, baseJoint: UV_STARHART5_JOINT_BASE, foot: UV_STARHART5_FOOT, leg: UV_STARHART5_LEG_SEG, legBase: UV_STARHART5_LEG_BASE_SEG,
-      sil: { body: UV_STARHART5_BODY_SIL, base: UV_STARHART5_BASE_SIL, joint: UV_STARHART5_JOINT_SIL, baseJoint: UV_STARHART5_JOINT_BASE_SIL, foot: UV_STARHART5_FOOT_SIL } },
-  ];
-  legCells.forEach((cells, i) => {
-    const T = HART_TIERS[3 + i];
-    const a = hartLegged(T);
-    const body = toCanvas(a.body), base = toCanvas(a.base);
-    const foot = toCanvas(a.foot), joint = toCanvas(a.joint), baseJoint = toCanvas(a.baseJoint);
-    part(cells.body, body); part(cells.base, base); part(cells.foot, foot); part(cells.joint, joint); part(cells.baseJoint, baseJoint);
-    part(cells.sil.body, body, true); part(cells.sil.base, base, true); part(cells.sil.foot, foot, true); part(cells.sil.joint, joint, true); part(cells.sil.baseJoint, baseJoint, true);
-    seg(cells.leg, toCanvasRect(a.leg.px, a.leg.w, a.leg.h));
-    seg(cells.legBase, toCanvasRect(a.legBase.px, a.legBase.w, a.legBase.h));
-    dropCell(cells.kind);
-    teamCell(cells.kind, body, toCanvas(a.cell), cells.body, T.n);
-  });
-
-  // ---- Ironhide and Weaver ----
-  // the same two rigs, packed by one pair of helpers: a mech tier is body,
-  // base and the near-side legs; a legged tier is body, foot, the caps and
+  // ---- the ground families ----
+  // two rigs, packed by one pair of helpers: a mech tier is body, base
+  // and the near-side legs; a legged tier is body, foot, the caps and
   // segments it has cells for, and a base where the stock rig kept one
   interface MechCells { kind: UnitKind; body: UVRect; base: UVRect; leg: UVRect; sil: { body: UVRect; base: UVRect; leg: UVRect } }
   interface LegCells {
@@ -2656,6 +2574,19 @@ function packAnimalArt(
     dropCell(cells.kind);
     teamCell(cells.kind, body, toCanvas(a.cell), cells.body, n);
   };
+  const hartMechCells: readonly MechCells[] = [
+    { kind: "starhart1", body: UV_STARHART1_BODY, base: UV_STARHART1_BASE, leg: UV_STARHART1_LEG, sil: { body: UV_STARHART1_BODY_SIL, base: UV_STARHART1_BASE_SIL, leg: UV_STARHART1_LEG_SIL } },
+    { kind: "starhart2", body: UV_STARHART2_BODY, base: UV_STARHART2_BASE, leg: UV_STARHART2_LEG, sil: { body: UV_STARHART2_BODY_SIL, base: UV_STARHART2_BASE_SIL, leg: UV_STARHART2_LEG_SIL } },
+    { kind: "starhart3", body: UV_STARHART3_BODY, base: UV_STARHART3_BASE, leg: UV_STARHART3_LEG, sil: { body: UV_STARHART3_BODY_SIL, base: UV_STARHART3_BASE_SIL, leg: UV_STARHART3_LEG_SIL } },
+  ];
+  hartMechCells.forEach((cells, i) => packMech(cells, hartMech(HART_TIERS[i]), HART_TIERS[i].n));
+  const hartLegCells: readonly LegCells[] = [
+    { kind: "starhart4", body: UV_STARHART4_BODY, base: UV_STARHART4_BASE, joint: UV_STARHART4_JOINT, baseJoint: UV_STARHART4_JOINT_BASE, foot: UV_STARHART4_FOOT, leg: UV_STARHART4_LEG_SEG, legBase: UV_STARHART4_LEG_BASE_SEG,
+      sil: { body: UV_STARHART4_BODY_SIL, base: UV_STARHART4_BASE_SIL, joint: UV_STARHART4_JOINT_SIL, baseJoint: UV_STARHART4_JOINT_BASE_SIL, foot: UV_STARHART4_FOOT_SIL } },
+    { kind: "starhart5", body: UV_STARHART5_BODY, base: UV_STARHART5_BASE, joint: UV_STARHART5_JOINT, baseJoint: UV_STARHART5_JOINT_BASE, foot: UV_STARHART5_FOOT, leg: UV_STARHART5_LEG_SEG, legBase: UV_STARHART5_LEG_BASE_SEG,
+      sil: { body: UV_STARHART5_BODY_SIL, base: UV_STARHART5_BASE_SIL, joint: UV_STARHART5_JOINT_SIL, baseJoint: UV_STARHART5_JOINT_BASE_SIL, foot: UV_STARHART5_FOOT_SIL } },
+  ];
+  hartLegCells.forEach((cells, i) => packLegged(cells, hartLegged(HART_TIERS[3 + i]), HART_TIERS[3 + i].n));
   const rhinoMechCells: readonly MechCells[] = [
     { kind: "ironhide1", body: UV_IRONHIDE1_BODY, base: UV_IRONHIDE1_BASE, leg: UV_IRONHIDE1_LEG, sil: { body: UV_IRONHIDE1_BODY_SIL, base: UV_IRONHIDE1_BASE_SIL, leg: UV_IRONHIDE1_LEG_SIL } },
     { kind: "ironhide2", body: UV_IRONHIDE2_BODY, base: UV_IRONHIDE2_BASE, leg: UV_IRONHIDE2_LEG, sil: { body: UV_IRONHIDE2_BODY_SIL, base: UV_IRONHIDE2_BASE_SIL, leg: UV_IRONHIDE2_LEG_SIL } },
@@ -2683,34 +2614,24 @@ function packAnimalArt(
   ];
   spiderLegCells.forEach((cells, i) => packLegged(cells, spiderLegged(SPIDER_TIERS[i]), SPIDER_TIERS[i].n));
 
-  // ---- Skate, Livewire ----
-  const packHull = (kinds: readonly UnitKind[], tiers: readonly StoopTier[], hulls: readonly UVRect[], cells: readonly (readonly [UVRect, UVRect])[], art: (T: StoopTier) => StoopArt): void =>
+  // ---- Stoop, Skate, Livewire ----
+  // the wing rig: the composed sprite in the kind's own cell, the body
+  // column and the wing in the cells above
+  const packWinged = (kinds: readonly UnitKind[], tiers: readonly FlyerTier[], fulls: readonly UVRect[], cells: readonly (readonly [UVRect, UVRect])[], art: (T: FlyerTier) => StoopArt): void =>
     tiers.forEach((T, i) => {
       const a = art(T);
       const full = toCanvas(a.full);
-      part(hulls[i], full);
+      part(fulls[i], full);
       const [bodyUV, wingUV] = cells[i];
-      const strip = bodyColumn(a.body, T.bw ?? T.nb);
+      const strip = bodyColumn(a.body, T.bw);
       part(bodyUV, toCanvasRect(strip.px, strip.w, strip.h));
       part(wingUV, toCanvas(a.wing));
       dropCell(kinds[i]);
-      teamCell(kinds[i], full, toCanvas(a.cell), hulls[i], T.n);
+      teamCell(kinds[i], full, toCanvas(a.cell), fulls[i], T.n);
     });
-  packHull(MANTA_KINDS, MANTA_TIERS, [UV_SKATE1, UV_SKATE2, UV_SKATE3, UV_SKATE4, UV_SKATE5], UV_MANTA_CELLS, manta);
-  packHull(NARWHAL_KINDS, NARWHAL_TIERS, [UV_LIVEWIRE1, UV_LIVEWIRE2, UV_LIVEWIRE3, UV_LIVEWIRE4, UV_LIVEWIRE5], UV_NARWHAL_CELLS, narwhal);
-
-  // ---- Stoop ----
-  const fullCells: readonly UVRect[] = [UV_STOOP1, UV_STOOP2, UV_STOOP3, UV_STOOP4, UV_STOOP5];
-  STOOP_TIERS.forEach((T, i) => {
-    const a = stoop(T);
-    const full = toCanvas(a.full);
-    part(fullCells[i], full);
-    const [bodyUV, wingUV] = STOOP_CELLS[i];
-    part(bodyUV, toCanvas(a.body));
-    part(wingUV, toCanvas(a.wing));
-    dropCell(STOOP_KINDS[i]);
-    teamCell(STOOP_KINDS[i], full, toCanvas(a.cell), fullCells[i], T.n);
-  });
+  packWinged(STOOP_KINDS, STOOP_TIERS, [UV_STOOP1, UV_STOOP2, UV_STOOP3, UV_STOOP4, UV_STOOP5], UV_STOOP_CELLS, stoop);
+  packWinged(MANTA_KINDS, MANTA_TIERS, [UV_SKATE1, UV_SKATE2, UV_SKATE3, UV_SKATE4, UV_SKATE5], UV_MANTA_CELLS, manta);
+  packWinged(NARWHAL_KINDS, NARWHAL_TIERS, [UV_LIVEWIRE1, UV_LIVEWIRE2, UV_LIVEWIRE3, UV_LIVEWIRE4, UV_LIVEWIRE5], UV_NARWHAL_CELLS, narwhal);
 }
 
 /** transparent margin round every packed team cell — the sheet's mip-3

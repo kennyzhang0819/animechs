@@ -64,8 +64,9 @@ export const IRON_TIERS: readonly IronTier[] = [
 ];
 
 /** pixel coordinates on the tier's grid, off a 32-grid layout: every value
- *  is scaled and rounded, and a width is held to four or more */
-const scaler = (n: number) => {
+ *  is scaled and rounded, and a width is held to four or more. Shared
+ *  with the other families (familyArt.ts) */
+export const scaler = (n: number) => {
   const u = n / 32;
   const q = (v: number): number => Math.round(v * u);
   const w = (v: number): number => Math.max(4, Math.round(v * u));
@@ -141,8 +142,8 @@ export function ironMech(T: IronTier): MechParts {
 }
 
 /** a stretched leg segment: hide, its top half dark and its bottom light,
- *  as a round leg seen from above is */
-const segment = (w: number, h: number, m: Mat): Rect => {
+ *  as a round leg seen from above is. Shared with the other families */
+export const segment = (w: number, h: number, m: Mat): Rect => {
   const px: (string | null)[] = [];
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) px.push(y < h / 2 ? m[0] : m[1]);
   return { px, w, h };
