@@ -24,9 +24,9 @@
  */
 import type { LegParts, MechParts, StoopArt, StoopGeom } from "./animalArt";
 import { BORE, GUN, STEEL, bars, draw, drawWithCell, rev, type Mat, type Pen } from "./turretArt";
-import { scaler, segment, type IronTier } from "./ironhideArt";
+import { BONE, scaler, segment, type IronTier } from "./ironhideArt";
 
-const STEEL_R = rev(STEEL);
+const BONE_R = rev(BONE);
 
 // ── shared: pens that move, and the wing rig's frame ───────────────────
 /** the same pen, its origin moved */
@@ -100,10 +100,10 @@ function flyerGeom(T: FlyerTier, L: Wing): StoopGeom {
 // ── STARHART ─────────────────────────────────────────────────────────────
 //
 // The stag: a slim back, a neck, a wedge of a head, and from T2 the
-// antlers — a steel beam either side of the head joined to it by a bar,
+// antlers — a BONE beam either side of the head joined to it by a bar,
 // tines off the beam outward as the tiers climb, the emitter gold at the
-// top of each beam. Steel down the spine with the gold seam on it, the
-// gold alone on the runt. At T5 the gold leaves the antlers: a panel down
+// top of each beam. A gunmetal plate down the spine with the gold seam on
+// it and a steel rim at its front from T3, the gold alone on the runt. At T5 the gold leaves the antlers: a panel down
 // each shoulder yoke and a blaze in the crest plate, which is the apex's
 // own tell. Mech rig to T3, four legs from T4.
 export const HART: Mat = ["#5a3f2c", "#9a7350"];
@@ -131,10 +131,10 @@ function hartBody(P: Pen, T: IronTier): void {
   // the bar to the head, the tines outward, the emitter at the top
   if (t >= 2) {
     const bx = q(3), top = q(1), beamW = w(4);
-    P.box(bx, top, bx + beamW, q(t >= 5 ? 13 : 11), STEEL);
-    P.box(bx, q(7), c - w(3), q(7) + beamW, STEEL);
+    P.box(bx, top, bx + beamW, q(t >= 5 ? 13 : 11), BONE);
+    P.box(bx, q(7), c - w(3), q(7) + beamW, BONE);
     const tines = t >= 5 ? 3 : t >= 4 ? 2 : t >= 3 ? 1 : 0, tH = w(3), period = tH + w(1.5);
-    for (let k = 0; k < tines; k++) P.box(bx - w(3), top + k * period, bx + beamW, top + k * period + tH, STEEL);
+    for (let k = 0; k < tines; k++) P.box(bx - w(3), top + k * period, bx + beamW, top + k * period + tH, BONE);
     P.box(bx, top, bx + beamW, top + w(3), STAR);
   }
   // a gunmetal yoke over each shoulder from T4, from beside the neck out
@@ -150,12 +150,14 @@ function hartBody(P: Pen, T: IronTier): void {
   // the neck and the head, a wedge forward of the shoulders
   P.box(c - w(3), q(8), c + w(3), q(14), HART);
   P.octa(c - w(4), q(2), c + w(4), q(10), U, HART);
-  // the saddle: steel down the spine from T2 with the gold seam on it, a
-  // gunmetal collar at its front from T3; the runt wears the gold alone
+  // the saddle: a gunmetal plate down the spine from T2 with the gold seam
+  // on it and a steel rim at its front from T3; the runt wears the gold
+  // alone. The plate is gunmetal and not steel because a white plate the
+  // length of a brown deer's back is the machine wearing the animal
   if (t >= 2) {
-    P.box(c - 2 * U, q(13), c + 2 * U, n - q(3), STEEL);
+    P.box(c - 2 * U, q(13), c + 2 * U, n - q(3), GUN);
     P.box(c - U, q(13) + U, c + U, n - q(3) - U, STAR);
-    if (t >= 3) P.box(c - 2 * U, q(13), c + 2 * U, q(13) + U, GUN);
+    if (t >= 3) P.box(c - 2 * U, q(13), c + 2 * U, q(13) + U, STEEL);
   } else P.box(c - U, q(14), c + U, q(27), STAR);
   // vents down the saddle from T4; a crest plate over the head at T5 with
   // the gold burning in the middle of it, a unit of gunmetal either side
@@ -271,8 +273,13 @@ function frogBody(P: Pen, T: IronTier): void {
   // like everything else here it ends on straight edges only
   if (t >= 5) P.box(c - q(11), q(18), c - q(8) - w(1), q(24), ACID);
   // the tank down the spine from T2, between the stripes and wider than
-  // the tube it feeds, so the two read as plumbing and not as one bar
-  if (t >= 2) P.box(c - (spine - U), q(13), c + (spine - U), n - q(9), STEEL);
+  // the tube it feeds, so the two read as plumbing and not as one bar.
+  // Gunmetal under a steel tube: the bright metal on this body is the
+  // barrel alone, and the vessel behind it is plate. It starts on the row
+  // the tube ENDS on, never under it — a vessel a pixel wider than the
+  // tube lying over it is two slivers of grey, which is the one thing
+  // this grammar does not allow
+  if (t >= 2) P.box(c - (spine - U), q(14), c + (spine - U), n - q(9), GUN);
   // the brow plate at T5: gunmetal, not steel, so the spitter reads as a
   // tube lying OVER it rather than melting into one steel T
   if (t >= 5) P.box(c - q(5), q(6), c + q(5), q(6) + w(3), GUN);
@@ -334,15 +341,22 @@ export function frogLegged(T: IronTier): LegParts {
 
 // ── STOOP ────────────────────────────────────────────────────────────────
 //
-// The bat: a long fur body with a wider head, the charge a magenta block
-// on the belly (the whole belly on the two small tiers), a steel harness
-// under it from T2, stacks at the tail from T3, a gunmetal cap on the head
-// from T4. The wing is a membrane slab with the arm out along its span
-// and fingers trailing back, fur-boned to T2 and steel from T3, with a
-// magenta cell on each wing from T4, and at T5 a SECOND cell down the
-// same finger and the magenta at the front of each tail stack.
-export const FUR: Mat = ["#352a3e", "#6b5a7c"];
-export const MEMB: Mat = ["#6b1f63", "#b9469f"];
+// The bat: a long body of BROWN FUR with a wider head and darker brown
+// membranes, because that is what a bat is. The pair this line used to
+// wear — a violet body under magenta wings — made a very large moth: the
+// magenta is the family's hue (PAL.bomber) and it belongs on the charge
+// and nowhere else, which is the whole of what an accent is for.
+//
+// So: the charge a magenta block on the belly (the whole belly on the two
+// small tiers), a gunmetal harness under it from T2, stacks at the tail
+// from T3, a gunmetal cap on the head from T4. The wing is a membrane
+// slab with the arm out along its span and fingers trailing back, all
+// three of them FUR-boned at every tier — a finger is a finger and not a
+// strut — with a magenta cell on each wing from T4, and at T5 a SECOND
+// cell down the same finger and the magenta at the front of each tail
+// stack.
+export const FUR: Mat = ["#4a3526", "#8b6845"];
+export const MEMB: Mat = ["#332621", "#63483a"];
 export const MAG: Mat = ["#a02890", "#ff6ad8"];
 const FUR_R = rev(FUR);
 /** hitboxes UR x 1.125 / 1.375 / 2.5 / 5.75 / 7.25 */
@@ -369,7 +383,7 @@ export function stoop(T: FlyerTier): StoopArt {
   const body = (P: Pen): void => {
     P.octa(cx - B, q(8), cx + B, q(27), U, FUR);
     P.octa(cx - H, q(2), cx + H, q(10), U, FUR);
-    if (t >= 2) P.box(cx - (t >= 3 ? 2 * U : U), q(10), cx + (t >= 3 ? 2 * U : U), q(24), STEEL);
+    if (t >= 2) P.box(cx - (t >= 3 ? 2 * U : U), q(10), cx + (t >= 3 ? 2 * U : U), q(24), GUN);
     P.box(cx - U, q(14), cx + U, q(14) + w(5), MAG);
     if (t >= 3) P.box(cx - B, q(25), cx - B + U, q(30), GUN);
     if (t >= 4) P.box(cx - H + U, q(3), cx + H - U, q(3) + w(3), GUN);
@@ -377,7 +391,7 @@ export function stoop(T: FlyerTier): StoopArt {
     if (t >= 5) P.box(cx - B, q(25), cx - B + U, q(25) + w(3), MAG);
   };
   const wing = (O: Pen): void => {
-    const R = scaler(L.reach); const bone = t >= 3 ? STEEL : FUR_R; const ya = L.rootY;
+    const R = scaler(L.reach); const bone = FUR_R; const ya = L.rootY;
     O.octa(0, L.y0, L.reach, L.y1, R.w(8), MEMB);
     O.box(0, ya, R.q(29), ya + w(3), bone);
     O.box(R.q(8), ya, R.q(8) + R.w(5), L.y1 - w(4), bone);
@@ -393,13 +407,14 @@ export function stoop(T: FlyerTier): StoopArt {
 
 // ── SKATE ────────────────────────────────────────────────────────────────
 //
-// The manta: a long plate of a body with the cephalic fins as one steel
-// cowl forward of it, the harpoon tail steel with its barb the family's
-// teal, the teal seam down the spine from T2, a gunmetal transom at the
-// hips from T4. The wings are FINS, not the bat's pods: wider than they
+// The manta: a long plate of a body with the cephalic fins as one cowl
+// forward of it — IN THE REVERSED PAIR AND NOT IN STEEL, because a fin is
+// part of the fish and only the gear on its back is machine — the harpoon
+// tail the same, with its barb the family's teal. The teal seam runs down
+// the spine from T2 and a gunmetal transom sits at the hips from T4. The wings are FINS, not the bat's pods: wider than they
 // are tall, full height at the root and tapering on 45-degree cuts to a
 // four-pixel tip, with a fold along the leading edge — in the reversed
-// pair to T3, steel from T4 — that follows the taper at one width all
+// pair to T3, a gunmetal spar from T4 — that follows the taper at one width all
 // the way out. A teal cell on each fin at T5, a second one out where the
 // taper leaves less room, and the cowl grown into the two CEPHALIC PRONGS
 // a manta leads with — the apex's own tell, and the thing that tells it
@@ -437,9 +452,9 @@ export function manta(T: FlyerTier): StoopArt {
     // a clear notch between them. Three shapes off the front, which is
     // what tells this apex from the bat's at a glance
     if (t >= 5) {
-      P.box(cx - B, q(3), cx + B, q(3) + w(4), STEEL);
-      P.box(cx - B, 0, cx - B + w(3), q(3) + w(4), STEEL);
-    } else P.box(cx - B + U, q(1), cx + B - U, q(1) + w(4), STEEL);
+      P.box(cx - B, q(3), cx + B, q(3) + w(4), SKIN_R);
+      P.box(cx - B, 0, cx - B + w(3), q(3) + w(4), SKIN_R);
+    } else P.box(cx - B + U, q(1), cx + B - U, q(1) + w(4), SKIN_R);
     // the seam ends a unit above the harpoon's shaft, never nearer
     const shaft = q(27) - 1 - (w(4) - U);
     if (t >= 2) P.box(cx - U, q(9), cx + U, shaft - U, TEAL);
@@ -447,7 +462,7 @@ export function manta(T: FlyerTier): StoopArt {
     // the harpoon last, over the transom: the shaft and the barb
     // the shaft starts on the row where the body's chamfer has narrowed
     // to the shaft's own width, so no sliver of skin is left beside it
-    P.box(cx - U, shaft, cx + U, n, STEEL);
+    P.box(cx - U, shaft, cx + U, n, SKIN_R);
     const barb = t >= 3 ? w(3) : U;
     P.box(cx - barb, n - U, cx + barb, n, TEAL);
   };
@@ -462,7 +477,7 @@ export function manta(T: FlyerTier): StoopArt {
     // trailing edge. The runt's fin is too short for one
     const c = (y1 - y0 - 4) / 2, fold = reach - c - 4;
     O.octa(-c, y0, reach, y1, c, SKIN);
-    if (fold >= 4) O.box(0, y0, fold, y0 + w(4), t >= 4 ? STEEL : SKIN_R);
+    if (fold >= 4) O.box(0, y0, fold, y0 + w(4), t >= 4 ? GUN : SKIN_R);
     // two teal cells out the fin at T5, the outer one shorter because the
     // taper leaves it less room: a manta's spots, and they sit inside the
     // octagon's diagonals at every row they cross
@@ -477,13 +492,18 @@ export function manta(T: FlyerTier): StoopArt {
 // ── LIVEWIRE ─────────────────────────────────────────────────────────────
 //
 // The narwhal: a melon rounding into the shoulders, a body narrowing to a
-// peduncle and a fluke in the reversed pair, the tusk a steel spike off
-// the melon with the violet electrode at its tip and ridges across it
-// from T3 (violet themselves at T5). Steel saddle and violet seam from
-// T2, a collar from T3, a stack at the peduncle from T4, and at T5 steel
-// on the fluke's edge, a steel GIRTH the body's full width across the
-// shoulders and a violet cell on each flipper — the apex is harnessed. Small flippers on the wing rig, a shallow beat.
-export const NARW: Mat = ["#5b6577", "#aab6c6"];
+// peduncle and a fluke in the reversed pair, the tusk IVORY off the melon
+// — it is the one part of this animal that is really that pale, and the
+// rule is that a near-white goes nowhere else on a body — with the violet
+// electrode at its tip and the spiral's ridges across it from T3.
+//
+// GUNMETAL saddle and violet seam from T2, a collar from T3, a stack at
+// the peduncle from T4, and at T5 a plated fluke edge, a GIRTH the body's
+// full width across the shoulders and a violet cell on each flipper — the
+// apex is harnessed. The gear is gunmetal and not steel on purpose: a
+// whale is grey, and a white plate the length of its back turned the
+// animal into a hull. Small flippers on the wing rig, a shallow beat.
+export const NARW: Mat = ["#47525f", "#8a95a5"];
 export const VOLT: Mat = ["#6a3fd0", "#c0a0ff"];
 const NARW_R = rev(NARW);
 /** hitboxes UR x 1.375 / 1.75 / 2.5 / 5.5 / 7.25 */
@@ -506,29 +526,29 @@ export function narwhal(T: FlyerTier): StoopArt {
   const B = narwhalHalf(T), F = B + w(3), L = narwhalWing(T);
   const body = (P: Pen): void => {
     // the fluke first, under the peduncle
-    if (t >= 5) P.octa(cx - F, n - q(6), cx + F, n, w(3), STEEL);
+    if (t >= 5) P.octa(cx - F, n - q(6), cx + F, n, w(3), GUN);
     const e = t >= 5 ? w(1.5) : 0;
     P.octa(cx - F + e, n - q(6) + e, cx + F - e, n - e, w(3), NARW_R);
     // the body and the peduncle
     P.octa(cx - B, q(8), cx + B, n - q(8), w(5), NARW);
     P.box(cx - B + w(3), n - q(9), cx + B - w(3), n - q(4), NARW);
     // the tusk, its electrode, its ridges
-    P.box(cx - U, 0, cx + U, q(10), STEEL);
+    P.box(cx - U, 0, cx + U, q(10), BONE);
     P.box(cx - U, 0, cx + U, w(3), VOLT);
-    if (t >= 3) for (let y = w(3) + U; y + U <= q(9); y += 2 * U) P.box(cx - U, y, cx + U, y + U, t >= 5 ? VOLT : STEEL_R);
+    if (t >= 3) for (let y = w(3) + U; y + U <= q(9); y += 2 * U) P.box(cx - U, y, cx + U, y + U, BONE_R);
     // the machine: saddle and seam, collar, the stack
-    if (t >= 2) { P.box(cx - 2 * U, q(14), cx + 2 * U, n - q(9), STEEL); P.box(cx - U, q(14) + U, cx + U, n - q(9) - U, VOLT); }
-    if (t >= 3) P.box(cx - B + U, q(12), cx + B - U, q(12) + w(3), STEEL);
+    if (t >= 2) { P.box(cx - 2 * U, q(14), cx + 2 * U, n - q(9), GUN); P.box(cx - U, q(14) + U, cx + U, n - q(9) - U, VOLT); }
+    if (t >= 3) P.box(cx - B + U, q(12), cx + B - U, q(12) + w(3), GUN);
     // the apex is HARNESSED: a steel girth the body's full width across the
     // shoulders, a clear gap behind the collar, laid where the melon is
     // straight-sided so it ends flush with the silhouette and not on a
     // chamfer. With the saddle running down from it the machine reads as
     // one rig rather than as a strip down the spine
-    if (t >= 5) P.box(cx - B, q(16), cx + B, q(16) + w(2), STEEL);
+    if (t >= 5) P.box(cx - B, q(16), cx + B, q(16) + w(2), GUN);
     if (t >= 4) { P.box(cx - U, n - q(9), cx + U, n - q(5), GUN); P.box(cx - U, n - q(9), cx + U, n - q(9) + U, VOLT); }
   };
   const wing = (O: Pen): void => {
-    O.octa(0, L.y0, L.reach, L.y1, U, t >= 4 ? STEEL : NARW_R);
+    O.octa(0, L.y0, L.reach, L.y1, U, t >= 4 ? GUN : NARW_R);
     O.octa(0, L.y0 + w(3), L.reach, L.y1, U, NARW);
     // a violet cell on each flipper at T5, inside the octagon's diagonals
     if (t >= 5) O.box(U, L.y0 + w(4), L.reach - U, L.y1 - w(2), VOLT);

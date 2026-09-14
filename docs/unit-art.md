@@ -67,8 +67,8 @@ the other way round.
   onto steel rails and the ivory runs the leading edge of each ear; the
   bat carries a second charge cell down each wing and magenta on the tail
   stacks; the manta's cowl grows the two cephalic prongs it leads with;
-  the narwhal is harnessed, a steel girth across the shoulders and a
-  violet cell on each flipper. Everything in that list is a box inside a
+  the narwhal is harnessed, a girth across the shoulders and a violet cell
+  on each flipper. Everything in that list is a box inside a
   flat, which is the only way an added mark stays clear of a chamfer.
 - **Legs stay tucked until T4.** T1 to T3 are small and concise: a compact
   body, tiny feet peeking out, nothing splayed. Only T4 and T5 open their
@@ -213,6 +213,25 @@ stricter grammar than the trial above, and every family is drawn to it
   never. A part in the REVERSED pair (`rev`) catches light the other way,
   and that is how a fold, a band or a bevel is shown — the tacker's light
   wedge in its dark half, the rhino's shoulder fold.
+- **The animal keeps its own colour, and the machine is what is bolted
+  to it.** A body is the creature's real colouring over most of its
+  area — brown fur and darker brown membrane on a bat, grey-blue on a
+  whale, dark blue with acid bands on a dart frog — and the hardware is
+  metal laid on top of that: `GUN` for a plate, a saddle, a howdah, a
+  harness, a rail, `BORE` for a hole. What the family's HUE is for is
+  the accent and nothing else: the charge cell, the seam, the emitter,
+  the heat band, the tip of a horn. A line's hue spread over its whole
+  wing does not read as a family, it reads as the wrong animal — the
+  Stoop was violet under magenta wings and read as a moth; the Livewire
+  was white under violet and read as a gunship.
+- **`STEEL` is a near-white, so it goes only where the animal really is
+  near-white.** Ivory, antler, the pale keratin of a tusk — and on the
+  hardware, the small bright parts: a barrel, a rim, a strake. Dark
+  keratin (a rhino's horn, a hoof, a claw) is `HORN` and the pale kind
+  is `BONE`, both in `game/ironhideArt.ts` and shared by every family.
+  A big white plate down an animal's back turns it into a hull, which is
+  why the stag's saddle, the frog's tank and the narwhal's whole rig are
+  gunmetal with one steel detail each.
 - **Nothing under four pixels.** No line, gap, stud, band or highlight
   narrower than four. The one-pixel checker the trial used for mottled
   hide is gone with the rest. A feature on the midline has to be at

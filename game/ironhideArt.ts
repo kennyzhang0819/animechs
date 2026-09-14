@@ -22,7 +22,7 @@
  *     every stock sprite.
  *
  * THE RHINO: a wall of back seen from above, the head a wedge off the
- * shoulders, the horn a steel spike whose tip is the family's crimson —
+ * shoulders, the horn a spike of dark keratin whose tip is the crimson —
  * the straight round comes out of the one thing a rhino points at you. A
  * fold of hide across the shoulder and another before the hip, drawn in
  * the reversed pair. The machine grows up the ladder: a gunmetal saddle
@@ -44,6 +44,18 @@ import { BORE, GUN, STEEL, draw, drawWithCell, rev, type Mat, type Pen } from ".
 /** the hide, and the crimson the family wears (PAL.mech is the light) */
 export const HIDE: Mat = ["#524b4d", "#857c7a"];
 export const CRIM: Mat = ["#b0223f", "#ff5c73"];
+/**
+ * KERATIN, AND IT IS SHARED WITH THE OTHER FAMILIES (familyArt.ts): a
+ * horn, an antler, a tusk, a claw and a beak are all the same stuff, and
+ * none of them is metal. The rule this pair exists to keep is that STEEL
+ * — a near-white — goes on a body ONLY where the animal is really that
+ * pale: an elephant's tusk, a deer's antler, the narwhal's ivory. A
+ * rhino's horn is dark keratin, so it is drawn in dark keratin, and what
+ * is left reading as machine on these bodies is the machine.
+ */
+export const HORN: Mat = ["#6a5e52", "#a89c8c"];
+/** the pale end of the same stuff: antler, ivory, bone */
+export const BONE: Mat = ["#a4967a", "#f0e5cd"];
 const HIDE_R = rev(HIDE);
 
 export interface IronTier {
@@ -99,10 +111,12 @@ function body(P: Pen, T: IronTier): void {
   P.octa(c - w(7), q(4), c + w(7), q(14), w(4), HIDE);
   // the crest: a gunmetal plate over the forehead at T5, under the horn
   if (t >= 5) P.octa(c - w(5), q(5), c + w(5), q(12), w(2), GUN);
-  // the horn: a steel spike, its tip the crimson
-  P.box(c - hornW / 2, 0, c + hornW / 2, hornL, STEEL);
+  // the horn: a spike of dark keratin, its tip the crimson. It is horn
+  // and not steel because a rhino's horn is not steel and not white — the
+  // ram is the animal's own, and the metal on this body is the plate
+  P.box(c - hornW / 2, 0, c + hornW / 2, hornL, HORN);
   P.box(c - hornW / 2, 0, c + hornW / 2, w(3), CRIM);
-  if (t >= 3) P.box(c - hornW / 2, q(9), c + hornW / 2, q(9) + w(4), STEEL);   // the second horn, behind the first
+  if (t >= 3) P.box(c - hornW / 2, q(9), c + hornW / 2, q(9) + w(4), HORN);   // the second horn, behind the first
   if (t >= 5) P.box(c - hornW / 2 - w(2), q(3), c + hornW / 2 + w(2), q(3) + w(3), GUN);   // a muzzle collar
   // strakes: steel down each flank from T3, inside the back's edge; from
   // T4 they start below the pauldron, a clear gap between
