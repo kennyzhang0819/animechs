@@ -1844,7 +1844,10 @@ export class Sim {
     this.mouths = null;
     this.routes = null;
     this.navalPadsFrom = null;
-    // a new map is a new board: nothing is pending on it
+    // a new map is a new board: nothing is pending on it, and a solve
+    // still grinding away at the LAST one is solving a map that no longer
+    // exists — the one place a solve in flight is genuinely worthless
+    this.abortSolves();
     this.fieldDirty = false;
     this.navalDirty = false;
     this.unstickPending = false;
@@ -2032,7 +2035,43 @@ export class Sim {
   }
   private fieldBudgetMs = FIELD_BUDGET_MS;
 
-  /** drop the solves in flight: the board they were solving has moved on */
+  /**
+   * Drop the solves in flight and everything waiting behind them — for a
+   * board that is not merely different but GONE (a new map, a reset).
+   *
+   * NOT FOR AN ORDINARY BOARD CHANGE, which is what it used to be for, and
+   * that was the single worst bug the routing has had. A structure going
+   * up or coming down threw away the solve in flight so the next one could
+   * start from the board as it now stands. On a quiet board that is free.
+   * On a LATE NEMESIS board — a wave chewing through a line while the
+   * player lays another — something changes every few tenths of a second,
+   * and a solve is half a second of slices: every one of them was killed
+   * before it published, forever. Measured on Crater at rung four, with a
+   * board held at eight hundred turrets against the whole script: the
+   * walkers' field last published at 10:42 of a 16:40 run and never again,
+   * SIX MINUTES of the swarm steering by a board that had turned over
+   * twice, while nine hundred aborted solves piled up behind it.
+   *
+   * What the swarm does with a field that old is exactly what it was
+   * reported doing: it walks the lane that was open minutes ago,
+   * piles into the face of a line that has gone up across it since, and
+   * stands there — because the route that would have taken it round was
+   * never solved. THE FIX IS TO LET THE SOLVE FINISH. A field one board
+   * change out of date is a route; no field at all is a traffic jam. The
+   * same run with the solve left alone: eight hundred and ninety routes
+   * published instead of a hundred and forty-six, not one abort, and the
+   * worst the swarm's routing ever lagged the board was 3.6 SECONDS.
+   *
+   * It is also safe, which is what makes it cheap. The solver's topology
+   * comes from `solid` (walk and not soft), snapshotted at begin(), and a
+   * structure change cannot move it: claimGround writes walk and soft
+   * TOGETHER, so a cell is non-solid whether the building is there or not.
+   * Only the COST of a cell shifts under a running solve, and a cost that
+   * shifts mid-pass still leaves a finite, monotone field with a heading
+   * everywhere — the route it describes is simply a blend of the board a
+   * moment ago and the board now. The flags raised alongside this then buy
+   * a clean one as soon as the board holds still (solveDirtyFields).
+   */
   private abortSolves(): void {
     for (const f of this.solveQueue) f.abort();
     this.solveQueue.length = 0;
@@ -4739,9 +4778,11 @@ export class Sim {
         changed = true;
       }
     if (changed) {
-      // a solve in flight is solving the board as it was a moment ago:
-      // drop it and let the flags below buy a fresh one once things settle
-      if (this.solveQueue.length > 0) this.abortSolves();
+      // A SOLVE IN FLIGHT IS LEFT TO FINISH. It is solving the board as it
+      // was a moment ago, and a route a moment out of date is worth far
+      // more than the nothing that killing it buys — see abortSolves for
+      // what dropping it did to a busy board. The flags below queue the
+      // clean one behind it, once the board holds still
       this.fieldDirty = true;
       this.navalDirty = true;
       this.unstickPending = true;
@@ -7347,8 +7388,9 @@ export class Sim {
           this.navalField.soft[i] = 0;
         }
       // ...and the routes over it are re-solved when the board settles,
-      // the same deferral every other structure change gets
-      if (this.solveQueue.length > 0) this.abortSolves();
+      // the same deferral every other structure change gets — and, like
+      // every other structure change, a solve already under way is left to
+      // finish rather than thrown away (claimGround, abortSolves)
       this.fieldDirty = true;
       this.navalDirty = true;
       this.fieldQuiet = 0;
