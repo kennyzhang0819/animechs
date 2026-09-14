@@ -27,6 +27,7 @@ import { loadBalanceDoc } from "@/game/balance";
 import {
   ACTIVE_FAMILIES,
   FAMILIES,
+  FAMILIES_MAX,
   FAMILIES_PER_RUN,
   MAX_FAMILIES_PER_WAVE,
   FAMILY_ACCENT,
@@ -866,20 +867,28 @@ function PickerDone({ summary, onClose }: { summary: string; onClose: () => void
  * THE FACTION LIST — custom mode's, and the only place in the game where
  * the swarm is NAMED rather than rolled.
  *
- * A run sends FAMILIES_PER_RUN families, dealt into the script's slots a
- * wave at a time (levels.ts rollFamilies, transformScript), and this
- * builds that hand a family at a time. AN EMPTY HAND IS THE DEFAULT AND
- * MEANS ROLLED, and a PARTIAL hand is honoured as far as it goes: name
- * one family and the rest are
- * rolled around it, which is how "I want to see what the Wraith fleet
- * does here" is asked without also deciding the rest of the run. The
- * Random row at the top is not a choice sitting alongside the six — it is
- * the empty hand, and pressing it clears.
+ * A run's families are dealt into the script's slots a wave at a time
+ * (levels.ts rollFamilies, transformScript), and this names them.
  *
- * A FULL HAND STOPS TAKING MORE rather than pushing the oldest out: a
- * silent swap in a list of six is a hand a player cannot keep track of,
- * so the button under a seventh family says it is full and the way to
- * change it is to drop one.
+ * WHAT IS NAMED IS WHAT IS SENT — the whole list, not a seed. Tick three
+ * and the run sends those three; tick ONE and every wave of the campaign
+ * arrives in that one family, which is the way to sit down and find out
+ * what a single line actually does. A hand used to be topped up to
+ * FAMILIES_PER_RUN by the roll, which made this picker a liar: ticking
+ * the Wraiths to go and look at the Wraiths got you the Wraiths and three
+ * strangers, and a single-family run could not be asked for at all.
+ *
+ * AN EMPTY HAND IS NOT A HAND OF ZERO. The Random row at the top is not a
+ * choice sitting alongside the families — it is the ABSENCE of a hand,
+ * means rolled, and pressing it clears. So the floor on a named hand is
+ * one and the way back to none is the row that says so.
+ *
+ * THE CEILING IS FAMILIES_MAX or the roster, whichever bites first — a
+ * hand cannot name a family that does not exist, so with seven fielded
+ * the list fills at seven. A FULL HAND STOPS TAKING MORE rather than
+ * pushing the oldest out: a silent swap in a list this long is a hand a
+ * player cannot keep track of, so the button says it is full and the way
+ * to change it is to drop one.
  */
 function FactionPicker({
   picked,
@@ -896,14 +905,15 @@ function FactionPicker({
   const [focus, setFocus] = useState<FamilyKey | null>(null);
   const family = focus == null ? null : familyByKey(focus);
   const on = focus != null && picked.includes(focus);
-  const full = picked.length >= FAMILIES_PER_RUN;
-  const rolled = FAMILIES_PER_RUN - picked.length;
 
   // the families a hand may actually name: the table less the shelf
   // (levels.ts SHELVED_FAMILIES, which cleanFamilies enforces anyway — a
   // row here for a family the roller will not deal is a row that does
   // nothing when it is ticked)
   const offered = FAMILIES.filter((f) => ACTIVE_FAMILIES.includes(f.key));
+  // ...and the ceiling is whichever runs out first, the rule or the roster
+  const cap = Math.min(FAMILIES_MAX, offered.length);
+  const full = picked.length >= cap;
 
   const rowText = "truncate font-display text-[15px] font-bold uppercase tracking-widest";
   const list = (
@@ -935,7 +945,8 @@ function FactionPicker({
         <p className="text-[14px] text-[#A6A6AF]">
           The die deals {FAMILIES_PER_RUN} of the {offered.length} families when the
           run starts, and each wave is played by up to {MAX_FAMILIES_PER_WAVE} of
-          them — the campaign&apos;s own deal.
+          them — the campaign&apos;s own deal. Name any {cap === 1 ? "one" : `1 to ${cap}`}{" "}
+          instead and the run sends exactly those.
         </p>
         <SelectButton
           label="Roll them all"
@@ -972,7 +983,7 @@ function FactionPicker({
           {family.kinds.map(unitRank).join(" · ")}
         </p>
         <SelectButton
-          label={on ? "Remove" : full ? `Hand is full — ${FAMILIES_PER_RUN}` : "Add"}
+          label={on ? "Remove" : full ? `Hand is full — ${cap}` : "Add"}
           disabled={!on && full}
           onClick={() =>
             onSet(on ? picked.filter((k) => k !== focus) : [...picked, focus as FamilyKey])
@@ -993,7 +1004,9 @@ function FactionPicker({
           summary={
             picked.length === 0
               ? `All ${FAMILIES_PER_RUN} rolled`
-              : `${picked.length} named · ${rolled} rolled`
+              : picked.length === 1
+                ? "1 named — every wave"
+                : `${picked.length} named`
           }
           onClose={onClose}
         />
@@ -1208,19 +1221,34 @@ function DealFamiliesCell({ families }: { families: readonly FamilyKey[] }) {
       aria-label={`Swarm families: ${names.join(", ")}`}
       className="ms-pane-solid pointer-events-auto flex h-12 w-12 flex-wrap items-center justify-center gap-0.5 p-1 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
     >
+      {/* THE PICTURES SHRINK TO FIT, because the hand does not have a
+          fixed size any more (levels.ts FAMILIES_MAX): the die deals four
+          and custom mode may name up to ten. The square is 48px with 4px
+          of padding, so 40px of room and a 2px gap — which takes two 16px
+          pictures a row, three 12px, or four 8px. Picking the step off
+          the COUNT keeps every hand inside the same square rather than
+          letting a big one push the mutators up the margin. */}
       {families.map((f) => (
         <img
           key={f}
           src={unitIconOf(familyByKey(f).icon) ?? BLANK_ICON}
           alt=""
-          className="h-4 w-4 object-contain [image-rendering:pixelated]"
+          className={`${
+            families.length <= 4 ? "h-4 w-4" : families.length <= 9 ? "h-3 w-3" : "h-2 w-2"
+          } object-contain [image-rendering:pixelated]`}
         />
       ))}
       <HoverCard tip={tip} title="Swarm families" tag="Deal" color={DEAL_COLOR} align="right">
-        The {families.length} families the deploy dealt this run. Every wave is
-        played by some of them, tier for tier, and the deal turns a notch each
-        wave — so the mixture changes as the run goes, and no wave sends more
-        than {MAX_FAMILIES_PER_WAVE}.
+        {families.length === 1 ? (
+          <>The one family this run sends — every wave of it, tier for tier.</>
+        ) : (
+          <>
+            The {families.length} families the deploy dealt this run. Every wave is
+            played by some of them, tier for tier, and the deal turns a notch each
+            wave — so the mixture changes as the run goes, and no wave sends more
+            than {MAX_FAMILIES_PER_WAVE}.
+          </>
+        )}
         <span className="mt-1.5 block text-[#EDEDEF]">{names.join(" · ")}</span>
       </HoverCard>
     </div>
@@ -1718,16 +1746,18 @@ export default function Animechs() {
    * is wider than the row has. The one exception is a single mutator,
    * whose name fits and is the thing worth knowing at a glance.
    *
-   * Both always say how much is still being ROLLED, because a hand of
-   * one is two thirds a roll and the row would otherwise read as the
-   * whole answer. Which families are in the hand is the list's to say.
+   * NOTHING IS ROLLED ALONGSIDE A HAND any more (levels.ts rollFamilies):
+   * a named hand is the whole list, so the row says how many were named
+   * and stops. It used to print the remainder the die was still filling
+   * in, which no longer exists. Which families are in the hand is the
+   * list's to say.
    */
   const factionsText =
     families.length === 0
       ? "Random"
-      : families.length >= FAMILIES_PER_RUN
-        ? `${families.length} named`
-        : `${families.length} named · ${FAMILIES_PER_RUN - families.length} rolled`;
+      : families.length === 1
+        ? "1 named — every wave"
+        : `${families.length} named`;
   const mutatorsText =
     tierMutationCount(tier) === 0
       ? `None at ${rungLabel(tier)}`

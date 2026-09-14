@@ -101,6 +101,7 @@ export const PAL = {
   wraithDark: "#5a35b8", wraith: "#b48cff",
   bomberDark: "#8f2280", bomber: "#ff5fd6",
   harpoonDark: "#0f8a78", harpoon: "#4dffe0",
+  tuskDark: "#a08b6b", tusk: "#fff3de",
   codexDark: "#c25a97", codex: "#ff8acb", codexLite: "#ffc7e6",
 } as const;
 

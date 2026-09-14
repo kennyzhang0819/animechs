@@ -96,22 +96,91 @@ function bolt(g: Pen): void {
   g.over((o) => o.box(0, 0.62, 1, 1, PAL.sparkDark));
 }
 
+/**
+ * THE CANOPY both field symbols are cut from — an arch with something
+ * under it. Plating is already a shield silhouette in this catalog and two
+ * shield silhouettes that differ only in colour are one symbol at seven
+ * pixels; an arch with a body beneath it says the other half of what a
+ * field is, which is that the thing inside is COVERED.
+ *
+ * `shield` (a pool standing in front of health), `bubble` (the body that
+ * projects one) and `shields` (the body that hands them out) all wear it,
+ * in three shades of the same blue: one picture, three places on the
+ * chain — what is covered, what covers itself, what covers the crowd.
+ */
+function canopy(g: Pen, ink: Ink, under: Ink, cap: Ink): void {
+  g.ring(0.5, 0.6, 0.44, 2, ink);
+  g.erase((e) => e.box(0, 0.7, 1, 1, null)); // half a ring is an arch
+  g.box(0.32, 0.64, 0.68, 0.98, under); // what is under it
+  g.over((o) => o.box(0, 0.64, 1, 0.74, cap)); // its lit cap
+}
+
+/**
+ * THE HEATER SHIELD, PLATED DOWN ITS MIDDLE — `armor`, the plating a body
+ * wears, and `plates`, the body that hands plating out. The strake is
+ * vertical for rule 6: a pale band across a symmetrical shield is a visor,
+ * and a visor is a face.
+ */
+function heater(g: Pen): void {
+  // FLAT ACROSS THE TOP. The first cut of this had the shoulders sloping
+  // up to a point and it read as a funnel — and a funnel is what
+  // `arriving` is. A shield has a straight top edge.
+  g.poly([[0.08, 0.04], [0.92, 0.04], [0.92, 0.5], [0.5, 0.98], [0.08, 0.5]], PAL.steel);
+  g.over((o) => {
+    o.box(0.42, 0, 0.58, 1, PAL.steelLite); // the strake
+    o.box(0, 0.72, 1, 1, PAL.steelDark); // the point, in shadow
+  });
+}
+
+/** A RING WITH A WEDGE OUT OF IT — `cloaked`, the body that is dark right
+ *  now, and `vanishes`, the body that is going to go dark. */
+function gone(g: Pen): void {
+  g.ring(0.5, 0.5, 0.42, 0.16, PAL.wraith);
+  g.over((o) => o.box(0, 0.6, 1, 1, PAL.wraithDark));
+  g.erase((e) => e.poly([[0.5, 0.5], [1.0, 0.2], [1.0, 0.8]], PAL.wraith));
+}
+
+/** THE CROSS — `regen`, a building being mended, and `heals`, the body
+ *  that mends the crowd. */
+function cross(g: Pen): void {
+  g.box(0.38, 0.06, 0.62, 0.94, PAL.heal);
+  g.box(0.06, 0.38, 0.94, 0.62, PAL.heal);
+  g.over((o) => o.box(0, 0.62, 1, 1, PAL.healDark));
+}
+
+/** TWO CHEVRONS, a rank — `veteran`, the body that has aged, and `ages`,
+ *  the body that is going to. */
+function chevrons(g: Pen): void {
+  g.poly([[0.5, 0.06], [0.94, 0.4], [0.78, 0.56], [0.5, 0.34], [0.22, 0.56], [0.06, 0.4]], PAL.harpoon);
+  g.poly([[0.5, 0.5], [0.94, 0.84], [0.78, 1.0], [0.5, 0.78], [0.22, 1.0], [0.06, 0.84]], PAL.harpoon);
+  g.over((o) => o.box(0, 0.7, 1, 1, PAL.harpoonDark));
+}
+
+/** A BOLT IN FLAME — `boost`, the gun reloading faster, and `hastens`,
+ *  the body that drives the crowd faster. Speed is a bolt. */
+function speedBolt(g: Pen): void {
+  g.poly([[0.74, 0.0], [0.14, 0.58], [0.46, 0.58], [0.28, 1.0], [0.88, 0.42], [0.56, 0.42]], PAL.flame);
+  g.over((o) => o.box(0, 0.5, 1, 1, PAL.emberLite));
+  g.over((o) => o.box(0, 0.8, 1, 1, PAL.ember));
+}
+
+/** A SIGNAL CROSSED OUT — `jam`, the gun under the blanket, and `jams`,
+ *  the flyer carrying it. The rings are the blanket, the bar is what it
+ *  does to the gun under it. */
+function jammed(g: Pen): void {
+  g.ring(0.5, 0.5, 0.44, 0.14, PAL.bomber);
+  g.ring(0.5, 0.5, 0.2, 0.12, PAL.bomber);
+  g.over((o) => o.box(0, 0.6, 1, 1, PAL.bomberDark));
+  g.poly([[0.06, 0.2], [0.2, 0.06], [0.94, 0.8], [0.8, 0.94]], PAL.steelDark);
+}
+
 const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
   /**
    * PLATING — a heater shield, plated DOWN its middle. The strake is
    * vertical for rule 6: a pale band across a symmetrical shield is a
    * visor, and a visor is a face.
    */
-  armor: (g) => {
-    // FLAT ACROSS THE TOP. The first cut of this had the shoulders sloping
-    // up to a point and it read as a funnel — and a funnel is what
-    // `arriving` is, two rows down. A shield has a straight top edge.
-    g.poly([[0.08, 0.04], [0.92, 0.04], [0.92, 0.5], [0.5, 0.98], [0.08, 0.5]], PAL.steel);
-    g.over((o) => {
-      o.box(0.42, 0, 0.58, 1, PAL.steelLite); // the strake
-      o.box(0, 0.72, 1, 1, PAL.steelDark); // the point, in shadow
-    });
-  },
+  armor: (g) => heater(g),
 
   /**
    * SOAKED — the droplet, and nothing else. This is the symbol the
@@ -156,6 +225,120 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
    *  mark it lays (see `bolt`). */
   shocks: (g) => bolt(g),
 
+  // ---- THE BODY TRAITS (status.ts) ------------------------------------
+  //
+  // Seven of the fourteen are drawn as the thing they DO, borrowing the
+  // picture of the live status they hand out — the canopy, the cross, the
+  // heater, the bolt, the rings, the chevrons. That is this catalog's
+  // whole promise working the way round it was meant to: a player who has
+  // learned the green cross over a mending building reads "it mends the
+  // crowd" off a body without being taught a second picture.
+
+  /** FORCE FIELD — the canopy, in the mid blue: a body that covers
+   *  ITSELF. Between `shield` (dark, what is under the arch is the pool)
+   *  and `shields` (pale, it covers everyone). */
+  bubble: (g) => canopy(g, PAL.fieldDark, PAL.field, PAL.fieldLite),
+
+  /** SHIELD FIELD — the canopy at its brightest: the body handing the
+   *  cover OUT. */
+  shields: (g) => canopy(g, PAL.fieldLite, PAL.field, PAL.fieldLite),
+
+  /** REPAIR FIELD — the green cross again (see `cross`). */
+  heals: (g) => cross(g),
+
+  /** PLATING FIELD — the heater shield again (see `heater`): what it
+   *  hands out is the plate every body already wears. */
+  plates: (g) => heater(g),
+
+  /** HASTE FIELD — the flame bolt again (see `speedBolt`): speed is a
+   *  bolt, and this one gives it away. */
+  hastens: (g) => speedBolt(g),
+
+  /** JAM FIELD — the crossed-out signal again (see `jammed`): the flyer
+   *  carrying the blanket, drawn as the blanket. */
+  jams: (g) => jammed(g),
+
+  /**
+   * SPOTTER — a LONG ARROW, because what a spotter gives is reach and
+   * nothing else. A reticle was the first cut and this catalog already
+   * holds three rings (`cloaked`, `jam`, `immune`); a fourth would have
+   * been a ring the player has to read the colour of. An arrow that runs
+   * off the edge of the square says "further" with no ring at all.
+   */
+  spots: (g) => {
+    g.box(0.02, 0.42, 0.7, 0.58, PAL.harpoon);
+    g.poly([[0.6, 0.16], [1.0, 0.5], [0.6, 0.84]], PAL.harpoon);
+    g.over((o) => o.box(0, 0.6, 1, 1, PAL.harpoonDark));
+  },
+
+  /**
+   * DRILL — an HOURGLASS, because what it hands the fleet is TIME: the
+   * bodies round it get to hitting hard sooner. Narrow, so the pinch in
+   * the middle is the silhouette — the chevrons beside it in this same
+   * teal are full-width arrows, and the two must not be one shape.
+   */
+  drills: (g) => {
+    g.poly([[0.24, 0.04], [0.76, 0.04], [0.5, 0.5]], PAL.harpoon);
+    g.poly([[0.5, 0.5], [0.76, 0.96], [0.24, 0.96]], PAL.harpoon);
+    g.over((o) => o.box(0, 0.6, 1, 1, PAL.harpoonDark));
+  },
+
+  /** VETERAN — the two chevrons again (see `chevrons`): the rank it is
+   *  climbing, on the body that climbs it. */
+  ages: (g) => chevrons(g),
+
+  /**
+   * BLINK — TWO ARROWS AND THE GAP BETWEEN THEM: a dim one where the body
+   * was and a bright one where it now is. The gap is the whole idea, so it
+   * is a third of the square wide — a teleport drawn without room to have
+   * travelled reads as an arrow with a bite out of it.
+   */
+  blinks: (g) => {
+    g.poly([[0.02, 0.2], [0.36, 0.5], [0.02, 0.8]], PAL.wraithDark);
+    g.poly([[0.56, 0.12], [0.98, 0.5], [0.56, 0.88]], PAL.wraith);
+  },
+
+  /** CLOAK — the ring with a wedge out of it (see `gone`): the body that
+   *  goes dark, drawn as the dark it goes into. */
+  vanishes: (g) => gone(g),
+
+  /**
+   * CHARGE — A BODY AIMED AT A BUILDING, which is the whole of what the
+   * trait is: it leaves the route and walks at the gun. The block is on
+   * the right and the wedge is pointed into it, so the symbol has a
+   * direction and the direction is "at your line".
+   */
+  charges: (g) => {
+    g.box(0.74, 0.08, 1.0, 0.92, PAL.tuskDark);
+    g.poly([[0.0, 0.5], [0.56, 0.12], [0.56, 0.88]], PAL.tusk);
+    g.over((o) => o.box(0, 0.72, 1, 1, PAL.tuskDark));
+  },
+
+  /**
+   * PAYLOAD — a bomb with a lit fuse. The body IS the bomb, so the symbol
+   * is the bomb and not a body carrying one; the spark is the single
+   * accent (rule 5), and it is what says the thing is live rather than
+   * cargo.
+   */
+  bomb: (g) => {
+    g.disc(0.44, 0.62, 0.36, PAL.bomber);
+    g.over((o) => o.box(0, 0.74, 1, 1, PAL.bomberDark));
+    g.box(0.56, 0.04, 0.74, 0.32, PAL.bomber);
+    g.over((o) => o.disc(0.65, 0.1, 0.16, PAL.flame));
+  },
+
+  /**
+   * IMMUNE — a ring with a BAR STRAIGHT THROUGH IT, the plainest "no" this
+   * catalog can draw, in steel because it is not about any one status.
+   * The bar is horizontal and the ring single, which is what keeps it off
+   * `jam` (two rings, a DIAGONAL bar, magenta) at seven pixels.
+   */
+  immune: (g) => {
+    g.ring(0.5, 0.5, 0.42, 0.16, PAL.steelLite);
+    g.over((o) => o.box(0, 0.6, 1, 1, PAL.steelDark));
+    g.box(0.1, 0.42, 0.9, 0.58, PAL.steelWhite);
+  },
+
   wet: (g) => drop(g),
 
   /** SHOCKED — the bolt: a body the blue line has been on (see `bolt`). */
@@ -176,12 +359,7 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
    * pixels; an arc with something under it says the other half of what a
    * force field is, which is that the thing inside is covered.
    */
-  shield: (g) => {
-    g.ring(0.5, 0.6, 0.44, 2, PAL.field);
-    g.erase((e) => e.box(0, 0.7, 1, 1, null)); // half a ring is an arch
-    g.box(0.32, 0.64, 0.68, 0.98, PAL.fieldDark); // what is under it
-    g.over((o) => o.box(0, 0.64, 1, 0.74, PAL.fieldLite)); // its lit cap
-  },
+  shield: (g) => canopy(g, PAL.field, PAL.fieldDark, PAL.fieldLite),
 
   /**
    * ARRIVING — a chevron coming down onto a pad. It is the drop, not the
@@ -284,11 +462,7 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
    * teal: the family whose hulls earn them. The lower one is darker so
    * the pair reads as stacked rather than as one fat V.
    */
-  veteran: (g) => {
-    g.poly([[0.5, 0.06], [0.94, 0.4], [0.78, 0.56], [0.5, 0.34], [0.22, 0.56], [0.06, 0.4]], PAL.harpoon);
-    g.poly([[0.5, 0.5], [0.94, 0.84], [0.78, 1.0], [0.5, 0.78], [0.22, 1.0], [0.06, 0.84]], PAL.harpoon);
-    g.over((o) => o.box(0, 0.7, 1, 1, PAL.harpoonDark));
-  },
+  veteran: (g) => chevrons(g),
 
   /**
    * CLOAKED — a hollow ring with a bite out of it, in the wraiths' violet:
@@ -296,11 +470,7 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
    * symbol in the file drawn as a ring rather than a body, because that
    * is what a cloak is.
    */
-  cloaked: (g) => {
-    g.ring(0.5, 0.5, 0.42, 0.16, PAL.wraith);
-    g.over((o) => o.box(0, 0.6, 1, 1, PAL.wraithDark));
-    g.erase((e) => e.poly([[0.5, 0.5], [1.0, 0.2], [1.0, 0.8]], PAL.wraith));
-  },
+  cloaked: (g) => gone(g),
 
   /**
    * SHORTED — a violet bolt across a dark bar. The bar is the gun that is
@@ -321,28 +491,15 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
    * with a dark bar struck through them. The rings are the flight's
    * blanket and the bar is what it does to the gun under it.
    */
-  jam: (g) => {
-    g.ring(0.5, 0.5, 0.44, 0.14, PAL.bomber);
-    g.ring(0.5, 0.5, 0.2, 0.12, PAL.bomber);
-    g.over((o) => o.box(0, 0.6, 1, 1, PAL.bomberDark));
-    g.poly([[0.06, 0.2], [0.2, 0.06], [0.94, 0.8], [0.8, 0.94]], PAL.steelDark);
-  },
+  jam: (g) => jammed(g),
 
   /** LAST VOLLEY — a bolt, hot at the tip and cooling down its length.
    *  A gun reloading three times as fast is speed, and speed is a bolt. */
-  boost: (g) => {
-    g.poly([[0.74, 0.0], [0.14, 0.58], [0.46, 0.58], [0.28, 1.0], [0.88, 0.42], [0.56, 0.42]], PAL.flame);
-    g.over((o) => o.box(0, 0.5, 1, 1, PAL.emberLite));
-    g.over((o) => o.box(0, 0.8, 1, 1, PAL.ember));
-  },
+  boost: (g) => speedBolt(g),
 
   /** MENDING — the fixer's cross. Nothing else in the game is a green
    *  plus, and a plus is the one shape that survives any size. */
-  regen: (g) => {
-    g.box(0.38, 0.06, 0.62, 0.94, PAL.heal);
-    g.box(0.06, 0.38, 0.94, 0.62, PAL.heal);
-    g.over((o) => o.box(0, 0.62, 1, 1, PAL.healDark));
-  },
+  regen: (g) => cross(g),
 
   /**
    * UNDYING — a rampart with the fixer's green in the gate, the same

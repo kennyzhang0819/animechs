@@ -36,6 +36,12 @@ Two rules keep a wave readable:
   the cap the extra slots fold back onto the families already dealt to it
   and their counts add, so nothing authored is dropped.
 
+**Custom mode names the hand instead of rolling it**, and a named hand is
+the whole list: one family named is a fifty-wave run of that one family,
+and `FAMILIES_MAX` (ten, or the roster, whichever bites first) is the
+ceiling. `FAMILIES_PER_RUN` is only what the *die* deals when nobody
+names anything — it is not a floor under what a player may ask for.
+
 `FAMILIES_PER_RUN` and the script's slot count are **separate dials** now
 — they used to have to match, because one fixed cast held for the whole
 run and a fourth family had nowhere to go. Raise `FAMILIES_PER_RUN` to put

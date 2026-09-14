@@ -2098,6 +2098,31 @@ export const ACTIVE_FAMILIES: readonly FamilyKey[] = FAMILIES.map((f) => f.key).
 export const FAMILIES_PER_RUN = 4;
 
 /**
+ * THE MOST FAMILIES A CUSTOM HAND MAY NAME — the ceiling on what a player
+ * can ask for, and a different number from FAMILIES_PER_RUN on purpose.
+ *
+ * FAMILIES_PER_RUN is how many the DIE deals when nobody says otherwise.
+ * This is how many a player may LIST, and there is no reason those two
+ * should be the same: the roll is a balance decision about the campaign,
+ * the hand is the player asking for a particular fight. Custom mode
+ * already hands over the difficulty and the mutators; the swarm's cast is
+ * the same kind of dial.
+ *
+ * TEN IS HEADROOM, not a promise. The roster fields seven families today
+ * (ACTIVE_FAMILIES) and a hand cannot name one that does not exist, so
+ * the picker fills at seven and this number does nothing until an eighth
+ * family ships. It is here so that the day one does, the only thing that
+ * has to change is the table.
+ *
+ * THE FLOOR IS ONE, and one is a real answer: a hand of a single family
+ * plays every wave of the campaign in that family (transformScript), which
+ * is the way to sit down and learn what one line actually does. An EMPTY
+ * hand is not zero families — it is the absence of a hand, and means
+ * rolled (see rollFamilies `chosen`).
+ */
+export const FAMILIES_MAX = 10;
+
+/**
  * THE MOST FAMILIES ONE WAVE MAY SEND, however many the run rolled.
  *
  * A WAVE IS A THING A PLAYER HAS TO READ IN THREE SECONDS. Ten families
@@ -2244,7 +2269,7 @@ export function cleanFamilies(raw: unknown): FamilyKey[] {
     const key = ACTIVE_FAMILIES.find((f) => f === v);
     if (!key || out.includes(key)) continue;
     out.push(key);
-    if (out.length >= FAMILIES_PER_RUN) break;
+    if (out.length >= FAMILIES_MAX) break;
   }
   return out;
 }
@@ -2385,15 +2410,31 @@ export function openingDeal(script: readonly LevelStep[]): number {
  *
  * `chosen` IS CUSTOM MODE'S HAND, and the one way a family arrives
  * without the die. A regular deploy passes nothing and gets the roll
- * above; a custom one passes the families the player ticked, which are
- * taken FIRST and the rest of the run filled out by the same shuffle —
- * so a hand of one is one family asked for and the rest rolled. The
- * arrangement rule still holds over a chosen hand: a walker takes the
- * front where the hand has one, because a script's opening is answered
- * with the first card off the deal whoever picked the swarm. What a
- * chosen hand does NOT get is the second shuffle: the tail is the
- * player's list in the order they gave it, since a hand is not a roll and
- * there is no bias left to spread.
+ * above.
+ *
+ * A NAMED HAND IS THE WHOLE LIST, NOT A SEED. Name three families and the
+ * run sends those three and nothing else; name ONE and every wave of the
+ * campaign arrives in that one family (transformScript deals a wave as
+ * many families as it was authored wide, and with a list of one there is
+ * only ever the one to deal). It used to be a seed — a hand of one was
+ * topped up to FAMILIES_PER_RUN by the shuffle — and that made the
+ * picker a liar: a player who ticked the Wraiths to go and look at the
+ * Wraiths got the Wraiths and three strangers, and there was no way at
+ * all to ask for a single-family run. FAMILIES_PER_RUN is what the DIE
+ * deals; it was never meant to be a floor under what a player may ask
+ * for.
+ *
+ * AN EMPTY HAND IS NOT A HAND OF ZERO. It is the absence of one, and
+ * means rolled — which is the default, and what regular mode always
+ * passes.
+ *
+ * THE ARRANGEMENT RULE STILL HOLDS OVER A HAND: a walker takes the front
+ * where the hand has one, because a script's opening is answered with the
+ * first card off the deal whoever picked the swarm. A hand of one flying
+ * family is honoured as given — there is nothing to arrange, and a player
+ * who asked for that fight has asked for it. What a hand does NOT get is
+ * the second shuffle: the tail is the player's list in the order they
+ * gave it, since a hand is not a roll and there is no bias to spread.
  */
 export function rollFamilies(
   rand: () => number = Math.random,
@@ -2401,12 +2442,14 @@ export function rollFamilies(
   chosen: readonly FamilyKey[] = [],
 ): FamilyKey[] {
   const hand = cleanFamilies(chosen);
-  const pool: FamilyKey[] = ACTIVE_FAMILIES.filter((f) => !hand.includes(f));
+  // A HAND NAMED IS A HAND PLAYED (see `chosen`): the pool is drawn on
+  // only to FILL a run nobody named, never to pad one somebody did
+  const pool: FamilyKey[] = hand.length > 0 ? [] : [...ACTIVE_FAMILIES];
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  const picked = [...hand, ...pool].slice(0, FAMILIES_PER_RUN);
+  const picked = hand.length > 0 ? hand : pool.slice(0, FAMILIES_PER_RUN);
   const opening = Math.min(script ? openingDeal(script) : 1, picked.length);
   if (opening <= 0) return picked;
   // the front first, each position taking the earliest WALKING family

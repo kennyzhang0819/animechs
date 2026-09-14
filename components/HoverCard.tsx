@@ -93,15 +93,34 @@ export function HoverCard({
   tip,
   title,
   tag,
+  stat,
   color,
   children,
   align = "left",
 }: {
   tip: HoverAnchor;
   title: string;
-  /** a short word in the corner, in the border colour — a mutator's weight */
+  /**
+   * A SHORT WORD IN THE CORNER, in the border colour — a mutator's band, a
+   * rarity, a build slot's key. One or two words is the whole budget: it
+   * shares the title's line, and the title is what a player is looking
+   * for.
+   *
+   * ANYTHING WITH NUMBERS IN IT BELONGS IN `stat`, not here. A sentence
+   * passed to this used to squeeze the title off its own line and out of
+   * the card — the tag never shrinks, so the title was the thing that
+   * gave. The line wraps now rather than clipping, but a long tag still
+   * reads as a label that has outgrown its corner; put it below.
+   */
   tag?: string;
-  /** the border, and the tag */
+  /**
+   * THE NUMBERS, ON THEIR OWN ROW under the title — a status's reach and
+   * rate, a pool, a duration. A stat line is as long as the fact it is
+   * stating and must never have to compete with the title for room, which
+   * is the whole reason this is a second row and not a second corner.
+   */
+  stat?: ReactNode;
+  /** the border, the tag and the stat row */
   color: string;
   /** the sentence */
   children: ReactNode;
@@ -129,17 +148,28 @@ export function HoverCard({
         transform: `translate(${dx}, ${dy})`,
       }}
     >
-      <span className="flex items-baseline justify-between gap-2">
-        <span className="text-[15px] font-bold text-[#EDEDEF]">{title}</span>
+      {/* THE TITLE OWNS ITS LINE. `flex-wrap` and a `min-w-0` title are
+          what keep that true: a tag that no longer fits beside the name
+          drops under it instead of pushing the name out of the card, and
+          a long single word in the title wraps instead of overflowing.
+          Both used to clip, and a clipped title is the one piece of a
+          tooltip a player cannot do without. */}
+      <span className="flex flex-wrap items-baseline justify-between gap-x-2">
+        <span className="min-w-0 break-words text-[15px] font-bold text-[#EDEDEF]">{title}</span>
         {tag && (
-          <span
-            className="shrink-0 text-[13px] font-bold uppercase tracking-widest"
-            style={{ color }}
-          >
+          <span className="text-[13px] font-bold uppercase tracking-widest" style={{ color }}>
             {tag}
           </span>
         )}
       </span>
+      {/* ...and the numbers under it, in the card's own ink so they read
+          as the heading's second line rather than as the start of the
+          prose below */}
+      {stat && (
+        <span className="mt-0.5 block text-[13.5px] font-bold leading-snug" style={{ color }}>
+          {stat}
+        </span>
+      )}
       <span className="mt-1 block text-[14.5px] leading-snug text-[#A6A6AF]">{children}</span>
     </span>,
     document.body,

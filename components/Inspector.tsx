@@ -139,7 +139,12 @@ function StatusPip({ chip }: { chip: Chip }) {
     >
       <StatusGlyph id={chip.id} className="h-[15px] w-[15px]" />
       {chip.n !== null && <span className="ms-tile-count">{chip.n}</span>}
-      <HoverCard tip={tip} title={d.name} tag={chip.note} color={d.color} align="center">
+      {/* THE NOTE IS A STAT, NOT A TAG. It used to ride the title's line as
+          a corner label, which was fine while every note was "3s left" and
+          broke the moment they carried what a thing actually does — "60
+          shield every 2s to everything within 9.5t, up to 420" pushed the
+          status's own name out of the card. */}
+      <HoverCard tip={tip} title={d.name} stat={chip.note} color={d.color} align="center">
         {d.blurb}
       </HoverCard>
     </span>

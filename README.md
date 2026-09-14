@@ -13,6 +13,7 @@ npm install
 npm run dev       # the desktop app: a PRODUCTION build served inside the Electron shell
 npm run dev:web   # the same production server, in a bare browser tab
 npm run dev:hot   # Next's dev server with hot reload — slow, and not what ships; only when you need it
+npm run check     # the crash gate, about fifteen seconds — run this, and only this
 ```
 
 **The game is a desktop game**, shipped to Steam as an Electron app
@@ -24,6 +25,71 @@ leaves the Windows and Linux depots under `desktop/release/`. The shell
 lives in `desktop/` (its own npm package; `npm run dev` installs it
 on first run, or `cd desktop && npm install` by hand); see
 [docs/desktop.md](docs/desktop.md).
+
+## Checks
+
+### The quick check
+
+```bash
+npm run check
+```
+
+**One command, about fifteen seconds, and it is the only one anybody is
+asked to run.** It is a CRASH GATE: every question it asks has a right
+answer that needs no opinion about how the game should feel, so it can be
+run after every edit instead of saved up for the end. Non-zero exit means
+something is broken.
+
+| | |
+|---|---|
+| `types` | `tsc --noEmit` over the tree — the broadest net, and what catches a renamed key |
+| `art` | every Foundry head the code names has a drawing in `docs/turret-concepts/` — the trap a turret rename walks into |
+| `docs` | every level and map document under `public/` parses and applies |
+| `worlds` | all nine worlds construct: terrain, script, core |
+| `sim` | the swarm is let out on world 1, a dozen tackers go down on its route, and a round has to connect |
+
+The sim leg **asks for a hit, not a kill**. A hit is the whole pipeline in
+one fact — a body was made, it moved, a turret found it, a round reached it
+and the damage landed — and unlike a kill it does not move when somebody
+tunes a price or a hit point. It runs on a fixed seed (the sim rolls off
+`Math.random` directly, so an unseeded gate would be a coin flip), and it
+stops the moment the round lands, which is usually about five seconds in.
+
+The typecheck and the sim transpile run as two tsc processes side by side,
+and the transpile is skipped outright when nothing under `game/` is newer
+than the last one. It writes to `.playtest/check`, which is its own
+directory and not the playtest's, because the two routinely run at once
+from different sessions.
+
+**What it will never do is play the game.** It reports no wave reached and
+no core percentage, because those are numbers somebody has to weigh.
+
+### The playtest
+
+**`npm run playtest` is the design owner's tool, driven by hand, and
+should not be run to satisfy a check.** It plays a whole map through the
+real sim with a builder bot at the keyboard and reports where it gets to —
+which is a balance reading, not a pass or a fail, and it costs tens of
+minutes: a `--seconds 300` run was measured at **19m41s**, and the default
+`--seconds 2400` is eight times that work. The run is bounded by SIM time,
+not by the clock, and nothing stops it early.
+
+When you do reach for it:
+
+- `--seconds 300`–`600` answers most questions; `2400` is a full read.
+- `--no-build` after the first run in a session skips a five-second tsc.
+- `--seed <n>` or the run is an anecdote — an unseeded opening deal alone
+  moves a result by twenty waves.
+- **One at a time.** It is single-threaded and holds well over a gigabyte;
+  several at once on one machine is superlinearly slower, not faster, and
+  parallel sessions on this checkout have run six.
+- Leave `--field-budget` alone. The default finishes every solve in the
+  tick that queued it, which is what makes a run reproducible; `3` is
+  measured against a wall clock and under load produces stalls that read
+  like balance findings.
+
+The header comment of `scripts/playtest.mjs` documents every option; there
+is no `--help` flag.
 
 ### Build number
 
@@ -915,11 +981,16 @@ behind it"), not a promise about which family plays it. When a run
 deploys, **the die rolls four families** from the seven — every layer
 crosses every map now, and a fleet on a map with no channel simply drives
 — and deals them into the slots tier for tier, **a wave at a time**
-(`rollFamilies`, `transformScript` in levels.ts). In custom mode the hand
-is named instead, in whole or in part, and whatever is left unnamed is
-still rolled. Forty of the first ground body in the script are forty of
-whichever family took the line on that wave. The boss (Boss) is in no
-family and is never swapped.
+(`rollFamilies`, `transformScript` in levels.ts). Forty of the first
+ground body in the script are forty of whichever family took the line on
+that wave. The boss (Boss) is in no family and is never swapped.
+
+**In custom mode the hand is named instead, and what is named is what is
+sent** — the whole list, never a seed. Name one and *every wave of the
+campaign* arrives in that family; name seven and all seven ride the ring.
+The floor is one and the ceiling is `FAMILIES_MAX` (ten) or the roster,
+whichever bites first. An empty hand is not a hand of zero: it is the
+absence of one, and means rolled.
 
 **The run's families are a ring and it turns one notch a wave**, so the
 mixture changes as the run goes: wave 1's line is the first family, wave
@@ -1206,11 +1277,23 @@ shell: the card it came off was already paid for, and a timer between the
 click and the gun was a second tax on a decision already made. The balance
 pass is done on the two dials and never row by row.
 
-**Every map is checked headless.** `npm run playtest -- --world <id>`
-runs the real sim with an ordinary builder bot at the keyboard (route
-coverage from a dry run, the stage's tier bought round-robin, never a
-sale, never a rebuild) and reports where it gets to. Run it after any
-wave, price, weapon, mutator or unit edit.
+**Balance and play are checked by hand, by the person who owns the
+design.** Every change's balancing and correctness is tested personally.
+Nobody else is asked to judge whether wave 37 at forty percent core is the
+right answer, because that judgement is the design and not a number a
+check can hold.
+
+**So the loop for anyone working in here is: implement, `npm run check`,
+commit.** That is the whole of the assurance asked for — see
+[The quick check](#the-quick-check).
+
+**DO NOT RUN FULL SIM GAME CYCLES.** `npm run playtest` plays a whole map
+through the real sim and takes tens of minutes to do it — a single
+`--seconds 300` run was measured at nineteen minutes and forty-one
+seconds, and the default is eight times that. It is a design tool, driven
+by hand, for a question somebody already has. It is not a gate, running it
+does not make a change safer, and it must not be run to satisfy a check.
+Its own documentation is under [The playtest](#the-playtest).
 
 ### What a turret's shot IS
 
@@ -1261,6 +1344,49 @@ that pays it. Neither half is worth much alone: the liquid turrets do
 almost no damage and buy a slow, the blue line does damage and buys
 nothing. Put a douser in front of a coil and the pair is worth twice the
 sum.
+
+### What a body can DO
+
+The same treatment on the other side of the board: **a unit's abilities
+are chips in the inspector, behind its plating** — read off the KIND, so
+they are what the thing *is* rather than what is happening to it
+(`unitTraits` in `game/status.ts`).
+
+None of it was anywhere on the screen before. You could watch a Tusker
+champion's bubble eat a volley, a Skate elite make the fleet around it
+outrange your whole board, or a Livewire step out from under a beam the
+instant it landed — and have no way to find out why. The sim knew; the
+only place it was written down was a source comment.
+
+| chip | what it means |
+|---|---|
+| **Force field** | it projects a bubble that eats shots at its outline — and the bubble comes back |
+| **Shield field** | it hands an absorbing bar to the crowd around it |
+| **Repair field** | it mends the crowd around it, itself included |
+| **Plating field** | it stamps extra plating onto the crowd |
+| **Haste field** | it drives the crowd faster |
+| **Jam field** | guns underneath it reload slower |
+| **Spotter** | everything around it *reaches further* |
+| **Drill** | the bodies around it grow their veterancy faster |
+| **Grows** | the longer it lives the harder it hits |
+| **Blink** | a hit that lands throws it forward, past the gun that landed it |
+| **Cloak** | it goes dark on a cycle (rounds miss it; non-bullets do not) |
+| **Charge** | it leaves the route to come at your guns |
+| **Payload** | the body *is* the bomb, and it goes off however it dies |
+| **Immune** | a status simply never takes on it — fire, or water |
+
+**The notes carry the numbers**, because the number is the decision:
+"it shields the crowd" is trivia, `60 shield every 2s to everything within
+9.5t, up to 420` is where the next turret goes.
+
+**A trait is not its live status, and both show.** The bubble that is up
+right now is **Shielded** and prints what is left in it; the cloak that is
+dark right now is **Cloaked** and prints its seconds. The trait shows even
+when it is spent — which is the point of showing it, because a broken
+bubble is a bubble that is coming back. Where the two are one idea they
+share one picture (the canopy, the cross, the heater shield, the
+chevrons), which is this catalog's standing promise: a player learns a
+symbol once.
 
 ### The core
 

@@ -29,7 +29,8 @@
  * NOT statuses; they are the thing itself.
  */
 
-import { firesBullets, WET_SHOCK_MUL } from "./constants";
+import { CELL, firesBullets, WET_SHOCK_MUL } from "./constants";
+import { UNIT_KINDS, UNIT_STATS, type UnitKind } from "./levels";
 import { AMPHIBIOUS_MAX_STACKS, HUNGRY_MAX_MEALS, LEADERSHIP_CAP, VIRUS_DPS } from "./mutation";
 import { PAL } from "./pixelArt";
 import type { Sim } from "./sim";
@@ -45,6 +46,23 @@ export type StatusId =
   | "ignites"
   | "soaks"
   | "shocks"
+  // ...and the BODY TRAITS, on the same terms: what a unit can DO, as
+  // against what is being done to it. Same place in the row for the same
+  // reason — a player clicking a body is asking what it is
+  | "bubble"
+  | "shields"
+  | "heals"
+  | "plates"
+  | "hastens"
+  | "jams"
+  | "spots"
+  | "drills"
+  | "ages"
+  | "blinks"
+  | "vanishes"
+  | "charges"
+  | "bomb"
+  | "immune"
   | "wet"
   | "shocked"
   | "burning"
@@ -140,6 +158,139 @@ export const STATUSES: readonly StatusDef[] = [
       "Its shot is electric. It marks what it hits, which on its own does nothing — but against a SOAKED body an electric shot is worth double. Put one of these behind a douser.",
     field: false,
   },
+  // ---- THE BODY TRAITS --------------------------------------------------
+  //
+  // WHAT A UNIT CAN DO, and until now none of it was anywhere on the
+  // screen. A player could watch a tusker4's bubble eat a volley, or a
+  // skate3 make the fleet around it outrange the board, or a livewire
+  // step out from under a beam, and have no way at all to find out WHY —
+  // the sim knew, the panel did not, and the only place any of it was
+  // written down was a source comment. These say it.
+  //
+  // THE NOTES CARRY THE NUMBERS (see unitTraits), because "it shields the
+  // crowd" is trivia and "150 of shield to everything within seven tiles"
+  // is a decision about where to put the next turret.
+  //
+  // THEY ARE PROPERTIES, so like plating they never go on the field. What
+  // the overlay stamps is the live half — the bubble that is up right now
+  // is `shield`, the cloak that is dark right now is `cloaked` — and the
+  // two answer different questions. A trait that is down still shows,
+  // which is the point: a broken bubble is coming back.
+  {
+    id: "bubble",
+    name: "Force field",
+    color: PAL.field,
+    blurb:
+      "It carries a bubble that eats shots at its outline before they reach the hull — and the bubble comes back a few seconds after it breaks. Break it and kill the body inside the window, or the window closes.",
+    field: false,
+  },
+  {
+    id: "shields",
+    name: "Shield field",
+    color: PAL.fieldLite,
+    blurb:
+      "It hands an absorbing bar to every body around it, on a pulse. The crowd is tougher than it looks for as long as this one is alive: kill the carrier and the bar stops being renewed.",
+    field: false,
+  },
+  {
+    id: "heals",
+    name: "Repair field",
+    color: PAL.heal,
+    blurb:
+      "It mends the bodies around it, itself included, on a pulse. A line that cannot out-damage the mend is a line that never gets anywhere — kill this one first.",
+    field: false,
+  },
+  {
+    id: "plates",
+    name: "Plating field",
+    color: PAL.steelLite,
+    blurb:
+      "It stamps extra plating onto every body around it. Plating is a flat shave off each hit, so this hurts volume far more than it hurts calibre — answer it with the big guns, or kill the carrier.",
+    field: false,
+  },
+  {
+    id: "hastens",
+    name: "Haste field",
+    color: PAL.flame,
+    blurb:
+      "It drives the bodies around it faster. Less time in your kill zone for the whole crowd, not just for itself.",
+    field: false,
+  },
+  {
+    id: "jams",
+    name: "Jam field",
+    color: PAL.bomber,
+    blurb: "Guns underneath it reload slower for as long as it is overhead.",
+    field: false,
+  },
+  {
+    id: "spots",
+    name: "Spotter",
+    color: PAL.harpoon,
+    blurb:
+      "Every weapon around it reaches further. A fleet already firing from outside your board's reach fires from further still while this one lives — it is the hull to kill, and you may have to build to reach it.",
+    field: false,
+  },
+  {
+    id: "drills",
+    name: "Drill",
+    color: PAL.harpoonDark,
+    blurb:
+      "The bodies around it grow their veterancy faster — they get to hitting hard sooner. Only a body that ages at all takes anything from it.",
+    field: false,
+  },
+  {
+    id: "ages",
+    // NOT "Veteran": that is the LIVE chip two rows down, the one that
+    // prints how far up this body has already climbed. This is the
+    // ability — that it climbs at all — and two chips with one name is
+    // one chip as far as a player is concerned
+    name: "Grows",
+    color: PAL.harpoon,
+    blurb:
+      "THE LONGER IT LIVES THE HARDER IT HITS — every weapon on it climbs with its age, to a ceiling. There is no answer to an old one; the answer is reaching out and killing it young.",
+    field: false,
+  },
+  {
+    id: "blinks",
+    name: "Blink",
+    color: PAL.wraith,
+    blurb:
+      "A hit that lands throws it FORWARD along its route, past the gun that landed it, on a cooldown. A line that opens fire on it is a line it is suddenly behind — answer it with bursts and with fields that catch a body wherever it lands.",
+    field: false,
+  },
+  {
+    id: "vanishes",
+    name: "Cloak",
+    color: PAL.wraith,
+    blurb:
+      "It goes dark on a cycle. No round can find it while it is gone — but fire, bolts, beams, rays and rails go straight through a cloak, so a non-bullet turret keeps working on it.",
+    field: false,
+  },
+  {
+    id: "charges",
+    name: "Charge",
+    color: PAL.tusk,
+    blurb:
+      "IT LEAVES THE ROUTE. With a structure in sight it drops the flow field and walks straight at it, so mazing it past your line does not work — it was never going to the core. Every answer is on the approach.",
+    field: false,
+  },
+  {
+    id: "bomb",
+    name: "Payload",
+    color: PAL.bomber,
+    blurb:
+      "It carries no gun: the BODY is the bomb. It dives at the nearest structure and goes off on contact — and goes off the same way wherever it is shot down, so an AA line standing over your guns detonates these on top of them. Kill them over nothing.",
+    field: false,
+  },
+  {
+    id: "immune",
+    name: "Immune",
+    color: PAL.steel,
+    blurb:
+      "A status simply never takes on it. Not a resistance — it is never applied at all, so the turret that lays it is doing nothing but its contact damage here.",
+    field: false,
+  },
   // ---- and back to the things that HAPPEN -----------------------------
   {
     id: "wet",
@@ -167,10 +318,10 @@ export const STATUSES: readonly StatusDef[] = [
   },
   {
     id: "shield",
-    name: "Force field",
+    name: "Shielded",
     color: PAL.field,
     blurb:
-      "An absorbing bubble, eaten before health is. Nothing reaches the body until it breaks.",
+      "An absorbing pool standing in front of health — its own bubble, or a bar handed to it by a carrier's shield field. Nothing reaches the body until it is gone.",
     field: true,
   },
   {
@@ -314,6 +465,11 @@ const num = (v: number): string =>
 
 const secs = (v: number): string => num(v) + "s left";
 
+/** a plain LENGTH of time — a cooldown, a pulse, a cycle. `secs` above is
+ *  a countdown on a live clock and says "left"; a trait's numbers are not
+ *  ticking down, so they must not borrow its wording */
+const dur = (v: number): string => num(v) + "s";
+
 // ---------- bodies ----------
 
 /**
@@ -356,12 +512,113 @@ export function unitFieldStatuses(sim: Sim, i: number, out: StatusId[]): number 
   return out.length;
 }
 
-/** the whole row for the inspector: plating first, then whatever is
- *  happening — built once a HUD poll, for one body */
+/** a field's radius as the player reads the board: whole-ish tiles */
+const tiles = (px: number): string => `${(Math.round((px / CELL) * 10) / 10).toFixed(1)}t`;
+
+/** a per-pulse amount as a rate, which is how a player weighs it against a gun */
+const perSec = (amount: number, reload: number): string =>
+  `${num(amount / Math.max(reload, 0.0001))} a second`;
+
+/**
+ * WHAT THIS BODY CAN DO — the ability chips, behind plating, on exactly
+ * the terms the turret traits sit behind it (see turretTraits).
+ *
+ * NONE OF THIS WAS ANYWHERE ON THE SCREEN. A player could watch a
+ * tusker4's bubble eat a volley, or a skate3 make the fleet around it
+ * outrange the board, or a livewire step out from under a beam the
+ * instant it landed, and have no way to find out why: the sim knew, and
+ * the only place it was written down was a source comment. A mechanic the
+ * player cannot see is a mechanic they cannot play against.
+ *
+ * THE NOTES CARRY THE NUMBERS, because the number is the decision. "It
+ * shields the crowd" is trivia; "150 of shield to everything within seven
+ * tiles, every three seconds" is where the next turret goes.
+ *
+ * READ OFF THE KIND, not off the body: these are what the thing IS, and a
+ * clock that has run down does not make it something else. That is the
+ * split with the live chips below — the bubble that is up RIGHT NOW is
+ * `shield` and carries what is left in it, the cloak that is dark RIGHT
+ * NOW is `cloaked` and carries its seconds. A trait that is spent still
+ * shows, which is the whole point of showing it: a broken bubble is a
+ * bubble that is coming back.
+ */
+function unitTraits(kind: UnitKind): StatusChip[] {
+  const u = UNIT_STATS[kind];
+  const out: StatusChip[] = [];
+  const add = (id: StatusId, note: string): void => void out.push({ id, n: null, note });
+  if (u.forceField)
+    add(
+      "bubble",
+      `${num(u.forceField.max)} absorbed at ${tiles(u.forceField.radius)} — back ${dur(u.forceField.cooldown)} after it breaks`,
+    );
+  if (u.shieldField)
+    add(
+      "shields",
+      `${num(u.shieldField.amount)} shield every ${dur(u.shieldField.reload)} to everything within ${tiles(u.shieldField.range)}, up to ${num(u.shieldField.max)}`,
+    );
+  if (u.repairField)
+    add(
+      "heals",
+      `${perSec(u.repairField.amount, u.repairField.reload)} to everything within ${tiles(u.repairField.range)}`,
+    );
+  else if (u.energyField)
+    add(
+      "heals",
+      `${u.energyField.healPercent}% of max health every ${dur(u.energyField.reload)} to ${u.energyField.maxTargets} within ${tiles(u.energyField.range)}`,
+    );
+  if (u.armorField)
+    add(
+      "plates",
+      `+${num(u.armorField.amount)} plating to everything within ${tiles(u.armorField.range)}`,
+    );
+  if (u.hasteField)
+    add(
+      "hastens",
+      `x${u.hasteField.mult} pace to everything within ${tiles(u.hasteField.range)}`,
+    );
+  if (u.jamField)
+    add(
+      "jams",
+      `guns within ${tiles(u.jamField.range)} reload at ${Math.round(u.jamField.rate * 100)}%`,
+    );
+  if (u.spotterField)
+    add(
+      "spots",
+      `everything within ${tiles(u.spotterField.range)} reaches x${u.spotterField.mult} further`,
+    );
+  if (u.drillField)
+    add(
+      "drills",
+      `veterancy runs x${u.drillField.mult} faster within ${tiles(u.drillField.range)}`,
+    );
+  if (u.veteran)
+    add("ages", `hits up to x${(1 + u.veteran.max).toFixed(1)} the longer it stays alive`);
+  if (u.blink)
+    add("blinks", `a hit throws it ${tiles(u.blink.dist)} forward, at most every ${dur(u.blink.cooldown)}`);
+  if (u.cloak)
+    add(
+      "vanishes",
+      `${dur(u.cloak.duration)} dark in every ${dur(u.cloak.period)}` +
+        (u.cloak.veil ? ` — and takes everything within ${tiles(u.cloak.veil)} with it` : ""),
+    );
+  if (u.charge) add("charges", `leaves the route for any structure within ${tiles(u.charge.range)}`);
+  if (u.payload)
+    add(
+      "bomb",
+      `${num(u.payload.splash)} over ${tiles(u.payload.radius)} where it dies, however it dies`,
+    );
+  if (u.immunities && u.immunities.length > 0)
+    add("immune", `${u.immunities.map((k) => (k === "burning" ? "fire" : "water")).join(" and ")} never takes on it`);
+  return out;
+}
+
+/** the whole row for the inspector: plating, then what the body CAN do,
+ *  then what is being done to it — built once a HUD poll, for one body */
 export function unitStatusChips(sim: Sim, i: number): StatusChip[] {
   const armor = sim.uarmor[i];
   const out: StatusChip[] = [
     { id: "armor", n: Math.round(armor), note: num(armor) + " off every hit" },
+    ...unitTraits(UNIT_KINDS[sim.ukind[i]]),
   ];
   if (sim.uwet[i] > 0)
     out.push({

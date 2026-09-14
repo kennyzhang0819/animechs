@@ -527,9 +527,29 @@ export class FlowField {
   /**
    * The heading itself: every open cell's upwind gradient, read off the
    * field the two passes above settled.
+   *
+   * A SOFT CELL IS ONE OF THEM. Only rock is skipped here (solid), not
+   * every cell a body cannot stand in: the path already runs THROUGH a
+   * structure at STRUCTURE_COST, so a cell a turret stands on has a real
+   * distance, and refusing to write its heading left it a hole in the
+   * published field. Two things fell into that hole.
+   *
+   * A BODY INSIDE THE PATCH. The Tuskers drop the route and walk straight
+   * at what they can see (Sim.updateUnits, the charge), so they are the
+   * one family that routinely stands in a turret's own cells. Reading a
+   * zero there is a body told to go nowhere, and it stood where it was.
+   *
+   * AND THE CELL A DEAD TURRET LEAVES BEHIND. `walk` and `soft` are
+   * cleared the instant a structure comes down (Sim.claimGround) while the
+   * heading is only replaced by the next full solve — and every death
+   * aborts the solve in flight, so a line being chewed through can go a
+   * long time without one. In that window the wreck's cells read open and
+   * pointed nowhere, and sample() blended that zero into the heading of
+   * anything standing on them. Writing the heading a soft cell always had
+   * closes the window: the cell was already on a route, and now it says so.
    */
   private stepGrad(until: number): void {
-    const { walk, solid, isGoal, wDist, wDirX, wDirY } = this;
+    const { solid, isGoal, wDist, wDirX, wDirY } = this;
     for (let i = this.cursor; i < NCELLS; i++) {
       wDirX[i] = 0;
       wDirY[i] = 0;
@@ -537,7 +557,7 @@ export class FlowField {
         this.cursor = i;
         return;
       }
-      if (walk[i] || isGoal[i] || wDist[i] >= INF) continue;
+      if (solid[i] || isGoal[i] || wDist[i] >= INF) continue;
       const x = i % COLS, y = (i / COLS) | 0;
       const d = wDist[i];
       // upwind gradient: on each axis, lean toward the cheaper side by
@@ -563,8 +583,18 @@ export class FlowField {
           const nx = x + dx, ny = y + dy;
           if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
           const ni = ny * COLS + nx;
-          if (walk[ni]) continue;
-          if (dx !== 0 && dy !== 0 && (walk[y * COLS + nx] || walk[ny * COLS + x])) continue;
+          // ...over the SAME mask the upwind term above reads. It used to
+          // read `walk` here and `solid` there, and the disagreement was
+          // the rest of the hole: a soft cell whose orthogonal neighbours
+          // all tie it has only soft ones left to descend through, and
+          // this refused every one of them.
+          //
+          // NO ROUTE MOVES FOR IT. Compared cell for cell on a 117-turret
+          // board, every open cell that had a heading kept exactly the one
+          // it had; the only open cells that changed are the four diagonal
+          // corners of the core, which used to be dead and now point at it.
+          if (solid[ni]) continue;
+          if (dx !== 0 && dy !== 0 && (solid[y * COLS + nx] || solid[ny * COLS + x])) continue;
           if (wDist[ni] < best) {
             best = wDist[ni];
             bx = dx;
