@@ -20,7 +20,6 @@ import {
   NARWHAL_TIERS,
   HART_TIERS,
   MANTA_TIERS,
-  RHINO_TIERS,
   SPIDER_TIERS,
   STOOP_TIERS,
   narwhal,
@@ -30,9 +29,6 @@ import {
   manta,
   mantaGeom,
   narwhalGeom,
-  rhinoLegged,
-  rhinoMech,
-  rhinoSeg,
   spiderLegged,
   stoop,
   stoopGeom,
@@ -45,6 +41,7 @@ import {
   type StoopGeom,
   type StoopTier,
 } from "./animalArt";
+import { IRON_TIERS, ironLegged, ironMech } from "./ironhideArt";
 
 /**
  * THE SHEET IS PACKED AT LOAD. Nothing in this file names a pixel
@@ -1537,11 +1534,11 @@ export const UV_IRONHIDE5_JOINT_BASE = sprite("ironhide5-joint-base", 128, 128);
 export const UV_IRONHIDE5_FOOT_SIL = sprite("ironhide5-foot-sil", 128, 128);
 export const UV_IRONHIDE5_JOINT_SIL = upright("ironhide5-joint-sil", 128, 128);
 export const UV_IRONHIDE5_JOINT_BASE_SIL = sprite("ironhide5-joint-base-sil", 128, 128);
-const RHINO_SEG4 = rhinoSeg(RHINO_TIERS[3]), RHINO_SEG5 = rhinoSeg(RHINO_TIERS[4]);
-export const UV_IRONHIDE4_LEG_SEG = flat("ironhide4-leg-seg", 64, RHINO_SEG4.th);
-export const UV_IRONHIDE4_LEG_BASE_SEG = flat("ironhide4-leg-base-seg", 64, RHINO_SEG4.sh);
-export const UV_IRONHIDE5_LEG_SEG = flat("ironhide5-leg-seg", 64, RHINO_SEG5.th);
-export const UV_IRONHIDE5_LEG_BASE_SEG = flat("ironhide5-leg-base-seg", 64, RHINO_SEG5.sh);
+const IRON4 = IRON_TIERS[3], IRON5 = IRON_TIERS[4];
+export const UV_IRONHIDE4_LEG_SEG = flat("ironhide4-leg-seg", 64, IRON4.th);
+export const UV_IRONHIDE4_LEG_BASE_SEG = flat("ironhide4-leg-base-seg", 64, IRON4.sh);
+export const UV_IRONHIDE5_LEG_SEG = flat("ironhide5-leg-seg", 64, IRON5.th);
+export const UV_IRONHIDE5_LEG_BASE_SEG = flat("ironhide5-leg-base-seg", 64, IRON5.sh);
 /** the spider's parts the venom line's rigs never had — a knee cap and a
  *  foot for the weaver1, which leaves the mech rig, and knees for the
  *  weaver4 and weaver5 — and every tier's steel segments, both the same
@@ -1707,22 +1704,18 @@ if (ANIMAL_ART) {
   };
 
   // ---- Ironhide ----
-  // the rhino's T1-T3 keep the ground mechs' rig and cells, guns off (the
-  // horn is the barrel, drawn into the body), on a heavier shuffle
-  const rhinoMechArt = (k: UnitKind, i: number): MechArt => {
-    const T = RHINO_TIERS[i];
-    UNIT_ART[k] = { uv: UNIT_ART[k].uv, sprite: UNIT_ART[k].sprite * T.scale };
-    return { ...MECH_ART[k]!, guns: [], stride: [0, 3, 3.5, 4.5][T.t] * MU, sprite: MECH_ART[k]!.sprite * T.scale };
-  };
+  // the rhino is drawn at its hitbox on the turrets' scale (ironhideArt.ts),
+  // so nothing here overshoots: the stock cells and quads stand, the art
+  // sits at native size inside them. T1-T3 keep the ground mechs' rig,
+  // guns off (the horn is the barrel, drawn into the body), on a shuffle
+  // sized to the body; T4 and T5 leave it for four stout planted legs
+  const rhinoMechArt = (k: UnitKind, i: number): MechArt =>
+    ({ ...MECH_ART[k]!, guns: [], stride: IRON_TIERS[i].stride * PX });
   MECH_ART.ironhide1 = rhinoMechArt("ironhide1", 0);
   MECH_ART.ironhide2 = rhinoMechArt("ironhide2", 1);
   MECH_ART.ironhide3 = rhinoMechArt("ironhide3", 2);
-  // the T4 and T5 leave the mech rig for four stout planted legs
   delete MECH_ART.ironhide4;
   delete MECH_ART.ironhide5;
-  const R4 = RHINO_TIERS[3].scale, R5 = RHINO_TIERS[4].scale;
-  UNIT_ART.ironhide4 = { uv: UNIT_ART.ironhide4.uv, sprite: UNIT_ART.ironhide4.sprite * R4 };
-  UNIT_ART.ironhide5 = { uv: UNIT_ART.ironhide5.uv, sprite: UNIT_ART.ironhide5.sprite * R5 };
   LEG_ART.ironhide4 = {
     body: UV_IRONHIDE4_BODY,
     base: UV_IRONHIDE4_BASE,
@@ -1731,11 +1724,11 @@ if (ANIMAL_ART) {
     foot: UV_IRONHIDE4_FOOT,
     leg: UV_IRONHIDE4_LEG_SEG,
     legBase: UV_IRONHIDE4_LEG_BASE_SEG,
-    legStroke: RHINO_SEG4.th * PX * R4,
-    legBaseStroke: RHINO_SEG4.sh * PX * R4,
+    legStroke: IRON4.th * PX,
+    legBaseStroke: IRON4.sh * PX,
     guns: [],
-    sprite: UNIT_SPRITE * 4 * R4,
-    small: UNIT_SPRITE * R4,
+    sprite: UNIT_SPRITE * 4,
+    small: UNIT_SPRITE,
     sil: {
       body: UV_IRONHIDE4_BODY_SIL,
       base: UV_IRONHIDE4_BASE_SIL,
@@ -1752,11 +1745,11 @@ if (ANIMAL_ART) {
     foot: UV_IRONHIDE5_FOOT,
     leg: UV_IRONHIDE5_LEG_SEG,
     legBase: UV_IRONHIDE5_LEG_BASE_SEG,
-    legStroke: RHINO_SEG5.th * PX * R5,
-    legBaseStroke: RHINO_SEG5.sh * PX * R5,
+    legStroke: IRON5.th * PX,
+    legBaseStroke: IRON5.sh * PX,
     guns: [],
-    sprite: UNIT_SPRITE * 4 * R5,
-    small: UNIT_SPRITE * 2 * R5,
+    sprite: UNIT_SPRITE * 4,
+    small: UNIT_SPRITE * 2,
     sil: {
       body: UV_IRONHIDE5_BODY_SIL,
       base: UV_IRONHIDE5_BASE_SIL,
@@ -2668,14 +2661,14 @@ function packAnimalArt(
     { kind: "ironhide2", body: UV_IRONHIDE2_BODY, base: UV_IRONHIDE2_BASE, leg: UV_IRONHIDE2_LEG, sil: { body: UV_IRONHIDE2_BODY_SIL, base: UV_IRONHIDE2_BASE_SIL, leg: UV_IRONHIDE2_LEG_SIL } },
     { kind: "ironhide3", body: UV_IRONHIDE3_BODY, base: UV_IRONHIDE3_BASE, leg: UV_IRONHIDE3_LEG, sil: { body: UV_IRONHIDE3_BODY_SIL, base: UV_IRONHIDE3_BASE_SIL, leg: UV_IRONHIDE3_LEG_SIL } },
   ];
-  rhinoMechCells.forEach((cells, i) => packMech(cells, rhinoMech(RHINO_TIERS[i]), RHINO_TIERS[i].n));
+  rhinoMechCells.forEach((cells, i) => packMech(cells, ironMech(IRON_TIERS[i]), IRON_TIERS[i].n));
   const rhinoLegCells: readonly LegCells[] = [
     { kind: "ironhide4", body: UV_IRONHIDE4_BODY, base: UV_IRONHIDE4_BASE, joint: UV_IRONHIDE4_JOINT, baseJoint: UV_IRONHIDE4_JOINT_BASE, foot: UV_IRONHIDE4_FOOT, leg: UV_IRONHIDE4_LEG_SEG, legBase: UV_IRONHIDE4_LEG_BASE_SEG,
       sil: { body: UV_IRONHIDE4_BODY_SIL, base: UV_IRONHIDE4_BASE_SIL, joint: UV_IRONHIDE4_JOINT_SIL, baseJoint: UV_IRONHIDE4_JOINT_BASE_SIL, foot: UV_IRONHIDE4_FOOT_SIL } },
     { kind: "ironhide5", body: UV_IRONHIDE5_BODY, base: UV_IRONHIDE5_BASE, joint: UV_IRONHIDE5_JOINT, baseJoint: UV_IRONHIDE5_JOINT_BASE, foot: UV_IRONHIDE5_FOOT, leg: UV_IRONHIDE5_LEG_SEG, legBase: UV_IRONHIDE5_LEG_BASE_SEG,
       sil: { body: UV_IRONHIDE5_BODY_SIL, base: UV_IRONHIDE5_BASE_SIL, joint: UV_IRONHIDE5_JOINT_SIL, baseJoint: UV_IRONHIDE5_JOINT_BASE_SIL, foot: UV_IRONHIDE5_FOOT_SIL } },
   ];
-  rhinoLegCells.forEach((cells, i) => packLegged(cells, rhinoLegged(RHINO_TIERS[3 + i]), RHINO_TIERS[3 + i].n));
+  rhinoLegCells.forEach((cells, i) => packLegged(cells, ironLegged(IRON_TIERS[3 + i]), IRON_TIERS[3 + i].n));
   const spiderLegCells: readonly LegCells[] = [
     { kind: "weaver1", body: UV_WEAVER1_BODY, base: UV_WEAVER1_BASE, joint: UV_WEAVER1_JOINT, foot: UV_WEAVER1_FOOT, leg: UV_WEAVER1_LEG_SEG, legBase: UV_WEAVER1_LEG_BASE_SEG,
       sil: { body: UV_WEAVER1_BODY_SIL, base: UV_WEAVER1_BASE_SIL, joint: UV_WEAVER1_JOINT_SIL, foot: UV_WEAVER1_FOOT_SIL } },

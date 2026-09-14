@@ -7,15 +7,14 @@
  * Mindustry's ground, and the first thing to change if the game is to
  * look like itself.
  *
- * A tile here is 16 logical pixels across, drawn 2× into the same 32px
- * cell the atlas and the menu already expect, so everything downstream —
- * the antialias pass, the edge fades, the 64px atlas cells — is untouched.
- * The coarser grid is the point: a chunkier pixel reads as a different
- * hand. On it a floor is a flat base colour and a FEW things — one or two
- * soft patches a shade off the base, a ripple, a crack, at most one
- * pebble — never a field of dots. Two paintings a floor: one with a
- * single mark on it and one plain; the third slot every table still has
- * draws the first again, turned.
+ * A tile is 32 pixels across, the same grid the turrets are drawn on
+ * (docs/turret-factions.md: a 1x1 head is 32 px), so the ground, the
+ * heads on it and the animals walking it are one pixel. It was 16
+ * logical pixels drawn 2x once; that hand's marks came out two pixels
+ * wide, and the turrets' rule is NOTHING UNDER FOUR: no line, tick,
+ * crest or gouge narrower than four, no dither. A floor is a flat base
+ * colour and one mark in its pair's light, on a third of its cells;
+ * two paintings a floor, one marked and one plain.
  *
  * Everything is deterministic: a (kind, variant) pair paints the same
  * pixels every time, in the browser and in the script that writes the
@@ -26,9 +25,11 @@
 
 import { LINOCUT_TERRAIN } from "./terrainFlag";
 
-/** logical pixels across a tile, and the scale to the 32px cell */
-export const TILE_LOGICAL = 16;
-export const TILE_SCALE = 2;
+/** pixels across a tile: the turrets' 32, drawn 1:1 into the cell */
+export const TILE_LOGICAL = 32;
+export const TILE_SCALE = 1;
+/** the smallest thing drawn on a tile, px: the turrets' rule */
+export const MIN_MARK = 4;
 export const TILE_PX = TILE_LOGICAL * TILE_SCALE;
 /** how many distinct paintings a floor has */
 export const FLOOR_VARIANTS = 2;
@@ -209,14 +210,14 @@ export function paintFloor(kind: FloorKind, variant: number): Uint8ClampedArray<
   // a place for a mark, kept two logical pixels off the tile's rim: the
   // atlas crops that ring away (FLOOR_INSET in atlas.ts), and a mark that
   // reached it would be cut at the seam
-  const RIM = 2;
+  const RIM = 4;
   const spot = (w: number, h: number): [number, number] => [
     RIM + Math.floor(rng() * (N - RIM * 2 - w)),
     RIM + Math.floor(rng() * (N - RIM * 2 - h)),
   ];
   /** a blob: a rounded patch of one colour, a little wider than tall */
   const blob = (c: string, r: number, squash = 0.8): void => {
-    const rx = r, ry = Math.max(1.5, r * squash);
+    const rx = r, ry = Math.max(MIN_MARK / 2, r * squash);
     const cx = RIM + rx + rng() * (N - RIM * 2 - rx * 2);
     const cy = RIM + ry + rng() * (N - RIM * 2 - ry * 2);
     ellipse(cx, cy, rx, ry, (x, y) => put(x, y, c));
@@ -236,43 +237,42 @@ export function paintFloor(kind: FloorKind, variant: number): Uint8ClampedArray<
   // from above
   if (LINOCUT_TERRAIN) {
     // under the ink the one mark is a carved tick: a short diagonal
-    // stroke ONE px wide, either way, a shade up or (mostly) down, and
-    // eased most of the way back to the ground — at full strength and two
-    // px wide it was a scratch on every third cell, which from the air
-    // read as a texture over the whole board rather than as ground
+    // stroke, either way, in the ground's light — the pair's other tone
+    // and nothing else — and never narrower than the turrets' four px
+    // (seven rows of the diagonal is five across it)
     if (variant % LINOCUT_MARK_EVERY === 0) {
-      const len = 3 + Math.floor(rng() * 2), flip = rng() < 0.5 ? 1 : -1;
-      const x0 = RIM + 1 + Math.floor(rng() * (N - RIM * 2 - 2 - len));
-      const y0 = RIM + 1 + (flip < 0 ? len : 0) + Math.floor(rng() * (N - RIM * 2 - 2 - len));
-      const c = mix(rng() < 0.35 ? st.light : dark, st.base, 0.45);
+      const len = 5 + Math.floor(rng() * 3), flip = rng() < 0.5 ? 1 : -1;
+      const x0 = RIM + 2 + Math.floor(rng() * (N - RIM * 2 - 4 - len));
+      const y0 = RIM + 2 + (flip < 0 ? len : 0) + Math.floor(rng() * (N - RIM * 2 - 4 - len));
+      const c = mix(st.light, st.base, 0.35);
       for (let y = 0; y < N; y++)
         for (let x = 0; x < N; x++) {
           const u = x - x0 + flip * (y - y0), v = x - x0 - flip * (y - y0);
-          if (u >= 0 && u < len * 2 && Math.abs(v) < 1.1) put(x, y, c);
+          if (u >= 0 && u < len * 2 && Math.abs(v) <= 3) put(x, y, c);
         }
     }
   } else if (variant % FLOOR_VARIANTS === 0)
     switch (st.mark) {
       case "soft":
-        blob(st.light, 3 + rng() * 1.5);
+        blob(st.light, 6 + rng() * 3);
         break;
       case "tussock":
-        if (rng() < 0.5) blob(st.light, 3 + rng() * 1.5);
-        else blob(dark, 1.8 + rng() * 0.6, 1);
+        if (rng() < 0.5) blob(st.light, 6 + rng() * 3);
+        else blob(dark, 3.6 + rng() * 1.2, 1);
         break;
       case "spotted":
-        if (rng() < 0.6) blob(st.light, 3 + rng() * 1.5);
-        else blob(dark, 2 + rng() * 0.8);
+        if (rng() < 0.6) blob(st.light, 6 + rng() * 3);
+        else blob(dark, 4 + rng() * 1.6);
         break;
       case "dune":
-        blob(st.light, 3.5 + rng() * 1.5, 0.4);
+        blob(st.light, 7 + rng() * 3, 0.4);
         break;
       case "pebbled":
-        if (rng() < 0.5) blob(st.light, 3 + rng() * 1.5);
-        else stone(1.8 + rng() * 0.5);
+        if (rng() < 0.5) blob(st.light, 6 + rng() * 3);
+        else stone(3.6 + rng() * 1);
         break;
       case "ember":
-        blob(st.accent ?? st.light, 1.6 + rng() * 0.6);
+        blob(st.accent ?? st.light, 3.2 + rng() * 1.2);
         break;
     }
 
@@ -406,17 +406,18 @@ export function paintWall(
   };
   if (LINOCUT_TERRAIN) {
     // under the ink a rock is flat, and the first painting carries one
-    // gouge: a diagonal stroke two px wide a shade up, clear of the rim
-    // the atlas crops (WALL_INSET, four logical px)
+    // gouge: a diagonal stroke in the rock's light, five px across (the
+    // turrets' four at least), clear of the rim the atlas crops
+    // (WALL_INSET, eight px)
     if (variant % WALL_VARIANTS === 0) {
-      const RIM = 4, len = 5 + Math.floor(rng() * 3), flip = rng() < 0.5 ? 1 : -1;
+      const RIM = 8, len = 7 + Math.floor(rng() * 4), flip = rng() < 0.5 ? 1 : -1;
       const x0 = RIM + Math.floor(rng() * (N - RIM * 2 - len));
       const y0 = RIM + (flip < 0 ? len : 0) + Math.floor(rng() * (N - RIM * 2 - len));
-      const c = mix(st.face, "#ffffff", 0.1);
+      const c = mix(st.face, st.light, 0.55);
       for (let y = 0; y < N; y++)
         for (let x = 0; x < N; x++) {
           const u = x - x0 + flip * (y - y0), v = x - x0 - flip * (y - y0);
-          if (u >= 0 && u < len * 2 && Math.abs(v) < 1.6) put(x, y, c);
+          if (u >= 0 && u < len * 2 && Math.abs(v) <= 3) put(x, y, c);
         }
     }
     return toRgba(grid, N, TILE_PX * span);
@@ -450,8 +451,8 @@ export function paintWall(
   // px off the rim: the atlas crops that ring away (WALL_INSET), and a
   // pebble that reached it would be cut at the seam
   if (variant % WALL_VARIANTS === 0) {
-    const RIM = 4;
-    const r = 1.8 + rng() * 0.6;
+    const RIM = 8;
+    const r = 3.6 + rng() * 1.2;
     let cx = N / 2, cy = N / 2;
     for (let tries = 0; tries < 12; tries++) {
       const x = RIM + r + rng() * (N - RIM * 2 - r * 2);
@@ -513,12 +514,12 @@ export function paintWater(kind: WaterKind, variant = WATER_WAVE_VARIANT): Uint8
   const rng = mulberry32(9000 + (deep ? 17 : 0) + (tainted ? 131 : 0));
   const grid = new Array<string>(N * N).fill(base);
   if (variant % WATER_VARIANTS === WATER_WAVE_VARIANT) {
-    // one wave a tile: a 7px line somewhere in the middle band, with a
-    // two-px tick lifting off its trailing end
-    const x0 = 2 + Math.floor(rng() * 5), y = 4 + Math.floor(rng() * 8);
-    for (let x = x0; x < x0 + 7; x++) grid[y * N + x] = crest;
-    grid[(y - 1) * N + x0 + 6] = crest;
-    grid[(y - 1) * N + x0 + 5] = crest;
+    // one wave a tile: a 14px line four px deep somewhere in the middle
+    // band, with a four-px block lifting off its trailing end — the
+    // turrets' four, nothing thinner
+    const x0 = 4 + Math.floor(rng() * 10), y = 8 + Math.floor(rng() * 14);
+    for (let yy = y; yy < y + 4; yy++) for (let x = x0; x < x0 + 14; x++) grid[yy * N + x] = crest;
+    for (let yy = y - 4; yy < y; yy++) for (let x = x0 + 10; x < x0 + 14; x++) grid[yy * N + x] = crest;
   }
   return toRgba(grid, N, TILE_PX);
 }
@@ -547,15 +548,17 @@ export const wallIcon = (kind: WallKind, variant: number): string =>
 
 // ---------------------------------------------------------------------------
 // THE PROPS: the things that stand on the ground — trees, boulders, shrubs,
-// spore pods. Painted the way the tiles are: round shapes, three tones a
-// family, the light on the top-right and the shade on the bottom-left, and
-// nothing that reads as a sphere. Each one is a square of `size` native
-// pixels (a 48 boulder overhangs its tile to 1.5, a 32 shrub sits inside
-// one, a 40 spore cluster to 1.25) with a transparent ground, painted on a
-// logical grid at half that and scaled up like a tile.
+// spore pods. Painted the way the turrets are: round shapes in ONE PAIR of
+// tones, the dark on the left half of the square and the light on the
+// right, and nothing that reads as a sphere. Each one is a square of
+// `size` native pixels (a 48 boulder overhangs its tile to 1.5, a 32 shrub
+// sits inside one, a 40 spore cluster to 1.25) with a transparent ground,
+// on the tiles' own 32-a-tile grid.
 // ---------------------------------------------------------------------------
 
-/** three tones: the body, the lit side and the shaded side */
+/** three tones: the body, the lit side and the shaded side. The pair
+ *  drawn is the lit and the shaded eased toward the body; the body itself
+ *  is what a floor tone or a wall tone is keyed off */
 interface PropTones {
   mid: string;
   light: string;
@@ -609,11 +612,10 @@ export const PROP_KINDS = Object.keys(PROP_STYLE) as PropKind[];
 /**
  * Paint one prop: `size`×`size` RGBA, row-major, transparent where there is
  * nothing. The silhouette is a few discs overlapping, so the outline is
- * lumpy; the whole of it is then shaded by ONE diagonal the way a wall
- * tile is — light past one threshold, shade past the other, the body
- * between, the boundaries wandering a little — so a boulder is a flat
- * shape lit from the top-right and never a pile of spheres. There is no
- * outline: the silhouette is the shading's own edge, as on the tiles.
+ * lumpy; the whole of it is then shaded the turrets' way — the pair's dark
+ * on the left half, its light on the right, nothing between — so a canopy
+ * is a flat shape and never a pile of spheres. There is no outline: the
+ * silhouette is the shading's own edge, as on the tiles.
  */
 export function paintProp(kind: PropKind): Uint8ClampedArray<ArrayBuffer> {
   const st: PropStyle = PROP_STYLE[kind];
@@ -626,7 +628,6 @@ export function paintProp(kind: PropKind): Uint8ClampedArray<ArrayBuffer> {
       if (x >= 0 && y >= 0 && x < N && y < N) piece[y * N + x] = 1;
     });
   const c = N / 2;
-  let litAt = 0.22, darkAt = -0.26;
   let trunk = false;
 
   switch (st.shape) {
@@ -653,8 +654,6 @@ export function paintProp(kind: PropKind): Uint8ClampedArray<ArrayBuffer> {
         lump(c + Math.cos(b) * R * 0.58, c + Math.sin(b) * R * 0.58, R * 0.46);
       }
       lump(c, c, R * 0.62);
-      litAt = 0.18;
-      darkAt = -0.2;
       trunk = true;
       break;
     }
@@ -687,39 +686,35 @@ export function paintProp(kind: PropKind): Uint8ClampedArray<ArrayBuffer> {
     }
   }
 
-  // THE SHADING: one diagonal across the whole shape, as on a wall tile,
-  // but gentler than a wall's: a prop is set down at any quarter turn, so
-  // its lit side may face any way, and a strong one would read as a
-  // different light on every rock. Both bands are eased toward the body
+  // THE SHADING: the turrets' split, the pair's dark on the left half and
+  // its light on the right, both eased toward the body so a prop set down
+  // at any quarter turn does not read as lit from a different side than
+  // its neighbour
   const { mid, light: lightTone, dark } = st.tones;
   const light = mix(lightTone, mid, 0.4);
-  const shade = mix(dark, mid, 0.55);
-  const w1 = rng() * Math.PI * 2, w2 = rng() * Math.PI * 2;
+  const shade = mix(dark, mid, 0.45);
   const grid = new Array<string | null>(N * N).fill(null);
   for (let y = 0; y < N; y++)
     for (let x = 0; x < N; x++) {
       if (!piece[y * N + x]) continue;
-      const t = (x + 0.5 - c - (y + 0.5 - c)) / N;
-      const along = (x + y) / N;
-      const v = t + 0.06 * Math.sin(along * Math.PI * 2 + w1) + 0.04 * Math.sin(along * Math.PI * 5 + w2);
-      grid[y * N + x] = v > litAt ? light : v < darkAt ? shade : mid;
+      grid[y * N + x] = x < c ? shade : light;
     }
 
   if (st.shape === "thicket") {
-    // a few round tussocks, a shade up and one a shade down, like a
-    // floor tile that grew thicker
-    for (let i = 0; i < N * N; i++) grid[i] = mid;
-    const n = 5 + Math.floor(rng() * 2);
+    // a few round tussocks in the light over the shade, like a floor
+    // tile that grew thicker; none under four px across
+    for (let i = 0; i < N * N; i++) grid[i] = shade;
+    const n = 4 + Math.floor(rng() * 2);
     for (let i = 0; i < n; i++) {
-      const r = 1.8 + rng() * 1.2;
-      const x = 2 + r + rng() * (N - 4 - r * 2), y = 2 + r + rng() * (N - 4 - r * 2);
+      const r = 3 + rng() * 2;
+      const x = 4 + r + rng() * (N - 8 - r * 2), y = 4 + r + rng() * (N - 8 - r * 2);
       ellipse(x, y, r, r * 0.85, (px, py) => {
-        if (px >= 0 && py >= 0 && px < N && py < N) grid[py * N + px] = i % 3 === 0 ? shade : light;
+        if (px >= 0 && py >= 0 && px < N && py < N) grid[py * N + px] = light;
       });
     }
   } else if (trunk) {
-    // the trunk seen from above: a small dot a shade down, not a hole
-    ellipse(c, c, 1.2, 1.2, (x, y) => { grid[y * N + x] = shade; });
+    // the trunk seen from above: a block in the shade, four px across
+    for (let y = c - 2; y < c + 2; y++) for (let x = c - 2; x < c + 2; x++) grid[y * N + x] = shade;
   }
 
   const P = st.size;

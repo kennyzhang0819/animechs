@@ -110,9 +110,14 @@ function grid(n: number): { mat: Cell[]; pen: Pen } {
 }
 /** mirror the left half over the right (x → n-1-x), then shade: every
  *  material's dark on the left half, its light on the right */
-function finish(mat: Cell[], n: number): Art {
-  for (let y = 0; y < n; y++) for (let x = 0; x < n >> 1; x++) mat[y * n + (n - 1 - x)] = mat[y * n + x];
+function finish(mat: Cell[], n: number, mirror = true): Art {
+  if (mirror) for (let y = 0; y < n; y++) for (let x = 0; x < n >> 1; x++) mat[y * n + (n - 1 - x)] = mat[y * n + x];
   return { n, px: mat.map((m, i) => (m === null ? null : m[i % n < n / 2 ? 0 : 1])) };
+}
+/** the same drawing as a mask: white wherever material `m` was laid, for a
+ *  team cell that is the family's accent and nothing else */
+function mask(mat: Cell[], n: number, m: Mat): Art {
+  return { n, px: mat.map((c) => (c === m ? "#ffffff" : null)) };
 }
 
 // ── the vocabulary: the parts a turret is built from ───────────────────
@@ -420,11 +425,23 @@ export function drawCore(): Art {
 }
 
 /** any drawing on an n grid through the same mirror-and-shade finish —
- *  what a concept sheet uses for a plate or another faction's heads */
-export function draw(n: number, fn: (P: Pen) => void): Art {
+ *  what a concept sheet uses for a plate or another faction's heads. A
+ *  part drawn for one side of a body (a mech rig's near-side hooves) asks
+ *  not to be mirrored and is shaded as it lies */
+export function draw(n: number, fn: (P: Pen) => void, mirror = true): Art {
   const g = grid(n);
   fn(g.pen);
-  return finish(g.mat, n);
+  return finish(g.mat, n, mirror);
+}
+/** a drawing and its accent mask together: the body, and the team cell
+ *  that is every pixel laid in `accent` (the animals' bodies, whose cell
+ *  is the family colour on them and nothing else) */
+export function drawWithCell(n: number, fn: (P: Pen) => void, accent: Mat): { art: Art; cell: Art } {
+  const g = grid(n);
+  fn(g.pen);
+  // finish mirrors the material grid in place, so the mask is read after it
+  const art = finish(g.mat, n);
+  return { art, cell: mask(g.mat, n, accent) };
 }
 
 /** draw one head of `set` (the roster by default) at its native size */

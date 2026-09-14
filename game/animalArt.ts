@@ -1,8 +1,10 @@
 /**
- * ANIMAL ART: the Starhart (stag), Stoop (bat), Ironhide (rhino), Weaver
- * (spider), Skate (manta) and Livewire (narwhal) families, generated as pixel
- * art at load and packed over the six stock families' atlas cells
- * (atlas.ts packAnimalArt) while game/animalFlag.ts ANIMAL_ART is on.
+ * ANIMAL ART: the Starhart (stag), Stoop (bat), Weaver (spider), Skate
+ * (manta) and Livewire (narwhal) families, generated as pixel art at load
+ * and packed over the stock families' atlas cells (atlas.ts packAnimalArt)
+ * while game/animalFlag.ts ANIMAL_ART is on. The Ironhide (rhino) left
+ * this file for ironhideArt.ts, drawn on the turrets' engine and grammar
+ * (docs/unit-art.md section 1b); the others follow it one at a time.
  *
  * The style these follow and the rule for how big a tier draws are in
  * docs/unit-art.md; read it before adding a family.
@@ -34,8 +36,7 @@
  * atlas.ts). The composed sprite is packed too, for the icon, the spawn
  * effect and the cloak ghost.
  *
- * Ironhide follows the stag's split exactly: mech rig to T3, four legs
- * from T4. Weaver is legged at every tier, the T1 included — a spider's
+ * Weaver is legged at every tier, the T1 included — a spider's
  * legs ARE its silhouette, so the one animal that gets its legs out at
  * every size is the one whose body is nothing without them.
  *
@@ -526,98 +527,6 @@ const legRig = (
     legBase: segmentArt(64, seg.sh, tone),
   };
 };
-
-// ── IRONHIDE ─────────────────────────────────────────────────────────────
-//
-// The rhino. A wall of back and a horn that is a gun barrel: the family's
-// straight round comes out of the one thing a rhino points at you. The
-// plating is a saddle of steel down the spine that grows tier by tier —
-// strakes down the flanks at T3, pauldrons and stacks at T4, a crest over
-// the head at T5 — and the accent is crimson: the muzzle, the spine, the
-// pauldron lights. T1-T3 ride the mech rig (hooves under a body that keeps
-// its legs in), T4 and T5 the legged rig on four stout legs.
-const CRIM: Tone = ["#8c1c3a", "#ff4d6d", "#ff9ab0"];
-const RHINO: Tone = ["#3e3a3c", "#66605f", "#8e8684"];
-/** grids fill the ground mechs' cells (64/64/128/256/256) */
-export const RHINO_TIERS: readonly Tier[] = [
-  { t: 1, n: 63, R: 16, scale: 1.5 },
-  { t: 2, n: 63, R: 16, scale: 1.6 },
-  { t: 3, n: 127, R: 32, scale: 1.4 },
-  { t: 4, n: 255, R: 64, scale: 1.6 },
-  { t: 5, n: 255, R: 64, scale: 2.0 },
-];
-const hornWidth = (t: number): number => (t >= 5 ? 0.16 : t >= 3 ? 0.13 : 0.1);
-/** the crimson: drawn last on the body, and alone (in white) for the team cell */
-function rhinoAccent(g: Pen, H: H, T: Tier): void {
-  const { n, R, t } = T; const c = (n - 1) / 2;
-  const X = (v: number) => c + v * R, Y = (v: number) => c + v * R;
-  const hw = hornWidth(t);
-  g.box(H.p(X(-hw)), H.p(Y(-1.92)), H.p(X(hw)), H.p(Y(-1.8)), CRIM[1]);
-  g.box(H.p(X(-0.05)), H.p(Y(-0.45)), H.p(X(0.05)), H.p(Y(0.65)), CRIM[1]);
-  if (t >= 4) for (const s of [-1, 1]) g.disc(H.p(X(s * 0.62)), H.p(Y(-0.5)), H.p(R * 0.09), CRIM[1]);
-  if (t >= 5) g.disc(H.p(c), H.p(Y(-0.9)), H.p(R * 0.1), CRIM[1]);
-}
-/** the rhino's body: everything but the legs */
-function rhinoBody(g: Pen, H: H, T: Tier): void {
-  const { n, R, t } = T; const c = (n - 1) / 2; const o = RHINO;
-  const X = (v: number) => c + v * R, Y = (v: number) => c + v * R;
-  const px = (v: number) => Math.max(2, Math.round(v * R));
-  // the barrel of the body, with the two skin folds a rhino carries behind the shoulder and before the hip
-  H.org(g, el(H, c, Y(0.2), R * (t >= 5 ? 0.98 : 0.92), R * 1.0), o, false);
-  g.over((q) => { for (const y of [-0.25, 0.45]) q.box(H.p(X(-1)), H.p(Y(y)), H.p(X(1)), H.p(Y(y) + px(0.05)), o[0]); });
-  // the head: a wedge off the shoulders, a snout, two ears
-  H.org(g, { poly: H.P([[X(-0.6), Y(-0.6)], [X(0.6), Y(-0.6)], [X(0.34), Y(-1.35)], [X(-0.34), Y(-1.35)]]) }, o, false);
-  H.org(g, { disc: [c, Y(-1.3), R * 0.3] }, o, false);
-  for (const s of [-1, 1]) { H.org(g, { disc: [X(s * 0.42), Y(-0.85), R * 0.14] }, o, false); g.disc(H.p(X(s * 0.42)), H.p(Y(-0.85)), H.p(R * 0.06), o[0]); }
-  // the horn is the gun: a barrel off the snout, the second stub behind it from the T3, a muzzle collar at T5
-  const hw = hornWidth(t);
-  H.pipe(g, X(-hw), Y(-1.9), X(hw), Y(-1.2));
-  if (t >= 3) H.pipe(g, X(-hw * 0.7), Y(-1.12), X(hw * 0.7), Y(-0.85));
-  if (t >= 5) g.ring(H.p(c), H.p(Y(-1.72)), H.p(R * 0.21), Math.max(2, Math.round(R * 0.05)), ST.lite);
-  // steel: the saddle from T2, flank strakes and vents from T3, pauldrons and stacks from T4, the crest at T5
-  if (t >= 2) H.hull(g, { poly: H.R(X(-0.4), Y(-0.55), X(0.4), Y(0.8)) });
-  if (t >= 3) {
-    for (const s of [-1, 1]) H.mech(g, { poly: H.P([[X(s * 0.45), Y(-0.45)], [X(s * 0.88), Y(-0.3)], [X(s * 0.9), Y(0.55)], [X(s * 0.45), Y(0.7)]]) });
-    H.vents(g, c - 5, Y(-0.42), 3, px(0.2));
-  }
-  if (t >= 4) {
-    for (const s of [-1, 1]) H.mech(g, { disc: [X(s * 0.62), Y(-0.5), R * 0.24] });
-    stacks(g, H, t >= 5 ? [X(-0.22), X(0.22)] : [c], Y(0.85), Y(1.2), px(0.16));
-  }
-  if (t >= 5) H.mech(g, { poly: H.P([[X(-0.5), Y(-0.65)], [X(0.5), Y(-0.65)], [X(0.28), Y(-1.2)], [X(-0.28), Y(-1.2)]]) }, false);
-  if (t >= 2) H.pipe(g, X(-0.06), Y(1.15), X(0.06), Y(1.38));
-  rhinoAccent(g, H, T);
-}
-/** T1-T3: body, base and the near-side hoof pair as the mech rig's leg */
-export function rhinoMech(T: Tier): MechParts {
-  const { n, R } = T; const c = (n - 1) / 2;
-  const body = draw(n, (g, H) => rhinoBody(g, H, T));
-  const base = draw(n, (g, H) => H.org(g, el(H, c, c + R * 0.2, R * 0.84, R * 0.92), [RHINO[0], RHINO[0], RHINO[1]], false));
-  // the hooves sit at the body's edge, so a sliver of each shows past it and shuffles
-  const leg = draw(n, (g, H) => stubs(g, H, [[c + R * 0.92, c - R * 0.55], [c + R * 0.92, c + R * 0.5]], Math.max(4, R * 0.3), Math.max(6, R * 0.45), RHINO), false);
-  const cell = cellOf(n, (g, H) => rhinoAccent(g, H, T));
-  return { body, base, leg, cell, stride: [0, 3, 3.5, 4.5][T.t] };
-}
-/** T4-T5: body and base, plus the legged rig's caps, hoof and segments */
-export function rhinoLegged(T: Tier): LegParts {
-  const { n, R } = T; const c = (n - 1) / 2;
-  const body = draw(n, (g, H) => rhinoBody(g, H, T));
-  const base = draw(n, (g, H) => H.org(g, el(H, c, c + R * 0.2, R * 0.7, R * 0.8), [RHINO[0], RHINO[0], RHINO[1]], false));
-  const cell = cellOf(n, (g, H) => rhinoAccent(g, H, T));
-  const hw = Math.round(R * 0.3), hh = Math.round(R * 0.26);
-  const rig = legRig(rhinoSmall(T), RHINO, rhinoSeg(T), R * 0.2, R * 0.26, (g, H, sc) => {
-    g.box(H.p(sc - hw / 2), H.p(sc - hh / 2), H.p(sc + hw / 2), H.p(sc + hh / 2), RHINO[0]);
-    g.box(H.p(sc - hw / 2), H.p(sc - hh / 2), H.p(sc + hw / 2), H.p(sc - hh / 2 + Math.max(2, hh * 0.35)), ST.deep);
-  });
-  return { body, base, cell, ...rig };
-}
-/** the grid the T4's and T5's caps and hoof are drawn on: the cell they pack into */
-export const rhinoSmall = (T: Tier): number => (T.t >= 5 ? 127 : 63);
-/** thigh and shin heights (native px across the leg): stout, a rhino's */
-export const rhinoSeg = (T: Tier): { th: number; sh: number } => ({
-  th: Math.max(8, Math.round(T.R * 0.36)),
-  sh: Math.max(6, Math.round(T.R * 0.28)),
-});
 
 // ── WEAVER ───────────────────────────────────────────────────────────────
 //

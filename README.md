@@ -178,6 +178,10 @@ stale tab or a cached bundle looks exactly like a fix not working.
   art packed over the stock cells while `ANIMAL_ART`
   (`game/animalFlag.ts`) is on. The style, the sizing rule and how to
   add a family are in [docs/unit-art.md](docs/unit-art.md)
+- `game/ironhideArt.ts` — the rhino line redrawn on the turrets' engine
+  and grammar: paired colours shaded dark-left light-right, nothing under
+  four pixels, a body drawn at its hitbox on 32 px a tile. The pattern the
+  other families move to, one at a time
 - `game/turretArt.ts` — the player's turrets as FOUNDRY, one gunmetal
   plating with a silhouette a kind and an accent per ammo, generated the
   same way and packed over the stock turret cells while `FOUNDRY_ART`

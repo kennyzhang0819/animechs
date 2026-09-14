@@ -661,15 +661,17 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     shieldField: { amount: 25, max: 250, reload: 1, range: 7.5 * CELL },
     // THE ANIMAL TRIAL (animalFlag.ts): the Ironhide T4 is a rhino on
     // four stout planted legs (LEG_ART.ironhide4 in atlas.ts), short for
-    // its bulk so the feet stay close under a body that is mostly back
+    // its bulk so the feet stay close under a body that is mostly back.
+    // The body is drawn at its hitbox (ironhideArt.ts), 55 px across, so
+    // the legs mount inside its edge and reach a little past it
     ...(ANIMAL_ART
       ? {
           legs: legs({
             count: 4,
-            length: 22 * MU,
+            length: 14 * MU,
             forwardScl: 0.7,
             moveSpace: 1.3,
-            baseOffset: 9 * MU,
+            baseOffset: 8 * MU,
             lengthScl: 0.9,
             speed: 0.14,
             elevation: 0.25,
@@ -708,15 +710,16 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     // and what it adds to the line is the thing it is already best at.
     armorField: { amount: 12, reload: 2, range: 9 * CELL },
     // THE ANIMAL TRIAL (animalFlag.ts): the Ironhide T5, the same four
-    // legs at the ironhide5's weight and reach (LEG_ART.ironhide5 in atlas.ts)
+    // legs at the ironhide5's weight and reach (LEG_ART.ironhide5 in
+    // atlas.ts), on a body drawn 75 px across
     ...(ANIMAL_ART
       ? {
           legs: legs({
             count: 4,
-            length: 32 * MU,
+            length: 19 * MU,
             forwardScl: 0.7,
             moveSpace: 1.4,
-            baseOffset: 12 * MU,
+            baseOffset: 11 * MU,
             lengthScl: 0.9,
             speed: 0.13,
             elevation: 0.35,

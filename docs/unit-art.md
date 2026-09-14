@@ -4,8 +4,10 @@ This is the direction the enemy art settled on after the animal trial
 (`game/animalArt.ts`, behind `ANIMAL_ART` in `game/animalFlag.ts`), written
 down so the next family is drawn to the same rules without re-running the
 trial. The Starhart stags and the Stoop bats are the reference
-implementation, and the Ironhide rhinos, Weaver spiders, Skate mantas
-and Livewire narwhals were drawn to this page; the pixel engine and the house rules they obey are in
+implementation, and the Weaver spiders, Skate mantas and Livewire
+narwhals were drawn to this page; the Ironhide rhinos have since been
+redrawn to the turrets' stricter grammar (section 1b), which is where
+every family goes next; the pixel engine and the house rules they obey are in
 `game/pixelArt.ts`, and the packing in `game/atlas.ts`.
 
 ## 1. The style
@@ -101,7 +103,47 @@ the other way round.
   family's cells in `packAnimalArt` while the flag is on. Turn the flag
   off and the stock swarm is back, byte for byte.
 
-## 2. The size
+## 1b. The turrets' grammar: where the art is going next
+
+Foundry's heads (`public/foundry`, `docs/turret-factions.md`) set a
+stricter grammar than the trial above, and the Ironhide rhino is the
+first family redrawn to it (`game/ironhideArt.ts`, on the turret engine
+in `game/turretArt.ts`). The rest follow it, one family at a time. Read
+off the shipped heads:
+
+- **Every colour is a pair, dark and light.** The dark on the left half
+  of the sprite, the light on the right, and that is the whole of the
+  lighting: no lit top, no dark underside, no third tone, no dither. A
+  part is drawn once in its material and the shade falls on it after
+  (`finish`), so the shape is symmetric by construction and the shade is
+  never. A part in the REVERSED pair (`rev`) catches light the other way,
+  and that is how a fold, a band or a bevel is shown — the duo's light
+  wedge in its dark half, the rhino's shoulder fold.
+- **Nothing under four pixels.** No line, gap, stud, band or highlight
+  narrower than four. The one-pixel checker the trial used for mottled
+  hide is gone with the rest. A feature on the midline has to be at
+  least four wide, because the shade split cuts it in two.
+- **The scale is the turrets'.** 32 native px a tile, so a body is drawn
+  at its hitbox: an ironhide1 is a 1x1 (radius `UR` = 10 world px, one
+  20 px tile) and draws on a 32 grid, like a duo; an ironhide5 is a
+  3.75x3.75 and draws on 120. There is no overshoot on these — the quad
+  is the box — which retires rule 3 of "The size" below for a family on
+  this grammar. The sheet's 0.625 world px per native px puts 32 px on
+  one tile, the same constant the turrets ride.
+- **Still no eyes, and now no round pair anywhere.** Two discs side by
+  side read as eyes at every size; the rhino's pauldrons had crimson
+  centres for one render. Pairs of plates and stacks are fine.
+- **Facing up, on its own square grid, through the same packer.** The
+  animals' rigs are unchanged: the rhino still rides the mech rig to T3
+  and four planted legs from T4, on legs shortened to the smaller body
+  (`game/levels.ts`).
+
+The pixel budget per tier is the hitbox: 32, 40, 52, 88, 120 for the
+rhino. What fits in 32 is what fits in a duo — a body, a head, a horn
+and one accent block — and that is the point: a T1 next to a 1x1 turret
+is the same kind of drawing at the same size.
+
+## 2. The size (the trial's rule, for the families not yet on the turrets' grammar)
 
 The trial's second finding was that a unit drawn faithfully to its stock
 pixel count looks small, and that a T4 or T5 that is merely "bigger" is
@@ -171,15 +213,18 @@ Stoop, the bat (Skyfall bombers' cells):
 | T4 | stoop4 | 256 | 1.4 | 224 | 150 | 57.5 |
 | T5 | stoop5 | 384 | 1.6 | 384 | 200 | 72.5 |
 
-Ironhide, the rhino (ground mechs' cells; mech rig to T3, four legs from T4):
+Ironhide, the rhino (ground mechs' cells; mech rig to T3, four legs
+from T4; on the turrets' grammar, section 1b, so the grid is the hitbox
+and there is no scale — the art sits at native size inside the stock cell
+and the quad is the cell's own):
 
-| tier | kind | cell | scale | quad, world px | stock, world px | hitbox radius |
+| tier | kind | grid | cell | drawn, world px | hitbox, world px | stock, world px |
 | --- | --- | --- | --- | --- | --- | --- |
-| T1 | ironhide1 | 64 | 1.5 | 60 | 30 | 10 |
-| T2 | ironhide2 | 64 | 1.6 | 64 | 40 | 12.5 |
-| T3 | ironhide3 | 128 | 1.4 | 112 | 62 | 16.25 |
-| T4 | ironhide4 | 256 | 1.6 | 256 | 106 | 27.5 |
-| T5 | ironhide5 | 256 | 2.0 | 320 | 134 | 37.5 |
+| T1 | ironhide1 | 32 | 64 | 20 | 20 | 30 |
+| T2 | ironhide2 | 40 | 64 | 25 | 25 | 40 |
+| T3 | ironhide3 | 52 | 128 | 32.5 | 32.5 | 62 |
+| T4 | ironhide4 | 88 | 256 | 55 | 55 | 106 |
+| T5 | ironhide5 | 120 | 256 | 75 | 75 | 134 |
 
 Weaver, the spider (venom spitters' cells; legged rig at every tier, six legs on the T1 and eight above):
 
@@ -231,6 +276,10 @@ The spider's legs are the size that matters for that family: leg length
 runs 12, 18, 26, 50 and 60 Mindustry units up the ladder against the
 stock line's 5 to 20, so the apex spans some twenty tiles foot to foot
 on a body drawn at sixteen.
+
+The rhino's legs went the other way when its body was drawn at the
+hitbox: 14 and 19 Mindustry units, mounted 8 and 11 in, on bodies 55 and
+75 world px across.
 
 The T4 and T5 stags also get longer legs than the stock walkers
 (`LegSpec.length` 26 and 38 Mindustry units against the stock T5's
