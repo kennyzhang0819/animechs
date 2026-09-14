@@ -10,8 +10,11 @@
 // game's own painters (game/tiles.ts) with the hill darkness and the rim
 // shadow the renderer adds, as the baseline; the rest are the directions
 // in docs/terrain-directions.md, and `families.png` is every direction on
-// every floor family. Nothing here is wired into the game.
-import { mkdirSync, writeFileSync } from "node:fs";
+// every floor family. The `linocut-*` renders take that direction onto a
+// real map — a crop of Greenwood round its core at full detail, and the
+// whole 512 board zoomed out — in four palettes. Nothing here is wired
+// into the game.
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { GUN, draw, drawCore, drawHead, plate } from "../game/turretArt.ts";
 import { paintFloor, paintProp, paintWall } from "../game/tiles.ts";
@@ -39,37 +42,42 @@ const fbm = (x, y, s = 0) => 0.55 * vnoise(x, y, s) + 0.3 * vnoise(x * 2.1 + 7, 
 
 // ── a board: cells, and the fields the painters read ───────────────────
 const L = 16, N = 32;                              // logical px a tile, native px a tile
-const ROCK = 1, FLOOR = 0, SHALLOW = 2, DEEP = 3;
-function makeBoard(TW, TH, cellFn, famFn = () => 0) {
+const ROCK = 1, FLOOR = 0, SHALLOW = 2, DEEP = 3, PINE = 4;
+// A distance field is answered per pixel from the cells within REACH
+// tiles rather than stored, so a 512 board costs the same per pixel as
+// the 24x14 scene. Nothing asks further than REACH.
+const REACH = 4;
+function makeBoard(TW, TH, cellFn, famFn = () => "grass") {
   const LW = TW * L, LH = TH * L;
-  const cell = new Uint8Array(TW * TH), fam = new Uint8Array(TW * TH);
+  const cell = new Uint8Array(TW * TH), fam = new Array(TW * TH);
   for (let y = 0; y < TH; y++) for (let x = 0; x < TW; x++) { cell[y * TW + x] = cellFn(x, y); fam[y * TW + x] = famFn(x, y); }
   const at = (x, y) => (x < 0 || y < 0 || x >= TW || y >= TH ? ROCK : cell[y * TW + x]);
   const isRock = (x, y) => at(x, y) === ROCK;
-  const isWater = (x, y) => at(x, y) >= SHALLOW;
+  const isWater = (x, y) => at(x, y) >= SHALLOW && at(x, y) <= DEEP;
+  const inside = (x, y) => x >= 0 && y >= 0 && x < TW && y < TH;
   // erosion depth: how many cells in from open ground a rock cell is
   const depth = new Uint8Array(TW * TH);
   for (let y = 0; y < TH; y++) for (let x = 0; x < TW; x++) if (isRock(x, y)) { let d = 0; outer: for (d = 0; d < 6; d++) { for (let dy = -d; dy <= d; dy++) for (let dx = -d; dx <= d; dx++) if (!isRock(x + dx, y + dy)) break outer; } depth[y * TW + x] = d; }
-  // distance in tiles, per logical px, to the nearest cell rect that satisfies pred
-  const field = (pred, off = [0, 0]) => {
-    const out = new Float32Array(LW * LH);
-    const rects = [];
-    for (let y = -1; y <= TH; y++) for (let x = -1; x <= TW; x++) if (pred(x, y)) rects.push([x, y]);
-    for (let py = 0; py < LH; py++) for (let px = 0; px < LW; px++) {
-      const wx = (px + 0.5) / L + off[0], wy = (py + 0.5) / L + off[1];
-      let best = 9;
-      for (const [rx, ry] of rects) { const dx = Math.max(rx - wx, 0, wx - rx - 1), dy = Math.max(ry - wy, 0, wy - ry - 1); const d = Math.hypot(dx, dy); if (d < best) best = d; }
-      out[py * LW + px] = best;
+  // distance in tiles from logical px (wx, wy), offset by (ox, oy) tiles, to the nearest cell rect satisfying pred
+  const dist = (pred) => (wx, wy, ox = 0, oy = 0) => {
+    const px = (wx + 0.5) / L + ox, py = (wy + 0.5) / L + oy;
+    const cx = Math.floor(px), cy = Math.floor(py);
+    let best = REACH;
+    for (let y = cy - REACH; y <= cy + REACH; y++) for (let x = cx - REACH; x <= cx + REACH; x++) {
+      if (!pred(x, y)) continue;
+      const dx = Math.max(x - px, 0, px - x - 1), dy = Math.max(y - py, 0, py - y - 1);
+      const d = Math.hypot(dx, dy); if (d < best) best = d;
     }
-    return out;
+    return best;
   };
+  const dRock = dist(isRock);
   return {
     TW, TH, LW, LH, cell, fam, at, isRock, isWater, depth,
-    dRock: field(isRock),
-    dRockShadow: field(isRock, [0.3, -0.45]),                 // the shadow falls down-left
-    dOpen: field((x, y) => !isRock(x, y) && x >= 0 && y >= 0 && x < TW && y < TH),   // inside the rock: how far to daylight
-    dLand: field((x, y) => !isWater(x, y)),
-    dWater: field(isWater),
+    dRock,
+    dRockShadow: (wx, wy) => dRock(wx, wy, 0.3, -0.45),   // the shadow falls down-left
+    dOpen: dist((x, y) => inside(x, y) && !isRock(x, y)),  // inside the rock: how far to daylight
+    dLand: dist((x, y) => !isWater(x, y)),
+    dWater: dist(isWater),
   };
 }
 
@@ -83,7 +91,7 @@ const SCENE = makeBoard(24, 14, (x, y) => {
   for (const [x0, y0, w, h] of [[3, 0, 3, 3], [9, 0, 1, 3], [14, 0, 2, 2]]) if (x >= x0 && x < x0 + w && y >= y0 && y < y0 + h) rock = true;   // the heads' ground
   const wd = Math.hypot((x + 0.5 - 20.6) * 0.9, y + 0.5 - 11.4) + 1.1 * fbm(x * 0.45, y * 0.45, 15) - 0.5;
   return wd < 2.3 ? DEEP : wd < 3.9 ? SHALLOW : rock ? ROCK : FLOOR;
-}, (x, y) => (fbm(x * 0.17 + 3, y * 0.17, 16) > 0.56 ? 1 : 0));
+}, (x, y) => (fbm(x * 0.17 + 3, y * 0.17, 16) > 0.56 ? "dirt" : "grass"));
 // the things on the scene: [kind, tx, ty]
 const HEADS = [["ripple", 3, 0], ["duo", 9, 1], ["lancer", 14, 0]];
 const CORE = [8, 8];
@@ -100,8 +108,45 @@ const FAMILY = {
   snow: { floor: "#e9edf2", rock: "#cdd6e0", tree: "#e2e8ee" },
   moss: { floor: "#6f4a7a", rock: "#86679a", tree: "#8f5aa8" },
   basalt: { floor: "#4e4a49", rock: "#6a6461", tree: "#5a7f4a" },
+  dust: { floor: "#5a5450", rock: "#6e6762", tree: "#5a7f4a" },
+  shale: { floor: "#6b6688", rock: "#7e7a9e", tree: "#5f8a58" },
+  salt: { floor: "#f0f1f5", rock: "#d6d9e0", tree: "#e2e8ee" },
+  ice: { floor: "#cfcff6", rock: "#c2c4e6", tree: "#e2e8ee" },
+  peat: { floor: "#3f2a24", rock: "#5a453c", tree: "#8f5aa8" },
 };
-const SCENE_FAMS = ["grass", "dirt"];
+// a map document's floor group (index / 3) and wall index, as families
+const GROUP_FAMILY = ["grass", "stone", "dirt", "sand", "dust", null, null, "moss", "moss", "peat", "shale", "snow", "salt", "ice", "basalt", null, null];
+const WALL_FAMILY = ["stone", "stone", "dirt", "dirt", null, "basalt", "basalt", null, "moss", "moss", "shale", "shale", "snow", "snow", "ice", "ice", "salt", "salt", "sand", "sand", "dust", "dust", "stone", "stone"];
+
+
+// ── the linocut palettes: one carved hand, four inks ───────────────────
+// each takes a family base and answers the three tones of the rock, the
+// three of the floor, the water and its crests
+const LINOCUT_PALETTES = {
+  /** cool slate rock, the floors as they are */
+  slate: (f) => {
+    const rock = mix(shd(f.rock, 0.22), "#5a6270", 0.4);
+    return { base: desat(f.floor, 0.1), fl: lit(desat(f.floor, 0.1), 0.2), fd: shd(f.floor, 0.22), rock, rockL: mix(lit(f.rock, 0.18), "#c8ccd4", 0.3), rockD: shd(rock, 0.6), gouge: lit(rock, 0.1), deep: "#2b3a68", shallow: "#43579a", crest: "#b7c4e2", wet: shd(f.floor, 0.3), tree: shd(f.tree, 0.15) };
+  },
+  /** burnt umber rock, warm floors, teal water */
+  ochre: (f) => {
+    const rock = mix(shd(f.rock, 0.18), "#8a5a34", 0.45);
+    const floor = mix(f.floor, "#c9a45a", 0.15);
+    return { base: floor, fl: lit(floor, 0.2), fd: shd(floor, 0.22), rock, rockL: mix(lit(f.rock, 0.2), "#e2b876", 0.35), rockD: shd(mix(f.rock, "#5a3a20", 0.5), 0.55), gouge: lit(rock, 0.1), deep: "#1f4a55", shallow: "#2f6b74", crest: "#cfe6d8", wet: shd(floor, 0.3), tree: mix(f.tree, "#6a7a30", 0.3) };
+  },
+  /** a night print: near-black rock with bone bands, deep floors */
+  night: (f) => {
+    const rock = shd(mix(f.rock, "#2a2d3a", 0.7), 0.3);
+    const floor = shd(desat(f.floor, 0.2), 0.42);
+    return { base: floor, fl: lit(floor, 0.18), fd: shd(floor, 0.3), rock, rockL: mix(lit(f.rock, 0.3), "#d9d3c2", 0.55), rockD: "#101218", gouge: lit(rock, 0.12), deep: "#141c38", shallow: "#22305a", crest: "#8fa0d0", wet: shd(floor, 0.35), tree: shd(f.tree, 0.45) };
+  },
+  /** bone and ink: pale floors, dark ink rock with white bands */
+  bone: (f) => {
+    const rock = mix(shd(f.rock, 0.55), "#3a3530", 0.5);
+    const floor = lit(desat(f.floor, 0.35), 0.3);
+    return { base: floor, fl: lit(floor, 0.25), fd: shd(floor, 0.16), rock, rockL: "#d8d2c4", rockD: "#1e1b18", gouge: lit(rock, 0.12), deep: "#7a93b6", shallow: "#a6b8d0", crest: "#ffffff", wet: shd(floor, 0.25), tree: mix(f.tree, "#b9b39f", 0.3) };
+  },
+};
 
 // ── the options ────────────────────────────────────────────────────────
 // each paints one logical pixel of board B in tones t; (wx, wy) logical
@@ -120,8 +165,8 @@ const OPTIONS = {
       const n = fbm(wx / 38, wy / 38, 21);
       let c = n > 0.62 ? t.fl : n < 0.36 ? t.fd : t.base;
       if (hash2(tx, ty, 22) < 0.3) { const cx = 3 + hash2(tx, ty, 23) * 9, cy = 3 + hash2(tx, ty, 24) * 9; if (Math.hypot((lx + 0.5 - cx) / 2.2, (ly + 0.5 - cy) / 1.4) < 1) c = t.fl; }
-      if (B.dWater[wy * B.LW + wx] < 0.14) c = t.wet;
-      const ds = B.dRockShadow[wy * B.LW + wx]; if (ds < 0.9) c = mul(c, 1 - 0.3 * (1 - ds / 0.9));
+      if (B.dWater(wx, wy) < 0.14) c = t.wet;
+      const ds = B.dRockShadow(wx, wy); if (ds < 0.9) c = mul(c, 1 - 0.3 * (1 - ds / 0.9));
       return c;
     },
     rock(B, t, wx, wy, lx, ly, tx, ty) {
@@ -138,7 +183,7 @@ const OPTIONS = {
       return c;
     },
     water(B, t, kind, wx, wy) {
-      if (B.dLand[wy * B.LW + wx] < 0.16) return t.foam;
+      if (B.dLand(wx, wy) < 0.16) return t.foam;
       const c = kind === DEEP ? t.deep : t.shallow;
       if (hash2(wy >> 1, wx >> 3, 29) < 0.12 && (wx & 7) < 4 && (wy & 1) === 0) return t.wave;
       return c;
@@ -155,20 +200,20 @@ const OPTIONS = {
     },
     floor(B, t, wx, wy, lx, ly, tx, ty) {
       let c = fbm(wx / 50, wy / 50, 31) > 0.6 ? t.fl : t.base;
-      const dr = B.dRock[wy * B.LW + wx];
+      const dr = B.dRock(wx, wy);
       if (dr < 2.2 && (wx & 1) === 0 && (wy & 1) === 0) { const p = (1 - dr / 2.2) * 0.42; if (hash2(wx >> 1, wy >> 1, 32) < p * p * 2.2) c = t.inkSoft; }
-      if (B.dWater[wy * B.LW + wx] < 0.12 && hash2(wx >> 2, wy >> 2, 33) < 0.6) c = t.ink;
+      if (B.dWater(wx, wy) < 0.12 && hash2(wx >> 2, wy >> 2, 33) < 0.6) c = t.ink;
       return c;
     },
     rock(B, t, wx, wy, lx, ly, tx, ty) {
-      const d = B.dOpen[wy * B.LW + wx];
+      const d = B.dOpen(wx, wy);
       if (d < 3 / L) return t.ink;                                  // the ink line round the rock
       const k = d - 0.55, f = k - Math.round(k);
       if (k > 0 && Math.abs(f) < 0.09 && d < 3.6) return t.iso;     // a contour every tile inward
       return fbm(wx / 34, wy / 34, 34) > 0.66 ? t.rockL : t.rock;
     },
     water(B, t, kind, wx, wy) {
-      if (B.dLand[wy * B.LW + wx] < 0.12 && ((wx + wy) >> 2) % 2 === 0) return t.foam;
+      if (B.dLand(wx, wy) < 0.12 && ((wx + wy) >> 2) % 2 === 0) return t.foam;
       const s = wy + 5 * fbm(wx / 26, wy / 26, 35), period = kind === DEEP ? 7 : 11;
       if (((s | 0) % period) < 2 && hash2(wx >> 4, (s / period) | 0, 36) < 0.75) return t.ripple;
       return kind === DEEP ? t.deep : t.shallow;
@@ -179,25 +224,22 @@ const OPTIONS = {
   /** LINOCUT — three tones a family, a carved mass with a wide light band
    *  on its lit edges and a wide dark one on the shaded, a few gouges */
   linocut: {
-    tones: (f) => {
-      const rock = mix(shd(f.rock, 0.2), "#6a6058", 0.3);
-      return { base: f.floor, fl: lit(f.floor, 0.2), fd: shd(f.floor, 0.22), rock, rockL: lit(f.rock, 0.16), rockD: shd(f.rock, 0.62), gouge: lit(rock, 0.12), deep: "#2f3f70", shallow: "#465a9e", crest: "#b7c4e2", wet: shd(f.floor, 0.3) };
-    },
+    tones: (f) => LINOCUT_PALETTES.slate(f),
     floor(B, t, wx, wy, lx, ly, tx, ty) {
       let c = t.base;
       const h = hash2(tx, ty, 41);
       // a few carved ticks, either diagonal, never a field of them
-      if (h < 0.11) { const x0 = 2 + hash2(tx, ty, 42) * 8, y0 = 2 + hash2(tx, ty, 43) * 8, len = 4 + hash2(tx, ty, 44) * 3, flip = hash2(tx, ty, 49) < 0.5 ? 1 : -1; const u = (lx - x0) + flip * (ly - y0), v = (lx - x0) - flip * (ly - y0); if (u >= 0 && u < len * 2 && Math.abs(v) < 1.6) c = h < 0.07 ? t.fl : t.fd; }
-      if (B.dWater[wy * B.LW + wx] < 0.18) c = t.wet;
+      if (h < 0.07) { const x0 = 2 + hash2(tx, ty, 42) * 8, y0 = 2 + hash2(tx, ty, 43) * 8, len = 4 + hash2(tx, ty, 44) * 3, flip = hash2(tx, ty, 49) < 0.5 ? 1 : -1; const u = (lx - x0) + flip * (ly - y0), v = (lx - x0) - flip * (ly - y0); if (u >= 0 && u < len * 2 && Math.abs(v) < 1.6) c = h < 0.07 ? t.fl : t.fd; }
+      if (B.dWater(wx, wy) < 0.18) c = t.wet;
       return c;
     },
     rock(B, t, wx, wy, lx, ly, tx, ty) {
       const S = !B.isRock(tx, ty + 1), Nn = !B.isRock(tx, ty - 1), E = !B.isRock(tx + 1, ty), W = !B.isRock(tx - 1, ty);
       const NE = !B.isRock(tx + 1, ty - 1), SW = !B.isRock(tx - 1, ty + 1);
-      const b = 4;
+      const b = 6;
       if ((Nn && ly < b) || (E && lx >= L - b) || (NE && lx >= L - b && ly < b)) return t.rockL;
       if ((S && ly >= L - b) || (W && lx < b) || (SW && lx < b && ly >= L - b)) return t.rockD;
-      if (hash2(tx, ty, 45) < 0.2) { const x0 = 1 + hash2(tx, ty, 46) * 6, y0 = 1 + hash2(tx, ty, 47) * 6, flip = hash2(tx, ty, 50) < 0.5 ? 1 : -1; const u = (lx - x0) + flip * (ly - y0), v = (lx - x0) - flip * (ly - y0); if (u >= 0 && u < 16 && Math.abs(v) < 1.6) return t.gouge; }
+      if (hash2(tx, ty, 45) < 0.12) { const x0 = 1 + hash2(tx, ty, 46) * 6, y0 = 1 + hash2(tx, ty, 47) * 6, flip = hash2(tx, ty, 50) < 0.5 ? 1 : -1; const u = (lx - x0) + flip * (ly - y0), v = (lx - x0) - flip * (ly - y0); if (u >= 0 && u < 16 && Math.abs(v) < 1.6) return t.gouge; }
       return t.rock;
     },
     water(B, t, kind, wx, wy) {
@@ -220,7 +262,7 @@ const OPTIONS = {
       const n = fbm(wx / 26, wy / 26, 51);
       let c = n > 0.6 ? t.fl : n < 0.34 ? t.fd : t.base;
       if (hash2(tx, ty, 52) < 0.08) { const cx = 4 + hash2(tx, ty, 53) * 8, cy = 4 + hash2(tx, ty, 54) * 8; if (Math.hypot(lx + 0.5 - cx, (ly + 0.5 - cy) / 0.8) < 1.7) c = ly + 0.5 < cy ? t.fl : t.fd; }
-      const dr = B.dRock[wy * B.LW + wx]; if (dr < 0.5) c = mul(c, 1 - 0.45 * (1 - dr / 0.5));
+      const dr = B.dRock(wx, wy); if (dr < 0.5) c = mul(c, 1 - 0.45 * (1 - dr / 0.5));
       return c;
     },
     rock(B, t, wx, wy, lx, ly, tx, ty) {
@@ -234,7 +276,7 @@ const OPTIONS = {
       return c;
     },
     water(B, t, kind, wx, wy) {
-      if (B.dLand[wy * B.LW + wx] < 0.2) return t.foam;
+      if (B.dLand(wx, wy) < 0.2) return t.foam;
       const c = kind === DEEP ? t.deep : t.shallow;
       if (hash2(wy >> 1, wx >> 3, 57) < 0.2 && (wx & 7) < 5 && (wy & 1) === 0) return t.swell;
       return c;
@@ -242,6 +284,10 @@ const OPTIONS = {
     prop: { split: "soft", outline: null },
   },
 };
+
+for (const [name, pal] of Object.entries(LINOCUT_PALETTES)) OPTIONS[`linocut-${name}`] = { ...OPTIONS.linocut, tones: pal };
+// the tree tone every option lacks: a pine cell (blocked, shows its floor) is drawn as canopy
+const treeTone = (t, f) => t.tree ?? shd(f.tree, 0.1);
 
 // ── props: a boulder, a pine, a shrub, in the option's tones ───────────
 function stampProp(out, B, kind, cx, cy, tones, style) {
@@ -273,7 +319,7 @@ function paintCurrent(B) {
   const tiles = new Map();
   const tileOf = (key, fn) => { let t = tiles.get(key); if (!t) { t = fn(); tiles.set(key, t); } return t; };
   for (let ty = 0; ty < B.TH; ty++) for (let tx = 0; tx < B.TW; tx++) {
-    const k = B.cell[ty * B.TW + tx], fm = B.fam[ty * B.TW + tx];
+    const k = B.cell[ty * B.TW + tx], fm = B.fam[ty * B.TW + tx] === "dirt" ? 1 : 0;
     const v = hash2(tx, ty, 61) < 0.5 ? 0 : 1;
     let src;
     if (k === ROCK) src = tileOf(`w${fm}${v}`, () => paintWall(wallKind[fm], v));
@@ -287,7 +333,7 @@ function paintCurrent(B) {
         c = k === DEEP ? (((s | 0) % 5) === 0 ? "#4b5fa8" : "#3f5397") : (((s | 0) % 5) === 0 ? "#6478bd" : "#5769ae");
       }
       if (k === ROCK) { const d = B.depth[ty * B.TW + tx]; if (d > 0) c = mul(c, 1 - Math.min((d + 0.5) / 4, 1)); }
-      else if (k === FLOOR) { const dr = B.dRock[wy * B.LW + wx]; if (dr < 0.5) c = mul(c, 1 - 0.71 * (1 - dr / 0.5)); }
+      else if (k === FLOOR) { const dr = B.dRock(wx, wy); if (dr < 0.5) c = mul(c, 1 - 0.71 * (1 - dr / 0.5)); }
       put(wx, wy, c);
     }
   }
@@ -296,24 +342,39 @@ function paintCurrent(B) {
     const src = paintProp(props[kind]); const S = kind === "shrub" ? 32 : 48; const Ls = S / 2;
     for (let y = 0; y < Ls; y++) for (let x = 0; x < Ls; x++) { const o = ((y * 2) * S + x * 2) * 4; if (!src[o + 3]) continue; const ox = Math.round(cx * L - Ls / 2) + x, oy = Math.round(cy * L - Ls / 2) + y; if (ox < 0 || oy < 0 || ox >= B.LW || oy >= B.LH) continue; put(ox, oy, rgb(src[o], src[o + 1], src[o + 2])); }
   }
-  return out;
+  return { px: out, W: B.LW, H: B.LH };
 }
 
-// paint a board in an option: `fams` names the family per fam index, the
-// rock is always the first family's (one mass is one stone)
-function paintOption(opt, B, fams, props = []) {
-  const out = new Uint8ClampedArray(B.LW * B.LH * 4);
-  const tones = fams.map((f) => opt.tones({ ...FAMILY[f], rock: FAMILY[fams[0]].rock }));
-  for (let ty = 0; ty < B.TH; ty++) for (let tx = 0; tx < B.TW; tx++) {
-    const k = B.cell[ty * B.TW + tx], t = tones[B.fam[ty * B.TW + tx]];
-    for (let ly = 0; ly < L; ly++) for (let lx = 0; lx < L; lx++) {
-      const wx = tx * L + lx, wy = ty * L + ly;
-      const c = k === ROCK ? opt.rock(B, t, wx, wy, lx, ly, tx, ty) : k === FLOOR ? opt.floor(B, t, wx, wy, lx, ly, tx, ty) : opt.water(B, t, k, wx, wy);
-      const [r, g, b] = hex(c); const o = (wy * B.LW + wx) * 4; out[o] = r; out[o + 1] = g; out[o + 2] = b; out[o + 3] = 255;
-    }
+// paint a board in an option. `rockFam` names one family for every rock
+// cell (the scene: one mass is one stone) or null to take each cell's
+// own (a map: the wall is the floor's wall). `step` samples every step-th
+// logical px, for a whole map zoomed out
+function paintOption(opt, B, { rockFam = null, props = [], step = 1 } = {}) {
+  const W = Math.floor(B.LW / step), H = Math.floor(B.LH / step);
+  const out = new Uint8ClampedArray(W * H * 4);
+  const tones = new Map();
+  const tonesFor = (f, rf) => { const key = f + "/" + rf; let t = tones.get(key); if (!t) { t = opt.tones({ ...FAMILY[f], rock: FAMILY[rf].rock }); tones.set(key, t); } return t; };
+  // one logical px per output px at step 1; past that, the step-th px is
+  // not picked but the 2x2 samples across it averaged, the way the game's
+  // mipmaps show a map zoomed out
+  const paintAt = (wx, wy) => {
+    const tx = (wx / L) | 0, ty = (wy / L) | 0, lx = wx % L, ly = wy % L;
+    const k = B.cell[ty * B.TW + tx], f = B.fam[ty * B.TW + tx];
+    const t = tonesFor(f, rockFam ?? f);
+    if (k === ROCK) return opt.rock(B, t, wx, wy, lx, ly, tx, ty);
+    if (k === FLOOR) return opt.floor(B, t, wx, wy, lx, ly, tx, ty);
+    if (k === PINE) { const tt = treeTone(t, FAMILY[f]); return hash2(tx, ty, 71) < 0.5 && Math.hypot(lx - 8, ly - 8) < 5 ? lit(tt, 0.14) : tt; }
+    return opt.water(B, t, k, wx, wy);
+  };
+  const offs = step === 1 ? [[0, 0]] : [[step >> 2, step >> 2], [(step * 3) >> 2, step >> 2], [step >> 2, (step * 3) >> 2], [(step * 3) >> 2, (step * 3) >> 2]];
+  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
+    let r = 0, g = 0, b = 0;
+    for (const [ox, oy] of offs) { const [cr, cg, cb] = hex(paintAt(px * step + ox, py * step + oy)); r += cr; g += cg; b += cb; }
+    const o = (py * W + px) * 4, n = offs.length; out[o] = r / n; out[o + 1] = g / n; out[o + 2] = b / n; out[o + 3] = 255;
   }
-  for (const [kind, cx, cy] of props) stampProp(out, B, kind, cx, cy, { rock: FAMILY[fams[0]].rock, tree: FAMILY[fams[0]].tree }, opt.prop);
-  return out;
+  const rf = rockFam ?? "grass";
+  for (const [kind, cx, cy] of props) stampProp(out, B, kind, cx, cy, { rock: FAMILY[rf].rock, tree: FAMILY[rf].tree }, opt.prop);
+  return { px: out, W, H };
 }
 
 // ── compose at native size: terrain x2, then the plates, heads and core ─
@@ -321,40 +382,95 @@ const upscale = (src, w, h, s) => { const out = new Uint8ClampedArray(w * s * h 
 const stampArt = (out, W, art, x0, y0, f = 1) => { for (let y = 0; y < art.n; y++) for (let x = 0; x < art.n; x++) { const c = art.px[y * art.n + x]; if (c === null) continue; const [r, g, b] = hex(c); const o = ((y0 + y) * W + x0 + x) * 4; out[o] = r * f; out[o + 1] = g * f; out[o + 2] = b * f; out[o + 3] = 255; } };
 const plates = {};
 const plateArt = (size) => (plates[size] ??= draw(N * size, (P) => plate(P, 0, 0, N * size, N * size, 3 * size, GUN, 3)));
-const core = drawCore();
-function compose(B, terrain) {
-  const W = B.LW * 2, H = B.LH * 2;
-  const out = upscale(terrain, B.LW, B.LH, 2);
-  for (const [kind, tx, ty] of HEADS) {
+const coreArt = drawCore();
+function compose(terrain, { heads = [], core = null, zoom = 2 } = {}) {
+  const W = terrain.W * 2, H = terrain.H * 2;
+  const out = upscale(terrain.px, terrain.W, terrain.H, 2);
+  for (const [kind, tx, ty] of heads) {
     const head = drawHead(kind); const size = head.n / N;
     stampArt(out, W, plateArt(size), tx * N, ty * N, 0.65);
     stampArt(out, W, head, tx * N, ty * N);
   }
-  stampArt(out, W, core, CORE[0] * N, CORE[1] * N);
-  return upscale(out, W, H, 2);   // and once more for the eye: 64 px a tile
+  if (core) stampArt(out, W, coreArt, core[0] * N, core[1] * N);
+  return zoom === 1 ? { px: out, W, H } : { px: upscale(out, W, H, zoom), W: W * zoom, H: H * zoom };
 }
+const write = (file, img) => { writeFileSync(file, png(img.px, img.W, img.H)); console.log("wrote", file, img.W + "x" + img.H); };
 
 mkdirSync("docs/terrain-concepts", { recursive: true });
-const jobs = [["current", () => paintCurrent(SCENE)], ...Object.entries(OPTIONS).map(([k, o]) => [k, () => paintOption(o, SCENE, SCENE_FAMS, PROPS)])];
-for (const [name, fn] of jobs) {
-  const file = `docs/terrain-concepts/${name}.png`;
-  writeFileSync(file, png(compose(SCENE, fn()), SCENE.LW * 4, SCENE.LH * 4), );
-  console.log("wrote", file);
-}
+const SCENE_OPTS = ["mesa", "chart", "linocut", "strata"];
+write("docs/terrain-concepts/current.png", compose(paintCurrent(SCENE), { heads: HEADS, core: CORE }));
+for (const name of SCENE_OPTS) write(`docs/terrain-concepts/${name}.png`, compose(paintOption(OPTIONS[name], SCENE, { rockFam: "grass", props: PROPS }), { heads: HEADS, core: CORE }));
 
 // the family strip: every option on every family, a 3x3 board a card —
 // rock across the top, floor in the middle, water along the bottom
 {
-  const fams = Object.keys(FAMILY), names = Object.keys(OPTIONS);
+  const fams = ["grass", "dirt", "sand", "stone", "snow", "moss", "basalt"];
   const MINI = makeBoard(3, 3, (x, y) => (y === 0 ? ROCK : y === 1 ? FLOOR : x === 2 ? DEEP : SHALLOW));
   const SW = MINI.LW, SH = MINI.LH, GAP = 4;
-  const W = fams.length * (SW + GAP) + GAP, H = names.length * (SH + GAP) + GAP;
+  const W = fams.length * (SW + GAP) + GAP, H = SCENE_OPTS.length * (SH + GAP) + GAP;
   const strip = new Uint8ClampedArray(W * H * 4);
   for (let i = 0; i < strip.length; i += 4) { strip[i] = 24; strip[i + 1] = 24; strip[i + 2] = 28; strip[i + 3] = 255; }
-  names.forEach((name, row) => fams.forEach((f, col) => {
-    const card = paintOption(OPTIONS[name], MINI, [f]);
+  SCENE_OPTS.forEach((name, row) => fams.forEach((f, col) => {
+    const mini = makeBoard(3, 3, (x, y) => (y === 0 ? ROCK : y === 1 ? FLOOR : x === 2 ? DEEP : SHALLOW), () => f);
+    const card = paintOption(OPTIONS[name], mini).px;
     for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++) { const si = (y * SW + x) * 4, o = ((GAP + row * (SH + GAP) + y) * W + GAP + col * (SW + GAP) + x) * 4; strip[o] = card[si]; strip[o + 1] = card[si + 1]; strip[o + 2] = card[si + 2]; strip[o + 3] = 255; }
   }));
-  writeFileSync("docs/terrain-concepts/families.png", png(upscale(strip, W, H, 3), W * 3, H * 3));
-  console.log("wrote docs/terrain-concepts/families.png");
+  write("docs/terrain-concepts/families.png", { px: upscale(strip, W, H, 3), W: W * 3, H: H * 3 });
+}
+
+// ── linocut on a real map ──────────────────────────────────────────────
+// Greenwood (public/maps/greenwood.json): a crop round the core at full
+// detail with a few heads set on the rock beside the lane, and the whole
+// 512 board zoomed out, in every palette
+{
+  const doc = JSON.parse(readFileSync("public/maps/greenwood.json", "utf8"));
+  const MW = doc.w, MH = doc.floor.length / doc.w;
+  const WALL_PINE = 4, WALL_DEEP = 7;
+  const cellAt = (x, y) => {
+    const i = y * MW + x, g = (doc.floor[i] / 3) | 0;
+    if (doc.wall[i] === WALL_DEEP || g === 6 || g === 16) return DEEP;
+    if (g === 5 || g === 15) return SHALLOW;
+    if (doc.wall[i] === WALL_PINE) return PINE;
+    return doc.blocked[i] ? ROCK : FLOOR;
+  };
+  const famAt = (x, y) => { const i = y * MW + x; return doc.blocked[i] && doc.wall[i] !== WALL_PINE && doc.wall[i] !== WALL_DEEP ? WALL_FAMILY[doc.wall[i]] ?? "stone" : GROUP_FAMILY[(doc.floor[i] / 3) | 0] ?? "grass"; };
+  // the crop: the 96x56 window with the most in it — rock about half,
+  // some water, some forest, more than one floor family
+  const CW = 96, CH = 56;
+  let cx0 = 0, cy0 = 0, bestScore = -1;
+  for (let y0 = 0; y0 + CH <= MH; y0 += 8) for (let x0 = 0; x0 + CW <= MW; x0 += 8) {
+    let rock = 0, water = 0, pine = 0; const fams = new Set();
+    for (let y = y0; y < y0 + CH; y += 2) for (let x = x0; x < x0 + CW; x += 2) { const k = cellAt(x, y); if (k === ROCK) rock++; else if (k === PINE) pine++; else if (k >= SHALLOW) water++; else fams.add(famAt(x, y)); }
+    const n = (CW * CH) / 4, rockF = rock / n, waterF = water / n, pineF = pine / n;
+    const score = (rockF > 0.35 && rockF < 0.6 ? 1 : 0) + Math.min(waterF, 0.12) / 0.12 + Math.min(pineF, 0.05) / 0.05 + Math.min(fams.size, 3) / 3;
+    if (score > bestScore) { bestScore = score; cx0 = x0; cy0 = y0; }
+  }
+  console.log(`crop at (${cx0}, ${cy0}), score ${bestScore.toFixed(2)}`);
+  const CROP = makeBoard(CW, CH, (x, y) => cellAt(cx0 + x, cy0 + y), (x, y) => famAt(cx0 + x, cy0 + y));
+  // a few heads on rock beside open ground: the first footprints that fit, spread out
+  const heads = [];
+  const fits = (x, y, s) => { for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) if (!CROP.isRock(x + dx, y + dy) || CROP.depth[(y + dy) * CW + x + dx] > 2) return false; let edge = false; for (let dy = -1; dy <= s; dy++) for (let dx = -1; dx <= s; dx++) if (!CROP.isRock(x + dx, y + dy)) edge = true; return edge; };
+  const wanted = [["ripple", 3], ["lancer", 2], ["duo", 1], ["duo", 1], ["salvo", 2], ["duo", 1], ["hail", 1], ["scatter", 2]];
+  for (const [kind, s] of wanted) {
+    let placed = false;
+    for (let tries = 0; tries < 4000 && !placed; tries++) {
+      const x = 4 + Math.floor(hash2(tries, s, 77) * (CW - 12)), y = 4 + Math.floor(hash2(s, tries, 78) * (CH - 12));
+      if (!fits(x, y, s)) continue;
+      if (heads.some(([, hx, hy, hs]) => Math.abs(hx - x) < hs + s + 3 && Math.abs(hy - y) < hs + s + 3)) continue;
+      heads.push([kind, x, y, s]); placed = true;
+    }
+  }
+  const inCrop = doc.base.x >= cx0 && doc.base.x + 5 <= cx0 + CW && doc.base.y >= cy0 && doc.base.y + 5 <= cy0 + CH;
+  const core = inCrop ? [doc.base.x - cx0, doc.base.y - cy0] : null;
+  const pineProps = [];
+  for (const name of Object.keys(LINOCUT_PALETTES)) {
+    const opt = OPTIONS[`linocut-${name}`];
+    write(`docs/terrain-concepts/linocut-${name}.png`, compose(paintOption(opt, SCENE, { rockFam: "grass", props: PROPS }), { heads: HEADS, core: CORE }));
+    write(`docs/terrain-concepts/linocut-${name}-crop.png`, compose(paintOption(opt, CROP, { props: pineProps }), { heads: heads.map(([k, x, y]) => [k, x, y]), core, zoom: 1 }));
+  }
+  const MAP = makeBoard(MW, MH, cellAt, famAt);
+  for (const name of Object.keys(LINOCUT_PALETTES)) {
+    const img = paintOption(OPTIONS[`linocut-${name}`], MAP, { step: 4 });
+    write(`docs/terrain-concepts/linocut-${name}-map.png`, img);
+  }
 }

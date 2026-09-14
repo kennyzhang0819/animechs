@@ -147,6 +147,32 @@ gunmetal further behind than the concept manages, and the marks have to
 stay rare or the board reads as rain. Presented as a direction, not a
 finished look.
 
+#### Linocut on a real map, in four inks
+
+`linocut-<ink>.png` is the scene, `linocut-<ink>-crop.png` a 96x56
+crop of Greenwood at the game's own zoom (chosen for variety: rock about
+half, a lake, a pine stand, two floor families, a few heads set on the
+rock beside the lane), and `linocut-<ink>-map.png` the whole 512 board
+at four pixels a tile with the samples averaged the way the mipmaps show
+it. The carved hand is the same in every one; the ink
+(`LINOCUT_PALETTES` in the script) is what changes:
+
+| ink | rock | floors | water |
+| --- | --- | --- | --- |
+| slate | cool grey-blue | as they are, a touch desaturated | blue |
+| ochre | burnt umber | warmed toward ochre | teal |
+| night | near-black with bone bands | deep and dark | ink blue |
+| bone | dark ink with white bands | pale bone | paper blue |
+
+What the map showed: at the game's zoom a Greenwood room is a big flat
+field, and a carved hand has to live with that. The lit and shaded bands
+on the rock's edges carry the drawing (they went from four logical
+pixels to six for it), and the gouges have to stay rare. Zoomed out, the
+bands become the map's own contour. Slate is the safe ink; ochre
+separates from gunmetal best; bone is the most linocut and the most
+legible zoomed out, and wants a lighter plate under the heads; night is
+a mood that would need the swarm's six hues to carry the board.
+
 ## The recommendation
 
 Mesa, with Chart's stipple at the foot of the cliff if the floor wants
