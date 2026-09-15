@@ -483,11 +483,11 @@ const TURRET_MODS: readonly ModDef[] = [
   {
     id: "giant",
     name: "Giant",
-    tweak: "+1000% health, +200% damage, +10 armor, −90% range, twice the footprint",
-    // the blindness and the footprint are the PRICE and never scale, so
+    tweak: "+500% health, +200% damage, +10 armor, −50% range, twice the footprint",
+    // the short sight and the footprint are the PRICE and never scale, so
     // they read the same at every count — see `scale`
-    total: bothOf(pctOf(11, "health"), pctOf(3, "damage"), flatOf(10, "armor"), () =>
-      "−90% range, twice the footprint"),
+    total: bothOf(pctOf(6, "health"), pctOf(3, "damage"), flatOf(10, "armor"), () =>
+      "−50% range, twice the footprint"),
     rarity: "ultra",
     glyph: "giant",
     // ROLLED ONCE PER CARD (`solo`), not once per turret — so this is the
@@ -495,13 +495,13 @@ const TURRET_MODS: readonly ModDef[] = [
     // the loosest of the three because it costs the whole card to happen
     chance: 0.05,
     blurb:
-      "A card has a chance to come out GIANT instead: one building, twice the size, eleven times the health, ten more plating and triple the damage — but it sees barely a tenth as far, so it has to be put where the swarm is already coming.",
-    // THE FOOTPRINT AND THE BLINDNESS ARE THE PRICE AND DO NOT STACK
+      "A card has a chance to come out GIANT instead: one building, twice the size, six times the health, ten more plating and triple the damage — but it sees half as far, so it has to be put where the swarm is already coming.",
+    // THE FOOTPRINT AND THE SHORT SIGHT ARE THE PRICE AND DO NOT STACK
     // (see `scale`): copies buy a harder-hitting, tougher, better plated
-    // giant standing on exactly the same ground, still seeing a tenth as
-    // far as its kind
+    // giant standing on exactly the same ground, still seeing half as far
+    // as its kind
     apply: (t, n) =>
-      bigger(armored(tougher(reaching(stronger(t, per(3, n)), 0.1), per(11, n)), 10 * Math.max(1, n)), GIANT_SCALE),
+      bigger(armored(tougher(reaching(stronger(t, per(3, n)), 0.5), per(6, n)), 10 * Math.max(1, n)), GIANT_SCALE),
     scale: GIANT_SCALE,
     solo: true,
   },

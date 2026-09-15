@@ -5,8 +5,10 @@
  * the grammar in full): every material a dark/light PAIR split at the
  * midline and nothing else for lighting, a fold or a band in the reversed
  * pair, NOTHING NARROWER THAN FOUR PIXELS, no dither, and every body drawn
- * AT ITS HITBOX on the turrets' 32 px a tile — a starhart1 on a 32 grid
- * like a tacker, a stoop5 on 232. No overshoot: the quad is the box.
+ * AT ITS HITBOX on the turrets' 32 px a tile — a weaver1 on a 32 grid
+ * like a tacker, a stoop5 on 232. No overshoot: the quad is the box, and
+ * an animal that reads too small is a BOX to raise (see HART_TIERS,
+ * where the stag's went up a quarter) and never a drawing to spill.
  *
  * Every width here is built up from the scaler's units (w, never under
  * four) so that what is left beside a feature is a unit too: a seam ±U on
@@ -105,7 +107,10 @@ export function flyerGeom(T: FlyerTier, L: Wing): StoopGeom {
 
 // ── STARHART ─────────────────────────────────────────────────────────────
 //
-// The stag: a slim back, a neck, a wedge of a head, and from T2 the
+// The stag: a slim back (20/32 of the grid, against the rhino's 26 and
+// the elephant's full width — it is the narrowest animal here, and the
+// reason its box had to grow; see HART_TIERS), a neck, a wedge of
+// a head, and from T2 the
 // antlers — a BONE beam either side of the head joined to it by a bar,
 // tines off the beam outward as the tiers climb, the emitter gold at the
 // top of each beam. A gunmetal plate down the spine with the gold seam on
@@ -115,24 +120,49 @@ export function flyerGeom(T: FlyerTier, L: Wing): StoopGeom {
 export const HART: Mat = ["#5a3f2c", "#9a7350"];
 export const STAR: Mat = ["#e0a830", "#ffe58a"];
 const HART_R = rev(HART);
-/** hitboxes UR x 1 / 1.375 / 1.625 / 3 / 3.625, at 32 px a tile.
+/**
+ *  THE WHOLE ANIMAL GREW A QUARTER — box and drawing together, which is
+ *  the only way it can grow while the grid IS the hitbox (the header).
+ *  The deer was the roster's slimmest silhouette laid on the roster's
+ *  narrowest box: a back 20/32 of its grid where the rhino's is 26 and
+ *  the elephant's fills it, so a starhart1 beside a tusker1 read as a
+ *  seed beside a boulder. The answer is not to draw past the box, it is
+ *  a bigger deer.
+ *
+ *  So the boxes went up a quarter (public/balance.json, and the authored
+ *  radii in levels.ts with them) AND KEPT THEIR SHAPE — the long
+ *  rectangle a stag ought to have, 25x18.75 up to 90x60, the same
+ *  long-to-wide the tier had before. The grids follow: hitboxes
+ *  UR x 1.25 / 1.75 / 2 / 3.75 / 4.5, which is 40/56/64/120/144 px at 32
+ *  a tile, even so the mirror has a centre column to fold on.
+ *
+ *  THE ELEPHANT IS STILL THE BIGGER ANIMAL at every tier and by a clear
+ *  margin — 70x75 px of the stag's ink against the tusker4's 85x80,
+ *  84x90 against the tusker5's 110x102, and the width in those is a rack
+ *  of antlers rather than mass — which is the one proportion this family
+ *  is sized against.
+ *
+ *  `stride` (the mech rig's hoof swing) and the legged tiers' feet
+ *  (levels.ts starhart4/starhart5, `length` and `baseOffset`) are up the
+ *  same quarter, so the stance against the body is exactly what it was.
+ *
  *  A DEER'S LEG TAPERS: the thigh is meat and the cannon bone under the
  *  hock is a stick, so `th` (mount to knee) is near twice `sh` (knee to
  *  hoof) on the two legged tiers. Two segments of the same middling width
  *  is a crab's limb, and a crab's limb on a ring of four mounts is what
  *  reads as a spider however the thing walks */
 export const HART_TIERS: readonly IronTier[] = [
-  { t: 1, n: 32, stride: 4, small: 16, th: 4, sh: 4 },
-  { t: 2, n: 44, stride: 5, small: 16, th: 4, sh: 4 },
-  { t: 3, n: 52, stride: 6, small: 16, th: 4, sh: 4 },
-  { t: 4, n: 96, stride: 0, small: 32, th: 10, sh: 5 },
-  { t: 5, n: 116, stride: 0, small: 48, th: 13, sh: 6 },
+  { t: 1, n: 40, stride: 5, small: 16, th: 4, sh: 4 },
+  { t: 2, n: 56, stride: 6, small: 16, th: 4, sh: 4 },
+  { t: 3, n: 64, stride: 7, small: 16, th: 4, sh: 4 },
+  { t: 4, n: 120, stride: 0, small: 40, th: 12, sh: 6 },
+  { t: 5, n: 144, stride: 0, small: 60, th: 16, sh: 7 },
 ];
 function hartBody(P: Pen, T: IronTier): void {
   const { n, t } = T; const { q, w } = scaler(n); const c = n / 2; const U = w(2);
-  // the back: a slim chamfered plate, the haunch fold in the reversed pair
-  P.octa(q(7), q(12), n - q(7), n - q(1), w(4), HART);
-  P.box(q(8), q(23), n - q(8), q(23) + w(3), HART_R);
+  // the back: a chamfered plate, the haunch fold in the reversed pair
+  P.octa(q(6), q(12), n - q(6), n - q(1), w(4), HART);
+  P.box(q(7), q(23), n - q(7), q(23) + w(3), HART_R);
   // the antlers from T2, under the head so it covers the join: the beam,
   // the bar to the head, the tines outward, the emitter at the top
   if (t >= 2) {
@@ -147,12 +177,12 @@ function hartBody(P: Pen, T: IronTier): void {
   // to the back's edge and in to the saddle: it is also where the legged
   // rig's shoulder caps sit (levels.ts starhart4, mounts 5 MU out at 45
   // degrees), so the caps come up under a plate, not beside a bare neck
-  if (t >= 4) P.octa(q(6), q(9), c - 2 * U, q(12) + w(6), U, GUN);
+  if (t >= 4) P.octa(q(5), q(9), c - 2 * U, q(12) + w(6), U, GUN);
   // the apex gilds them: a gold panel down each yoke, a unit in from its
   // edges so it lies in the flat and never crosses a chamfer. Gold on the
   // shoulders and gold on the brow is what this champion has that the T4
   // has not — the emitters are no longer only at the antlers' tips
-  if (t >= 5) P.box(q(6) + U, q(9) + U, c - 3 * U, q(9) + U + w(6), STAR);
+  if (t >= 5) P.box(q(5) + U, q(9) + U, c - 3 * U, q(9) + U + w(6), STAR);
   // the neck and the head, a wedge forward of the shoulders
   P.box(c - w(3), q(8), c + w(3), q(14), HART);
   P.octa(c - w(4), q(2), c + w(4), q(10), U, HART);
@@ -179,12 +209,12 @@ export function hartMech(T: IronTier): MechParts {
   const { art, cell } = drawWithCell(n, (P) => hartBody(P, T), STAR);
   return {
     body: art,
-    base: draw(n, (P) => P.octa(q(9), q(12), n - q(9), n - q(2), w(4), GUN)),
+    base: draw(n, (P) => P.octa(q(8), q(12), n - q(8), n - q(2), w(4), GUN)),
     // two hooves at the body's right edge, a unit of each past the back
     leg: draw(n, (P) => {
       for (const y of [q(13), q(23)]) {
-        P.box(n - q(7) - w(2), y, n - q(7) + w(3), y + w(5), HART);
-        P.box(n - q(7) - w(2), y + w(5) - w(2), n - q(7) + w(3), y + w(5), BORE);
+        P.box(n - q(6) - w(2), y, n - q(6) + w(3), y + w(5), HART);
+        P.box(n - q(6) - w(2), y + w(5) - w(2), n - q(6) + w(3), y + w(5), BORE);
       }
     }, false),
     cell,
@@ -197,7 +227,7 @@ export function hartLegged(T: IronTier): LegParts {
   const { art, cell } = drawWithCell(n, (P) => hartBody(P, T), STAR);
   return {
     body: art,
-    base: draw(n, (P) => P.octa(q(10), q(13), n - q(10), n - q(3), w(4), GUN)),
+    base: draw(n, (P) => P.octa(q(9), q(13), n - q(9), n - q(3), w(4), GUN)),
     cell,
     foot: draw(small, (P) => { P.box(sc - w(2), sc - w(3), sc + w(2), sc + w(3), HART); P.box(sc - w(2), sc - w(3), sc + w(2), sc - w(3) + w(2), BORE); }, false),
     joint: draw(small, (P) => P.disc(sc, sc, Math.max(2, Math.round(th / 2)), HART), false),

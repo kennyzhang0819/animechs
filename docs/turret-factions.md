@@ -122,13 +122,20 @@ All eighteen render through the same run check with none flagged.
 ### The core
 
 The core (`mill-core.png`, `drawCore`) is drawn to the same rules on the
-nucleus's 160 px, five cells square: one gunmetal plate, four steel
-conduits into a reactor ring in the middle, and the team's sharded
-yellow drawn into the reactor where the stock team overlay put it, as a
-dark/light pair like every other material. It is symmetric on both axes because a building the
-swarm walks at from every side has no front. While the flag is on the
-atlas packs it in place of the nucleus and its overlay; off, the stock
-composite comes back.
+nucleus's 160 px, five cells square: a hard square slab with four square
+courses stepping in — slate, iron, slate — to a well of the team's
+sharded yellow, its innermost square in the reversed shade and a bore at
+the bottom. Sixteen px a course, so every run clears the four-pixel floor
+and the well clears the eight-pixel midline one. It is symmetric on both
+axes because a building the swarm walks at from every side has no front,
+and it is square to the sprite's edge with no chamfer and no margin: a
+core is a slab of ground the player holds, not a turret standing on a
+plate. It is also the one drawing with metals of its own — slate
+`#343846 / #4e5464` and iron `#5a5f6e / #8b90a0`, a step either side of
+gunmetal — which is what keeps it from reading as a seventeenth head
+among the turrets parked around it; a head is still gunmetal, steel and a
+bore. While the flag is on the atlas packs it in place of the nucleus and
+its overlay; off, the stock composite comes back.
 
 ### The plate
 

@@ -55,6 +55,12 @@ export const BORE: Mat = ["#2c2d38", "#2c2d38"];
  *  half, done on purpose */
 export const rev = (m: Mat): Mat => [m[1], m[0]];
 export const GUN_R: Mat = rev(GUN);
+/** THE CORE'S TWO METALS, and nowhere else: the building the swarm walks
+ *  at is not a turret, and a slab a step darker than gunmetal with a
+ *  lighter course inside it is what separates it from the seventeen heads
+ *  standing around it. A head is still gunmetal, steel and a bore */
+export const SLATE: Mat = ["#343846", "#4e5464"];
+export const IRON: Mat = ["#5a5f6e", "#8b90a0"];
 
 /** what a turret throws, and the colour it wears for it */
 export type AmmoGroup = "bullet" | "shell" | "flame" | "beam" | "water" | "field" | "missile";
@@ -339,23 +345,28 @@ export const HEADS: Record<TurretArtKind, HeadFn> = {
 export const TEAM: Mat = ["#d9a85a", "#ffd37f"];
 
 /**
- * THE CORE, drawn to the same rules as the heads: one gunmetal plate,
- * five cells square (160 px, the nucleus's size), that never turns. A
- * reactor in the middle wearing the team's colour, four conduits into
- * it. Symmetric on both axes, since a building the swarm walks at from
- * every side has no front.
+ * THE CORE, drawn to the same rules as the heads: a square slab five
+ * cells on a side (160 px, the nucleus's size) that never turns, four
+ * square courses stepping in to a lit well in the middle. Symmetric on
+ * both axes, since a building the swarm walks at from every side has no
+ * front — and square to the sprite's edge, with no chamfer and no margin,
+ * because a core is a slab of ground the player holds and not a turret
+ * standing on a plate.
+ *
+ * SLATE and IRON alternate down the courses and the well is the team's
+ * sharded yellow, its innermost square in the reversed shade so the pit
+ * catches light the other way. Sixteen px a course, eight either side of
+ * the midline at the bottom of the well: every run clears the four-pixel
+ * floor and the eight-pixel midline one.
  */
 export const CORE_N = 160;
 export function coreHead(P: Pen): void {
-  P.octa(4, 4, 156, 156, 28, GUN);
-  // the conduits, top and bottom and left (the mirror does the right)
-  P.box(76, 12, 84, 40, STEEL); P.box(76, 120, 84, 148, STEEL);
-  P.box(12, 76, 40, 84, STEEL);
-  // the reactor
-  P.octa(36, 36, 124, 124, 24, STEEL);
-  inset(P, 36, 36, 124, 124, 24, 8, GUN_R);
-  inset(P, 36, 36, 124, 124, 24, 16, TEAM);               // the team's colour, where the stock overlay put it
-  P.box(74, 74, 86, 86, BORE);
+  P.box(0, 0, 160, 160, SLATE);      // the slab
+  P.box(16, 16, 144, 144, IRON);     // the first course
+  P.box(32, 32, 128, 128, SLATE);    // the second
+  P.box(48, 48, 112, 112, TEAM);     // the well, in the team's colour
+  P.box(64, 64, 96, 96, rev(TEAM));  // its lip, lit the other way
+  P.box(74, 74, 86, 86, BORE);       // the pit
 }
 export function drawCore(): Art {
   return draw(CORE_N, coreHead);

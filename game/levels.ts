@@ -1082,9 +1082,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     flying: true,
     payload: { splash: 75, radius: 28 * MU },
   },
-  // starhart1: the T1 of the Starlight mechs — 200 hp, armor 1, 1x1-block
-  // hitbox, 0.55 px/tick = 4.125 tiles/s. Frailer than an ironhide1 but a step
-  // quicker. THE T1 IS THE FAMILY IN MINIATURE: a thin piercing green
+  // starhart1: the T1 of the Starlight mechs — 200 hp, armor 1, a
+  // 1.25x0.9375-block hitbox, 0.55 px/tick = 4.125 tiles/s. Frailer than
+  // an ironhide1 but a step quicker. THE T1 IS THE FAMILY IN MINIATURE: a thin piercing green
   // lance (weapons.ts) and a repair field — RepairFieldAbility(10, 60*4)
   // upstream, a little quicker here: 12 hp to everything within 7.5 tiles
   // every 3 s, so a starhart1 escort keeps its line topped up between volleys
@@ -1092,12 +1092,12 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     hp: 200,
     speed: 4.125 * CELL,
     armor: 1,
-    radius: UR,
+    radius: UR * 1.25,
     tier: 1,
     repairField: { amount: 12, reload: 3, range: 7.5 * CELL },
   },
   // starhart2: support T2 — 320 hp, armor 4 (an ironhide2's plating on half its hp),
-  // 1.375x1.375-block hitbox, 0.7 px/tick = 5.25 tiles/s: the line's fastest
+  // a 1.75x1.125-block hitbox, 0.7 px/tick = 5.25 tiles/s: the line's fastest
   // walker, so it arrives ahead of the runts it escorts
   // ShieldRegenFieldAbility(20, 40, 60*5, 60) upstream; +25 shield every
   // 4 s up to a 60-point cap here, over the same 7.5-tile field — the
@@ -1107,12 +1107,12 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     hp: 320,
     speed: 5.25 * CELL,
     armor: 4,
-    radius: UR * 1.375,
+    radius: UR * 1.75,
     tier: 2,
     shieldField: { amount: 25, max: 60, reload: 4, range: 7.5 * CELL },
   },
   // starhart3: support T3 — 640 hp, armor 9 (an ironhide3's plating), a
-  // 1.625x1.625-block hitbox, 0.5 px/tick = 3.75 tiles/s: after the
+  // 2x1.3125-block hitbox, 0.5 px/tick = 3.75 tiles/s: after the
   // starhart2's sprint the line drops back to the ironhide1's marching pace
   // ForceFieldAbility(60, 0.4, 500, 60*6): a 7.5-tile bubble holding 500
   // points, refilling at 24/s and dark for 6 s once it breaks (Mindustry
@@ -1124,7 +1124,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     hp: 640,
     speed: UNIT_SPEED,
     armor: 9,
-    radius: UR * 1.625,
+    radius: UR * 2,
     tier: 3,
     forceField: {
       radius: 7.5 * CELL,
@@ -1133,7 +1133,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
       cooldown: 6,
     },
   },
-  // starhart4: the support line's T4 — 7800 hp, armor 16, a 3x3-block hitbox,
+  // starhart4: the support line's T4 — 7800 hp, armor 16, a 3.75x2.5-block hitbox,
   // 0.44 px/tick = 3.3 tiles/s, and rotateSpeed 1.8, the slowest turn on
   // the roster. Thirteen elites' health with none of the starhart3's reach:
   // where its predecessor covers the ground around it, this one is simply
@@ -1160,7 +1160,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     hp: 7800,
     speed: 3.3 * CELL,
     armor: 16,
-    radius: UR * 3,
+    radius: UR * 3.75,
     tier: 4,
     rotateSpeed: 1.8,
     immunities: ["burning"],
@@ -1179,7 +1179,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     // THE FOOT LANDS AT THE OUTLINE, 1.10 radii out against the 1.32 it
     // used to stand at — a third of a body clear of its own edge — so
     // what shows past the flank is a hoof and the last of a shin, not a
-    // splayed limb. `lengthScl` 0.92 runs the leg near straight from
+    // splayed limb. Both numbers below went up a quarter with the animal
+    // (familyArt.ts HART_TIERS), which is what holds that 1.10 where it
+    // was. `lengthScl` 0.92 runs the leg near straight from
     // shoulder to hoof, which is what a deer's leg is from above; the
     // knee barely leaves the line between the two. `elevation` 0.55
     // nearly doubles the lift, so a swinging hoof rises clear of the
@@ -1201,10 +1203,10 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
       ? {
           legs: legs({
             count: 4,
-            length: 10 * MU,
+            length: 12.5 * MU,
             forwardScl: 0.65,
             moveSpace: 1.25,
-            baseOffset: 4 * MU,
+            baseOffset: 5 * MU,
             lengthScl: 0.92,
             speed: 0.22,
             elevation: 0.55,
@@ -1213,7 +1215,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
         }
       : {}),
   },
-  // starhart5: the support line's T5 — 17000 hp, armor 14, a 3.625x3.625-block
+  // starhart5: the support line's T5 — 17000 hp, armor 14, a 4.5x3-block
   // hitbox, and 0.3 px/tick = 2.25 tiles/s, the slowest thing in the game.
   // rotateSpeed 1.5 is likewise the slowest turn on the roster, under a
   // third of stock: it arrives late and cannot answer a flank
@@ -1234,7 +1236,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     hp: 17000,
     speed: 2.25 * CELL,
     armor: 14,
-    radius: UR * 3.625,
+    radius: UR * 4.5,
     tier: 5,
     rotateSpeed: 1.5,
     repairField: { amount: 80, reload: 2, range: 11 * CELL },
@@ -1247,10 +1249,10 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     legs: ANIMAL_ART
       ? legs({
           count: 4,
-          length: 12 * MU,
+          length: 15 * MU,
           forwardScl: 0.65,
           moveSpace: 1.25,
-          baseOffset: 5 * MU,
+          baseOffset: 6.25 * MU,
           lengthScl: 0.92,
           speed: 0.2,
           elevation: 0.65,
@@ -1716,8 +1718,8 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   //
   // THE BIG ONES, and that is the first and the loudest thing about them.
   // Every other line on the roster opens on a 1x1 or thereabouts — the
-  // ironhide1, the weaver1 and the starhart1 are all exactly one tile, the
-  // widest T1 anywhere is the livewire1's 1.375 — and the Tusker RUNT is a
+  // ironhide1 and the weaver1 are exactly one tile, the widest T1
+  // anywhere is the livewire1's 1.375 — and the Tusker RUNT is a
   // 1.75x1.75. It is half again the biggest opening body in the game, it
   // is drawn at that box (tuskerArt.ts: no overshoot, the quad is the
   // hitbox), and the ladder ends on a 5.5x5.5 apex: the largest thing

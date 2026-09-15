@@ -939,7 +939,7 @@ with the hull already inside the line.
 balance — weakening the swarm is the mutators' half of the game — but a
 top-band mod is allowed to gut a stat the build does not want, which is
 what makes it a build and not a bonus. That is the Sniper's tenth of a
-health pool and the Giant's tenth of a range. **A relic never charges**: at
+health pool and the Giant's half a range. **A relic never charges**: at
 150,000 the price is the cost.
 
 **Repair is a percentage of the turret's OWN ceiling, per second.**

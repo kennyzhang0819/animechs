@@ -191,6 +191,8 @@ export interface UiState {
   bodies: number;
   /** where the sim is stepping — on its own thread, or this one (workerhost.ts) */
   host: "worker" | "local";
+  /** the step's heaviest phases, one line, while the phase clock is armed; "" otherwise */
+  phases: string;
   /** is the drop-zone and air-route overlay on? */
   showRoutes: boolean;
   /**
@@ -432,6 +434,23 @@ function localSimForced(): boolean {
   if (!ADMIN_ENABLED) return false;
   try {
     return localStorage.getItem("animechsLocalSim") === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * ...AND THE ONE THAT ARMS THE PHASE CLOCK FROM THE START: `localStorage
+ * animechsProfile = "1"` in a dev build. With it the corner readout shows
+ * the step's four heaviest phases live (Game.ui `phases`), so a wave that
+ * turns slow can be read on the spot instead of reconstructed in a
+ * harness afterwards — the sim on its worker reports the clock in every
+ * frame (simreport.ts), and this is the cheapest way to see it.
+ */
+function profileForced(): boolean {
+  if (!ADMIN_ENABLED) return false;
+  try {
+    return localStorage.getItem("animechsProfile") === "1";
   } catch {
     return false;
   }
@@ -1264,8 +1283,8 @@ export class Game {
    * THE CARD GETS ONE ROLL BEFORE A SINGLE FOOTPRINT IS LAID (mods.ts
    * rollSolo): if it comes out GIANT, the shape is discarded and the
    * whole card is spent on ONE building at the middle of where the patch
-   * was going — twice its kind's edge, eleven times the health, and
-   * barely a tenth of the reach. That is the one attribute allowed to eat
+   * was going — twice its kind's edge, six times the health, and half
+   * the reach. That is the one attribute allowed to eat
    * a card, and it is rolled per CARD rather than per turret because
    * three hundred and sixty rolls at any useful chance is a giant every
    * time (see ModDef.solo).
@@ -1638,6 +1657,7 @@ export class Game {
     // forces the one-thread path so the two can be measured side by side
     await begin("world");
     const host = await makeHost(spec, localSimForced());
+    if (profileForced()) host.profile(true);
     const game = new Game(glCanvas, uiCanvas, atlas, host);
 
     // one full frame on the GPU before anything uncovers the canvas, so
@@ -2035,6 +2055,8 @@ export class Game {
       drawMs: this.drawEma,
       bodies: w.n,
       host: this.sim ? "local" : "worker",
+      // the step's heaviest phases, while the clock is armed (profileForced)
+      phases: this.phaseLine(),
       showRoutes: this.showRoutes,
       lost: w.lost,
       coreHp: Math.ceil(this.view.core.hp),
@@ -2175,6 +2197,17 @@ export class Game {
   /** the clock's last published reading — empty until it has been armed */
   profileRead(): { name: string; ms: number }[] {
     return this.world.report.phases ?? [];
+  }
+  /** the four heaviest phases as one line for the readout, or "" while the clock is off */
+  private phaseLine(): string {
+    const ph = this.profileRead();
+    if (ph.length === 0) return "";
+    return ph
+      .filter((p) => p.ms > 0)
+      .sort((a, b) => b.ms - a.ms)
+      .slice(0, 4)
+      .map((p) => `${p.name} ${p.ms.toFixed(1)}`)
+      .join(" · ");
   }
 
   stats(): Stats {

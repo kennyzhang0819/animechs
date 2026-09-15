@@ -11,6 +11,8 @@ import {
   type RefObject,
 } from "react";
 import { ADMIN_ENABLED } from "@/game/env";
+import { usePathname, useRouter } from "next/navigation";
+import GameConsole from "./Console";
 import {
   BOOT_STEP_LABEL,
   BOOT_STEPS,
@@ -1678,6 +1680,10 @@ export default function Animechs() {
   // the level selector is the entrance: no Game exists until a level is
   // picked, and going back to the menu tears the whole game down
   const [screen, setScreen] = useState<"menu" | "tech" | "game">("menu");
+  // the in-game console's way to the admin page (Console.tsx; the same
+  // route AdminShortcut's key takes)
+  const router = useRouter();
+  const pathname = usePathname();
   /**
    * WHERE IN THE FRONT-OF-HOUSE THE PLAYER IS. The menu screen is three
    * panels, not one: a title card, settings, and the DEPLOY screen behind
@@ -3377,6 +3383,9 @@ export default function Animechs() {
                 {ADMIN_ENABLED && (
                   <span className="ms-2 font-normal normal-case tracking-normal text-[#71717A]">
                     {`sim ${hud.simMs.toFixed(1)} · draw ${hud.drawMs.toFixed(1)} · ${hud.bodies} · ${hud.host}`}
+                    {/* ...and where the step went, when the clock is armed
+                        (localStorage animechsProfile = "1", game.ts) */}
+                    {hud.phases && <span className="ms-2">{`[${hud.phases}]`}</span>}
                   </span>
                 )}
               </div>
@@ -3766,6 +3775,21 @@ export default function Animechs() {
         )}
         {/* the same one dialog the front of house uses, over the field */}
         {confirmDialog}
+        {/* THE CONSOLE (backquote), in every build — see Console.tsx */}
+        <GameConsole
+          host={{
+            game: () => gameRef.current,
+            hud,
+            sandbox: admin,
+            setSandbox: setAdmin,
+            admin: () => router.push(pathname.startsWith("/admin") ? "/" : "/admin"),
+            fps: showFps,
+            setFps: (on) => {
+              setShowFps(on);
+              saveShowFps(on);
+            },
+          }}
+        />
       </div>
     </div>
   );
