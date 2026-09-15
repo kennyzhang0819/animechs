@@ -42,9 +42,10 @@
     ".next-4300/types/**/*.ts",
     ".next-4511/types/**/*.ts",
     ".next-4633/types/**/*.ts",
+    ".next-4719/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-4719/types/**/*.ts"
+    ".next-3903/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

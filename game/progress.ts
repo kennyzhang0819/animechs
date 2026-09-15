@@ -125,13 +125,6 @@ export interface Progress {
    * means "written before the format was versioned".
    */
   saveVersion?: number;
-  /**
-   * The fast-forward multiplier the player last picked, kept so a run does
-   * not start at 1x every single time. A pace is a preference about how the
-   * player wants to spend their minutes, not a fact about the run. What the
-   * save is ALLOWED to run at is the track's business: see startingSpeed.
-   */
-  speed?: number;
   /** the HUD's top-left panel collapsed to its one-line wave counter */
   hudMinimized?: boolean;
   /**
@@ -254,19 +247,6 @@ function readClearedByMap(p: { clearedByMap?: unknown; cleared?: unknown }): Rec
   return out;
 }
 
-/**
- * Every pace a save might have stored. The list is SHORTER than it used to
- * be — 4x, 8x and 16x have come off the sandbox strip — and an old save
- * holding one of them reads back as "no stored pace" rather than as a
- * speed with no button to leave it by. startingSpeed would clamp it down
- * anyway; dropping it here means the next save written forgets it.
- */
-const ALL_SPEEDS: readonly number[] = [1, 2];
-
-function readSpeed(p: { speed?: unknown }): number | undefined {
-  const s = p.speed;
-  return typeof s === "number" && ALL_SPEEDS.includes(s) ? s : undefined;
-}
 
 /**
  * The UI sizes on offer, as --ui-scale multipliers. The panels were sized
@@ -323,7 +303,6 @@ export function loadProgress(): Progress {
     const loaded: Progress = {
       xp,
       clearedByMap,
-      speed: readSpeed(p),
       hudMinimized: p.hudMinimized === true,
       difficulty: readDifficulty(p),
       map: readMapPick(p),
@@ -421,12 +400,6 @@ const sameList = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((v, i) => v === b[i]);
 
 
-export function saveSpeed(mult: number): void {
-  const p = loadProgress();
-  if (p.speed === mult) return;
-  saveProgress({ ...p, speed: mult });
-}
-
 export function saveHudMinimized(min: boolean): void {
   const p = loadProgress();
   if ((p.hudMinimized ?? false) === min) return;
@@ -482,18 +455,6 @@ export function savePanSpeed(mult: number): void {
   saveProgress({ ...p, panSpeed: mult });
 }
 
-
-/**
- * The pace a run should open at: the save's remembered choice, if the
- * track allows it, else the fastest allowed pace at or under it.
- */
-export function startingSpeed(p: Progress, allowed: readonly number[]): number {
-  const want = p.speed ?? 1;
-  if (allowed.includes(want)) return want;
-  let best = 1;
-  for (const m of allowed) if (m <= want && m > best) best = m;
-  return best;
-}
 
 export function saveProgress(p: Progress): void {
   try {

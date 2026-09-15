@@ -24,6 +24,26 @@ import { loadWindowState, saveWindowState } from "./window-state";
  * through the bridge preload.ts puts on window.
  */
 
+/**
+ * A WAY IN, FOR DEVELOPMENT ONLY. The game is played in this window, not
+ * in a browser tab, which means the window is where a slow wave actually
+ * happens — and until now the only way to ask it anything was to open
+ * devtools by hand and type. This opens the same debugging channel
+ * devtools itself uses, so a tool outside the shell can evaluate against
+ * the live game (scripts/probe.mjs): arm the sim's phase clock, read it
+ * back, pull the frame's numbers, without touching the run.
+ *
+ * NEVER IN A PACKAGED BUILD. `isPackaged` gates it exactly as it gates the
+ * devtools menu item below, so what ships has no port on it. Chromium
+ * binds this to the loopback interface only, so even in development it is
+ * reachable from this machine and nowhere else.
+ *
+ * It must be set BEFORE the app is ready — a Chromium switch appended
+ * after the browser process has started is a switch that does nothing.
+ */
+const DEBUG_PORT = "9222";
+if (!app.isPackaged) app.commandLine.appendSwitch("remote-debugging-port", DEBUG_PORT);
+
 const BACKGROUND = "#0B0B0D"; // the game paints its own; no white flash at launch
 const MIN_WIDTH = 960;
 const MIN_HEIGHT = 600;

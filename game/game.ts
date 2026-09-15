@@ -169,8 +169,6 @@ export interface UiState {
   kills: number;
   /** the esc game menu is up: sim held, resume or abandon from the overlay */
   menuOpen: boolean;
-  /** simulation speed multiplier: one of SPEEDS */
-  speed: number;
   /**
    * FRAMES A SECOND, smoothed (Game.fpsEma) and rounded — what the corner
    * counter prints when the Video tab has asked for it. It rides the HUD
@@ -178,6 +176,21 @@ export interface UiState {
    * is as often as a number a human is reading wants to change anyway.
    */
   fps: number;
+  /**
+   * WHERE THAT FRAME WENT, in milliseconds, and how much world there was
+   * to spend them on — the three the dev readout prints beside the counter
+   * and the shipped build never shows (ADMIN_ENABLED, see game/env.ts).
+   *
+   * A counter on its own says a frame was slow and stops there. These say
+   * WHICH HALF was slow, which is the only question worth asking of it:
+   * `simMs` is the stepping, `drawMs` is the handover and the three draws
+   * after it, and `bodies` is the load both were carrying. They do not sum
+   * to the frame — the browser's own compositing is outside both — so a
+   * gap between their total and 1000/fps is real and is not ours.
+   */
+  simMs: number;
+  drawMs: number;
+  bodies: number;
   /** is the drop-zone and air-route overlay on? */
   showRoutes: boolean;
   /**
@@ -297,33 +310,19 @@ export interface UiState {
 export interface Stats {
   units: number;
   kills: number;
+  /** the frame's two halves — see UiState.simMs for what they do and do
+   *  not account for */
   simMs: number;
+  drawMs: number;
   fps: number;
   zoom: number;
 }
-
-/**
- * THE SPEEDS THE HUD TOGGLE OFFERS. 4x, 8x and 16x used to be here, as
- * sandbox tools for reaching a late wave without sitting through the early
- * ones — which is a thing the sandbox strip now does directly and exactly
- * (skipToWave), instead of approximately and at sixteen times the risk of
- * the sim drifting from what a real run does at 1x.
- */
-export const SPEEDS: readonly number[] = [1, 2];
 
 /** every turret's scrap price, read fresh so a dashboard edit shows at once */
 const PRICES = (): Record<TowerKind, number> =>
   Object.fromEntries(TOWER_KINDS.map((k) => [k, scrapPriceOf(k)])) as Record<TowerKind, number>;
 const REFUNDS = (): Record<TowerKind, number> =>
   Object.fromEntries(TOWER_KINDS.map((k) => [k, sellValue(k)])) as Record<TowerKind, number>;
-
-/**
- * The multipliers a save has BEFORE the track hands it any — just the
- * pace the game runs at. 2x is a level reward (track.ts), so what a
- * player gets is read off their save (TechState.speeds) rather than
- * written here; the sandbox lifts the gate and offers both.
- */
-export const BASE_SPEEDS: readonly number[] = [1];
 
 /**
  * The stages of starting a level, in order, as the loading screen reports
@@ -899,7 +898,6 @@ export class Game {
   // fast-forward: the sim runs this many fixed steps per rendered frame, so
   // a sped-up run steps exactly like a real-time one (stretching dt instead
   // would let units tunnel through walls and each other)
-  private speed = 1;
   // the campaign's tower unlocks and caps (see setTech); null in the editor
   private tech: TechState | null = null;
   /**
@@ -953,7 +951,20 @@ export class Game {
   private raf = 0;
   private last = 0;
   private fpsEma = 60;
+  /**
+   * THE FRAME'S TWO HALVES, smoothed — what the dev readout prints beside
+   * the counter (UiState.simMs, UiState.drawMs).
+   *
+   * They are per FRAME and not per step, which is the whole point of
+   * having them. The sim runs at a fixed sixty steps a second whatever the
+   * display is doing (see SIM_DT), so a frame that arrives late steps the
+   * sim twice and `simEma` shows that doubling where a per-step figure
+   * would hide it — and a pace of 2x doubles it again. A frame is only
+   * ever slow for one of these two reasons, and the counter alone cannot
+   * say which.
+   */
   private simEma = 0;
+  private drawEma = 0;
   private destroyed = false;
   // real time owed to the fixed-step sim (see frame) — carried between
   // frames so a 120Hz display steps the sim on every other frame instead
@@ -2043,10 +2054,6 @@ export class Game {
   }
 
 
-  /** fast-forward toggle: any multiplier in SPEEDS; anything else is 1x */
-  setSpeed(mult: number): void {
-    this.speed = SPEEDS.includes(mult) ? mult : 1;
-  }
 
   /** the Controls tab's pan speed: a multiplier on PAN_RATE, keys and edges alike */
   setPanSpeed(mult: number): void {
@@ -2140,8 +2147,10 @@ export class Game {
       buildFacing: this.buildFacing,
       held: this.heldCard,
       paused: this.paused,
-      speed: this.speed,
       fps: Math.round(this.fpsEma),
+      simMs: this.simEma,
+      drawMs: this.drawEma,
+      bodies: this.sim.n,
       showRoutes: this.showRoutes,
       lost: this.sim.lost(),
       coreHp: Math.ceil(this.sim.core.hp),
@@ -2388,11 +2397,33 @@ export class Game {
     this.view.read(packSnapshot(this.sim, this.snapshot), this.sim.n, this.sim.fxN);
   }
 
+  /**
+   * THE SIM'S PHASE CLOCK, on the debug handle (window.__animechs) so a
+   * slow wave can be taken apart where it actually happens rather than in
+   * a harness guessing at the same board:
+   *
+   *     __animechs.profile(true)      // play through the slow part
+   *     console.table(__animechs.profileRead())
+   *
+   * Off by default and free while off (Sim.mark). `profileRead` is the one
+   * thing here that answers back, which is why it is NOT on SimHost: the
+   * day the sim steps on a worker this has to ride the snapshot across
+   * like everything else, and putting it on the command seam now would be
+   * writing a method that cannot survive the move.
+   */
+  profile(on: boolean): void {
+    this.sim.profile(on);
+  }
+  profileRead(): { name: string; ms: number }[] {
+    return this.sim.profileRead();
+  }
+
   stats(): Stats {
     return {
       units: this.sim.n,
       kills: this.sim.kills,
       simMs: this.simEma,
+      drawMs: this.drawEma,
       fps: Math.round(this.fpsEma),
       zoom: this.zoom,
     };
@@ -2534,7 +2565,7 @@ export class Game {
       this.simAcc += dt;
       for (let s = 0; this.simAcc >= SIM_DT && s < SIM_STEPS_MAX; s++) {
         this.simAcc -= SIM_DT;
-        for (let i = 0; i < this.speed; i++) this.host.step(SIM_DT);
+        this.host.step(SIM_DT);
       }
       // time the step cap refused is forfeit, not owed (see SIM_STEPS_MAX)
       if (this.simAcc >= SIM_DT) this.simAcc = 0;
@@ -2544,6 +2575,13 @@ export class Game {
       this.simAcc = 0;
     }
     const simMs = performance.now() - t0;
+
+    // ...and the other half starts HERE, at the handover rather than at the
+    // first pixel. publish() is the seam's own cost and it is paid on this
+    // thread, which is the only thing the readout is measuring: where the
+    // time of the thread that draws actually goes. The day the sim steps
+    // elsewhere this cost goes with it.
+    const t1 = performance.now();
 
     // THE FRAME'S WORLD, HANDED OVER. Between here and the draw below there
     // is nothing of the sim left in the picture — only what publish() put
@@ -2568,6 +2606,7 @@ export class Game {
     if (this.diagZooms.length) this.diagScan();
     this.drawOverlay(this.view);
     this.drawMinimap(this.view);
+    const drawMs = performance.now() - t1;
 
     // THE COUNTER READS THE FRAME. It used to measure off `dt`, which is
     // capped at 0.05s for the sim's sake — so the lowest number the corner
@@ -2579,6 +2618,7 @@ export class Game {
     if (raw <= FPS_BLIND)
       this.fpsEma += (1 / raw - this.fpsEma) * (1 - Math.exp(-raw / FPS_TAU));
     this.simEma += (simMs - this.simEma) * 0.1;
+    this.drawEma += (drawMs - this.drawEma) * 0.1;
     this.raf = requestAnimationFrame(this.frame);
   };
 

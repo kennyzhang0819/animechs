@@ -75,8 +75,13 @@ const server = spawn(npx, ["next", "start", "--port", port], {
   shell: win,
   env,
 });
+// THE DEBUGGING PORT, on the command line as well as in the shell's own
+// main (desktop/src/main.ts). Chromium reads it straight off argv, which
+// does not depend on when a switch was appended relative to app startup —
+// and a diagnostic that works only sometimes is worse than none. Both are
+// gated on an unpackaged shell, so nothing here reaches a shipped build.
 const shell = withShell
-  ? spawn(npm, ["run", "dev", "--", `--dev-url=http://localhost:${port}`], {
+  ? spawn(npm, ["run", "dev", "--", `--dev-url=http://localhost:${port}`, "--remote-debugging-port=9222"], {
       cwd: desktop,
       stdio: "inherit",
       shell: win,

@@ -2974,11 +2974,82 @@ export class Sim {
   }
 
 
+  /**
+   * WHERE THE STEP'S TIME GOES, phase by phase.
+   *
+   * WHY THIS EXISTS. The frames check times the step as one number against
+   * a board IT builds, and a board it builds is a guess at the board a
+   * player plays. When the two disagree — and they have — a single number
+   * cannot say which pass is responsible, so the only honest next move is
+   * to measure the step in the game rather than in the harness.
+   *
+   * FREE WHEN OFF, which is what lets it live in the shipping path rather
+   * than in a branch that rots. `mark` returns on a boolean before it
+   * reads a clock, and every call site passes a string LITERAL, so nothing
+   * is allocated and nothing is computed until someone asks. Switched on
+   * it costs one performance.now() per phase — about a microsecond a step,
+   * against the tens of milliseconds it is there to explain.
+   *
+   * THE NAMES BUILD THEMSELVES from the call sites, in the order they run,
+   * so a phase added to update() shows up here without a table anyone has
+   * to remember to update. A table beside the code is a table that rots.
+   */
+  private profOn = false;
+  private profAt = 0;
+  private profI = 0;
+  private profSteps = 0;
+  private readonly profNames: string[] = [];
+  private readonly profTotal: number[] = [];
+
+  /** close the phase that just ran, open the next */
+  private mark(name: string): void {
+    if (!this.profOn) return;
+    const t = performance.now();
+    const i = this.profI++;
+    if (this.profNames.length <= i) {
+      this.profNames.push(name);
+      this.profTotal.push(0);
+    }
+    this.profTotal[i] += t - this.profAt;
+    this.profAt = t;
+  }
+
+  /**
+   * Start or stop the phase clock. STARTING clears the tally; stopping
+   * KEEPS it, so a run can be ended and then read — the other way round
+   * throws away the measurement at the moment you ask for it, which is a
+   * trap rather than an API.
+   */
+  profile(on: boolean): void {
+    if (on) {
+      this.profSteps = 0;
+      this.profTotal.fill(0);
+    }
+    this.profOn = on;
+  }
+
+  /**
+   * The phases, dearest first, in milliseconds PER STEP — which is the
+   * figure that has to fit in 16.7ms, and not the per-frame one the HUD
+   * prints (a slow frame runs the step more than once; see Game.simMs).
+   */
+  profileRead(): { name: string; ms: number }[] {
+    const n = Math.max(1, this.profSteps);
+    return this.profNames
+      .map((name, i) => ({ name, ms: this.profTotal[i] / n }))
+      .sort((a, b) => b.ms - a.ms);
+  }
+
   update(dt: number): void {
     // Mindustry Time.time: seconds of SIMULATED time, so animations driven
     // by it (the shield hatch) speed up with the game speed and hold still
     // while the sim is paused
     this.time += dt;
+    if (this.profOn) {
+      this.profSteps++;
+      this.profI = 0;
+      this.profAt = performance.now();
+    }
     this.runScript(dt);
     // a structure went up on, or came down off, open ground: shove anything
     // standing in its cells clear now, and re-solve the routes when the
@@ -2988,61 +3059,82 @@ export class Sim {
       this.unstickUnits();
     }
     this.solveDirtyFields(dt);
+    this.mark("script+field");
 
     this.updateAliveBounds();
+    this.mark("bounds");
     this.buildHash();
+    this.mark("hash");
     this.updatePhysics();
+    this.mark("physics");
     this.updateUnits(dt);
+    this.mark("units");
     this.updateAbilities(dt);
+    this.mark("abilities");
     // ...and the ORDER over the tier fives' escorts (Leadership), on its
     // own beat. After the abilities and before anything shoots, so a body
     // that walked into the circle this tick is covered for the volley
     // that lands this tick
     this.updateLeadership(dt);
+    this.mark("leadership");
     this.updateStatus(dt);
+    this.mark("status");
     // the hungry eat AFTER the status pass and before the towers fire, so a
     // unit that burned to death this tick is already gone rather than being
     // swallowed as a corpse — and so a meal's health is on the eater before
     // anything shoots at it
     this.feedHungry(dt);
+    this.mark("hungry");
     // ...and the squeezed fold, on the same footing: a body that died this
     // tick is gone rather than folded, and a fold's pooled health is on
     // the survivor before anything shoots at it
     this.mergeSqueezed(dt);
+    this.mark("squeeze");
     // the waders gain AFTER the status pass for the same reason: a body
     // that burned to death this tick is already gone, and a stack taken
     // this tick is on the unit before anything shoots at it
     this.updateAmphibious(dt);
+    this.mark("amphibious");
     // ShieldComp: shieldAlpha fades out over 15 ticks once nothing refreshes it
     for (let i = 0; i < this.n; i++)
       if (this.ushieldAlpha[i] > 0) this.ushieldAlpha[i] = Math.max(0, this.ushieldAlpha[i] - dt * (60 / 15));
+    this.mark("shieldFade");
     // shieldTowers run before the towers so a dome that regenerated this tick
     // absorbs the volley fired this tick, never one late
     this.updateShieldTowers(dt);
+    this.mark("domes");
     this.fireTowers(dt);
+    this.mark("towers");
     this.updateProjectiles(dt);
+    this.mark("projectiles");
     this.updateUnitWeapons(dt);
+    this.mark("unitGuns");
     // THE HOOKS, after the targets are picked and before the shots move:
     // a starfish spends its winch on the target updateUnitWeapons just
     // handed it, or on the ground ahead when there is none
     if (HAS_GRAPPLE) this.updateGrapples(dt);
+    this.mark("grapples");
     this.updateEnemyShots(dt);
+    this.mark("enemyShots");
     // CASCADE CHARGES (relics.ts): the heavy hulls that fell this tick,
     // going off — after every pass that can kill, so nothing is halfway
     // through a removal when a blast reaps its own dead (drainCascades)
     if (this.cascadeOn) this.drainCascades();
+    this.mark("cascades");
     // RECONSTRUCTION (mutation.ts): the corpses standing back up, at the
     // very end of the tick — a body raised here starts walking on the NEXT
     // one, with a fresh hash and a fresh set of alive bounds under it,
     // rather than appearing halfway through passes that have already
     // decided what is on the field
     this.updateCorpses(dt);
+    this.mark("corpses");
 
     const { fxAge, fxTtl } = this;
     for (let e = this.fxN - 1; e >= 0; e--) {
       fxAge[e] += dt;
       if (fxAge[e] >= fxTtl[e]) this.removeFx(e);
     }
+    this.mark("fx");
   }
 
   // ---------- level script ----------

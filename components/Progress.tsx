@@ -76,7 +76,6 @@ type TabId = (typeof TABS)[number]["id"];
  *  wears its RARITY (rarityOf below) rather than one flat orange */
 const REWARD_COLOR: Record<Reward["kind"], string> = {
   world: "#7BE58A",
-  speed: "#7FC4FF",
   turret: "#FF9A62",
   // a mutator wears the codex's pink here, not its own weight band: the
   // question a row answers is "what kind of thing is this handing me",
@@ -139,8 +138,6 @@ function TurretFace({ kind }: { kind: TowerKind }) {
 
 function RewardFace({ reward }: { reward: Reward }) {
   if (reward.kind === "world") return <MapThumb mapId={worldMapId(reward.worldId)} />;
-  if (reward.kind === "speed")
-    return <span className="font-display text-[13px] font-bold leading-none">{reward.mult}x</span>;
   if (reward.kind === "mutator") return <MutationFace id={reward.id} size="h-6 w-6" />;
   // a module has no sprite — it is not a building — so it wears the same
   // small geometry the shelf and the reveal draw it as (Relics.tsx), and

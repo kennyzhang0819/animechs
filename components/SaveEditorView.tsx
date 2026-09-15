@@ -33,7 +33,6 @@ import {
   relicsAt,
   rewardsAt,
   rewardText,
-  speedsAt,
   turretsAt,
   worldUnlockLevel,
 } from "@/game/track";
@@ -300,12 +299,6 @@ export default function SaveEditorView() {
               have={WORLDS.filter((w) => worldUnlockLevel(w.id) <= plays).length}
               all={WORLDS.length}
             />
-            <div className="flex items-baseline justify-between gap-3 border-t border-[#2E2E36] py-1.5">
-              <span className="text-[#A6A6AF]">Paces</span>
-              <span className="font-mono tabular-nums text-[#EDEDEF]">
-                {speedsAt(plays).map((s) => `${s}x`).join(" · ")}
-              </span>
-            </div>
           </div>
 
           <div className="mt-4 sm:mt-0">

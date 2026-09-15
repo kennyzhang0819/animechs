@@ -158,7 +158,6 @@ export const MAX_LEVEL = 30;
  */
 export type Reward =
   | { kind: "world"; worldId: string }
-  | { kind: "speed"; mult: number }
   | { kind: "turret"; id: TowerKind }
   | { kind: "mod"; id: ModId }
   | { kind: "relic"; id: RelicId }
@@ -495,7 +494,6 @@ const REWARD_ORDER: readonly Reward["kind"][] = [
   "relic",
   "upgrade",
   "mutator",
-  "speed",
   "world",
 ];
 
@@ -563,14 +561,6 @@ export function worldUnlockLevel(worldId: string): number {
   return 1;
 }
 
-/** the fast-forward paces a level has switched on, ascending, 1x included */
-export function speedsAt(level: number): number[] {
-  const out = [1];
-  for (const p of PLACED)
-    if (p.reward.kind === "speed" && p.level <= level) out.push(p.reward.mult);
-  return out.sort((a, b) => a - b);
-}
-
 /** the turrets a level has on the roster: the starting four and every one dealt so far */
 export function turretsAt(level: number): Set<TowerKind> {
   const out = new Set<TowerKind>();
@@ -603,7 +593,6 @@ export function nextRewardLevel(level: number): number | null {
 /** a reward in the player's own words */
 export function rewardText(r: Reward): string {
   if (r.kind === "world") return `Map: ${WORLDS.find((w) => w.id === r.worldId)?.name ?? "Unknown"}`;
-  if (r.kind === "speed") return `${r.mult}x speed`;
   if (r.kind === "turret") return `Turret: ${TOWERS[r.id].name}`;
   if (r.kind === "mod") return `Mod: ${modName(modDef(r.id))}`;
   if (r.kind === "relic") return `Relic: ${relicDef(r.id).name}`;
@@ -615,7 +604,6 @@ export function rewardText(r: Reward): string {
 /** ...and what it does, for the hover card */
 export function rewardBlurb(r: Reward): string {
   if (r.kind === "world") return "A map the campaign can be deployed on.";
-  if (r.kind === "speed") return `Fast-forward: a run may be played at ${r.mult}x pace from the strip under the wave panel.`;
   if (r.kind === "turret") return TOWER_DESC[r.id];
   if (r.kind === "mod") return modDef(r.id).blurb;
   if (r.kind === "relic") return relicDef(r.id).blurb;
@@ -755,7 +743,6 @@ export function unlocksOf(kind: UnlockKind): UnlockEntry[] {
 export function techStateFor(level: number): TechState {
   return {
     unlocked: turretsAt(level),
-    speeds: speedsAt(level),
     mods: modsAt(level),
     relics: relicsAt(level),
     upgrades: upgradesAt(level),

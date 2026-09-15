@@ -18,7 +18,6 @@ import {
   Game,
   LOAD_STEP_LABEL,
   LOAD_STEPS,
-  SPEEDS,
   type BootStep,
   type LoadStep,
   type UiState,
@@ -92,8 +91,6 @@ import {
   UI_SCALE_DEFAULT,
   UI_SCALES,
   saveRunPick,
-  saveSpeed,
-  startingSpeed,
   techOf,
   worldLock,
   GAME_MODE_DEFAULT,
@@ -1781,12 +1778,12 @@ export default function Animechs() {
   // the selector draws map previews, so the documents load with the menu —
   // Game.create re-fetches later, keeping in-game state just as fresh
   const [mapsReady, setMapsReady] = useState(false);
-  // SANDBOX MODE, hidden until Ctrl+Shift+S on any run: widens the pace
-  // strip to every SPEEDS multiplier AND lifts the stage gate and the
-  // price of every placement (Game.setTech(null)), so a run can be staged
-  // for filming. Leaving it drops back to whatever the save allows — a
-  // sandbox-only pace steps down to the fastest speed the save owns (see
-  // the effect below)
+  // SANDBOX MODE, hidden until Ctrl+Shift+S on any run: lifts the stage
+  // gate and the price of every placement (Game.setTech(null)) and opens
+  // the wave jump, so a run can be staged for filming. Leaving it drops
+  // back to whatever the save allows (see the effect below).
+  // It used to widen a pace strip as well; there is no pace to widen any
+  // more — see the jump's own note for why the multipliers went.
   const [admin, setAdmin] = useState(false);
   /** what is typed into the sandbox's wave field, as typed — a string so
    *  the field can be EMPTY, which "0" is not: a number state would put a
@@ -2072,13 +2069,6 @@ export default function Animechs() {
     // never empties. Leaving hands the player's own scrap back, so the
     // turrets, mods and relics bought in there come out with the run
     g.setRich(admin);
-    // dropping out of sandbox drops a sandbox-only pace with it, or the run
-    // keeps running at a speed whose button is no longer on screen. What the
-    // save allows is the utilities path rather than a constant, so it falls
-    // back the same way a fresh run starts: the remembered pace, stepped
-    // down to the fastest one this save actually owns
-    if (!admin && !tech.speeds.includes(g.ui().speed))
-      g.setSpeed(startingSpeed(loadProgress(), tech.speeds));
     setHud(g.ui());
   }, [admin, level?.tier]);
 
@@ -2198,9 +2188,6 @@ export default function Animechs() {
         // from state: this runs once at create, and a run started right
         // after a toggle must not come up with last render's value
         g.setEffects(save.effects ?? true);
-        // the pace carries across runs and across sessions — a player who
-        // plays at 2x wants 2x again after a loss, not 1x and a click
-        g.setSpeed(startingSpeed(save, admin ? SPEEDS : techOf(save).speeds));
         // the controls, off the save for the same reason as the effects
         g.setPanSpeed(save.panSpeed ?? PAN_SPEED_DEFAULT);
         g.setHealthBars(save.allyBars ?? HEALTH_BARS_DEFAULT, save.enemyBars ?? HEALTH_BARS_DEFAULT);
@@ -2298,6 +2285,23 @@ export default function Animechs() {
       alive = false;
       clearInterval(poll);
       for (const t of timers) clearTimeout(t);
+      /**
+       * THE LAST MEASUREMENT OUTLIVES THE RUN, and is taken BEFORE the
+       * teardown below — a destroyed Game is not a Game to ask questions
+       * of. A run that was being profiled ends exactly when the numbers
+       * matter most: the wave was hard, the core fell, and the handle
+       * carrying the tally goes with it. Losing the reading at the moment
+       * it is asked for is the same trap as a profiler that wipes itself
+       * when you stop it, and it has already cost a real measurement once.
+       */
+      if (game) {
+        const phases = game.profileRead();
+        if (phases.some((p) => p.ms > 0))
+          (window as unknown as Record<string, unknown>).__animechsLastProfile = {
+            stats: game.stats(),
+            phases,
+          };
+      }
       game?.destroy();
       gameRef.current = null;
       setHud(null);
@@ -2385,12 +2389,8 @@ export default function Animechs() {
     return () => window.removeEventListener("keydown", onKey);
   }, [screen]);
 
-  const togglePause = (): void => {
-    const g = gameRef.current;
-    if (!g) return;
-    g.togglePause();
-    setHud(g.ui());
-  };
+  // (the pause BUTTON is gone with the pace strip; space is handled in
+  //  Game's own key handler, and the menu holds the sim when it opens)
 
   /**
    * THE PAUSE OVERLAY ALWAYS RE-OPENS ON ITS MENU, never on the settings a
@@ -3251,79 +3251,35 @@ export default function Animechs() {
                 corner that holds what is true of the run for good. */}
             <RelicShelf relics={hud.shelfRelics} mods={hud.shelfMods} />
             {admin && !hud.lost && !hud.won && !hud.menuOpen && (
-              /* THE SANDBOX'S OWN CONTROLS, and nothing else on the field
-                 has them. A campaign run plays at 1x — the multipliers have
-                 always been admin-only — and the pause button beside them
-                 was the whole strip for everyone else: one button, sitting
-                 over the field for a whole run, for a thing SPACE does and
-                 the gear in the other corner does (the menu holds the sim
-                 the moment it opens, and it is on screen for a touch that
-                 has no space bar). A control that duplicates two others
-                 earns its corner from nobody.
-                 They live directly under the wave panel so the whole run
-                 reads off one corner — and self-start keeps each strip its
-                 own width rather than the stack's. */
-              <>
-              <div
-                role="group"
-                aria-label="speed controls"
-                className="ms-seg self-start"
-              >
-                <button
-                  title={hud.paused ? "Resume (space)" : "Pause (space)"}
-                  aria-label={hud.paused ? "Resume" : "Pause"}
-                  aria-pressed={hud.paused}
-                  onClick={() => {
-                    const g = gameRef.current;
-                    if (!g) return;
-                    g.togglePause();
-                    setHud(g.ui());
-                  }}
-                  className="ms-btn px-3 py-1.5"
-                >
-                  <svg viewBox="0 0 12 12" className="h-4 w-4 fill-current" aria-hidden="true">
-                    {hud.paused ? (
-                      <path d="M2.5 1.5v9l8-4.5z" />
-                    ) : (
-                      <path d="M2 1.5h3v9H2zM7 1.5h3v9H7z" />
-                    )}
-                  </svg>
-                </button>
-                {SPEEDS.map((mult) => (
-                  <button
-                    key={mult}
-                    title={`${mult}x speed`}
-                    aria-pressed={hud.speed === mult}
-                    onClick={() => {
-                      const g = gameRef.current;
-                      if (!g) return;
-                      g.setSpeed(mult);
-                      saveSpeed(mult);
-                      setHud(g.ui());
-                    }}
-                    className="ms-btn px-3 py-1.5 text-[15px]"
-                  >
-                    {mult}x
-                  </button>
-                ))}
-              </div>
-              {/* THE JUMP. What 4x, 8x and 16x were actually for was
-                  getting to wave forty to look at wave forty, and running
-                  the first thirty-nine at speed is a slow, approximate way
-                  of doing that: the fight still has to be survived, and a
-                  sim stepped sixteen times a frame is not the sim a real
-                  run plays. This asks for the wave directly.
-                  A FORM rather than a button beside a field, so ENTER out
-                  of the box does the thing the box is for — and the button
-                  says where it is going rather than "Go", because the
-                  number is typed above the field's own placeholder and the
-                  two must not be read as one sentence.
-                  AND IT IS GONE ON THE LAST WAVE, where there is nothing in
-                  front of the run to jump to. A survive mission brings it
-                  back by itself: its script loops and totalWaves grows
-                  (Sim.loadStep), so the last wave stops being the last
-                  one. */}
-              {hud.currentWave < hud.totalWaves && (
+              /* THE SANDBOX'S ONE CONTROL: the wave jump.
+                 THE PACE STRIP IS GONE, and with it every multiplier. A
+                 fast-forward is a promise the sim cannot keep on the waves
+                 anyone wanted it for — at 2x a step has to fit in half a
+                 frame, which above a couple of thousand bodies it does
+                 not, so SIM_STEPS_MAX starts discarding owed time and the
+                 run plays SLOWER than 1x while drawing at twenty frames.
+                 It said nothing while doing it, which cost a day of
+                 chasing a 50ms step that was only ever the multiplier.
+                 The pause button went with the strip: space does it, and
+                 so does the gear (the menu holds the sim the moment it
+                 opens) — it was a third way to do a thing with two.
+                 WHAT THE MULTIPLIERS WERE FOR was reaching wave forty to
+                 look at wave forty, and running the first thirty-nine at
+                 speed is a slow, approximate way of doing that: the fight
+                 still has to be survived, and a sim stepped several times
+                 a frame is not the sim a real run plays. This asks for the
+                 wave directly.
+                 A FORM rather than a button beside a field, so ENTER out
+                 of the box does the thing the box is for — and the button
+                 says where it is going rather than "Go", because the
+                 number is typed above the field's own placeholder and the
+                 two must not be read as one sentence.
+                 AND IT IS GONE ON THE LAST WAVE, where there is nothing in
+                 front of the run to jump to. A survive mission brings it
+                 back by itself: its script loops and totalWaves grows
+                 (Sim.loadStep), so the last wave stops being the last
+                 one. */
+              hud.currentWave < hud.totalWaves && (
               <form
                 aria-label="skip to wave"
                 onSubmit={(e) => {
@@ -3377,8 +3333,7 @@ export default function Animechs() {
                   Skip
                 </button>
               </form>
-              )}
-              </>
+              )
             )}
           </div>
         )}
@@ -3407,6 +3362,22 @@ export default function Animechs() {
                 className="pointer-events-none select-none text-[15px] font-bold uppercase tracking-widest tabular-nums text-[#A1A1AA] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]"
               >
                 {`${hud.fps} FPS`}
+                {/* WHERE THE FRAME WENT, on the dev loop only. A player who
+                    turns the counter on wants a number, not a profile, and
+                    ADMIN_ENABLED is already the one switch that decides what
+                    a shipped build has in it (game/env.ts) — so this folds
+                    away in the static export exactly as the editors do.
+                    SIM AND DRAW, not a total: the two are what compete for
+                    this thread today, and reading them apart is the whole
+                    point (a sim at 19ms and a draw at 5ms is a different
+                    problem from the reverse, and the counter cannot tell
+                    them apart). The body count rides along because neither
+                    number means anything without the load behind it. */}
+                {ADMIN_ENABLED && (
+                  <span className="ms-2 font-normal normal-case tracking-normal text-[#71717A]">
+                    {`sim ${hud.simMs.toFixed(1)} · draw ${hud.drawMs.toFixed(1)} · ${hud.bodies}`}
+                  </span>
+                )}
               </div>
             )}
             {!hud.lost && !hud.won && !hud.menuOpen && (
@@ -3739,30 +3710,9 @@ export default function Animechs() {
         {hud?.menuOpen && !hud.lost && !hud.won && !pauseSettings && (
           <div className="ms-screen absolute inset-0 flex items-center justify-center">
             <div className="ui-zoom ms-pane flex max-h-[calc(100vh-2rem)] w-[30rem] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 overflow-y-auto p-6">
-              {/* the sandbox door is Ctrl+Shift+S on any run; the row
-                  below says when it is open, and is also what closes it */}
               <h2 className="ms-strip -mx-6 -mt-6 mb-1 self-stretch font-display text-lg font-bold uppercase text-[#FFD37F]">
                 Paused
               </h2>
-              {admin && (
-                <div className="ms-pane flex w-full max-w-[20rem] items-center justify-between gap-3 border-[#6b4f8a] px-3 py-2">
-                  <div className="min-w-0">
-                    <div className="text-[15px] font-bold uppercase tracking-widest text-[#C9A7FF]">
-                      Sandbox
-                    </div>
-                    <div className="text-[14px] text-[#71717C]">
-                      Every turret and pace — this run only
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setAdmin(false)}
-                    className="ms-btn ms-btn-tint shrink-0 px-3 py-1.5 text-[15px]"
-                    style={{ "--ms-tint": "#c9a7ff" } as CSSProperties}
-                  >
-                    Off
-                  </button>
-                </div>
-              )}
               {/* THE MENU. Settings is one press deep and opens as its own
                   screen over the field (above); the press back out is the
                   corner back button, where every other screen keeps it */}

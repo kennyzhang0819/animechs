@@ -17,8 +17,6 @@ import { FIELDED_KINDS, type TowerKind } from "./types";
 export interface TechState {
   /** the turrets the save owns — what the track has dealt so far */
   unlocked: ReadonlySet<TowerKind>;
-  /** the fast-forward paces switched on, ascending, 1x included */
-  speeds: readonly number[];
   /** the MODS the M button may roll (mods.ts), dealt by the track exactly
    *  as the turrets are */
   mods: ReadonlySet<ModId>;
