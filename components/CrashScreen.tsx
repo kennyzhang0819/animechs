@@ -1,14 +1,22 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BUILD } from "@/game/version";
 
 /**
  * THE ERROR SCREEN — where every failure in the app ends up.
  *
- * It says one thing and offers two buttons. No stack, no explanation, no
- * copy about what the machine was doing: a player who crashes wants back
- * into the game, and everything a developer needs is in the console.
+ * It says one thing, offers two buttons, and CARRIES THE FAULT ITSELF.
+ *
+ * It used to show the code and nothing else, on the grounds that a player
+ * who crashes wants back into the game and a developer has the console.
+ * That is true right up to the moment the crash happens to somebody who is
+ * not sitting in front of devtools — which is every crash worth hearing
+ * about — and then the only thing that comes back is seven characters. So
+ * the one-line reason is always on screen and the STACK is one click
+ * behind it, with a button that copies the lot for a bug report. The
+ * console still gets the unscrubbed object, which is the better thing to
+ * have when devtools IS open.
  *
  * Nothing here may name the toolkit the page was built with. It is also
  * deliberately SELF-CONTAINED — its own <style>, its own font stack, no
@@ -52,6 +60,23 @@ export default function CrashScreen({
   onRetry?: () => void;
 }): React.JSX.Element {
   const code = useMemo(() => faultCode(error ?? kind, digest), [error, kind, digest]);
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  /** the fault as text: the reason on one line, then the stack under it */
+  const detail = useMemo(() => {
+    if (kind !== "fault" || error === undefined) return null;
+    const head =
+      error instanceof Error
+        ? `${error.name}: ${error.message}`
+        : typeof error === "string"
+          ? error
+          : safeString(error);
+    const stack = error instanceof Error ? (error.stack ?? "") : "";
+    // a browser stack usually repeats the head line; do not print it twice
+    const body = stack.startsWith(head) ? stack.slice(head.length).replace(/^\n/, "") : stack;
+    return { head, body };
+  }, [error, kind]);
 
   // the whole of it goes to the console, unscrubbed — that is where a
   // developer looks, and it is not a surface the player reads
@@ -83,9 +108,35 @@ export default function CrashScreen({
             MAIN MENU
           </button>
         </div>
+        {detail ? <p className="cs-reason">{detail.head}</p> : null}
         <div className="cs-meta">
           {code} · build {BUILD}
         </div>
+        {detail ? (
+          <div className="cs-diag">
+            <div className="cs-acts">
+              <button type="button" className="cs-btn cs-btn-small" onClick={() => setOpen((v) => !v)}>
+                {open ? "HIDE TRACE" : "SHOW TRACE"}
+              </button>
+              <button
+                type="button"
+                className="cs-btn cs-btn-small"
+                onClick={() => {
+                  const text = `[${code}] build ${BUILD}\n${detail.head}\n${detail.body}`;
+                  // clipboard access can be refused (insecure origin, a
+                  // permission policy); the trace is selectable either way
+                  void navigator.clipboard?.writeText(text).then(
+                    () => setCopied(true),
+                    () => setCopied(false),
+                  );
+                }}
+              >
+                {copied ? "COPIED" : "COPY"}
+              </button>
+            </div>
+            {open ? <pre className="cs-trace">{detail.body || "(no stack)"}</pre> : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -118,4 +169,28 @@ const CSS = `
 .cs-btn-accent:hover{background:rgba(255,211,127,.14);}
 .cs-meta{color:#5A5A63;font-size:11px;letter-spacing:.14em;
   font-family:var(--font-mono),ui-monospace,monospace;user-select:text;cursor:text;}
+.cs-reason{margin:0;max-width:min(78ch,86vw);color:#E4645A;font-size:13px;line-height:1.45;
+  font-family:var(--font-mono),ui-monospace,monospace;user-select:text;cursor:text;
+  overflow-wrap:anywhere;}
+.cs-diag{display:flex;flex-direction:column;align-items:center;gap:.75rem;width:100%;}
+.cs-btn-small{padding:.35rem .9rem;font-size:11px;}
+.cs-trace{margin:0;max-width:min(96ch,86vw);max-height:38vh;overflow:auto;text-align:left;
+  padding:.75rem .9rem;border:3px solid #454545;background:#000;color:#9A9AA6;font-size:11px;
+  line-height:1.5;font-family:var(--font-mono),ui-monospace,monospace;white-space:pre-wrap;
+  overflow-wrap:anywhere;user-select:text;cursor:text;}
 `;
+
+/** a non-Error thrown value as text, without letting the stringify itself
+ *  throw — a circular object or a hostile toString must not take out the
+ *  screen that is reporting the last crash */
+function safeString(v: unknown): string {
+  try {
+    return JSON.stringify(v) ?? String(v);
+  } catch {
+    try {
+      return String(v);
+    } catch {
+      return "unprintable value";
+    }
+  }
+}
