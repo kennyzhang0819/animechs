@@ -38,6 +38,12 @@ async function gameTarget() {
         `is opened by the shell, and only when it is not packaged.`,
     );
   }
+  // THE PAGE, NOT THE SIM'S WORKER. Once the world steps on its own thread
+  // (game/sim.worker.ts) the sim itself is out of this reach: the worker
+  // target Chromium lists answers no Runtime.evaluate over this port
+  // (tried, both directly and attached through the page's session). What
+  // the page publishes — window.__animechs.world — is what can be asked;
+  // devtools' own worker scope reaches `__sim` for the rest
   const pages = list.filter((t) => t.type === "page" && t.webSocketDebuggerUrl);
   if (!pages.length) throw new Error("the shell is up but has no page open yet — give it a moment");
   // the game is the one that is not devtools

@@ -9,6 +9,8 @@ import {
   H as H_IMPORT,
 } from "./constants";
 import { STRUCTURE_COST } from "./weapons";
+import * as shared from "./shared";
+import type { FieldPort, FieldReply, FieldRequest } from "./fieldport";
 
 // Module-local bindings for the constants blockedPx/hitsWall/sample read:
 // an imported binding is a getter call under CommonJS interop (dev server,
@@ -110,7 +112,9 @@ export class FlowField {
   readonly soft = new Uint8Array(NCELLS);
   /** walk and not soft — what the path solver treats as rock */
   private readonly solid = new Uint8Array(NCELLS);
-  readonly isGoal = new Uint8Array(NCELLS);
+  /** on shared memory: a placement reads it from the drawing side (board.ts
+   *  BoardGrids), which may be the other thread */
+  readonly isGoal = shared.u8(NCELLS);
   /**
    * THE PUBLISHED FIELD — the distance, the heading and the room, as
    * everything outside this class reads them. Not readonly, because a
@@ -120,9 +124,9 @@ export class FlowField {
    * serving the LAST one, whole and self-consistent, for as long as the
    * new one takes — nothing ever reads a half-solved heading.
    */
-  dist = new Float32Array(NCELLS);
-  dirX = new Float32Array(NCELLS);
-  dirY = new Float32Array(NCELLS);
+  dist: Float32Array = new Float32Array(NCELLS);
+  dirX: Float32Array = new Float32Array(NCELLS);
+  dirY: Float32Array = new Float32Array(NCELLS);
   /**
    * Cells of this layer's spawn mask that are passable AND connected to one
    * of its goals — where a unit of this layer may actually be dropped. A
@@ -196,15 +200,15 @@ export class FlowField {
    * reads it to decide how much room a crowd has to fan out into — no room
    * means a 1-wide slot, where spreading is not on offer
    */
-  clear = new Float32Array(NCELLS);
+  clear: Float32Array = new Float32Array(NCELLS);
 
   // THE WORK BUFFERS: where a solve builds the next field. Swapped with
   // the published ones the instant it finishes (publish), never read from
   // outside
-  private wDist = new Float32Array(NCELLS);
-  private wDirX = new Float32Array(NCELLS);
-  private wDirY = new Float32Array(NCELLS);
-  private wClear = new Float32Array(NCELLS);
+  private wDist: Float32Array = new Float32Array(NCELLS);
+  private wDirX: Float32Array = new Float32Array(NCELLS);
+  private wDirY: Float32Array = new Float32Array(NCELLS);
+  private wClear: Float32Array = new Float32Array(NCELLS);
   private wSpawn: number[] = [];
   /**
    * WHERE THE SOLVE HAS GOT TO. A solve is a run of raster passes, a
@@ -660,14 +664,85 @@ export class FlowField {
     this.step = Step.ClearFwd;
   }
 
-  /** a solve is under way and has not published yet */
+  /** a solve is under way and has not published yet — in slices here, or
+   *  on the field worker (remoteId) */
   get solving(): boolean {
-    return this.step !== Step.Idle;
+    return this.step !== Step.Idle || this.remoteId !== 0;
   }
 
-  /** throw away a solve in flight — the board it was solving has moved on */
+  /** throw away a solve in flight — the board it was solving has moved on.
+   *  A reply still to come from the worker is then ignored (adopt) */
   abort(): void {
     this.step = Step.Idle;
+    this.remoteId = 0;
+  }
+
+  // ---------- the solve on another thread (fieldport.ts) ----------
+
+  /** the request the field worker is answering, or 0 when none */
+  private remoteId = 0;
+
+  /** ask the field worker for this field's solve; the answer lands in adopt */
+  requestRemote(port: FieldPort): void {
+    this.remoteId = port.request(this);
+  }
+
+  /** the masks as they stand, COPIED, for a solve over exactly this board */
+  masks(id: number): FieldRequest {
+    return {
+      id,
+      walk: this.walk.slice(),
+      soft: this.soft.slice(),
+      // slice() lands on ordinary memory even from a shared array — the
+      // copy is what makes the solve a snapshot rather than a race
+      isGoal: this.isGoal.slice(),
+      spawn: this.spawnMask ? this.spawnMask.slice() : null,
+    };
+  }
+
+  /**
+   * THE FINISHED FIELD, FROM THE WORKER — adopted whole, the four arrays
+   * and the doors together, so nothing ever reads a heading from one solve
+   * against a distance from another. A reply to a request this field has
+   * since abandoned (abort — a reset under it) is not adopted.
+   */
+  adopt(r: FieldReply): void {
+    if (r.id !== this.remoteId) return;
+    this.remoteId = 0;
+    this.dist = r.dist;
+    this.dirX = r.dirX;
+    this.dirY = r.dirY;
+    this.clear = r.clear;
+    this.spawnPts = r.spawnPts;
+  }
+
+  /** the worker's side: take the masks a request carries as this field's own */
+  setMasks(walk: Uint8Array, soft: Uint8Array, isGoal: Uint8Array, spawn: Uint8Array | null): void {
+    this.walk.set(walk);
+    this.soft.set(soft);
+    this.isGoal.set(isGoal);
+    this.spawnMask = spawn;
+  }
+
+  /**
+   * ...and hand the published field over for the reply, leaving fresh
+   * buffers behind: what is returned gets TRANSFERRED to the other thread,
+   * and a transferred buffer is detached here.
+   */
+  takeResult(): Omit<FieldReply, "id"> {
+    const r = {
+      dist: this.dist,
+      dirX: this.dirX,
+      dirY: this.dirY,
+      clear: this.clear,
+      spawnPts: this.spawnPts,
+    };
+    this.dist = new Float32Array(NCELLS);
+    this.dirX = new Float32Array(NCELLS);
+    this.dirY = new Float32Array(NCELLS);
+    this.clear = new Float32Array(NCELLS);
+    this.spawnPts = [];
+    return r;
   }
 
   /**

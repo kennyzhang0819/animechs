@@ -241,20 +241,6 @@ export interface Tower {
    */
   shortT: number;
   /**
-   * ANCHORED — the Grapnels' hook has already had this one
-   * (constants.ts GRAPPLE_ANCHOR_TIME, Sim.pullTower): the seconds before
-   * any starfish may drag it again.
-   *
-   * IT IS WHAT KEEPS A MOVED BUILDING FROM BEING A CONVEYOR. One body
-   * spends a minute of winch to pull one gun a few tiles; without this
-   * clock the next forty bodies in the same wave would each spend theirs
-   * on the same gun and walk it into the swarm. With it, the wave gets
-   * ONE pull out of a turret and then has to deal with it where it now
-   * stands. Set at the pull and counted down with the rest of the
-   * building's clocks; nothing refreshes it but another pull.
-   */
-  pullT: number;
-  /**
    * JAMMED — the Sky gunships' T4 blankets the ground under it
    * (levels.ts jamField): while `jamT` runs, the reload goes at `jamRate`
    * on top of `fireRate`. A stamp like the swarm's own auras — the carrier

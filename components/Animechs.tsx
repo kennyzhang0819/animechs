@@ -3375,7 +3375,7 @@ export default function Animechs() {
                     number means anything without the load behind it. */}
                 {ADMIN_ENABLED && (
                   <span className="ms-2 font-normal normal-case tracking-normal text-[#71717A]">
-                    {`sim ${hud.simMs.toFixed(1)} · draw ${hud.drawMs.toFixed(1)} · ${hud.bodies}`}
+                    {`sim ${hud.simMs.toFixed(1)} · draw ${hud.drawMs.toFixed(1)} · ${hud.bodies} · ${hud.host}`}
                   </span>
                 )}
               </div>

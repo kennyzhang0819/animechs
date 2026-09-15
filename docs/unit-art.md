@@ -162,12 +162,17 @@ the other way round.
   drawn on the left and mirrored — cannot read as eyes, as a pair of ears
   or as a crab's claws, and thick arms that lie flat cannot read as legs;
   the thing the legged rig kept producing was a bent knee standing outside
-  a silhouette, and a starfish has no knee. It is also the only body on
-  the sheet whose LEG CELL IS EMPTY (`game/starfishArt.ts`): its feet are
-  all on the underside, so from above there is nothing to draw, and every
-  pass that drew some anyway put two blocks in the notches between the
-  arms that read as cargo strapped to a star. A rig part with nothing to
-  show is left blank rather than filled.
+  a silhouette, and a starfish has no knee. It is also the one body whose
+  LEG CELL IS NOT A FOOT (`game/starfishArt.ts`): its tube feet are all on
+  the underside, so from above there is nothing there to draw — every pass
+  that drew some anyway put two blocks in the notches between the arms
+  that read as cargo strapped to a star — and what goes on that cell
+  instead is the ARMS. One side's pair, drawn where they sit on the
+  animal, mirrored and rowed fore and aft by the rig's own stride; the
+  disc, the machine and the forward arm stay on the body cell and hold
+  still. A gait with no new sprite in it, and the general lesson is the
+  one above it: **a rig part is a slot, not a foot** — give it whatever
+  part of the animal actually moves.
 - **No eyes.** A pair of dark dots on a top-down body reads as dirt at
   field zoom and as a cartoon up close. The head is a shape: a wedge, a
   snout, a jaw plate, horns. The spiders and the eels shipped with eyes
@@ -289,7 +294,7 @@ footprint gets.
 | Skate, the manta | `game/familyArt.ts` | body and two fins, wider than tall, tapered to the tip | 40, 52, 80, 156, 232 |
 | Livewire, the narwhal | `game/familyArt.ts` | body and two flippers | 44, 56, 80, 176, 232 |
 | Tusker, the elephant | `game/tuskerArt.ts` | mech to T3, four legs from T4 | 56, 72, 96, 136, 176 |
-| Grapnel, the starfish | `game/starfishArt.ts` | mech at every tier, and the leg cell is empty | 36, 52, 72, 116, 148 |
+| Grapnel, the starfish | `game/starfishArt.ts` | mech at every tier, and the leg cell is the rowing arms | 36, 52, 72, 116, 148 |
 
 **A family may be big, and the Tusker is the one that is.** Every other
 line opens on about a tile — a 32 grid, a tacker's own footprint — because

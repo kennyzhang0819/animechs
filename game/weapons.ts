@@ -1,6 +1,6 @@
 import { CELL, PAL, SHRAPNEL } from "./constants";
 import type { UnitKind } from "./levels";
-import { FxKind, type RGB } from "./types";
+import { FxKind, type RGB, type TowerKind } from "./types";
 
 /**
  * WHAT EVERY ENEMY SHOOTS — the units' weapons, in the sim's own units
@@ -457,14 +457,28 @@ const laserStyle = (s: Omit<LaserStyle, "id">): LaserStyle => {
   return st;
 };
 export const SAP_STYLES: SapStyle[] = [];
-/** no unit throws a sap any more (the venom rework took the spider lines
- *  off); the maker stays with the fx kind and the renderer's draw, for the
- *  day a family wants one back */
+/** NOTHING IN THE GAME FIRES A SAP TODAY — the venom rework took the
+ *  spider lines off, and the Grapnels' winch line went with the hook —
+ *  but the kind is live end to end (UnitWeapon.fx "sap", FxKind.Sap,
+ *  renderer drawSap), so a weapon that wants a line has one waiting */
 const sapStyle = (s: Omit<SapStyle, "id">): SapStyle => {
   const st = { ...s, id: SAP_STYLES.length };
   SAP_STYLES.push(st);
   return st;
 };
+/**
+ * SLOT 0, AND THE TABLE MUST NEVER BE EMPTY. Anything pushed with no
+ * style of its own reads this row, so leaving the table unregistered
+ * means there is no slot 0 at all and the first line drawn in a run puts
+ * the renderer on the floor mid-frame (drawSap) — a crash, not a missing
+ * line. It cost nothing to keep and it is the whole of the safety net.
+ *
+ * The width is Mindustry's spiroct sap, the row that used to sit here:
+ * the strip is 12 x this and the end caps 18 x it, so a little over six
+ * units of cable with a disc at each end — a winch line at the scale the
+ * bodies are drawn at.
+ */
+export const DEFAULT_SAP = sapStyle({ color: PAL.sapBullet, width: 0.54, lifetime: t(35) });
 export const BEAM_STYLES: BeamStyle[] = [];
 const beamStyle = (s: Omit<BeamStyle, "id">): BeamStyle => {
   const st = { ...s, id: BEAM_STYLES.length };
@@ -535,6 +549,38 @@ const STARHART2_LASER = laserStyle({
   sideLength: 5,
   lifetime: t(12),
 });
+
+/**
+ * TETHER'S LANCE, and the second tower beam in the table after piercer's.
+ *
+ * It has to read as the OPPOSITE of piercer at a glance, because the two
+ * sit one band apart and both fire an instant beam: piercer's is a wide
+ * blue sheet that cuts a line of four, this one is a thin mint spike that
+ * ends in one body. So the width is 9 against piercer's 15, and the side
+ * flares are pulled in to 30 degrees and shortened — a lance has a point,
+ * not wings.
+ *
+ * The hue is the dish's own accent (turretArt.ts "field", PAL.tetherBeam),
+ * which is the one colour no other turret on the board throws.
+ */
+export const TETHER_LASER = laserStyle({
+  colors: [[PAL.tetherBeam, 0.4], [PAL.tetherBeam, 1], [WHITE, 1]],
+  width: 9,
+  sideAngle: 30 * DEG,
+  sideWidth: 0.6,
+  sideLength: 14,
+  lifetime: t(20),
+});
+
+/**
+ * WHICH LASER STYLE A TURRET'S SHOT DRAWS IN. A tower's beam is picked by
+ * kind rather than carried in its BulletStats, because constants.ts is
+ * UPSTREAM of this file (weapons.ts imports PAL from it) and cannot name a
+ * style without a cycle. Anything absent draws style 0, piercer's.
+ */
+export const TOWER_LASER_STYLE: Partial<Record<TowerKind, number>> = {
+  tether: TETHER_LASER.id,
+};
 
 /** the furnace's beam, and it is HOT: the deep orange at .33 and .67, the
  *  pale flame face, then white. It was piercer's blue while the turret was
@@ -1137,9 +1183,15 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
     },
   ],
   // EnergyFieldAbility(40, 65, 180): 80 (upstream 40) to everything in 180
-  // — twenty-two tiles — every 65 ticks, a Fx.chainLightning to each, in
-  // the family's violet and with a SHORT rolled on every one of them. The
-  // family's area tier and its healer at once (levels.ts energyField)
+  // — twenty-two tiles — every 65 ticks, in the family's violet and with a
+  // SHORT rolled on every one of them. The family's area tier and its
+  // healer at once (levels.ts energyField).
+  //
+  // IT IS DRAWN AS ONE BOLT AND NOT AS TWENTY-FIVE. The pulse takes every
+  // target at once, but the lightning WALKS them nearest to nearest out of
+  // the mount (sim.ts case "field") instead of leaving the hull once per
+  // target: a star of twenty-five beams off one body is a blot, and this
+  // family's whole look is a line that goes somewhere
   livewire4: [
     {
       name: "energy-field", reload: t(65), mounts: 1, damage: 80, range: u(180), speed: 0, fx: "field",

@@ -595,37 +595,6 @@ export interface UnitStats {
    */
   charge?: { range: number };
   /**
-   * THE GRAPPLE — the Grapnels' family trait, and the only thing in the
-   * game that MOVES A BUILDING THAT IS STILL STANDING.
-   *
-   * A starfish carries one hook and one winch, and the hook has two uses
-   * that are the same action pointed at different things
-   * (Sim.updateGrapples):
-   *
-   *   - NOTHING IN REACH: it throws the hook up its own route, as far as
-   *     `reach` and no further than the first rock or building on the
-   *     line, and winches ITSELF there. That is how this family crosses
-   *     open ground it is otherwise slow over — the bodies are the
-   *     slowest walkers on the roster and they arrive in lurches.
-   *   - A TURRET INSIDE `range`: it hooks the GUN instead and drags it
-   *     `pull` px toward itself, onto the first footprint that will hold
-   *     it. The building keeps its health, its mods and its cooldown; all
-   *     it loses is where it was standing — out of the crossfire it was
-   *     built into, and that much nearer the swarm.
-   *
-   * ONE THROW A MINUTE, BOTH WAYS. `cooldown` is the winch's, so a body
-   * that has just dragged itself forward cannot also take a gun, and a
-   * crowd of forty cannot walk a turret across the board: every building
-   * carries its own no-pull clock afterwards (Tower.pullT, the same
-   * seconds), so the second starfish to arrive finds the gun anchored and
-   * has to spend its hook on the ground instead.
-   *
-   * IT IS NEVER THE CORE. The core is the run's whole stake and it is a
-   * goal cell besides — dragging it would move the map, so the hook does
-   * not take it, exactly as the rend does not bite it.
-   */
-  grapple?: { reach: number; range: number; pull: number; cooldown: number };
-  /**
    * CLOAK — every `period` seconds the body vanishes for `duration`, and
    * it is drawn as a ghost of itself. `veil` is the flagship's: when it
    * cloaks, every body within that radius cloaks with it for the same
@@ -1095,7 +1064,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // seven seconds of fire against a walking wave's twenty-seven.
   // THE T1 IS THE FAMILY IN MINIATURE (the Skyfall bombers): no gun, a
   // charge that goes off on the turret it dives at — or wherever it is
-  // shot down — for 150 over three and a half tiles
+  // shot down — for 75 over three and a half tiles
   stoop1: {
     hp: 70,
     speed: 8 * CELL,
@@ -1104,7 +1073,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 1,
     drag: 0.04,
     flying: true,
-    payload: { splash: 150, radius: 28 * MU },
+    payload: { splash: 75, radius: 28 * MU },
   },
   // starhart1: the T1 of the Starlight mechs — 200 hp, armor 1, 1x1-block
   // hitbox, 0.55 px/tick = 4.125 tiles/s. Frailer than an ironhide1 but a step
@@ -1322,7 +1291,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // stoop2: the T2 — 340 hp, armor 3, 1.375x1.375-block hitbox, 7 tiles/s
   // (upstream 12.375). Slower than a stoop1 but four times the health, and
   // armour 3 blunts the airburst flak that shreds the T1
-  // The charge is the bomber's whole reason: 550 over five tiles, which
+  // The charge is the bomber's whole reason: 275 over five tiles, which
   // is the old bomb rack's whole rain delivered in one arrival
   stoop2: {
     hp: 340,
@@ -1333,7 +1302,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.03,
     rotateSpeed: 4.5,
     flying: true,
-    payload: { splash: 550, radius: 40 * MU },
+    payload: { splash: 275, radius: 40 * MU },
   },
   // stoop3: the T3 — 700 hp, armor 5, a 2.5x2.5-block hitbox that makes it
   // the widest thing in the sky below the T4/T5 hulls, at 6 tiles/s
@@ -1351,7 +1320,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.016,
     flying: true,
     hasteField: { mult: 1.4, reload: 2, range: 9 * CELL },
-    payload: { splash: 800, radius: 48 * MU },
+    payload: { splash: 400, radius: 48 * MU },
   },
   // stoop4: the air line's T4 — 6500 hp, armor 12, and a 5.75x5.75-block
   // hitbox, more than twice the stoop3 across; only the stoop5's 7.25
@@ -1384,9 +1353,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     flying: true,
     jamField: { rate: 0.5, reload: 2, range: 11 * CELL },
     payload: {
-      splash: 2000,
+      splash: 1000,
       radius: 72 * MU,
-      bomblets: { count: 10, splash: 400, radius: 32 * MU, spread: 88 * MU },
+      bomblets: { count: 10, splash: 200, radius: 32 * MU, spread: 88 * MU },
     },
   },
   // stoop5: the air line's T5 — 14000 hp, armor 14, and a 7.25x7.25-block
@@ -1412,10 +1381,10 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // THE NUKE (payload.fuse): where it goes off — on the structure it
   // dived at, or wherever it was shot down — the charge ARMS and sits for
   // two and a half seconds, a fat orange orb swelling on the ground, and
-  // then takes 9,000 off everything within SIXTEEN TILES. That is a
+  // then takes 4,500 off everything within SIXTEEN TILES. That is a
   // 32-tile circle of board, which is most of a citadel, at four figures
-  // past what a repeater carrying half the catalog is holding: nothing in
-  // the blast is meant to survive it. The fuse is the player's warning
+  // past what a repeater carrying half the catalog is holding: almost
+  // nothing in the blast is meant to survive it. The fuse is the player's warning
   // and the family's rule at its largest — a stoop5 shot down over the
   // line is a line with two and a half seconds to be somewhere else, and
   // a turret cannot be somewhere else
@@ -1428,7 +1397,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.04,
     rotateSpeed: 1,
     flying: true,
-    payload: { splash: 9000, radius: 128 * MU, fuse: 2.5 },
+    payload: { splash: 4500, radius: 128 * MU, fuse: 2.5 },
   },
   // boss: THE FINAL BOSS — Erekir's tier-5 missile bomber, the one kind
   // on the roster from the other planet. Base shape from
@@ -1918,20 +1887,20 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
 
   // ── THE GRAPNELS, the starfish (game/starfishArt.ts) ──────────────────
   //
-  // THE SLOWEST WALKERS ON THE ROSTER, and the only ones that do not
-  // really walk: every tier crawls at about two tiles a second and makes
-  // its ground up in LURCHES, throwing a hook up its own route and
-  // winching itself to it (UnitStats.grapple). A body that has just
-  // grappled is a body that cannot grapple again for a minute, so a wave
-  // of them comes in as a shoal that surges and then trudges.
+  // THE SLOWEST BODIES IN THE GAME, and the only ones that CRAWL: about
+  // two tiles a second at every tier, which is a walker's pace halved,
+  // and no trait on this table to make up for it. What they have instead
+  // is the star (weapons.ts starfish-star) and the ten seconds between
+  // volleys — a family whose whole account is settled in the moment it
+  // fires, by where it has got to and which way it happens to be facing.
   //
-  // WHAT THEY POSE is not on this table at all: it is where your guns
-  // are standing. A starfish that reaches a turret with a loaded winch
-  // DRAGS IT — the gun keeps everything but its position, and a position
-  // is most of what a turret is worth on a board built around crossfire
-  // and reach. Answer it by killing them on the approach, by spreading
-  // the line so a dragged gun still has friends, or by letting one take
-  // a cheap turret and paying the minute for it (Tower.pullT).
+  // THEY USED TO CARRY A HOOK, and the hook is gone: it winched the body
+  // up its own route and dragged your turrets out of position, and both
+  // halves of it are out of the game now. What is left is a body that
+  // walks, and the crawl is in the DRAWING rather than the numbers — the
+  // four rear arms swing the body along on the mech rig
+  // (game/starfishArt.ts), which is the only place this family's gait
+  // lives.
   //
   // THE MIDDLE OF THE TANKINESS LADDER, deliberately: tougher than the
   // fleets that blink and cloak, softer than anything that is meant to
@@ -1944,7 +1913,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     radius: UR * 1.125,
     tier: 1,
     rotateSpeed: 3.5,
-    grapple: { reach: 7 * CELL, range: 4 * CELL, pull: 1.5 * CELL, cooldown: 60 },
   },
   starfish2: {
     hp: 780,
@@ -1953,7 +1921,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     radius: UR * 1.625,
     tier: 2,
     rotateSpeed: 3.2,
-    grapple: { reach: 8 * CELL, range: 5 * CELL, pull: 2 * CELL, cooldown: 60 },
   },
   starfish3: {
     hp: 2100,
@@ -1962,10 +1929,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     radius: UR * 2.25,
     tier: 3,
     rotateSpeed: 2.8,
-    grapple: { reach: 9 * CELL, range: 6 * CELL, pull: 2.5 * CELL, cooldown: 60 },
   },
-  // the champion drags a gun a full three tiles, which is a turret out of
-  // one patch and into the next
   starfish4: {
     hp: 7400,
     speed: 2.05 * CELL,
@@ -1973,7 +1937,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     radius: UR * 3.625,
     tier: 4,
     rotateSpeed: 2.2,
-    grapple: { reach: 11 * CELL, range: 7 * CELL, pull: 3 * CELL, cooldown: 60 },
   },
   starfish5: {
     hp: 16000,
@@ -1982,7 +1945,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     radius: UR * 4.625,
     tier: 5,
     rotateSpeed: 1.8,
-    grapple: { reach: 13 * CELL, range: 9 * CELL, pull: 4 * CELL, cooldown: 60 },
   },
 };
 
@@ -2006,7 +1968,7 @@ export const UNIT_TREES = [
   { key: "navalSupport", name: FAMILY_NAMES.navalSupport.name, kinds: ["livewire1", "livewire2", "livewire3", "livewire4", "livewire5"] },
   // the seventh row: the heavy melee line, on the walkers' layer
   { key: "tusker", name: FAMILY_NAMES.tusker.name, kinds: ["tusker1", "tusker2", "tusker3", "tusker4", "tusker5"] },
-  // the eighth row: the grapple line, on the walkers' layer
+  // the eighth row: the crawlers, on the walkers' layer
   { key: "starfish", name: FAMILY_NAMES.starfish.name, kinds: ["starfish1", "starfish2", "starfish3", "starfish4", "starfish5"] },
   // not an upgrade path: the boss row holds the kinds that arrive as an
   // event rather than a stream, so its slots do not read as tiers
@@ -2210,11 +2172,9 @@ export const FAMILIES = [
   // approach — there is no answering a Tusker that has arrived.
   { key: "tusker", name: FAMILY_NAMES.tusker.name, layer: "ground", icon: "tusker1",
     kinds: ["tusker1", "tusker2", "tusker3", "tusker4", "tusker5"] },
-  // THE GRAPNELS: the starfish — starfish1 to starfish5 — and the only
-  // family that attacks the BOARD rather than the buildings on it. Every
-  // one of them carries a hook (UnitStats.grapple): with nothing in reach
-  // it winches itself up its own route, and with a turret in reach it
-  // drags THAT instead, one gun a minute per body and one minute per gun.
+  // THE GRAPNELS: the starfish — starfish1 to starfish5 — the slowest
+  // bodies in the game and the only ones with no trait at all. Every
+  // other family on this list does something; this one arrives.
   //
   // ITS GUN IS A STAR. Every tier fires the same thing and nothing else:
   // five heavy rounds at once, seventy-two degrees apart, flying straight
@@ -2224,10 +2184,10 @@ export const FAMILIES = [
   // the roster — so what a starfish does to a board is decided in the
   // moment it fires, by where it is standing and which way it is facing.
   //
-  // WHAT IT POSES: a line that is no longer where you built it, and a
-  // round that does not stop at the first turret. The answer is killing
-  // them on the crawl — they are the slowest bodies in the game — and
-  // spacing the guns so one star cannot take a whole row.
+  // WHAT IT POSES: a round that does not stop at the first turret, on a
+  // body slow enough that you will see it coming for a long time. The
+  // answer is killing them on the crawl and spacing the guns so one star
+  // cannot take a whole row.
   { key: "starfish", name: FAMILY_NAMES.starfish.name, layer: "ground", icon: "starfish1",
     kinds: ["starfish1", "starfish2", "starfish3", "starfish4", "starfish5"] },
 ] as const satisfies readonly {

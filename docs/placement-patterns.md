@@ -137,7 +137,7 @@ learns.
 | **autocannon** | **Magazine** | **+1 shot per burst** per orthogonally adjacent autocannon, max +2 |
 | **piercer** | **Capacitor bank** | a coil within 2 cells of the footprint → **−40% charge time**; a second coil → **−60%** |
 | **barrage** | **Dug in** | no open floor orthogonally adjacent to the 3×3 — walled in rock on every side → **+25% range, −15% minimum range** |
-| **tether** | **Anchor** | two or more of its 2×2's four sides fully on open floor, **and** no other tether within 6 cells → **the beam spools 30% faster, +15% range** |
+| **tether** | **Anchor** | two or more of its 2×2's four sides fully on open floor, **and** no other tether within 6 cells → **−20% reload, +15% range** |
 
 Autocannon's is the first pattern that changes a turret's *shape of fire* rather
 than a multiplier — three autocannons in a row are a different weapon, not a

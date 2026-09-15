@@ -316,34 +316,6 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
   },
 
   /**
-   * GRAPPLE — A HOOK ON A LINE, and the line is taut. The shank runs from
-   * the bottom-left corner to the head at the top right and the two barbs
-   * come back off it, which at seven pixels is the only hook shape that
-   * survives: a grapnel drawn with three or four flukes is a blob. Copper,
-   * the family's own (PAL.hook), and nothing else on it.
-   */
-  grapples: (g) => {
-    g.poly([[0.02, 0.98], [0.2, 0.98], [0.86, 0.3], [0.68, 0.14]], PAL.hookDark);
-    g.box(0.56, 0.02, 0.98, 0.26, PAL.hook);
-    g.box(0.36, 0.14, 0.56, 0.34, PAL.hook);
-    g.over((o) => o.box(0, 0.6, 1, 1, PAL.hookDark));
-  },
-
-  /**
-   * ANCHORED — the same hook, STOPPED: a block with a bar across it, in
-   * the same copper, because what the chip says is "this one has already
-   * been dragged and no other hook may take it". It has to read as a
-   * refusal at a glance rather than as a second grapple, so the hook shape
-   * is gone entirely and what is left is the ground peg and the bar.
-   */
-  anchored: (g) => {
-    g.box(0.4, 0.06, 0.6, 0.72, PAL.hook);
-    g.box(0.12, 0.72, 0.88, 0.94, PAL.hookDark);
-    g.box(0.06, 0.3, 0.94, 0.48, PAL.hookDark);
-    g.over((o) => o.box(0, 0.74, 1, 1, PAL.hookDark));
-  },
-
-  /**
    * PAYLOAD — a bomb with a lit fuse. The body IS the bomb, so the symbol
    * is the bomb and not a body carrying one; the spark is the single
    * accent (rule 5), and it is what says the thing is live rather than

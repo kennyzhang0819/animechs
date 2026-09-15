@@ -73,13 +73,37 @@ function missing(root: string): Response | Promise<Response> {
   return new Response("not found", { status: 404 });
 }
 
+/**
+ * CROSS-ORIGIN ISOLATION, which is what buys the game a SharedArrayBuffer
+ * — and the sim its own thread. The sim steps on a worker and the renderer
+ * reads the world off memory both threads hold (game/shared.ts); a browser
+ * only hands that memory to a page that is cross-origin isolated, and a
+ * page is only that if the RESPONSE says so. The dev server sets these in
+ * next.config.ts; here the shell is the server, so it sets them itself.
+ *
+ * Without them the game still runs, single-threaded, exactly as it did —
+ * game/shared.ts falls back — which is precisely the failure that would
+ * never be noticed: the shipped build quietly slower than the one being
+ * developed. Every response gets both, the 404 document included.
+ */
+const ISOLATION: [string, string][] = [
+  ["Cross-Origin-Opener-Policy", "same-origin"],
+  ["Cross-Origin-Embedder-Policy", "require-corp"],
+];
+
+function isolated(r: Response, status = r.status): Response {
+  const headers = new Headers(r.headers);
+  for (const [k, v] of ISOLATION) headers.set(k, v);
+  return new Response(r.body, { status, headers });
+}
+
 /** serve the export at app://game/ — after app.whenReady */
 export function serveBundle(root: string): void {
-  protocol.handle(APP_SCHEME, (request) => {
+  protocol.handle(APP_SCHEME, async (request) => {
     const url = new URL(request.url);
-    if (url.host !== APP_HOST) return missing(root);
+    if (url.host !== APP_HOST) return isolated(await missing(root));
     const file = resolveFile(root, url.pathname);
-    if (!file) return missing(root);
-    return net.fetch(pathToFileURL(file).href);
+    if (!file) return isolated(await missing(root));
+    return isolated(await net.fetch(pathToFileURL(file).href));
   });
 }

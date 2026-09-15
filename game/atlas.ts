@@ -1056,7 +1056,10 @@ export const TUSK5_CELLS = tuskLegCells(5, TUSK5, 256, 128);
  * Every tier is the mech rig's three parts on one cell: a body drawn at
  * its hitbox in native px (36, 52, 72, 116, 148 — starfishArt.ts) on the
  * smallest 64-multiple cell that holds it, so the world px per native px
- * is the same 0.625 the rest of the sheet has.
+ * is the same 0.625 the rest of the sheet has. The `leg` cell is this
+ * family's ROWING ARMS rather than any kind of foot, and it is the same
+ * size as the body's because the arms are drawn where they sit on the
+ * animal — the rig slides the whole cell, not a sprite cut to the limb.
  */
 const sfMechCells = (t: number, n: number, cell: number) => ({
   body: sprite(`starfish${t}`, cell, n),
@@ -1215,6 +1218,15 @@ export interface MechArt {
    */
   guns: readonly LegGun[];
   stride: number; // leg swing amplitude px — the walk cycle is 4 strides
+  /**
+   * HOW MUCH THE SWINGING SIDE SHORTENS, as a fraction of the part's own
+   * quad (default LEG_LIFT). Mindustry's mech lifts the swinging leg and
+   * draws it half length, which is a leg leaving the ground seen from
+   * above; a body whose "legs" are ARMS LYING FLAT (starfishArt.ts) never
+   * leaves the ground at all, and half is a squash rather than a step —
+   * so that family asks for a tenth and gets a reach instead of a stamp.
+   */
+  legLift?: number;
   /** forward body/gun bob px — Mindustry mechFrontSway (default 0.1) x 2.5 */
   frontSway?: number;
   /** sideways body/gun bob px — Mindustry mechSideSway (default 0.54) x 2.5 */
@@ -1907,16 +1919,20 @@ if (ANIMAL_ART) {
   tuskLegArt("tusker5", TUSK5_CELLS, TUSK5, 2);
 
   // ---- Grapnels ----
-  // the starfish on the mech rig at every tier, because it has no legs to
-  // plant: what slides with the walk is a fringe of tube feet. No guns —
-  // the star volley is drawn live as shots in flight, never off a sprite —
-  // and no front sway, since nothing about a starfish lurches forward
+  // the starfish on the mech rig at every tier, and what slides with the
+  // walk is THE ARMS: the rig's leg cell holds one side's pair and the
+  // renderer rows them fore and aft against their mirror image, which is
+  // this family's whole gait (starfishArt.ts). No guns — the star volley
+  // is drawn live as shots in flight, never off a sprite — and the swing
+  // shortens an arm a TENTH rather than the mech's half (legLift): an arm
+  // lying flat on the ground reaches, it does not step over anything.
   const sfMechArt = (c: typeof SF1_CELLS, T: IronTier, cellScale: 1 | 2 | 4): MechArt => ({
     leg: c.leg,
     base: c.base,
     body: c.body,
     guns: [],
     stride: T.stride * PX,
+    legLift: 0.1,
     sprite: UNIT_SPRITE * cellScale,
     sil: { leg: c.legSil, base: c.baseSil, body: c.bodySil },
   });
@@ -2809,7 +2825,7 @@ function packAnimalArt(
       sil: { body: TUSK5_CELLS.bodySil, base: TUSK5_CELLS.baseSil, joint: TUSK5_CELLS.jointSil, baseJoint: TUSK5_CELLS.baseJointSil, foot: TUSK5_CELLS.footSil } },
   ];
   tuskLegCellSets.forEach((cells, i) => packLegged(cells, tuskLegged(TUSK_TIERS[3 + i]), TUSK_TIERS[3 + i].n));
-  // ---- the Grapnels: five mech tiers, body, base plate and tube feet ----
+  // ---- the Grapnels: five mech tiers, body, base plate and rowing arms ----
   const sfCellSets: readonly MechCells[] = [SF1_CELLS, SF2_CELLS, SF3_CELLS, SF4_CELLS, SF5_CELLS].map((c, i) => ({
     kind: `starfish${i + 1}` as UnitKind,
     body: c.body, base: c.base, leg: c.leg,

@@ -611,6 +611,9 @@ const SHADOW_TY = 13 * MU;
 const SIDE_SWAY = 0.54 * 2.5;
 const FRONT_SWAY = 0.1 * 2.5;
 const LEG_SHADE = 0.14;
+/** how much of its own length the swinging leg loses — Mindustry's mech
+ *  draws it at half. A rig may ask for less (MechArt.legLift) */
+const LEG_LIFT = 0.5;
 // floor blend priority by group id (grass, stone, dirt, sand, darksand,
 // shallow water, deep water): Blocks.java definition order — water <
 // stone < sand < darksand < dirt < grass, higher fades over lower.
@@ -1335,15 +1338,26 @@ export class Renderer {
     cellCol: RGB,
   ): void {
     const s = m.sprite;
+    // A RIG WHOSE STRIDE IS ZERO WALKS ON THE SPOT, and it has to be
+    // asked for that in so many words. The cycle below both takes a
+    // modulo BY the stride and divides by it, so at zero each of those is
+    // NaN — and the NaN does not stay in the gait: it rides through
+    // `sway` into the BODY quad's own position, and a quad with no
+    // position is a quad that never lands. A rig that shipped with a
+    // stride of 0 drew as nothing but its ground shadow (a separate flat
+    // quad off KIND_UV, which never comes through here) — a body-shaped
+    // hole in the floor with no body standing in it. Three lines to make
+    // that a still sprite instead.
+    const st = m.stride;
+    const raw = st > 0 ? walk % (st * 4) : 0;
+    const ext = st > 0 ? (raw > st * 3 ? raw - st * 4 : raw > st ? st * 2 - raw : raw) : 0;
     // Mindustry walkExtend: a 4-stride cycle — triangle wave for the leg
     // reach, quarter-phase sine for lift and sway
-    const raw = walk % (m.stride * 4);
-    const ext = raw > m.stride * 3 ? raw - m.stride * 4 : raw > m.stride ? m.stride * 2 - raw : raw;
-    const lift = Math.sin(((raw / m.stride) * Math.PI) / 2);
+    const lift = st > 0 ? Math.sin(((raw / st) * Math.PI) / 2) : 0;
     const cb = Math.cos(brot), sb = Math.sin(brot);
     // stride sway shifts everything above the chassis (guns + body only)
     const sway = lift * (m.sideSway ?? SIDE_SWAY);
-    const fsway = Math.sin((raw / m.stride) * Math.PI) * (m.frontSway ?? FRONT_SWAY);
+    const fsway = st > 0 ? Math.sin((raw / st) * Math.PI) * (m.frontSway ?? FRONT_SWAY) : 0;
     const ox = -sb * sway + cb * fsway;
     const oy = cb * sway + sb * fsway;
     const cr = Math.cos(rot), sr = Math.sin(rot);
@@ -1364,13 +1378,13 @@ export class Renderer {
       np++;
     };
     for (let side = -1; side <= 1; side += 2) {
-      const dk = 1 - Math.max(0, (side * ext) / m.stride) * LEG_SHADE;
+      const dk = st > 0 ? 1 - Math.max(0, (side * ext) / st) * LEG_SHADE : 1;
       part(
         m.leg,
         m.sil.leg,
         x + cb * ext * side,
         y + sb * ext * side,
-        s * (1 - Math.max(-lift * side, 0) * 0.5),
+        s * (1 - Math.max(-lift * side, 0) * (m.legLift ?? LEG_LIFT)),
         s * side, // negative height mirrors the off-side leg
         brot,
         dk,

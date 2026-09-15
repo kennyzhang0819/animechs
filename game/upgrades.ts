@@ -242,23 +242,6 @@ const fusedAt = (s: TowerStats, mul: number): TowerStats =>
     ? withBullet(s, { flak: { ...s.bullet.flak, explodeRange: s.bullet.flak.explodeRange * mul } })
     : s;
 
-/** a lock beam's SPOOL: how long it takes to reach full power (`faster`,
- *  a multiplier on the rate) and how much power that is (`peak`, added to
- *  the multiplier at the top of the ramp). Neither touches `damage` — the
- *  cold beam is what `stronger` moves */
-const spooling = (
-  s: TowerStats,
-  { faster = 1, peak = 0 }: { faster?: number; peak?: number },
-): TowerStats =>
-  s.bullet.lock
-    ? withBullet(s, {
-        lock: {
-          spool: s.bullet.lock.spool / faster,
-          peak: s.bullet.lock.peak + peak,
-        },
-      })
-    : s;
-
 /** PLATING, added flat — armour is a shave per hit and never a multiplier,
  *  so "+6 armour" means the same six on a tacker as on a repeater */
 export const armored = (s: TowerStats, add: number): TowerStats => ({ ...s, armor: s.armor + add });
@@ -688,18 +671,27 @@ const BARRAGE: readonly TurretUpgradeDef[] = [
   },
 ];
 
-// the ramp is what tether IS, so its branch buys the ramp: a hotter
-// beam at both ends, then reach, then the spool itself. Nothing here may
-// take the fully-upgraded beam anywhere near railhead's rail — the top
-// rung lands it at 405 damage a second against ONE body, where an
-// upgraded railhead spends better than four times that on a queue
+// THE WAIT is what tether is, so its branch buys the wait: a heavier
+// lance, then reach, then the reload itself. Nothing here may take the
+// fully-upgraded gun anywhere near railhead's rail — the top rung lands
+// it at 825 on a 2.7-second clock, 306 a second against ONE body, where
+// an upgraded railhead spends better than five times that on a queue.
+//
+// AND THE TOP RUNG IS THE ONLY WAY BACK TO A FAST TETHER. Stock reload is
+// 210 ticks (constants.ts) and deliberately slower than railhead's; the
+// 30% here is what a player spends a point on to get a gun that fires
+// like the 165-tick version this turret briefly shipped with.
+//
+// AND THE TOP RUNG MAY NEVER BUY PIERCE. A second body on the lance is
+// piercer's trick one band down and railhead's two up; the thing this
+// turret sells is that the whole 550 lands on the one target worth it
 const TETHER: readonly TurretUpgradeDef[] = [
   {
     id: "tether-field",
     turret: "tether",
     tier: 1,
     name: "Focused Emitter",
-    blurb: "+50% beam damage, cold and fully spooled alike.",
+    blurb: "+50% lance damage.",
     glyph: "damage",
     apply: (s) => stronger(s, 1.5),
   },
@@ -717,9 +709,9 @@ const TETHER: readonly TurretUpgradeDef[] = [
     turret: "tether",
     tier: 3,
     name: "Phase Coils",
-    blurb: "Phase fabric in the emitter: the beam spools twice as fast and burns up to 9x the cold beam.",
-    glyph: "beam",
-    apply: (s) => spooling(s, { faster: 2, peak: 2 }),
+    blurb: "Phase fabric in the emitter: the lance recharges 30% faster.",
+    glyph: "rate",
+    apply: (s) => faster(s, 1.3),
   },
 ];
 

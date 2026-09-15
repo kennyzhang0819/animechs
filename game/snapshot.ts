@@ -35,6 +35,7 @@
  */
 import { TOWER_KINDS, type RGB, type TowerKind } from "./types";
 import { UNIT_KINDS, UNIT_STATS } from "./levels";
+import * as shared from "./shared";
 import { UNIT_WEAPONS, type ShotLook } from "./weapons";
 import type { Terrain } from "./terrain";
 import {
@@ -97,12 +98,17 @@ const SHOT_F = 7;
 /** ...and the core, which there is exactly one of */
 const CORE_F = 8;
 
-/** grow a float buffer to hold at least `need`, keeping it a power of two */
+/**
+ * grow a float buffer to hold at least `need`, keeping it a power of two.
+ * ON SHARED MEMORY, like the flat arrays: a snapshot packed on the worker
+ * is then read on the drawing side with nothing copied — the message that
+ * announces it carries views over the same bytes.
+ */
 const fit = (a: Float32Array, need: number): Float32Array => {
   if (a.length >= need) return a;
   let n = Math.max(64, a.length);
   while (n < need) n *= 2;
-  return new Float32Array(n);
+  return shared.f32(n);
 };
 
 /**
@@ -130,29 +136,42 @@ export interface Snapshot {
    *  [is there one, x, y, top] */
   selectedN: number;
   mark: Float32Array;
+  /**
+   * THE BOLT PATHS (SimView.fxPts) — the one thing in the effect pool that
+   * is a list rather than a number, so the one thing there that cannot be
+   * shared. Packed as [slot, count, x, y, x, y, ...] per effect that
+   * carries one, `ptsN` floats of it. Only filled when asked (packSnapshot
+   * withPts): in one thread the array itself is read by reference.
+   */
+  ptsN: number;
+  pts: Float32Array;
 }
 
 export const emptySnapshot = (): Snapshot => ({
   time: 0,
   towerN: 0,
-  towers: new Float32Array(0),
+  towers: shared.f32(0),
   domeN: 0,
-  domes: new Float32Array(0),
+  domes: shared.f32(0),
   projN: 0,
-  projs: new Float32Array(0),
+  projs: shared.f32(0),
   shotN: 0,
-  shots: new Float32Array(0),
-  core: new Float32Array(CORE_F),
-  aiming: new Uint8Array(0),
+  shots: shared.f32(0),
+  core: shared.f32(CORE_F),
+  aiming: shared.u8(0),
   aimingN: 0,
   selectedN: 0,
-  mark: new Float32Array(4),
+  mark: shared.f32(4),
+  ptsN: 0,
+  pts: shared.f32(0),
 });
 
 /** what packSnapshot reads — the sim side of SimView, and nothing else */
 export interface Packable extends ShotsView {
   readonly time: number;
   readonly n: number;
+  readonly fxN: number;
+  readonly fxPts: readonly (readonly number[] | null)[];
   readonly utgt: readonly (unknown | null)[];
   /**
    * THE STRUCTURES AS THE SIM HAS THEM, which carry more than the view's do
@@ -176,7 +195,7 @@ export type PackableTower = Omit<TowerView, "selected" | "inspected" | "statuses
  * FLATTEN THE WORLD INTO `out`, growing its arrays if the board has. Called
  * once per published frame on the side the sim is on.
  */
-export function packSnapshot(w: Packable, out: Snapshot): Snapshot {
+export function packSnapshot(w: Packable, out: Snapshot, withPts = false): Snapshot {
   out.time = w.time;
 
   // ---- the line ----
@@ -294,10 +313,34 @@ export function packSnapshot(w: Packable, out: Snapshot): Snapshot {
   }
 
   // ---- who is holding a target ----
-  if (out.aiming.length < w.n) out.aiming = new Uint8Array(Math.max(1024, w.n * 2));
+  if (out.aiming.length < w.n) out.aiming = shared.u8(Math.max(1024, w.n * 2));
   out.aimingN = w.n;
   const A = out.aiming;
   for (let i = 0; i < w.n; i++) A[i] = w.utgt[i] ? 1 : 0;
+
+  // ---- the bolt paths, when they have to cross ----
+  out.ptsN = 0;
+  if (withPts) {
+    // sized first, written second: a buffer grown mid-write would have to
+    // carry what was already in it, and two passes over a handful of
+    // bolts is cheaper than that
+    let need = 0;
+    for (let f = 0; f < w.fxN; f++) {
+      const p = w.fxPts[f];
+      if (p) need += 2 + p.length;
+    }
+    out.pts = fit(out.pts, need);
+    const Q = out.pts;
+    let k = 0;
+    for (let f = 0; f < w.fxN; f++) {
+      const p = w.fxPts[f];
+      if (!p) continue;
+      Q[k++] = f;
+      Q[k++] = p.length;
+      for (let j = 0; j < p.length; j++) Q[k++] = p[j];
+    }
+    out.ptsN = k;
+  }
 
   // ---- the selection's size, and the arrow ----
   out.selectedN = w.selectedStructN;
@@ -310,6 +353,24 @@ export function packSnapshot(w: Packable, out: Snapshot): Snapshot {
   }
 
   return out;
+}
+
+/**
+ * THE BOLT PATHS, READ BACK: the packed floats become the per-slot list
+ * the renderer expects, in an array the reading side owns. Every slot is
+ * cleared first — a path left in a slot whose effect has since died would
+ * be drawn under whatever effect took the slot next.
+ */
+export function readPts(s: Snapshot, into: (readonly number[] | null)[]): void {
+  into.fill(null);
+  const Q = s.pts;
+  for (let k = 0; k < s.ptsN; ) {
+    const f = Q[k++];
+    const len = Q[k++];
+    const p = new Array<number>(len);
+    for (let j = 0; j < len; j++) p[j] = Q[k++];
+    into[f] = p;
+  }
 }
 
 // ---------- the reading side ----------
@@ -552,6 +613,11 @@ export type FlatWorld = {
   readonly uwakeY: Float32Array;
   readonly uwakeN: Uint8Array;
   readonly aliveByKind: Int32Array;
+  readonly uspawn: Float32Array;
+  readonly uburn: Float32Array;
+  readonly uvet: Float32Array;
+  readonly uled: Float32Array;
+  readonly uvirus: Uint8Array;
   readonly fxX: Float32Array;
   readonly fxY: Float32Array;
   readonly fxAge: Float32Array;
@@ -568,6 +634,32 @@ export type FlatWorld = {
   readonly fxColB: Float32Array;
   readonly fxPts: readonly (readonly number[] | null)[];
 };
+
+/**
+ * EVERY KEY OF FlatWorld, by name, so the worker can hand across exactly
+ * these views and nothing else of the sim (flatOf). Kept beside the type
+ * because the compiler checks the two against each other: a key added to
+ * one and not the other fails to build.
+ */
+export const FLAT_KEYS = [
+  "upx", "upy", "ubrot", "urot", "ukind", "uid", "uhp", "uhpmax", "urad", "uwalk",
+  "ufly", "uwet", "uhungry", "ueaten", "uwade", "ucloakT", "ustack", "ushield",
+  "ushieldAlpha", "uforceScale", "ubeamT", "ucharge", "uheldRot", "ulegFX", "ulegFY",
+  "ulegJX", "ulegJY", "ulegStage", "ulegMove", "usegX", "usegY", "uwakeX", "uwakeY",
+  "uwakeN", "aliveByKind", "uspawn", "uburn", "uvet", "uled", "uvirus", "fxX", "fxY", "fxAge", "fxTtl", "fxKind", "fxLen", "fxRot",
+  "fxSeed", "fxSides", "fxUnit", "fxHasCol", "fxColR", "fxColG", "fxColB", "fxPts",
+] as const satisfies readonly (keyof FlatWorld)[];
+// ...and the other direction: every key of the type is in the list
+type Missing = Exclude<keyof FlatWorld, (typeof FLAT_KEYS)[number]>;
+const _everyKeyListed: Missing extends never ? true : Missing = true;
+void _everyKeyListed;
+
+/** just the flat half of a world — what crosses to the drawing side by reference */
+export function flatOf(src: FlatWorld): FlatWorld {
+  const out: Partial<Record<keyof FlatWorld, unknown>> = {};
+  for (const k of FLAT_KEYS) out[k] = src[k];
+  return out as FlatWorld;
+}
 
 /**
  * WHAT THE DRAWING SIDE ACTUALLY HOLDS. The flat arrays by reference, the
@@ -615,6 +707,11 @@ export class DrawView implements SimView {
   readonly uwakeY: Float32Array;
   readonly uwakeN: Uint8Array;
   readonly aliveByKind: Int32Array;
+  readonly uspawn: Float32Array;
+  readonly uburn: Float32Array;
+  readonly uvet: Float32Array;
+  readonly uled: Float32Array;
+  readonly uvirus: Uint8Array;
   readonly fxX: Float32Array;
   readonly fxY: Float32Array;
   readonly fxAge: Float32Array;
@@ -693,6 +790,11 @@ export class DrawView implements SimView {
     this.uwakeY = src.uwakeY;
     this.uwakeN = src.uwakeN;
     this.aliveByKind = src.aliveByKind;
+    this.uspawn = src.uspawn;
+    this.uburn = src.uburn;
+    this.uvet = src.uvet;
+    this.uled = src.uled;
+    this.uvirus = src.uvirus;
     this.fxX = src.fxX;
     this.fxY = src.fxY;
     this.fxAge = src.fxAge;

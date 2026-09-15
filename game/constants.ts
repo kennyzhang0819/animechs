@@ -81,6 +81,10 @@ export const PAL = {
   thoriumAmmoBack: pal(0xf595be),
   thoriumPink: pal(0xf9a3c7),
   piercerLaser: pal(0xa9d8ff),
+  /** Tether's mint, the one hue no stock turret wears (turretArt.ts, the
+   *  "field" accent). The dish has always been drawn in it; now the shot
+   *  is too, so the gun and the light it throws are the same colour */
+  tetherBeam: pal(0x8fe0b8),
   accent: pal(0xffd37f),
   missileYellow: pal(0xffd2ae),
   missileYellowBack: pal(0xe58956),
@@ -170,9 +174,9 @@ export const PAL = {
    * starfish). The hue nothing else on the board carries — the swarm owns
    * rose, lime, gold, magenta, teal, violet and bone, and the turrets own
    * orange at the muzzle, so a warm metal that is neither the sky's
-   * orange nor the ground mechs' rose is what is left. It is the winch on
-   * the body, the hook line when it is thrown, and the five lit arm tips
-   * on the apex.
+   * orange nor the ground mechs' rose is what is left. It is the drum on
+   * the body's back, the star it fires, and the five lit arm tips on the
+   * apex.
    */
   hook: pal(0xe59a55),
   /** ...and its shade, the star's back sprite under the front one */
@@ -1168,59 +1172,93 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // Tether, and THE ROSTER'S OTHER DELIBERATE DEVIATION (the first is
   // the liquid turrets' soak, see `wet`). Mindustry's tether is a
   // TractorBeamTurret: it holds a beam on one FLYER, deals 30
-  // armour-piercing damage a second and DRAGS it backwards. The drag is a
-  // lovely thing in a game where flyers steer themselves and a menace in
-  // one where they walk a flow field — it shoves the swarm off the lane
-  // the whole board was built around — so the beam keeps everything else
-  // and trades the pull for a SPOOL.
+  // armour-piercing damage a second and DRAGS it backwards. Neither half
+  // survives here. The drag is a lovely thing in a game where flyers steer
+  // themselves and a menace in one where they walk a flow field — it
+  // shoves the swarm off the lane the whole board was built around. And
+  // the HELD BEAM, which this turret did keep for a long time, was a line
+  // drawn across the map every frame it was alive: two tethers on a board
+  // and the lane disappeared under white cable that never stopped moving.
   //
-  // The beam takes both layers, locks the HIGHEST-HEALTH body in range the
-  // way railhead's rail does, and holds it until it dies or leaves.
-  // Thirty damage a second is what it opens with — still nothing, still
-  // upstream's number — and eight seconds of unbroken contact walks it up
-  // to seven times that. So it is a SIEGE WEAPON, not a gun: worthless
-  // against anything that dies quickly or arrives in a crowd (a target
-  // change zeroes the spool outright), and the tier-2 answer to the one
-  // armoured body nothing else can chew through, because the beam never
-  // meets armour at all.
+  // So the beam is now a SHOT. One mint lance, every 3.5 seconds, at the
+  // highest-health body in reach — and between shots the turret draws
+  // nothing at all but the dish tracking its mark.
   //
-  // IT IS NOT A RAILHEAD AND MUST NEVER READ AS ONE. Fully spooled it is
-  // 210 damage a second against a single body; railhead spends 1,755 on
-  // a queue every 3.3 seconds — better than twice tether's rate, through
-  // as many bodies as the budget reaches, from 200 units further out, and
-  // from the first shot rather than the eighth second. The ramp buys
-  // tether the ONE case railhead is wasted on: a lone heavy that has
-  // to be ground down rather than deleted.
+  // WHAT MAKES IT ANTI-HEAVY IS NOW THE SHAPE OF THE SHOT, not a ramp.
+  // Three things, and none of them is a timer:
+  //  - `pierceArmor`: the lance never meets armour, so the 550 lands whole
+  //    on the one body plated thickly enough that everything else on the
+  //    board is shaving twenty a hit off it.
+  //  - `sort: "strongest"`, railhead's pick for railhead's reason: a gun
+  //    that fires this rarely cannot spend a shot on whichever weaver1
+  //    wandered nearest.
+  //  - `pierceCap: 1` and 550 damage on a 3.5-second clock. Against a
+  //    crowd that is ONE dead chaff body every 3.5 seconds and five
+  //    hundred points thrown into the dirt — the overkill IS the
+  //    anti-chaff rule, and it needs no code. Against a heavy it is 157
+  //    damage a second through armour, which is what the turret is for.
+  //
+  // IT IS NOT A RAILHEAD AND MUST NEVER READ AS ONE, and the numbers are
+  // picked to keep the two apart at a glance. Railhead spends 1,755 on a
+  // QUEUE every 3.3 seconds — 527 a second, through as many bodies as the
+  // budget reaches, from 200 units further out. Tether spends 550 on ONE
+  // body every 3.5 — 157 a second, and the second body in the line is
+  // untouched. It is SLOWER than the railhead as well as smaller, which is
+  // the point: under a third of the rate at an eighth of the price, and
+  // that is the whole of the tier-2 bargain.
+  //
+  // THE RELOAD IS THE COST AND IT IS MEANT TO HURT, and it is the one
+  // number on this turret that has been deliberately walked the WRONG way.
+  // 210 ticks with a 4-degree cone and a 4-degree-a-tick yoke: the turret
+  // commits to a mark, swings slowly onto it, and a body that dies
+  // mid-swing costs the player the whole cycle. At 165 the gun fired often
+  // enough to feel like a gun; at 210 every shot is a decision, which is
+  // what a siege weapon is supposed to be. Nothing here may be shortened
+  // without taking the reload back to where it stops being one.
   tether: {
     name: "Tether",
     size: 2,
     health: 640,
     armor: 4,
     range: 300 * MU,
-    reload: 0, // continuous: no volley clock at all
+    reload: 210 / TICK, // 3.5 s — SLOWER than railhead's 3.3, on purpose
     shots: 1,
     shotDelay: 0,
     spread: 0,
     inaccuracy: 0,
-    shootCone: (6 * Math.PI) / 180, // TractorBeamTurret's own default
-    rotateSpeed: ((12 * Math.PI) / 180) * TICK,
+    // it commits, nearly as hard as a railhead does: four degrees of cone
+    // on a yoke that turns four a tick
+    shootCone: (4 * Math.PI) / 180,
+    rotateSpeed: ((4 * Math.PI) / 180) * TICK,
     targetAir: true,
     targetGround: true,
-    // railhead's pick, for railhead's reason: a beam that has to be
-    // held for seconds to be worth anything cannot spend them on whichever
-    // weaver1 wandered nearest
     sort: "strongest",
     bullet: {
-      // damageContinuousPierce is per TICK; this table is per second
       speed: 0,
-      damage: 0.5 * TICK,
-      lifetime: 0,
+      damage: 550,
+      // the damage is instant; this is the lance's FADE, a third of a
+      // second so a shot that big is still on screen long enough to read
+      lifetime: 20 / TICK,
       splash: 0,
       splashRadius: 0,
       collidesAir: true,
       collidesGround: true,
       pierceArmor: true,
-      lock: { spool: 8, peak: 7 },
+      // ONE body, and the beam stops dead at it (Sim.laserBeam's
+      // findPierceLength) — so a lance fired into a crowd visibly ends at
+      // the thing it picked instead of running the lane. Length is a
+      // touch over the turret's range, as piercer's is over its.
+      // `width` is carried for the table's sake only — the drawn width
+      // comes off the style (weapons.ts TETHER_LASER), so the two are
+      // kept equal rather than allowed to contradict each other
+      laser: { length: 310 * MU, pierceCap: 1, width: 9 * MU },
+      // a laser fires clean: a spark at the muzzle and no powder at all
+      shootFx: FxKind.SparkShoot,
+      // Fx.hitPiercer, the white bars every instant beam on the roster
+      // lands with — colourless on purpose, so the mint is the LANCE and
+      // the impact is just impact
+      hitFx: FxKind.HitPiercer,
+      fxColor: PAL.tetherBeam,
     },
   },
   // Deluge — douser's weapon at the endgame's scale, and the same
@@ -1720,7 +1758,7 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   douser: "Lobs a ball of water that bursts, soaking everything nearby and chipping at it.",
   piercer: "Charges up, then fires a beam through a line of enemies.",
   barrage: "Lobs four shells at once over a long distance.",
-  tether: "Locks a beam onto one enemy that burns hotter the longer it holds.",
+  tether: "Fires one huge armour-piercing lance at the toughest enemy in range, then reloads slowly.",
   cleaver: "Shoots three heavy rays at very close range.",
   hive: "Shoots homing missiles that explode on contact.",
   whirl: "Shoots a fast stream of shells that burst into fragments.",
@@ -2076,38 +2114,6 @@ export const SHORT_FX_LIFE = 0.22;
  * for that long and no longer.
  */
 export const AURA_LINGER = 1.35;
-
-/**
- * THE GRAPNELS' WINCH (levels.ts UnitStats.grapple, Sim.updateGrapples).
- *
- * GRAPPLE_REEL_TIME is how long a hooked body spends being dragged to
- * where its hook bit — a third of a second whatever the distance, because
- * what the player has to read is a winch snapping taut rather than a body
- * walking faster. GRAPPLE_REEL_SPEED is what its own pace is multiplied
- * by while that runs, and the two together are what decide how far a
- * throw actually carries: the ray picks a point up to the kind's `reach`,
- * and the reel is fast enough to cover it.
- *
- * GRAPPLE_ANCHOR_TIME is the OTHER end of the mechanic and the reason it
- * is not oppressive: a building that has been dragged cannot be dragged
- * again for this long (Tower.pullT), so a wave of forty starfish cannot
- * walk one turret across the map — the first one takes it, and every body
- * behind it finds the gun anchored and spends its hook on the ground. It
- * is the same minute the winch itself takes, on purpose: one gun per body
- * per minute, one pull per gun per minute.
- *
- * 
-GRAPPLE_SETTLE is the winch SPOOLING UP: the seconds a freshly arrived
- * body may not throw at all. It is not flavour — a body picks its first
- * target a few tenths of a second after it goes live, and without this a
- * starfish that lands within reach of a turret throws its hook at the
- * empty ground ahead on its very first tick, because it has not looked at
- * anything yet. Two seconds is several target picks.
- */
-export const GRAPPLE_SETTLE = 2;
-export const GRAPPLE_REEL_TIME = 0.35;
-export const GRAPPLE_REEL_SPEED = 7;
-export const GRAPPLE_ANCHOR_TIME = 60;
 
 /**
  * THE SQUEEZE (Sim.mergeSqueezed): two bodies of one kind crushed into

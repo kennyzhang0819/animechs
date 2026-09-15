@@ -3,6 +3,7 @@
 // is allocated the ordinary way — sharing what nobody outside reads would
 // be memory handed over for nothing.
 import * as shared from "./shared";
+import { HEADER_LEN } from "./simreport";
 // the placement rule lives over grids so that the drawing side can ask it
 // too, without waiting on this thread (board.ts)
 import { canPlaceOn, rulerCells, waterloggedUnder, type BoardGrids } from "./board";
@@ -21,10 +22,6 @@ import {
   BURN_DPS as BURN_DPS_IMPORT,
   BURN_FX_CHANCE as BURN_FX_CHANCE_IMPORT,
   AURA_LINGER,
-  GRAPPLE_ANCHOR_TIME,
-  GRAPPLE_REEL_SPEED,
-  GRAPPLE_REEL_TIME,
-  GRAPPLE_SETTLE,
   DAMAGE_SMOKE_BELOW,
   DAMAGE_SMOKE_LIFE,
   DAMAGE_SMOKE_RATE,
@@ -86,6 +83,7 @@ const TOWERS = TOWERS_IMPORT;
 const W = W_IMPORT;
 const WALL_R = WALL_R_IMPORT;
 import { FlowField, type Footprint, type Vec2 } from "./flowfield";
+import { makeFieldPort, type FieldLink, type FieldPort } from "./fieldport";
 import {
   HB_A,
   HB_B,
@@ -215,6 +213,7 @@ import {
   UNIT_REACH,
   UNIT_WEAPONS,
   EXPLOSION_STYLES,
+  TOWER_LASER_STYLE,
   type UnitWeapon,
 } from "./weapons";
 import {
@@ -449,10 +448,17 @@ const FIELD_SETTLE = 0.15;
  */
 const FIELD_MAX_STALE = 1;
 /**
- * WHAT A RE-ROUTE COSTS A FRAME, in milliseconds. The solve itself is
- * sliced (FlowField.advance) and this is the size of the slice: the whole
- * of what building a turret takes out of a frame, whatever is queued
- * behind it. Three milliseconds leaves a 60fps frame the other thirteen.
+ * WHAT A RE-ROUTE COSTS A FRAME, in milliseconds — WHEN IT IS SOLVED ON
+ * THIS THREAD. The solve itself is sliced (FlowField.advance) and this is
+ * the size of the slice: the whole of what building a turret takes out of
+ * a frame, whatever is queued behind it. Three milliseconds leaves a 60fps
+ * frame the other thirteen.
+ *
+ * In the game the solve runs on a thread of its own (fieldport.ts) and
+ * this is not paid at all: on a late board the queue never emptied and
+ * the slice was the third-largest phase of every step. The slices remain
+ * for the headless tools (no Worker in node) and as the fallback if the
+ * worker fails.
  */
 const FIELD_BUDGET_MS = 3;
 /**
@@ -527,6 +533,8 @@ export const PICK_LENIENT = 1.6;
  * wall from reading as the ground behind it.
  */
 export const PICK_STRUCT_PAD = CELL * 0.5;
+/** how far from a gathering click "everything like it" reaches (Sim.click) */
+export const SEL_LIKE_STRUCT_R = CELL * 40;
 
 
 /** how many buildings one ruler line may lay down (rulerCells) */
@@ -630,16 +638,8 @@ const KIND_PAYLOAD = UNIT_KINDS.map((k) => UNIT_STATS[k].payload ?? null);
  */
 const KIND_CHARGE = Float64Array.from(UNIT_KINDS, (k) => UNIT_STATS[k].charge?.range ?? 0);
 const HAS_CHARGE = KIND_CHARGE.some((r) => r > 0);
-/**
- * THE GRAPPLE (levels.ts UnitStats.grapple), the Grapnels' trait: the
- * hook's reach up its own route, the reach it will take a GUN at instead,
- * how far that gun is dragged, and the minute between throws. Null for
- * every kind that carries no hook, which is every kind but five.
- */
-const KIND_GRAPPLE = UNIT_KINDS.map((k) => UNIT_STATS[k].grapple ?? null);
-const HAS_GRAPPLE = KIND_GRAPPLE.some((g) => g !== null);
 const KIND_SEEK = Float64Array.from(UNIT_KINDS, (k) =>
-  Math.max(UNIT_REACH[k], UNIT_STATS[k].charge?.range ?? 0, UNIT_STATS[k].grapple?.range ?? 0),
+  Math.max(UNIT_REACH[k], UNIT_STATS[k].charge?.range ?? 0),
 );
 const KIND_BOSS: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].boss);
 const BOSS_KINDS = KIND_BOSS.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
@@ -1017,13 +1017,13 @@ export class Sim {
    * so the boundary between the two is also the frame Fx.spawn fires on.
    * Zero is a unit that has finished arriving, which is nearly all of them
    */
-  readonly uspawn = new Float32Array(MAX_UNITS);
+  readonly uspawn = shared.f32(MAX_UNITS);
   /**
    * StatusEffects.burning: seconds of fire left. Reapplying resets it to
    * the full statusDuration rather than stacking, exactly like Mindustry's
    * status map, which keeps one entry per effect
    */
-  readonly uburn = new Float32Array(MAX_UNITS);
+  readonly uburn = shared.f32(MAX_UNITS);
   /**
    * THE TWO STAMPED AURAS (constants.ts AURA_LINGER), each a value and the
    * seconds it has left to run: extra armour from an ironhide5, a speed
@@ -1054,7 +1054,7 @@ export class Sim {
   readonly uage = new Float32Array(MAX_UNITS);
   /** what age is worth right now: the damage multiplier every weapon the
    *  body fires carries (1 on everything that does not age) */
-  readonly uvet = new Float32Array(MAX_UNITS);
+  readonly uvet = shared.f32(MAX_UNITS);
   readonly udrillMul = new Float32Array(MAX_UNITS);
   readonly udrillT = new Float32Array(MAX_UNITS);
   /** THE SPOTTER'S STAMP (levels.ts spotterField): the reach multiplier
@@ -1063,21 +1063,6 @@ export class Sim {
   readonly ureachT = new Float32Array(MAX_UNITS);
   /** BLINK (levels.ts blink): seconds until the body may jump again */
   readonly ublinkCd = new Float32Array(MAX_UNITS);
-  /**
-   * THE GRAPNELS' WINCH (levels.ts grapple): seconds until the hook may be
-   * thrown again — one minute, whichever way it was spent.
-   */
-  readonly ugrapCd = new Float32Array(MAX_UNITS);
-  /**
-   * ...and the throw in progress: where the hook is planted and how many
-   * seconds of winching are left. While `ureelT` runs the body drops the
-   * flow field and is dragged straight at that point at several times its
-   * own pace (updateUnits), which is the whole of how this family covers
-   * ground. Zero is a body walking normally.
-   */
-  readonly ureelT = new Float32Array(MAX_UNITS);
-  readonly ureelX = new Float32Array(MAX_UNITS);
-  readonly ureelY = new Float32Array(MAX_UNITS);
   /** CLOAK (levels.ts cloak): seconds still hidden, and seconds until the
    *  next time it hides */
   readonly ucloakT = shared.f32(MAX_UNITS);
@@ -1184,13 +1169,13 @@ export class Sim {
    * beat, and a body that walks out of the circle has to stop being
    * covered on its own rather than waiting for someone to notice.
    */
-  readonly uled = new Float32Array(MAX_UNITS);
+  readonly uled = shared.f32(MAX_UNITS);
   /**
    * MECH VIRUS (mutation.ts): is this body a carrier? One byte, rolled
    * once at the spawn like the hungry mark beside it, and read once when
    * the body dies.
    */
-  readonly uvirus = new Uint8Array(MAX_UNITS);
+  readonly uvirus = shared.u8(MAX_UNITS);
   /**
    * THE WAVE EVERY BODY BELONGS TO, 1-based: the number loadStep staged
    * it under, and a brood member's is its parent's. It is what makes a
@@ -1268,6 +1253,13 @@ export class Sim {
    * cannot disagree.
    */
   readonly occupied = shared.u8(NCELLS);
+  /**
+   * THE SCALARS THE GAME READS, one slot each, on shared memory — the
+   * clock, the count, the purse, the wave (simreport.ts HDR). Written by
+   * writeHeader after every step and every command, read by the game
+   * directly, so the frame loop's own questions never wait on a message.
+   */
+  readonly header = shared.f64(HEADER_LEN);
   /** the swarm's bullets, missiles and shells in flight (see EnemyShot) */
   readonly shots: EnemyShot[] = [];
   /** runts that went off on a structure: gone, and paid for by no one */
@@ -1348,12 +1340,15 @@ export class Sim {
    * Bodies EATEN by hungry units (the Hungry mutator) — removed from the
    * field without ever having been killed or leaked.
    *
-   * It is its own counter and not a kill for two reasons. The HUD's kill
-   * count is what the player's towers did, and crediting them with a meal
-   * they had no part in is a lie on the one number that says how the run is
-   * going. And `remaining()` is what ENDS the run: a devoured unit is gone,
-   * so it has to come off the total or a wave that eats itself can never be
-   * finished and the level never wins.
+   * It is its own counter and not a kill because the HUD's kill count is
+   * what the player's towers did, and crediting them with a meal they had
+   * no part in is a lie on the one number that says how the run is going.
+   *
+   * IT NO LONGER HAS TO BE PAID BACK ANYWHERE. It used to come off
+   * `remaining()`, because that was a ledger and a body eaten had to be
+   * credited or a wave that ate itself could never be finished. remaining()
+   * counts the field and the unsent script now, so an eaten body stops
+   * counting by being gone. This is a REPORT NUMBER, as `merged` is.
    *
    * killsByKind — the drop ledger — is deliberately untouched, which is the
    * whole "hungry enemies do not drop more materials" rule: what is eaten
@@ -1440,6 +1435,18 @@ export class Sim {
    * for these branches existing.
    */
   private specs = new Map<TowerKind, TowerStats>();
+  /**
+   * HOW MANY TIMES THE TABLE HAS BEEN RECOMPOSED. The drawing side keeps
+   * its own copy of it (World.statsFor — a bullet is drawn with the stats
+   * it was fired with), and this is how it knows the copy has gone stale
+   * without being sent the whole table every frame (simreport.ts).
+   */
+  specsVersion = 0;
+
+  /** the composed table as entries — what crosses when specsVersion moves */
+  specTable(): [TowerKind, TowerStats][] {
+    return [...this.specs];
+  }
 
   /** how deep the placement batch is (batchPlacement), and whether anything
    *  inside it asked for a spec refresh that is still owed */
@@ -1545,6 +1552,24 @@ export class Sim {
   private wavesStarted = 0;
   /** index of the script's last non-empty wave — what a survive mission repeats */
   private lastWaveIdx = -1;
+  /**
+   * SUFFIX SUMS OVER THE SCRIPT: `scriptLeft[i]` is how many bodies every
+   * step from `i` to the end of the script still holds, so
+   * `scriptLeft[stepIdx + 1]` is everything the cursor has NOT reached, in
+   * one read. Built once by stageScript and never touched again — it
+   * describes the script, not the run.
+   *
+   * IT IS THE REASON remaining() NEEDS NO LEDGER. A counter that has to be
+   * paid down every time a body leaves the field by some new door — eaten,
+   * exploded, folded, swept off by a wave skip — is a counter that goes
+   * wrong the first time someone adds a door and forgets. This is derived
+   * from where the cursor IS, so a jump that walks past thirty waves stops
+   * counting them by arithmetic rather than by remembering to.
+   *
+   * Length is script.length + 1 so the last entry is always a real 0 and
+   * the read past the end needs no branch of its own.
+   */
+  private scriptLeft: number[] = [0];
   // the wave being drained, flattened to (region, kind) entries — every
   // entry runs out at the same moment (see nextWaveEntry), each spawning
   // only on its own region's pads (region 0 = any pad)
@@ -1869,9 +1894,34 @@ export class Sim {
 
   /** a Sim is always born on a level — building a default world and then
    * calling loadLevel solved the flow field twice and threw the first away */
-  constructor(level: LevelSpec = WORLDS[0]) {
+  /**
+   * `solver` is the line to the route solver's thread (fieldport.ts), handed
+   * in by whoever builds a sim inside a browser — the page spawns the
+   * thread, never the sim; the headless tools pass nothing and solve in
+   * slices (see fieldPort).
+   */
+  constructor(level: LevelSpec = WORLDS[0], solver?: FieldLink | null) {
     this.level = level;
+    // a solve that lands takes its field off the queue
+    this.fieldPort = makeFieldPort(solver, (f) => {
+      const i = this.solveQueue.indexOf(f);
+      if (i >= 0) this.solveQueue.splice(i, 1);
+    });
     this.reset();
+  }
+
+  /**
+   * THE ROUTE SOLVER'S THREAD (fieldport.ts), or null where there is no
+   * such thing — node, where the headless tools run and every solve is
+   * finished in the tick that queued it anyway (setFieldBudget). Made
+   * once per sim.
+   */
+  private fieldPort: FieldPort | null = null;
+
+  /** stop talking to the solver — the level is over (the page ends its thread) */
+  dispose(): void {
+    this.fieldPort?.close();
+    this.fieldPort = null;
   }
 
   reset(): void {
@@ -2148,6 +2198,20 @@ export class Sim {
    * whole (FlowField.advance).
    */
   private runSolveQueue(): void {
+    // ON THE FIELD WORKER, where there is one: every queued field is asked
+    // for at once (the worker answers them in order) and this thread pays
+    // for a copy of the masks and nothing else. The queue empties as the
+    // replies land (fieldPort's onDone). A worker that has died is dropped
+    // here, and the fields it was holding start over in slices below — a
+    // route that is late is a route; a route never solved is a traffic jam
+    const port = this.fieldPort;
+    if (port && !port.alive) {
+      this.fieldPort = null;
+      for (const f of this.solveQueue) f.abort();
+    } else if (port) {
+      for (const f of this.solveQueue) if (!f.solving) f.requestRemote(port);
+      return;
+    }
     const until = nowMs() + this.fieldBudgetMs;
     while (this.solveQueue.length > 0) {
       const left = until - nowMs();
@@ -2495,15 +2559,22 @@ export class Sim {
   }
 
   /**
-   * IS THE MISSION MET? A hold is won when every body the script sends is
-   * down (and it sent some); a survive when the clock has run out.
+   * IS THE MISSION MET? A hold is won when the field is clear and the
+   * script has nothing left to send; a survive when the clock has run out.
    * Never while the base is dead — a clock that ran out on a lost base is
    * a loss.
+   *
+   * `remaining()` is the whole of the hold test and is counted off the
+   * world, so this is true exactly when there is no body on the field, no
+   * corpse waiting to stand up, and no wave the cursor has yet to reach.
+   * `totalWaves > 0` is the one thing it cannot see: a script with no
+   * waves in it is a level with nothing to hold against, and an empty
+   * field on wave zero is not a victory.
    */
   won(): boolean {
     if (this.lost()) return false;
     if (this.deadline > 0) return this.time >= this.deadline;
-    return this.totalEnemies > 0 && this.remaining() <= 0;
+    return this.totalWaves > 0 && this.remaining() <= 0;
   }
 
 
@@ -2622,6 +2693,7 @@ export class Sim {
     // the loss is the player's purchase, and buffing the swarm's copy with
     // it would make every upgrade a gift to the thing shooting back
     for (const t of this.towers) if (t.team === "player") this.resolveTower(t);
+    this.specsVersion++;
   }
 
   /**
@@ -2766,9 +2838,46 @@ export class Sim {
     return counts;
   }
 
-  /** enemies left to kill: still unspawned + still walking the field */
+  /**
+   * ENEMIES LEFT TO KILL, COUNTED OFF THE WORLD RATHER THAN OFF A LEDGER:
+   * what is standing on the field right now, plus what the script has not
+   * sent yet. Nothing is subtracted, so nothing can fail to be subtracted.
+   *
+   * THIS USED TO BE `totalEnemies - kills - devoured - exploded`, and that
+   * shape is why a run could not be won after a wave skip: the skip walks
+   * the cursor past waves whose bodies were already in `totalEnemies` and
+   * pays none of them back, so the total stayed owed forever and the level
+   * never ended (see skipToWave). The same hole opens for every future
+   * door a body might leave by — a new mutator that removes units, an
+   * ability that banishes them, anything at all — because each one has to
+   * remember to credit a counter it has no reason to know about.
+   *
+   * Counted from the world there is no such obligation. A body that is
+   * gone is gone because it is not on the field; a wave the cursor has
+   * walked past is not counted because the cursor is past it. The four
+   * pieces:
+   *
+   *  - every row on the field, weighted by `ustack` — a folded body
+   *    (mergeSqueezed) is several bodies riding in one row, and the wave
+   *    that sent them is not finished until the row that holds them dies.
+   *  - the loaded wave's unsent remainder, straight off waveEntries.
+   *  - every wave the cursor has not reached (scriptLeft).
+   *  - THE CORPSES, stacks and all. Reconstruction (updateCorpses) stands
+   *    them back up, so a field that looks clear with a corpse on it has
+   *    bodies still to come — and the old ledger, which had already
+   *    counted the corpse as a kill, could declare the level won a moment
+   *    before its swarm got off the floor.
+   */
   remaining(): number {
-    return this.totalEnemies - this.kills - this.devoured - this.exploded;
+    let left = 0;
+    for (let i = 0; i < this.n; i++) left += this.ustack[i];
+    for (const e of this.waveEntries) left += e.left;
+    for (const c of this.corpses) left += c.stack;
+    // the cursor sits ON the loaded wave, whose remainder is in waveEntries
+    // above — so the unreached script starts at the step AFTER it. Clamped
+    // because a spent script leaves stepIdx at the script's own length
+    left += this.scriptLeft[Math.min(this.stepIdx + 1, this.scriptLeft.length - 1)];
+    return left;
   }
 
   /** per-kind head count currently on the field, indexed like UNIT_KINDS */
@@ -2904,10 +3013,8 @@ export class Sim {
       poison: 0,
       poisonUnit: 0,
       poisonT: 0,
-      // ...nor shorted (the Wraith fleet's EMP) nor jammed (the sky's T4),
-      // and nothing has had a hook on it (the Grapnels', Tower.pullT)
+      // ...nor shorted (the Wraith fleet's EMP) nor jammed (the sky's T4)
       shortT: 0,
-      pullT: 0,
       jamT: 0,
       jamRate: 1,
       // ...and nothing is infected the moment it is built: the Mech Virus
@@ -3020,6 +3127,11 @@ export class Sim {
    * throws away the measurement at the moment you ask for it, which is a
    * trap rather than an API.
    */
+  /** is the phase clock armed — the report carries its reading only then */
+  get profiling(): boolean {
+    return this.profOn;
+  }
+
   profile(on: boolean): void {
     if (on) {
       this.profSteps = 0;
@@ -3109,11 +3221,6 @@ export class Sim {
     this.mark("projectiles");
     this.updateUnitWeapons(dt);
     this.mark("unitGuns");
-    // THE HOOKS, after the targets are picked and before the shots move:
-    // a starfish spends its winch on the target updateUnitWeapons just
-    // handed it, or on the ground ahead when there is none
-    if (HAS_GRAPPLE) this.updateGrapples(dt);
-    this.mark("grapples");
     this.updateEnemyShots(dt);
     this.mark("enemyShots");
     // CASCADE CHARGES (relics.ts): the heavy hulls that fell this tick,
@@ -3152,16 +3259,24 @@ export class Sim {
     this.totalWaves = 0;
     const script = this.level.script;
     this.lastWaveIdx = -1;
+    // the per-step body counts, kept so the suffix sums below can be laid
+    // down in one pass back over them
+    const per = new Array<number>(script.length).fill(0);
     for (let i = 0; i < script.length; i++) {
       const step = script[i];
       if (!("wave" in step)) continue;
       let n = 0;
       for (const g of waveGroups(step.wave)) for (const c of g.counts) n += c;
       if (n === 0) continue;
+      per[i] = n;
       this.totalWaves++;
       this.totalEnemies += n;
       this.lastWaveIdx = i;
     }
+    // ...and the suffix sums over them, walked backwards (see scriptLeft)
+    this.scriptLeft = new Array<number>(script.length + 1).fill(0);
+    for (let i = script.length - 1; i >= 0; i--)
+      this.scriptLeft[i] = this.scriptLeft[i + 1] + per[i];
     this.stepIdx = 0;
     this.waitLeft = 0;
     this.spawnAcc = 0;
@@ -3261,6 +3376,12 @@ export class Sim {
    * the purse a run that played forty waves would have. The sandbox builds
    * for free anyway (setRich), which is the whole reason the purse does
    * not have to be faked here.
+   *
+   * AND NOTHING HERE HAS TO TELL THE WIN CONDITION WHAT IT DID. It used
+   * to have to and did not, which is what made a jumped run unwinnable:
+   * the skipped waves stayed owed in a body ledger nobody paid back. See
+   * remaining() — it counts the field and the unsent script, so moving the
+   * cursor IS the accounting.
    */
   skipToWave(target: number): void {
     const want = Math.min(Math.max(1, Math.floor(target)), this.totalWaves);
@@ -4338,20 +4459,41 @@ export class Sim {
             break;
           }
           case "field": {
-            // EnergyFieldAbility: one pulse to every structure in reach, a
-            // Fx.chainLightning to each and Fx.hitLaserBlast off the unit
-            // toward it, in the ability's colour
+            // EnergyFieldAbility: one pulse to every structure in reach —
+            // but DRAWN AS ONE BOLT, not as one per target. The ability
+            // reaches twenty-two tiles and takes twenty-five things, and a
+            // star of twenty-five bolts leaving the same hull is a white
+            // blot where a weapon should be. So the pulse WALKS instead:
+            // out of the mount to the nearest structure, then nearest to
+            // nearest through the rest, one Fx.chainLightning a hop. Same
+            // targets, same damage on every one of them — the hop order is
+            // the only thing the walk decides, and it decides it so the
+            // line is short and legible rather than so the chain is fair
             const hit = this.structuresWithin(x, y, wrange, this.splashOut);
-            const max = wp.maxTargets ?? hit.length;
+            const max = Math.min(hit.length, wp.maxTargets ?? hit.length);
             const col = wp.fieldColor ?? PAL.heal;
-            for (let k = 0; k < hit.length && k < max; k++) {
+            let cx = x, cy = y;
+            for (let k = 0; k < max; k++) {
+              // NEAREST-NEIGHBOUR, IN PLACE: pick the closest of the
+              // structures not yet walked (hit[k..]) and swap it to k, so
+              // the tail stays the unvisited set with nothing allocated
+              let bi = k, bd = Infinity;
+              for (let j = k; j < hit.length; j++) {
+                const ddx = hit[j].x - cx, ddy = hit[j].y - cy;
+                const d2 = ddx * ddx + ddy * ddy;
+                if (d2 < bd) { bd = d2; bi = j; }
+              }
+              if (bi !== k) { const sw = hit[k]; hit[k] = hit[bi]; hit[bi] = sw; }
+              const t = hit[k];
               // the rot rides a field pulse exactly as it rides a bullet: no
               // hit path in this file may quietly drop a weapon's status, or
               // the next family built on `field` loses it without a word
-              this.hitStructure(hit[k], wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
-              if (wp.short) this.shortTower(hit[k], wp.short, wp.shortChance ?? 1);
-              this.chainFx(x, y, hit[k], col);
-              this.pushFxCol(x, y, 12 / 60, FxKind.HitLaserBlast, Math.atan2(hit[k].y - y, hit[k].x - x), 0, col);
+              this.hitStructure(t, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
+              if (wp.short) this.shortTower(t, wp.short, wp.shortChance ?? 1);
+              this.chainFx(cx, cy, t, col);
+              this.pushFxCol(t.x, t.y, 12 / 60, FxKind.HitLaserBlast, Math.atan2(t.y - cy, t.x - cx), 0, col);
+              cx = t.x;
+              cy = t.y;
             }
             break;
           }
@@ -4905,6 +5047,15 @@ export class Sim {
     });
   }
 
+  /** a saved layout, stood back up as one board change — how many stood */
+  placeMany(towers: readonly { gx: number; gy: number; kind: TowerKind }[]): number {
+    return this.batchPlacement(() => {
+      let n = 0;
+      for (const t of towers) if (this.placeTower(t.gx, t.gy, t.kind) === "ok") n++;
+      return n;
+    });
+  }
+
   batchPlacement<T>(fn: () => T): T {
     this.specsHold++;
     try {
@@ -5431,13 +5582,6 @@ export class Sim {
       this.ureachMul[i] = 1;
       this.ureachT[i] = 0;
       this.ublinkCd[i] = 0;
-      // a body arrives with its hook LOADED BUT NOT YET AIMED: the winch
-      // spools for a moment first (GRAPPLE_SETTLE), which is the two
-      // seconds it takes to pick a first target. Without it every
-      // starfish throws at the ground on the tick it arrives, having
-      // looked at nothing
-      this.ugrapCd[i] = GRAPPLE_SETTLE;
-      this.ureelT[i] = 0;
       // a cloaking kind walks in visible and hides for the first time a
       // full period in — a door that spat out ghosts would be a door with
       // no answer
@@ -5789,7 +5933,6 @@ export class Sim {
         }
       }
       if (HAS_BLINK && this.ublinkCd[i] > 0) this.ublinkCd[i] -= dt;
-      if (HAS_GRAPPLE && this.ugrapCd[i] > 0) this.ugrapCd[i] -= dt;
       // THE CLOAK CYCLE (levels.ts cloak): hidden for `duration`, then
       // seen for the rest of `period`, from the first period in. The
       // flagship's veil hides the bodies round it for the same spell —
@@ -6375,10 +6518,6 @@ export class Sim {
     this.ureachMul[i] = this.ureachMul[n];
     this.ureachT[i] = this.ureachT[n];
     this.ublinkCd[i] = this.ublinkCd[n];
-    this.ugrapCd[i] = this.ugrapCd[n];
-    this.ureelT[i] = this.ureelT[n];
-    this.ureelX[i] = this.ureelX[n];
-    this.ureelY[i] = this.ureelY[n];
     this.ucloakT[i] = this.ucloakT[n];
     this.ucloakCd[i] = this.ucloakCd[n];
     this.uhungry[i] = this.uhungry[n];
@@ -6983,26 +7122,6 @@ export class Sim {
           flowTmp.y = ty / tl;
         } else mf.sample(upx[i], upy[i], flowTmp);
       }
-      // A HOOKED BODY IS BEING WINCHED (levels.ts grapple, Sim.hookSelf):
-      // for the third of a second the line is taut it drops the route and
-      // is dragged straight at where the hook bit, at several times its
-      // own pace. It is the charge's override with a point instead of a
-      // target — and it keeps every force below it, so the reel still
-      // slides along walls and still shoves through a crowd rather than
-      // teleporting past either
-      let reeling = false;
-      if (HAS_GRAPPLE && this.ureelT[i] > 0) {
-        this.ureelT[i] -= dt;
-        const tx = this.ureelX[i] - upx[i], ty = this.ureelY[i] - upy[i];
-        const tl = Math.sqrt(tx * tx + ty * ty);
-        // arrived, or the clock ran out: the line goes slack
-        if (this.ureelT[i] <= 0 || tl < CELL * 0.4) this.ureelT[i] = 0;
-        else {
-          reeling = true;
-          flowTmp.x = tx / tl;
-          flowTmp.y = ty / tl;
-        }
-      }
       // StatusEffects.unmoving is a speedMultiplier of 0, not a freeze: a
       // unit still materialising cannot drive itself anywhere, but the
       // crowd shove below still lands on it. Wet is the other multiplier
@@ -7037,16 +7156,12 @@ export class Sim {
       // soaked body under a weaver3 is slowed and hurried at once, and the
       // product is the honest answer to both.
       const haste = HAS_HASTE_AURA && this.uhasteT[i] > 0 ? this.uhasteMul[i] : 1;
-      // ...and a FIFTH, which is the only one that can be bigger than one:
-      // the winch (GRAPPLE_REEL_SPEED). A hooked body covers ground at
-      // several times its walk for as long as the line is taut
-      const reel = reeling ? GRAPPLE_REEL_SPEED : 1;
       const spd =
         uspawn[i] > SPAWN_INVINCIBLE - SPAWN_UNMOVING
           ? 0
           : uwet[i] > 0
-            ? uspd[i] * uwetSlow[i] * land * haste * reel
-            : uspd[i] * land * haste * reel;
+            ? uspd[i] * uwetSlow[i] * land * haste
+            : uspd[i] * land * haste;
       uvx[i] += (flowTmp.x * spd - uvx[i]) * steer;
       uvy[i] += (flowTmp.y * spd - uvy[i]) * steer;
 
@@ -7966,6 +8081,87 @@ export class Sim {
   }
 
   /**
+   * ONE LEFT CLICK ON THE BOARD — everything it can mean, in the order a
+   * player means them. It used to be a chain of questions Game asked the
+   * sim one after another (unitAt, then shieldTowerAt, then ...), each
+   * with an answer the next depended on; that is a conversation, and a
+   * conversation cannot cross a thread. Asked HERE it is one command with
+   * four numbers in it, and every answer is local.
+   *
+   * With `like` (ctrl, or the second click of a double): everything LIKE
+   * the thing under the cursor and near it, buildings gathered the way a
+   * squad is — click one of them. The near miss is forgiven here too, so
+   * each half is asked tight first and only once that came back empty with
+   * the forgiving reach. Nothing gathered leaves the click to be an
+   * ordinary one rather than nothing.
+   *
+   * The ordinary click:
+   *
+   *   an ENEMY   — ASK WHAT IT IS: the panel answers for the tapped body
+   *                (setInspectUnit) and an arrow over it says which one is
+   *                being read. It is a question and nothing else — no
+   *                turret's aim moves for it
+   *   a SHIELD TOWER   — the same question, of the mutator's structure
+   *   a BUILDING OF OURS — SELECT IT, which is what draws its range ring
+   *                and what the delete key sells. Shift (`add`) adds it to
+   *                whatever is already held
+   *   nothing    — clear everything: selection and mark alike
+   *
+   * Bodies first because they are small, moving, and the thing a panicking
+   * player is jabbing at; a building is big, still, and easy to hit on
+   * purpose. Everything is asked TIGHT first and then, only once all of it
+   * has come back empty, asked again with the forgiving reach
+   * (PICK_LENIENT) — so a near miss lands on what it nearly hit instead of
+   * clearing the board, and nothing precise is ever taken from a click
+   * that did hit something.
+   *
+   * A SHIFT-CLICK ON NOTHING KEEPS THE SELECTION. Adding one building at
+   * a time means missing one now and then, and a miss that emptied the
+   * hand would make the gesture unusable.
+   */
+  click(px: number, py: number, add: boolean, like: boolean): void {
+    if (like)
+      for (const structPad of [0, PICK_STRUCT_PAD] as const)
+        if (this.selectStructsLike(px, py, SEL_LIKE_STRUCT_R, add, structPad) > 0) return;
+    // a plain click replaces the selection; a mark on an enemy clears it too
+    const replaced = (): void => {
+      if (!add) this.clearStructSelection();
+    };
+    const ui = this.unitAt(px, py);
+    if (ui >= 0) {
+      replaced();
+      this.setInspectUnit(ui);
+      return;
+    }
+    const si = this.shieldTowerAt(px, py);
+    if (si >= 0) {
+      replaced();
+      this.setInspectShieldTower(si);
+      return;
+    }
+    // a turret the swarm has taken (Conquest) is read like any other
+    // enemy, and asked BEFORE the selection: it is not the player's to
+    // select, so a click on one can only ever be the question
+    const et = this.enemyTowerAt(px, py);
+    if (et) {
+      replaced();
+      this.setInspectTower(et);
+      return;
+    }
+    if (this.selectStructAt(px, py, add)) return;
+    if (this.selectStructAt(px, py, add, PICK_STRUCT_PAD)) return;
+    const lui = this.unitAt(px, py, PICK_LENIENT);
+    if (lui >= 0) {
+      replaced();
+      this.setInspectUnit(lui);
+      return;
+    }
+    if (add) return; // a shift-click on bare ground is not a change of mind
+    this.clearAllSelection();
+    this.clearInspect();
+  }
+
+  /**
    * THE MARKED BODY, as a live index — -1 when the mark is on something
    * else, on a body that has since died, or on nothing.
    *
@@ -8317,13 +8513,6 @@ export class Sim {
       // runs — no reload, no volley, no mending, no beam — until the clock
       // is out. The sparks are the only sign, on the rot's own footprint
       // rule, so a shorted repeater reads from across the field
-      // ANCHORED (Tower.pullT): the minute a dragged gun spends immune to
-      // the next hook. It runs while the turret is shorted, jammed or
-      // anything else — it is a fact about the ground, not about the gun
-      if (t.pullT > 0) {
-        t.pullT -= dt;
-        if (t.pullT <= 0) t.pullT = 0;
-      }
       if (t.shortT > 0) {
         t.shortT -= dt;
         if (t.shortT <= 0) t.shortT = 0;
@@ -8763,14 +8952,20 @@ export class Sim {
             st.bullet.damage,
             st.bullet.laser.pierceCap,
             st.bullet.armorMultiplier ?? 1,
+            st.bullet.pierceArmor ?? false,
             st.bullet.collidesAir,
             st.bullet.collidesGround,
             st.bullet.hitFx,
             st.bullet.fxColor,
             nature,
           );
-      // forced: the beam is piercer's entire visible shot (damage is instant)
-      this.pushFx(x, y, st.bullet.lifetime, FxKind.Laser, a, reached, 0, 0, true);
+      // forced: the beam IS the shot for every laser turret (damage is
+      // instant), and the style rides `sides` — piercer's blue sheet by
+      // default, tether's mint lance where the table names one
+      this.pushFx(
+        x, y, st.bullet.lifetime, FxKind.Laser, a, reached, 0,
+        TOWER_LASER_STYLE[t.kind] ?? 0, true,
+      );
       hitAimed();
       return;
     }
@@ -9279,6 +9474,7 @@ export class Sim {
     damage: number,
     pierceCap: number,
     armorMult: number,
+    pierceArmor: boolean,
     air: boolean,
     ground: boolean,
     hitFx: BulletFx | undefined,
@@ -9300,7 +9496,7 @@ export class Sim {
     const dead: number[] = [];
     for (let k = 0; k < order.length && (pierceCap <= 0 || k < pierceCap); k++) {
       const i = hits[order[k]];
-      this.damageUnit(i, damage, false, armorMult, nature);
+      this.damageUnit(i, damage, pierceArmor, armorMult, nature);
       if (uhp[i] > 0) this.bulletFx(hitFx, upx[i], upy[i], angle, fxColor);
       else dead.push(i);
     }
@@ -9781,156 +9977,6 @@ export class Sim {
         if (bl) this.blinkUnit(i, bl.dist, bl.cooldown);
       }
     }
-  }
-
-  /**
-   * THE HOOK (levels.ts UnitStats.grapple), once a minute a body.
-   *
-   * ONE ACTION POINTED AT TWO THINGS. A starfish with a turret inside its
-   * grapple range drags THE TURRET; with nothing there it throws the hook
-   * up its own route and drags ITSELF. Both spend the same winch, so a
-   * body that has just crossed a field cannot also take a gun when it
-   * arrives, and that is most of what keeps the family fair: the hook is
-   * either how it got here or what it does when it does.
-   *
-   * WHAT IT WILL NOT TAKE: the core (a goal cell, and the run's whole
-   * stake), a building already carrying its own no-pull clock
-   * (Tower.pullT), and anything it cannot see — a ground body may only
-   * hold a target it has a clear line to, which updateUnitWeapons has
-   * already tested for the target this reads.
-   */
-  private updateGrapples(dt: number): void {
-    void dt;
-    for (let i = 0; i < this.n; i++) {
-      const g = KIND_GRAPPLE[this.ukind[i]];
-      if (!g || this.uhp[i] <= 0 || this.uspawn[i] > 0) continue;
-      // reeling, or the winch is still turning: nothing to decide
-      if (this.ureelT[i] > 0 || this.ugrapCd[i] > 0) continue;
-      const x = this.upx[i], y = this.upy[i];
-      const aim = this.utgt[i];
-      // A GUN IN REACH IS THE HOOK'S FIRST CHOICE
-      if (aim && !isCore(aim.s)) {
-        const t = aim.s as Tower;
-        const dx = t.x - x, dy = t.y - y;
-        if (dx * dx + dy * dy <= g.range * g.range && t.pullT <= 0 && t.hp > 0) {
-          if (this.pullTower(t, x, y, g.pull)) {
-            this.ugrapCd[i] = g.cooldown;
-            continue;
-          }
-        }
-        // A BODY WITH A BUILDING IN SIGHT HOLDS ITS HOOK, which is the
-        // whole of what makes this family's headline a thing that ever
-        // happens. Left to throw it the moment it could, a starfish
-        // spends the winch on open ground the instant it spawns and
-        // arrives at your line every time with a minute still to run —
-        // measured, the drag fired on none of a ninety-second approach.
-        // It is also the reading a player would expect: the hook is for
-        // the gun when there is a gun, and for the ground when there is
-        // not.
-        continue;
-      }
-      // ...and the ground ahead is what it settles for
-      this.hookSelf(i, g.reach, g.cooldown);
-    }
-  }
-
-  /**
-   * THE WINCH ON ITSELF: the hook goes up the body's own route as far as
-   * `reach`, stopping short of the first cell its layer cannot enter and
-   * of any building — the blink's ray, walked the same way — and what it
-   * finds is where the body is dragged over the next fraction of a second
-   * (updateUnits reads ureelT). A throw that finds less than a tile of
-   * clear line is not worth a minute of winch, so it is not spent.
-   */
-  private hookSelf(i: number, reach: number, cooldown: number): void {
-    const mf = this.unav[i] !== 0 ? this.navalField : this.field;
-    const x0 = this.upx[i], y0 = this.upy[i];
-    mf.sample(x0, y0, flowTmpBlink);
-    const dx = flowTmpBlink.x, dy = flowTmpBlink.y;
-    if (dx * dx + dy * dy < 0.01) return;
-    const step = CELL * 0.5;
-    let d = 0;
-    for (let t = step; t <= reach; t += step) {
-      const px = x0 + dx * t, py = y0 + dy * t;
-      const cx = (px / CELL) | 0, cy = (py / CELL) | 0;
-      if (cx < 1 || cy < 1 || cx >= COLS - 1 || cy >= ROWS - 1) break;
-      const ci = cy * COLS + cx;
-      if (mf.walk[ci] || this.cellTower[ci]) break;
-      d = t;
-    }
-    if (d < CELL) return;
-    this.ugrapCd[i] = cooldown;
-    this.ureelX[i] = x0 + dx * d;
-    this.ureelY[i] = y0 + dy * d;
-    // the reel is over in about a third of a second whatever the distance:
-    // this is a winch snapping taut, not a walk
-    this.ureelT[i] = GRAPPLE_REEL_TIME;
-    // the line itself, drawn from the body to where the hook bit
-    this.pushFxCol(x0, y0, GRAPPLE_REEL_TIME, FxKind.Sap, Math.atan2(dy, dx), d, PAL.hook, 0, true);
-  }
-
-  /**
-   * THE WINCH ON A BUILDING: `dist` px of it, toward (hx, hy), onto the
-   * first footprint on that line that will hold it.
-   *
-   * IT IS A MOVE AND NOT A REBUILD. The structure keeps its health, its
-   * mods, its resolved stats, its cooldown and its target; what changes is
-   * the ground it stands on — claimGround gives its old cells back and
-   * takes the new ones, which is also what marks the routes dirty and the
-   * aim boxes stale, so the swarm re-solves round the gun's new position
-   * the way it would round a fresh one.
-   *
-   * THE LANDING IS TESTED FROM THE FAR END BACK. The hook wants the whole
-   * `dist`; where that footprint would sit on rock, on a spawn tile, on
-   * another building or off the board, it takes the longest shorter pull
-   * that fits, and where nothing fits at all the throw is refused (false)
-   * and the body keeps its winch for the next thing it meets.
-   *
-   * Returns true if the building actually moved.
-   */
-  private pullTower(t: Tower, hx: number, hy: number, dist: number): boolean {
-    if (t.hp <= 0) return false;
-    const dx = hx - t.x, dy = hy - t.y;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    if (len < 1) return false;
-    const ux = dx / len, uy = dy / len;
-    const sz = this.sizeOf(t);
-    // never past the body doing the pulling: a gun dragged through a
-    // starfish would land on top of it
-    const most = Math.min(dist, Math.max(0, len - (sz * CELL) / 2));
-    if (most < CELL) return false;
-    for (let d = most; d >= CELL * 0.5; d -= CELL * 0.5) {
-      const nx = t.x + ux * d, ny = t.y + uy * d;
-      const gx = Math.round(nx / CELL - sz / 2), gy = Math.round(ny / CELL - sz / 2);
-      if (gx === t.gx && gy === t.gy) continue;
-      if (!this.canStand(gx, gy, sz, t)) continue;
-      const ox = t.x, oy = t.y;
-      this.claimGround(t, false);
-      t.gx = gx;
-      t.gy = gy;
-      t.x = (gx + sz / 2) * CELL;
-      t.y = (gy + sz / 2) * CELL;
-      this.claimGround(t, true);
-      // the ground under it is new ground: a gun dragged to the water's
-      // edge fires slowed from now on, and one dragged off it recovers
-      // (Hydrophobic, mutation.ts)
-      t.fireRate = this.isWaterlogged(gx, gy, t.kind, sz) ? HYDROPHOBIC_RATE : 1;
-      // ...and the board has one fewer turret where it was, which the
-      // count-dependent rungs read
-      this.refreshSpecs();
-      // THE GUN IS ANCHORED FOR A MINUTE (Tower.pullT). Without it the
-      // second, third and fortieth starfish in a wave would walk the same
-      // turret across the board a pull at a time; with it, one body takes
-      // one gun and everything behind it has to spend its hook on the
-      // ground instead
-      t.pullT = GRAPPLE_ANCHOR_TIME;
-      // the line, and the dust where it landed
-      this.pushFxCol(hx, hy, GRAPPLE_REEL_TIME, FxKind.Sap, Math.atan2(oy - hy, ox - hx),
-        Math.sqrt((ox - hx) * (ox - hx) + (oy - hy) * (oy - hy)), PAL.hook, 0, true);
-      this.pushFx(t.x, t.y, 24 / 60, FxKind.Pulverize, 0, 0, (Math.random() * 0x7fffffff) | 0);
-      return true;
-    }
-    return false;
   }
 
   /**

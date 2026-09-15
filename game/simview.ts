@@ -103,6 +103,17 @@ export interface UnitsView {
   readonly aiming: Uint8Array;
   /** the live census, per kind id — what the composition strip counts */
   readonly aliveByKind: Int32Array;
+  /**
+   * THE REST OF WHAT THE FIELD'S STATUS ROW READS (status.ts
+   * unitFieldStatuses): the arrival grace, the burn, the veteran's
+   * multiplier, the leader's cover and the infection. Numbers the sim
+   * keeps for its own loops that the picture also stamps a symbol for.
+   */
+  readonly uspawn: Float32Array;
+  readonly uburn: Float32Array;
+  readonly uvet: Float32Array;
+  readonly uled: Float32Array;
+  readonly uvirus: Uint8Array;
 }
 
 /**
