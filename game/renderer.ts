@@ -4642,8 +4642,10 @@ export class Renderer {
       const c = ramp(PAL.white, col, null, Math.min(1, t * 2));
       this.strokeLine(dyn, e.x, e.y, e.rot ?? 0, e.len, w, c, 0.35 + fout * 0.65);
     }
+    // the muzzle ring is the heavy tiers' alone: a stroked circle is a
+    // dozen quads, and the mass tiers fire by the thousand
     const RING = 8 / 16;
-    if (t < RING) {
+    if (big && t < RING) {
       const s = t / RING;
       this.strokeCircle(dyn, e.x, e.y, s * (big ? 9 : 5) * MU, ((1 - s) * 1 + 0.2) * MU, col[0], col[1], col[2], RING_ALPHA);
     }

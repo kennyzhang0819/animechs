@@ -301,6 +301,17 @@ const EXPLOSION_LIFE: readonly number[] = EXPLOSION_STYLES.map((e) => e.lifetime
  */
 const FX_CAP = 1400;
 /**
+ * THE WEAPON LANE. A forced effect (pushFx `force`) is a weapon's one
+ * visible artifact — the harpoon's line, the lance's beam, the round's
+ * muzzle splash — and goes past FX_CAP so that a firing body and a stalled
+ * one never look the same, on exactly the wave where the ambient pool is
+ * full. It is not unbounded: this many slots above the cap, and then the
+ * weapons queue like everything else. Bounded by body count x fire rate x
+ * a few tenths of a second of life, a ten-thousand-body wave's worth of
+ * lines is a couple of thousand quads, which the draw does not feel.
+ */
+const FX_WEAPON_CAP = 3000;
+/**
  * Footfall dust gets 140 of those and no more — a fixed slice, not a share,
  * so raising the budget above buys room for shots rather than for grit. It
  * is ambience, and it is PERIODIC: every legged unit on the field throws a
@@ -4512,7 +4523,8 @@ export class Sim {
               } else {
                 this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
                 this.splashStructures(x, y, wpSplash, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1);
-                this.pushFx(x, y, 40 / 60, FxKind.Pulverize, 0, 0, (Math.random() * 0x7fffffff) | 0);
+                // the burst is the whole of the bomb: weapon lane
+                this.pushFx(x, y, 40 / 60, FxKind.Pulverize, 0, 0, (Math.random() * 0x7fffffff) | 0, 0, true);
               }
               this.pushDeathFx(x, y);
               // a stack that goes off is that many bodies gone — read
@@ -4555,10 +4567,14 @@ export class Sim {
             // effect cap — which on a thousand runts was thousands of
             // uncapped quads a second and a frame that stalled. It is ONE
             // effect now: the whole line as a hair-thin streak carrying its
-            // length (FxKind.RailShoot, `len`), a small hit flick, and only
-            // the top tiers' rails are forced (`big`): a T1 that fires by
-            // the thousand fires small, and vanishes under the cap like
-            // everything else that small
+            // length (FxKind.RailShoot, `len`) and a small hit flick. THE
+            // LINE IS FORCED FOR EVERY TIER (the weapon lane, FX_WEAPON_CAP):
+            // it used to be forced for the top tiers only, and on a late
+            // board the ambient pool was full, so a T1-T3 fleet fired by
+            // the thousand and showed nothing at all. The mass tiers' line
+            // is a bare thread — no muzzle ring (renderer drawRailShoot) —
+            // and the hit flick stays dressing, kept only for the heavy
+            // tiers (`big`)
             const big = KIND_TIER[ukind[i]] >= 4;
             if (wp.pierce) {
               const hit = this.structuresAlong(x, y, aim, wrange, CELL * 0.5, this.alongOut);
@@ -4572,7 +4588,7 @@ export class Sim {
             }
             const dx = tgt.x - x, dy = tgt.y - y;
             const along = wp.pierce ? wrange : Math.min(wrange, Math.sqrt(dx * dx + dy * dy));
-            this.pushFxCol(x, y, 16 / 60, FxKind.RailShoot, aim, along, rc, big ? 1 : 0, big);
+            this.pushFxCol(x, y, 16 / 60, FxKind.RailShoot, aim, along, rc, big ? 1 : 0, true);
             break;
           }
           case "scatter": {
@@ -4619,7 +4635,8 @@ export class Sim {
             this.hitStructure(cur, dmg, wp.poison ?? 0, wp.poisonChance ?? 1);
             this.shortTower(cur, wp.short ?? 0, wp.shortChance ?? 1);
             this.chainFx(x, y, cur, ar.color);
-            this.pushFxCol(cur.x, cur.y, 12 / 60, FxKind.HitLaserBlast, aim, 0, ar.color);
+            // the first hop's blast is what an arc shows of itself: weapon lane
+            this.pushFxCol(cur.x, cur.y, 12 / 60, FxKind.HitLaserBlast, aim, 0, ar.color, 0, true);
             seen.push(cur);
             for (let j = 0; j < ar.jumps; j++) {
               const near = this.structuresWithin(cur.x, cur.y, ar.reach, this.arcNear);
@@ -4704,7 +4721,9 @@ export class Sim {
     const shoot = wp.shoot ?? FxKind.ShootSmall;
     const col = wp.shootColor ?? PAL.lightOrange;
     const seed = (Math.random() * 0x7fffffff) | 0;
-    this.pushFxCol(x, y, fxLife(shoot), shoot, a, 0, col, 0, false, seed);
+    // the splash is the whole of what a bodiless round shows, so it rides
+    // the weapon lane (FX_WEAPON_CAP); the smoke is dressing
+    this.pushFxCol(x, y, fxLife(shoot), shoot, a, 0, col, 0, true, seed);
     if (wp.smoke !== undefined) this.pushFxCol(x, y, fxLife(wp.smoke), wp.smoke, a, 0, col, 0, false, seed + 1);
   }
 
@@ -4881,10 +4900,12 @@ export class Sim {
       this.aimHit(tgt, wp.damage * fed, wp.poison ?? 0, wp.poisonChance ?? 1);
     }
     if (!st) return;
-    // only a heavy tier's beam is forced past the effect cap (`big`): a
-    // thousand runts' lances are a thousand small effects that fall under
-    // it like any other, or the cap means nothing on the wave that needs it
-    this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, range, 0, st.id, big);
+    // THE BEAM IS THE ATTACK and is forced for every tier (the weapon
+    // lane, FX_WEAPON_CAP): a thousand runts' lances that fell under the
+    // ambient cap were a thousand bodies firing invisibly on the wave that
+    // most needed to be read. The muzzle flash and the hit blast below stay
+    // dressing
+    this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, range, 0, st.id, true);
     if (wp.shoot === FxKind.Shockwave) this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, wp.shootLen ?? 0);
     else if (wp.shoot !== undefined)
       this.pushFxCol(x, y, fxLife(wp.shoot), wp.shoot, aim, 0, st?.colors[1][0] ?? PAL.heal, 0, false, (Math.random() * 0x7fffffff) | 0);
@@ -11219,7 +11240,7 @@ export class Sim {
     // dressing is refused outright with the switch off (see setEffects);
     // a forced effect is a weapon and goes through either way
     if (!force && (!this.fxOn || i >= FX_CAP)) return -1;
-    if (i >= FX_MAX) return -1;
+    if (i >= FX_MAX || (force && i >= FX_CAP + FX_WEAPON_CAP)) return -1;
     this.fxN = i + 1;
     this.fxX[i] = x;
     this.fxY[i] = y;
