@@ -2138,5 +2138,54 @@ export const MERGE_HOLD = 0.5;
 export const MERGE_MAX_STACK = 8;
 export const MERGE_GROWTH = 0.12;
 
+/**
+ * THE GRAPNELS' FOLD (Sim.mergeStarfish) — the same arithmetic as the
+ * squeeze above and none of its trigger. A starfish does not have to be
+ * crushed into one of its own to fold with it: it REACHES for the nearest
+ * one and folds on purpose, which is the family's whole shape on a board.
+ * Everything a fold moves is what the squeeze moves — health, maximum
+ * health, shield and the star's bite all add (ustack) — so a field of
+ * runts becomes a handful of very heavy runts that throw very heavy stars,
+ * and the answer is to kill them before they find each other.
+ *
+ * STARFISH_MERGE_REACH is how far one looks, centre to EDGE like every
+ * other neighbour scan in the sim, so a wide body is in reach as soon as
+ * its arms are.
+ * STARFISH_MERGE_PERIOD is how often it looks, in seconds — one attempt a
+ * period and never a banked one, exactly as the hungry rule eats.
+ * WHERE IT STOPS IS NOT HERE. The ceiling is authored per kind, with the
+ * rest of the trait (levels.ts UnitStats.starburst.merge, ten bodies —
+ * which on a rule that only ever folds two of ONE KIND is ten times the
+ * health it walked in with), because it is a thing about the family and
+ * not about the mechanic. MERGE_MAX_STACK above does not apply to them: a
+ * family whose trait is folding would be capped below its own ceiling by
+ * the rule it shares with everybody else.
+ */
+export const STARFISH_MERGE_REACH = 88;
+export const STARFISH_MERGE_PERIOD = 1;
+
+/**
+ * FIRE ON A BUILDING (Tower.burnT, the Grapnels' fire star) — burning as
+ * the swarm's bodies have always had it, pointed the other way.
+ *
+ * IT IS A REFRESH ON THE CLOCK AND A MAX ON THE RATE, which is the shape
+ * every status the swarm lays on a turret has (the short, the jam): a
+ * second star does not stack a second fire, it re-lights the one that is
+ * burning and, if it is the bigger star, burns hotter. The rate is the
+ * STAR'S, authored per tier (weapons.ts StarSpec.burn), because a T5's
+ * fire being a T3's would make two thirds of the ladder decoration.
+ *
+ * LIKE THE ROT, IT IGNORES PLATING (Sim.damageTower's pierce flag). Fire
+ * has ignored armour on the other side of the field since the torch was
+ * written, and a fire that a bulwarked tacker simply shrugs off is a
+ * status the player never has to answer.
+ */
+export const TOWER_BURN_TIME = 5;
+/** flames a second a BURNING building throws, for a 1x1 — scaled by the
+ *  footprint exactly as the rot's motes and the short's sparks are */
+export const TOWER_BURN_FX_RATE = 7;
+/** seconds one flame lives */
+export const TOWER_BURN_FX_LIFE = 0.5;
+
 export const clamp = (v: number, a: number, b: number): number =>
   v < a ? a : v > b ? b : v;

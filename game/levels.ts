@@ -655,6 +655,38 @@ export interface UnitStats {
     bomblets?: { count: number; splash: number; radius: number; spread: number };
   };
   /**
+   * THE STARBURST — the Grapnels' family trait, and the only one on the
+   * roster that is not something the body DOES but something that happens
+   * TO it. A starfish carries no weapon at all (weapons.ts UNIT_WEAPONS):
+   * it crawls to the core and never once takes aim. What it does instead
+   * is throw stars (weapons.ts STARFISH_STARS, Sim.throwStar):
+   *
+   *   A HIT THAT LANDS on it throws one back, `chance` of the time, out
+   *   of one of its five arms and no oftener than every `cooldown`
+   *   seconds — so a body nobody is shooting at is a body doing nothing,
+   *   and a line that opens up on one is a line it is now answering.
+   *
+   *   ITS DEATH throws FIVE at once, one down every arm, wherever it
+   *   falls. Killing a starfish is not the end of it; it is the loudest
+   *   thing it does, and killing one inside your own patch is a mistake
+   *   the burst charges for.
+   *
+   * THE COOLDOWN IS WHAT MAKES IT SURVIVABLE. Without one, rot, fire and
+   * a beam's every tick would each roll the chance — a body under a
+   * furnace would answer sixty times a second — so the clock is the real
+   * rate limit and the chance is the texture on top of it.
+   *
+   * `merge` IS THE OTHER HALF OF THE FAMILY (Sim.mergeStarfish): a
+   * starfish REACHES for the nearest starfish of its own kind and folds
+   * with it on purpose, up to `merge` bodies in one. Health, maximum
+   * health, shield and the star's bite all add, exactly as they do under
+   * the squeeze every other kind shares (constants.ts MERGE_*) — the
+   * difference is that this one is deliberate and happens in the open
+   * rather than only in a jam. A field of runts left alone becomes a
+   * handful of very heavy runts throwing very heavy stars.
+   */
+  starburst?: { chance: number; cooldown: number; merge: number };
+  /**
    * Mindustry UnitType.immunities: status effects that simply never take.
    * The check is at application time (StatusComp.apply returns early), not
    * a resistance — an immune unit is never lit at all, so it also never
@@ -1888,24 +1920,50 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // ── THE GRAPNELS, the starfish (game/starfishArt.ts) ──────────────────
   //
   // THE SLOWEST BODIES IN THE GAME, and the only ones that CRAWL: about
-  // two tiles a second at every tier, which is a walker's pace halved,
-  // and no trait on this table to make up for it. What they have instead
-  // is the star (weapons.ts starfish-star) and the ten seconds between
-  // volleys — a family whose whole account is settled in the moment it
-  // fires, by where it has got to and which way it happens to be facing.
+  // two tiles a second at every tier, which is a walker's pace halved.
   //
-  // THEY USED TO CARRY A HOOK, and the hook is gone: it winched the body
-  // up its own route and dragged your turrets out of position, and both
-  // halves of it are out of the game now. What is left is a body that
-  // walks, and the crawl is in the DRAWING rather than the numbers — the
-  // four rear arms swing the body along on the mech rig
-  // (game/starfishArt.ts), which is the only place this family's gait
-  // lives.
+  // AND THE ONLY ONES THAT DO NOT SHOOT. There is no starfish weapon in
+  // weapons.ts any more — no gun, no reload, no aim. A starfish crawls at
+  // your core and answers what is done to it: a hit that lands throws a
+  // homing star back out of one of its five arms, and its death throws
+  // five at once (`starburst` below, weapons.ts STARFISH_STARS). It is
+  // the one family on the roster whose damage is decided by the BOARD —
+  // shoot it and it shoots back, kill it and it empties itself into
+  // whatever is standing around it, ignore it and it walks into your core
+  // having done nothing at all.
+  //
+  // THEY USED TO VOLLEY, and the volley is gone the way the hook went
+  // before it: five unaimed rounds every ten seconds, four of which flew
+  // off into the map by construction. A family that only fires when it is
+  // fired on cannot afford to miss with four fifths of what it throws, so
+  // the stars steer now, and they are thrown far oftener than once a
+  // volley.
+  //
+  // THE CRAWL IS IN THE DRAWING AND NOT IN THESE NUMBERS — the four rear
+  // arms swing the body along on the mech rig (game/starfishArt.ts),
+  // which is the only place this family's gait lives.
+  //
+  // AND THEY FOLD INTO EACH OTHER (`starburst.merge`, Sim.mergeStarfish).
+  // Every other kind folds only when a choke crushes it; these reach for
+  // their own kind and fold on purpose, up to ten bodies in one and ten
+  // times the health — with the star's bite adding the whole way. A patch
+  // of runts the line cannot reach is a T1 problem that becomes one very
+  // large T1 problem.
   //
   // THE MIDDLE OF THE TANKINESS LADDER, deliberately: tougher than the
   // fleets that blink and cloak, softer than anything that is meant to
   // be a wall. It is slow and it is in the open — plating it like a
   // rhino would make a family nothing answers in time.
+  //
+  // THE CHANCE IS ONE NUMBER ACROSS THE FAMILY and the COOLDOWN climbs
+  // hard with the tier: the runt answers about once a second with a small
+  // star, the apex once in two and a half with one that takes a corner of
+  // a patch. THE COOLDOWN IS THE REAL RATE and the chance is texture on
+  // top of it — a body under a turret line is hit many times a second, so
+  // any chance at all saturates a clock this short, and what actually
+  // decides a tier's output is how long it waits. An apex on the runt's
+  // clock would out-damage every other T5 on the roster several times
+  // over, purely for being shot at.
   starfish1: {
     hp: 240,
     speed: 1.9 * CELL,
@@ -1913,6 +1971,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     radius: UR * 1.125,
     tier: 1,
     rotateSpeed: 3.5,
+    starburst: { chance: 0.3, cooldown: 1, merge: 10 },
   },
   starfish2: {
     hp: 780,
@@ -1921,6 +1980,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     radius: UR * 1.625,
     tier: 2,
     rotateSpeed: 3.2,
+    starburst: { chance: 0.3, cooldown: 1.2, merge: 10 },
   },
   starfish3: {
     hp: 2100,
@@ -1929,6 +1989,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     radius: UR * 2.25,
     tier: 3,
     rotateSpeed: 2.8,
+    starburst: { chance: 0.3, cooldown: 1.5, merge: 10 },
   },
   starfish4: {
     hp: 7400,
@@ -1937,6 +1998,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     radius: UR * 3.625,
     tier: 4,
     rotateSpeed: 2.2,
+    starburst: { chance: 0.3, cooldown: 1.9, merge: 10 },
   },
   starfish5: {
     hp: 16000,
@@ -1945,6 +2007,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     radius: UR * 4.625,
     tier: 5,
     rotateSpeed: 1.8,
+    starburst: { chance: 0.3, cooldown: 2.4, merge: 10 },
   },
 };
 
@@ -2173,21 +2236,24 @@ export const FAMILIES = [
   { key: "tusker", name: FAMILY_NAMES.tusker.name, layer: "ground", icon: "tusker1",
     kinds: ["tusker1", "tusker2", "tusker3", "tusker4", "tusker5"] },
   // THE GRAPNELS: the starfish — starfish1 to starfish5 — the slowest
-  // bodies in the game and the only ones with no trait at all. Every
-  // other family on this list does something; this one arrives.
+  // bodies in the game, and the only ones that carry no weapon.
   //
-  // ITS GUN IS A STAR. Every tier fires the same thing and nothing else:
-  // five heavy rounds at once, seventy-two degrees apart, flying straight
-  // out from the body with no homing and no arc, each one PIERCING every
-  // structure on its line until its flight runs out (weapons.ts
-  // starfish-star). Ten seconds between volleys — the longest reload on
-  // the roster — so what a starfish does to a board is decided in the
-  // moment it fires, by where it is standing and which way it is facing.
+  // IT DOES NOT SHOOT; IT ANSWERS. A hit that lands on a starfish has a
+  // chance of throwing a homing star back out of one of its five arms,
+  // and a starfish that dies throws five at once, one down every arm
+  // (UnitStats.starburst, weapons.ts STARFISH_STARS). From the elite up
+  // every star is an element — rot, a soak that slows a gun's reload, or
+  // fire — and every one of those bursts as well as bites.
   //
-  // WHAT IT POSES: a round that does not stop at the first turret, on a
-  // body slow enough that you will see it coming for a long time. The
-  // answer is killing them on the crawl and spacing the guns so one star
-  // cannot take a whole row.
+  // AND IT FOLDS INTO ITSELF. A starfish reaches for the nearest of its
+  // own kind and merges with it on purpose, up to ten bodies and ten
+  // times the health in one, with the star's bite adding the whole way
+  // (Sim.mergeStarfish).
+  //
+  // WHAT IT POSES: a body that punishes the board for doing anything to
+  // it, and punishes it most for finishing the job. The answer is reach —
+  // kill them far from the line, before they have found each other — and
+  // spacing, so one death burst cannot take a patch.
   { key: "starfish", name: FAMILY_NAMES.starfish.name, layer: "ground", icon: "starfish1",
     kinds: ["starfish1", "starfish2", "starfish3", "starfish4", "starfish5"] },
 ] as const satisfies readonly {

@@ -36,7 +36,7 @@
 import { TOWER_KINDS, type RGB, type TowerKind } from "./types";
 import { UNIT_KINDS, UNIT_STATS } from "./levels";
 import * as shared from "./shared";
-import { UNIT_WEAPONS, type ShotLook } from "./weapons";
+import { EXTRA_LOOKS, UNIT_WEAPONS, type ShotLook } from "./weapons";
 import type { Terrain } from "./terrain";
 import {
   canPlaceOn,
@@ -72,12 +72,20 @@ import type {
  */
 const LOOKS: ShotLook[] = [];
 const LOOK_ID = new Map<ShotLook, number>();
+const addLook = (l: ShotLook): void => {
+  if (LOOK_ID.has(l)) return;
+  LOOK_ID.set(l, LOOKS.length);
+  LOOKS.push(l);
+};
 for (const kind of UNIT_KINDS)
-  for (const w of UNIT_WEAPONS[kind]) {
-    if (!w.look || LOOK_ID.has(w.look)) continue;
-    LOOK_ID.set(w.look, LOOKS.length);
-    LOOKS.push(w.look);
-  }
+  for (const w of UNIT_WEAPONS[kind]) if (w.look) addLook(w.look);
+// ...and the rounds that no weapon row carries (weapons.ts EXTRA_LOOKS): a
+// bomber's bomblets and its nuke, and every one of the Grapnels' stars,
+// which are thrown rather than fired. Without a seat here each of them
+// crosses as index 0 and is drawn on the other side as somebody else's
+// bullet — the whole point of the table being an index is that both sides
+// build the same one
+for (const l of EXTRA_LOOKS) addLook(l);
 // the roster is walked through UNIT_STATS' own key order above; touching it
 // here keeps the import honest if a kind is ever added without a weapon
 void UNIT_STATS;

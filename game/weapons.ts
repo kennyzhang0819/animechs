@@ -105,7 +105,17 @@ export type ShotRegion =
   // the Grapnels' round and nothing else: five arms of the sprite laid
   // round a centre that turns as it flies, so what crosses the field is a
   // little spinning star (renderer.ts, the swarm's shots)
-  | "star";
+  | "star"
+  // ...and the three the heavy tiers throw, each one a DIFFERENT STAR and
+  // not a recolour (renderer.ts drawStar): the rot star is stubby arms on
+  // a heavy core with a bead dripping off the back of it, the soaked star
+  // a round bead inside a hard rim, and the fire star a ten-pointed flare
+  // with a short point between every long one, spinning half again as
+  // fast. A player has to know which is coming at their line from the
+  // shape of it before the colour reaches them
+  | "star-rot"
+  | "star-soak"
+  | "star-fire";
 
 /**
  * BasicBulletType.draw, for a shot in flight: the `-back` region under the
@@ -310,22 +320,6 @@ export interface UnitWeapon {
    * structure under it every interval.
    */
   pierce?: boolean;
-  /**
-   * THE STAR — the Grapnels' volley, and the one weapon in the game that
-   * does not care where its target is standing. `shots` rounds leave the
-   * body at once, evenly spaced round the full circle (the five of a
-   * starfish's arms, seventy-two degrees apart), on the heading the body
-   * happens to be facing and with none of the aim jitter an aimed burst
-   * takes. A target inside `range` is only what makes it PULL THE
-   * TRIGGER — nothing about the volley is aimed at it, so four of the
-   * five rounds usually fly off into the map and the fifth takes whatever
-   * happens to be on its line.
-   *
-   * It is why this family's reload is ten seconds and its damage is what
-   * it is: a shot that lands by geometry rather than by aim has to be
-   * worth a great deal when it does.
-   */
-  radial?: boolean;
   /**
    * fx "scatter": the CONE — half-angle in radians either side of the aim.
    * Every structure whose footprint edge is within `range` and inside the
@@ -679,6 +673,45 @@ const star = (size: number): ShotLook => ({
   hit: FxKind.BulletHit,
   hitColor: PAL.hook,
 });
+
+/**
+ * THE THREE ELEMENTAL STARS (StarSpec below): the same round with a
+ * different thing riding on it, drawn as three different objects.
+ *
+ * COLOUR SAYS WHAT IT DOES AND THE SHAPE SAYS IT AGAIN. The rot star is
+ * the venom line's acid, the soaked star the dousers' blue, the fire star
+ * a red core burning out to a pale flame — three hues nothing in the
+ * Grapnels' own copper palette can be confused with, on three silhouettes
+ * (see ShotRegion) that read at field zoom when the colours do not. All
+ * three stream a puff, which the plain copper star deliberately does not:
+ * a round with something on it should look like it is carrying something.
+ */
+const elemStar = (
+  size: number,
+  region: "star-rot" | "star-soak" | "star-fire",
+  back: RGB,
+  front: RGB,
+  hit: FxKind,
+): ShotLook => ({
+  region,
+  width: u(size * 0.42),
+  height: u(size),
+  shrinkX: 0,
+  shrinkY: 0,
+  back,
+  front,
+  shoot: FxKind.ShootBig,
+  hit,
+  hitColor: front,
+  puff: { chance: 0.3, size: u(size * 0.3), color: back },
+});
+
+const rotStar = (size: number): ShotLook =>
+  elemStar(size, "star-rot", PAL.venomDark, PAL.venom, FxKind.SapExplosion);
+const soakStar = (size: number): ShotLook =>
+  elemStar(size, "star-soak", PAL.water, PAL.piercerLaser, FxKind.EmpHit);
+const fireStar = (size: number): ShotLook =>
+  elemStar(size, "star-fire", PAL.blastAmmoBack, PAL.lighterOrange, FxKind.BlastExplosion);
 
 const venomOrb = (size: number, o: { trail?: boolean } = {}): ShotLook => ({
   region: "orb",
@@ -1281,41 +1314,218 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
     },
   ],
 
-  // ---- THE GRAPNELS, the starfish: one weapon, five rounds, no aim ----
+  // ---- THE GRAPNELS, the starfish: NO WEAPON AT ALL ------------------
   //
-  // THE WHOLE FAMILY FIRES THE SAME SHOT and only the numbers move: five
-  // copper stars at once, seventy-two degrees apart (UnitWeapon.radial),
-  // straight out from the body with no homing and no arc, each one going
-  // THROUGH every structure on its line until its flight runs out
-  // (UnitWeapon.pierce). A structure inside `range` is only what pulls the
-  // trigger; where the rounds actually go is decided by which way the body
-  // happens to be pointing, which is decided by the route it is crawling.
+  // THE ONLY BODIES ON THE ROSTER THAT NEVER PULL A TRIGGER. Every other
+  // kind in this table attack-moves — it walks the field and fires at
+  // whatever comes inside its reach — and a starfish does neither: it
+  // crawls to the core and it does not so much as look at a turret on the
+  // way (Sim.updateUnitWeapons skips a body with no weapons outright, so
+  // it does not even pay for the search).
   //
-  // TEN SECONDS IS THE LONGEST RELOAD ON THE ROSTER, and the damage is
-  // sized for it: a volley that mostly misses by construction has to be
-  // worth a great deal on the arm that connects. One starfish5 star down
-  // a row of tackers is the row.
-  starfish1: [
-    { name: "starfish1-star", reload: 10, mounts: 1, shots: 5, radial: true, pierce: true,
-      damage: 120, range: u(72), speed: spd(2.4), fx: "bullet", look: star(9) },
-  ],
-  starfish2: [
-    { name: "starfish2-star", reload: 10, mounts: 1, shots: 5, radial: true, pierce: true,
-      damage: 260, range: u(84), speed: spd(2.4), fx: "bullet", look: star(11) },
-  ],
-  starfish3: [
-    { name: "starfish3-star", reload: 10, mounts: 1, shots: 5, radial: true, pierce: true,
-      damage: 480, range: u(96), speed: spd(2.5), fx: "bullet", look: star(13) },
-  ],
-  starfish4: [
-    { name: "starfish4-star", reload: 10, mounts: 1, shots: 5, radial: true, pierce: true,
-      damage: 900, range: u(112), speed: spd(2.5), fx: "bullet", look: star(16) },
-  ],
-  starfish5: [
-    { name: "starfish5-star", reload: 10, mounts: 1, shots: 5, radial: true, pierce: true,
-      damage: 1500, range: u(128), speed: spd(2.6), fx: "bullet", look: star(20) },
-  ],
+  // WHAT IT DOES INSTEAD IS ANSWER. A hit that lands on a starfish has a
+  // chance of throwing a star back out of one of its five arms, and a
+  // starfish that DIES throws five at once, one down every arm
+  // (STARFISH_STARS below, levels.ts UnitStats.starburst, Sim.throwStar).
+  // So the family's whole output is a function of the board shooting at
+  // it, which is the one shape no other family here has: a line that
+  // opens up on a crawling star is a line the star is now shooting back
+  // at, and a line that kills one is a line with five stars incoming.
+  //
+  // The rounds are not weapons and are not in this table, because nothing
+  // about them is a weapon: no reload, no mount, no aim, no target to
+  // pull a trigger. They are in STARFISH_STARS.
+  starfish1: [],
+  starfish2: [],
+  starfish3: [],
+  starfish4: [],
+  starfish5: [],
 };
+
+/**
+ * THE STAR — what a starfish throws, and the only round in the game that
+ * is not fired by a weapon.
+ *
+ * A starfish carries no gun (UNIT_WEAPONS, above): it crawls, and a hit
+ * that lands on it has a chance of throwing ONE of these back out of one
+ * of its five arms, and a starfish that dies throws FIVE, one down every
+ * arm (Sim.throwStar). So there is no reload, no mount, no aim and no
+ * target that pulls a trigger — there is a round, a heading and how far
+ * it is allowed to travel before it burns out.
+ *
+ * IT STEERS. A star leaves on its arm's heading and then turns onto the
+ * nearest building it can see (`homing`, Sim.updateEnemyShots), which is
+ * what makes a round nobody aimed worth throwing: the old volley put five
+ * unaimed rounds on the board and four of them flew into the map by
+ * construction, and a family that only shoots when it is shot cannot
+ * afford to miss with four fifths of what it throws. What it cannot do is
+ * chase forever — `range` is the WHOLE of its travel, and a star thrown
+ * at nothing, or at something behind a ridge, burns out in the open.
+ *
+ * AND IT IS FAST — twice the pace the old volley flew at, and half a
+ * second of flight at the outside. That is a performance number as much
+ * as a feel one: every body in a Grapnel wave can throw these and a dying
+ * one throws five, so what keeps the air clear is each round being OVER
+ * quickly rather than crossing nine tiles at a walk. It reads correctly
+ * too — a star is a thing that is flung. It is also why the shots pass
+ * sweeps its step (Sim.sweepShot): at this pace a round moves further
+ * than a cell in a tick, and one cell read would miss what it flew
+ * through.
+ *
+ * WHAT THE LADDER BUYS is the ELEMENT. The runt and the brute throw a
+ * plain copper star: one building, one bite, nothing after it. From the
+ * elite up every star rolls one of three, and all three carry a BURST as
+ * well as a bite, wider and heavier the higher the tier:
+ *
+ *   the ROT star    — the venom line's acid on what it reaches
+ *   the SOAKED star — that gun reloads at a fraction of its rate
+ *   the FIRE star   — it burns, and fire ignores plating
+ *
+ * A player cannot know which one is coming, which is the point: the
+ * answer to the heavy tiers is not a counter to one status, it is
+ * killing the body before it has thrown very many.
+ */
+export interface StarSpec {
+  /** what it is, for the roll and for the drawing */
+  element: "plain" | "rot" | "soak" | "fire";
+  /** the bite on what it strikes... */
+  damage: number;
+  /** ...and the burst around it, T3 and up. 0 on the plain star */
+  splash: number;
+  splashRadius: number;
+  /** THE WHOLE OF ITS TRAVEL in world px — a star that has flown this far
+   *  is spent wherever it is, and this is the "nearby" in "it attacks a
+   *  nearby turret": nothing further away is ever reachable */
+  range: number;
+  /** world px a second */
+  speed: number;
+  /** how hard it turns onto its quarry, radians a second */
+  homing: number;
+  /** raw health a second of ROT it lays, over POISON_TIME (the rot star) */
+  poison: number;
+  /** the SOAK: seconds of slowed reload, and the fraction of its own rate
+   *  the gun reloads at while they run (Sim.soakTower) */
+  soak: number;
+  soakRate: number;
+  /** the FIRE: raw health a second, over TOWER_BURN_TIME (Sim.burnTower) */
+  burn: number;
+  look: ShotLook;
+}
+
+/** the shared half of a star — everything but what it carries */
+const starOf = (
+  element: StarSpec["element"],
+  o: {
+    damage: number; splash?: number; splashRadius?: number; range: number; speed: number;
+    homing: number; poison?: number; soak?: number; soakRate?: number; burn?: number;
+    look: ShotLook;
+  },
+): StarSpec => ({
+  element,
+  damage: o.damage,
+  splash: o.splash ?? 0,
+  splashRadius: o.splashRadius ?? 0,
+  range: o.range,
+  speed: o.speed,
+  homing: o.homing,
+  poison: o.poison ?? 0,
+  soak: o.soak ?? 0,
+  soakRate: o.soakRate ?? 1,
+  burn: o.burn ?? 0,
+  look: o.look,
+});
+
+/**
+ * Every star on the roster, indexed by TIER 1-5 — a body throwing one
+ * rolls evenly among the entry for its tier (one on the runt and the
+ * brute, three from the elite up).
+ *
+ * THE NUMBERS ARE SIZED FOR A ROUND THAT CONNECTS. The old volley threw
+ * five unaimed rounds every ten seconds and landed about one, so its
+ * damage carried four misses; a star is thrown perhaps twice as often,
+ * lands, and hits for about what one of those rounds did. The death
+ * burst is where the family's weight actually is — five of these at once
+ * is what a starfish is worth to the wave, and it is collected by the
+ * board killing it.
+ */
+export const STARFISH_STARS: readonly (readonly StarSpec[])[] = [
+  // T1, the runt: one copper star, one building, nothing after it
+  [starOf("plain", { damage: 150, range: u(110), speed: spd(5), homing: 16, look: star(9) })],
+  // T2, the brute: the same round, heavier
+  [starOf("plain", { damage: 330, range: u(120), speed: spd(5), homing: 16, look: star(11) })],
+  // T3, the elite: the elements arrive, and with them the burst
+  [
+    starOf("rot", {
+      damage: 420, splash: 210, splashRadius: u(18), range: u(130), speed: spd(5.2), homing: 17,
+      poison: 22, look: rotStar(13),
+    }),
+    starOf("soak", {
+      damage: 420, splash: 210, splashRadius: u(18), range: u(130), speed: spd(5.2), homing: 17,
+      soak: 4, soakRate: 0.6, look: soakStar(13),
+    }),
+    starOf("fire", {
+      damage: 420, splash: 210, splashRadius: u(18), range: u(130), speed: spd(5.2), homing: 17,
+      burn: 26, look: fireStar(13),
+    }),
+  ],
+  // T4, the champion
+  [
+    starOf("rot", {
+      damage: 800, splash: 420, splashRadius: u(26), range: u(140), speed: spd(5.4), homing: 18,
+      poison: 40, look: rotStar(16),
+    }),
+    starOf("soak", {
+      damage: 800, splash: 420, splashRadius: u(26), range: u(140), speed: spd(5.4), homing: 18,
+      soak: 5, soakRate: 0.5, look: soakStar(16),
+    }),
+    starOf("fire", {
+      damage: 800, splash: 420, splashRadius: u(26), range: u(140), speed: spd(5.4), homing: 18,
+      burn: 48, look: fireStar(16),
+    }),
+  ],
+  // T5, the apex: the burst is most of what it is worth — a star off an
+  // apex takes a corner of a patch and not a turret
+  [
+    starOf("rot", {
+      damage: 1350, splash: 760, splashRadius: u(36), range: u(150), speed: spd(5.6), homing: 19,
+      poison: 68, look: rotStar(20),
+    }),
+    starOf("soak", {
+      damage: 1350, splash: 760, splashRadius: u(36), range: u(150), speed: spd(5.6), homing: 19,
+      soak: 6, soakRate: 0.4, look: soakStar(20),
+    }),
+    starOf("fire", {
+      damage: 1350, splash: 760, splashRadius: u(36), range: u(150), speed: spd(5.6), homing: 19,
+      burn: 85, look: fireStar(20),
+    }),
+  ],
+];
+
+for (const [i, tier] of STARFISH_STARS.entries())
+  for (const sp of tier) {
+    if (sp.range <= 0 || sp.speed <= 0)
+      throw new Error(`the tier-${i + 1} ${sp.element} star flies nowhere`);
+    // the element is what the drawing keys off, so a star that says it is
+    // one thing and is drawn as another is a round a player cannot read
+    const want = sp.element === "plain" ? "star" : `star-${sp.element}`;
+    if (sp.look.region !== want)
+      throw new Error(`the tier-${i + 1} ${sp.element} star is drawn as a ${sp.look.region}`);
+  }
+
+/**
+ * THE LOOKS NO WEAPON ROW CARRIES. The snapshot crosses a shot as an
+ * INDEX into a table both threads build from this module (snapshot.ts),
+ * and it builds that table by walking UNIT_WEAPONS — so a round thrown by
+ * something that is not a weapon (a bomber's bomblets, its nuke, and
+ * every one of the Grapnels' stars) would cross as index 0 and be drawn
+ * on the drawing side as somebody else's bullet. These are the rounds
+ * that have no row, and this is how they get a seat at the table.
+ */
+export const EXTRA_LOOKS: readonly ShotLook[] = [
+  BOMBLET_LOOK,
+  NUKE_LOOK,
+  ...STARFISH_STARS.flatMap((tier) => tier.map((sp) => sp.look)),
+];
 
 /** the most weapon slots any unit carries — the per-unit cooldown stride in the sim */
 export const MAX_WEAPONS = 3;
@@ -1355,15 +1565,12 @@ for (const [k, ws] of Object.entries(UNIT_WEAPONS)) {
     if (w.fx === "lightning" && !w.bolt) throw new Error(`${k}/${w.name} is lightning with no bolt`);
     if (w.fx === "scatter" && w.cone === undefined) throw new Error(`${k}/${w.name} is a scatter with no cone`);
     if (w.fx === "arc" && !w.arc) throw new Error(`${k}/${w.name} is an arc with no chain`);
-    // a pierce is a beam that takes everything on its length, a rail that
-    // punches through, or a BULLET that is not stopped by what it hits
-    // (the Grapnels' star) — never a shell, a bomb or anything instant
-    if (w.pierce && w.fx !== "laser" && w.fx !== "rail" && w.fx !== "bullet")
-      throw new Error(`${k}/${w.name} pierces but is neither laser, rail nor bullet`);
-    // a radial volley leaves the body on fixed headings, so it has to be
-    // something that flies and there has to be more than one of them
-    if (w.radial && (w.fx !== "bullet" || (w.shots ?? 1) < 2))
-      throw new Error(`${k}/${w.name} is radial but is not a volley of bullets`);
+    // a pierce is a beam that takes everything on its length or a rail
+    // that punches through, and nothing else: no round the swarm fires
+    // goes through a building. The one that did was the Grapnels' old
+    // volley, and what replaced it strikes one thing and bursts
+    if (w.pierce && w.fx !== "laser" && w.fx !== "rail")
+      throw new Error(`${k}/${w.name} pierces but is neither a laser nor a rail`);
     // the rend is the melee bite and nothing else's: a percentage of a
     // turret's pool arriving from across the board would be a different
     // game, and the family's whole cost is having to walk up to it

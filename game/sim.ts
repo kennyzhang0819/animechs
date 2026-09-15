@@ -44,6 +44,11 @@ import {
   MERGE_HOLD,
   MERGE_MAX_STACK,
   MERGE_SQUEEZE,
+  STARFISH_MERGE_PERIOD,
+  STARFISH_MERGE_REACH,
+  TOWER_BURN_FX_LIFE,
+  TOWER_BURN_FX_RATE,
+  TOWER_BURN_TIME,
   PAL,
   TEAM_CRUX_RGB,
   ROWS as ROWS_IMPORT,
@@ -209,11 +214,13 @@ import {
   BOMBLET_LOOK,
   MAX_WEAPONS,
   NUKE_LOOK,
+  STARFISH_STARS,
   unitDamageScale,
   UNIT_REACH,
   UNIT_WEAPONS,
   EXPLOSION_STYLES,
   TOWER_LASER_STYLE,
+  type StarSpec,
   type UnitWeapon,
 } from "./weapons";
 import {
@@ -305,6 +312,13 @@ const FX_DEATH = 0.35;
 /** what a DEVOURED body's ring is drawn in (see feedHungry) — the hungry
  *  hue, so a meal never reads as a kill the player's towers scored */
 const HUNGRY_FX_COL: RGB = [1, 0.35, 0.72];
+/**
+ * HOW FINELY A ROUND'S STEP IS SAMPLED against the buildings (sweepShot):
+ * half a cell, which is the coarsest spacing that cannot step over a 1x1
+ * footprint. A round slower than this a tick — every round in the game but
+ * the Grapnels' stars — costs exactly the one cell read it always did.
+ */
+const SHOT_SWEEP = CELL_IMPORT / 2;
 /** the ring drawn when two squeezed bodies fold into one (mergeSqueezed):
  *  amber, so a fold never reads as a kill and never as a meal */
 const MERGE_FX_COL: RGB = [1, 0.8, 0.4];
@@ -641,6 +655,44 @@ const HAS_CHARGE = KIND_CHARGE.some((r) => r > 0);
 const KIND_SEEK = Float64Array.from(UNIT_KINDS, (k) =>
   Math.max(UNIT_REACH[k], UNIT_STATS[k].charge?.range ?? 0),
 );
+/**
+ * THE STARBURST (levels.ts UnitStats.starburst), the Grapnels' trait, and
+ * the stars it throws (weapons.ts STARFISH_STARS) resolved per KIND — the
+ * table is authored by tier, and every read of it here is on a body whose
+ * kind is already in hand.
+ *
+ * A null in either is a kind that never throws a star, which is every kind
+ * but five; HAS_STARBURST is the gate that keeps the whole rule — the
+ * riposte roll on every hit that lands, and the fold pass — out of a run
+ * whose roster has no Grapnel in it.
+ */
+const KIND_STARBURST = UNIT_KINDS.map((k) => UNIT_STATS[k].starburst ?? null);
+const KIND_STARS = UNIT_KINDS.map((k) =>
+  UNIT_STATS[k].starburst ? (STARFISH_STARS[UNIT_STATS[k].tier - 1] ?? null) : null,
+);
+const HAS_STARBURST = KIND_STARBURST.some(Boolean);
+/** ...as a list of kind ids, so the fold pass can ask the per-kind census
+ *  whether any of them is standing before it walks the field at all */
+const STARBURST_KINDS = KIND_STARBURST.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
+/**
+ * THE MOST BODIES ONE SURVIVOR MAY STAND FOR, by kind — the squeeze's own
+ * MERGE_MAX_STACK for everything, and the Grapnels' own ceiling for a
+ * starfish (levels.ts starburst.merge, ten). Read by BOTH fold passes, so
+ * a starfish cannot reach eight through the squeeze and then ten through
+ * its own rule, or go over its ceiling by taking one route after the other.
+ */
+const KIND_MERGE_MAX = Uint8Array.from(
+  UNIT_KINDS,
+  (k) => UNIT_STATS[k].starburst?.merge ?? MERGE_MAX_STACK,
+);
+// A TRAIT WITH NO ROUND BEHIND IT IS A FAMILY THAT SILENTLY DOES NOTHING
+// — the body would take its hits, roll its chance and throw nothing at
+// all — so the two tables are checked against each other at load rather
+// than on the first hit that happens to need one
+UNIT_KINDS.forEach((k, i) => {
+  if (KIND_STARBURST[i] && !KIND_STARS[i]?.length)
+    throw new Error(`${k} has a starburst but no star is authored for tier ${UNIT_STATS[k].tier}`);
+});
 const KIND_BOSS: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].boss);
 const BOSS_KINDS = KIND_BOSS.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
 /** which FLD_SLICE a world x falls in, clamped onto the board */
@@ -1063,6 +1115,20 @@ export class Sim {
   readonly ureachT = new Float32Array(MAX_UNITS);
   /** BLINK (levels.ts blink): seconds until the body may jump again */
   readonly ublinkCd = new Float32Array(MAX_UNITS);
+  /**
+   * THE STARBURST (levels.ts starburst, the Grapnels): seconds until this
+   * body may throw another star in answer to a hit, and seconds until it
+   * next reaches for one of its own kind to fold with (mergeStarfish).
+   *
+   * THE FIRST OF THEM IS THE RULE'S REAL RATE LIMIT. The chance is rolled
+   * inside damageUnit, which is the door EVERY point of damage in the game
+   * comes through — a tick of rot, a tick of fire, a beam's bite — so
+   * without a clock a body standing in a furnace's beam would answer sixty
+   * times a second. Both are dead weight on every kind but five, which is
+   * what HAS_STARBURST is for.
+   */
+  private readonly ustarCd = new Float32Array(MAX_UNITS);
+  private readonly ufoldT = new Float32Array(MAX_UNITS);
   /** CLOAK (levels.ts cloak): seconds still hidden, and seconds until the
    *  next time it hides */
   readonly ucloakT = shared.f32(MAX_UNITS);
@@ -3013,10 +3079,15 @@ export class Sim {
       poison: 0,
       poisonUnit: 0,
       poisonT: 0,
-      // ...nor shorted (the Wraith fleet's EMP) nor jammed (the sky's T4)
+      // ...nor shorted (the Wraith fleet's EMP) nor jammed (the sky's T4),
+      // nor alight (the Grapnels' fire star)
       shortT: 0,
+      burnT: 0,
+      burnDps: 0,
       jamT: 0,
       jamRate: 1,
+      soakT: 0,
+      soakRate: 1,
       // ...and nothing is infected the moment it is built: the Mech Virus
       // only ever arrives off a dead carrier or off a dead neighbour
       virus: false,
@@ -3202,6 +3273,12 @@ export class Sim {
     // the survivor before anything shoots at it
     this.mergeSqueezed(dt);
     this.mark("squeeze");
+    // ...and the Grapnels' own fold beside it, on the same footing and for
+    // the same reasons: a starfish that died this tick is gone rather than
+    // folded, and a fold's pooled health is on the survivor before
+    // anything shoots at it
+    this.mergeStarfish(dt);
+    this.mark("fold");
     // the waders gain AFTER the status pass for the same reason: a body
     // that burned to death this tick is already gone, and a stack taken
     // this tick is on the unit before anything shoots at it
@@ -4192,16 +4269,7 @@ export class Sim {
           case "bullet":
           case "missile":
           case "shell": {
-            // THE STAR (weapons.ts UnitWeapon.radial): the volley leaves
-            // the body evenly spaced round the whole circle, on the
-            // heading the body happens to be facing, with none of the
-            // aim's jitter. The target is what pulled the trigger and
-            // nothing more — four of a starfish's five rounds usually fly
-            // off into the map, and the fifth takes everything on its line
-            if (wp.radial) {
-              for (let k = 0; k < shots; k++)
-                this.fireUnitShotAt(x, y, urot[i] + (k * Math.PI * 2) / shots, wp, fed);
-            } else for (let k = 0; k < shots; k++) this.fireUnitShot(x, y, tgt, wp, k, fed);
+            for (let k = 0; k < shots; k++) this.fireUnitShot(x, y, tgt, wp, k, fed);
             break;
           }
           case "gun": {
@@ -4347,7 +4415,11 @@ export class Sim {
                 look: wp.look, collide: wp.look.collide !== false, trailT: 0,
                 poison: wp.poison ?? 0,
                 poisonChance: wp.poisonChance ?? 1,
-                pierced: null,
+                homing: 0,
+                seek: null,
+                soakT: 0,
+                soakRate: 1,
+                burn: 0,
               });
             }
             break;
@@ -4562,10 +4634,14 @@ export class Sim {
       // when it was fired (weapons.ts UnitWeapon.poison)
       poison: wp.poison ?? 0,
       poisonChance: wp.poisonChance ?? 1,
-      // a piercing round carries the list of what it has already bitten
-      // (weapons.ts pierce); every other shot dies on the first thing it
-      // touches and never allocates one
-      pierced: wp.pierce ? [] : null,
+      // no weapon on the roster steers, soaks a gun or lights one: those
+      // three belong to the Grapnels' stars, which are not weapons and are
+      // not fired from here (fireStar)
+      homing: 0,
+      seek: null,
+      soakT: 0,
+      soakRate: 1,
+      burn: 0,
     });
     // the bullet's own shootEffect and smokeEffect, in its hitColor (what
     // Effect.at is handed for a shootEffect) — sparkShoot ramps into it
@@ -4573,6 +4649,91 @@ export class Sim {
     const seed = (Math.random() * 0x7fffffff) | 0;
     this.pushFxCol(x, y, fxLife(look.shoot), look.shoot, a, 0, fc, 0, false, seed);
     if (look.smoke) this.pushFxCol(x, y, fxLife(look.smoke), look.smoke, a, 0, fc, 0, false, seed + 1);
+  }
+
+  /**
+   * THE STARBURST (levels.ts UnitStats.starburst, weapons.ts
+   * STARFISH_STARS) — the Grapnels throwing stars. `count` of them leave
+   * the body at once, evenly spaced round the whole circle: ONE, from a
+   * random arm, when a hit that landed rolled its answer; FIVE, one down
+   * every arm, when the body died where it stands.
+   *
+   * IT IS NOT A WEAPON AND THERE IS NO AIM. Nothing pulled a trigger and
+   * nothing was targeted — the headings are the body's own five arms on
+   * the heading it happens to be crawling, exactly as the old volley's
+   * were. What is new is that each round then STEERS: it looks for the
+   * nearest building it can see inside its own travel and turns onto it
+   * (EnemyShot.homing, updateEnemyShots). A star thrown with nothing in
+   * reach flies its arm's heading and burns out in the open, which is
+   * what makes killing them away from the line the answer.
+   *
+   * WHAT IT HITS FOR IS THE BODY'S, NOT THE ROW'S: a folded stack throws
+   * for every body in it (ustack, the same rule the squeeze and every
+   * weapon in the game run on), and a fed Hungry mech's stars carry its
+   * meals. That is the other half of the fold — ten runts in one body
+   * throw one star worth ten.
+   *
+   * THE ELEMENT IS ROLLED PER STAR and not per body, so a death burst off
+   * an apex is five different things arriving at once — which is the
+   * point of it: there is no one status to build against.
+   */
+  private throwStar(i: number, count: number): void {
+    const stars = KIND_STARS[this.ukind[i]];
+    if (!stars) return;
+    const x = this.upx[i], y = this.upy[i];
+    // ...times the stack and the meals, exactly as updateUnitWeapons bills
+    // a weapon it fires (see `fed` there)
+    const fed =
+      (this.hungryOn && this.uhungry[i] ? 1 + this.ueaten[i] * HUNGRY_DMG_PER_MEAL : 1) *
+      this.ustack[i];
+    // a single star leaves a RANDOM arm; five leave all five. Either way
+    // the spacing is the body's own — seventy-two degrees, off its facing
+    const first = count >= 5 ? 0 : (Math.floor(Math.random() * 5) * Math.PI * 2) / 5;
+    for (let k = 0; k < count; k++) {
+      const sp = stars.length === 1 ? stars[0] : stars[(Math.random() * stars.length) | 0];
+      this.fireStar(x, y, this.urot[i] + first + (k * Math.PI * 2) / 5, sp, fed);
+    }
+  }
+
+  /**
+   * ONE STAR ON ONE ARM'S HEADING — what throwStar resolves to once it has
+   * rolled the element, and the only place a star is ever made.
+   *
+   * THE QUARRY IS PICKED HERE AND ONCE. The star looks for the nearest
+   * building it can SEE within its whole travel — sighted, like the ground
+   * body that threw it, so a turret behind a ridge is not one a star finds
+   * — and carries the pointer out of the muzzle. Everything after that is
+   * the shot's own business (updateEnemyShots): it steers onto it, it
+   * looks once more if the building comes down under it, and it is spent
+   * wherever it happens to be when its travel runs out.
+   */
+  private fireStar(x: number, y: number, a: number, sp: StarSpec, fed: number): void {
+    const look = sp.look;
+    this.shots.push({
+      x, y,
+      vx: Math.cos(a) * sp.speed, vy: Math.sin(a) * sp.speed,
+      // the travel is the WHOLE of what a star gets — "a nearby turret" is
+      // exactly this number, and nothing further off is ever reachable
+      life: sp.range / sp.speed, age: 0,
+      damage: sp.damage * fed,
+      splash: sp.splash * fed,
+      splashRadius: sp.splashRadius,
+      look,
+      collide: true,
+      trailT: 0,
+      poison: sp.poison,
+      // a star never misses by a roll — the element IS the round, so what
+      // it carries lands every time it connects
+      poisonChance: 1,
+      homing: sp.homing,
+      seek: this.nearestStructure(x, y, sp.range, true),
+      soakT: sp.soak,
+      soakRate: sp.soakRate,
+      burn: sp.burn,
+    });
+    const fc = look.hitColor ?? look.back;
+    const seed = (Math.random() * 0x7fffffff) | 0;
+    this.pushFxCol(x, y, fxLife(look.shoot), look.shoot, a, 0, fc, 0, false, seed);
   }
 
   /**
@@ -4672,16 +4833,96 @@ export class Sim {
     }
   }
 
+  /** where the last sweepShot's round actually met the building, in world
+   *  px, rather than where its step happened to end */
+  private sweepHitX = 0;
+  private sweepHitY = 0;
+
   /**
-   * THE SWARM'S SHOTS IN FLIGHT. Each flies its heading; the structure
-   * under it — one cellTower read — is what it hits. A shell that runs
-   * out of life bursts where it is (that is where it was aimed); a
+   * THE FIRST STRUCTURE A ROUND CROSSED THIS TICK — the line from where it
+   * was to where it now is, sampled every half cell, and the nearest thing
+   * standing on it.
+   *
+   * IT EXISTS BECAUSE A FAST ROUND OUTRUNS THE GRID. One cell read at the
+   * end of the step is the whole collision test for the swarm's shots, and
+   * it is exact for anything moving less than a cell a tick — which was
+   * every round in the game until the Grapnels' stars, at forty px a tick
+   * against a thirty-two px cell. A round that skips cells does not miss
+   * SOMETIMES; it misses every turret whose footprint happens to fall
+   * between two samples, which on a 1x1 is most of them.
+   *
+   * SO THE COST IS PAID BY THE ROUNDS THAT NEED IT AND BY NO OTHERS: the
+   * sample count is the step over half a cell, which is 1 — one cell read,
+   * exactly as before — for everything slower than that.
+   *
+   * It stops at the FIRST thing the round meets, which is where the round
+   * stops: nothing the swarm fires goes through a building any more — the
+   * one round that did was the Grapnels' old volley, and the stars that
+   * replaced it strike one thing and burst.
+   */
+  private sweepShot(sh: EnemyShot, x0: number, y0: number): Structure | null {
+    const dx = sh.x - x0, dy = sh.y - y0;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    const steps = len > SHOT_SWEEP ? Math.ceil(len / SHOT_SWEEP) : 1;
+    for (let k = 1; k <= steps; k++) {
+      const f = k / steps;
+      const sx = x0 + dx * f, sy = y0 + dy * f;
+      if (sx < 0 || sy < 0 || sx >= W || sy >= H) break;
+      const t = this.structureAt(sx, sy);
+      if (!t) continue;
+      this.sweepHitX = sx;
+      this.sweepHitY = sy;
+      return t;
+    }
+    return null;
+  }
+
+  /**
+   * THE SWARM'S SHOTS IN FLIGHT. Each flies its heading — or steers onto
+   * a building, if it is one of the Grapnels' stars — and the first
+   * structure its STEP crossed (sweepShot) is what it hits. A shell that
+   * runs out of life bursts where it is (that is where it was aimed); a
    * missile does the same; a bullet that reaches nothing is spent.
    */
   private updateEnemyShots(dt: number): void {
     const shots = this.shots;
     for (let p = shots.length - 1; p >= 0; p--) {
       const sh = shots[p];
+      // A ROUND THAT STEERS (weapons.ts StarSpec.homing, the Grapnels'
+      // star): it turns onto its quarry at its own rate, which keeps the
+      // speed and moves the heading — a star is flung, not guided, and one
+      // thrown past a turret at close range overshoots and comes back
+      // round rather than pivoting on the spot.
+      //
+      // ITS QUARRY IS REVALIDATED EVERY TICK against the occupancy grid,
+      // exactly as a turret's held target is: a building whose anchor cell
+      // no longer points back at it is one that came down. When that
+      // happens the star looks ONCE for another inside the travel it has
+      // LEFT — not its whole range, which would let a spent round reach
+      // further than a fresh one — and if there is nothing there it stops
+      // steering and flies out the heading it is on.
+      if (sh.homing > 0) {
+        const sp = Math.sqrt(sh.vx * sh.vx + sh.vy * sh.vy);
+        if (sh.seek && this.cellTower[sh.seek.gy * COLS + sh.seek.gx] !== sh.seek) {
+          sh.seek = this.nearestStructure(sh.x, sh.y, sh.life * sp, true);
+          if (!sh.seek) sh.homing = 0;
+        }
+        if (sh.seek) {
+          const want = Math.atan2(sh.seek.y - sh.y, sh.seek.x - sh.x);
+          let a = Math.atan2(sh.vy, sh.vx);
+          let d = want - a;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          const step = sh.homing * dt;
+          a += Math.abs(d) <= step ? d : Math.sign(d) * step;
+          sh.vx = Math.cos(a) * sp;
+          sh.vy = Math.sin(a) * sp;
+        }
+      }
+      // where it was before this tick's step — the far end of the line the
+      // sweep below tests, which is the only thing that lets a round move
+      // further than a cell in one tick and still hit what is on its way
+      const x0 = sh.x, y0 = sh.y;
       sh.x += sh.vx * dt;
       sh.y += sh.vy * dt;
       sh.life -= dt;
@@ -4701,24 +4942,25 @@ export class Sim {
         this.pushTrail(sh.x, sh.y, look.puff.size, look.puff.color);
       }
       const off = sh.x < 0 || sh.y < 0 || sh.x >= W || sh.y >= H;
-      const t = off || !sh.collide ? null : this.structureAt(sh.x, sh.y);
-      // A PIERCING ROUND IS NOT STOPPED BY WHAT IT HITS (weapons.ts
-      // UnitWeapon.pierce, the Grapnels' star): it bites a structure ONCE
-      // — the list is what keeps a footprint it spends four cells
-      // crossing from being charged four times — and flies on until its
-      // flight runs out. A row of turrets on its line is a row of turrets
-      if (t && sh.pierced) {
-        if (!sh.pierced.includes(t)) {
-          sh.pierced.push(t);
-          this.hitStructure(t, sh.damage, sh.poison, sh.poisonChance);
-          if (sh.splash > 0)
-            this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison, sh.poisonChance);
-          this.shotHitFx(sh);
-        }
-      } else if (t) {
+      // WHAT IT CROSSED, not what it is standing on. A round used to be
+      // tested against the one cell it ended the tick over, which is
+      // exactly right while a round moves less than a cell in a tick and
+      // silently wrong the moment one does not: the Grapnels' stars fly
+      // forty px a tick against a thirty-two px cell, so half the turrets
+      // on their line were passed straight THROUGH. The sweep walks the
+      // step instead (sweepShot) and is a single cell read — the same one
+      // this always did — for every round slower than that, which is every
+      // other round in the game.
+      const t = off || !sh.collide ? null : this.sweepShot(sh, x0, y0);
+      if (t) {
+        // it stops WHERE IT STRUCK and not where the step ended, so the
+        // burst, the flames and the hit mark are all on the building
+        sh.x = this.sweepHitX;
+        sh.y = this.sweepHitY;
         this.hitStructure(t, sh.damage, sh.poison, sh.poisonChance);
         if (sh.splash > 0)
           this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison, sh.poisonChance);
+        this.starStatus(sh, t);
         this.shotHitFx(sh);
       } else if (sh.life <= 0 && !off) {
         // a shell that runs out of flight lands where it is — ON whatever
@@ -4733,16 +4975,85 @@ export class Sim {
         if (under) this.hitStructure(under, sh.damage, sh.poison, sh.poisonChance);
         if (sh.splash > 0) {
           this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison, sh.poisonChance);
+          // ...and a burst that went off in the open still soaks and still
+          // lights whatever happened to be standing inside it
+          this.starStatus(sh, under);
           this.shotHitFx(sh);
         } else if (under || look.hit === FxKind.HitLaser) this.shotHitFx(sh);
       }
-      // ...so a piercing round only leaves the list when it flies off the
-      // board or its flight is spent
-      if ((t && !sh.pierced) || off || sh.life <= 0) {
+      if (t || off || sh.life <= 0) {
         shots[p] = shots[shots.length - 1];
         shots.pop();
       }
     }
+  }
+
+  /**
+   * WHAT A STAR LEAVES BEHIND BESIDES A HOLE (weapons.ts StarSpec): the
+   * soaked star's slowed reload and the fire star's flames, on the
+   * building it struck and on everything its burst reached.
+   *
+   * THE ROT IS NOT HERE and does not need to be: poison already rides
+   * every shot in the game (EnemyShot.poison) and hitStructure and
+   * splashStructures both lay it. These two are the statuses nothing but
+   * a star applies, so this is the only place that knows about them — and
+   * it is a NO-OP, one compare, on every other round in flight.
+   *
+   * IT WALKS THE BURST A SECOND TIME rather than threading two more
+   * arguments through splashStructures, which every weapon in the game
+   * calls and none of them would ever pass. Stars are thrown by the
+   * handful and never by the thousand: the second walk is over the
+   * structures inside one splash radius, and it is paid only by the round
+   * that actually carries a status.
+   */
+  private starStatus(sh: EnemyShot, t: Structure | null): void {
+    if (sh.soakT <= 0 && sh.burn <= 0) return;
+    if (t) {
+      this.soakTower(t, sh.soakT, sh.soakRate);
+      this.burnTower(t, sh.burn);
+    }
+    if (sh.splash <= 0 || sh.splashRadius <= 0) return;
+    for (const s of this.structuresWithin(sh.x, sh.y, sh.splashRadius, this.splashOut)) {
+      if (s === t) continue;
+      this.soakTower(s, sh.soakT, sh.soakRate);
+      this.burnTower(s, sh.burn);
+    }
+  }
+
+  /**
+   * THE SOAK LANDING (Tower.soakT / soakRate, the Grapnels' soaked star):
+   * this gun reloads at `rate` of its own for `dur` seconds.
+   *
+   * IT WEARS THE SAME CHIP AS WATERLOGGING and it is not the same thing
+   * (see the note on the field): a wound a round left, not a fact about
+   * the ground. What the player reads off both is the one number that
+   * matters — how fast this gun is reloading — so the inspector folds them
+   * into one rate and the field wears one symbol.
+   *
+   * A REFRESH on the clock and the DEEPEST rate in force, exactly like the
+   * short and the fire: two stars do not slow a gun twice, and the heavier
+   * of them decides how slow.
+   */
+  private soakTower(t: Structure, dur: number, rate: number): void {
+    if (dur <= 0 || isCore(t) || t.hp <= 0) return;
+    if (t.soakT <= 0 || rate < t.soakRate) t.soakRate = rate;
+    if (dur > t.soakT) t.soakT = dur;
+  }
+
+  /**
+   * THE FIRE LANDING (Tower.burnT, the Grapnels' fire star): the building
+   * burns for TOWER_BURN_TIME, for `dps` raw health a second.
+   *
+   * A REFRESH ON THE CLOCK AND A MAX ON THE RATE (see the note on the
+   * field). And it ignores plating, like burning on a body and like the
+   * rot: the two statuses that go through armour are the two answers to
+   * armour, and a fire a bulwarked tacker shrugs off is a status the
+   * player never has to think about.
+   */
+  private burnTower(t: Structure, dps: number): void {
+    if (dps <= 0 || isCore(t) || t.hp <= 0) return;
+    if (dps > t.burnDps) t.burnDps = dps;
+    t.burnT = TOWER_BURN_TIME;
   }
 
   /** BulletType.hitEffect.at(x, y, rotation, hitColor) for a swarm shot */
@@ -5582,6 +5893,14 @@ export class Sim {
       this.ureachMul[i] = 1;
       this.ureachT[i] = 0;
       this.ublinkCd[i] = 0;
+      // THE STARBURST (levels.ts, the Grapnels): a starfish walks in able
+      // to answer the first hit that lands on it, and somewhere inside the
+      // fold period rather than at the start of one — a wave that all
+      // reached for a partner on the same frame would collapse into a
+      // handful of bodies in one visible step, and pay for the search in
+      // one visible spike
+      this.ustarCd[i] = 0;
+      this.ufoldT[i] = Math.random() * STARFISH_MERGE_PERIOD;
       // a cloaking kind walks in visible and hides for the first time a
       // full period in — a door that spat out ghosts would be a door with
       // no answer
@@ -5933,6 +6252,10 @@ export class Sim {
         }
       }
       if (HAS_BLINK && this.ublinkCd[i] > 0) this.ublinkCd[i] -= dt;
+      // THE STARBURST'S clock (levels.ts starburst): seconds until this
+      // body may answer a hit with another star. The fold clock is ticked
+      // in the fold pass itself, for the reason feedHungry ticks its own
+      if (HAS_STARBURST && this.ustarCd[i] > 0) this.ustarCd[i] -= dt;
       // THE CLOAK CYCLE (levels.ts cloak): hidden for `duration`, then
       // seen for the rest of `period`, from the first period in. The
       // flagship's veil hides the bodies round it for the same spell —
@@ -6147,8 +6470,10 @@ export class Sim {
    * ironhide2, so a stack is always "N of this" and the survivor is
    * exactly what it looks like, only heavier. Bosses never fold (a boss is
    * an authored event with its own bar), nor does a body still inside its
-   * arrival clock, and a stack stops at MERGE_MAX_STACK bodies so the rule
-   * thins a jam rather than collapsing a whole wave into one ball.
+   * arrival clock, and a stack stops at the kind's own ceiling
+   * (KIND_MERGE_MAX — MERGE_MAX_STACK for everything but a starfish, which
+   * carries its family's ten) so the rule thins a jam rather than
+   * collapsing a whole wave into one ball.
    *
    * WHAT THE LEDGERS SEE: the folded body leaves through removeUnit, so
    * its wave books it down at once; the survivor then counts for ustack
@@ -6181,7 +6506,7 @@ export class Sim {
       if (
         j === i || j >= this.n || uid[j] !== usqzU[i] || ukind[j] !== ukind[i] ||
         uhp[j] <= 0 || uhp[i] <= 0 || uspawn[i] > 0 || uspawn[j] > 0 ||
-        KIND_BOSS[ukind[i]] || ustack[i] + ustack[j] > MERGE_MAX_STACK
+        KIND_BOSS[ukind[i]] || ustack[i] + ustack[j] > KIND_MERGE_MAX[ukind[i]]
       ) continue;
       uhp[i] += uhp[j];
       uhpmax[i] += uhpmax[j];
@@ -6195,6 +6520,117 @@ export class Sim {
       this.pushFxCol(upx[i], upy[i], 22 / 60, FxKind.ShieldWave, 0, urad[i] * 2.5, MERGE_FX_COL);
       this.removeUnit(j);
     }
+  }
+
+  /**
+   * THE GRAPNELS' FOLD — a starfish reaches for the nearest starfish of
+   * its own kind and merges with it ON PURPOSE (levels.ts starburst.merge,
+   * constants.ts STARFISH_*).
+   *
+   * IT IS THE SQUEEZE WITHOUT THE SQUEEZE. Everything it moves is what
+   * mergeSqueezed moves and by the same arithmetic — health, maximum
+   * health, the force-field pool and the stack all add, the survivor's
+   * stars hit for the sum (ustack, read by throwStar), and the folded body
+   * leaves through removeUnit so every ledger books it at once. What is
+   * different is the TRIGGER: the squeeze needs a choke to crush two
+   * bodies into each other and holds them there for half a second, and
+   * this needs neither. A starfish in open ground, touching nothing, folds
+   * with whatever of its kind is within STARFISH_MERGE_REACH of it.
+   *
+   * SO IT IS A CLOCK AND NOT A PILE. One attempt every
+   * STARFISH_MERGE_PERIOD, never banked (a lone starfish that walks into a
+   * crowd does not get an instant fold owed to it), which is also what
+   * keeps the pass cheap: the neighbour search is paid only by the
+   * starfish whose clock came up this tick, and by nothing else on the
+   * field at all. The clocks start at a random point in the period, like
+   * the guns' reloads do, so a wave that arrived together does not all
+   * reach for a partner on the same frame.
+   *
+   * TEN BODIES AND TEN TIMES THE HEALTH is where it stops (KIND_MERGE_MAX).
+   * A fold only ever joins two of ONE KIND, so a stack of ten is exactly
+   * ten times what one of them walked in with — which is the ceiling the
+   * family is authored to, and it is shared with the squeeze so neither
+   * route can be used to get past the other.
+   *
+   * ORDER: downward, like feedHungry and the squeeze, and for the same
+   * reason — removal swaps the LAST row into the freed slot, and on a
+   * downward scan that row is one already visited.
+   */
+  private mergeStarfish(dt: number): void {
+    if (!HAS_STARBURST) return;
+    // ...and nothing at all in a wave with no Grapnel in it: the clocks
+    // below are a pass over every body on the field, and most waves on
+    // most boards are carrying none of these
+    let any = false;
+    for (const k of STARBURST_KINDS) if (this.aliveByKind[k] > 0) { any = true; break; }
+    if (!any) return;
+    const { ufoldT, ukind, ustack, uhp, uhpmax, ushield, uspawn, upx, upy, urad } = this;
+    // pass one: the clocks, separate from the fold below for feedHungry's
+    // reason — that loop can visit a slot twice, and a doubly-ticked clock
+    // would fold faster than the period says
+    for (let i = 0; i < this.n; i++) if (KIND_STARBURST[ukind[i]]) ufoldT[i] -= dt;
+    for (let i = this.n - 1; i >= 0; i--) {
+      if (!KIND_STARBURST[ukind[i]] || ufoldT[i] > 0) continue;
+      ufoldT[i] = STARFISH_MERGE_PERIOD;
+      if (uspawn[i] > 0 || uhp[i] <= 0 || ustack[i] >= KIND_MERGE_MAX[ukind[i]]) continue;
+      const j = this.foldMateFor(i);
+      if (j < 0) continue;
+      uhp[i] += uhp[j];
+      uhpmax[i] += uhpmax[j];
+      ushield[i] += ushield[j];
+      ustack[i] += ustack[j];
+      this.merged++;
+      // the same ring the squeeze closes on its survivor — one rule, one
+      // mark, whichever of the two folded these bodies
+      this.pushFxCol(upx[i], upy[i], 22 / 60, FxKind.ShieldWave, 0, urad[i] * 2.5, MERGE_FX_COL);
+      this.removeUnit(j);
+    }
+  }
+
+  /**
+   * A FOLD PARTNER for the starfish at `i`: another of its own kind within
+   * STARFISH_MERGE_REACH that the pair can fit inside the ceiling, or -1.
+   *
+   * RANDOM, NOT NEAREST, for preyFor's reason: a crowd of starfish all
+   * locking onto the single nearest body would have nine of them find it
+   * gone the moment the first one folded it in. Reservoir sampling gives
+   * every candidate an even chance for one extra random per hit and builds
+   * no array.
+   *
+   * SAME KIND ONLY, which is also same tier: a runt never folds into a
+   * brute, so a stack is always "N of this" and the survivor is exactly
+   * what it looks like, only heavier. The reach is centre to EDGE like
+   * every other neighbour scan here, so a wide body is in reach as soon as
+   * its arms are.
+   */
+  private foldMateFor(i: number): number {
+    const { upx, upy, uhp, ukind, uspawn, ustack, bStart, bUnits } = this;
+    const x = upx[i], y = upy[i];
+    const kind = ukind[i];
+    const room = KIND_MERGE_MAX[kind] - ustack[i];
+    const pad = STARFISH_MERGE_REACH + this.rmaxAliveFor(false, true);
+    const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((x + pad) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((y + pad) / HC) | 0, 0, HROWS - 1);
+    let seen = 0, pick = -1;
+    for (let hy = hy0; hy <= hy1; hy++) {
+      const row = hy * HCOLS;
+      const e = bStart[row + hx1 + 1];
+      for (let k = bStart[row + hx0]; k < e; k++) {
+        const j = bUnits[k];
+        // the broad phase is the frame's own hash, so a slot recycled
+        // since it was built is re-tested against the live rows here
+        if (j === i || j >= this.n || uhp[j] <= 0) continue;
+        if (ukind[j] !== kind || uspawn[j] > 0 || ustack[j] > room) continue;
+        const dx = upx[j] - x, dy = upy[j] - y;
+        const d2 = dx * dx + dy * dy;
+        const rr = STARFISH_MERGE_REACH + this.hitR(j, dx, dy, d2);
+        if (d2 > rr * rr) continue;
+        if (Math.random() * ++seen < 1) pick = j;
+      }
+    }
+    return pick;
   }
 
   /** a tower kill: death puff, removal, and the per-kind drop ledger */
@@ -6243,6 +6679,18 @@ export class Sim {
     this.scrap += drop;
     this.scrapEarned += drop;
     this.pushDeathFx(x, y);
+    // THE DEATH BURST (levels.ts starburst, the Grapnels): A STARFISH
+    // EMPTIES ITSELF WHEN IT DIES — five stars at once, one down every
+    // arm, wherever it fell. It is the loudest thing the family does and
+    // it is collected by the BOARD: killing one at reach costs nothing,
+    // killing one standing in your own patch is five homing rounds
+    // already inside the line.
+    //
+    // Thrown from here, which is after the RECONSTRUCTION branch above:
+    // the first death under that rule is not a death, and a body about to
+    // get up whole has not emptied itself of anything. The stars carry
+    // the stack (throwStar), so a fold of ten throws a burst worth ten.
+    if (HAS_STARBURST && KIND_STARBURST[kind]) this.throwStar(i, 5);
     // CASCADE CHARGES (relics.ts): a T4 or T5 hull comes apart where it
     // falls, for a fifth of its OWN maximum health over six tiles. Read
     // here, while the row is still the dead body's, and set off later —
@@ -6518,6 +6966,8 @@ export class Sim {
     this.ureachMul[i] = this.ureachMul[n];
     this.ureachT[i] = this.ureachT[n];
     this.ublinkCd[i] = this.ublinkCd[n];
+    this.ustarCd[i] = this.ustarCd[n];
+    this.ufoldT[i] = this.ufoldT[n];
     this.ucloakT[i] = this.ucloakT[n];
     this.ucloakCd[i] = this.ucloakCd[n];
     this.uhungry[i] = this.uhungry[n];
@@ -8482,6 +8932,30 @@ export class Sim {
           }
         }
       }
+      // ALIGHT (Tower.burnT, the Grapnels' fire star): raw health a
+      // second, PAST PLATING like the rot above it, and the flames on the
+      // rot's own footprint rule so a burning repeater reads from across
+      // the field. A refresh and a max rather than a stack (burnTower), so
+      // unlike the rot there is nothing here to bleed back down — it burns
+      // at what the biggest star that lit it said, and then it is out
+      if (t.burnT > 0) {
+        t.burnT -= dt;
+        if (t.burnT <= 0) {
+          t.burnT = 0;
+          t.burnDps = 0;
+        } else if (t.hp > 0) {
+          this.damageTower(t, t.burnDps * dt, true);
+          if (Math.random() < TOWER_BURN_FX_RATE * t.size * dt) {
+            const sz = t.size * CELL;
+            this.pushFx(
+              t.x + (Math.random() - 0.5) * sz * 0.7,
+              t.y + (Math.random() - 0.5) * sz * 0.7,
+              TOWER_BURN_FX_LIFE,
+              FxKind.Burning,
+            );
+          }
+        }
+      }
       // LAST VOLLEY (mods.ts): a dead neighbour's charge, running down
       if (t.boostT > 0) t.boostT -= dt;
       // THE JAM (levels.ts jamField), running down the same way — the
@@ -8489,6 +8963,12 @@ export class Sim {
       if (t.jamT > 0 && (t.jamT -= dt) <= 0) {
         t.jamT = 0;
         t.jamRate = 1;
+      }
+      // ...and the SOAK (Tower.soakT, the Grapnels' soaked star) beside
+      // it, on the same terms and its own clock
+      if (t.soakT > 0 && (t.soakT -= dt) <= 0) {
+        t.soakT = 0;
+        t.soakRate = 1;
       }
       const maxHp = t.hpMax;
       if (t.hp < maxHp * DAMAGE_SMOKE_BELOW) {
@@ -8556,7 +9036,10 @@ export class Sim {
       // the Hydrophobic rule has waterlogged (mutation.ts)
       // ...times a dying neighbour's parting charge, if one is running
       // ...times the sky's jam, while a bomber wing's stamp is on it
-      const rate = t.fireRate * (t.boostT > 0 ? LAST_VOLLEY_RATE : 1) * (t.jamT > 0 ? t.jamRate : 1);
+      // ...times a Grapnel star's soak, while one is on it
+      const rate =
+        t.fireRate * (t.boostT > 0 ? LAST_VOLLEY_RATE : 1) * (t.jamT > 0 ? t.jamRate : 1) *
+        (t.soakT > 0 ? t.soakRate : 1);
       if (t.cd > 0 && !(cont && t.beamT > cont.fade)) t.cd -= dt * rate;
 
       // a queued volley that is still charging: the shots are already spent
@@ -9977,6 +10460,28 @@ export class Sim {
         if (bl) this.blinkUnit(i, bl.dist, bl.cooldown);
       }
     }
+    // THE STARBURST (levels.ts starburst, the Grapnels): A HIT THAT LANDS
+    // THROWS A STAR BACK, on a chance and no oftener than its clock. This
+    // is the family's ONLY output — a starfish carries no weapon at all —
+    // so the rule sits on the one line every point of damage in the game
+    // comes through, and the clock above it is what keeps a body under a
+    // beam or a rot from answering every tick.
+    //
+    // A SHIELD EATING THE HIT IS STILL A HIT. The roll is outside the
+    // `amount > 0` branch on purpose: what pulls the answer out of a
+    // starfish is the board shooting at it, not the board getting through
+    // its plating, and a rule that needed health to come off would be
+    // silent for exactly as long as a force field held.
+    //
+    // A BODY THAT DIED ON THIS HIT DOES NOT ANSWER, because it is about to
+    // do something far louder: killUnit throws five (see there).
+    if (HAS_STARBURST && this.uhp[i] > 0 && this.ustarCd[i] <= 0) {
+      const sb = KIND_STARBURST[this.ukind[i]];
+      if (sb && Math.random() < sb.chance) {
+        this.ustarCd[i] = sb.cooldown;
+        this.throwStar(i, 1);
+      }
+    }
   }
 
   /**
@@ -10099,7 +10604,8 @@ export class Sim {
         this.shots.push({
           x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
           life: 0.5, age: 0, damage: 0, splash: b.splash * stack, splashRadius: b.radius,
-          look: BOMBLET_LOOK, collide: false, trailT: 0, poison: 0, poisonChance: 1, pierced: null,
+          look: BOMBLET_LOOK, collide: false, trailT: 0, poison: 0, poisonChance: 1,
+          homing: 0, seek: null, soakT: 0, soakRate: 1, burn: 0,
         });
       }
     }
@@ -10107,7 +10613,8 @@ export class Sim {
       this.shots.push({
         x, y, vx: 0, vy: 0,
         life: pl.fuse, age: 0, damage: 0, splash: pl.splash * stack, splashRadius: pl.radius,
-        look: NUKE_LOOK, collide: false, trailT: 0, poison: 0, poisonChance: 1, pierced: null,
+        look: NUKE_LOOK, collide: false, trailT: 0, poison: 0, poisonChance: 1,
+        homing: 0, seek: null, soakT: 0, soakRate: 1, burn: 0,
       });
       this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, pl.radius * 0.35);
       return;
