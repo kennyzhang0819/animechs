@@ -131,7 +131,7 @@ import { MAX_LEGS, MAX_SEGS, MUZZLE_FLASH_LIFE, WAKE_PTS } from "./sim";
 // THE WORLD, THROUGH THE ONE WINDOW THE DRAWING SIDE HAS (simview.ts).
 // Not `Sim` itself: what the picture is allowed to know is a written-down
 // list, and reaching past it has to go through that list first.
-import type { SimView, TowerView } from "./simview";
+import type { ShotView, SimView, TowerView } from "./simview";
 import {
   BEAM_STYLES,
   EXPLOSION_STYLES,
@@ -243,16 +243,23 @@ const FLOOR_DUST: readonly RGB[] = [
 /** Pal.piercerLaser #a9d8ff — coil's bolt and piercer's beam are both drawn
  * in it, and both wash out to white as they fade */
 const PAL_PIERCER = PAL.piercerLaser;
-/** radians a second the Grapnels' star turns as it flies */
+/** radians a second the Grapnels' star turns as it flies — and the FIRE
+ *  star's own, half again as fast, because a flare should look like it is
+ *  tumbling out of control and the other three like they were thrown */
 const STAR_SPIN = 3.2;
+const FIRE_SPIN = 5;
 /**
  * The region pair behind each of the swarm's ShotLook sprites (weapons.ts):
  * `-back` first, front over it, exactly as BULLET_REGIONS does for the
  * turrets. The boss missile is a unit's own coloured art and has no
  * back; an orb is no sprite at all (LiquidBulletType.draw is a disc), and
- * a STAR is the bullet pair laid five times round a turning centre.
+ * the four STARS are the bullet pair laid round a turning centre, each one
+ * with a different number of arms and a different middle (drawStar).
  */
-const SHOT_REGIONS: Record<Exclude<ShotRegion, "orb" | "star">, readonly [UVRect | null, UVRect]> = {
+const SHOT_REGIONS: Record<
+  Exclude<ShotRegion, "orb" | "star" | "star-rot" | "star-soak" | "star-fire">,
+  readonly [UVRect | null, UVRect]
+> = {
   bullet: [UV_BULLET_BACK, UV_BULLET],
   shell: [UV_SHELL_BACK, UV_SHELL],
   missile: [UV_MISSILE_BACK, UV_MISSILE],
@@ -2306,21 +2313,11 @@ export class Renderer {
       const look = sh.look;
       // a bomb has no velocity: it keeps the heading it was dropped on, 0
       const rot = sh.vx === 0 && sh.vy === 0 ? 0 : Math.atan2(sh.vy, sh.vx);
-      if (look.region === "star") {
-        // THE GRAPNELS' ROUND: five arms of the ordinary bullet sprite
-        // laid round a centre that turns as the shot flies, so what
-        // crosses the field is a little spinning copper star. It is drawn
-        // rather than packed because five quads cost less than a sprite
-        // cell and the spin has to be live
-        const spin = rot + sh.age * STAR_SPIN;
-        const [sback, sfront] = SHOT_REGIONS.bullet;
-        const arm = look.height * 0.55, out = look.height * 0.28;
-        for (let k = 0; k < 5; k++) {
-          const a = spin + (k * Math.PI * 2) / 5;
-          const px = sh.x + Math.cos(a) * out, py = sh.y + Math.sin(a) * out;
-          if (sback) this.push(dyn, px, py, arm, look.width, a, sback, look.back[0], look.back[1], look.back[2], 1);
-          this.push(dyn, px, py, arm, look.width, a, sfront, look.front[0], look.front[1], look.front[2], 1);
-        }
+      if (
+        look.region === "star" || look.region === "star-rot" ||
+        look.region === "star-soak" || look.region === "star-fire"
+      ) {
+        this.drawStar(dyn, sh, rot);
         continue;
       }
       if (look.region === "orb") {
@@ -2352,6 +2349,77 @@ export class Renderer {
         this.strokeLine(dyn, sh.x - (Math.cos(rot) * look.height) / 4, sh.y - (Math.sin(rot) * look.height) / 4,
           rot, look.height / 2, 2 * MU, look.front, 1);
       }
+    }
+  }
+
+  /**
+   * THE GRAPNELS' ROUNDS — four different stars, all of them arms of the
+   * ordinary bullet sprite laid round a centre that turns as the shot
+   * flies. They are DRAWN rather than packed because a handful of quads
+   * costs less than a sprite cell apiece and the spin has to be live.
+   *
+   * AND THEY ARE FOUR OBJECTS, not one in four colours. A star off a
+   * champion may be a rot star, a soaked star or a fire star, the player
+   * cannot know which until it is in the air, and what it does when it
+   * lands is completely different in each case — so the shape has to say
+   * it as loudly as the hue, and say it at field zoom where three similar
+   * silhouettes in three similar sizes are one silhouette:
+   *
+   *   plain   five copper arms, nothing in the middle — the runt's round
+   *   rot     five FAT short arms and a heavy lobed core, an acid drop
+   *           that happens to have points, hanging off the back of itself
+   *   soak    five arms pulled back round a big round bead with a ring —
+   *           a drop of water, and the roundest of the four
+   *   fire    TEN points, a short flare between every long one, no core
+   *           and half again the spin: the one that reads as burning
+   */
+  private drawStar(dyn: Batch, sh: ShotView, rot: number): void {
+    const look = sh.look;
+    const el = look.region;
+    const [sback, sfront] = SHOT_REGIONS.bullet;
+    const spin = rot + sh.age * (el === "star-fire" ? FIRE_SPIN : STAR_SPIN);
+    const b = look.back, f = look.front;
+    // the rot star's arms are stubs off a fat middle; the soaked star's
+    // are pulled back into its bead; the other two run long
+    const arm =
+      look.height * (el === "star-rot" ? 0.4 : el === "star-soak" ? 0.44 : 0.55);
+    const out = look.height * (el === "star-soak" ? 0.34 : 0.28);
+    const wide = look.width * (el === "star-rot" ? 1.5 : 1);
+    for (let k = 0; k < 5; k++) {
+      const a = spin + (k * Math.PI * 2) / 5;
+      const px = sh.x + Math.cos(a) * out, py = sh.y + Math.sin(a) * out;
+      if (sback) this.push(dyn, px, py, arm, wide, a, sback, b[0], b[1], b[2], 1);
+      this.push(dyn, px, py, arm, wide, a, sfront, f[0], f[1], f[2], 1);
+    }
+    if (el === "star-fire") {
+      // the five short points BETWEEN the long ones, in the dark face, so
+      // the flare reads as ten and as two colours rather than as a bigger
+      // five-pointed star
+      const sa = look.height * 0.3, so = look.height * 0.2;
+      for (let k = 0; k < 5; k++) {
+        const a = spin + ((k + 0.5) * Math.PI * 2) / 5;
+        const px = sh.x + Math.cos(a) * so, py = sh.y + Math.sin(a) * so;
+        this.push(dyn, px, py, sa, look.width, a, sfront, b[0], b[1], b[2], 1);
+      }
+      return;
+    }
+    if (el === "star-rot") {
+      // the drip: a fat disc over the roots of the arms, and a brighter
+      // bead off the back of it, which is what makes an acid star read as
+      // something hanging rather than something spinning
+      this.fillCircle(dyn, sh.x, sh.y, look.height * 0.3, b, 1);
+      this.fillCircle(dyn, sh.x, sh.y, look.height * 0.18, f, 1);
+      const tx = sh.x - Math.cos(rot) * look.height * 0.28;
+      const ty = sh.y - Math.sin(rot) * look.height * 0.28;
+      this.fillCircle(dyn, tx, ty, look.height * 0.14, f, 1);
+      return;
+    }
+    if (el === "star-soak") {
+      // the bead and its rim: the only one of the four with a hard round
+      // outline, which is the whole of why a soaked star reads as water
+      this.fillCircle(dyn, sh.x, sh.y, look.height * 0.34, b, 1);
+      this.fillCircle(dyn, sh.x, sh.y, look.height * 0.22, f, 1);
+      this.strokeCircle(dyn, sh.x, sh.y, look.height * 0.34, 1.5 * MU, f[0], f[1], f[2], 0.7);
     }
   }
 

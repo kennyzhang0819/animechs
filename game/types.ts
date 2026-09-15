@@ -241,6 +241,18 @@ export interface Tower {
    */
   shortT: number;
   /**
+   * ALIGHT — the Grapnels' fire star (weapons.ts StarSpec.burn): the
+   * seconds this building is burning and the raw health a second it is
+   * losing to it. A REFRESH on the clock and a MAX on the rate, like the
+   * short above and unlike the rot, which stacks: a second star re-lights
+   * the fire rather than laying a second one, and a bigger star's fire
+   * burns hotter than the one already on it (Sim.burnTower).
+   *
+   * IT IGNORES PLATING, exactly as burning does on the swarm's own bodies.
+   */
+  burnT: number;
+  burnDps: number;
+  /**
    * JAMMED — the Sky gunships' T4 blankets the ground under it
    * (levels.ts jamField): while `jamT` runs, the reload goes at `jamRate`
    * on top of `fireRate`. A stamp like the swarm's own auras — the carrier
@@ -249,6 +261,23 @@ export interface Tower {
    */
   jamT: number;
   jamRate: number;
+  /**
+   * SOAKED — the Grapnels' soaked star (weapons.ts StarSpec.soak): while
+   * `soakT` runs, this gun's reload goes at `soakRate` of its own, on top
+   * of the jam above and everything else that moves it.
+   *
+   * IT IS NOT THE JAM AND IT IS NOT WATERLOGGING, however alike the three
+   * read on the turret. The jam is a STAMP — a bomber wing is overhead
+   * right now and the timer is refreshed while it stays — and waterlogging
+   * (`fireRate`) is a fact about the ground the turret was built on that
+   * never changes. This is a wound: laid once by a round that landed, it
+   * runs down and is gone. Sharing either field would have a star's soak
+   * cleared by a flight leaving, or a permanent property re-timed by a
+   * round. A REFRESH on the clock and the DEEPEST rate in force, like the
+   * short and the fire (Sim.soakTower).
+   */
+  soakT: number;
+  soakRate: number;
   /**
    * THE MECH VIRUS IS IN THIS BUILDING (mutation.ts). Unlike the rot
    * above it carries no rate and no clock, because it has neither: it
@@ -417,13 +446,30 @@ export interface EnemyShot {
    *  never miss */
   poisonChance: number;
   /**
-   * A ROUND THAT IS NOT STOPPED BY WHAT IT HITS (weapons.ts
-   * UnitWeapon.pierce — the Grapnels' star, and nothing else in the game
-   * today): the structures it has already bitten, so a footprint it
-   * spends four cells crossing is charged once. Null on every ordinary
-   * shot, which dies on the first thing it touches.
+   * A ROUND THAT STEERS (weapons.ts StarSpec.homing, the Grapnels' star
+   * and nothing else today): how hard it turns onto its quarry, in
+   * radians a second. 0 on every shot that flies the heading it was
+   * fired on, which is all of them but this one.
    */
-  pierced: Structure[] | null;
+  homing: number;
+  /**
+   * ...and what it is chasing. Held by reference and revalidated against
+   * the occupancy grid every tick (Sim.updateEnemyShots), because a
+   * building that came down is a building whose cells no longer point at
+   * it; a star whose quarry is gone looks once for another and then flies
+   * straight until its travel runs out. Null on everything else.
+   */
+  seek: Structure | null;
+  /**
+   * THE SOAKED STAR (Sim.soakTower): seconds of slowed reload it lays on
+   * what it hits, and the fraction of its own rate that gun then reloads
+   * at. 0 and 1 on every shot that is not one.
+   */
+  soakT: number;
+  soakRate: number;
+  /** THE FIRE STAR (Sim.burnTower): raw health a second it sets what it
+   *  hits alight for, over TOWER_BURN_TIME. 0 on everything else */
+  burn: number;
 }
 
 export interface Projectile {

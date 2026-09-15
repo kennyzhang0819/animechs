@@ -316,6 +316,55 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
   },
 
   /**
+   * STARBURST — the star itself, five-pointed and point-up, in the
+   * Grapnels' copper. It is the one symbol in this catalog that is a STAR,
+   * which is what keeps it apart from everything else at seven pixels, and
+   * it is the round the family throws rather than a picture of throwing
+   * one: the thing the player will see coming at their line is exactly
+   * this shape, spinning.
+   */
+  throws: (g) => {
+    // laid out ROW BY ROW on the twelve grid rather than as a polygon: a
+    // five-pointed star is the one shape here with no axis of symmetry the
+    // rasteriser can round evenly, and a star with one leg a pixel fatter
+    // than the other is what a player sees at seven pixels
+    const R = (y0: number, y1: number, x0: number, x1: number): void =>
+      void g.box(x0 / 12, y0 / 12, x1 / 12, y1 / 12, PAL.hook);
+    R(2, 4, 5, 7);   // the point
+    R(4, 5, 0, 12);  // the two arms, full width
+    R(5, 6, 1, 11);
+    R(6, 8, 3, 9);   // the waist
+    R(8, 9, 2, 10);
+    R(9, 10, 2, 4);  // ...and the two legs
+    R(9, 10, 8, 10);
+    g.over((o) => o.box(0, 7 / 12, 1, 1, PAL.hookDark));
+  },
+
+  /**
+   * FOLD — two wedges driven into each other until they meet, which is
+   * the plainest "these two become one" this grid can hold. NOT two discs:
+   * two round things side by side are eyes at this size, and the whole
+   * catalog is drawn to avoid that. The seam down the middle is where the
+   * two arrive, and it is the single accent (rule 5).
+   */
+  folds: (g) => {
+    // two arrowheads driven at each other until they meet, laid out row by
+    // row for the star's reason above. NOT two discs: two round things
+    // side by side are eyes at this size, and the whole catalog is drawn
+    // to keep off that. The bar down the middle is where they arrive, and
+    // it is the single accent (rule 5)
+    const R = (y0: number, y1: number, x0: number, x1: number): void =>
+      void g.box(x0 / 12, y0 / 12, x1 / 12, y1 / 12, PAL.hook);
+    R(3, 4, 0, 2);   R(3, 4, 10, 12);
+    R(4, 5, 0, 3);   R(4, 5, 9, 12);
+    R(5, 7, 0, 4);   R(5, 7, 8, 12);
+    R(7, 8, 0, 3);   R(7, 8, 9, 12);
+    R(8, 9, 0, 2);   R(8, 9, 10, 12);
+    g.over((o) => o.box(0, 7 / 12, 1, 1, PAL.hookDark));
+    g.box(5 / 12, 4 / 12, 7 / 12, 8 / 12, PAL.hookDark);
+  },
+
+  /**
    * PAYLOAD — a bomb with a lit fuse. The body IS the bomb, so the symbol
    * is the bomb and not a body carrying one; the spark is the single
    * accent (rule 5), and it is what says the thing is live rather than

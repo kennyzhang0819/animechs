@@ -64,6 +64,8 @@ export type StatusId =
   | "blinks"
   | "vanishes"
   | "charges"
+  | "throws"
+  | "folds"
   | "bomb"
   | "immune"
   | "wet"
@@ -278,6 +280,22 @@ export const STATUSES: readonly StatusDef[] = [
     field: false,
   },
   {
+    id: "throws",
+    name: "Starburst",
+    color: PAL.hook,
+    blurb:
+      "IT CARRIES NO GUN AND IT NEVER TAKES AIM. What it does is ANSWER: a hit that lands on it throws a homing star back out of one of its five arms, and its death throws five at once, one down every arm. Shoot it and it shoots back; kill it standing over your line and the burst is already inside it.",
+    field: false,
+  },
+  {
+    id: "folds",
+    name: "Fold",
+    color: PAL.hook,
+    blurb:
+      "It reaches for its own kind and MERGES with whatever it finds — health, shield pool and the weight of its stars all add, up to ten bodies in one. A patch of them left alone is one very large one.",
+    field: false,
+  },
+  {
     id: "bomb",
     name: "Payload",
     color: PAL.bomber,
@@ -307,7 +325,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Burning",
     color: PAL.ember,
     blurb:
-      "Alight, off a torch. Fire takes health straight off the pool and ignores plating entirely.",
+      "Alight — off a torch on a body, off a Grapnel's fire star on a building. Fire takes health straight off the pool and ignores plating entirely; a second application re-lights it rather than stacking.",
     field: true,
   },
   {
@@ -424,7 +442,8 @@ export const STATUSES: readonly StatusDef[] = [
     id: "soaked",
     name: "Waterlogged",
     color: PAL.water,
-    blurb: "Built on the shore under the Hydrophobic rule: this gun reloads slower, and always will.",
+    blurb:
+      "Water on the gun, and it reloads slower for it — built on the shore under the Hydrophobic rule, which never lifts, or struck by a Grapnel's soaked star, which runs down and is gone.",
     field: true,
   },
   {
@@ -594,6 +613,14 @@ function unitTraits(kind: UnitKind): StatusChip[] {
         (u.cloak.veil ? ` — and takes everything within ${tiles(u.cloak.veil)} with it` : ""),
     );
   if (u.charge) add("charges", `leaves the route for any structure within ${tiles(u.charge.range)}`);
+  if (u.starburst) {
+    add(
+      "throws",
+      `${Math.round(u.starburst.chance * 100)}% of hits throw a star back, at most every ` +
+        `${dur(u.starburst.cooldown)} — and five when it dies`,
+    );
+    add("folds", `merges with its own kind, up to ${u.starburst.merge} bodies in one`);
+  }
   if (u.payload)
     add(
       "bomb",
@@ -678,17 +705,18 @@ export function unitStatusChips(sim: Sim, i: number): StatusChip[] {
  * nothing, and cannot change sides.
  */
 /**
- * THE TEN SYMBOLS A BUILDING CAN WEAR, in the order they are drawn.
+ * THE ELEVEN SYMBOLS A BUILDING CAN WEAR, in the order they are drawn.
  *
  * The order is the wire format as well as the catalogue: a building's row
  * crosses to the drawing side as one bitmask over this list (see
- * structStatusMask), which is ten clocks' worth of answer in one number —
+ * structStatusMask), which is eleven clocks' worth of answer in one number —
  * and keeps the RULE about what counts as a status on the side that owns
  * the clocks, rather than copying nine of them across to be re-judged.
  */
 export const STRUCT_FIELD_STATUSES: readonly StatusId[] = [
   "virus",
   "rot",
+  "burning",
   "short",
   "jam",
   "boost",
@@ -704,13 +732,14 @@ export function structStatusMask(s: Structure): number {
   return (
     (s.virus ? 1 : 0) |
     (s.poison > 0 ? 2 : 0) |
-    (s.shortT > 0 ? 4 : 0) |
-    (s.jamT > 0 ? 8 : 0) |
-    (s.boostT > 0 ? 16 : 0) |
-    (s.regen > 0 ? 32 : 0) |
-    (s.revives > 0 ? 64 : 0) |
-    (s.fireRate < 1 ? 128 : 0) |
-    (s.team === "enemy" ? 256 : 0)
+    (s.burnT > 0 ? 4 : 0) |
+    (s.shortT > 0 ? 8 : 0) |
+    (s.jamT > 0 ? 16 : 0) |
+    (s.boostT > 0 ? 32 : 0) |
+    (s.regen > 0 ? 64 : 0) |
+    (s.revives > 0 ? 128 : 0) |
+    (s.fireRate < 1 || s.soakT > 0 ? 256 : 0) |
+    (s.team === "enemy" ? 512 : 0)
   );
 }
 
@@ -800,6 +829,7 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
   // the single-pick numbers. Summed or maxed so they stay meaningful for
   // one building, which is the only case that ever reads them back
   let poison = 0, boostT = 0, regen = 0, revives = 0, rate = 1, shortT = 0, jamRate = 1;
+  let burnDps = 0;
   let virusDps = 0;
   for (const s of picked) {
     if (isCore(s)) {
@@ -807,13 +837,16 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
       continue;
     }
     poison += s.poison;
+    burnDps = Math.max(burnDps, s.burnT > 0 ? s.burnDps : 0);
     shortT = Math.max(shortT, s.shortT);
     if (s.jamT > 0) jamRate = Math.min(jamRate, s.jamRate);
     virusDps += s.virus ? s.hpMax * VIRUS_DPS : 0;
     boostT = Math.max(boostT, s.boostT);
     regen += s.regen;
     revives += s.revives;
-    rate = Math.min(rate, s.fireRate);
+    // what this gun is ACTUALLY reloading at from water: the ground it
+    // stands on and a star's soak are one number to the player
+    rate = Math.min(rate, s.fireRate * (s.soakT > 0 ? s.soakRate : 1));
     // the LIVE spec's plating, this turret's attributes folded in — a
     // Bulwarked tacker beside a plain one is two answers, and two answers is
     // no answer
@@ -822,12 +855,13 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
     const bump = (id: StatusId): void => void tally.set(id, (tally.get(id) ?? 0) + 1);
     if (s.virus) bump("virus");
     if (s.poison > 0) bump("rot");
+    if (s.burnT > 0) bump("burning");
     if (s.shortT > 0) bump("short");
     if (s.jamT > 0) bump("jam");
     if (s.boostT > 0) bump("boost");
     if (s.regen > 0) bump("regen");
     if (s.revives > 0) bump("revive");
-    if (s.fireRate < 1) bump("soaked");
+    if (s.fireRate < 1 || s.soakT > 0) bump("soaked");
     if (s.team === "enemy") bump("conquered");
   }
   const out: StatusChip[] = [];
@@ -849,6 +883,7 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
     `${num(virusDps)} health a second — it jumps when this goes`,
   );
   on("rot", null, `${num(poison)} health a second`);
+  on("burning", null, `${num(burnDps)} health a second`);
   on("short", null, secs(shortT));
   on("jam", null, `reloads at ${Math.round(jamRate * 100)}%`);
   on("boost", null, secs(boostT));
