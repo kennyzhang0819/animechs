@@ -2716,7 +2716,7 @@ export class Renderer {
         );
       }
     }
-    // the shieldTowers, AFTER the towers: they stand on free rock of their
+    // the shieldTowers, AFTER the towers: they rose on free ground of their
     // own (Sim.trySpawnShieldTower) and never overlap one, so the order is
     // only about the domes drawing over the board.
     // Dead shieldTowers draw nothing; their ground is open again

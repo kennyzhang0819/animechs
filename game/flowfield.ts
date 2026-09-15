@@ -201,6 +201,13 @@ export class FlowField {
    * means a 1-wide slot, where spreading is not on offer
    */
   clear: Float32Array = new Float32Array(NCELLS);
+  /**
+   * THE CLEARANCE, IN SHARED MEMORY: a copy of `clear` refreshed whenever
+   * a solve is published or adopted, for a reader on another thread (the
+   * crowd shove, physkernel.ts) — `clear` itself is swapped and transferred
+   * and so cannot be the thing another thread holds a view over
+   */
+  readonly clearShared: Float32Array = shared.f32(NCELLS);
 
   // THE WORK BUFFERS: where a solve builds the next field. Swapped with
   // the published ones the instant it finishes (publish), never read from
@@ -645,6 +652,7 @@ export class FlowField {
     f = this.dirX; this.dirX = this.wDirX; this.wDirX = f;
     f = this.dirY; this.dirY = this.wDirY; this.wDirY = f;
     f = this.clear; this.clear = this.wClear; this.wClear = f;
+    this.clearShared.set(this.clear);
     const s = this.spawnPts; this.spawnPts = this.wSpawn; this.wSpawn = s;
   }
 
@@ -713,6 +721,7 @@ export class FlowField {
     this.dirX = r.dirX;
     this.dirY = r.dirY;
     this.clear = r.clear;
+    this.clearShared.set(this.clear);
     this.spawnPts = r.spawnPts;
   }
 

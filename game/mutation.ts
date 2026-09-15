@@ -1174,15 +1174,33 @@ for (let t = 1; t < MITOSIS_BROOD.length; t++)
 // roster the shield tower-breaking roster.
 //
 // IT RISES ON EMPTY TURRET GROUND, AND THAT IS THE WHOLE COST. A shield
-// tower only ever lands on BUILDABLE ROCK that is FREE — the same
-// highground a turret needs, never on the lanes, and never on a square
-// anything already stands on — so it takes no pathing decision away from
-// the swarm and one unbuilt emplacement away from the player. The dome
-// still hangs over the road beside it, which is where the sheltering
-// happens; what the footprint costs is somewhere to shoot from.
+// tower only ever lands on ground a TURRET COULD HAVE STOOD ON that is
+// FREE — open floor, off the core, off the swarm's doors, and never on a
+// square anything already stands on — so what it takes is one unbuilt
+// emplacement and nothing else. The dome hangs over the road around it,
+// which is where the sheltering happens; what the footprint costs is
+// somewhere to shoot from.
+//
+// IT ASKS THE PLACEMENT RULE, IT DOES NOT RESTATE IT. The roller reads
+// board.ts (groundClear, domesClear) — the same two predicates the build
+// cursor is coloured by — so "somewhere a turret could go" has exactly
+// one definition. It used to carry its own, and that is how this rule
+// broke: it wanted BUILDABLE ROCK, which was right while turrets stood on
+// the highground, and turrets stand on the FLOOR now. Every dome on every
+// map was landing on a hill — competing with the player for ground the
+// player had stopped wanting, at which point the rule's whole cost was
+// zero. A rule priced on what it takes away must ask the board what there
+// is to take.
+//
+// IT HOLDS NO GROUND AGAINST THE SWARM. The footprint is solid to a
+// PLACEMENT and thin air to a body: the horde walks straight through its
+// own building, exactly as it walks through a turret Conquest took off
+// the player (Sim.conquerTower). A dome its own bodies will not shoot and
+// cannot pass would be a wall a wave stands at forever, so raising one
+// still changes no route and costs no re-solve.
 //
 // IT NEVER TOUCHES WHAT THE PLAYER BUILT. A roll that would land over a
-// turret is thrown away and re-rolled, and a board with no free rock left
+// turret is thrown away and re-rolled, and a board with no free ground left
 // simply raises NOTHING that period (Sim.trySpawnShieldTower) — the rule
 // competes with the player for empty ground, it does not take ground back
 // off them. The mutator used to ENTOMB a turret it landed on, disabling it
@@ -1272,7 +1290,7 @@ export const SHIELD_TOWER_SPAWN_PERIOD = 30;
  *
  * TWENTY, WHICH IS A LANDSCAPE RATHER THAN AN EVENT. At three the rule
  * was a handful of objectives to clear; at twenty, and only ever on
- * BUILDABLE ROCK (see the spot roller in sim.ts), the shieldTowers are
+ * BUILDABLE GROUND (see the spot roller in sim.ts), the shieldTowers are
  * competing with the player for the same real estate the turrets want.
  * The cost stops being "go and break that" and becomes "there is nowhere
  * left to stand", which is a far better fit for a rule that never touches

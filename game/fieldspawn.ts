@@ -11,3 +11,7 @@
  */
 export const spawnFieldWorker = (): Worker =>
   new Worker(new URL("./field.worker.ts", import.meta.url), { type: "module" });
+
+/** ...and the crowd shove's thread (phys.worker.ts), on the same terms */
+export const spawnPhysWorker = (): Worker =>
+  new Worker(new URL("./phys.worker.ts", import.meta.url), { type: "module" });

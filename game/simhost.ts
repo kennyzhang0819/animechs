@@ -137,6 +137,8 @@ export class LocalHost implements SimHost {
     /** the route solver's thread when the page spawned one for this sim
      *  (workerhost.ts makeHost) — ended with the level */
     private readonly fieldWorker: Worker | null = null,
+    /** ...and the crowd shove's thread, likewise */
+    private readonly physWorker: Worker | null = null,
   ) {
     this.world = new World({
       level: sim.level,
@@ -232,5 +234,6 @@ export class LocalHost implements SimHost {
     // does not go by itself
     this.sim.dispose();
     this.fieldWorker?.terminate();
+    this.physWorker?.terminate();
   }
 }

@@ -41,7 +41,7 @@ import { readPts, type FlatWorld, type Snapshot } from "./snapshot";
 import type { WorldReport } from "./simreport";
 import { World } from "./simreads";
 import { LocalHost, type Cell, type Placement, type SimHost } from "./simhost";
-import { spawnFieldWorker } from "./fieldspawn";
+import { spawnFieldWorker, spawnPhysWorker } from "./fieldspawn";
 
 /** what the game sends the worker */
 export type ToWorker =
@@ -51,6 +51,8 @@ export type ToWorker =
       /** the sim's end of the line to the route solver (fieldport.ts), or
        *  null to solve in slices */
       field: MessagePort | null;
+      /** ...and to the crowd shove's thread (physport.ts), or null to shove in-thread */
+      phys: MessagePort | null;
     }
   | { t: "run"; on: boolean }
   | { t: "cmd"; m: string; a: unknown[] };
@@ -94,6 +96,8 @@ export class WorkerHost implements SimHost {
     private readonly worker: Worker,
     /** the route solver's thread, spawned here and ended here (docs/threads.md) */
     private readonly fieldWorker: Worker | null,
+    /** ...and the crowd shove's, on the same terms */
+    private readonly physWorker: Worker | null,
     level: LevelSpec,
     ready: Extract<FromWorker, { t: "ready" }>,
   ) {
@@ -138,10 +142,27 @@ export class WorkerHost implements SimHost {
       } catch (err) {
         console.warn("no field worker; the sim will route in-thread:", err);
       }
+      // THE CROWD SHOVE'S THREAD, likewise — and only where there are
+      // cores for it (physCores)
+      let physWorker: Worker | null = null;
+      let phys: MessagePort | null = null;
+      if (physCores()) {
+        try {
+          physWorker = spawnPhysWorker();
+          const channel = new MessageChannel();
+          physWorker.postMessage({ port: channel.port1 }, [channel.port1]);
+          physWorker.onerror = (e) =>
+            console.error("physics worker failed; the sim will shove in-thread:", e.message);
+          phys = channel.port2;
+        } catch (err) {
+          console.warn("no physics worker; the sim will shove in-thread:", err);
+        }
+      }
       const fail = (why: string): void => {
         clearTimeout(clock);
         worker.terminate();
         fieldWorker?.terminate();
+        physWorker?.terminate();
         reject(new Error(why));
       };
       const clock = setTimeout(() => fail(`sim worker did not come up in ${READY_MS}ms`), READY_MS);
@@ -152,9 +173,12 @@ export class WorkerHost implements SimHost {
         if (m.t !== "ready") return;
         clearTimeout(clock);
         worker.onerror = (err) => console.error("sim worker:", err.message);
-        resolve(new WorkerHost(worker, fieldWorker, level, m));
+        resolve(new WorkerHost(worker, fieldWorker, physWorker, level, m));
       };
-      worker.postMessage({ t: "init", spec: level, field } satisfies ToWorker, field ? [field] : []);
+      const transfer: Transferable[] = [];
+      if (field) transfer.push(field);
+      if (phys) transfer.push(phys);
+      worker.postMessage({ t: "init", spec: level, field, phys } satisfies ToWorker, transfer);
     });
   }
 
@@ -242,7 +266,21 @@ export class WorkerHost implements SimHost {
   destroy(): void {
     this.worker.terminate();
     this.fieldWorker?.terminate();
+    this.physWorker?.terminate();
   }
+}
+
+/**
+ * IS THERE A CORE FOR THE CROWD SHOVE? The game runs four threads of its
+ * own with it (page, sim, solver, shove) beside the browser's GPU process
+ * and compositor; on fewer than six hardware threads the fourth is
+ * preempting the draw rather than helping it, and the sim shoves
+ * in-thread as it always did. Unknown counts are taken as enough.
+ */
+const PHYS_MIN_CORES = 6;
+export function physCores(): boolean {
+  const c = typeof navigator !== "undefined" ? navigator.hardwareConcurrency : 0;
+  return !c || c >= PHYS_MIN_CORES;
 }
 
 /**
@@ -268,7 +306,7 @@ export async function makeHost(level: LevelSpec, local = false): Promise<SimHost
     );
   }
   // the sim on the page holds the solver's worker directly, and lets it
-  // go with the level (LocalHost.destroy)
+  // go with the level (LocalHost.destroy) — and the shove's, on the same terms
   let field: Worker | null = null;
   try {
     field = spawnFieldWorker();
@@ -276,5 +314,14 @@ export async function makeHost(level: LevelSpec, local = false): Promise<SimHost
   } catch (err) {
     console.warn("no field worker; routing in-thread:", err);
   }
-  return new LocalHost(new Sim(level, field), field);
+  let phys: Worker | null = null;
+  if (SHARED_MEMORY && physCores()) {
+    try {
+      phys = spawnPhysWorker();
+      phys.onerror = (e) => console.error("physics worker failed; shoving in-thread:", e.message);
+    } catch (err) {
+      console.warn("no physics worker; shoving in-thread:", err);
+    }
+  }
+  return new LocalHost(new Sim(level, field, phys), field, phys);
 }

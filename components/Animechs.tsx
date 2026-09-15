@@ -3562,29 +3562,36 @@ export default function Animechs() {
                 Core destroyed
               </div>
               <div className="mt-4 space-y-1 text-base text-[#EDEDEF]">
-                <div>
-                  Reached wave{" "}
-                  <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span>
-                  {hud.mission.kind === "survive" ? (
-                    <>
-                      {" "}
-                      with <span className="font-bold text-[#EDEDEF]">{clock(hud.timeLeft)}</span>{" "}
-                      left
-                    </>
-                  ) : (
-                    <> of {hud.totalWaves}</>
-                  )}
-                </div>
+                {hud.mission.kind === "survive" ? (
+                  <div>
+                    Survived{" "}
+                    <span className="font-bold text-[#EDEDEF]">{clock(hud.timeLeft)}</span> left
+                    on the clock
+                  </div>
+                ) : (
+                  /* NO WAVE NUMBERS ANYWHERE ON THIS SCREEN — a player is
+                     not supposed to be able to count how many waves a
+                     mission holds, so progress is a bar, not a fraction */
+                  <div>
+                    <div className="mb-1 text-[14px] uppercase tracking-widest text-[#71717C]">
+                      Progress
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-[#3a1f1f]">
+                      <div
+                        className="h-full rounded-full bg-[#e55454]"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            (100 * hud.currentWave) / Math.max(1, hud.totalWaves),
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
                 <div>
                   Kills <span className="font-bold text-[#EDEDEF]">{hud.kills}</span>
                 </div>
-                {result && (
-                  <div>
-                    Waves cleared{" "}
-                    <span className="font-bold text-[#EDEDEF]">{result.wavesCleared}</span>
-                    {hud.mission.kind === "survive" ? null : <> of {result.totalWaves}</>}
-                  </div>
-                )}
                 {/* A CUSTOM RUN SAYS SO INSTEAD OF PRINTING A ZERO. The
                     run was played under rules its player chose, so it
                     banks nothing (progress.ts) — and a results panel that

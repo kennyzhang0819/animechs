@@ -6,7 +6,14 @@ import * as shared from "./shared";
 import { HEADER_LEN } from "./simreport";
 // the placement rule lives over grids so that the drawing side can ask it
 // too, without waiting on this thread (board.ts)
-import { canPlaceOn, rulerCells, waterloggedUnder, type BoardGrids } from "./board";
+import {
+  canPlaceOn,
+  domesClear,
+  groundClear,
+  rulerCells,
+  waterloggedUnder,
+  type BoardGrids,
+} from "./board";
 import {
   HC,
   HCOLS,
@@ -89,6 +96,17 @@ const W = W_IMPORT;
 const WALL_R = WALL_R_IMPORT;
 import { FlowField, type Footprint, type Vec2 } from "./flowfield";
 import { makeFieldPort, type FieldLink, type FieldPort } from "./fieldport";
+import {
+  buildHash,
+  runPhysics,
+  PHYS_R,
+  SPREAD_CLEAR,
+  type PhysIn,
+  type PhysOut,
+  type PhysScratch,
+  type PhysTables,
+} from "./physkernel";
+import { makePhysPort, type PhysLink, type PhysPort } from "./physport";
 import {
   HB_A,
   HB_B,
@@ -209,7 +227,7 @@ import {
   type RelicsHeld,
 } from "./relics";
 import { RICH_SCRAP, SCRAP_START, sellValue } from "./economy";
-import { airWalkMask, isBuildableWall, isWaterFloor, navalWalkMask, type Terrain } from "./terrain";
+import { airWalkMask, isWaterFloor, navalWalkMask, type Terrain } from "./terrain";
 import {
   BOMBLET_LOOK,
   MAX_WEAPONS,
@@ -328,10 +346,22 @@ const MERGE_FX_COL: RGB = [1, 0.8, 0.4];
 // (0.6); our urad stores hitSize/2 in px, so the factor doubles to 1.2.
 // Note the physics circle is BIGGER than the hitbox — crowds keep a
 // sliver of daylight between sprites, exactly like the original
-const PHYS_R = 1.2;
+// (PHYS_R, PHYS_SCL, PUSH_LONG, PUSH_SIDE and SPREAD_CLEAR live in
+// physkernel.ts now, beside the pair loop that reads them)
+/**
+ * THE THINKING IS SLICED. A body's steering decision — the field sample,
+ * the wall probes, the drift, the lane centering, the doorway jitter — is
+ * taken once every THINK_STRIDE ticks (staggered by index, so a quarter of
+ * the swarm thinks each tick) or the tick it enters a new cell, whichever
+ * comes first, and reused in between. The MOVE is every tick: velocity,
+ * the wall slide, the clamp to the board, the turn toward the cached aim.
+ * The velocity relaxes toward the decision at ~8Hz anyway (updateUnits
+ * `steer`), so a decision a few ticks old is under the smoothing; the
+ * cell trigger is what keeps a fast body's corners fresh.
+ */
+const THINK_STRIDE = 4;
 // PhysicsWorld.scl, "how much to soften movement by": each overlapping
 // pair moves only 1/1.25 of the way apart per tick, split by mass
-const PHYS_SCL = 1.25;
 /**
  * Spatial hash cell size (px); rebuilt every frame with a counting sort.
  *
@@ -387,12 +417,9 @@ const TARGET_INTERVAL = 20 / 60;
 const CENTER_K = 25;
 
 
-const PUSH_LONG = 0.45;
-const PUSH_SIDE = 1.1;
 // ...but only where a unit has somewhere to step aside: this much
 // clearance (FlowField.clear, in cells) or the shove stays as Mindustry
 // wrote it, so a 1-wide slot still resolves a rear-ender by backing off
-const SPREAD_CLEAR = 1.7;
 // 2. Lateral drift: every WALKER carries a bias in [-1, 1] and walks that
 //    fraction of its speed across the flow. LAT_RELAX sets how fast the
 //    bias decorrelates (1/s — its reciprocal is the correlation time, and
@@ -1007,8 +1034,8 @@ export class Sim {
 
   readonly upx = shared.f32(MAX_UNITS);
   readonly upy = shared.f32(MAX_UNITS);
-  readonly uvx = new Float32Array(MAX_UNITS);
-  readonly uvy = new Float32Array(MAX_UNITS);
+  readonly uvx = shared.f32(MAX_UNITS);
+  readonly uvy = shared.f32(MAX_UNITS);
   /**
    * WHERE THE BODY IS TRYING TO GO, smoothed: the drive plus the slow
    * steering (drift, probes, centring), through the same first-order
@@ -1278,7 +1305,7 @@ export class Sim {
    *  not on a water floor. Kept beside ufly rather than folded into it
    *  because the two answer different questions: ufly decides what may
    *  SHOOT at a unit, and this decides which field it walks. */
-  readonly unav = new Uint8Array(MAX_UNITS);
+  readonly unav = shared.u8(MAX_UNITS);
   /**
    * THE SWARM'S GUNS (weapons.ts). Per unit: a reload clock per weapon
    * slot (MAX_WEAPONS wide), the structure it has picked to shoot, when
@@ -1301,6 +1328,14 @@ export class Sim {
   readonly ucharge = shared.f32(MAX_UNITS);
   readonly uheldRot = shared.f32(MAX_UNITS);
   readonly utgt: (Aim | null)[] = new Array<Aim | null>(MAX_UNITS).fill(null);
+  /**
+   * THE SIGHT, REMEMBERED (updateUnitWeapons): the cell this body last
+   * asked "can I see my target?" from (-1: not yet asked for this target),
+   * and the answer. The question is put once per decision — a fresh pick,
+   * or a new cell under the body — never once per tick.
+   */
+  private readonly utcell = new Int32Array(MAX_UNITS);
+  private readonly uinview = new Uint8Array(MAX_UNITS);
   /**
    * WHICH STRUCTURE STANDS ON EACH CELL — every footprint cell of every
    * live tower, rock or ground, kept by claimGround. It is how a unit
@@ -1332,7 +1367,7 @@ export class Sim {
   exploded = 0;
   /** HB_HEAVY[ukind[i]], same reasoning — the physics split reads it per
    * candidate */
-  readonly uheavy = new Uint8Array(MAX_UNITS);
+  readonly uheavy = shared.u8(MAX_UNITS);
   /**
    * this walker's sideways bias in [-1, 1]: how far off the flow line it
    * prefers to walk. Wanders on a multi-second clock, so two units that
@@ -1833,10 +1868,10 @@ export class Sim {
   private rmaxAliveAir = 0;
   /** physics span per kind against ANY live partner on its layer — what a
    * heavy scans, since a heavy owns every pair it is in */
-  private readonly kindSpanDyn = new Int32Array(UNIT_KINDS.length);
+  private readonly kindSpanDyn = shared.i32(UNIT_KINDS.length);
   /** physics span per kind against SMALL live partners only — what the
    * swarm scans, its heavy pairs being the heavies' job (see HB_HEAVY) */
-  private readonly kindSpanSDyn = new Int32Array(UNIT_KINDS.length);
+  private readonly kindSpanSDyn = shared.i32(UNIT_KINDS.length);
   /** live head counts per layer — they let a turret whose target layer is
    * empty skip its scan outright. Snapshots from the top of the tick, so
    * mid-tick deaths only ever leave them high (a scan that finds nothing),
@@ -1848,6 +1883,32 @@ export class Sim {
   // Never swapped in removeUnit — fully rebuilt every tick before use
   private readonly phx = new Float32Array(MAX_UNITS);
   private readonly phy = new Float32Array(MAX_UNITS);
+  /** this tick's crowd shove per body, as a displacement (physkernel.ts) */
+  readonly ushx = shared.f32(MAX_UNITS);
+  readonly ushy = shared.f32(MAX_UNITS);
+  /** the kernel's tables, scratch and output, for the run in this thread */
+  private readonly physTables: PhysTables = {
+    HB_A, HB_B, HB_OUTER, HB_OVAL,
+    spanDyn: this.kindSpanDyn,
+    spanSDyn: this.kindSpanSDyn,
+  };
+  private readonly physScratch: PhysScratch = { phx: this.phx, phy: this.phy, uhx: this.uhx, uhy: this.uhy };
+  private readonly physOut: PhysOut = {
+    shx: this.ushx, shy: this.ushy, sqzJ: this.usqzJ, sqzU: this.usqzU, sqzD: this.usqzD,
+  };
+  /** the crowd shove's thread (physport.ts), or null: the kernel runs here */
+  private physPort: PhysPort | null = null;
+  /** ticks stepped since construction — the physics handshake's clock, and the thinking's stagger */
+  private tick = 0;
+  // THE CACHED DECISION (THINK_STRIDE): the flow heading, the steering
+  // forces, the doorway jitter, and the cell the body last thought in
+  private readonly uthx = new Float32Array(MAX_UNITS);
+  private readonly uthy = new Float32Array(MAX_UNITS);
+  private readonly ufcx = new Float32Array(MAX_UNITS);
+  private readonly ufcy = new Float32Array(MAX_UNITS);
+  private readonly ujx = new Float32Array(MAX_UNITS);
+  private readonly ujy = new Float32Array(MAX_UNITS);
+  private readonly ucellT = new Int32Array(MAX_UNITS);
   /**
    * the carriers standing a force field this projectile pass, by unit
    * index. Gathered at the top of the pass — after every earlier step that
@@ -1966,8 +2027,10 @@ export class Sim {
    * thread, never the sim; the headless tools pass nothing and solve in
    * slices (see fieldPort).
    */
-  constructor(level: LevelSpec = WORLDS[0], solver?: FieldLink | null) {
+  constructor(level: LevelSpec = WORLDS[0], solver?: FieldLink | null, shove?: PhysLink | null) {
     this.level = level;
+    // the crowd shove's thread, on the same terms as the solver's
+    this.physPort = makePhysPort(shove, this.physIn(), this.kindSpanDyn, this.kindSpanSDyn);
     // a solve that lands takes its field off the queue
     this.fieldPort = makeFieldPort(solver, (f) => {
       const i = this.solveQueue.indexOf(f);
@@ -1988,6 +2051,19 @@ export class Sim {
   dispose(): void {
     this.fieldPort?.close();
     this.fieldPort = null;
+    this.physPort?.close();
+    this.physPort = null;
+  }
+
+  /** what the crowd shove reads of the bodies — every one of them shared (physkernel.ts) */
+  private physIn(): PhysIn {
+    return {
+      upx: this.upx, upy: this.upy, uvx: this.uvx, uvy: this.uvy,
+      urad: this.urad, urot: this.urot, ufly: this.ufly, unav: this.unav,
+      uheavy: this.uheavy, ukind: this.ukind, uid: this.uid,
+      clear: this.field.clearShared, wclear: this.navalField.clearShared,
+      bStart: this.bStart, bUnits: this.bUnits,
+    };
   }
 
   reset(): void {
@@ -3228,6 +3304,7 @@ export class Sim {
     // by it (the shield hatch) speed up with the game speed and hold still
     // while the sim is paused
     this.time += dt;
+    this.tick++;
     if (this.profOn) {
       this.profSteps++;
       this.profI = 0;
@@ -3319,6 +3396,10 @@ export class Sim {
       if (fxAge[e] >= fxTtl[e]) this.removeFx(e);
     }
     this.mark("fx");
+    // the bodies stand where they stand until the next tick: resolve the
+    // pile now, on its own thread, and take the answer at the next tick's
+    // physics phase (physport.ts)
+    this.physPort?.kick(this.n, this.tick);
   }
 
   // ---------- level script ----------
@@ -4069,8 +4150,10 @@ export class Sim {
 
   /**
    * WHAT A BODY AIMS AT: the nearer of the other side's nearest structure
-   * and its nearest body within reach — a target either way (Aim). A
-   * ground body only takes what it can see; a flyer sees its radius.
+   * and its nearest body within reach — a target either way (Aim). With
+   * `sighted` the search takes only what it can see (the charge's search,
+   * updateUnitWeapons); without it, the nearest in reach, and whether the
+   * body may FIRE at that is a separate question asked once per decision.
    */
   private pickAim(x: number, y: number, reach: number, sighted: boolean): Aim | null {
     const s = this.nearestStructure(x, y, reach, sighted);
@@ -4106,6 +4189,7 @@ export class Sim {
    */
   private updateUnitWeapons(dt: number): void {
     const { upx, upy, urot, ukind, uspawn, ucd, utT, ubeamT, ucharge, uheldRot, utgt } = this;
+    const { utcell, uinview } = this;
     for (let i = this.n - 1; i >= 0; i--) {
       if (uspawn[i] > 0) continue; // still arriving, untouchable and unarmed
       const kind = UNIT_KINDS[ukind[i]];
@@ -4127,32 +4211,66 @@ export class Sim {
       // (hitStructure), and what a shot leaving the muzzle carries
       this.dmgMul = HAS_VET ? this.uvet[i] : 1;
       // the target, re-picked every few tenths of a second, dropped the
-      // moment it dies, walks out of the longest gun's reach, or goes
-      // behind rock — the sight test rides here, ONCE PER BODY PER TICK.
-      //
-      // IT CANNOT BE SAMPLED. Thinning this raycast to one tick in six, or
-      // to the re-pick clock, looks like a pure saving and is a balance
-      // change: a long gun over rough ground is behind a ridge most of the
-      // time, so between checks it goes on firing through the rock at a
-      // target it can no longer see. Measured, that alone took the Harpoon
-      // fleet from losing on wave 50 to taking the bot's board on wave 15.
-      // The saving that was real is in the SCAN (nearestStructure), not
-      // here.
+      // moment it dies or walks out of the longest gun's reach
       utT[i] -= dt;
       let tgt = utgt[i];
       const had = tgt !== null;
-      if (tgt && (!this.aimReach(tgt, x, y, reach) || (sighted && !this.canSee(tgt.s, x, y))))
-        tgt = null;
+      if (tgt && !this.aimReach(tgt, x, y, reach)) tgt = null;
       // ...on the clock, or the moment the one it had is gone. A body that
       // has NOTHING waits for the clock like everyone else rather than
       // re-scanning every tick: an empty search is the most expensive one
-      // there is (it walks every ring out to reach, and now casts a ray at
-      // each candidate), and it is exactly the search a swarm still crossing
-      // open ground is running. `had` is what tells the two apart
+      // there is (it walks every ring out to reach), and it is exactly the
+      // search a swarm still crossing open ground is running. `had` is
+      // what tells the two apart
       if (utT[i] <= 0 || (had && !tgt)) {
         utT[i] = 0.3 + Math.random() * 0.2;
-        tgt = this.pickAim(x, y, reach, sighted);
+        // THE SEARCH DOES NOT LOOK OVER HILLS. It takes the nearest
+        // structure in reach, sighted or not, and the ray below decides
+        // whether this body may fire at it. The search used to cast a ray
+        // at EVERY candidate until one was in view, and for a long gun on
+        // the water — a Harpoon hull reaches fifty to ninety tiles, and
+        // from the sea most of the board is behind a ridge — that was
+        // thousands of rays a pick, ~8,000 a tick on a skate wave against
+        // ~170 without: the whole of the fleet's cost. The price is a
+        // blind spot: a hull whose nearest turret is behind rock holds its
+        // fire even when a farther one stands in the open. Under the rule
+        // that no ground gun shoots through a hill, that is what a sniper
+        // behind a ridge does.
+        //
+        // The charge (KIND_CHARGE, the tuskers) is the one search that
+        // stays sighted: it LEAVES THE ROUTE for its target (updateUnits),
+        // so what it picks must be a thing it can walk straight at, and
+        // its reach is a few tiles — a ray a candidate costs nothing there.
+        const seek = HAS_CHARGE && KIND_CHARGE[ukind[i]] > 0;
+        tgt = this.pickAim(x, y, reach, sighted && seek);
         utgt[i] = tgt;
+        utcell[i] = -1;
+      }
+      // THE SIGHT, ONCE PER DECISION. A ground or naval body asks whether it
+      // can see the target it holds from the CELL it stands in, and asks
+      // again only when it stands in another cell or has picked again; in
+      // between, nothing that the answer depends on has moved (the target
+      // is a structure). Out of view, the target is HELD and not fired at.
+      //
+      // WHY THIS IS NOT THE SAMPLING THAT WAS TRIED AND REJECTED: an
+      // earlier cut thinned this ray to one tick in six, or to the re-pick
+      // clock, and that was a balance change — a hull moving along a
+      // ridge went on firing through the rock for the tenths of a second
+      // between checks, and measured, it took the Harpoon fleet from
+      // losing on wave 50 to taking the bot's board on wave 15. That was
+      // sampling in TIME: the body moved, the answer changed, nobody asked.
+      // This is sampling in SPACE: the answer is re-asked the tick the body
+      // crosses a cell line, and within one cell the line of sight shifts
+      // by less than a cell's width along its whole length — the error is
+      // one hill cell's edge, not a ridge.
+      if (tgt && sighted) {
+        const ci =
+          clamp((y / CELL) | 0, 0, ROWS - 1) * COLS + clamp((x / CELL) | 0, 0, COLS - 1);
+        if (utcell[i] !== ci) {
+          utcell[i] = ci;
+          uinview[i] = this.canSee(tgt.s, x, y) ? 1 : 0;
+        }
+        if (uinview[i] === 0) tgt = null;
       }
       let exploded = false;
       // HUNGRY MECHS (mutation.ts): A MEAL IS WORTH WHAT IT ATE, NOT JUST
@@ -5942,6 +6060,9 @@ export class Sim {
       this.usqzJ[i] = -1;
       this.usqzU[i] = -1;
       this.usqzD[i] = 0;
+      this.ucellT[i] = -1;
+      this.utcell[i] = -1;
+      this.uinview[i] = 0;
       this.uid[i] = this.nextId++;
       this.ukind[i] = UNIT_ID[kind];
       this.ufly[i] = fly ? 1 : 0;
@@ -7307,20 +7428,7 @@ export class Sim {
   }
 
   private buildHash(): void {
-    const { bStart, bCount, bUnits } = this;
-    bCount.fill(0);
-    for (let i = 0; i < this.n; i++) bCount[this.hashCellOf(i)]++;
-    let s = 0;
-    for (let c = 0; c < HN; c++) {
-      bStart[c] = s;
-      s += bCount[c];
-    }
-    bStart[HN] = s;
-    bCount.fill(0);
-    for (let i = 0; i < this.n; i++) {
-      const c = this.hashCellOf(i);
-      bUnits[bStart[c] + bCount[c]++] = i;
-    }
+    buildHash(this.upx, this.upy, this.n, this.bStart, this.bCount, this.bUnits);
   }
 
   // ---------- units ----------
@@ -7345,157 +7453,23 @@ export class Sim {
    * column — the classic conga line. Same magnitude, different axis.
    */
   private updatePhysics(): void {
-    const { upx, upy, urad, ufly, unav, uvx, uvy, uhx, uhy, uid, phx, phy, bStart, bUnits } = this;
-    const { usqzJ, usqzU, usqzD } = this;
-    const { clear } = this.field;
-    // the naval tanks' clearance map, so the sideways re-aim below asks
-    // how much room a tank has beside it on its OWN mask — deep water
-    // scores zero on the ground map, which would have switched the
-    // re-aim off for the whole naval line
-    const wclear = this.navalField.clear;
-    const n = this.n;
-    for (let i = 0; i < n; i++) {
-      phx[i] = upx[i];
-      phy[i] = upy[i];
-      const vx = uvx[i], vy = uvy[i];
-      const vl = Math.sqrt(vx * vx + vy * vy);
-      // walkers only, and only where there is open ground beside them: the
-      // sideways re-aim would otherwise grind a unit into rock. Flyers are
-      // left on Mindustry's own centre-line resolution — the conga line is
-      // a corridor problem, and they are not in a corridor
-      const room =
-        vl > 1e-3 &&
-        ufly[i] === 0 &&
-        (unav[i] !== 0 ? wclear : clear)[
-          clamp((upy[i] / CELL) | 0, 0, ROWS - 1) * COLS +
-            clamp((upx[i] / CELL) | 0, 0, COLS - 1)
-        ] >= SPREAD_CLEAR;
-      uhx[i] = room ? vx / vl : 0;
-      uhy[i] = room ? vy / vl : 0;
-      // the squeeze scratch is this tick's alone (mergeSqueezed)
-      usqzJ[i] = -1;
-      usqzD[i] = 0;
+    // on the shove's own thread the answer for the tick just ended is
+    // waiting (or is not, and this tick goes without); in this thread the
+    // kernel runs here over the same arrays
+    const port = this.physPort;
+    if (port && port.take(this.tick, this.n, this.uid, this.physOut)) return;
+    // nothing new from the thread this tick: shove here. A thread that
+    // has thrown, or answered nothing for two seconds, is let go of
+    if (port && !port.alive) {
+      console.warn("physics worker went quiet; shoving in-thread from here");
+      this.physPort = null;
     }
-    const { ukind, kindSpanDyn, kindSpanSDyn, uheavy } = this;
-    for (let i = 0; i < n; i++) {
-      const fly = ufly[i];
-      // the size split (see HB_HEAVY): a heavy owns EVERY pair it is part
-      // of and scans the wide window for them; a small unit scans only the
-      // small-partner window and skips heavy candidates outright. Each
-      // unordered pair still resolves exactly once, and the small window
-      // is what keeps an ironhide1 swarm's broad phase priced for runts
-      // while an ironhide5 stands on the same field
-      const iHeavy = uheavy[i];
-      const ki = ukind[i];
-      // the pair's cheap reject rides the OUTER radii, which is the widest
-      // either body can be however it is turned; a shaped pair that gets
-      // past it is measured again against its real axes below
-      const oi = HB_OUTER[ki] * PHYS_R;
-      const ovalI = HB_OVAL[ki];
-      const mi = urad[i] * urad[i]; // hitSize^2 * pi — the pi cancels in the ratio
-      // the unit's own scratch position rides in locals through the scan —
-      // candidates read it every test, and it only moves when a pair
-      // actually resolves — and lands back in the array afterwards
-      let pxi = phx[i], pyi = phy[i];
-      const hix = clamp((pxi / HC) | 0, 0, HCOLS - 1);
-      const hiy = clamp((pyi / HC) | 0, 0, HROWS - 1);
-      const sp = iHeavy ? kindSpanDyn[ki] : kindSpanSDyn[ki];
-      // the counting sort lays a row's buckets out contiguously in bUnits,
-      // so each row of the window is ONE range — no per-bucket setup
-      const gx0 = Math.max(0, hix - sp), gx1 = Math.min(HCOLS - 1, hix + sp);
-      for (let gy = Math.max(0, hiy - sp); gy <= Math.min(HROWS - 1, hiy + sp); gy++) {
-        const row = gy * HCOLS;
-        const e = bStart[row + gx1 + 1];
-        for (let k = bStart[row + gx0]; k < e; k++) {
-          const j = bUnits[k];
-          if (j >= n || ufly[j] !== fly) continue;
-          if (iHeavy) {
-            // a heavy meets everyone; only the heavy-heavy pair needs the
-            // once-per-pair guard (its small pairs are exclusively its own)
-            if (j === i || (uheavy[j] !== 0 && j <= i)) continue;
-          } else {
-            if (j <= i || uheavy[j] !== 0) continue;
-          }
-          const kj = ukind[j];
-          let dx = pxi - phx[j], dy = pyi - phy[j];
-          const d2 = dx * dx + dy * dy;
-          const outer = oi + HB_OUTER[kj] * PHYS_R;
-          if (d2 >= outer * outer) continue;
-          // ...and where either body is shaped, the touching distance is
-          // each one's radius ALONG THE CENTRE LINE (Sim.hitR). A round
-          // pair's outer radii ARE its radii, so it never pays for this
-          const rs =
-            ovalI === 0 && HB_OVAL[kj] === 0
-              ? outer
-              : (this.hitR(i, -dx, -dy, d2) + this.hitR(j, dx, dy, d2)) * PHYS_R;
-          if (d2 >= rs * rs) continue;
-          const dst = Math.sqrt(d2);
-          // THE SQUEEZE (mergeSqueezed): a same-kind pair crushed this
-          // deep is noted on both bodies — the deepest such partner each
-          // has this tick, by index and by uid
-          if (dst < rs * MERGE_SQUEEZE && ukind[j] === ukind[i]) {
-            const depth = rs - dst;
-            if (depth > usqzD[i]) {
-              usqzD[i] = depth;
-              usqzJ[i] = j;
-              usqzU[i] = uid[j];
-            }
-            if (depth > usqzD[j]) {
-              usqzD[j] = depth;
-              usqzJ[j] = i;
-              usqzU[j] = uid[i];
-            }
-          }
-          if (dst < 1e-4) {
-            const a = Math.random() * Math.PI * 2;
-            dx = Math.cos(a);
-            dy = Math.sin(a);
-          } else {
-            dx /= dst;
-            dy /= dst;
-          }
-          // re-aim the (unit-length) push across the direction of travel:
-          // split it into along- and across-heading parts, keep a fraction
-          // of the along part, and spend what is left widening the rank.
-          // Renormalised, so the pair still separates by exactly the
-          // overlap and the relaxation cannot overshoot into jitter
-          const hx = uhx[i], hy = uhy[i];
-          if (hx !== 0 || hy !== 0) {
-            const al = dx * hx + dy * hy;
-            const ll = Math.sqrt(Math.max(0, 1 - al * al));
-            let lx: number, ly: number;
-            if (ll < 1e-3) {
-              // dead in line astern — no across-component to grow, so take
-              // a side from the pair's ids: stable frame to frame, which
-              // matters because a side that flipped would just shudder
-              const s = (uid[i] ^ uid[j]) & 1 ? 1 : -1;
-              lx = -hy * s;
-              ly = hx * s;
-            } else {
-              lx = (dx - al * hx) / ll;
-              ly = (dy - al * hy) / ll;
-            }
-            const pa = al * PUSH_LONG;
-            const pl = ll + Math.abs(al) * PUSH_SIDE;
-            const pn = Math.sqrt(pa * pa + pl * pl) || 1;
-            dx = (pa * hx + pl * lx) / pn;
-            dy = (pa * hy + pl * ly) / pn;
-          }
-          const mj = urad[j] * urad[j];
-          const push = (rs - dst) / PHYS_SCL / (mi + mj);
-          pxi += dx * push * mj;
-          pyi += dy * push * mj;
-          phx[j] -= dx * push * mi;
-          phy[j] -= dy * push * mi;
-        }
-      }
-      phx[i] = pxi;
-      phy[i] = pyi;
-    }
+    runPhysics(this.physIn(), this.physTables, this.physScratch, this.physOut, this.n);
   }
 
   private updateUnits(dt: number): void {
-    const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, ulat, phx, phy, field, flowTmp } = this;
+    const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, ulat, ushx, ushy, field, flowTmp } = this;
+    const { uthx, uthy, ufcx, ufcy, ujx, ujy, ucellT, tick } = this;
     const { upullx, upully, uspawn, uwet, uwetSlow, uaimx, uaimy } = this;
     // the water mask, for the naval tanks' pace ashore (NAVAL_LAND_SPEED)
     const water = this.waterCells;
@@ -7503,7 +7477,7 @@ export class Sim {
     // one step of the lateral bias's mean-reverting walk, precomputed: pull
     // LAT_A of the way back to straight-ahead, then add noise scaled so the
     // stationary spread lands on LAT_SIGMA whatever the tick rate
-    const LAT_A = Math.min(1, LAT_RELAX * dt);
+    const LAT_A = Math.min(1, LAT_RELAX * dt * THINK_STRIDE);
     const LAT_N = LAT_SIGMA * Math.sqrt(6 * LAT_A);
     // repulsion probes reach 4px past the wall-clearance radius: any longer
     // and the push-off fires while a unit hugs a wall to enter a staggered
@@ -7518,6 +7492,13 @@ export class Sim {
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
       const cy = clamp((upy[i] / CELL) | 0, 0, ROWS - 1);
       const ci = cy * COLS + cx;
+      // THIS TICK'S DECISION, OR THE CACHED ONE (THINK_STRIDE)
+      const think = ucellT[i] !== ci || ((i + tick) & (THINK_STRIDE - 1)) === 0;
+      if (!think) {
+        flowTmp.x = uthx[i];
+        flowTmp.y = uthy[i];
+      } else {
+      ucellT[i] = ci;
       // NOTHING ARRIVES AND NOTHING LEAKS. The core is the goal (coreGoal)
       // and it is solid: a body that reaches it is pressed against it by
       // the field and stays there, firing (updateUnitWeapons), until one of
@@ -7572,6 +7553,9 @@ export class Sim {
           flowTmp.y = ty / tl;
         } else mf.sample(upx[i], upy[i], flowTmp);
       }
+      uthx[i] = flowTmp.x;
+      uthy[i] = flowTmp.y;
+      }
       // StatusEffects.unmoving is a speedMultiplier of 0, not a freeze: a
       // unit still materialising cannot drive itself anywhere, but the
       // crowd shove below still lands on it. Wet is the other multiplier
@@ -7621,7 +7605,7 @@ export class Sim {
       // faster than it walks, exactly as in Mindustry — but it rides
       // through the same wall slide below, so pressure never pins anyone
       // into rock
-      const shx = phx[i] - upx[i], shy = phy[i] - upy[i];
+      const shx = ushx[i], shy = ushy[i];
       let fx = 0, fy = 0;
       // ...and the doorway jitter, kept apart from the rest of the steering
       // because the FACING below must not see it (see aimX)
@@ -7643,7 +7627,7 @@ export class Sim {
       // but nothing up there stops them — no corridor to spread across and
       // no wall to crowd against, so the crowd fixes a corridor needs would
       // only add wobble
-      if (!fly) {
+      if (think && !fly) {
         const cl = mf.clear[ci];
 
         // lateral drift. The physics re-aim above only spreads units already
@@ -7720,6 +7704,17 @@ export class Sim {
           if (bL && bR) fx += ((cx + 0.5) * CELL - upx[i]) * CENTER_K;
           if (bU && bD) fy += ((cy + 0.5) * CELL - upy[i]) * CENTER_K;
         }
+      }
+      if (think) {
+        ufcx[i] = fx;
+        ufcy[i] = fy;
+        ujx[i] = jx;
+        ujy[i] = jy;
+      } else {
+        fx = ufcx[i];
+        fy = ufcy[i];
+        jx = ujx[i];
+        jy = ujy[i];
       }
 
       // the unit's own drive (flow + terrain steering) never exceeds its
@@ -7991,70 +7986,52 @@ export class Sim {
 
   /**
    * Roll a spot and raise a shield tower on it. A candidate 3x3 has to be
-   * EMPTY BUILDABLE ROCK: every cell of it rock a turret could itself have
-   * stood on, and nothing already standing on any of them — no other
-   * shield tower, no turret, not the core.
+   * GROUND A TURRET COULD HAVE STOOD ON AND NOTHING IS STANDING ON: open
+   * floor, off the core, off the swarm's doors, and clear of every
+   * structure and every other dome.
+   *
+   * IT ASKS THE PLACEMENT RULE ITSELF (board.ts groundClear, domesClear)
+   * RATHER THAN SPELLING THE GROUND OUT AGAIN. This roller used to want
+   * BUILDABLE ROCK — blocked cells a turret could be built on top of —
+   * which was the right test while turrets stood on the highground. They
+   * stand on the FLOOR now, and the roller was never told: a rule whose
+   * whole cost is an emplacement the player does not get was quietly
+   * spending rock nobody wanted, which is why every dome on a map was
+   * sitting on a hill. The two predicates below are the same ones the
+   * build cursor is coloured by, so "somewhere a turret could go" has one
+   * definition and the rule cannot drift off the board's again.
+   *
+   * WHAT THE OLD TEST CARRIED FOR FREE HAS TO BE ASKED FOR NOW. Rock was
+   * already impassable, already dry and already nowhere a door could be,
+   * so a footprint on it could not cork a drop zone or sit in water
+   * whatever the roll said. On open floor none of that is true by
+   * construction — groundClear is what refuses the doors and the core,
+   * and the deep water is in `blocked` with them.
    *
    * Two dozen tries, then GIVE UP until the next period. That is the whole
-   * failure mode and it is deliberate: a board whose free rock the player
+   * failure mode and it is deliberate: a board whose free ground the player
    * has built out raises nothing at all, rather than the rule reaching for
    * a square that is taken. Nothing the player owns is ever displaced,
    * buried or disabled by a shield tower — it competes for empty ground
    * and loses when there is none.
    */
   private trySpawnShieldTower(): void {
-    const { blocked, wall } = this.terrain;
+    const grids = this.boardGrids();
     for (let tries = 0; tries < 24; tries++) {
       const gx = 1 + ((Math.random() * (this.terrain.cols - SHIELD_TOWER_SIZE - 2)) | 0);
       const gy = 1 + ((Math.random() * (this.terrain.rows - SHIELD_TOWER_SIZE - 2)) | 0);
-      // TURRET GROUND ONLY: every cell of the footprint has to be rock a
-      // tower could itself have been built on — blocked, and not one of
-      // the un-buildable kinds (isBuildableWall: no pine, no deep water).
-      //
-      // That one test replaces every rule this roller used to carry. A
-      // shield tower on rock cannot cork a drop zone, cannot stand in a lane,
-      // cannot sit on water and cannot seal the swarm's route, because
-      // rock is already impassable and already none of those things — so
-      // the base apron, the spawn/exit test, the water test and the BFS
-      // seal probe are all gone rather than merely passing every time.
-      let ok = true;
-      for (let y = gy; y < gy + SHIELD_TOWER_SIZE && ok; y++)
-        for (let x = gx; x < gx + SHIELD_TOWER_SIZE; x++) {
-          const i = y * COLS + x;
-          if (!blocked[i] || !isBuildableWall(wall[i])) {
-            ok = false;
-            break;
-          }
-        }
-      if (!ok) continue;
-      // ...and never on top of another shield tower. Harmless at a cap of three
-      // and near-certain at twenty: rock is a small share of the map, so
-      // without this the roller stacks them on the same few outcrops
-      for (const o of this.shieldTowers) {
-        if (o.hp <= 0) continue;
-        if (
-          gx < o.gx + SHIELD_TOWER_SIZE && o.gx < gx + SHIELD_TOWER_SIZE &&
-          gy < o.gy + SHIELD_TOWER_SIZE && o.gy < gy + SHIELD_TOWER_SIZE
-        ) {
-          ok = false;
-          break;
-        }
-      }
-      if (!ok) continue;
-      // ...and never on anything already standing. cellTower is the board's
-      // own occupancy index — the core and the player's turrets alike — so
-      // one sweep of the footprint answers
-      // it for all of them. The board the player built is theirs: a mutator
-      // that buried it would be a mutator that undid their choices, so a
-      // roll that lands on one is thrown away and a map with no free rock
-      // left raises nothing this period
-      for (let y = gy; y < gy + SHIELD_TOWER_SIZE && ok; y++)
-        for (let x = gx; x < gx + SHIELD_TOWER_SIZE; x++)
-          if (this.cellTower[y * COLS + x]) {
-            ok = false;
-            break;
-          }
-      if (!ok) continue;
+      // TURRET GROUND ONLY — and `occupied` is the board's own index of
+      // what stands where (claimGround writes it in the same breath as
+      // cellTower), so the core and every turret the player owns are
+      // refused by the same sweep that refuses rock. The board the player
+      // built is theirs: a mutator that buried it would be a mutator that
+      // undid their choices, so a roll that lands on one is thrown away
+      // and a map with no free ground left raises nothing this period.
+      if (!groundClear(grids, gx, gy, SHIELD_TOWER_SIZE)) continue;
+      // ...and never on top of another shield tower — the same test the
+      // player's own placement is refused by, read off the same array, so
+      // a dome's ground is a dome's ground whoever is asking for it
+      if (!domesClear(this.shieldTowers, SHIELD_TOWER_SIZE, gx, gy, SHIELD_TOWER_SIZE)) continue;
 
       // the spot holds — raise it. BOTH POOLS ARE SET BY THE WAVE IT RISES
       // ON and fixed there for the rest of the run (shieldTowerWaveScale:
@@ -8085,9 +8062,15 @@ export class Sim {
         mega,
         regenT: 0,
       });
-      // NOTHING TOUCHES THE FLOW FIELD. A shield tower stands on rock the swarm
-      // could never walk anyway, so raising one changes no route and costs
-      // no Dijkstra — which is what makes a cap of twenty affordable
+      // NOTHING TOUCHES THE FLOW FIELD, and now that a dome stands on open
+      // floor that is a CHOICE rather than a consequence. A building the
+      // SWARM owns holds no ground against the swarm — the same rule a
+      // conquered turret is released under (conquerTower): its bodies will
+      // not shoot it, so a wall they cannot pass and will not break is a
+      // wall they would stand at forever. So a dome is solid to the
+      // player's placement (board.ts domesClear) and thin air to the
+      // horde walking under it: raising one changes no route and costs no
+      // Dijkstra, which is what makes a cap of twenty affordable
       this.pushFx(this.shieldTowers[idx].x, this.shieldTowers[idx].y, 0.7, FxKind.ShieldWave);
       this.pushFx(this.shieldTowers[idx].x, this.shieldTowers[idx].y, 0.35, FxKind.Shockwave);
       return;
@@ -8131,9 +8114,12 @@ export class Sim {
     s.scale = 0;
     s.shield = 0;
     const idx = this.shieldTowers.indexOf(s);
-    // nothing to hand back and no lane to reopen: a shield tower stands on
-    // FREE ROCK and only free rock (see trySpawnShieldTower), so it never
-    // held a turret and the swarm's routes never knew it existed
+    // nothing to hand back and no lane to reopen: a shield tower rose on
+    // FREE GROUND and only free ground (see trySpawnShieldTower), so it
+    // never held a turret, and it was never in the fields for the swarm's
+    // routes to have known it existed. What its death DOES give back is
+    // the emplacement — the cells go quiet in domesClear the moment hp
+    // hits zero, so the player may build there on the next frame
     // a dead shield tower is no longer anyone's mark
     if (this.inspectShieldTower === idx) this.inspectShieldTower = -1;
     this.pushFx(s.x, s.y, 0.6, FxKind.Breach);

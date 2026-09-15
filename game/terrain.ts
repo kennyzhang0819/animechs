@@ -22,12 +22,13 @@ export const WALL_PINE = 4;
  * wall[] value meaning "this blocked cell is DEEP WATER" — the second
  * sentinel, and the mirror image of the first.
  *
- * A blocked cell is normally a hill: units cannot cross it and towers CAN
- * be built on it (canPlace in sim.ts). The two sentinels are the blocked
- * cells that are not hills, for opposite reasons — a pine forest is too
- * dense to stand a turret on, and deep water is too deep. Both keep their
- * floor showing instead of a wall sprite (see the renderer's showsFloor),
- * and neither takes a tower.
+ * A blocked cell is normally a hill: nothing walks across it and nothing
+ * builds on it either (board.ts groundClear refuses every blocked cell).
+ * The two sentinels are the blocked cells that are NOT hills, for opposite
+ * reasons — a pine forest is a canopy a flyer crosses, and deep water is
+ * the naval layer's own road — so both keep their floor showing instead of
+ * a wall sprite (see the renderer's showsFloor) and neither is in the
+ * flyers' mask.
  *
  * SHALLOW WATER HAS NO SENTINEL AND WANTS NONE. It is an ordinary floor
  * index (FLOOR_SHALLOW_WATER) on an unblocked cell: ground units walk
@@ -41,10 +42,18 @@ export const WALL_PINE = 4;
 export const WALL_DEEP = 7;
 
 /**
- * Can a tower stand on this blocked cell? Every rock family can; the two
- * sentinels cannot. Read this rather than testing WALL_PINE by hand — that
- * test was the whole rule when pines were the only exception, and a second
- * exception is exactly the kind of thing a scattered comparison misses.
+ * IS THIS BLOCKED CELL A HILL? Every rock family is; the two sentinels are
+ * not. Read this rather than testing WALL_PINE by hand — that test was the
+ * whole rule when pines were the only exception, and a second exception is
+ * exactly the kind of thing a scattered comparison misses.
+ *
+ * IT USED TO BE "CAN A TOWER STAND HERE", and it is worth saying why it is
+ * not any more: turrets stood on the highground once, so "rock standing
+ * above the floor" and "somewhere to build" were the same sentence. They
+ * are not — a structure stands on the FLOOR now (board.ts groundClear) —
+ * and anything asking this one where to put a building is asking the wrong
+ * question. What it still answers is what a FLYER routes around and what
+ * SIGHT stops at (airWalkMask, Sim.hasSight).
  */
 export const isBuildableWall = (wall: number): boolean =>
   wall !== WALL_PINE && wall !== WALL_DEEP;
@@ -122,8 +131,8 @@ export function navalWalkMask(t: Terrain): Uint8Array {
  * It is `isBuildableWall` that decides what a hill is, and not by accident
  * — "rock standing above the floor" is one idea, and a second predicate
  * spelling it out again is a second place for the sentinel list to go
- * stale. Same set, for the same reason: what a turret can stand on is what
- * a flyer flies around, and what SIGHT stops at (Sim.hasSight).
+ * stale. Same set, for the same reason: what a flyer flies around is what
+ * SIGHT stops at (Sim.hasSight).
  */
 export function airWalkMask(t: Terrain): Uint8Array {
   const m = new Uint8Array(t.blocked.length);

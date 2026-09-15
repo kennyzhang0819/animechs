@@ -129,7 +129,7 @@ function publish(): void {
   post({ t: "frame", snapshot, report });
 }
 
-async function init(spec: LevelSpec, field: MessagePort | null): Promise<void> {
+async function init(spec: LevelSpec, field: MessagePort | null, phys: MessagePort | null): Promise<void> {
   await Promise.all([
     refreshMap(spec.map ?? OFFICIAL_MAP_IDS[0]),
     loadLevelDocs(),
@@ -137,7 +137,7 @@ async function init(spec: LevelSpec, field: MessagePort | null): Promise<void> {
   ]);
   // ...talking to the route solver down the line the page handed over —
   // the page spawned that thread too (workerhost.ts, docs/threads.md)
-  const s = new Sim(spec, field);
+  const s = new Sim(spec, field, phys);
   sim = s;
   // the debug handle on THIS side of the seam, for devtools' worker scope
   // (`__sim.n`), the way window.__animechs is on the other. A module's own
@@ -165,7 +165,7 @@ port.addEventListener("message", (e) => {
   const m = e.data;
   switch (m.t) {
     case "init":
-      init(m.spec, m.field).catch((err: unknown) => post({ t: "error", message: String(err) }));
+      init(m.spec, m.field, m.phys).catch((err: unknown) => post({ t: "error", message: String(err) }));
       break;
     case "run":
       running = m.on;
