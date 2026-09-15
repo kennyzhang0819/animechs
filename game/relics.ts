@@ -54,7 +54,7 @@ import { faster, piercing, stronger } from "./upgrades";
  * thousand scrap (economy.ts RELIC_ROLL_PRICE) is a hundred and fifty
  * turret cards, or the whole opening bank twenty times over, and nothing
  * at that price may be a percentage: the board fires TWICE as fast, every
- * kill pays TRIPLE, armour stops existing, every turret stands back up. A
+ * kill pays TRIPLE, armour stops existing, every turret revives. A
  * relic at "+10% damage" would be a mod with a worse price tag, and the
  * run could not tell the two buttons apart by what they did — only by
  * what they cost.
@@ -254,7 +254,7 @@ export const CASCADE_TILES = 6;
 export const CASCADE_CHAIN_CAP = 64;
 
 
-/** PHOENIX: the odds a wrecked turret stands back up — EVERY time, not
+/** PHOENIX: the odds a wrecked turret revives — EVERY time, not
  *  once. A coin flip with no floor under it is worth one extra life on
  *  average, the same as Undying's certain one, and it never runs out; the
  *  two are the same relic told as certainty and as luck, and a run that
@@ -320,7 +320,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Overclock Core",
     rarity: "common",
     glyph: "core",
-    blurb: "Every turret on the field deals DOUBLE damage.",
+    blurb: "Every turret deals double damage.",
     apply: (s) => stronger(s, OVERCLOCK_MUL),
   },
   {
@@ -328,7 +328,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Coolant Loop",
     rarity: "common",
     glyph: "coolant",
-    blurb: "Every turret on the field fires TWICE as fast.",
+    blurb: "Every turret fires twice as fast.",
     apply: (s) => faster(s, COOLANT_MUL),
   },
   {
@@ -336,14 +336,14 @@ export const RELICS: readonly RelicDef[] = [
     name: "Scavenger Rig",
     rarity: "common",
     glyph: "coin",
-    blurb: "Every kill pays TRIPLE scrap.",
+    blurb: "Every kill pays triple scrap.",
   },
   {
     id: "insurance",
     name: "Salvage Insurance",
     rarity: "uncommon",
     glyph: "vault",
-    blurb: "Every destroyed turret pays out 2,000 scrap — two cards' worth, every time.",
+    blurb: "Every destroyed turret pays out 2,000 scrap.",
   },
   {
     id: "phosphor",
@@ -353,7 +353,7 @@ export const RELICS: readonly RelicDef[] = [
     // the "bullet upgrade that changes what an attack LOOKS like": every
     // round on the board goes white-hot, muzzle spray and hit included —
     // and now it goes THROUGH things, which is what white-hot should mean
-    blurb: "Every shot on the field burns phosphor-white: half again the damage, and it punches through two more bodies.",
+    blurb: "Every shot deals +50% damage and pierces 2 more enemies.",
     apply: (s) => {
       const hot = piercing(stronger(s, PHOSPHOR_MUL), PHOSPHOR_PIERCE);
       return {
@@ -380,7 +380,7 @@ export const RELICS: readonly RelicDef[] = [
     rarity: "uncommon",
     glyph: "volley",
     blurb:
-      "A destroyed turret spends its last charge on its neighbours: every turret within 8 tiles fires at TRIPLE rate for 15 seconds.",
+      "When a turret is destroyed, every turret within 8 tiles fires at triple rate for 15 seconds.",
   },
   {
     id: "cascade",
@@ -388,21 +388,21 @@ export const RELICS: readonly RelicDef[] = [
     rarity: "uncommon",
     glyph: "chain",
     blurb:
-      "A T4 or T5 hull comes apart where it falls, for a FIFTH of its own maximum health over 6 tiles — enough to set off the next one. A wall of heavies unzips itself.",
+      "When a T4 or T5 enemy is destroyed, it explodes for 20% of its maximum health to everything within 6 tiles.",
   },
   {
     id: "phoenix",
     name: "Phoenix Protocol",
     rarity: "rare",
     glyph: "phoenix",
-    blurb: "A destroyed turret has a 50% chance to stand straight back up at full health — every time it falls, with no limit.",
+    blurb: "A destroyed turret has a 50% chance to revive at full health. No limit.",
   },
   {
     id: "twinfire",
     name: "Twin Fire",
     rarity: "rare",
     glyph: "twin",
-    blurb: "Every turret on the field fires one more round in every volley.",
+    blurb: "Every turret fires 1 more round per volley.",
     apply: (s) => ({ ...s, shots: s.shots + TWINFIRE_SHOTS }),
   },
   {
@@ -410,8 +410,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Monofilament Rounds",
     rarity: "rare",
     glyph: "thread",
-    blurb:
-      "ARMOUR STOPS APPLYING. Every hit the board lands is dealt in full, whatever the body is plated in — and the heaviest hulls in the game are plated in twenty-two.",
+    blurb: "Armour is ignored. Every hit deals its full damage.",
   },
   {
     id: "titan",
@@ -419,7 +418,7 @@ export const RELICS: readonly RelicDef[] = [
     rarity: "rare",
     glyph: "titan",
     blurb:
-      "The bigger the body, the harder the round lands: every hit gains a quarter again for each tier its target stands above the first, so a T5 hull takes DOUBLE.",
+      "Every hit deals +25% damage for each tier its target is above T1, so a T5 takes double damage.",
   },
   {
     id: "undying",
@@ -427,15 +426,14 @@ export const RELICS: readonly RelicDef[] = [
     rarity: "ultra",
     glyph: "legion",
     blurb:
-      "EVERY turret you own stands back up once, at full health, the first time it is destroyed — the ones already on the field included.",
+      "Every turret you own revives at full health the first time it is destroyed. Once per turret.",
   },
   {
     id: "terminal",
     name: "Terminal Protocol",
     rarity: "ultra",
     glyph: "terminal",
-    blurb:
-      "Nothing finishes dying slowly. Any body knocked to 15% of its own health dies on the spot — and 15% of a stoop5 is three thousand the board never has to grind through.",
+    blurb: "Any enemy dropped below 15% of its maximum health is destroyed instantly.",
   },
   {
     id: "ascendancy",
@@ -443,7 +441,7 @@ export const RELICS: readonly RelicDef[] = [
     rarity: "ultra",
     glyph: "star",
     blurb:
-      "The deal starts handing over the big guns: rare turrets come up five times as often and ULTRA turrets twenty times as often, for the rest of the run.",
+      "For the rest of the run, the deal draws rare turrets 5x as often and ultra turrets 20x as often.",
   },
 ];
 
@@ -454,14 +452,6 @@ export const relicDef = (id: RelicId): RelicDef => {
   if (!d) throw new Error(`no such relic: ${id}`);
   return d;
 };
-
-/**
- * THE ONE LINE EVERY RELIC PRINTS UNDER ITS BLURB. A mod's says the odds
- * it rolls at, because that is the one thing a player has to know before
- * paying for one; a relic's says the opposite — there is no roll, it is
- * simply on.
- */
-export const RELIC_NOTE = "In force over the whole board the moment it is bought";
 
 /**
  * THE ODDS AT THE R BUTTON, and they are the module curve: steeper at the

@@ -70,7 +70,7 @@ const STAR_R = rev(STAR);
  *  star at the ends of the swing. A tenth was tried and it is too much:
  *  at full throw an arm's root slides out from under the disc that is
  *  supposed to cover it, and the animal comes apart at the hub. */
-export const STARFISH_TIERS: readonly IronTier[] = [
+export const GRAPNEL_TIERS: readonly IronTier[] = [
   { t: 1, n: 36, stride: 3, small: 16, th: 4, sh: 4 },
   { t: 2, n: 52, stride: 4, small: 16, th: 4, sh: 4 },
   { t: 3, n: 72, stride: 5, small: 32, th: 4, sh: 4 },
@@ -166,7 +166,7 @@ function body(P: Pen, T: IronTier): void {
   // THE DRUM IS ON EVERY TIER, RUNT INCLUDED, and that is a hard
   // requirement rather than a taste: a body's TEAM CELL is the mask of
   // every pixel laid in the family's accent (drawWithCell), and the atlas
-  // refuses a cell with nothing in it — "the starfish1 team cell has no
+  // refuses a cell with nothing in it — "the grapnel1 team cell has no
   // pixels in it", thrown while a level is loading. The runt wore no
   // copper at all for one build and took the game down with it.
   if (t >= 2) P.box(c - 2 * U, c - 2 * U, c + 2 * U, c + 2 * U, GUN);
@@ -204,7 +204,7 @@ const base = (P: Pen, T: IronTier): void => {
 
 /** every tier on the mech rig: the still body, the base plate under it,
  *  and the two rowing arms on the cell the walk slides */
-export function starfishMech(T: IronTier): MechParts {
+export function grapnelMech(T: IronTier): MechParts {
   const { art, cell } = drawWithCell(T.n, (P) => body(P, T), COPPER);
   return {
     body: art,

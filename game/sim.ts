@@ -58,8 +58,8 @@ import {
   MERGE_HOLD,
   MERGE_MAX_STACK,
   MERGE_SQUEEZE,
-  STARFISH_MERGE_PERIOD,
-  STARFISH_MERGE_REACH,
+  GRAPNEL_MERGE_PERIOD,
+  GRAPNEL_MERGE_REACH,
   TOWER_BURN_FX_LIFE,
   TOWER_BURN_FX_RATE,
   TOWER_BURN_TIME,
@@ -243,7 +243,7 @@ import {
   BOMBLET_LOOK,
   MAX_WEAPONS,
   NUKE_LOOK,
-  STARFISH_STARS,
+  GRAPNEL_STARS,
   unitDamageScale,
   UNIT_REACH,
   UNIT_WEAPONS,
@@ -633,7 +633,7 @@ const KIND_SHIELD = UNIT_KINDS.map((k) => UNIT_STATS[k].shieldField ?? null);
 const KIND_ENERGY = UNIT_KINDS.map((k) => UNIT_STATS[k].energyField ?? null);
 const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
 /** the two STAMP auras (levels.ts armorField / hasteField): the ironhide5's
- *  plating and the weaver3's pace, one carrier each at the moment */
+ *  plating and the dartback3's pace, one carrier each at the moment */
 const KIND_ARMOR_F = UNIT_KINDS.map((k) => UNIT_STATS[k].armorField ?? null);
 const KIND_HASTE_F = UNIT_KINDS.map((k) => UNIT_STATS[k].hasteField ?? null);
 /** ...and the two the sky and the sea carry (levels.ts jamField /
@@ -706,7 +706,7 @@ const KIND_SEEK = Float64Array.from(UNIT_KINDS, (k) =>
 );
 /**
  * THE STARBURST (levels.ts UnitStats.starburst), the Grapnels' trait, and
- * the stars it throws (weapons.ts STARFISH_STARS) resolved per KIND — the
+ * the stars it throws (weapons.ts GRAPNEL_STARS) resolved per KIND — the
  * table is authored by tier, and every read of it here is on a body whose
  * kind is already in hand.
  *
@@ -717,7 +717,7 @@ const KIND_SEEK = Float64Array.from(UNIT_KINDS, (k) =>
  */
 const KIND_STARBURST = UNIT_KINDS.map((k) => UNIT_STATS[k].starburst ?? null);
 const KIND_STARS = UNIT_KINDS.map((k) =>
-  UNIT_STATS[k].starburst ? (STARFISH_STARS[UNIT_STATS[k].tier - 1] ?? null) : null,
+  UNIT_STATS[k].starburst ? (GRAPNEL_STARS[UNIT_STATS[k].tier - 1] ?? null) : null,
 );
 const HAS_STARBURST = KIND_STARBURST.some(Boolean);
 /** ...as a list of kind ids, so the fold pass can ask the per-kind census
@@ -726,8 +726,8 @@ const STARBURST_KINDS = KIND_STARBURST.map((b, i) => (b ? i : -1)).filter((i) =>
 /**
  * THE MOST BODIES ONE SURVIVOR MAY STAND FOR, by kind — the squeeze's own
  * MERGE_MAX_STACK for everything, and the Grapnels' own ceiling for a
- * starfish (levels.ts starburst.merge, ten). Read by BOTH fold passes, so
- * a starfish cannot reach eight through the squeeze and then ten through
+ * grapnel (levels.ts starburst.merge, ten). Read by BOTH fold passes, so
+ * a grapnel cannot reach eight through the squeeze and then ten through
  * its own rule, or go over its ceiling by taking one route after the other.
  */
 const KIND_MERGE_MAX = Uint8Array.from(
@@ -794,7 +794,7 @@ const FLD_SLICE = 256;
 const FLD_SLICES = Math.ceil(W / FLD_SLICE) + 1;
 /**
  * MITOSIS (mutation.ts): the tier-1 kinds a death may break into, grouped
- * by the movement layer they travel on — ground gets ironhide1, weaver1 and
+ * by the movement layer they travel on — ground gets ironhide1, dartback1 and
  * starhart1, air gets stoop1, water gets skate1 and livewire1.
  *
  * THE LAYER IS THE WHOLE FILTER and it is not a convenience. A brood is
@@ -894,7 +894,7 @@ const KIND_WAKE_DT = Float32Array.from(UNIT_KINDS, (k) => {
 /** widest leg count on the roster: the stride of the per-leg arrays */
 export const MAX_LEGS = Math.max(1, ...KIND_LEGS.map((l) => l?.count ?? 0));
 // ulegMove packs one swing bit per leg into a Uint8Array, so eight legs is
-// the roster's ceiling — and the weaver5 sits exactly on it. A ninth would
+// the roster's ceiling — and the dartback5 sits exactly on it. A ninth would
 // not fail anywhere: the bit would truncate silently, that leg would never
 // register a landing, and it would simply stop throwing dust. Widen
 // ulegMove to a Uint16Array if a unit ever needs more.
@@ -999,8 +999,8 @@ const HAS_CLOAK = KIND_CLOAK.some(Boolean);
 const ROT_SPD = ((5 * Math.PI) / 180) * 60;
 /**
  * UnitType.rotateSpeed per kind, rad/s — how fast the TORSO comes round.
- * Much of the roster above the T1s overrides it (ironhide3, weaver2 and
- * weaver3 at 3, the stoop2 at 4.5); kinds that state none take the
+ * Much of the roster above the T1s overrides it (ironhide3, dartback2 and
+ * dartback3 at 3, the stoop2 at 4.5); kinds that state none take the
  * default, and the chassis under all of them keeps baseRotateSpeed
  * either way
  */
@@ -1128,7 +1128,7 @@ export class Sim {
   /**
    * THE TWO STAMPED AURAS (constants.ts AURA_LINGER), each a value and the
    * seconds it has left to run: extra armour from an ironhide5, a speed
-   * multiplier from a weaver3. A carrier's pulse writes both; nothing else
+   * multiplier from a dartback3. A carrier's pulse writes both; nothing else
    * ever does, and a body with an expired clock reads as if it had never
    * been stamped.
    *
@@ -1167,7 +1167,7 @@ export class Sim {
   /**
    * THE STARBURST (levels.ts starburst, the Grapnels): seconds until this
    * body may throw another star in answer to a hit, and seconds until it
-   * next reaches for one of its own kind to fold with (mergeStarfish).
+   * next reaches for one of its own kind to fold with (mergeGrapnel).
    *
    * THE FIRST OF THEM IS THE RULE'S REAL RATE LIMIT. The chance is rolled
    * inside damageUnit, which is the door EVERY point of damage in the game
@@ -1891,7 +1891,7 @@ export class Sim {
    * The largest radius STANDING on each layer this tick, and the per-kind
    * physics spans derived from it (see updateAliveBounds). The static
    * kindSpan / HIT_SPAN bounds are sized to the biggest unit on the whole
-   * roster, so every ironhide1's broad phase paid scan area for a weaver5
+   * roster, so every ironhide1's broad phase paid scan area for a dartback5
    * that is almost never on the field; these shrink each bound to what is
    * actually alive, which changes no query's RESULT — only its cost.
    */
@@ -3761,10 +3761,10 @@ export class Sim {
     this.mergeSqueezed(dt);
     this.mark("squeeze");
     // ...and the Grapnels' own fold beside it, on the same footing and for
-    // the same reasons: a starfish that died this tick is gone rather than
+    // the same reasons: a grapnel that died this tick is gone rather than
     // folded, and a fold's pooled health is on the survivor before
     // anything shoots at it
-    this.mergeStarfish(dt);
+    this.mergeGrapnel(dt);
     this.mark("fold");
     // the waders gain AFTER the status pass for the same reason: a body
     // that burned to death this tick is already gone, and a stack taken
@@ -4597,7 +4597,7 @@ export class Sim {
    * would make every sweep silently re-tune the venom family twice.
    *
    * A HIT THAT DOES NO DAMAGE STILL POISONS. The rot rides on the shot
-   * CONNECTING, not on the damage surviving armour: a weaver1's 8-point
+   * CONNECTING, not on the damage surviving armour: a dartback1's 8-point
    * spit against a railhead's plating lands 0.8 and six full seconds of
    * rot, which is the entire reason that body is on the field.
    */
@@ -4735,7 +4735,7 @@ export class Sim {
    *
    * Instant weapons (beams, bolts, flames, saps, fields, bombs) land the
    * moment they fire; the rest put a shot in flight (shots, updateEnemyShots).
-   * A weaver1's weapon is itself: it goes off on the structure and is gone.
+   * A dartback1's weapon is itself: it goes off on the structure and is gone.
    */
   private updateUnitWeapons(dt: number): void {
     const { upx, upy, urot, ukind, uspawn, ucd, utT, ubeamT, ucharge, uheldRot, utgt } = this;
@@ -5043,7 +5043,7 @@ export class Sim {
               // seeks to `range` and goes off on CONTACT — the last
               // stretch is flown at the target (updateUnits) and the
               // charge is the payload's; a kind without one is the old
-              // weaver1 charge, the row's own splash centred on itself.
+              // dartback1 charge, the row's own splash centred on itself.
               // Either way it is gone, and no kill goes on the ledger.
               //
               // AN ARRIVAL PAYS HALF. A bomber shot down pays its kill
@@ -5330,7 +5330,7 @@ export class Sim {
 
   /**
    * THE STARBURST (levels.ts UnitStats.starburst, weapons.ts
-   * STARFISH_STARS) — the Grapnels throwing stars. `count` of them leave
+   * GRAPNEL_STARS) — the Grapnels throwing stars. `count` of them leave
    * the body at once, evenly spaced round the whole circle: ONE, from a
    * random arm, when a hit that landed rolled its answer; FIVE, one down
    * every arm, when the body died where it stands.
@@ -6576,7 +6576,7 @@ export class Sim {
       this.uburn[i] = 0;
       this.uwet[i] = 0;
       this.uwetSlow[i] = 1;
-      // a body walks in unstamped: the ironhide5's plating and the weaver3's
+      // a body walks in unstamped: the ironhide5's plating and the dartback3's
       // pace are both things it has to be standing near something to have
       this.uarmorAdd[i] = 0;
       this.uarmorT[i] = 0;
@@ -6590,14 +6590,14 @@ export class Sim {
       this.ureachMul[i] = 1;
       this.ureachT[i] = 0;
       this.ublinkCd[i] = 0;
-      // THE STARBURST (levels.ts, the Grapnels): a starfish walks in able
+      // THE STARBURST (levels.ts, the Grapnels): a grapnel walks in able
       // to answer the first hit that lands on it, and somewhere inside the
       // fold period rather than at the start of one — a wave that all
       // reached for a partner on the same frame would collapse into a
       // handful of bodies in one visible step, and pay for the search in
       // one visible spike
       this.ustarCd[i] = 0;
-      this.ufoldT[i] = Math.random() * STARFISH_MERGE_PERIOD;
+      this.ufoldT[i] = Math.random() * GRAPNEL_MERGE_PERIOD;
       // a cloaking kind walks in visible and hides for the first time a
       // full period in — a door that spat out ghosts would be a door with
       // no answer
@@ -6992,7 +6992,7 @@ export class Sim {
       // DAMAGE SMOKE: a body under DAMAGE_SMOKE_BELOW of its pool sheds
       // soot, and the lower it gets the thicker it pours — the tint has
       // gone grey (HP_TINT), and this is the other half of "that one is
-      // nearly dead". Scaled by the hitbox so a weaver5 smokes like the
+      // nearly dead". Scaled by the hitbox so a dartback5 smokes like the
       // building it is and an ironhide1 like an ironhide1. pushFx refuses it with
       // effects off (setEffects), which is the whole of that switch — no
       // second gate here
@@ -7175,7 +7175,7 @@ export class Sim {
    * exactly what it looks like, only heavier. Bosses never fold (a boss is
    * an authored event with its own bar), nor does a body still inside its
    * arrival clock, and a stack stops at the kind's own ceiling
-   * (KIND_MERGE_MAX — MERGE_MAX_STACK for everything but a starfish, which
+   * (KIND_MERGE_MAX — MERGE_MAX_STACK for everything but a grapnel, which
    * carries its family's ten) so the rule thins a jam rather than
    * collapsing a whole wave into one ball.
    *
@@ -7227,9 +7227,9 @@ export class Sim {
   }
 
   /**
-   * THE GRAPNELS' FOLD — a starfish reaches for the nearest starfish of
+   * THE GRAPNELS' FOLD — a grapnel reaches for the nearest grapnel of
    * its own kind and merges with it ON PURPOSE (levels.ts starburst.merge,
-   * constants.ts STARFISH_*).
+   * constants.ts GRAPNEL_*).
    *
    * IT IS THE SQUEEZE WITHOUT THE SQUEEZE. Everything it moves is what
    * mergeSqueezed moves and by the same arithmetic — health, maximum
@@ -7238,14 +7238,14 @@ export class Sim {
    * leaves through removeUnit so every ledger books it at once. What is
    * different is the TRIGGER: the squeeze needs a choke to crush two
    * bodies into each other and holds them there for half a second, and
-   * this needs neither. A starfish in open ground, touching nothing, folds
-   * with whatever of its kind is within STARFISH_MERGE_REACH of it.
+   * this needs neither. A grapnel in open ground, touching nothing, folds
+   * with whatever of its kind is within GRAPNEL_MERGE_REACH of it.
    *
    * SO IT IS A CLOCK AND NOT A PILE. One attempt every
-   * STARFISH_MERGE_PERIOD, never banked (a lone starfish that walks into a
+   * GRAPNEL_MERGE_PERIOD, never banked (a lone grapnel that walks into a
    * crowd does not get an instant fold owed to it), which is also what
    * keeps the pass cheap: the neighbour search is paid only by the
-   * starfish whose clock came up this tick, and by nothing else on the
+   * grapnel whose clock came up this tick, and by nothing else on the
    * field at all. The clocks start at a random point in the period, like
    * the guns' reloads do, so a wave that arrived together does not all
    * reach for a partner on the same frame.
@@ -7260,7 +7260,7 @@ export class Sim {
    * reason — removal swaps the LAST row into the freed slot, and on a
    * downward scan that row is one already visited.
    */
-  private mergeStarfish(dt: number): void {
+  private mergeGrapnel(dt: number): void {
     if (!HAS_STARBURST) return;
     // ...and nothing at all in a wave with no Grapnel in it: the clocks
     // below are a pass over every body on the field, and most waves on
@@ -7275,7 +7275,7 @@ export class Sim {
     for (let i = 0; i < this.n; i++) if (KIND_STARBURST[ukind[i]]) ufoldT[i] -= dt;
     for (let i = this.n - 1; i >= 0; i--) {
       if (!KIND_STARBURST[ukind[i]] || ufoldT[i] > 0) continue;
-      ufoldT[i] = STARFISH_MERGE_PERIOD;
+      ufoldT[i] = GRAPNEL_MERGE_PERIOD;
       if (uspawn[i] > 0 || uhp[i] <= 0 || ustack[i] >= KIND_MERGE_MAX[ukind[i]]) continue;
       const j = this.foldMateFor(i);
       if (j < 0) continue;
@@ -7292,10 +7292,10 @@ export class Sim {
   }
 
   /**
-   * A FOLD PARTNER for the starfish at `i`: another of its own kind within
-   * STARFISH_MERGE_REACH that the pair can fit inside the ceiling, or -1.
+   * A FOLD PARTNER for the grapnel at `i`: another of its own kind within
+   * GRAPNEL_MERGE_REACH that the pair can fit inside the ceiling, or -1.
    *
-   * RANDOM, NOT NEAREST, for preyFor's reason: a crowd of starfish all
+   * RANDOM, NOT NEAREST, for preyFor's reason: a crowd of grapnels all
    * locking onto the single nearest body would have nine of them find it
    * gone the moment the first one folded it in. Reservoir sampling gives
    * every candidate an even chance for one extra random per hit and builds
@@ -7312,7 +7312,7 @@ export class Sim {
     const x = upx[i], y = upy[i];
     const kind = ukind[i];
     const room = KIND_MERGE_MAX[kind] - ustack[i];
-    const pad = STARFISH_MERGE_REACH + this.rmaxAliveFor(false, true);
+    const pad = GRAPNEL_MERGE_REACH + this.rmaxAliveFor(false, true);
     const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
     const hx1 = clamp(((x + pad) / HC) | 0, 0, HCOLS - 1);
@@ -7331,7 +7331,7 @@ export class Sim {
         if (ukind[j] !== kind || uspawn[j] > 0 || ustack[j] > room) continue;
         const dx = upx[j] - x, dy = upy[j] - y;
         const d2 = dx * dx + dy * dy;
-        const rr = STARFISH_MERGE_REACH + this.hitR(j, dx, dy, d2);
+        const rr = GRAPNEL_MERGE_REACH + this.hitR(j, dx, dy, d2);
         if (d2 > rr * rr) continue;
         if (Math.random() * ++seen < 1) pick = j;
       }
@@ -7385,7 +7385,7 @@ export class Sim {
     this.scrap += drop;
     this.scrapEarned += drop;
     this.pushDeathFx(x, y);
-    // THE DEATH BURST (levels.ts starburst, the Grapnels): A STARFISH
+    // THE DEATH BURST (levels.ts starburst, the Grapnels): A GRAPNEL
     // EMPTIES ITSELF WHEN IT DIES — five stars at once, one down every
     // arm, wherever it fell. It is the loudest thing the family does and
     // it is collected by the BOARD: killing one at reach costs nothing,
@@ -7419,7 +7419,7 @@ export class Sim {
     if (KIND_PAYLOAD[kind]) this.detonate(i);
     // MECH VIRUS (mutation.ts): KILLING THE CARRIER IS WHAT SETS IT OFF.
     // The body has to actually die for it — a carrier Reconstruction is
-    // about to stand back up returned above and still has it, and one that
+    // about to revive returned above and still has it, and one that
     // walks off the board was never killed at all, so the thing only ever
     // goes off where the player is fighting
     if (this.uvirus[i]) this.infectNear(x, y, null);
@@ -7557,7 +7557,7 @@ export class Sim {
       if (this.spawnUnit(UNIT_KINDS[body.kind], { x: body.x, y: body.y }, body.wave)) {
         const r = this.n - 1;
         this.urisen[r] = 1;
-        // a stack stands back up as the stack it was (mergeSqueezed): the
+        // a stack revives as the stack it was (mergeSqueezed): the
         // pooled health and the many-bodies mark, as if it had never fallen
         if (body.stack > 1) {
           this.ustack[r] = body.stack;
@@ -7904,8 +7904,8 @@ export class Sim {
     // a leg is DOWN the moment its group's turn passes on, and that
     // transition is where Mindustry hangs everything a footstep does:
     // Fx.unitLandSmall at the foot, the step shake, and — on the units
-    // that carry it — legSplashDamage. Weaver4 (32 over 30 units) and
-    // weaver5 (80 over 60) carry that last one on this roster, and
+    // that carry it — legSplashDamage. Dartback4 (32 over 30 units) and
+    // dartback5 (80 over 60) carry that last one on this roster, and
     // neither has anything to land on: it hits enemy units and buildings,
     // and the player here fields no units and builds towers that cannot
     // be damaged. So
@@ -8170,12 +8170,12 @@ export class Sim {
           : HAS_WAKE_AURA && this.ubowT[i] > 0
             ? 1
             : KIND_LAND_SPEED[ukind[i]];
-      // ...and a FOURTH multiplier: the weaver3's pace stamp (levels.ts
+      // ...and a FOURTH multiplier: the dartback3's pace stamp (levels.ts
       // hasteField). It rides here with the wet slow and the land penalty
       // rather than on uspd, so it is a thing happening TO the body and
       // never a permanent change to what it is — walk out of the field and
       // the next frame is at its own speed again. The two can meet: a
-      // soaked body under a weaver3 is slowed and hurried at once, and the
+      // soaked body under a dartback3 is slowed and hurried at once, and the
       // product is the honest answer to both.
       const haste = HAS_HASTE_AURA && this.uhasteT[i] > 0 ? this.uhasteMul[i] : 1;
       const spd =
@@ -8832,7 +8832,7 @@ export class Sim {
    * kind, the footprint, the attributes it rolled at its placement
    * (Tower.mods) and the RESOLVED stats those composed (Tower.spec) — a
    * giant braced repeater comes back a giant braced repeater. What it is
-   * handed back is the stand-ups it was BORN with (Tower.revivesMax), so
+   * handed back is the revives it was BORN with (Tower.revivesMax), so
    * an Undying board arms the swarm with turrets that have to be killed
    * twice. What it never gets is the player's Phoenix roll (an unlimited
    * flip the RUN owns, held to the player's side in reviveTower), a share
@@ -10793,7 +10793,7 @@ export class Sim {
    *
    * WHICH BODY IT PICKS is railhead's rule (TowerStats.sort
    * "strongest"): the highest CURRENT health in range, because the one
-   * thing a ramp cannot afford is to spend its climb on a weaver1. And it
+   * thing a ramp cannot afford is to spend its climb on a dartback1. And it
    * HOLDS that pick — the scan only runs once the lock is broken by death
    * or by the target leaving reach, never to trade up — because re-picking
    * the strongest every interval would ping-pong between two bodies as
@@ -11071,14 +11071,14 @@ export class Sim {
     }
     // THE STARBURST (levels.ts starburst, the Grapnels): A HIT THAT LANDS
     // THROWS A STAR BACK, on a chance and no oftener than its clock. This
-    // is the family's ONLY output — a starfish carries no weapon at all —
+    // is the family's ONLY output — a grapnel carries no weapon at all —
     // so the rule sits on the one line every point of damage in the game
     // comes through, and the clock above it is what keeps a body under a
     // beam or a rot from answering every tick.
     //
     // A SHIELD EATING THE HIT IS STILL A HIT. The roll is outside the
     // `amount > 0` branch on purpose: what pulls the answer out of a
-    // starfish is the board shooting at it, not the board getting through
+    // grapnel is the board shooting at it, not the board getting through
     // its plating, and a rule that needed health to come off would be
     // silent for exactly as long as a force field held.
     //

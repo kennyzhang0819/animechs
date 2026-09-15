@@ -1,7 +1,7 @@
 import { targetingLine, TOWER_DESC, TOWERS } from "./constants";
 import { WORLDS } from "./levels";
-import { MODS, modDef, modName, oddsLine, type ModId } from "./mods";
-import { RELICS, relicDef, RELIC_NOTE, type RelicId } from "./relics";
+import { MODS, modBlurb, modDef, modName, type ModId } from "./mods";
+import { RELICS, relicDef, type RelicId } from "./relics";
 import { MUTATIONS, mutationById, mutationCostOf, type MutationId } from "./mutation";
 import { RARITIES, rarityDef } from "./rarity";
 import { BY_MINDUSTRY_VALUE, type TechState } from "./tech";
@@ -631,7 +631,7 @@ export function rewardText(r: Reward): string {
 export function rewardBlurb(r: Reward): string {
   if (r.kind === "world") return "A map the campaign can be deployed on.";
   if (r.kind === "turret") return TOWER_DESC[r.id];
-  if (r.kind === "mod") return modDef(r.id).blurb;
+  if (r.kind === "mod") return modBlurb(modDef(r.id));
   if (r.kind === "relic") return relicDef(r.id).blurb;
   if (r.kind === "mutator")
     return mutationById(r.id)?.blurb ?? "";
@@ -647,22 +647,15 @@ export function rewardBlurb(r: Reward): string {
  * upgraded yet. The in-run build card asks the sim instead (Hud.targeting),
  * which is what makes its line follow an upgrade.
  *
- * A MOD'S IS ITS ODDS (mods.ts oddsLine) and A RELIC'S IS THAT IT HAS NONE
- * (relics.ts RELIC_NOTE) — a mod is a CHANCE on every turret placed and a
- * relic is simply in force, and that difference is the one thing about a
- * module a player has to know before paying for one. A named mod says what
- * it does in numbers first, because its name is a name and the stats are
- * nowhere else on the card.
+ * A MOD'S IS THAT COPIES STACK, which is the one thing its own sentence
+ * (mods.ts modBlurb) does not already say: the blurb is the odds and the
+ * stats, and this adds what a second copy buys. A relic has nothing to
+ * add — it is bought once and it is on.
  */
 export function rewardNote(r: Reward): string | null {
   if (r.kind === "turret") return targetingLine(TOWERS[r.id]);
-  if (r.kind === "relic") return RELIC_NOTE;
   if (r.kind !== "mod") return null;
-  const d = modDef(r.id);
-  // "a copy over" rather than "per copy owned": the odds are a constant
-  // now and it is the EFFECT that every copy adds again (mods.ts)
-  const odds = `${oddsLine(d)}, and every copy adds its effect again`;
-  return d.name && d.tweak ? `${d.tweak}. ${odds}` : odds;
+  return "Every copy adds its effect again.";
 }
 
 /** the turret's display name, as the card prints it */

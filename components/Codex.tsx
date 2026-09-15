@@ -312,8 +312,7 @@ export default function Codex({
               <div className="mb-1 font-display text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
                 Nothing here yet
               </div>
-              These are written and waiting; nothing hands one out at the moment.
-              They will show up here when something does.
+              Nothing in the game hands these out yet.
             </div>
           ) : (
             items.map((entry, i) => (

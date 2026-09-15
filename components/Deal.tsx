@@ -413,8 +413,11 @@ function BuyButton({
   /** the printed letter, worn in the corner the way a command card's is */
   keyCap: string;
   label: string;
-  /** the line under the price — what the press hands over, or why it is dark */
-  sub: string;
+  /** the line under the price, or null where the button says enough on its
+   *  own — a turret press and a relic press both do, and only the MOD one
+   *  has a fact a new player has no other way of learning (the roll lands
+   *  on turrets BUILT AFTER IT, not on the board) */
+  sub: string | null;
   /** total scrap this press costs, or null when there is nothing to pay */
   price: number | null;
   poor: boolean;
@@ -460,9 +463,11 @@ function BuyButton({
           {price.toLocaleString()}
         </span>
       )}
-      <span className="max-w-full truncate font-display text-[7px] font-bold uppercase leading-none text-[#8A8E98]">
-        {sub}
-      </span>
+      {sub && (
+        <span className="max-w-full truncate font-display text-[7px] font-bold uppercase leading-none text-[#8A8E98]">
+          {sub}
+        </span>
+      )}
     </button>
   );
 }
@@ -515,7 +520,7 @@ export function DealCorner({
           <BuyButton
             keyCap="T"
             label={card ? "Re-roll" : "Turret"}
-            sub={n > 1 ? `${n} of the shape` : "one card"}
+            sub={n > 1 ? `${n} cards` : null}
             price={free ? null : turretCost}
             poor={short(turretCost)}
             amount={n}
@@ -568,11 +573,7 @@ export function DealCorner({
             keyCap="G"
             label="Relics"
             sub={
-              hud.relicDeal !== "open"
-                ? HALF_SUB[hud.relicDeal]
-                : n > 1
-                  ? `${n} draws`
-                  : "in force now"
+              hud.relicDeal !== "open" ? HALF_SUB[hud.relicDeal] : n > 1 ? `${n} draws` : null
             }
             price={hud.relicDeal === "open" && !free ? relicCost : null}
             poor={short(relicCost)}
@@ -612,9 +613,6 @@ export function DealCorner({
             </span>
             <span className="font-display text-[10px] font-bold uppercase leading-none text-[#E8E4D8]">
               Amount
-            </span>
-            <span className="font-display text-[7px] font-bold uppercase leading-none text-[#8A8E98]">
-              per press
             </span>
           </button>
         </div>

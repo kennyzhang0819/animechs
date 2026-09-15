@@ -947,10 +947,9 @@ function FactionPicker({
           Random
         </div>
         <p className="text-[14px] text-[#A6A6AF]">
-          The die deals {FAMILIES_PER_RUN} of the {offered.length} families when the
-          run starts, and each wave is played by up to {MAX_FAMILIES_PER_WAVE} of
-          them — the campaign&apos;s own deal. Name any {cap === 1 ? "one" : `1 to ${cap}`}{" "}
-          instead and the run sends exactly those.
+          {FAMILIES_PER_RUN} of the {offered.length} factions are picked at random each run,
+          up to {MAX_FAMILIES_PER_WAVE} of them per wave — or pick{" "}
+          {cap === 1 ? "one" : `1 to ${cap}`} yourself.
         </p>
         <SelectButton
           label="Roll them all"
@@ -1105,8 +1104,8 @@ function MutatorPicker({
           Random
         </div>
         <p className="text-[14px] text-[#A6A6AF]">
-          {rungLabel(tier)} rolls {rolls} rule{rolls === 1 ? "" : "s"} for {budgetPts} points
-          when the run starts — every rule in the catalog in the draw.
+          {rungLabel(tier)} rolls {rolls} rule{rolls === 1 ? "" : "s"} from the whole catalog
+          when the run starts, for {budgetPts} points.
         </p>
         <SelectButton
           label="Roll them all"
@@ -1244,13 +1243,11 @@ function DealFamiliesCell({ families }: { families: readonly FamilyKey[] }) {
       ))}
       <HoverCard tip={tip} title="Swarm families" tag="Deal" color={DEAL_COLOR} align="right">
         {families.length === 1 ? (
-          <>The one family this run sends — every wave of it, tier for tier.</>
+          <>The only faction this run sends.</>
         ) : (
           <>
-            The {families.length} families the deploy dealt this run. Every wave is
-            played by some of them, tier for tier, and the deal turns a notch each
-            wave — so the mixture changes as the run goes, and no wave sends more
-            than {MAX_FAMILIES_PER_WAVE}.
+            The {families.length} factions this run sends, up to {MAX_FAMILIES_PER_WAVE} of
+            them per wave.
           </>
         )}
         <span className="mt-1.5 block text-[#EDEDEF]">{names.join(" · ")}</span>

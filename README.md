@@ -427,7 +427,7 @@ is no touch input.
 | build | **T**, then left press on the ground. The draw comes out already in hand, so the flow is T, click, T, click. One card is one FORMATION, four to thirty-six turrets in a shape — times the amount (**X**). On a free board (sandbox, editors) pick a turret on the command card instead, or its key, and drag to chain; **shift-drag for a straight line** |
 | re-roll | **T** again — it throws the card in hand away and draws another, at full price. Spam it until the shape is the one you want |
 | buy mods | **M**, 2,000 each. The mid game's answer: a standing chance on every turret placed from then on. In force the instant they land — nothing to aim, nothing to place, no re-roll |
-| buy relics | **G**, 150,000 each, and **locked until level 16**. The late game's answer: rules that change the game over the whole board the moment they are paid for — the board fires twice as fast, armour stops applying, a dead T5 takes its escort with it, every turret stands back up. Same: nothing to aim, no re-roll |
+| buy relics | **G**, 150,000 each, and **locked until level 16**. The late game's answer: rules that change the game over the whole board the moment they are paid for — the board fires twice as fast, armour is ignored, a dead T5 takes its escort with it, every turret revives once. Same: nothing to aim, no re-roll |
 | turn the card | **R** while the ghost is up, or the strip under the card — a quarter clockwise, free, and it turns the WHOLE footprint. Ten of the twelve shapes are symmetric under a quarter turn, so only the Wedge visibly moves — and a fleet of wedges turns as one |
 | amount | **X** cycles ×1 / ×4 / ×9 and multiplies the next press, at flat price. On **M** and **G** that is N draws; on **T** it is one card carrying the shape **tiled** N times, square and gapless — so ×9 of a citadel is one ghost of 324 turrets in an 18×18 block to find ground for |
 | discard | right press while holding a card. No refund |
@@ -852,7 +852,7 @@ a relic.
 | +4% fire rate | Uncommon | 18% | |
 | +8% health | Uncommon | 18% | |
 | +4% range | Uncommon | 18% | |
-| repairs 0.15% a second | Uncommon | 18% | the one stat a plain turret has none of, so the tick is the whole thing |
+| +0.15% repair a second | Uncommon | 18% | the one stat a plain turret has none of, so the tick is the whole thing |
 | **Prototype Chassis** | Rare | 10% | +12% damage, +12% fire rate |
 | **Bulwark Plating** | Rare | 10% | more health, armour and repair at once |
 | **Sabot Rounds** | Rare | 10% | +1 pierce and harder rounds with it |
@@ -904,17 +904,17 @@ of every gun on the field.
 | Overclock Core | Common | 16 | every turret deals **double** damage |
 | Coolant Loop | Common | 17 | every turret fires **twice** as fast |
 | Scavenger Rig | Common | 19 | every kill pays **triple** scrap |
-| Salvage Insurance | Uncommon | 20 | every wrecked turret pays 2,000 scrap — two cards' worth, every time |
-| Phosphor Rounds | Uncommon | 21 | every shot burns white, hits half again as hard, and punches through 2 more bodies |
-| Last Volley | Uncommon | 22 | a wrecked turret gives every turret within 8 tiles **triple** fire rate for 15s |
-| **Cascade Charges** | Uncommon | 23 | a **T4 or T5 hull comes apart where it falls**, for a fifth of its own maximum health over 6 tiles — enough to set off the next one. A wall of heavies unzips itself |
-| Phoenix Protocol | Rare | 24 | a wrecked turret has a 50% chance to stand straight back up — **every time**, no limit |
-| Twin Fire | Rare | 25 | every turret fires one more round in every volley |
-| **Monofilament Rounds** | Rare | 26 | **ARMOUR STOPS APPLYING.** Every hit the board lands is dealt in full, whatever the body is plated in |
-| **Titan Rounds** | Rare | 27 | every hit gains **a quarter again per tier** above the first, so a T5 hull takes **double** |
-| **Undying Legion** | **Ultra** | 28 | **every turret you own stands back up once, at full health — the ones already on the field included** |
-| **Terminal Protocol** | **Ultra** | 29 | **anything knocked to 15% of its own health dies on the spot** — and 15% of a Stoop (apex) is three thousand the board never has to grind through |
-| **Ascendancy Protocol** | **Ultra** | 30 | **the turret deal hands over rares 5× and ULTRAS 20× as often, for the rest of the run** |
+| Salvage Insurance | Uncommon | 20 | every destroyed turret pays out 2,000 scrap |
+| Phosphor Rounds | Uncommon | 21 | every shot deals +50% damage and pierces 2 more enemies |
+| Last Volley | Uncommon | 22 | when a turret is destroyed, every turret within 8 tiles fires at **triple** rate for 15s |
+| **Cascade Charges** | Uncommon | 23 | when a **T4 or T5 enemy is destroyed**, it explodes for 20% of its maximum health to everything within 6 tiles — enough to set off the next one |
+| Phoenix Protocol | Rare | 24 | a destroyed turret has a 50% chance to revive at full health — **every time**, no limit |
+| Twin Fire | Rare | 25 | every turret fires 1 more round per volley |
+| **Monofilament Rounds** | Rare | 26 | **armour is ignored** — every hit deals its full damage |
+| **Titan Rounds** | Rare | 27 | every hit deals **+25% damage per tier** above T1, so a T5 takes **double** |
+| **Undying Legion** | **Ultra** | 28 | **every turret you own revives at full health the first time it is destroyed, once per turret** |
+| **Terminal Protocol** | **Ultra** | 29 | **any enemy dropped below 15% of its maximum health is destroyed instantly** — and 15% of a Stoop (apex) is three thousand the board never has to grind through |
+| **Ascendancy Protocol** | **Ultra** | 30 | **the turret deal draws rares 5× and ULTRAS 20× as often, for the rest of the run** |
 
 **And the mutators pull the other way, which is the point of them.**
 **Leadership** (`mutation.ts`) caps any one hit on a body near a live T5 at
@@ -1139,7 +1139,7 @@ have one: there is exactly one of it, so the name says *which thing*
 rather than which rung.
 
 **The id is the family and the tier, and nothing else.** `UnitKind` runs
-`ironhide1` … `ironhide5`, `weaver1` … `livewire5`, plus `boss` — so the
+`ironhide1` … `ironhide5`, `dartback1` … `livewire5`, plus `boss` — so the
 kind a wave is authored in (`public/levels/campaign.json`), the key in
 the sim's arrays and the name on screen are all the same fact said three
 ways, and no upstream unit name survives anywhere in the codebase.
@@ -1528,6 +1528,6 @@ Hungry Mechs, Speedy, Reconstruction, Conquest, Mech Virus, Overshields,
 Armored Swarms, Hydrophobic, Leadership, Mitosis, Amphibious, Shield
 Towers, Volatile — dearest first, which is codex order, and every one of
 those prices is measured rather than felt (see the head of
-`game/mutation.ts`) — the Unlocks
+`game/mutation.ts`) — the Codex
 board on the progress screen says what each does, and **custom mode** (see
 *Two modes*) is the one place they are chosen by hand.

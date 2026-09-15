@@ -220,8 +220,8 @@ export interface Tower {
    * IN THE SIZE OF THE CROWD.
    *
    * THE NUMBERS PER APPLICATION ARE SMALL AND MOST OF THEM ARE A CHANCE
-   * (weapons.ts poisonChance). A weaver1's spit is six health a second, one
-   * roll in four; a weaver5's bomb lands every time. What makes a wave
+   * (weapons.ts poisonChance). A dartback1's spit is six health a second, one
+   * roll in four; a dartback5's bomb lands every time. What makes a wave
    * lethal is that it is a wave.
    *
    * `poisonUnit` IS THE FLOOR — the heaviest single application in force,
@@ -289,13 +289,13 @@ export interface Tower {
    */
   virus: boolean;
   /**
-   * How many times this turret still gets to stand back up when it is
+   * How many times this turret can still revive when it is
    * wrecked (mods.ts: Undying Legion grants one to everything). Spent
    * before the Phoenix roll is even reached.
    */
   revives: number;
   /**
-   * How many stand-ups this turret was BORN with — what `revives` started
+   * How many revives this turret was BORN with — what `revives` started
    * at, held so CONQUEST (mutation.ts) can hand the swarm's copy the same
    * charges the player's turret had. A turret that spent its Undying
    * Legion charge holding the line does not get to keep the swarm from
@@ -586,7 +586,7 @@ export const enum FxKind {
    *  jittered chain from the unit to each thing its field hit, white
    *  washing into its colour. The path rides fxPts like a bolt's */
   ChainLightning = 43,
-  Pulverize = 44, // Fx.pulverize — the weaver1's own burst
+  Pulverize = 44, // Fx.pulverize — the dartback1's own burst
   SapExplosion = 45, // Fx.sapExplosion — the purple artillery's landing
   MassiveExplosion = 46, // Fx.massiveExplosion — skate3's shell
   RailShoot = 47, // Fx.railShoot — skate5's muzzle

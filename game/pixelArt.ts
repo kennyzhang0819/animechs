@@ -54,8 +54,8 @@
  *
  * ── 5. FLAT, NOT EMBOSSED ─────────────────────────────────────────────
  *
- * Count the colours in piercer.png or fixer.png: four or five, butted
- * along straight edges, no dark contour and no gradient. Do NOT trace
+ * Count the colours in piercer.png: four or five, butted along straight
+ * edges, no dark contour and no gradient. Do NOT trace
  * light down a silhouette's top-left edge and shadow down its
  * bottom-right — that is how a button is drawn, and it makes an icon look
  * pressed out of the page beside art that looks stamped flat. Form comes

@@ -36,7 +36,7 @@ import { FxKind, type RGB, type TowerKind } from "./types";
  *     is read off UnitTypes.java (master, 2026) and the bullet classes
  *     under entities/bullet, 1:1. An ironhide1's round is bulletYellow, not
  *     copper: units fire BasicBulletType's own defaults, and only turret
- *     ammo recolours them. A weaver4's shell is 19 units of sapBullet
+ *     ammo recolours them. A dartback4's shell is 19 units of sapBullet
  *     purple; a starhart3's beam is Pal.heal with a 45-degree side stoop1;
  *     the skate5's rail is orangeSpark. These are the game's own art and
  *     nothing here is free to differ from it.
@@ -265,8 +265,8 @@ export interface UnitWeapon {
    */
   charge?: number;
   /** the unit dies firing it: the splash is centred on itself. NOTHING
-   *  CARRIES IT ANY MORE — the weaver1's charge was the venom line's old
-   *  opening tier and the rework took it off (see the weaver1 row below).
+   *  CARRIES IT ANY MORE — the dartback1's charge was the venom line's old
+   *  opening tier and the rework took it off (see the dartback1 row below).
    *  The mechanism stays because it is one branch in updateUnitWeapons and
    *  a family built around contact is a family this game should be able to
    *  field again */
@@ -294,13 +294,13 @@ export interface UnitWeapon {
    *
    * IT IS THE TIER LADDER THAT DOES NOT MOVE THE NUMBER. `rate x chance` is
    * the same expected rot as a smaller rate landing every time, so the odds
-   * buy no scaling of their own — what they buy is a way to say "a weaver5
-   * poisons every time and a weaver1 one time in four" while both still
+   * buy no scaling of their own — what they buy is a way to say "a dartback5
+   * poisons every time and a dartback1 one time in four" while both still
    * read as the same status doing the same thing. A player learns one rule
    * and then learns which bodies are reliable.
    *
    * AND IT IS WHY A BURST COMES OUT SPECKLED. The roll is per structure, so
-   * a weaver4's bomb rots most of a patch and not all of it — the same
+   * a dartback4's bomb rots most of a patch and not all of it — the same
    * charm the turret attributes have (mods.ts), on the other side of the
    * field. A crowd large enough averages it away, which is exactly when
    * volume is supposed to take over.
@@ -651,7 +651,7 @@ const basic = (width: number, height: number, o: Partial<ShotLook> = {}): ShotLo
  * purple ball read as a THING at a glance rather than as a coloured dot.
  *
  * `size` is the diameter in world units, and it is the whole tier ladder of
- * the family's look: a weaver1's spit is 7 across, a weaver5's bomb 22.
+ * the family's look: a dartback1's spit is 7 across, a dartback5's bomb 22.
  */
 /**
  * THE GRAPNELS' STAR: a five-armed round in the family's copper, drawn as
@@ -912,7 +912,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // and how much of a patch it lands on.
   //
   // IT USED TO CLIMB FROM SIX TO TEN ACROSS FIVE TIERS and that was the
-  // whole ladder — a weaver5's bomb, the family's flagship weapon, put
+  // whole ladder — a dartback5's bomb, the family's flagship weapon, put
   // ten health a second on a building, which against a late-run turret
   // carrying Giant and Bulwark (mods.ts) was minutes of rot for a boss
   // that lives seconds. A hundred points of chip on a ten-thousand-health
@@ -931,10 +931,10 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // punch it down — a patch under venom fire loses health with nothing
   // visibly shooting it, which is the whole feel of the family.
   //
-  // NO SUICIDE CHARGE. The weaver1's contact bomb is gone: a status that
+  // NO SUICIDE CHARGE. The dartback1's contact bomb is gone: a status that
   // works over six seconds cannot have its opening tier delete itself on
   // arrival, because a dead spitter is one that never refreshes the clock.
-  weaver1: [
+  dartback1: [
     {
       name: "venom-spit", reload: t(180), mounts: 1, damage: 25, range: rng(6, 16), speed: spd(6),
       fx: "bullet", poison: 12, poisonChance: 0.4, look: venomOrb(7),
@@ -943,7 +943,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // FOUR BARRELS, AND THE FIRST ORB THAT BURSTS. A mirrored bank fires once
   // per reload divided by its mount count (updateUnitWeapons), so four
   // barrels is four times the APPLICATIONS rather than four shots at once —
-  // which is what a weaver2 is for now that the rot bleeds back down
+  // which is what a dartback2 is for now that the rot bleeds back down
   // (constants.ts POISON_DECAY): volume is the only thing that holds a
   // stack up, so four barrels on one body is four bodies' worth of rot.
   //
@@ -953,22 +953,22 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // card that puts down a thirty-six turret block meant the family's own
   // area weapons rotted a corner of one patch. The family's ladder
   // used to be three tiers of single-target pea-shooters and then two tiers
-  // of area bombardment, a fortyfold step between the weaver3 and the
-  // weaver4; it reads as one idea growing now: a ball, a small burst, a
+  // of area bombardment, a fortyfold step between the dartback3 and the
+  // dartback4; it reads as one idea growing now: a ball, a small burst, a
   // bigger burst, a thrown bomb, a barrage. The rot rides the burst, so
   // what a tier really buys is HOW MUCH OF A PATCH one orb rots at once.
-  weaver2: [
+  dartback2: [
     {
       name: "venom-spit", reload: t(180), mounts: 4, damage: 8, splash: 30, splashRadius: u(28),
       range: rng(6, 18), speed: spd(6), fx: "bullet", poison: 15, poisonChance: 0.5, look: venomOrb(7),
     },
   ],
   // THE PACE TIER. Its gun is the family's standard orb at a middling rate;
-  // what the weaver3 is FOR is the haste field it walks under (levels.ts
+  // what the dartback3 is FOR is the haste field it walks under (levels.ts
   // hasteField) — a third again on everything within ten tiles. It is the
   // only tier on the tree that hands something out, and what it hands out
   // is more applications inside the same six seconds
-  weaver3: [
+  dartback3: [
     {
       name: "venom-spit", reload: t(120), mounts: 2, damage: 10, splash: 40, splashRadius: u(36),
       range: rng(6, 20), speed: spd(6), fx: "bullet", poison: 30, poisonChance: 0.7, look: venomOrb(9),
@@ -980,7 +980,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // every structure inside it. A patch is four to thirty-six turrets
   // standing in a block — this is the tier that rots the whole block
   // instead of a corner of it, and it does it from six tiles out
-  weaver4: [
+  dartback4: [
     {
       name: "venom-spit", reload: t(90), mounts: 4, damage: 10, range: rng(6, 20), speed: spd(6),
       fx: "bullet", poison: 25, poisonChance: 0.8, look: venomOrb(8),
@@ -991,13 +991,13 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
       look: venomOrb(18, { trail: true }),
     },
   ],
-  // THE BOMB, FAST. The weaver5 drops the single-target spit altogether and
+  // THE BOMB, FAST. The dartback5 drops the single-target spit altogether and
   // throws nothing but area rot — three mounts on a one-second cycle, each
-  // one a weaver4's bomb with more reach behind it. It is the same weapon
+  // one a dartback4's bomb with more reach behind it. It is the same weapon
   // the tier below introduces, arriving often enough that a patch is never
   // out from under it, which is what a T5 of this family should be: not a
   // new idea, the family's idea at a rate nothing answers casually
-  weaver5: [
+  dartback5: [
     {
       name: "venom-bomb", reload: t(180), mounts: 3, damage: 18, splash: 160, splashRadius: u(136),
       range: rng(4, 62), speed: spd(4), fx: "shell", poison: 150, poisonChance: 1,
@@ -1315,19 +1315,19 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
     },
   ],
 
-  // ---- THE GRAPNELS, the starfish: NO WEAPON AT ALL ------------------
+  // ---- THE GRAPNELS, the starfish: NO WEAPON AT ALL ----------------
   //
   // THE ONLY BODIES ON THE ROSTER THAT NEVER PULL A TRIGGER. Every other
   // kind in this table attack-moves — it walks the field and fires at
-  // whatever comes inside its reach — and a starfish does neither: it
+  // whatever comes inside its reach — and a grapnel does neither: it
   // crawls to the core and it does not so much as look at a turret on the
   // way (Sim.updateUnitWeapons skips a body with no weapons outright, so
   // it does not even pay for the search).
   //
-  // WHAT IT DOES INSTEAD IS ANSWER. A hit that lands on a starfish has a
+  // WHAT IT DOES INSTEAD IS ANSWER. A hit that lands on a grapnel has a
   // chance of throwing a star back out of one of its five arms, and a
-  // starfish that DIES throws five at once, one down every arm
-  // (STARFISH_STARS below, levels.ts UnitStats.starburst, Sim.throwStar).
+  // grapnel that DIES throws five at once, one down every arm
+  // (GRAPNEL_STARS below, levels.ts UnitStats.starburst, Sim.throwStar).
   // So the family's whole output is a function of the board shooting at
   // it, which is the one shape no other family here has: a line that
   // opens up on a crawling star is a line the star is now shooting back
@@ -1335,21 +1335,21 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   //
   // The rounds are not weapons and are not in this table, because nothing
   // about them is a weapon: no reload, no mount, no aim, no target to
-  // pull a trigger. They are in STARFISH_STARS.
-  starfish1: [],
-  starfish2: [],
-  starfish3: [],
-  starfish4: [],
-  starfish5: [],
+  // pull a trigger. They are in GRAPNEL_STARS.
+  grapnel1: [],
+  grapnel2: [],
+  grapnel3: [],
+  grapnel4: [],
+  grapnel5: [],
 };
 
 /**
- * THE STAR — what a starfish throws, and the only round in the game that
+ * THE STAR — what a grapnel throws, and the only round in the game that
  * is not fired by a weapon.
  *
- * A starfish carries no gun (UNIT_WEAPONS, above): it crawls, and a hit
+ * A grapnel carries no gun (UNIT_WEAPONS, above): it crawls, and a hit
  * that lands on it has a chance of throwing ONE of these back out of one
- * of its five arms, and a starfish that dies throws FIVE, one down every
+ * of its five arms, and a grapnel that dies throws FIVE, one down every
  * arm (Sim.throwStar). So there is no reload, no mount, no aim and no
  * target that pulls a trigger — there is a round, a heading and how far
  * it is allowed to travel before it burns out.
@@ -1446,10 +1446,10 @@ const starOf = (
  * damage carried four misses; a star is thrown perhaps twice as often,
  * lands, and hits for about what one of those rounds did. The death
  * burst is where the family's weight actually is — five of these at once
- * is what a starfish is worth to the wave, and it is collected by the
+ * is what a grapnel is worth to the wave, and it is collected by the
  * board killing it.
  */
-export const STARFISH_STARS: readonly (readonly StarSpec[])[] = [
+export const GRAPNEL_STARS: readonly (readonly StarSpec[])[] = [
   // T1, the runt: one copper star, one building, nothing after it
   [starOf("plain", { damage: 150, range: u(110), speed: spd(5), homing: 16, look: star(9) })],
   // T2, the brute: the same round, heavier
@@ -1502,7 +1502,7 @@ export const STARFISH_STARS: readonly (readonly StarSpec[])[] = [
   ],
 ];
 
-for (const [i, tier] of STARFISH_STARS.entries())
+for (const [i, tier] of GRAPNEL_STARS.entries())
   for (const sp of tier) {
     if (sp.range <= 0 || sp.speed <= 0)
       throw new Error(`the tier-${i + 1} ${sp.element} star flies nowhere`);
@@ -1525,7 +1525,7 @@ for (const [i, tier] of STARFISH_STARS.entries())
 export const EXTRA_LOOKS: readonly ShotLook[] = [
   BOMBLET_LOOK,
   NUKE_LOOK,
-  ...STARFISH_STARS.flatMap((tier) => tier.map((sp) => sp.look)),
+  ...GRAPNEL_STARS.flatMap((tier) => tier.map((sp) => sp.look)),
 ];
 
 /** the most weapon slots any unit carries — the per-unit cooldown stride in the sim */

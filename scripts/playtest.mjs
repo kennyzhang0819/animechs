@@ -26,7 +26,8 @@
  *   --tier <n>       rung, 0-based (default 0 — no rolled mutators)
  *   --mutators a,b   mutators to play under (default none; intrinsic ones always apply)
  *   --families a,b,c the run's families, by key, in the order the deal walks them
- *                    (ground, weaver, groundSupport, air, naval, navalSupport, tusker).
+ *                    (ground, dartback, groundSupport, air, naval, navalSupport,
+ *                    tusker, grapnel).
  *                    Any number of them: each wave takes as many off the list as it
  *                    was authored wide, and the list turns a notch every wave —
  *                    default: the script as authored, which is ground, groundSupport, air
@@ -322,7 +323,7 @@ function play() {
   // THE ROUTES, one per movement layer, and WHAT EACH IS WORTH: the share
   // of the script's health that walks, flies or drives amphibious. A
   // naval wave-1 of runts is the water route's business, and a bot that
-  // spread its opening board along an empty weaver1 corridor would lose
+  // spread its opening board along an empty dartback1 corridor would lose
   // the map before learning that
   // the routes as walked (heatRoutes), falling back to the traced gradient
   // where the probe saw nothing on a layer the script sends later

@@ -111,8 +111,9 @@ export interface MapData {
  * Riverlands is "riverlands". They used to describe the terrain instead
  * (grass-open, tidewater), which meant the id and the name a player reads
  * were two different vocabularies and every lookup was a translation. A map
- * that is renamed is renamed in both places, and LEGACY_MAP_IDS in
- * progress.ts is where the old spellings are answered for.
+ * that is renamed is renamed in both places. Nothing answers for the old
+ * spelling: readMapPick (progress.ts) keeps only an id WORLDS still lists,
+ * so a save naming a renamed map reads as absent, which is Random.
  */
 export const OFFICIAL_MAP_IDS: readonly string[] = [
   // the campaign maps, in world order

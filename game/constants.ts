@@ -108,7 +108,7 @@ export const PAL = {
   /** Pal.heal — the support line's whole palette: starhart1's bolts, starhart2's
    *  arcs, starhart3's and starhart5's beams, the naval support's plasma */
   heal: pal(0x98ffa9),
-  /** the weaver1 line's purple: Pal.sap is the light, sapBullet the
+  /** the dartback1 line's purple: Pal.sap is the light, sapBullet the
    *  beam and shell face, sapBulletBack the shell rim and the blast sparks */
   sap: pal(0x665c9f),
   sapBullet: pal(0xbf92f9),
@@ -119,7 +119,7 @@ export const PAL = {
   unitFront: pal(0xffa665),
   unitBack: pal(0xd06b53),
   surge: pal(0xf3e979),
-  /** Liquids.slag.color — what a weaver2 spits */
+  /** Liquids.slag.color — what a dartback2 spits */
   slag: pal(0xffa166),
   // ---- THE FAMILY PALETTE, this game's own ----------------------------
   //
@@ -1208,7 +1208,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   //    on the one body plated thickly enough that everything else on the
   //    board is shaving twenty a hit off it.
   //  - `sort: "strongest"`, railhead's pick for railhead's reason: a gun
-  //    that fires this rarely cannot spend a shot on whichever weaver1
+  //    that fires this rarely cannot spend a shot on whichever dartback1
   //    wandered nearest.
   //  - `pierceCap: 1` and 550 damage on a 3.5-second clock. Against a
   //    crowd that is ONE dead chaff body every 3.5 seconds and five
@@ -1751,7 +1751,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // one shot deletes a queue until 1350 health has gone by and stops dead
   // there — nine runts, or an ironhide3 and a half. It kills a health
   // POOL, which is why it targets the STRONGEST thing in range rather than
-  // the nearest: spending the reload on a stray weaver1 is the one way to
+  // the nearest: spending the reload on a stray dartback1 is the one way to
   // waste it.
   railhead: {
     name: "Railhead",
@@ -1845,7 +1845,7 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   hive: "Shoots homing missiles that explode on contact.",
   whirl: "Shoots a fast stream of shells that burst into fragments.",
   deluge:
-    "Twin nozzles throw heavy balls of water and fire together. Each bursts into a huge cloud — the water leaves everything in it soaked and slow, the fire leaves it burning through its plating.",
+    "Throws balls of water and fire together. Each bursts into a large cloud: the water soaks and slows, the fire burns through plating.",
   fixer: "Repairs nearby buildings every few seconds.",
   restorer: "Repairs nearby buildings faster and over a wider area.",
   repeater: "Shoots heavy bullets from two barrels without stopping.",
@@ -2111,7 +2111,7 @@ export const HP_TINT: ReadonlyArray<readonly [number, number, number]> = [
  */
 export const DAMAGE_SMOKE_BELOW = 0.5;
 /** puffs a second at death's door, for an ironhide1-sized body; the sim scales
- *  it by the hitbox, so a weaver5 at the same health pours several times
+ *  it by the hitbox, so a dartback5 at the same health pours several times
  *  this. Mathf.chanceDelta-style: a per-second chance scaled by dt */
 export const DAMAGE_SMOKE_RATE = 5;
 /** seconds one puff lives — short, so a body that is healed stops
@@ -2144,9 +2144,9 @@ export const DAMAGE_SMOKE_LIFE = 0.55;
  * minutes of rot on a run that lasts twelve. The status quietly expired
  * somewhere around wave thirty.
  *
- * SO THE CROWD IS THE SCALING, AND THE TIER IS THE WEIGHT. A weaver1's
+ * SO THE CROWD IS THE SCALING, AND THE TIER IS THE WEIGHT. A dartback1's
  * spit is twelve health a second at two rolls in five, and what makes a
- * wave of them frightening is that there is a wave of them; a weaver5's
+ * wave of them frightening is that there is a wave of them; a dartback5's
  * bomb is a hundred and fifty across seventeen tiles, and what makes one
  * frightening is the one. The per-application rates used to top out at
  * ten a second for every tier alike, which against a pool that grows by
@@ -2230,8 +2230,8 @@ export const MERGE_MAX_STACK = 8;
 export const MERGE_GROWTH = 0.12;
 
 /**
- * THE GRAPNELS' FOLD (Sim.mergeStarfish) — the same arithmetic as the
- * squeeze above and none of its trigger. A starfish does not have to be
+ * THE GRAPNELS' FOLD (Sim.mergeGrapnel) — the same arithmetic as the
+ * squeeze above and none of its trigger. A grapnel does not have to be
  * crushed into one of its own to fold with it: it REACHES for the nearest
  * one and folds on purpose, which is the family's whole shape on a board.
  * Everything a fold moves is what the squeeze moves — health, maximum
@@ -2239,10 +2239,10 @@ export const MERGE_GROWTH = 0.12;
  * runts becomes a handful of very heavy runts that throw very heavy stars,
  * and the answer is to kill them before they find each other.
  *
- * STARFISH_MERGE_REACH is how far one looks, centre to EDGE like every
+ * GRAPNEL_MERGE_REACH is how far one looks, centre to EDGE like every
  * other neighbour scan in the sim, so a wide body is in reach as soon as
  * its arms are.
- * STARFISH_MERGE_PERIOD is how often it looks, in seconds — one attempt a
+ * GRAPNEL_MERGE_PERIOD is how often it looks, in seconds — one attempt a
  * period and never a banked one, exactly as the hungry rule eats.
  * WHERE IT STOPS IS NOT HERE. The ceiling is authored per kind, with the
  * rest of the trait (levels.ts UnitStats.starburst.merge, ten bodies —
@@ -2252,8 +2252,8 @@ export const MERGE_GROWTH = 0.12;
  * family whose trait is folding would be capped below its own ceiling by
  * the rule it shares with everybody else.
  */
-export const STARFISH_MERGE_REACH = 88;
-export const STARFISH_MERGE_PERIOD = 1;
+export const GRAPNEL_MERGE_REACH = 88;
+export const GRAPNEL_MERGE_PERIOD = 1;
 
 /**
  * FIRE ON A BUILDING (Tower.burnT, the Grapnels' fire star) — burning as

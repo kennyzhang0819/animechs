@@ -5,7 +5,7 @@
  * the grammar in full): every material a dark/light PAIR split at the
  * midline and nothing else for lighting, a fold or a band in the reversed
  * pair, NOTHING NARROWER THAN FOUR PIXELS, no dither, and every body drawn
- * AT ITS HITBOX on the turrets' 32 px a tile — a weaver1 on a 32 grid
+ * AT ITS HITBOX on the turrets' 32 px a tile — a dartback1 on a 32 grid
  * like a tacker, a stoop5 on 232. No overshoot: the quad is the box, and
  * an animal that reads too small is a BOX to raise (see HART_TIERS,
  * where the stag's went up a quarter) and never a drawing to spill.
@@ -238,7 +238,7 @@ export function hartLegged(T: IronTier): LegParts {
   };
 }
 
-// ── WEAVER ───────────────────────────────────────────────────────────────
+// ── DARTBACK ─────────────────────────────────────────────────────────────
 //
 // The poison frog (the Dartbacks): the silhouette is the whole animal,
 // and A FROG SEEN FROM ABOVE IS WIDE — a broad mass of folded thigh at

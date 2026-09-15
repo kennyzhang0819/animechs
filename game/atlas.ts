@@ -45,7 +45,7 @@ import {
 } from "./familyArt";
 import { IRON_TIERS, ironLegged, ironMech, type IronTier } from "./ironhideArt";
 import { TUSK_TIERS, tuskLegged, tuskMech } from "./tuskerArt";
-import { STARFISH_TIERS, starfishMech } from "./starfishArt";
+import { GRAPNEL_TIERS, grapnelMech } from "./grapnelArt";
 import { KING_TIER, king, kingGeom } from "./kingArt";
 
 /**
@@ -830,13 +830,13 @@ export const UV_IRONHIDE5_LEG_SIL = sprite("ironhide5-leg-sil", 256, [152, 124])
 export const UV_IRONHIDE5_WEAPON = sprite("ironhide5-weapon", 256, [83, 138]);
 export const UV_IRONHIDE5_WEAPON_SIL = sprite("ironhide5-weapon-sil", 256, [83, 138]);
 
-// the weaver1 line: the T1 a mech, the rest legged
-export const UV_WEAVER1_LEG = sprite("weaver1-leg", 64, 48);
-export const UV_WEAVER1_BASE = sprite("weaver1-base", 64, 48);
-export const UV_WEAVER1_BODY = sprite("weaver1", 64, 48);
-export const UV_WEAVER1_LEG_SIL = sprite("weaver1-leg-sil", 64, 48);
-export const UV_WEAVER1_BASE_SIL = sprite("weaver1-base-sil", 64, 48);
-export const UV_WEAVER1_BODY_SIL = sprite("weaver1-sil", 64, 48);
+// the dartback1 line: the T1 a mech, the rest legged
+export const UV_DARTBACK1_LEG = sprite("dartback1-leg", 64, 48);
+export const UV_DARTBACK1_BASE = sprite("dartback1-base", 64, 48);
+export const UV_DARTBACK1_BODY = sprite("dartback1", 64, 48);
+export const UV_DARTBACK1_LEG_SIL = sprite("dartback1-leg-sil", 64, 48);
+export const UV_DARTBACK1_BASE_SIL = sprite("dartback1-base-sil", 64, 48);
+export const UV_DARTBACK1_BODY_SIL = sprite("dartback1-sil", 64, 48);
 /**
  * The legged T2 and T3: body, mount plate and guns face +x on 128px
  * cells, feet the same on 64px ones. A JOINT is drawn with no rotation at
@@ -846,62 +846,62 @@ export const UV_WEAVER1_BODY_SIL = sprite("weaver1-sil", 64, 48);
  * as in Mindustry's own packer, and the leg art carries its dark edging
  * hand-drawn anyway.
  */
-export const UV_WEAVER2_BODY = sprite("weaver2", 128, [88, 64]);
-export const UV_WEAVER2_BASE = sprite("weaver2-base", 128, 64);
-export const UV_WEAVER2_WEAPON = sprite("weaver2-weapon", 128, [48, 56]);
-export const UV_WEAVER2_BODY_SIL = sprite("weaver2-sil", 128, [88, 64]);
-export const UV_WEAVER2_BASE_SIL = sprite("weaver2-base-sil", 128, 64);
-export const UV_WEAVER2_WEAPON_SIL = sprite("weaver2-weapon-sil", 128, [48, 56]);
-export const UV_WEAVER2_JOINT = upright("weaver2-joint", 64, 26);
-export const UV_WEAVER2_FOOT = sprite("weaver2-foot", 64, 40);
-export const UV_WEAVER2_JOINT_SIL = upright("weaver2-joint-sil", 64, 26);
-export const UV_WEAVER2_FOOT_SIL = sprite("weaver2-foot-sil", 64, 40);
-export const UV_WEAVER2_LEG = flat("weaver2-leg", 36, 26);
-export const UV_WEAVER2_LEG_BASE = flat("weaver2-leg-base", 36, 26);
-export const UV_WEAVER3_BODY = sprite("weaver3", 128, [94, 75]);
-export const UV_WEAVER3_WEAPON = sprite("weaver3-weapon", 128, [48, 56]);
-export const UV_WEAVER3_MOUNT = sprite("weaver3-mount", 128, 48);
-export const UV_WEAVER3_BODY_SIL = sprite("weaver3-sil", 128, [94, 75]);
-export const UV_WEAVER3_WEAPON_SIL = sprite("weaver3-weapon-sil", 128, [48, 56]);
-export const UV_WEAVER3_MOUNT_SIL = sprite("weaver3-mount-sil", 128, 48);
-export const UV_WEAVER3_JOINT = upright("weaver3-joint", 64, 32);
-export const UV_WEAVER3_FOOT = sprite("weaver3-foot", 64, 46);
-export const UV_WEAVER3_JOINT_SIL = upright("weaver3-joint-sil", 64, 32);
-export const UV_WEAVER3_FOOT_SIL = sprite("weaver3-foot-sil", 64, 46);
-export const UV_WEAVER3_LEG = flat("weaver3-leg", 48, 34);
-export const UV_WEAVER3_LEG_BASE = flat("weaver3-leg-base", 48, 34);
+export const UV_DARTBACK2_BODY = sprite("dartback2", 128, [88, 64]);
+export const UV_DARTBACK2_BASE = sprite("dartback2-base", 128, 64);
+export const UV_DARTBACK2_WEAPON = sprite("dartback2-weapon", 128, [48, 56]);
+export const UV_DARTBACK2_BODY_SIL = sprite("dartback2-sil", 128, [88, 64]);
+export const UV_DARTBACK2_BASE_SIL = sprite("dartback2-base-sil", 128, 64);
+export const UV_DARTBACK2_WEAPON_SIL = sprite("dartback2-weapon-sil", 128, [48, 56]);
+export const UV_DARTBACK2_JOINT = upright("dartback2-joint", 64, 26);
+export const UV_DARTBACK2_FOOT = sprite("dartback2-foot", 64, 40);
+export const UV_DARTBACK2_JOINT_SIL = upright("dartback2-joint-sil", 64, 26);
+export const UV_DARTBACK2_FOOT_SIL = sprite("dartback2-foot-sil", 64, 40);
+export const UV_DARTBACK2_LEG = flat("dartback2-leg", 36, 26);
+export const UV_DARTBACK2_LEG_BASE = flat("dartback2-leg-base", 36, 26);
+export const UV_DARTBACK3_BODY = sprite("dartback3", 128, [94, 75]);
+export const UV_DARTBACK3_WEAPON = sprite("dartback3-weapon", 128, [48, 56]);
+export const UV_DARTBACK3_MOUNT = sprite("dartback3-mount", 128, 48);
+export const UV_DARTBACK3_BODY_SIL = sprite("dartback3-sil", 128, [94, 75]);
+export const UV_DARTBACK3_WEAPON_SIL = sprite("dartback3-weapon-sil", 128, [48, 56]);
+export const UV_DARTBACK3_MOUNT_SIL = sprite("dartback3-mount-sil", 128, 48);
+export const UV_DARTBACK3_JOINT = upright("dartback3-joint", 64, 32);
+export const UV_DARTBACK3_FOOT = sprite("dartback3-foot", 64, 46);
+export const UV_DARTBACK3_JOINT_SIL = upright("dartback3-joint-sil", 64, 32);
+export const UV_DARTBACK3_FOOT_SIL = sprite("dartback3-foot-sil", 64, 46);
+export const UV_DARTBACK3_LEG = flat("dartback3-leg", 48, 34);
+export const UV_DARTBACK3_LEG_BASE = flat("dartback3-leg-base", 48, 34);
 /**
- * The T4: hull and guns on 256px cells — the sap gun is the weaver3's own
+ * The T4: hull and guns on 256px cells — the sap gun is the dartback3's own
  * weapon sprite packed a second time, because a legged unit draws every
- * gun at its own LegArt.sprite and weaver4's is 256. Its feet and shoulder
+ * gun at its own LegArt.sprite and dartback4's is 256. Its feet and shoulder
  * plates ride 128px cells (their 70px sources keep a wide margin there),
  * and its two leg segments the exact rects their art occupies.
  */
-export const UV_WEAVER4_BODY = sprite("weaver4", 256, 128);
-export const UV_WEAVER4_BODY_SIL = sprite("weaver4-sil", 256, 128);
-export const UV_WEAVER4_WEAPON = sprite("weaver4-weapon", 256, [48, 56]);
-export const UV_WEAVER4_WEAPON_SIL = sprite("weaver4-weapon-sil", 256, [48, 56]);
-export const UV_WEAVER4_MOUNT = sprite("weaver4-mount", 256, [70, 97]);
-export const UV_WEAVER4_MOUNT_SIL = sprite("weaver4-mount-sil", 256, [70, 97]);
-export const UV_WEAVER4_FOOT = sprite("weaver4-foot", 128, 70);
-export const UV_WEAVER4_FOOT_SIL = sprite("weaver4-foot-sil", 128, 70);
-export const UV_WEAVER4_JOINT_BASE = sprite("weaver4-joint-base", 128, 70);
-export const UV_WEAVER4_JOINT_BASE_SIL = sprite("weaver4-joint-base-sil", 128, 70);
-export const UV_WEAVER4_LEG = flat("weaver4-leg", 56, 56);
-export const UV_WEAVER4_LEG_BASE = flat("weaver4-leg-base", 104, 64);
-// the T5: the weaver4's frame with two more legs, and the one centred
-// cannon. weaver5's lower segment is 270px of art for a 150px upper one:
+export const UV_DARTBACK4_BODY = sprite("dartback4", 256, 128);
+export const UV_DARTBACK4_BODY_SIL = sprite("dartback4-sil", 256, 128);
+export const UV_DARTBACK4_WEAPON = sprite("dartback4-weapon", 256, [48, 56]);
+export const UV_DARTBACK4_WEAPON_SIL = sprite("dartback4-weapon-sil", 256, [48, 56]);
+export const UV_DARTBACK4_MOUNT = sprite("dartback4-mount", 256, [70, 97]);
+export const UV_DARTBACK4_MOUNT_SIL = sprite("dartback4-mount-sil", 256, [70, 97]);
+export const UV_DARTBACK4_FOOT = sprite("dartback4-foot", 128, 70);
+export const UV_DARTBACK4_FOOT_SIL = sprite("dartback4-foot-sil", 128, 70);
+export const UV_DARTBACK4_JOINT_BASE = sprite("dartback4-joint-base", 128, 70);
+export const UV_DARTBACK4_JOINT_BASE_SIL = sprite("dartback4-joint-base-sil", 128, 70);
+export const UV_DARTBACK4_LEG = flat("dartback4-leg", 56, 56);
+export const UV_DARTBACK4_LEG_BASE = flat("dartback4-leg-base", 104, 64);
+// the T5: the dartback4's frame with two more legs, and the one centred
+// cannon. dartback5's lower segment is 270px of art for a 150px upper one:
 // legExtension 20 runs it back over its own knee
-export const UV_WEAVER5_BODY = sprite("weaver5", 256, [160, 190]);
-export const UV_WEAVER5_BODY_SIL = sprite("weaver5-sil", 256, [160, 190]);
-export const UV_WEAVER5_CANNON = sprite("weaver5-cannon", 256, [206, 220]);
-export const UV_WEAVER5_CANNON_SIL = sprite("weaver5-cannon-sil", 256, [206, 220]);
-export const UV_WEAVER5_JOINT_BASE = sprite("weaver5-joint-base", 128, 70);
-export const UV_WEAVER5_JOINT_BASE_SIL = sprite("weaver5-joint-base-sil", 128, 70);
-export const UV_WEAVER5_FOOT = sprite("weaver5-foot", 128, 90);
-export const UV_WEAVER5_FOOT_SIL = sprite("weaver5-foot-sil", 128, 90);
-export const UV_WEAVER5_LEG = flat("weaver5-leg", 150, 72);
-export const UV_WEAVER5_LEG_BASE = flat("weaver5-leg-base", 270, 64);
+export const UV_DARTBACK5_BODY = sprite("dartback5", 256, [160, 190]);
+export const UV_DARTBACK5_BODY_SIL = sprite("dartback5-sil", 256, [160, 190]);
+export const UV_DARTBACK5_CANNON = sprite("dartback5-cannon", 256, [206, 220]);
+export const UV_DARTBACK5_CANNON_SIL = sprite("dartback5-cannon-sil", 256, [206, 220]);
+export const UV_DARTBACK5_JOINT_BASE = sprite("dartback5-joint-base", 128, 70);
+export const UV_DARTBACK5_JOINT_BASE_SIL = sprite("dartback5-joint-base-sil", 128, 70);
+export const UV_DARTBACK5_FOOT = sprite("dartback5-foot", 128, 90);
+export const UV_DARTBACK5_FOOT_SIL = sprite("dartback5-foot-sil", 128, 90);
+export const UV_DARTBACK5_LEG = flat("dartback5-leg", 150, 72);
+export const UV_DARTBACK5_LEG_BASE = flat("dartback5-leg-base", 270, 64);
 
 // the support line: T1 and T2 on 64px cells. starhart2's 68x58 body and
 // 64px leg overhang their cells with transparent padding only, which the
@@ -944,8 +944,8 @@ export const UV_REPAIR_BEAM = sprite("repair-beam", 256, 48);
 export const UV_REPAIR_BEAM_SIL = sprite("repair-beam-sil", 256, 48);
 /**
  * The T5, the only legged unit wearing the full set of leg parts: a mount
- * plate like the weaver2, a knee cap like the weaver2 and weaver3, AND a
- * shoulder plate like the weaver4 and weaver5. Four legs of 14 world units
+ * plate like the dartback2, a knee cap like the dartback2 and dartback3, AND a
+ * shoulder plate like the dartback4 and dartback5. Four legs of 14 world units
  * on mounts 11 out: almost the whole span is the mount offset, so the
  * segments are stubby and very broad — a 68px stroke on a 30px segment.
  */
@@ -1050,12 +1050,12 @@ export const TUSK5_CELLS = tuskLegCells(5, TUSK5, 256, 128);
 /**
  * THE GRAPNELS' CELLS, and the second family to ask the packer for room of
  * its own rather than draw over a Mindustry tree (the Tuskers were the
- * first, above). There is no upstream `starfish3` and no sprite file for
+ * first, above). There is no upstream `grapnel3` and no sprite file for
  * one, so with ANIMAL_ART off these cells are never painted and the family
  * sits on the shelf (levels.ts SHELVED_FAMILIES).
  *
  * Every tier is the mech rig's three parts on one cell: a body drawn at
- * its hitbox in native px (36, 52, 72, 116, 148 — starfishArt.ts) on the
+ * its hitbox in native px (36, 52, 72, 116, 148 — grapnelArt.ts) on the
  * smallest 64-multiple cell that holds it, so the world px per native px
  * is the same 0.625 the rest of the sheet has. The `leg` cell is this
  * family's ROWING ARMS rather than any kind of foot, and it is the same
@@ -1063,18 +1063,18 @@ export const TUSK5_CELLS = tuskLegCells(5, TUSK5, 256, 128);
  * animal — the rig slides the whole cell, not a sprite cut to the limb.
  */
 const sfMechCells = (t: number, n: number, cell: number) => ({
-  body: sprite(`starfish${t}`, cell, n),
-  base: sprite(`starfish${t}-base`, cell, n),
-  leg: sprite(`starfish${t}-leg`, cell, n),
-  bodySil: sprite(`starfish${t}-sil`, cell, n),
-  baseSil: sprite(`starfish${t}-base-sil`, cell, n),
-  legSil: sprite(`starfish${t}-leg-sil`, cell, n),
+  body: sprite(`grapnel${t}`, cell, n),
+  base: sprite(`grapnel${t}-base`, cell, n),
+  leg: sprite(`grapnel${t}-leg`, cell, n),
+  bodySil: sprite(`grapnel${t}-sil`, cell, n),
+  baseSil: sprite(`grapnel${t}-base-sil`, cell, n),
+  legSil: sprite(`grapnel${t}-leg-sil`, cell, n),
 });
-export const SF1_CELLS = sfMechCells(1, STARFISH_TIERS[0].n, 64);
-export const SF2_CELLS = sfMechCells(2, STARFISH_TIERS[1].n, 64);
-export const SF3_CELLS = sfMechCells(3, STARFISH_TIERS[2].n, 128);
-export const SF4_CELLS = sfMechCells(4, STARFISH_TIERS[3].n, 128);
-export const SF5_CELLS = sfMechCells(5, STARFISH_TIERS[4].n, 256);
+export const SF1_CELLS = sfMechCells(1, GRAPNEL_TIERS[0].n, 64);
+export const SF2_CELLS = sfMechCells(2, GRAPNEL_TIERS[1].n, 64);
+export const SF3_CELLS = sfMechCells(3, GRAPNEL_TIERS[2].n, 128);
+export const SF4_CELLS = sfMechCells(4, GRAPNEL_TIERS[3].n, 128);
+export const SF5_CELLS = sfMechCells(5, GRAPNEL_TIERS[4].n, 256);
 
 /**
  * WHAT THE BOSS DRAWS AT: one and a half world px per native px against
@@ -1139,12 +1139,12 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   ironhide3: { uv: UV_IRONHIDE3_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
   ironhide4: { uv: UV_IRONHIDE4_BODY, sprite: UNIT_SPRITE * 4 }, // 256px cell, same px scale
   ironhide5: { uv: UV_IRONHIDE5_BODY, sprite: UNIT_SPRITE * 4 },
-  weaver1: { uv: UV_WEAVER1_BODY, sprite: UNIT_SPRITE },
+  dartback1: { uv: UV_DARTBACK1_BODY, sprite: UNIT_SPRITE },
   // 128px cells, like the ironhide3: the legged pair's bodies outgrow 64
-  weaver2: { uv: UV_WEAVER2_BODY, sprite: UNIT_SPRITE * 2 },
-  weaver3: { uv: UV_WEAVER3_BODY, sprite: UNIT_SPRITE * 2 },
-  weaver4: { uv: UV_WEAVER4_BODY, sprite: UNIT_SPRITE * 4 }, // 256px cell, same px scale
-  weaver5: { uv: UV_WEAVER5_BODY, sprite: UNIT_SPRITE * 4 },
+  dartback2: { uv: UV_DARTBACK2_BODY, sprite: UNIT_SPRITE * 2 },
+  dartback3: { uv: UV_DARTBACK3_BODY, sprite: UNIT_SPRITE * 2 },
+  dartback4: { uv: UV_DARTBACK4_BODY, sprite: UNIT_SPRITE * 4 }, // 256px cell, same px scale
+  dartback5: { uv: UV_DARTBACK5_BODY, sprite: UNIT_SPRITE * 4 },
   starhart1: { uv: UV_STARHART1_BODY, sprite: UNIT_SPRITE },
   starhart2: { uv: UV_STARHART2_BODY, sprite: UNIT_SPRITE },
   starhart3: { uv: UV_STARHART3_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
@@ -1193,11 +1193,11 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   tusker3: { uv: TUSK3_CELLS.body, sprite: UNIT_SPRITE * 2 },
   tusker4: { uv: TUSK4_CELLS.body, sprite: UNIT_SPRITE * 4 },
   tusker5: { uv: TUSK5_CELLS.body, sprite: UNIT_SPRITE * 4 },
-  starfish1: { uv: SF1_CELLS.body, sprite: UNIT_SPRITE },
-  starfish2: { uv: SF2_CELLS.body, sprite: UNIT_SPRITE },
-  starfish3: { uv: SF3_CELLS.body, sprite: UNIT_SPRITE * 2 },
-  starfish4: { uv: SF4_CELLS.body, sprite: UNIT_SPRITE * 2 },
-  starfish5: { uv: SF5_CELLS.body, sprite: UNIT_SPRITE * 4 },
+  grapnel1: { uv: SF1_CELLS.body, sprite: UNIT_SPRITE },
+  grapnel2: { uv: SF2_CELLS.body, sprite: UNIT_SPRITE },
+  grapnel3: { uv: SF3_CELLS.body, sprite: UNIT_SPRITE * 2 },
+  grapnel4: { uv: SF4_CELLS.body, sprite: UNIT_SPRITE * 2 },
+  grapnel5: { uv: SF5_CELLS.body, sprite: UNIT_SPRITE * 4 },
 };
 
 // Mindustry world units → px (CELL / 8, see constants.ts)
@@ -1253,7 +1253,7 @@ export interface MechArt {
   /**
    * every Weapon bolted to the chassis, each mirrored to both sides
    * (Weapon.mirror, true on all of them). Empty when the type's weapons
-   * have no sprite at all — weaver1's explosion IS its weapon — and more
+   * have no sprite at all — dartback1's explosion IS its weapon — and more
    * than one once a hull carries mounts as well as a main gun.
    */
   guns: readonly LegGun[];
@@ -1262,7 +1262,7 @@ export interface MechArt {
    * HOW MUCH THE SWINGING SIDE SHORTENS, as a fraction of the part's own
    * quad (default LEG_LIFT). Mindustry's mech lifts the swinging leg and
    * draws it half length, which is a leg leaving the ground seen from
-   * above; a body whose "legs" are ARMS LYING FLAT (starfishArt.ts) never
+   * above; a body whose "legs" are ARMS LYING FLAT (grapnelArt.ts) never
    * leaves the ground at all, and half is a squash rather than a step —
    * so that family asks for a tenth and gets a reach instead of a stamp.
    */
@@ -1413,15 +1413,15 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
   },
   // no gun sprite — its Weapon fires only via shootOnDeath. mechSideSway
   // 0.25 is under half the default: it scuttles rather than swaggers
-  weaver1: {
-    leg: UV_WEAVER1_LEG,
-    base: UV_WEAVER1_BASE,
-    body: UV_WEAVER1_BODY,
+  dartback1: {
+    leg: UV_DARTBACK1_LEG,
+    base: UV_DARTBACK1_BASE,
+    body: UV_DARTBACK1_BODY,
     guns: [],
     stride: 4 * MU,
     sideSway: 0.25 * MU,
     sprite: UNIT_SPRITE,
-    sil: { leg: UV_WEAVER1_LEG_SIL, base: UV_WEAVER1_BASE_SIL, body: UV_WEAVER1_BODY_SIL },
+    sil: { leg: UV_DARTBACK1_LEG_SIL, base: UV_DARTBACK1_BASE_SIL, body: UV_DARTBACK1_BODY_SIL },
   },
 };
 
@@ -1441,7 +1441,7 @@ export interface LegGun {
    * Weapon.mirror, true on nearly every stock weapon: the mount is drawn
    * on BOTH sides of the hull, the far one from the same sprite flipped.
    * false draws it once, and is what a single centered gun wants —
-   * weaver5's cannon sits at x=0, so mirroring it would stack two quads in
+   * dartback5's cannon sits at x=0, so mirroring it would stack two quads in
    * the same place and double-composite the sprite's feathered rim.
    */
   mirror?: boolean;
@@ -1450,9 +1450,9 @@ export interface LegGun {
 /** part art for a legged (LegsUnit) ground unit — see LegSpec for its gait */
 export interface LegArt {
   body: UVRect;
-  /** Mindustry baseRegion, the plate the legs mount to; weaver3 has none */
+  /** Mindustry baseRegion, the plate the legs mount to; dartback3 has none */
   base?: UVRect;
-  /** Mindustry jointRegion, the cap over the KNEE — weaver4 has none, and
+  /** Mindustry jointRegion, the cap over the KNEE — dartback4 has none, and
    * its elbow is left as the bare overlap of the two segments */
   joint?: UVRect;
   /**
@@ -1480,102 +1480,102 @@ export interface LegArt {
 }
 
 export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
-  // weaver2-weapon x=7, top=false: a pair of slag guns slung under the shell
-  weaver2: {
-    body: UV_WEAVER2_BODY,
-    base: UV_WEAVER2_BASE,
-    joint: UV_WEAVER2_JOINT,
-    foot: UV_WEAVER2_FOOT,
-    leg: UV_WEAVER2_LEG,
-    legBase: UV_WEAVER2_LEG_BASE,
+  // dartback2-weapon x=7, top=false: a pair of slag guns slung under the shell
+  dartback2: {
+    body: UV_DARTBACK2_BODY,
+    base: UV_DARTBACK2_BASE,
+    joint: UV_DARTBACK2_JOINT,
+    foot: UV_DARTBACK2_FOOT,
+    leg: UV_DARTBACK2_LEG,
+    legBase: UV_DARTBACK2_LEG_BASE,
     legStroke: 26 * PX,
     legBaseStroke: 26 * PX,
-    guns: [{ uv: UV_WEAVER2_WEAPON, sil: UV_WEAVER2_WEAPON_SIL, x: 7 * MU, y: 0, top: false }],
+    guns: [{ uv: UV_DARTBACK2_WEAPON, sil: UV_DARTBACK2_WEAPON_SIL, x: 7 * MU, y: 0, top: false }],
     sprite: UNIT_SPRITE * 2,
     small: UNIT_SPRITE,
     sil: {
-      body: UV_WEAVER2_BODY_SIL,
-      base: UV_WEAVER2_BASE_SIL,
-      joint: UV_WEAVER2_JOINT_SIL,
-      foot: UV_WEAVER2_FOOT_SIL,
+      body: UV_DARTBACK2_BODY_SIL,
+      base: UV_DARTBACK2_BASE_SIL,
+      joint: UV_DARTBACK2_JOINT_SIL,
+      foot: UV_DARTBACK2_FOOT_SIL,
     },
   },
   // two weapon pairs over the body: the long sap gun (x=8.5, y=-1.5) and
   // the small purple mount (x=4, y=3). Both rotate to track a target in
   // Mindustry; these enemies never shoot, so they ride the body's facing
-  weaver3: {
-    body: UV_WEAVER3_BODY,
-    joint: UV_WEAVER3_JOINT,
-    foot: UV_WEAVER3_FOOT,
-    leg: UV_WEAVER3_LEG,
-    legBase: UV_WEAVER3_LEG_BASE,
+  dartback3: {
+    body: UV_DARTBACK3_BODY,
+    joint: UV_DARTBACK3_JOINT,
+    foot: UV_DARTBACK3_FOOT,
+    leg: UV_DARTBACK3_LEG,
+    legBase: UV_DARTBACK3_LEG_BASE,
     legStroke: 34 * PX,
     legBaseStroke: 34 * PX,
     guns: [
-      { uv: UV_WEAVER3_WEAPON, sil: UV_WEAVER3_WEAPON_SIL, x: 8.5 * MU, y: -1.5 * MU, top: true },
-      { uv: UV_WEAVER3_MOUNT, sil: UV_WEAVER3_MOUNT_SIL, x: 4 * MU, y: 3 * MU, top: true },
+      { uv: UV_DARTBACK3_WEAPON, sil: UV_DARTBACK3_WEAPON_SIL, x: 8.5 * MU, y: -1.5 * MU, top: true },
+      { uv: UV_DARTBACK3_MOUNT, sil: UV_DARTBACK3_MOUNT_SIL, x: 4 * MU, y: 3 * MU, top: true },
     ],
     sprite: UNIT_SPRITE * 2,
     small: UNIT_SPRITE,
-    sil: { body: UV_WEAVER3_BODY_SIL, joint: UV_WEAVER3_JOINT_SIL, foot: UV_WEAVER3_FOOT_SIL },
+    sil: { body: UV_DARTBACK3_BODY_SIL, joint: UV_DARTBACK3_JOINT_SIL, foot: UV_DARTBACK3_FOOT_SIL },
   },
   /**
-   * The weaver1 line's T4 — the same six-leg frame as the weaver3 at more
+   * The dartback1 line's T4 — the same six-leg frame as the dartback3 at more
    * than twice the reach, and the first unit on the roster whose knee has
-   * no cap: weaver4 ships a weaver4-joint-base instead, a shoulder plate
+   * no cap: dartback4 ships a dartback4-joint-base instead, a shoulder plate
    * drawn over all six MOUNTS once every leg is down.
    *
-   * Its guns are the weaver3's sap weapon three times over (x=4/9/14 down
+   * Its guns are the dartback3's sap weapon three times over (x=4/9/14 down
    * the flank, each mirrored) topped by one large purple artillery mount
-   * at x=9, y=-7 — eight gun quads, where the weaver3 carries four.
+   * at x=9, y=-7 — eight gun quads, where the dartback3 carries four.
    */
-  weaver4: {
-    body: UV_WEAVER4_BODY,
-    baseJoint: UV_WEAVER4_JOINT_BASE,
-    foot: UV_WEAVER4_FOOT,
-    leg: UV_WEAVER4_LEG,
-    legBase: UV_WEAVER4_LEG_BASE,
+  dartback4: {
+    body: UV_DARTBACK4_BODY,
+    baseJoint: UV_DARTBACK4_JOINT_BASE,
+    foot: UV_DARTBACK4_FOOT,
+    leg: UV_DARTBACK4_LEG,
+    legBase: UV_DARTBACK4_LEG_BASE,
     legStroke: 56 * PX,
     legBaseStroke: 64 * PX,
     guns: [
-      { uv: UV_WEAVER4_WEAPON, sil: UV_WEAVER4_WEAPON_SIL, x: 4 * MU, y: 8 * MU, top: true },
-      { uv: UV_WEAVER4_WEAPON, sil: UV_WEAVER4_WEAPON_SIL, x: 9 * MU, y: 6 * MU, top: true },
-      { uv: UV_WEAVER4_WEAPON, sil: UV_WEAVER4_WEAPON_SIL, x: 14 * MU, y: 0, top: true },
-      { uv: UV_WEAVER4_MOUNT, sil: UV_WEAVER4_MOUNT_SIL, x: 9 * MU, y: -7 * MU, top: true },
+      { uv: UV_DARTBACK4_WEAPON, sil: UV_DARTBACK4_WEAPON_SIL, x: 4 * MU, y: 8 * MU, top: true },
+      { uv: UV_DARTBACK4_WEAPON, sil: UV_DARTBACK4_WEAPON_SIL, x: 9 * MU, y: 6 * MU, top: true },
+      { uv: UV_DARTBACK4_WEAPON, sil: UV_DARTBACK4_WEAPON_SIL, x: 14 * MU, y: 0, top: true },
+      { uv: UV_DARTBACK4_MOUNT, sil: UV_DARTBACK4_MOUNT_SIL, x: 9 * MU, y: -7 * MU, top: true },
     ],
     sprite: UNIT_SPRITE * 4,
     small: UNIT_SPRITE * 2,
     sil: {
-      body: UV_WEAVER4_BODY_SIL,
-      baseJoint: UV_WEAVER4_JOINT_BASE_SIL,
-      foot: UV_WEAVER4_FOOT_SIL,
+      body: UV_DARTBACK4_BODY_SIL,
+      baseJoint: UV_DARTBACK4_JOINT_BASE_SIL,
+      foot: UV_DARTBACK4_FOOT_SIL,
     },
   },
   /**
-   * The weaver1 line's T5 — the weaver4's frame with two more legs and two
+   * The dartback1 line's T5 — the dartback4's frame with two more legs and two
    * and a half times the reach, and the only unit that carries BOTH gun
-   * kinds at once: the weaver4's large purple mount, mirrored to x=11,
-   * y=-5, and one weaver5-cannon dead on the centreline at y=-14. That
+   * kinds at once: the dartback4's large purple mount, mirrored to x=11,
+   * y=-5, and one dartback5-cannon dead on the centreline at y=-14. That
    * cannon is Weapon.mirror=false, the roster's only unmirrored gun with a
    * sprite, so it draws once rather than twice over itself.
    *
-   * The mount cell is the weaver4's own UV_WEAVER4_MOUNT: same sprite, same
+   * The mount cell is the dartback4's own UV_DARTBACK4_MOUNT: same sprite, same
    * 256px cell, same world scale, so there is nothing to gain by packing a
-   * second copy. Like the weaver4 it has no knee cap, only a shoulder plate.
+   * second copy. Like the dartback4 it has no knee cap, only a shoulder plate.
    */
-  weaver5: {
-    body: UV_WEAVER5_BODY,
-    baseJoint: UV_WEAVER5_JOINT_BASE,
-    foot: UV_WEAVER5_FOOT,
-    leg: UV_WEAVER5_LEG,
-    legBase: UV_WEAVER5_LEG_BASE,
+  dartback5: {
+    body: UV_DARTBACK5_BODY,
+    baseJoint: UV_DARTBACK5_JOINT_BASE,
+    foot: UV_DARTBACK5_FOOT,
+    leg: UV_DARTBACK5_LEG,
+    legBase: UV_DARTBACK5_LEG_BASE,
     legStroke: 72 * PX,
     legBaseStroke: 64 * PX,
     guns: [
-      { uv: UV_WEAVER4_MOUNT, sil: UV_WEAVER4_MOUNT_SIL, x: 11 * MU, y: -5 * MU, top: true },
+      { uv: UV_DARTBACK4_MOUNT, sil: UV_DARTBACK4_MOUNT_SIL, x: 11 * MU, y: -5 * MU, top: true },
       {
-        uv: UV_WEAVER5_CANNON,
-        sil: UV_WEAVER5_CANNON_SIL,
+        uv: UV_DARTBACK5_CANNON,
+        sil: UV_DARTBACK5_CANNON_SIL,
         x: 0,
         y: -14 * MU,
         top: true,
@@ -1585,16 +1585,16 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
     sprite: UNIT_SPRITE * 4,
     small: UNIT_SPRITE * 2,
     sil: {
-      body: UV_WEAVER5_BODY_SIL,
-      baseJoint: UV_WEAVER5_JOINT_BASE_SIL,
-      foot: UV_WEAVER5_FOOT_SIL,
+      body: UV_DARTBACK5_BODY_SIL,
+      baseJoint: UV_DARTBACK5_JOINT_BASE_SIL,
+      foot: UV_DARTBACK5_FOOT_SIL,
     },
   },
   /**
    * The support line's T5, and the only legged unit on the roster wearing
-   * the full set of leg parts: a mount plate (baseRegion) like the weaver2,
-   * a knee cap (jointRegion) like the weaver2 and weaver3, AND a shoulder
-   * plate (baseJointRegion) like the weaver4 and weaver5.
+   * the full set of leg parts: a mount plate (baseRegion) like the dartback2,
+   * a knee cap (jointRegion) like the dartback2 and dartback3, AND a shoulder
+   * plate (baseJointRegion) like the dartback4 and dartback5.
    *
    * It carries no gun at all. Mindustry's Weapon("starhart5-weapon") names a
    * region the sprite set does not contain — only a -heat overlay exists —
@@ -1673,21 +1673,21 @@ export const UV_IRONHIDE4_LEG_BASE_SEG = flat("ironhide4-leg-base-seg", 64, IRON
 export const UV_IRONHIDE5_LEG_SEG = flat("ironhide5-leg-seg", 64, IRON5.th);
 export const UV_IRONHIDE5_LEG_BASE_SEG = flat("ironhide5-leg-base-seg", 64, IRON5.sh);
 /** the frog's parts the venom line's rigs never had — knees for the
- *  weaver4 and weaver5 — and every legged tier's segments of hide; the
+ *  dartback4 and dartback5 — and every legged tier's segments of hide; the
  *  rest of its parts go on in the venom line's own cells, the runt's on
- *  the weaver1 mech's */
-export const UV_WEAVER4_JOINT = upright("weaver4-joint", 128, 128);
-export const UV_WEAVER4_JOINT_SIL = upright("weaver4-joint-sil", 128, 128);
-export const UV_WEAVER5_JOINT = upright("weaver5-joint", 128, 128);
-export const UV_WEAVER5_JOINT_SIL = upright("weaver5-joint-sil", 128, 128);
-export const UV_WEAVER2_LEG_SEG = flat("weaver2-leg-seg", 64, FROG_TIERS[1].th);
-export const UV_WEAVER2_LEG_BASE_SEG = flat("weaver2-leg-base-seg", 64, FROG_TIERS[1].sh);
-export const UV_WEAVER3_LEG_SEG = flat("weaver3-leg-seg", 64, FROG_TIERS[2].th);
-export const UV_WEAVER3_LEG_BASE_SEG = flat("weaver3-leg-base-seg", 64, FROG_TIERS[2].sh);
-export const UV_WEAVER4_LEG_SEG = flat("weaver4-leg-seg", 64, FROG_TIERS[3].th);
-export const UV_WEAVER4_LEG_BASE_SEG = flat("weaver4-leg-base-seg", 64, FROG_TIERS[3].sh);
-export const UV_WEAVER5_LEG_SEG = flat("weaver5-leg-seg", 64, FROG_TIERS[4].th);
-export const UV_WEAVER5_LEG_BASE_SEG = flat("weaver5-leg-base-seg", 64, FROG_TIERS[4].sh);
+ *  the dartback1 mech's */
+export const UV_DARTBACK4_JOINT = upright("dartback4-joint", 128, 128);
+export const UV_DARTBACK4_JOINT_SIL = upright("dartback4-joint-sil", 128, 128);
+export const UV_DARTBACK5_JOINT = upright("dartback5-joint", 128, 128);
+export const UV_DARTBACK5_JOINT_SIL = upright("dartback5-joint-sil", 128, 128);
+export const UV_DARTBACK2_LEG_SEG = flat("dartback2-leg-seg", 64, FROG_TIERS[1].th);
+export const UV_DARTBACK2_LEG_BASE_SEG = flat("dartback2-leg-base-seg", 64, FROG_TIERS[1].sh);
+export const UV_DARTBACK3_LEG_SEG = flat("dartback3-leg-seg", 64, FROG_TIERS[2].th);
+export const UV_DARTBACK3_LEG_BASE_SEG = flat("dartback3-leg-base-seg", 64, FROG_TIERS[2].sh);
+export const UV_DARTBACK4_LEG_SEG = flat("dartback4-leg-seg", 64, FROG_TIERS[3].th);
+export const UV_DARTBACK4_LEG_BASE_SEG = flat("dartback4-leg-base-seg", 64, FROG_TIERS[3].sh);
+export const UV_DARTBACK5_LEG_SEG = flat("dartback5-leg-seg", 64, FROG_TIERS[4].th);
+export const UV_DARTBACK5_LEG_BASE_SEG = flat("dartback5-leg-base-seg", 64, FROG_TIERS[4].sh);
 /** the bats', mantas' and narwhals' bodies and wings, apart, each on a
  *  cell one px over its art (FlyerTier n/bw/nw): the body is drawn on the
  *  composed grid, since a hull is longer than a wing is wide, and packed
@@ -1851,12 +1851,12 @@ if (ANIMAL_ART) {
     },
   };
 
-  // ---- Weaver ----
-  // the frog: the runt keeps the weaver1 mech's rig and cells (feet tucked,
-  // guns off — the venom is drawn live, never off a sprite), weaver2 up
+  // ---- Dartback ----
+  // the frog: the runt keeps the dartback1 mech's rig and cells (feet tucked,
+  // guns off — the venom is drawn live, never off a sprite), dartback2 up
   // keep the venom line's legged rig on four legs, with segments of their
-  // own and a knee the weaver4 and weaver5 never had
-  MECH_ART.weaver1 = { ...MECH_ART.weaver1!, guns: [], stride: FROG_TIERS[0].stride * PX };
+  // own and a knee the dartback4 and dartback5 never had
+  MECH_ART.dartback1 = { ...MECH_ART.dartback1!, guns: [], stride: FROG_TIERS[0].stride * PX };
   const frogLegArt = (k: UnitKind, i: number, parts: Omit<LegArt, "legStroke" | "legBaseStroke" | "guns" | "sprite" | "small">, cellScale: 1 | 2 | 4): void => {
     const T = FROG_TIERS[i];
     LEG_ART[k] = {
@@ -1868,17 +1868,17 @@ if (ANIMAL_ART) {
       small: UNIT_SPRITE * Math.max(1, cellScale / 2),
     };
   };
-  frogLegArt("weaver2", 1, {
-    body: UV_WEAVER2_BODY, base: UV_WEAVER2_BASE, joint: UV_WEAVER2_JOINT, foot: UV_WEAVER2_FOOT, leg: UV_WEAVER2_LEG_SEG, legBase: UV_WEAVER2_LEG_BASE_SEG,
-    sil: { body: UV_WEAVER2_BODY_SIL, base: UV_WEAVER2_BASE_SIL, joint: UV_WEAVER2_JOINT_SIL, foot: UV_WEAVER2_FOOT_SIL },
+  frogLegArt("dartback2", 1, {
+    body: UV_DARTBACK2_BODY, base: UV_DARTBACK2_BASE, joint: UV_DARTBACK2_JOINT, foot: UV_DARTBACK2_FOOT, leg: UV_DARTBACK2_LEG_SEG, legBase: UV_DARTBACK2_LEG_BASE_SEG,
+    sil: { body: UV_DARTBACK2_BODY_SIL, base: UV_DARTBACK2_BASE_SIL, joint: UV_DARTBACK2_JOINT_SIL, foot: UV_DARTBACK2_FOOT_SIL },
   }, 2);
-  frogLegArt("weaver3", 2, {
-    body: UV_WEAVER3_BODY, joint: UV_WEAVER3_JOINT, foot: UV_WEAVER3_FOOT, leg: UV_WEAVER3_LEG_SEG, legBase: UV_WEAVER3_LEG_BASE_SEG,
-    sil: { body: UV_WEAVER3_BODY_SIL, joint: UV_WEAVER3_JOINT_SIL, foot: UV_WEAVER3_FOOT_SIL },
+  frogLegArt("dartback3", 2, {
+    body: UV_DARTBACK3_BODY, joint: UV_DARTBACK3_JOINT, foot: UV_DARTBACK3_FOOT, leg: UV_DARTBACK3_LEG_SEG, legBase: UV_DARTBACK3_LEG_BASE_SEG,
+    sil: { body: UV_DARTBACK3_BODY_SIL, joint: UV_DARTBACK3_JOINT_SIL, foot: UV_DARTBACK3_FOOT_SIL },
   }, 2);
-  frogLegArt("weaver4", 3, {
-    body: UV_WEAVER4_BODY, joint: UV_WEAVER4_JOINT, baseJoint: UV_WEAVER4_JOINT_BASE, foot: UV_WEAVER4_FOOT, leg: UV_WEAVER4_LEG_SEG, legBase: UV_WEAVER4_LEG_BASE_SEG,
-    sil: { body: UV_WEAVER4_BODY_SIL, joint: UV_WEAVER4_JOINT_SIL, baseJoint: UV_WEAVER4_JOINT_BASE_SIL, foot: UV_WEAVER4_FOOT_SIL },
+  frogLegArt("dartback4", 3, {
+    body: UV_DARTBACK4_BODY, joint: UV_DARTBACK4_JOINT, baseJoint: UV_DARTBACK4_JOINT_BASE, foot: UV_DARTBACK4_FOOT, leg: UV_DARTBACK4_LEG_SEG, legBase: UV_DARTBACK4_LEG_BASE_SEG,
+    sil: { body: UV_DARTBACK4_BODY_SIL, joint: UV_DARTBACK4_JOINT_SIL, baseJoint: UV_DARTBACK4_JOINT_BASE_SIL, foot: UV_DARTBACK4_FOOT_SIL },
   }, 4);
   // ---- Stoop, Skate, Livewire ----
   // the bat, the manta and the narwhal on the wing rig — and the boss
@@ -1918,9 +1918,9 @@ if (ANIMAL_ART) {
   // an Erekir missile bomber's, and what is there now is a bird — the
   // thing that keeps it in the air is the beat
   wingPart("boss", KING_TIER, [KING_CELLS.body, KING_CELLS.wing], kingGeom(), false, BOSS_SCALE);
-  frogLegArt("weaver5", 4, {
-    body: UV_WEAVER5_BODY, joint: UV_WEAVER5_JOINT, baseJoint: UV_WEAVER5_JOINT_BASE, foot: UV_WEAVER5_FOOT, leg: UV_WEAVER5_LEG_SEG, legBase: UV_WEAVER5_LEG_BASE_SEG,
-    sil: { body: UV_WEAVER5_BODY_SIL, joint: UV_WEAVER5_JOINT_SIL, baseJoint: UV_WEAVER5_JOINT_BASE_SIL, foot: UV_WEAVER5_FOOT_SIL },
+  frogLegArt("dartback5", 4, {
+    body: UV_DARTBACK5_BODY, joint: UV_DARTBACK5_JOINT, baseJoint: UV_DARTBACK5_JOINT_BASE, foot: UV_DARTBACK5_FOOT, leg: UV_DARTBACK5_LEG_SEG, legBase: UV_DARTBACK5_LEG_BASE_SEG,
+    sil: { body: UV_DARTBACK5_BODY_SIL, joint: UV_DARTBACK5_JOINT_SIL, baseJoint: UV_DARTBACK5_JOINT_BASE_SIL, foot: UV_DARTBACK5_FOOT_SIL },
   }, 4);
 
   // ---- Tusker ----
@@ -1972,7 +1972,7 @@ if (ANIMAL_ART) {
   // the starfish on the mech rig at every tier, and what slides with the
   // walk is THE ARMS: the rig's leg cell holds one side's pair and the
   // renderer rows them fore and aft against their mirror image, which is
-  // this family's whole gait (starfishArt.ts). No guns — the star volley
+  // this family's whole gait (grapnelArt.ts). No guns — the star volley
   // is drawn live as shots in flight, never off a sprite — and the swing
   // shortens an arm a TENTH rather than the mech's half (legLift): an arm
   // lying flat on the ground reaches, it does not step over anything.
@@ -1986,11 +1986,11 @@ if (ANIMAL_ART) {
     sprite: UNIT_SPRITE * cellScale,
     sil: { leg: c.legSil, base: c.baseSil, body: c.bodySil },
   });
-  MECH_ART.starfish1 = sfMechArt(SF1_CELLS, STARFISH_TIERS[0], 1);
-  MECH_ART.starfish2 = sfMechArt(SF2_CELLS, STARFISH_TIERS[1], 1);
-  MECH_ART.starfish3 = sfMechArt(SF3_CELLS, STARFISH_TIERS[2], 2);
-  MECH_ART.starfish4 = sfMechArt(SF4_CELLS, STARFISH_TIERS[3], 2);
-  MECH_ART.starfish5 = sfMechArt(SF5_CELLS, STARFISH_TIERS[4], 4);
+  MECH_ART.grapnel1 = sfMechArt(SF1_CELLS, GRAPNEL_TIERS[0], 1);
+  MECH_ART.grapnel2 = sfMechArt(SF2_CELLS, GRAPNEL_TIERS[1], 1);
+  MECH_ART.grapnel3 = sfMechArt(SF3_CELLS, GRAPNEL_TIERS[2], 2);
+  MECH_ART.grapnel4 = sfMechArt(SF4_CELLS, GRAPNEL_TIERS[3], 2);
+  MECH_ART.grapnel5 = sfMechArt(SF5_CELLS, GRAPNEL_TIERS[4], 4);
 }
 
 const ENV = "/mindustry/sprites/blocks/environment";
@@ -2020,23 +2020,23 @@ const SPRITES = {
   ironhide2Base: "/mindustry/sprites/units/mace-base.png",
   ironhide2: "/mindustry/sprites/units/mace.png",
   ironhide2Leg: "/mindustry/sprites/units/mace-leg.png",
-  weaver2: "/mindustry/sprites/units/atrax.png",
-  weaver2Base: "/mindustry/sprites/units/atrax-base.png",
-  weaver2Leg: "/mindustry/sprites/units/atrax-leg.png",
-  weaver2LegBase: "/mindustry/sprites/units/atrax-leg-base.png",
-  weaver2Joint: "/mindustry/sprites/units/atrax-joint.png",
-  weaver2Foot: "/mindustry/sprites/units/atrax-foot.png",
-  weaver2Weapon: "/mindustry/sprites/units/weapons/atrax-weapon.png",
-  weaver3: "/mindustry/sprites/units/spiroct.png",
-  weaver3Leg: "/mindustry/sprites/units/spiroct-leg.png",
-  weaver3LegBase: "/mindustry/sprites/units/spiroct-leg-base.png",
-  weaver3Joint: "/mindustry/sprites/units/spiroct-joint.png",
-  weaver3Foot: "/mindustry/sprites/units/spiroct-foot.png",
-  weaver3Weapon: "/mindustry/sprites/units/weapons/spiroct-weapon.png",
-  weaver3Mount: "/mindustry/sprites/units/weapons/mount-purple-weapon.png",
-  weaver1Base: "/mindustry/sprites/units/crawler-base.png",
-  weaver1: "/mindustry/sprites/units/crawler.png",
-  weaver1Leg: "/mindustry/sprites/units/crawler-leg.png",
+  dartback2: "/mindustry/sprites/units/atrax.png",
+  dartback2Base: "/mindustry/sprites/units/atrax-base.png",
+  dartback2Leg: "/mindustry/sprites/units/atrax-leg.png",
+  dartback2LegBase: "/mindustry/sprites/units/atrax-leg-base.png",
+  dartback2Joint: "/mindustry/sprites/units/atrax-joint.png",
+  dartback2Foot: "/mindustry/sprites/units/atrax-foot.png",
+  dartback2Weapon: "/mindustry/sprites/units/weapons/atrax-weapon.png",
+  dartback3: "/mindustry/sprites/units/spiroct.png",
+  dartback3Leg: "/mindustry/sprites/units/spiroct-leg.png",
+  dartback3LegBase: "/mindustry/sprites/units/spiroct-leg-base.png",
+  dartback3Joint: "/mindustry/sprites/units/spiroct-joint.png",
+  dartback3Foot: "/mindustry/sprites/units/spiroct-foot.png",
+  dartback3Weapon: "/mindustry/sprites/units/weapons/spiroct-weapon.png",
+  dartback3Mount: "/mindustry/sprites/units/weapons/mount-purple-weapon.png",
+  dartback1Base: "/mindustry/sprites/units/crawler-base.png",
+  dartback1: "/mindustry/sprites/units/crawler.png",
+  dartback1Leg: "/mindustry/sprites/units/crawler-leg.png",
   ironhide3Base: "/mindustry/sprites/units/fortress-base.png",
   ironhide3: "/mindustry/sprites/units/fortress.png",
   ironhide3Leg: "/mindustry/sprites/units/fortress-leg.png",
@@ -2067,11 +2067,11 @@ const SPRITES = {
   starhart4Base: "/mindustry/sprites/units/vela-base.png",
   starhart4Leg: "/mindustry/sprites/units/vela-leg.png",
   repairBeam: "/mindustry/sprites/units/weapons/repair-beam-weapon-center-large.png",
-  weaver4: "/mindustry/sprites/units/arkyid.png",
-  weaver4Foot: "/mindustry/sprites/units/arkyid-foot.png",
-  weaver4JointBase: "/mindustry/sprites/units/arkyid-joint-base.png",
-  weaver4Leg: "/mindustry/sprites/units/arkyid-leg.png",
-  weaver4LegBase: "/mindustry/sprites/units/arkyid-leg-base.png",
+  dartback4: "/mindustry/sprites/units/arkyid.png",
+  dartback4Foot: "/mindustry/sprites/units/arkyid-foot.png",
+  dartback4JointBase: "/mindustry/sprites/units/arkyid-joint-base.png",
+  dartback4Leg: "/mindustry/sprites/units/arkyid-leg.png",
+  dartback4LegBase: "/mindustry/sprites/units/arkyid-leg-base.png",
   purpleMount: "/mindustry/sprites/units/weapons/large-purple-mount.png",
   stoop4: "/mindustry/sprites/units/antumbra.png",
   boss: "/mindustry/sprites/units/disrupt.png",
@@ -2086,12 +2086,12 @@ const SPRITES = {
   starhart5Joint: "/mindustry/sprites/units/corvus-joint.png",
   starhart5JointBase: "/mindustry/sprites/units/corvus-joint-base.png",
   starhart5Foot: "/mindustry/sprites/units/corvus-foot.png",
-  weaver5: "/mindustry/sprites/units/toxopid.png",
-  weaver5Leg: "/mindustry/sprites/units/toxopid-leg.png",
-  weaver5LegBase: "/mindustry/sprites/units/toxopid-leg-base.png",
-  weaver5JointBase: "/mindustry/sprites/units/toxopid-joint-base.png",
-  weaver5Foot: "/mindustry/sprites/units/toxopid-foot.png",
-  weaver5Cannon: "/mindustry/sprites/units/weapons/toxopid-cannon.png",
+  dartback5: "/mindustry/sprites/units/toxopid.png",
+  dartback5Leg: "/mindustry/sprites/units/toxopid-leg.png",
+  dartback5LegBase: "/mindustry/sprites/units/toxopid-leg-base.png",
+  dartback5JointBase: "/mindustry/sprites/units/toxopid-joint-base.png",
+  dartback5Foot: "/mindustry/sprites/units/toxopid-foot.png",
+  dartback5Cannon: "/mindustry/sprites/units/weapons/toxopid-cannon.png",
   stoop5: "/mindustry/sprites/units/eclipse.png",
   // the naval tanks. Each is a single hull sprite — the naval types' own
   // weapons all sit on turret mounts Mindustry draws from the weapon
@@ -2207,11 +2207,11 @@ const SPRITES = {
   ironhide3Cell: "/mindustry/sprites/units/fortress-cell.png",
   ironhide4Cell: "/mindustry/sprites/units/scepter-cell.png",
   ironhide5Cell: "/mindustry/sprites/units/reign-cell.png",
-  weaver1Cell: "/mindustry/sprites/units/crawler-cell.png",
-  weaver2Cell: "/mindustry/sprites/units/atrax-cell.png",
-  weaver3Cell: "/mindustry/sprites/units/spiroct-cell.png",
-  weaver4Cell: "/mindustry/sprites/units/arkyid-cell.png",
-  weaver5Cell: "/mindustry/sprites/units/toxopid-cell.png",
+  dartback1Cell: "/mindustry/sprites/units/crawler-cell.png",
+  dartback2Cell: "/mindustry/sprites/units/atrax-cell.png",
+  dartback3Cell: "/mindustry/sprites/units/spiroct-cell.png",
+  dartback4Cell: "/mindustry/sprites/units/arkyid-cell.png",
+  dartback5Cell: "/mindustry/sprites/units/toxopid-cell.png",
   starhart1Cell: "/mindustry/sprites/units/nova-cell.png",
   starhart2Cell: "/mindustry/sprites/units/pulsar-cell.png",
   starhart3Cell: "/mindustry/sprites/units/quasar-cell.png",
@@ -2842,18 +2842,18 @@ function packAnimalArt(
   ];
   rhinoLegCells.forEach((cells, i) => packLegged(cells, ironLegged(IRON_TIERS[3 + i]), IRON_TIERS[3 + i].n));
   packMech(
-    { kind: "weaver1", body: UV_WEAVER1_BODY, base: UV_WEAVER1_BASE, leg: UV_WEAVER1_LEG, sil: { body: UV_WEAVER1_BODY_SIL, base: UV_WEAVER1_BASE_SIL, leg: UV_WEAVER1_LEG_SIL } },
+    { kind: "dartback1", body: UV_DARTBACK1_BODY, base: UV_DARTBACK1_BASE, leg: UV_DARTBACK1_LEG, sil: { body: UV_DARTBACK1_BODY_SIL, base: UV_DARTBACK1_BASE_SIL, leg: UV_DARTBACK1_LEG_SIL } },
     frogMech(FROG_TIERS[0]), FROG_TIERS[0].n,
   );
   const frogLegCells: readonly LegCells[] = [
-    { kind: "weaver2", body: UV_WEAVER2_BODY, base: UV_WEAVER2_BASE, joint: UV_WEAVER2_JOINT, foot: UV_WEAVER2_FOOT, leg: UV_WEAVER2_LEG_SEG, legBase: UV_WEAVER2_LEG_BASE_SEG,
-      sil: { body: UV_WEAVER2_BODY_SIL, base: UV_WEAVER2_BASE_SIL, joint: UV_WEAVER2_JOINT_SIL, foot: UV_WEAVER2_FOOT_SIL } },
-    { kind: "weaver3", body: UV_WEAVER3_BODY, joint: UV_WEAVER3_JOINT, foot: UV_WEAVER3_FOOT, leg: UV_WEAVER3_LEG_SEG, legBase: UV_WEAVER3_LEG_BASE_SEG,
-      sil: { body: UV_WEAVER3_BODY_SIL, joint: UV_WEAVER3_JOINT_SIL, foot: UV_WEAVER3_FOOT_SIL } },
-    { kind: "weaver4", body: UV_WEAVER4_BODY, joint: UV_WEAVER4_JOINT, baseJoint: UV_WEAVER4_JOINT_BASE, foot: UV_WEAVER4_FOOT, leg: UV_WEAVER4_LEG_SEG, legBase: UV_WEAVER4_LEG_BASE_SEG,
-      sil: { body: UV_WEAVER4_BODY_SIL, joint: UV_WEAVER4_JOINT_SIL, baseJoint: UV_WEAVER4_JOINT_BASE_SIL, foot: UV_WEAVER4_FOOT_SIL } },
-    { kind: "weaver5", body: UV_WEAVER5_BODY, joint: UV_WEAVER5_JOINT, baseJoint: UV_WEAVER5_JOINT_BASE, foot: UV_WEAVER5_FOOT, leg: UV_WEAVER5_LEG_SEG, legBase: UV_WEAVER5_LEG_BASE_SEG,
-      sil: { body: UV_WEAVER5_BODY_SIL, joint: UV_WEAVER5_JOINT_SIL, baseJoint: UV_WEAVER5_JOINT_BASE_SIL, foot: UV_WEAVER5_FOOT_SIL } },
+    { kind: "dartback2", body: UV_DARTBACK2_BODY, base: UV_DARTBACK2_BASE, joint: UV_DARTBACK2_JOINT, foot: UV_DARTBACK2_FOOT, leg: UV_DARTBACK2_LEG_SEG, legBase: UV_DARTBACK2_LEG_BASE_SEG,
+      sil: { body: UV_DARTBACK2_BODY_SIL, base: UV_DARTBACK2_BASE_SIL, joint: UV_DARTBACK2_JOINT_SIL, foot: UV_DARTBACK2_FOOT_SIL } },
+    { kind: "dartback3", body: UV_DARTBACK3_BODY, joint: UV_DARTBACK3_JOINT, foot: UV_DARTBACK3_FOOT, leg: UV_DARTBACK3_LEG_SEG, legBase: UV_DARTBACK3_LEG_BASE_SEG,
+      sil: { body: UV_DARTBACK3_BODY_SIL, joint: UV_DARTBACK3_JOINT_SIL, foot: UV_DARTBACK3_FOOT_SIL } },
+    { kind: "dartback4", body: UV_DARTBACK4_BODY, joint: UV_DARTBACK4_JOINT, baseJoint: UV_DARTBACK4_JOINT_BASE, foot: UV_DARTBACK4_FOOT, leg: UV_DARTBACK4_LEG_SEG, legBase: UV_DARTBACK4_LEG_BASE_SEG,
+      sil: { body: UV_DARTBACK4_BODY_SIL, joint: UV_DARTBACK4_JOINT_SIL, baseJoint: UV_DARTBACK4_JOINT_BASE_SIL, foot: UV_DARTBACK4_FOOT_SIL } },
+    { kind: "dartback5", body: UV_DARTBACK5_BODY, joint: UV_DARTBACK5_JOINT, baseJoint: UV_DARTBACK5_JOINT_BASE, foot: UV_DARTBACK5_FOOT, leg: UV_DARTBACK5_LEG_SEG, legBase: UV_DARTBACK5_LEG_BASE_SEG,
+      sil: { body: UV_DARTBACK5_BODY_SIL, joint: UV_DARTBACK5_JOINT_SIL, baseJoint: UV_DARTBACK5_JOINT_BASE_SIL, foot: UV_DARTBACK5_FOOT_SIL } },
   ];
   frogLegCells.forEach((cells, i) => packLegged(cells, frogLegged(FROG_TIERS[1 + i]), FROG_TIERS[1 + i].n));
   // the elephants, into cells nobody else owns (see THE TUSKERS' CELLS).
@@ -2877,11 +2877,11 @@ function packAnimalArt(
   tuskLegCellSets.forEach((cells, i) => packLegged(cells, tuskLegged(TUSK_TIERS[3 + i]), TUSK_TIERS[3 + i].n));
   // ---- the Grapnels: five mech tiers, body, base plate and rowing arms ----
   const sfCellSets: readonly MechCells[] = [SF1_CELLS, SF2_CELLS, SF3_CELLS, SF4_CELLS, SF5_CELLS].map((c, i) => ({
-    kind: `starfish${i + 1}` as UnitKind,
+    kind: `grapnel${i + 1}` as UnitKind,
     body: c.body, base: c.base, leg: c.leg,
     sil: { body: c.bodySil, base: c.baseSil, leg: c.legSil },
   }));
-  sfCellSets.forEach((cells, i) => packMech(cells, starfishMech(STARFISH_TIERS[i]), STARFISH_TIERS[i].n));
+  sfCellSets.forEach((cells, i) => packMech(cells, grapnelMech(GRAPNEL_TIERS[i]), GRAPNEL_TIERS[i].n));
 
   // ---- Stoop, Skate, Livewire ----
   // the wing rig: the composed sprite in the kind's own cell, the body
@@ -3151,46 +3151,46 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   teamCell("ironhide4", img.ironhide4, img.ironhide4Cell, UV_IRONHIDE4_BODY, 170, 140);
   teamCell("ironhide5", img.ironhide5, img.ironhide5Cell, UV_IRONHIDE5_BODY, 214, 140);
 
-  // the weaver1 line. The legged units' segments are drawn unrotated at
+  // the dartback1 line. The legged units' segments are drawn unrotated at
   // native size onto rects that ARE the art (see the UV note), and a
   // knee cap is packed upright because it is drawn unrotated
   parts([
-    [UV_WEAVER1_LEG, UV_WEAVER1_LEG_SIL, img.weaver1Leg],
-    [UV_WEAVER1_BASE, UV_WEAVER1_BASE_SIL, img.weaver1Base],
-    [UV_WEAVER1_BODY, UV_WEAVER1_BODY_SIL, img.weaver1],
-    [UV_WEAVER2_BODY, UV_WEAVER2_BODY_SIL, img.weaver2],
-    [UV_WEAVER2_BASE, UV_WEAVER2_BASE_SIL, img.weaver2Base],
-    [UV_WEAVER2_WEAPON, UV_WEAVER2_WEAPON_SIL, img.weaver2Weapon],
-    [UV_WEAVER2_JOINT, UV_WEAVER2_JOINT_SIL, img.weaver2Joint],
-    [UV_WEAVER2_FOOT, UV_WEAVER2_FOOT_SIL, img.weaver2Foot],
-    [UV_WEAVER3_BODY, UV_WEAVER3_BODY_SIL, img.weaver3],
-    [UV_WEAVER3_WEAPON, UV_WEAVER3_WEAPON_SIL, img.weaver3Weapon],
-    [UV_WEAVER3_MOUNT, UV_WEAVER3_MOUNT_SIL, img.weaver3Mount],
-    [UV_WEAVER3_JOINT, UV_WEAVER3_JOINT_SIL, img.weaver3Joint],
-    [UV_WEAVER3_FOOT, UV_WEAVER3_FOOT_SIL, img.weaver3Foot],
-    [UV_WEAVER4_BODY, UV_WEAVER4_BODY_SIL, img.weaver4],
-    [UV_WEAVER4_WEAPON, UV_WEAVER4_WEAPON_SIL, img.weaver3Weapon],
-    [UV_WEAVER4_MOUNT, UV_WEAVER4_MOUNT_SIL, img.purpleMount],
-    [UV_WEAVER4_FOOT, UV_WEAVER4_FOOT_SIL, img.weaver4Foot],
-    [UV_WEAVER4_JOINT_BASE, UV_WEAVER4_JOINT_BASE_SIL, img.weaver4JointBase],
-    [UV_WEAVER5_BODY, UV_WEAVER5_BODY_SIL, img.weaver5],
-    [UV_WEAVER5_CANNON, UV_WEAVER5_CANNON_SIL, img.weaver5Cannon],
-    [UV_WEAVER5_JOINT_BASE, UV_WEAVER5_JOINT_BASE_SIL, img.weaver5JointBase],
-    [UV_WEAVER5_FOOT, UV_WEAVER5_FOOT_SIL, img.weaver5Foot],
+    [UV_DARTBACK1_LEG, UV_DARTBACK1_LEG_SIL, img.dartback1Leg],
+    [UV_DARTBACK1_BASE, UV_DARTBACK1_BASE_SIL, img.dartback1Base],
+    [UV_DARTBACK1_BODY, UV_DARTBACK1_BODY_SIL, img.dartback1],
+    [UV_DARTBACK2_BODY, UV_DARTBACK2_BODY_SIL, img.dartback2],
+    [UV_DARTBACK2_BASE, UV_DARTBACK2_BASE_SIL, img.dartback2Base],
+    [UV_DARTBACK2_WEAPON, UV_DARTBACK2_WEAPON_SIL, img.dartback2Weapon],
+    [UV_DARTBACK2_JOINT, UV_DARTBACK2_JOINT_SIL, img.dartback2Joint],
+    [UV_DARTBACK2_FOOT, UV_DARTBACK2_FOOT_SIL, img.dartback2Foot],
+    [UV_DARTBACK3_BODY, UV_DARTBACK3_BODY_SIL, img.dartback3],
+    [UV_DARTBACK3_WEAPON, UV_DARTBACK3_WEAPON_SIL, img.dartback3Weapon],
+    [UV_DARTBACK3_MOUNT, UV_DARTBACK3_MOUNT_SIL, img.dartback3Mount],
+    [UV_DARTBACK3_JOINT, UV_DARTBACK3_JOINT_SIL, img.dartback3Joint],
+    [UV_DARTBACK3_FOOT, UV_DARTBACK3_FOOT_SIL, img.dartback3Foot],
+    [UV_DARTBACK4_BODY, UV_DARTBACK4_BODY_SIL, img.dartback4],
+    [UV_DARTBACK4_WEAPON, UV_DARTBACK4_WEAPON_SIL, img.dartback3Weapon],
+    [UV_DARTBACK4_MOUNT, UV_DARTBACK4_MOUNT_SIL, img.purpleMount],
+    [UV_DARTBACK4_FOOT, UV_DARTBACK4_FOOT_SIL, img.dartback4Foot],
+    [UV_DARTBACK4_JOINT_BASE, UV_DARTBACK4_JOINT_BASE_SIL, img.dartback4JointBase],
+    [UV_DARTBACK5_BODY, UV_DARTBACK5_BODY_SIL, img.dartback5],
+    [UV_DARTBACK5_CANNON, UV_DARTBACK5_CANNON_SIL, img.dartback5Cannon],
+    [UV_DARTBACK5_JOINT_BASE, UV_DARTBACK5_JOINT_BASE_SIL, img.dartback5JointBase],
+    [UV_DARTBACK5_FOOT, UV_DARTBACK5_FOOT_SIL, img.dartback5Foot],
   ]);
-  draw(UV_WEAVER2_LEG, antialiased(img.weaver2Leg));
-  draw(UV_WEAVER2_LEG_BASE, antialiased(img.weaver2LegBase));
-  draw(UV_WEAVER3_LEG, antialiased(img.weaver3Leg));
-  draw(UV_WEAVER3_LEG_BASE, antialiased(img.weaver3LegBase));
-  draw(UV_WEAVER4_LEG, antialiased(img.weaver4Leg));
-  draw(UV_WEAVER4_LEG_BASE, antialiased(img.weaver4LegBase));
-  draw(UV_WEAVER5_LEG, antialiased(img.weaver5Leg));
-  draw(UV_WEAVER5_LEG_BASE, antialiased(img.weaver5LegBase));
-  teamCell("weaver1", img.weaver1, img.weaver1Cell, UV_WEAVER1_BODY, 48);
-  teamCell("weaver2", img.weaver2, img.weaver2Cell, UV_WEAVER2_BODY, 88, 64);
-  teamCell("weaver3", img.weaver3, img.weaver3Cell, UV_WEAVER3_BODY, 94, 75);
-  teamCell("weaver4", img.weaver4, img.weaver4Cell, UV_WEAVER4_BODY, 128);
-  teamCell("weaver5", img.weaver5, img.weaver5Cell, UV_WEAVER5_BODY, 160, 190);
+  draw(UV_DARTBACK2_LEG, antialiased(img.dartback2Leg));
+  draw(UV_DARTBACK2_LEG_BASE, antialiased(img.dartback2LegBase));
+  draw(UV_DARTBACK3_LEG, antialiased(img.dartback3Leg));
+  draw(UV_DARTBACK3_LEG_BASE, antialiased(img.dartback3LegBase));
+  draw(UV_DARTBACK4_LEG, antialiased(img.dartback4Leg));
+  draw(UV_DARTBACK4_LEG_BASE, antialiased(img.dartback4LegBase));
+  draw(UV_DARTBACK5_LEG, antialiased(img.dartback5Leg));
+  draw(UV_DARTBACK5_LEG_BASE, antialiased(img.dartback5LegBase));
+  teamCell("dartback1", img.dartback1, img.dartback1Cell, UV_DARTBACK1_BODY, 48);
+  teamCell("dartback2", img.dartback2, img.dartback2Cell, UV_DARTBACK2_BODY, 88, 64);
+  teamCell("dartback3", img.dartback3, img.dartback3Cell, UV_DARTBACK3_BODY, 94, 75);
+  teamCell("dartback4", img.dartback4, img.dartback4Cell, UV_DARTBACK4_BODY, 128);
+  teamCell("dartback5", img.dartback5, img.dartback5Cell, UV_DARTBACK5_BODY, 160, 190);
 
   // the support line
   parts([

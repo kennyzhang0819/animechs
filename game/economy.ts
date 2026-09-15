@@ -173,7 +173,7 @@ export const MOD_ROLL_PRICE = 2000;
  * three and a half thousand, which is where a "+10% damage" belongs, and
  * every relic in the catalog has since been rewritten to change the game
  * rather than nudge it (relics.ts) — the board fires twice as fast, every
- * kill pays triple, every turret stands back up. A rule that size at four
+ * kill pays triple, every turret revives. A rule that size at four
  * cards' price would be the first thing every run bought and the last
  * decision it ever made.
  *

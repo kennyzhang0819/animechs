@@ -727,7 +727,7 @@ function StepCard({
           so a wave is just counts.
 
           The slots stay in the same place whatever the wave holds, so its
-          ground/air/weaver1 mix is readable at a glance instead of being a
+          ground/air/dartback1 mix is readable at a glance instead of being a
           bag of chips. */}
       <div className="mt-1.5 space-y-1">
         {UNIT_TREES.map((tree) => (

@@ -2,7 +2,7 @@
 
 import type { RefObject } from "react";
 
-import { modDef, modName, type ModId } from "@/game/mods";
+import { modBlurb, modDef, modName, type ModId } from "@/game/mods";
 import { RARITY } from "@/game/rarity";
 import type { UiState } from "@/game/game";
 import { statusDef, type StatusChip as Chip } from "@/game/status";
@@ -81,7 +81,7 @@ function ModPip({ id, n, total }: { id: ModId; n: number; total: number }) {
       <Glyph glyph={d.glyph} className="h-[16px] w-[16px]" />
       {many && <span className="ms-tile-count">{n}</span>}
       <HoverCard tip={tip} title={modName(d)} tag={r.name} color={r.color} align="center">
-        {d.blurb}
+        {modBlurb(d)}
         {many && (
           <span className="mt-1.5 block font-bold" style={{ color: r.color }}>
             On {n} of the {total} selected

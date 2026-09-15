@@ -277,7 +277,7 @@ report("art", artMissing, `${artWanted.length} drawings`);
 // mask of every pixel laid in the family's accent, which the sheet tints
 // and lays back over the body (packTeamCells). A body that wears none of
 // its family's colour produces an empty mask, and the packer throws — "the
-// starfish1 team cell has no pixels in it" — WHILE A LEVEL IS LOADING,
+// grapnel1 team cell has no pixels in it" — WHILE A LEVEL IS LOADING,
 // which is as late as a failure can be found and the one place none of the
 // other stages look: the atlas needs a canvas, so nothing here packs it.
 //
@@ -285,7 +285,7 @@ report("art", artMissing, `${artWanted.length} drawings`);
 // wears no accent is a tier that cannot ship. The runt is the one that
 // gets caught, every time — it is the tier whose ornament is cut last.
 const cellFamilies = (() => {
-  const IA = R("ironhideArt.js"), FAM = R("familyArt.js"), TA = R("tuskerArt.js"), SA = R("starfishArt.js");
+  const IA = R("ironhideArt.js"), FAM = R("familyArt.js"), TA = R("tuskerArt.js"), SA = R("grapnelArt.js");
   const KA = R("kingArt.js");
   // a ground family's tier is a mech tier or a legged one; the Grapnels
   // ride the mech rig at every tier with no stride at all, so the rig is
@@ -294,9 +294,9 @@ const cellFamilies = (() => {
   return [
     ["ironhide", IA.IRON_TIERS, ground(IA.ironMech, IA.ironLegged)],
     ["starhart", FAM.HART_TIERS, ground(FAM.hartMech, FAM.hartLegged)],
-    ["weaver", FAM.FROG_TIERS, ground(FAM.frogMech, FAM.frogLegged)],
+    ["dartback", FAM.FROG_TIERS, ground(FAM.frogMech, FAM.frogLegged)],
     ["tusker", TA.TUSK_TIERS, ground(TA.tuskMech, TA.tuskLegged)],
-    ["starfish", SA.STARFISH_TIERS, SA.starfishMech],
+    ["grapnel", SA.GRAPNEL_TIERS, SA.grapnelMech],
     ["stoop", FAM.STOOP_TIERS, FAM.stoop],
     ["skate", FAM.MANTA_TIERS, FAM.manta],
     ["livewire", FAM.NARWHAL_TIERS, FAM.narwhal],

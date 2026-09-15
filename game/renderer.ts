@@ -615,7 +615,7 @@ const KIND_UV = UNIT_KINDS.map((k) => UNIT_ART[k].uv);
 const KIND_SPRITE = UNIT_KINDS.map((k) => UNIT_ART[k].sprite);
 const KIND_FLYING = UNIT_KINDS.map((k) => !!UNIT_STATS[k].flying);
 const KIND_MECH = UNIT_KINDS.map((k) => MECH_ART[k] ?? null);
-// the legged pair (weaver2, weaver3): part art and the gait that moves it
+// the legged pair (dartback2, dartback3): part art and the gait that moves it
 const KIND_LEG = UNIT_KINDS.map((k) => LEG_ART[k] ?? null);
 const KIND_GAIT = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
 /** each leg's fixed slice of the mount ring as a unit vector — the frame's
@@ -1033,7 +1033,7 @@ void main() {
 // border at mip 0, and at mip 3 a texel is eight sheet pixels wide, so
 // the blend reaches eight pixels into the neighbour. On a rotating
 // sprite that reads as a hairline along one edge of its quad, moving
-// with it: the weaver1's leg cell sits under the last opaque rows of the
+// with it: the dartback1's leg cell sits under the last opaque rows of the
 // core sprite, so its legs dragged a dark line as they strode; a turret's
 // base plate is opaque to its cell's edge, so at any zoom that minifies,
 // its rim mixed with the transparent black beside it and darkened. The
@@ -1338,7 +1338,7 @@ export class Renderer {
     // what MAX_UNITS of anything is ever actually made of, and the 13th is
     // the shadow every body throws (GROUND_SHADOW_ALPHA, and the flyers'
     // drop shadow before it). The heavies cost more — an ironhide4's three
-    // mounts make 20, a six-legged weaver3 closer to 50, and a naval hull 15
+    // mounts make 20, a six-legged dartback3 closer to 50, and a naval hull 15
     // (one for the boat, fourteen for the two sides of its wake) — and a
     // field that was somehow ALL heavies would run this dry; they arrive in
     // tens, among thousands of the cheap kinds that do not
@@ -1659,7 +1659,7 @@ export class Renderer {
           // Its MAGNITUDE is all that counts: Mindustry writes the offset
           // as `.inv().setLength(legExtension)`, and Arc's setLength goes
           // through setLength2(len * len) — a negative length comes back
-          // out positive. weaver4's -15 is a +15 offset in the real game
+          // out positive. dartback4's -15 is a +15 offset in the real game
           const dx = jx - fx, dy = jy - fy;
           const d = Math.hypot(dx, dy) || 1;
           const ext = Math.abs(L.extension);
@@ -1667,7 +1667,7 @@ export class Renderer {
           this.pushSeg(b, jx + ex, jy + ey, fx, fy, art.legBase, art.legBaseStroke * flip, tint);
         }
         // the knee cap is never rotated — Mindustry draws it upright. Not
-        // every legged unit has one: weaver4 leaves its elbow as the bare
+        // every legged unit has one: dartback4 leaves its elbow as the bare
         // overlap of the two segments and caps the shoulder instead
         const joint = painted ? art.joint : art.sil.joint;
         if (joint) this.push(b, jx, jy, sm, sm, 0, joint, tr, tg, tb, 1);
@@ -2615,7 +2615,7 @@ export class Renderer {
       // screen edge while half of it is still on screen.
       //
       // The two ADD, because a body can be both and the player needs to
-      // see that it is: on Quagmire a fed, five-times-forded weaver1 is
+      // see that it is: on Quagmire a fed, five-times-forded dartback1 is
       // the single most dangerous thing in the lane and it must not look
       // like either one of those alone
       // ...and a folded stack (Sim.mergeSqueezed) MERGE_GROWTH bigger per
@@ -3953,7 +3953,7 @@ export class Renderer {
    * The soot a hurt unit sheds (Sim.updateStatus): a few grey puffs
    * leaving the body, swelling and thinning as they go, and drifting UP the
    * screen the way smoke does. Fx.smokeCloud's shape at a unit's scale —
-   * e.len carries the hitbox radius, so a weaver5's smoke is not a
+   * e.len carries the hitbox radius, so a dartback5's smoke is not a
    * ironhide1's — and none of Mindustry's fire, which this game does not
    * field. A deviation: upstream units do not smoke, buildings do.
    */
@@ -4506,7 +4506,7 @@ export class Renderer {
   /**
    * ShrapnelBulletType.draw, 1:1: a long triangle bolt with a short back
    * spike and perpendicular serrations, tinted from the style's first
-   * colour to its second (cleaver: white to thoriumPink; weaver5: sapBullet to
+   * colour to its second (cleaver: white to thoriumPink; dartback5: sapBullet to
    * sapBulletBack) over its 10-tick life, all widths shrinking with fout.
    */
   private drawShrapnel(

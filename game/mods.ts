@@ -233,8 +233,6 @@ export interface ModDef {
   total?: (copies: number) => string;
   rarity: Rarity;
   glyph: ModGlyph;
-  /** what owning it does, in the player's own terms — the hover card */
-  blurb: string;
   /**
    * THE ODDS ONE NEW TURRET IS BORN WITH THIS, and they are a CONSTANT —
    * copies buy strength, never odds (see the header).
@@ -309,7 +307,7 @@ export interface ModDef {
    *
    * It gates the ROLL: a placement of any other kind never rolls for it
    * at all (rollTurretMods), so the odds are per THAT KIND placed and the
-   * shelf says so (oddsLine). It is on the def rather than inside `apply`
+   * shelf says so (modBlurb). It is on the def rather than inside `apply`
    * because the roll happens before there is a table to apply anything to.
    */
   only?: TowerKind;
@@ -376,7 +374,6 @@ const tick = (
   rarity,
   glyph,
   chance,
-  blurb: `A chance for a new turret to be born with ${tweak} — again for every copy held.`,
   apply,
   regen,
 });
@@ -442,8 +439,8 @@ const TURRET_MODS: readonly ModDef[] = [
   // is the whole thing rather than a percentage of nothing. Its copies are
   // summed by modRegen rather than here — `regen` is a field, not an apply
   tick(
-    "regen1", "uncommon", "weave", "repairs 0.15% a second",
-    (n) => `repairs ${(0.15 * nOf(n)).toFixed(2).replace(/\.?0+$/, "")}% a second`,
+    "regen1", "uncommon", "weave", "+0.15% repair a second",
+    (n) => `+${(0.15 * nOf(n)).toFixed(2).replace(/\.?0+$/, "")}% repair a second`,
     0.18,
     (t) => t,
     0.0015,
@@ -468,21 +465,19 @@ const TURRET_MODS: readonly ModDef[] = [
     rarity: "rare",
     glyph: "chassis",
     chance: 0.1,
-    blurb: "A chance for a new turret to be born on a prototype frame: more damage and more rate of fire, on both axes at once.",
     apply: (t, n) => faster(stronger(t, per(1.12, n)), per(1.12, n)),
   },
   {
     id: "bulwark",
     name: "Bulwark Plating",
-    tweak: "+25% health, +2 armor, repairs 0.8% a second",
+    tweak: "+25% health, +2 armor, +0.8% repair a second",
     total: bothOf(pctOf(1.25, "health"), flatOf(2, "armor"), (n) =>
-      `repairs ${(0.8 * nOf(n)).toFixed(2).replace(/\.?0+$/, "")}% a second`),
+      `+${(0.8 * nOf(n)).toFixed(2).replace(/\.?0+$/, "")}% repair a second`),
     rarity: "rare",
     glyph: "shield",
     chance: 0.1,
     // the +2 is half an ironhide2's plate — a copy is not the difference
     // between an ironhide1 biting and bouncing off any more, but four are
-    blurb: "A chance for a new turret to be born armoured: more health, plating an ironhide1 has to get through, and it mends itself.",
     apply: (t, n) => armored(tougher(t, per(1.25, n)), 2 * Math.max(1, n)),
     regen: 0.008,
   },
@@ -494,7 +489,6 @@ const TURRET_MODS: readonly ModDef[] = [
     rarity: "rare",
     glyph: "spike",
     chance: 0.1,
-    blurb: "A chance for a new turret to fire sabot: harder rounds, and each one punches through another body.",
     apply: (t, n) => piercing(stronger(t, per(1.15, n)), 1 * Math.max(1, n)),
   },
   // ---- ULTRA: NAMED, and the turret changes species --------------------
@@ -512,8 +506,6 @@ const TURRET_MODS: readonly ModDef[] = [
     // odds that a PLACEMENT comes out giant, whatever the card was. It is
     // the loosest of the three because it costs the whole card to happen
     chance: 0.05,
-    blurb:
-      "A card has a chance to come out GIANT instead: one building, twice the size, two and a half times the health, three more plating and nearly double the damage — but it sees half as far, so it has to be put where the swarm is already coming.",
     // THE FOOTPRINT AND THE SHORT SIGHT ARE THE PRICE AND DO NOT STACK
     // (see `scale`): copies buy a harder-hitting, tougher, better plated
     // giant standing on exactly the same ground, still seeing half as far
@@ -531,8 +523,6 @@ const TURRET_MODS: readonly ModDef[] = [
     rarity: "ultra",
     glyph: "scope",
     chance: 0.04,
-    blurb:
-      "New turrets have a chance to be born SNIPER: half again the reach, half again the rate of fire and a quarter more damage — on half the health. It outranges what it can, and folds the moment anything reaches it.",
     // the halved health pool is the PRICE and is paid once, however many
     // copies the run holds — see the header. It was a TENTH, which only
     // ever made sense next to four times the reach: a sniper that outranged
@@ -555,8 +545,6 @@ const TURRET_MODS: readonly ModDef[] = [
     // nothing: the giant gives up its range and the sniper its health, and
     // this one is simply a better turret (see the header)
     chance: 0.03,
-    blurb:
-      "New turrets have a chance to be born ALL ROUND: more damage, more rate of fire, more health, a little more reach, and the round punches through one more body. No cost at all — it is simply a better turret.",
     apply: (t, n) =>
       piercing(
         tougher(reaching(faster(stronger(t, per(1.35, n)), per(1.35, n)), per(1.15, n)), per(1.35, n)),
@@ -879,26 +867,30 @@ export function rollMod(
 }
 
 /**
- * WHAT ONE COPY OF THIS BUYS, in the player's terms — the line every
- * board and every chip prints under the blurb.
+ * WHAT A MOD DOES, AS ONE SENTENCE: the odds, and the stats it grants.
+ * "30% chance for a new turret to have +2% damage."
  *
- * THE UNIT IS NOT ALWAYS A TURRET. An ordinary attribute is rolled once
- * per turret placed, so its odds are per turret; a SOLO one (the giant)
- * is rolled once per CARD, so saying "on every turret placed" would
- * overstate it by a factor of the whole formation — which on a x10
- * citadel is three hundred and sixty.
+ * IT IS DERIVED, not written per def. Every mod is the same sentence with
+ * two blanks in it — the chance and the tweak — so a hand-written blurb
+ * could only ever be that sentence said again in different words, and the
+ * ones it was written in described the effect instead of naming it.
  *
- * IT TAKES NO COPY COUNT ANY MORE. The odds are a constant (chanceAt) and
- * what the copies moved is the strength — stackLine says that half.
+ * THE UNIT IS NOT ALWAYS A TURRET. An ordinary mod is rolled once per
+ * turret placed; a SOLO one (the giant) is rolled once per CARD, so
+ * saying "a new turret" would overstate it by the size of the whole
+ * formation — on a x10 citadel, three hundred and sixty.
+ *
+ * IT TAKES NO COPY COUNT. The odds are a constant (chanceAt) and what the
+ * copies moved is the strength — stackLine says that half.
  */
-export function oddsLine(d: ModDef): string {
+export function modBlurb(d: ModDef): string {
   const pct = Math.round(chanceAt(d.id) * 100);
-  // "chance to roll" rather than "on every turret placed": the words a
-  // player is reading mid-wave should be the shortest true ones, and
-  // WHAT is rolled against only has to be said where it is not a turret
-  if (d.solo) return `${pct}% chance to roll, per card`;
-  if (d.only) return `${pct}% chance to roll, per ${TOWERS[d.only].name.toLowerCase()}`;
-  return `${pct}% chance to roll`;
+  const what = d.solo
+    ? "a card"
+    : d.only
+      ? `a new ${TOWERS[d.only].name.toLowerCase()}`
+      : "a new turret";
+  return `${pct}% chance for ${what} to have ${d.tweak ?? modName(d)}.`;
 }
 
 /**

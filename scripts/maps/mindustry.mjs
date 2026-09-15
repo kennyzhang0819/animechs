@@ -1,10 +1,9 @@
 /**
  * THE MAP GENERATOR, MINDUSTRY'S WAY.
  *
- * Every campaign map is a spec file (confluence.mjs, maelstrom.mjs,
- * quagmire.mjs) of a few dozen numbers handed to `run()` here. The
- * pipeline is Mindustry's own SerpuloPlanetGenerator, step for step, on
- * this game's document shape:
+ * Every campaign map is a spec file beside this one, of a few dozen
+ * numbers handed to `run()` here. The pipeline is Mindustry's own
+ * SerpuloPlanetGenerator, step for step, on this game's document shape:
  *
  *   1. NOISE, NOT GEOMETRY. Rock is a warped fBm value-noise contour, so
  *      every edge is ragged the way a Mindustry wall is, and no arc, disc

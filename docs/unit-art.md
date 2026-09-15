@@ -7,7 +7,7 @@ families are on the turrets' grammar now (section 1b): the Ironhide rhino
 in `game/ironhideArt.ts`, the Starhart stag, Stoop bat, Dartback poison frog,
 Skate manta and Livewire narwhal in `game/familyArt.ts`, the Tusker
 elephant in `game/tuskerArt.ts`, the Grapnel starfish in
-`game/starfishArt.ts`, on the turret
+`game/grapnelArt.ts`, on the turret
 engine in `game/turretArt.ts`, with what they share in
 `game/animalArt.ts` and the packing in `game/atlas.ts`.
 
@@ -167,7 +167,7 @@ the other way round.
   or as a crab's claws, and thick arms that lie flat cannot read as legs;
   the thing the legged rig kept producing was a bent knee standing outside
   a silhouette, and a starfish has no knee. It is also the one body whose
-  LEG CELL IS NOT A FOOT (`game/starfishArt.ts`): its tube feet are all on
+  LEG CELL IS NOT A FOOT (`game/grapnelArt.ts`): its tube feet are all on
   the underside, so from above there is nothing there to draw — every pass
   that drew some anyway put two blocks in the notches between the arms
   that read as cargo strapped to a star — and what goes on that cell
@@ -298,7 +298,7 @@ footprint gets.
 | Skate, the manta | `game/familyArt.ts` | body and two fins, wider than tall, tapered to the tip | 40, 52, 80, 156, 232 |
 | Livewire, the narwhal | `game/familyArt.ts` | body and two flippers | 44, 56, 80, 176, 232 |
 | Tusker, the elephant | `game/tuskerArt.ts` | mech to T3, four legs from T4 | 56, 72, 96, 136, 176 |
-| Grapnel, the starfish | `game/starfishArt.ts` | mech at every tier, and the leg cell is the rowing arms | 36, 52, 72, 116, 148 |
+| Grapnel, the starfish | `game/grapnelArt.ts` | mech at every tier, and the leg cell is the rowing arms | 36, 52, 72, 116, 148 |
 | Sovereign, the sea eagle (the BOSS, one body) | `game/kingArt.ts` | body and two wings | 512 |
 
 **The boss is not a family, and it is the one body allowed to be a

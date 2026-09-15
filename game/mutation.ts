@@ -6,9 +6,12 @@
  * it. Each mutator carries a POINT COST that says how much harder it makes
  * the run; a difficulty carries a BUDGET and a COUNT; and picking a
  * difficulty rolls that many mutators to fit inside that budget
- * (rollMutations). The player never picks a mutator, never switches one
- * off, and never sees the roll coming — that is the whole appeal of the
- * mode, and it is why this file has no toggle in it any more.
+ * (rollMutations). In regular mode the player never picks a mutator and
+ * never sees the roll coming — that is the whole appeal of the mode, and
+ * it is why the choosing is not in this file. CUSTOM MODE IS THE ONE
+ * EXCEPTION: a hand named in MutatorPicker replaces the roll outright
+ * (the `named` branch in Animechs.tsx), toggle by toggle and costed
+ * against the same rung budget.
  *
  * WHY IT STOPPED BEING A TECH-TREE LINE. Mutation used to be the tree's
  * left column: a rank per boss felled, and a switch per rank the player
@@ -169,8 +172,7 @@ export const MUTATIONS: readonly MutationDef[] = [
     id: "hungry",
     name: "Hungry Mechs",
     cost: 6,
-    blurb:
-      "A few mechs eat their neighbours, and every meal leaves one bigger and hitting harder.",
+    blurb: "A few enemies eat nearby enemies, growing bigger and stronger with each one.",
   },
   {
     id: "speedy",
@@ -182,33 +184,31 @@ export const MUTATIONS: readonly MutationDef[] = [
     id: "reconstruction",
     name: "Reconstruction",
     cost: 5,
-    blurb: "Every enemy stands back up once, whole, where it fell.",
+    blurb: "Every enemy revives once, at full health, where it was destroyed.",
   },
   {
     id: "conquest",
     name: "Conquest",
     cost: 4,
-    blurb: "Every turret the swarm wrecks rises again on its side.",
+    blurb: "Every turret the enemy destroys is turned against you.",
   },
   {
     id: "mechVirus",
     name: "Mech Virus",
     cost: 4,
-    blurb: "A few enemies carry a virus that eats a turret and jumps to the next.",
+    blurb: "A few enemies carry a virus that drains a turret, then jumps to the next one.",
   },
   {
     id: "overshields",
     name: "Overshields",
     cost: 4,
-    blurb:
-      "Force fields are five times as strong.",
+    blurb: "Force fields are five times as strong.",
   },
   {
     id: "armored",
     name: "Armored Swarms",
     cost: 3,
-    blurb:
-      "Lower tier units gain massive armor boosts.",
+    blurb: "Lower tier enemies gain a large amount of armour.",
   },
   {
     id: "hydrophobic",
@@ -220,34 +220,31 @@ export const MUTATIONS: readonly MutationDef[] = [
     id: "leadership",
     name: "Leadership",
     cost: 3,
-    blurb: "Nothing standing near a tier five body can be hit for more than a scratch.",
+    blurb: "Enemies within 15 tiles of a live T5 take at most 10 damage from any one hit.",
   },
   {
     id: "mitosis",
     name: "Mitosis",
     cost: 3,
-    blurb:
-      "Every enemy breaks apart into tier one units when it dies.",
+    blurb: "Every enemy breaks apart into T1 enemies when it dies.",
   },
   {
     id: "amphibious",
     name: "Amphibious",
     cost: 2,
-    blurb: "Ground enemies that wade come out faster, tougher and healing.",
+    blurb: "Ground enemies come out of water faster, tougher and healing.",
   },
   {
     id: "shieldTowers",
     name: "Shield Towers",
     cost: 2,
-    blurb:
-      "Shield towers rise periodically, obsorbing bullets until they are destroyed.",
+    blurb: "Shield towers rise periodically and absorb bullets until they are destroyed.",
   },
   {
     id: "volatile",
     name: "Volatile",
     cost: 2,
-    blurb:
-      "Enemies detonate when they die and damages nearby turrets.",
+    blurb: "Enemies explode when they die, damaging nearby turrets.",
   },
 ];
 
@@ -874,10 +871,10 @@ export const HYDROPHOBIC_RATE = 0.3;
 // walking through them worse.
 //
 // EACH BONUS IS A SHARE OF THE UNIT'S OWN NUMBERS, not a flat amount, so
-// one rule reads the same on a 150-hp weaver1 and a 22,000-hp weaver5: a
+// one rule reads the same on a 150-hp dartback1 and a 22,000-hp dartback5: a
 // stack is always "a fifth again of what you were", never "+30 hp", which
 // would be everything to the first and nothing to the second. The one
-// exception is ARMOUR, and it is a deliberate one — the weaver1 line's T1
+// exception is ARMOUR, and it is a deliberate one — the dartback1 line's T1
 // has armour 0, so a percentage of it is a percentage of nothing, and the
 // rule would skip the very body it is most about. Armour is therefore a
 // flat step on the same scale ARMORED_ARMOR uses.
@@ -896,7 +893,7 @@ export const HYDROPHOBIC_RATE = 0.3;
 // number anyone can tune.
 //
 // WHAT IT DOES NOT TOUCH: the hitbox, the layer, the kind. A waded
-// weaver1 is a fast fat weaver1, and it still cannot swim — deep water is
+// dartback1 is a fast fat dartback1, and it still cannot swim — deep water is
 // impassable to it exactly as before, and the rule only ever fires on the
 // shallow ground the map already lets it walk on.
 
@@ -912,10 +909,10 @@ export const AMPHIBIOUS_HP = 0.15;
  * (Speedy's doubling included — a share of what it actually walks at).
  *
  * FIVE STACKS IS +50%, short of Speedy's doubling on purpose. It was
- * +250% — a weaver1 that forded every crossing on Quagmire arrived at
+ * +250% — a dartback1 that forded every crossing on Quagmire arrived at
  * three and a half times its pace — and that was a swarm no tier-1 board
  * could catch: the headless playtest lost the map on wave 4 with every
- * leak a weaver1, at half the authored counts. The rule keeps its teeth
+ * leak a dartback1, at half the authored counts. The rule keeps its teeth
  * in the health and the plating; the speed is what a kill zone can still
  * answer. It still has to be WALKED for, one crossing at a time, and only
  * the bodies that took the long way in arrive carrying it.
@@ -925,7 +922,7 @@ export const AMPHIBIOUS_SPEED = 0.1;
 /** armour added per stack, FLAT — see the note above on why this one is
  *  not a percentage. Five stacks is two and a half plates — it was ten,
  *  the whole of ARMORED_ARMOR, and a body wearing ten plates is a body a
- *  tacker hits for its floor, which on Quagmire was every weaver1 by wave
+ *  tacker hits for its floor, which on Quagmire was every dartback1 by wave
  *  four and every ironhide2 by wave twelve. The health is the rule's weight
  *  now; the plating is the edge that makes a lobber worth more than a
  *  tacker */
@@ -1433,7 +1430,7 @@ if (CONQUEST_RATE <= 0 || CONQUEST_RATE > 1)
 // ---------- RECONSTRUCTION ----------------------------------------------
 //
 // EVERY BODY DIES TWICE. A unit the player kills goes down, lies where it
-// fell for RECONSTRUCT_DELAY seconds, and stands back up WHOLE — same
+// fell for RECONSTRUCT_DELAY seconds, and revives WHOLE — same
 // kind, same wave, full health — and only the second death is a death.
 // Nothing rises twice: the risen body carries a mark (Sim.urisen) that
 // says it has already had its turn, so the rule is exactly one generation

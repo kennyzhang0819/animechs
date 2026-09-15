@@ -142,7 +142,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Damage",
     color: PAL.ember,
     blurb:
-      "What one of this gun's shots takes off what it hits, before the target's own plating is subtracted from it.",
+      "The damage one shot deals, before the target's plating is subtracted.",
     field: false,
   },
   {
@@ -150,7 +150,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Rate of fire",
     color: PAL.flame,
     blurb:
-      "How often the gun lets go — what it is reloading at RIGHT NOW, with the water, the jam and a parting charge already in the number.",
+      "Shots per second, with water, jams and last-volley boosts already counted.",
     field: false,
   },
   {
@@ -158,7 +158,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Plating",
     color: PAL.steelLite,
     blurb:
-      "Every hit is shaved by this much first, down to a tenth of the hit at most — small arms bounce, the heavies still bite.",
+      "Every hit is reduced by this much, but at least 10% of it always gets through.",
     field: false,
   },
   // ---- THE TURRET TRAITS ----------------------------------------------
@@ -173,14 +173,14 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Non-bullet",
     color: PAL.sparkLite,
     blurb:
-      "Its shot is fire, a bolt, a beam or a rail — not a round. A cloaked hull stops rounds and nothing else, so this keeps aiming at one that has gone dark, and keeps hurting it.",
+      "Its shot is fire, a bolt, a beam or a rail, not a round, so it can still hit cloaked enemies.",
     field: false,
   },
   {
     id: "ignites",
     name: "Ignites",
     color: PAL.ember,
-    blurb: "What it hits catches fire — health straight off the pool, plating ignored.",
+    blurb: "Its hits set the target on fire. Fire ignores plating.",
     field: false,
   },
   {
@@ -188,7 +188,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Soaks",
     color: PAL.waterLite,
     blurb:
-      "What it hits comes away wet and slowed — and a wet body takes double from an electric shot, so this is half of a pair.",
+      "Its hits soak the target: slowed, and takes double damage from electric shots.",
     field: false,
   },
   {
@@ -196,7 +196,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Electric",
     color: PAL.spark,
     blurb:
-      "Its shot conducts. Against a SOAKED body it is worth double, and against a dry one it is worth nothing extra. Put one of these behind a douser.",
+      "Double damage against soaked targets, and no bonus against dry ones.",
     field: false,
   },
   // ---- THE BODY TRAITS --------------------------------------------------
@@ -222,7 +222,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Force field",
     color: PAL.field,
     blurb:
-      "It carries a bubble that eats shots at its outline before they reach the hull — and the bubble comes back a few seconds after it breaks. Break it and kill the body inside the window, or the window closes.",
+      "It has a shield bubble that absorbs hits, and it recharges a few seconds after it breaks.",
     field: false,
   },
   {
@@ -230,7 +230,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Shield field",
     color: PAL.fieldLite,
     blurb:
-      "It hands an absorbing bar to every body around it, on a pulse. The crowd is tougher than it looks for as long as this one is alive: kill the carrier and the bar stops being renewed.",
+      "It gives every enemy around it a shield bar, on a pulse.",
     field: false,
   },
   {
@@ -238,7 +238,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Repair field",
     color: PAL.heal,
     blurb:
-      "It mends the bodies around it, itself included, on a pulse. A line that cannot out-damage the mend is a line that never gets anywhere — kill this one first.",
+      "It repairs every enemy around it, itself included, on a pulse.",
     field: false,
   },
   {
@@ -246,7 +246,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Plating field",
     color: PAL.steelLite,
     blurb:
-      "It stamps extra plating onto every body around it. Plating is a flat shave off each hit, so this hurts volume far more than it hurts calibre — answer it with the big guns, or kill the carrier.",
+      "It gives every enemy around it extra plating.",
     field: false,
   },
   {
@@ -254,14 +254,14 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Haste field",
     color: PAL.flame,
     blurb:
-      "It drives the bodies around it faster. Less time in your kill zone for the whole crowd, not just for itself.",
+      "It makes every enemy around it move faster.",
     field: false,
   },
   {
     id: "jams",
     name: "Jam field",
     color: PAL.bomber,
-    blurb: "Guns underneath it reload slower for as long as it is overhead.",
+    blurb: "Turrets underneath it reload slower while it is overhead.",
     field: false,
   },
   {
@@ -269,7 +269,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Spotter",
     color: PAL.harpoon,
     blurb:
-      "Every weapon around it reaches further. A fleet already firing from outside your board's reach fires from further still while this one lives — it is the hull to kill, and you may have to build to reach it.",
+      "It gives every enemy around it more attack range.",
     field: false,
   },
   {
@@ -277,7 +277,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Drill",
     color: PAL.harpoonDark,
     blurb:
-      "The bodies around it grow their veterancy faster — they get to hitting hard sooner. Only a body that ages at all takes anything from it.",
+      "Enemies around it gain veterancy faster. Only enemies that gain veterancy at all are affected.",
     field: false,
   },
   {
@@ -289,7 +289,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Grows",
     color: PAL.harpoon,
     blurb:
-      "THE LONGER IT LIVES THE HARDER IT HITS — every weapon on it climbs with its age, to a ceiling. There is no answer to an old one; the answer is reaching out and killing it young.",
+      "Its damage climbs the longer it lives, up to a cap.",
     field: false,
   },
   {
@@ -297,7 +297,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Blink",
     color: PAL.wraith,
     blurb:
-      "A hit that lands throws it FORWARD along its route, past the gun that landed it, on a cooldown. A line that opens fire on it is a line it is suddenly behind — answer it with bursts and with fields that catch a body wherever it lands.",
+      "When it is hit, it teleports forward along its route, on a cooldown.",
     field: false,
   },
   {
@@ -305,7 +305,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Cloak",
     color: PAL.wraith,
     blurb:
-      "It goes dark on a cycle. No round can find it while it is gone — but fire, bolts, beams, rays and rails go straight through a cloak, so a non-bullet turret keeps working on it.",
+      "It cloaks on a cycle. Bullets cannot target it while it is cloaked; non-bullet weapons can.",
     field: false,
   },
   {
@@ -313,7 +313,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Charge",
     color: PAL.tusk,
     blurb:
-      "IT LEAVES THE ROUTE. With a structure in sight it drops the flow field and walks straight at it, so mazing it past your line does not work — it was never going to the core. Every answer is on the approach.",
+      "It leaves the route and attacks the nearest structure it can see, so mazing does not work on it.",
     field: false,
   },
   {
@@ -321,7 +321,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Starburst",
     color: PAL.hook,
     blurb:
-      "IT CARRIES NO GUN AND IT NEVER TAKES AIM. What it does is ANSWER: a hit that lands on it throws a homing star back out of one of its five arms, and its death throws five at once, one down every arm. Shoot it and it shoots back; kill it standing over your line and the burst is already inside it.",
+      "It has no gun. Every hit it takes throws a homing star back, and its death throws five at once.",
     field: false,
   },
   {
@@ -329,7 +329,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Fold",
     color: PAL.hook,
     blurb:
-      "It reaches for its own kind and MERGES with whatever it finds — health, shield pool and the weight of its stars all add, up to ten bodies in one. A patch of them left alone is one very large one.",
+      "It merges with others of its kind, adding their health and shields, up to 10 in one.",
     field: false,
   },
   {
@@ -337,7 +337,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Payload",
     color: PAL.bomber,
     blurb:
-      "It carries no gun: the BODY is the bomb. It dives at the nearest structure and goes off on contact — and goes off the same way wherever it is shot down, so an AA line standing over your guns detonates these on top of them. Kill them over nothing.",
+      "It has no gun. It dives at the nearest structure and explodes on contact, and explodes the same way wherever it is shot down.",
     field: false,
   },
   {
@@ -345,7 +345,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Immune",
     color: PAL.steel,
     blurb:
-      "A status simply never takes on it. Not a resistance — it is never applied at all, so the turret that lays it is doing nothing but its contact damage here.",
+      "Statuses are never applied to it at all.",
     field: false,
   },
   // ---- and back to the things that HAPPEN -----------------------------
@@ -354,7 +354,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Soaked",
     color: PAL.waterLite,
     blurb:
-      "Water, off a douser or a deluge. It drives slower for as long as this lasts, a fresh soak re-times it rather than stacking, and while it is wet an ELECTRIC shot on it is worth double. That is the whole of the pairing: the water is on the body, the electricity is on the gun.",
+      "It moves slower, and takes double damage from electric shots. A fresh soak re-times it rather than stacking.",
     field: true,
   },
   {
@@ -362,7 +362,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Burning",
     color: PAL.ember,
     blurb:
-      "Alight — off a torch on a body, off a Grapnel's fire star on a building. Fire takes health straight off the pool and ignores plating entirely; a second application re-lights it rather than stacking.",
+      "It is losing health a second to fire, which ignores plating. A second hit re-lights it rather than stacking.",
     field: true,
   },
   {
@@ -370,7 +370,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Shielded",
     color: PAL.field,
     blurb:
-      "An absorbing pool standing in front of health — its own bubble, or a bar handed to it by a carrier's shield field. Nothing reaches the body until it is gone.",
+      "An absorbing pool in front of health. Nothing reaches the body until it is gone.",
     field: true,
   },
   {
@@ -378,7 +378,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Arriving",
     color: PAL.steelWhite,
     blurb:
-      "Still coming through the door. It cannot be hurt while this lasts, and for the first of it cannot move either.",
+      "Still spawning. It cannot be damaged, and cannot move at first either.",
     field: true,
   },
   {
@@ -386,7 +386,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Hungry",
     color: PAL.emberLite,
     blurb:
-      "It eats its neighbours, and every meal leaves it bigger and stronger. The count is the meals it has taken.",
+      "It eats nearby enemies, and each one makes it bigger and stronger. The count is how many it has eaten.",
     field: true,
   },
   {
@@ -394,7 +394,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Amphibious",
     color: PAL.heal,
     blurb:
-      "It has come up out of the water faster, tougher and healing. The count is how many times it has waded in.",
+      "It came out of water faster, tougher and healing. The count is how many times it has waded in.",
     field: true,
   },
   {
@@ -402,7 +402,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Veteran",
     color: PAL.harpoon,
     blurb:
-      "A Harpoon hull, and the longer it lives the harder it hits: every shot it fires is multiplied by this. Kill it young.",
+      "Its damage is multiplied by this much, and the multiplier climbs the longer it lives.",
     field: true,
   },
   {
@@ -410,15 +410,14 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Cloaked",
     color: PAL.wraith,
     blurb:
-      "Gone dark. No ROUND can find it until it shows again — but fire, bolts, beams, rays and rails go straight through a cloak, so a non-bullet turret still aims at it and still hurts it. The count is the seconds it has left.",
+      "Cloaked: bullets cannot target it, but non-bullet weapons can. The count is the seconds it has left.",
     field: true,
   },
   {
     id: "led",
     name: "Led",
     color: PAL.steelWhite,
-    blurb:
-      "A tier five is standing near it, and nothing can take more than a scratch off it in one hit. Kill the big one and the order is gone.",
+    blurb: `A T5 is nearby, so no single hit on it can deal more than ${LEADERSHIP_CAP} damage.`,
     field: true,
   },
   {
@@ -426,7 +425,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Mech virus",
     color: PAL.venom,
     blurb:
-      "A machine plague. On a body it is waiting for the thing to die; in a turret it is eating a share of the pool every second, and when the turret goes it jumps to the nearest one left.",
+      "On an enemy it waits for the enemy to die. In a turret it drains health a second, then jumps to the nearest turret when this one is destroyed.",
     field: true,
   },
   {
@@ -434,7 +433,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Rot",
     color: PAL.venom,
     blurb:
-      "Venom. It takes raw health a second and ignores plating; the more spitters on one building, the faster it rots.",
+      "It is losing raw health a second, ignoring plating. More spitters on one building means faster rot.",
     field: true,
   },
   {
@@ -442,7 +441,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Shorted",
     color: PAL.wraith,
     blurb:
-      "A Wraith arc put this gun out. It neither reloads nor fires nor mends while this lasts; a fresh short re-times it rather than stacking.",
+      "This gun cannot fire, reload or repair. A fresh short re-times it rather than stacking.",
     field: true,
   },
   {
@@ -450,7 +449,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Jammed",
     color: PAL.bomber,
     blurb:
-      "A bomber wing is blanketing the ground under it. This gun reloads slower for as long as the flight is over it.",
+      "This gun reloads slower while a bomber wing is overhead.",
     field: true,
   },
   {
@@ -458,21 +457,21 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Last volley",
     color: PAL.flame,
     blurb:
-      "A neighbour went down and left this gun its charge — it is reloading far faster while that lasts.",
+      "This gun is reloading much faster, from a destroyed neighbour's last volley.",
     field: true,
   },
   {
     id: "regen",
     name: "Mending",
     color: PAL.heal,
-    blurb: "It repairs itself, this much health a second, for as long as it stands.",
+    blurb: "It repairs itself this much health a second.",
     field: true,
   },
   {
     id: "revive",
     name: "Undying",
     color: PAL.healLite,
-    blurb: "It gets to stand back up when it is wrecked. The count is the stand-ups it has left.",
+    blurb: "It revives at full health when it is destroyed. The count is how many revives it has left.",
     field: true,
   },
   {
@@ -480,14 +479,14 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Waterlogged",
     color: PAL.water,
     blurb:
-      "Water on the gun, and it reloads slower for it — built on the shore under the Hydrophobic rule, which never lifts, or struck by a Grapnel's soaked star, which runs down and is gone.",
+      "This gun reloads slower: built near water under Hydrophobic, which never lifts, or hit by a Grapnel's soaked star, which runs out.",
     field: true,
   },
   {
     id: "conquered",
     name: "Taken",
     color: "#FF5A5A",
-    blurb: "The swarm wrecked this turret and it rose again on their side. It shoots at you now.",
+    blurb: "The enemy destroyed this turret and revived it on their side. It shoots at you now.",
     field: true,
   },
 ];

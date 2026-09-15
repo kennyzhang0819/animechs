@@ -1,7 +1,7 @@
 // THE SOVEREIGN'S CONCEPT SHEET: the boss drawn at native size into
-// docs/king-concept.png, on a dark ground, beside the stoop5 and the
-// tusker5 at the same px-per-tile so the size claim can be looked at
-// rather than argued about. Same house rules as the turret sheet: no run
+// docs/king-concept/ (full, body, wing, cell and sizes), on a dark
+// ground, beside the stoop5, the skate5 and the tusker5 at the same
+// px-per-tile so the size claim can be looked at rather than argued about. Same house rules as the turret sheet: no run
 // of one material under four pixels (game/turretArt.ts thinRuns).
 //
 //   node --experimental-transform-types --import ./scripts/ts-hooks.mjs scripts/king-concept.mjs

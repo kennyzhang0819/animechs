@@ -19,11 +19,10 @@
    THE KIT IS NOW PIXEL ART, drawn on the same 3px pixel the turret sprites
    are drawn at, so the interface and the field are one material:
 
-     THE PLATE (.ms-pane) — a riveted steel plate: a 3px edge with the
+     THE PLATE (.ms-pane) — a steel plate: a 3px edge with the
        corner pixel notched out, one light row under the top edge and one
-       dark row over the bottom edge so it reads as a raised slab, a stud
-       in each corner. Its header, where it has one, is a darker strip
-       with a stud at each end (.ms-strip).
+       dark row over the bottom edge so it reads as a raised slab. Its
+       header, where it has one, is a darker strip (.ms-strip).
      THE BEVEL BUTTON (.ms-btn) — the SNES button: a light edge top-left,
        a dark edge bottom-right, and the press SWAPS them and moves the
        face one pixel down and right, so every click visibly sinks.
@@ -57,7 +56,7 @@
   --ms-plate-light: #8a8e98;
   --ms-plate-dark: #101114;
   --ms-plate-strip: #2a2d34; /* the header strip */
-  --ms-stud: #c9ccd2;
+  --ms-key-face: #c9ccd2; /* the light tile the keycap letter is printed on */
   --ms-gray: #4a4d55; /* a quiet line: the segment strip's frame, the scrollbar */
   --ms-disabled: #1b1d22;
   --ms-red: #e55454; /* Pal.negativeStat */
@@ -78,8 +77,7 @@
      it is also what a Tailwind border-colour utility paints onto, so a
      pane that wears a colour (a rarity, the sandbox's purple) wears it as
      a plain 3px line over the plate. The two inner rows, light under the
-     top and dark over the bottom, are what make the slab stand up, and
-     the four studs are the rivets. */
+     top and dark over the bottom, are what make the slab stand up. */
   .ms-pane,
   .ms-pane-solid {
     border: var(--ms-px) solid transparent;
@@ -90,33 +88,21 @@
       linear-gradient(var(--ms-plate-edge), var(--ms-plate-edge)),
       linear-gradient(var(--ms-plate-edge), var(--ms-plate-edge)),
       linear-gradient(var(--ms-plate-light), var(--ms-plate-light)),
-      linear-gradient(var(--ms-plate-dark), var(--ms-plate-dark)),
-      linear-gradient(var(--ms-stud), var(--ms-stud)),
-      linear-gradient(var(--ms-stud), var(--ms-stud)),
-      linear-gradient(var(--ms-stud), var(--ms-stud)),
-      linear-gradient(var(--ms-stud), var(--ms-stud));
+      linear-gradient(var(--ms-plate-dark), var(--ms-plate-dark));
     background-size:
       calc(100% - 6px) 3px,
       calc(100% - 6px) 3px,
       3px calc(100% - 6px),
       3px calc(100% - 6px),
       calc(100% - 6px) 3px,
-      calc(100% - 6px) 3px,
-      3px 3px,
-      3px 3px,
-      3px 3px,
-      3px 3px;
+      calc(100% - 6px) 3px;
     background-position:
       3px 0,
       3px 100%,
       0 3px,
       100% 3px,
       3px 3px,
-      3px calc(100% - 3px),
-      6px 6px,
-      calc(100% - 6px) 6px,
-      6px calc(100% - 6px),
-      calc(100% - 6px) calc(100% - 6px);
+      3px calc(100% - 3px);
     background-repeat: no-repeat;
     background-origin: border-box;
     background-clip: border-box;
@@ -129,8 +115,8 @@
     border-top: var(--ms-px) solid var(--ms-outline);
   }
 
-  /* THE HEADER STRIP: a darker band across the top of a plate with a
-     stud at each end, the title on it. It is pulled out to the plate's
+  /* THE HEADER STRIP: a darker band across the top of a plate with the
+     title on it. It is pulled out to the plate's
      edge with negative margins by whoever uses it (the padding differs
      per dialog), and it names the plate the way a stamped label names a
      machine. */
@@ -144,22 +130,6 @@
     background: var(--ms-plate-strip);
     border-bottom: var(--ms-px) solid var(--ms-outline);
     text-align: center;
-  }
-  .ms-strip::before,
-  .ms-strip::after {
-    content: "";
-    position: absolute;
-    top: 9px;
-    width: 3px;
-    height: 3px;
-    background: var(--ms-stud);
-    box-shadow: 3px 3px 0 var(--ms-outline);
-  }
-  .ms-strip::before {
-    left: 6px;
-  }
-  .ms-strip::after {
-    right: 9px;
   }
 
   /* THE BUTTON: the bevel. A black outline, a face, a lit edge top-left
@@ -342,7 +312,7 @@
     line-height: 12px;
     letter-spacing: 0;
     color: var(--ms-outline);
-    background: var(--ms-stud);
+    background: var(--ms-key-face);
     pointer-events: none;
   }
   .ms-btn:hover:not(:disabled):not([aria-disabled="true"]) > .ms-key,
@@ -592,7 +562,7 @@
      codex, a module on the relic shelf and in the inspector, a rule
      in the corner, the dealt card, the hover card. It is the PANE'S OWN
      RECIPE (.ms-pane above: notched corners, a light row under the top
-     edge, a dark row over the bottom one, a stud in each corner) drawn in
+     edge, a dark row over the bottom one) drawn in
      whatever colour the thing wears, so the four rarities, the three
      mutator weights and the category colours all come off one drawing.
 
@@ -621,36 +591,24 @@
       linear-gradient(var(--tile), var(--tile)),
       linear-gradient(var(--tile), var(--tile)),
       linear-gradient(var(--tile-light), var(--tile-light)),
-      linear-gradient(var(--tile-dark), var(--tile-dark)),
-      linear-gradient(var(--tile-light), var(--tile-light)),
-      linear-gradient(var(--tile-light), var(--tile-light)),
-      linear-gradient(var(--tile-light), var(--tile-light)),
-      linear-gradient(var(--tile-light), var(--tile-light));
+      linear-gradient(var(--tile-dark), var(--tile-dark));
     background-size:
       calc(100% - 6px) 3px,
       calc(100% - 6px) 3px,
       3px calc(100% - 6px),
       3px calc(100% - 6px),
       calc(100% - 6px) 3px,
-      calc(100% - 6px) 3px,
-      3px 3px,
-      3px 3px,
-      3px 3px,
-      3px 3px;
+      calc(100% - 6px) 3px;
     background-position:
       3px 0,
       3px 100%,
       0 3px,
       100% 3px,
       3px 3px,
-      3px calc(100% - 3px),
-      6px 6px,
-      calc(100% - 6px) 6px,
-      6px calc(100% - 6px),
-      calc(100% - 6px) calc(100% - 6px);
+      3px calc(100% - 3px);
   }
 
-  /* UNDER 36PX the rows and studs would eat the face: only the notched
+  /* UNDER 36PX the rows would eat the face: only the notched
      frame stays. The relic shelf, the inspector's pips, the reveal's rows
      and the held card's formation mark are this size. */
   .ms-tile-sm {
@@ -875,7 +833,7 @@ svg {
 /* THE CARD IS A TILE (.ms-tile in the rarity's colour, components/tile.ts)
    that pops when dealt. It used to carry a stepped rarity flag in its
    top-left corner as well; the plate frame is the band now, corner to
-   corner, and the flag sat on the notch and the stud. */
+   corner, and the flag sat on the notch. */
 .ms-deal-card {
   position: relative;
   user-select: none;

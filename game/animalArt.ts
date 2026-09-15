@@ -31,7 +31,7 @@
  * atlas.ts). The composed sprite is packed too, for the icon, the spawn
  * effect and the cloak ghost.
  *
- * The Dartback frog (the weaver kinds) is a mech as a runt and legged on
+ * The Dartback frog (the dartback kinds) is a mech as a runt and legged on
  * FOUR legs from T2: a frog crouched with its legs at its sides is what a
  * frog looks like from above, and four short legs on the legged rig is
  * the nearest the rig comes. It replaced the spider.

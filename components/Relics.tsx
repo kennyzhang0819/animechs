@@ -2,8 +2,8 @@
 
 import type { RefObject } from "react";
 
-import { modDef, modName, oddsLine, stackLine, type ModGlyph, type ModId } from "@/game/mods";
-import { relicDef, RELIC_NOTE, type RelicGlyph, type RelicId } from "@/game/relics";
+import { modBlurb, modDef, modName, stackLine, type ModGlyph, type ModId } from "@/game/mods";
+import { relicDef, type RelicGlyph, type RelicId } from "@/game/relics";
 import { MOD_GRID, modGlyph } from "./modArt";
 import { RARITY } from "@/game/rarity";
 import { HoverCard, useHoverCard } from "./HoverCard";
@@ -99,8 +99,8 @@ function Chip({
   aria: string;
   /** the prose under the title, or null where the title already said it */
   blurb: string | null;
-  /** the odds line: a mod's chance, or a relic's "in force" */
-  note: string;
+  /** a line under the blurb, where there is anything left to add */
+  note: string | null;
   /** what the whole stack is worth right now — mods only */
   stack: string | null;
 }) {
@@ -118,16 +118,19 @@ function Chip({
       {n > 1 && <span className="ms-tile-count">{n}</span>}
       <HoverCard tip={tip} title={name} tag={r.name} color={r.color} align="left">
         {blurb}
-        <span className="mt-1.5 block font-bold" style={{ color: r.color }}>
-          {note}
-        </span>
+        {note && (
+          <span className="mt-1.5 block font-bold" style={{ color: r.color }}>
+            {note}
+          </span>
+        )}
         {stack && <span className="mt-1.5 block font-bold text-[#EDEDEF]">{stack}</span>}
       </HoverCard>
     </span>
   );
 }
 
-/** one owned RELIC: no count, and a card that says it is simply on */
+/** one owned RELIC: no count, and no line under the blurb — a relic is
+ *  bought once and it is on, so its sentence is the whole of it */
 function RelicChip({ id }: { id: RelicId }) {
   const d = relicDef(id);
   return (
@@ -138,7 +141,7 @@ function RelicChip({ id }: { id: RelicId }) {
       n={1}
       aria={`${d.name}, ${RARITY[d.rarity].name} relic`}
       blurb={d.blurb}
-      note={RELIC_NOTE}
+      note={null}
       stack={null}
     />
   );
@@ -158,18 +161,16 @@ function ModChip({ id, n }: { id: ModId; n: number }) {
       rarity={d.rarity}
       n={n}
       aria={`${name}${n > 1 ? ` times ${n}` : ""}, ${RARITY[d.rarity].name} mod`}
-      // AN UNNAMED TICK SHOWS NO BLURB. Its title IS its tweak, so the
-      // sentence under it ("a chance for a new turret to be born with +2%
-      // damage...") is the title, the odds line and the total all said
-      // again in prose — three lines of reading for a card that exists to
-      // be glanced at mid-wave. A named mod keeps its blurb, because a
-      // name says nothing about what the thing does.
-      blurb={d.name ? d.blurb : null}
-      // THE ODDS DO NOT MOVE WITH THE COPIES. A copy used to be another
+      // THE BLURB IS THE ODDS AND THE STATS, in one sentence (mods.ts
+      // modBlurb) — "30% chance for a new turret to have +2% damage". It
+      // used to be a sentence of prose with the odds on a second line
+      // under it, which said the same thing twice at different lengths.
+      // THE ODDS DO NOT MOVE WITH THE COPIES: a copy used to be another
       // roll folded in, so "+10% damage x3" printed 66%; copies buy the
-      // NUMBER now (mods.ts), so the chip says 30% however many are on it
-      // and the line below says what the x3 is worth
-      note={oddsLine(d)}
+      // NUMBER now (mods.ts), so the sentence says 30% however many are
+      // on it and the stack line says what the x3 is worth
+      blurb={modBlurb(d)}
+      note={null}
       stack={stackLine(d, n)}
     />
   );
@@ -234,16 +235,16 @@ export function RelicShelf({
 
 /** what the card needs to know about one drawn module, whichever catalog
  *  it came out of — the reveal is the same card either way */
-type Drawn = { id: string; name: string; glyph: ModGlyph | RelicGlyph; rarity: keyof typeof RARITY; blurb: string; note: string };
+type Drawn = { id: string; name: string; glyph: ModGlyph | RelicGlyph; rarity: keyof typeof RARITY; blurb: string; note: string | null };
 
 const drawnMod = (id: ModId): Drawn => {
   const d = modDef(id);
-  return { id, name: modName(d), glyph: d.glyph, rarity: d.rarity, blurb: d.blurb, note: "on new turrets" };
+  return { id, name: modName(d), glyph: d.glyph, rarity: d.rarity, blurb: modBlurb(d), note: "on new turrets" };
 };
 
 const drawnRelic = (id: RelicId): Drawn => {
   const d = relicDef(id);
-  return { id, name: d.name, glyph: d.glyph, rarity: d.rarity, blurb: d.blurb, note: "in force now" };
+  return { id, name: d.name, glyph: d.glyph, rarity: d.rarity, blurb: d.blurb, note: null };
 };
 
 export function ModReveal({ draw }: { draw: ModDraw }) {
@@ -321,7 +322,7 @@ function SingleReveal({ d }: { d: Drawn }) {
         </span>
       </div>
       <span className="text-[9px] font-bold uppercase leading-none tracking-wide opacity-70" style={{ color: r.color }}>
-        {r.name} — {d.note}
+        {d.note ? `${r.name} — ${d.note}` : r.name}
       </span>
       <span className="text-[10px] leading-snug text-[#EDEDEF]">{d.blurb}</span>
     </div>

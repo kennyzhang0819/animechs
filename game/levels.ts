@@ -6,7 +6,7 @@ import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // import must never become a value one or the two files form a cycle
 import type { MutationId } from "./mutation";
 
-export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "weaver1", "weaver2", "weaver3", "weaver4", "weaver5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "starfish1", "starfish2", "starfish3", "starfish4", "starfish5"] as const;
+export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -17,11 +17,11 @@ export const UNIT_ID: Record<UnitKind, number> = {
   ironhide3: 2,
   ironhide4: 3,
   ironhide5: 4,
-  weaver1: 5,
-  weaver2: 6,
-  weaver3: 7,
-  weaver4: 8,
-  weaver5: 9,
+  dartback1: 5,
+  dartback2: 6,
+  dartback3: 7,
+  dartback4: 8,
+  dartback5: 9,
   starhart1: 10,
   starhart2: 11,
   starhart3: 12,
@@ -48,11 +48,11 @@ export const UNIT_ID: Record<UnitKind, number> = {
   tusker4: 33,
   tusker5: 34,
   boss: 35,
-  starfish1: 36,
-  starfish2: 37,
-  starfish3: 38,
-  starfish4: 39,
-  starfish5: 40,
+  grapnel1: 36,
+  grapnel2: 37,
+  grapnel3: 38,
+  grapnel4: 39,
+  grapnel5: 40,
 };
 
 /**
@@ -77,9 +77,9 @@ export const UNIT_ID: Record<UnitKind, number> = {
  */
 export const FAMILY_NAMES = {
   ground: { name: ANIMAL_ART ? "Ironhides" : "Ground mechs", body: "Ironhide" },
-  // the kind ids stay `weaver1`..`weaver5` (the sim's arrays and every wave
+  // the kind ids stay `dartback1`..`dartback5` (the sim's arrays and every wave
   // on disk name them); the family is the poison frog on screen
-  weaver: { name: ANIMAL_ART ? "Dartbacks" : "Venom spitters", body: "Dartback" },
+  dartback: { name: ANIMAL_ART ? "Dartbacks" : "Venom spitters", body: "Dartback" },
   groundSupport: { name: ANIMAL_ART ? "Starhart" : "Starlight mechs", body: "Starhart" },
   air: { name: ANIMAL_ART ? "Stoop" : "Skyfall bombers", body: "Stoop" },
   naval: { name: ANIMAL_ART ? "Skates" : "Harpoon fleet", body: "Skate" },
@@ -89,8 +89,8 @@ export const FAMILY_NAMES = {
   // switch too (there is no upstream weapon to name it for)
   tusker: { name: "Tuskers", body: "Tusker" },
   // the eighth family, and the second with no upstream hull under it: the
-  // starfish (game/starfishArt.ts), named for the thing on its back
-  starfish: { name: "Grapnels", body: "Grapnel" },
+  // starfish (game/grapnelArt.ts), named for the thing on its back
+  grapnel: { name: "Grapnels", body: "Grapnel" },
 } as const satisfies Record<string, { name: string; body: string }>;
 
 /**
@@ -187,7 +187,7 @@ export interface LegSpec {
   /**
    * How far past the knee the LOWER segment starts, so its sprite covers
    * the joint rather than butting up against it, px. Mindustry states this
-   * signed (weaver4's is -15) but only its magnitude ever reaches the
+   * signed (dartback4's is -15) but only its magnitude ever reaches the
    * screen — see the note in Renderer.pushLegs — so the source's sign is
    * kept here for fidelity and dropped at draw time.
    */
@@ -500,7 +500,7 @@ export interface UnitStats {
    */
   armorField?: { amount: number; reload: number; range: number };
   /**
-   * THE HASTE AURA — the weaver3's, and the venom line's family trait made
+   * THE HASTE AURA — the dartback3's, and the venom line's family trait made
    * into a rule. Every `reload` seconds the carrier stamps a speed
    * MULTIPLIER onto every body in `range`, live for as long as the stamp
    * lasts.
@@ -670,9 +670,9 @@ export interface UnitStats {
   /**
    * THE STARBURST — the Grapnels' family trait, and the only one on the
    * roster that is not something the body DOES but something that happens
-   * TO it. A starfish carries no weapon at all (weapons.ts UNIT_WEAPONS):
+   * TO it. A grapnel carries no weapon at all (weapons.ts UNIT_WEAPONS):
    * it crawls to the core and never once takes aim. What it does instead
-   * is throw stars (weapons.ts STARFISH_STARS, Sim.throwStar):
+   * is throw stars (weapons.ts GRAPNEL_STARS, Sim.throwStar):
    *
    *   A HIT THAT LANDS on it throws one back, `chance` of the time, out
    *   of one of its five arms and no oftener than every `cooldown`
@@ -680,7 +680,7 @@ export interface UnitStats {
    *   and a line that opens up on one is a line it is now answering.
    *
    *   ITS DEATH throws FIVE at once, one down every arm, wherever it
-   *   falls. Killing a starfish is not the end of it; it is the loudest
+   *   falls. Killing a grapnel is not the end of it; it is the loudest
    *   thing it does, and killing one inside your own patch is a mistake
    *   the burst charges for.
    *
@@ -689,8 +689,8 @@ export interface UnitStats {
    * furnace would answer sixty times a second — so the clock is the real
    * rate limit and the chance is the texture on top of it.
    *
-   * `merge` IS THE OTHER HALF OF THE FAMILY (Sim.mergeStarfish): a
-   * starfish REACHES for the nearest starfish of its own kind and folds
+   * `merge` IS THE OTHER HALF OF THE FAMILY (Sim.mergeGrapnel): a
+   * grapnel REACHES for the nearest grapnel of its own kind and folds
    * with it on purpose, up to `merge` bodies in one. Health, maximum
    * health, shield and the star's bite all add, exactly as they do under
    * the squeeze every other kind shares (constants.ts MERGE_*) — the
@@ -867,7 +867,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
         }
       : {}),
   },
-  // weaver1: 150 hp, no armor, 1x1-block hitbox, 7.5 tiles/s — twice the
+  // dartback1: 150 hp, no armor, 1x1-block hitbox, 7.5 tiles/s — twice the
   // ground line's pace, and the fastest walker in the game.
   //
   // IT IS NOT A BOMB ANY MORE. The suicide charge is gone (weapons.ts): a
@@ -876,17 +876,17 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // spitter stops refreshing the clock it just started. So the T1 lives,
   // keeps its pace, and spits — one orb every three seconds, and every orb
   // lands the rot.
-  weaver1: {
+  dartback1: {
     hp: 150,
     speed: 7.5 * CELL,
     armor: 0,
     radius: UR,
     tier: 1,
-    // THE ANIMAL TRIAL (animalFlag.ts): the Dartback runt keeps the weaver1
-    // mech's rig, a frog with its feet tucked (MECH_ART.weaver1 in atlas.ts)
+    // THE ANIMAL TRIAL (animalFlag.ts): the Dartback runt keeps the dartback1
+    // mech's rig, a frog with its feet tucked (MECH_ART.dartback1 in atlas.ts)
   },
-  // weaver2: the venom line's T2 — 600 hp, armor 2, a 1.625x1.625-block
-  // hitbox, 5.5 tiles/s. It is the weaver1's VOLUME tier and nothing else:
+  // dartback2: the venom line's T2 — 600 hp, armor 2, a 1.625x1.625-block
+  // hitbox, 5.5 tiles/s. It is the dartback1's VOLUME tier and nothing else:
   // the same orb, the same rot, four times the health and four barrels.
   //
   // IT NO LONGER THROWS SLAG — the whole tree throws one thing now
@@ -897,7 +897,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // counter is one the player solves with a wall of one turret. So the tier
   // the swarm upgrades INTO is the tier the flame slides off, and a board
   // that opened with torch has to find a second idea by wave twenty.
-  weaver2: {
+  dartback2: {
     hp: 600,
     speed: 5.5 * CELL,
     armor: 2,
@@ -924,10 +924,10 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
       ? legs({ count: 4, length: 11 * MU, forwardScl: 0.6, moveSpace: 0.7, baseOffset: 2 * MU, lengthScl: 0.85, elevation: 0.15 })
       : legs({ count: 4, length: 5 * MU, forwardScl: 0.6, moveSpace: 1.1, elevation: 0.12 }),
   },
-  // weaver3: the line's T3 — 1000 hp, armor 9, a 1.875x1.875-block hitbox,
+  // dartback3: the line's T3 — 1000 hp, armor 9, a 1.875x1.875-block hitbox,
   // 0.54 px/tick = 4.05 tiles/s, the slowest thing on the field. Six legs
   // on longer mounts (legBaseOffset 2) stepping three at a time
-  weaver3: {
+  dartback3: {
     hp: 1000,
     speed: 5.5 * CELL,
     armor: 4,
@@ -955,17 +955,17 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
           elevation: 0.15,
         }),
   },
-  // weaver4: the weaver1 line's T4 — 8000 hp, armor 14, a 2.875x2.875-block
-  // hitbox, 0.62 px/tick = 4.65 tiles/s. Eight times the weaver3's health
+  // dartback4: the dartback1 line's T4 — 8000 hp, armor 14, a 2.875x2.875-block
+  // hitbox, 0.62 px/tick = 4.65 tiles/s. Eight times the dartback3's health
   // on something that walks faster than it, which makes it the only T4 on
   // the roster that is quicker than the T3 it replaces
   //
-  // Its legs are the difference: 30 world units against the weaver3's 13,
-  // on mounts 10 units out, so it straddles ground the weaver3 walks over.
-  // legPairOffset 3 staggers the gait leg by leg (the weaver3's 0 swings
+  // Its legs are the difference: 30 world units against the dartback3's 13,
+  // on mounts 10 units out, so it straddles ground the dartback3 walks over.
+  // legPairOffset 3 staggers the gait leg by leg (the dartback3's 0 swings
   // each three-leg group as one piece), and legExtension 15 runs each
   // lower segment a whole segment back past its own knee, so the limb
-  // sprite covers the joint — which is why weaver4 needs no knee cap where
+  // sprite covers the joint — which is why dartback4 needs no knee cap where
   // every other legged unit has one
   //
   // rippleScale 2 doubles the dust a planted foot throws. Mindustry also
@@ -973,7 +973,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // whatever the foot lands on: it has no target here, since this game's
   // towers cannot be damaged and the player fields no units of its own, so
   // what survives of the footfall is the dust and the reach
-  weaver4: {
+  dartback4: {
     hp: 8000,
     speed: 5.5 * CELL,
     armor: 7,
@@ -1008,25 +1008,25 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
           ripple: 2,
         }),
   },
-  // weaver5: the weaver1 line's T5 — 18000 hp, armor 10, a 3.25x3.25-block
+  // dartback5: the dartback1 line's T5 — 18000 hp, armor 10, a 3.25x3.25-block
   // hitbox, and 0.5 px/tick = 3.75 tiles/s, which is exactly the ironhide1's
   // marching pace: the largest frog on the field keeps up with the line
   // it walks in front of
   //
   // Its legs are the whole silhouette. Eight of them at 75 world units —
-  // two and a half times the weaver4's 30, the longest reach on the roster
+  // two and a half times the dartback4's 30, the longest reach on the roster
   // — on mounts only 8 units out, so the body sits low inside a span it
   // straddles rather than stands on. legLengthScl 0.93 folds them a little
-  // further in than weaver4's 0.96, and shadowElevation 0.95 lifts a
+  // further in than dartback4's 0.96, and shadowElevation 0.95 lifts a
   // swinging foot almost a full body-height off the ground: the gait is
-  // visibly high-stepping where the weaver4's is a scuttle
+  // visibly high-stepping where the dartback4's is a scuttle
   //
-  // Like the weaver4 it has no knee cap and takes a shoulder plate instead
+  // Like the dartback4 it has no knee cap and takes a shoulder plate instead
   // (legExtension 20 runs each lower segment back over its own joint), and
-  // like the weaver4 its legSplashDamage 80 / legSplashRange 60 has nothing
+  // like the dartback4 its legSplashDamage 80 / legSplashRange 60 has nothing
   // to hit here — towers cannot be damaged and the player fields no units
-  // — so what lands is rippleScale 3, half again the weaver4's dust
-  weaver5: {
+  // — so what lands is rippleScale 3, half again the dartback4's dust
+  dartback5: {
     hp: 18000,
     speed: 5 * CELL,
     armor: 10,
@@ -1064,7 +1064,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
         }),
   },
   // stoop1: 70 hp, no armor, 1.125-block hitbox, 8 tiles/s (upstream 20.25).
-  // Still the fastest body in the game — it outruns a weaver1 and laps an
+  // Still the fastest body in the game — it outruns a dartback1 and laps an
   // ironhide1, in a straight line over everything — but eight is a pace a
   // gun can track, and fifteen was not: the runt is the tier the script
   // sends in the hundreds, and at fifteen a hundred-tile approach was
@@ -1140,7 +1140,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // very hard to remove
   //
   // immunities = burning: torch's flame slides off this one exactly as it
-  // does off the weaver2, the roster's only other fireproof unit. A flame
+  // does off the dartback2, the roster's only other fireproof unit. A flame
   // wall that melts an ironhide1 column is the wrong answer here — 9 armour
   // already takes 17-damage flame hits down to 8, and the 0.167/tick burn
   // that normally finishes the job never starts
@@ -1229,7 +1229,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // is the long one: fifty-seven tiles, nine cells wide, every structure
   // inside it (weapons.ts). Kill it before it fires, or lose the row
   //
-  // Four legs, not the six or eight the weaver1 line runs on, at 14 world
+  // Four legs, not the six or eight the dartback1 line runs on, at 14 world
   // units on mounts 11 out: nearly all of the leg is the mount offset, so
   // it stands on stubby posts planted wide of a body that overhangs them
   starhart5: {
@@ -1285,7 +1285,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // twenty-seven. The board was not being beaten, it was being skipped.
   //
   // EIGHT IS STILL THE FASTEST THING IN THE GAME and still a straight
-  // line over every wall and every channel — a stoop1 outruns a weaver1
+  // line over every wall and every channel — a stoop1 outruns a dartback1
   // and laps an ironhide1 — but eight is a pace a gun can track, which
   // fifteen was not. The ramp down from there is one tile a tier, so
   // every step up the tree really is a trade of pace for weight rather
@@ -1718,7 +1718,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   //
   // THE BIG ONES, and that is the first and the loudest thing about them.
   // Every other line on the roster opens on a 1x1 or thereabouts — the
-  // ironhide1 and the weaver1 are exactly one tile, the widest T1
+  // ironhide1 and the dartback1 are exactly one tile, the widest T1
   // anywhere is the livewire1's 1.375 — and the Tusker RUNT is a
   // 1.75x1.75. It is half again the biggest opening body in the game, it
   // is drawn at that box (tuskerArt.ts: no overshoot, the quad is the
@@ -1927,16 +1927,16 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     }),
   },
 
-  // ── THE GRAPNELS, the starfish (game/starfishArt.ts) ──────────────────
+  // ── THE GRAPNELS, the starfish (game/grapnelArt.ts) ─────────────────
   //
   // THE SLOWEST BODIES IN THE GAME, and the only ones that CRAWL: about
   // two tiles a second at every tier, which is a walker's pace halved.
   //
-  // AND THE ONLY ONES THAT DO NOT SHOOT. There is no starfish weapon in
-  // weapons.ts any more — no gun, no reload, no aim. A starfish crawls at
+  // AND THE ONLY ONES THAT DO NOT SHOOT. There is no grapnel weapon in
+  // weapons.ts any more — no gun, no reload, no aim. A grapnel crawls at
   // your core and answers what is done to it: a hit that lands throws a
   // homing star back out of one of its five arms, and its death throws
-  // five at once (`starburst` below, weapons.ts STARFISH_STARS). It is
+  // five at once (`starburst` below, weapons.ts GRAPNEL_STARS). It is
   // the one family on the roster whose damage is decided by the BOARD —
   // shoot it and it shoots back, kill it and it empties itself into
   // whatever is standing around it, ignore it and it walks into your core
@@ -1950,10 +1950,10 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // volley.
   //
   // THE CRAWL IS IN THE DRAWING AND NOT IN THESE NUMBERS — the four rear
-  // arms swing the body along on the mech rig (game/starfishArt.ts),
+  // arms swing the body along on the mech rig (game/grapnelArt.ts),
   // which is the only place this family's gait lives.
   //
-  // AND THEY FOLD INTO EACH OTHER (`starburst.merge`, Sim.mergeStarfish).
+  // AND THEY FOLD INTO EACH OTHER (`starburst.merge`, Sim.mergeGrapnel).
   // Every other kind folds only when a choke crushes it; these reach for
   // their own kind and fold on purpose, up to ten bodies in one and ten
   // times the health — with the star's bite adding the whole way. A patch
@@ -1974,7 +1974,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // decides a tier's output is how long it waits. An apex on the runt's
   // clock would out-damage every other T5 on the roster several times
   // over, purely for being shot at.
-  starfish1: {
+  grapnel1: {
     hp: 240,
     speed: 1.9 * CELL,
     armor: 2,
@@ -1983,7 +1983,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 3.5,
     starburst: { chance: 0.3, cooldown: 1, merge: 10 },
   },
-  starfish2: {
+  grapnel2: {
     hp: 780,
     speed: 1.95 * CELL,
     armor: 4,
@@ -1992,7 +1992,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 3.2,
     starburst: { chance: 0.3, cooldown: 1.2, merge: 10 },
   },
-  starfish3: {
+  grapnel3: {
     hp: 2100,
     speed: 2 * CELL,
     armor: 7,
@@ -2001,7 +2001,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 2.8,
     starburst: { chance: 0.3, cooldown: 1.5, merge: 10 },
   },
-  starfish4: {
+  grapnel4: {
     hp: 7400,
     speed: 2.05 * CELL,
     armor: 13,
@@ -2010,7 +2010,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 2.2,
     starburst: { chance: 0.3, cooldown: 1.9, merge: 10 },
   },
-  starfish5: {
+  grapnel5: {
     hp: 16000,
     speed: 2.1 * CELL,
     armor: 19,
@@ -2030,7 +2030,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
 export const UNIT_TREES = [
   { key: "ground", name: FAMILY_NAMES.ground.name, kinds: ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5"] },
   { key: "support", name: FAMILY_NAMES.groundSupport.name, kinds: ["starhart1", "starhart2", "starhart3", "starhart4", "starhart5"] },
-  { key: "weaver", name: FAMILY_NAMES.weaver.name, kinds: ["weaver1", "weaver2", "weaver3", "weaver4", "weaver5"] },
+  { key: "dartback", name: FAMILY_NAMES.dartback.name, kinds: ["dartback1", "dartback2", "dartback3", "dartback4", "dartback5"] },
   { key: "air", name: FAMILY_NAMES.air.name, kinds: ["stoop1", "stoop2", "stoop3", "stoop4", "stoop5"] },
   // the two naval tank trees: upgrade paths like the four above, on the
   // amphibious layer. They used to be the only rows whose units needed a
@@ -2042,7 +2042,7 @@ export const UNIT_TREES = [
   // the seventh row: the heavy melee line, on the walkers' layer
   { key: "tusker", name: FAMILY_NAMES.tusker.name, kinds: ["tusker1", "tusker2", "tusker3", "tusker4", "tusker5"] },
   // the eighth row: the crawlers, on the walkers' layer
-  { key: "starfish", name: FAMILY_NAMES.starfish.name, kinds: ["starfish1", "starfish2", "starfish3", "starfish4", "starfish5"] },
+  { key: "grapnel", name: FAMILY_NAMES.grapnel.name, kinds: ["grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5"] },
   // not an upgrade path: the boss row holds the kinds that arrive as an
   // event rather than a stream, so its slots do not read as tiers
   { key: "boss", name: BOSS_NAME, kinds: ["boss"] },
@@ -2147,15 +2147,15 @@ export const FAMILIES = [
   // THE SPITTERS: light, quick, and every shot they fire is the same purple
   // orb landing the same rot (weapons.ts POISON). No suicide charge, no
   // sap beams, no slag — one weapon look and one status across five tiers,
-  // which is the whole point of the family. Its carrier is the weaver3,
+  // which is the whole point of the family. Its carrier is the dartback3,
   // and what it hands out is PACE, because rot runs on a clock and the
   // family wants more applications inside it.
   //
   // WHAT IT POSES: rot ignores armour, so this is the family a board that
   // out-plated the ground mechs still loses turrets to. Kill them before
   // the clock refreshes, or bring repair.
-  { key: "weaver", name: FAMILY_NAMES.weaver.name, layer: "ground", icon: "weaver1",
-    kinds: ["weaver1", "weaver2", "weaver3", "weaver4", "weaver5"] },
+  { key: "dartback", name: FAMILY_NAMES.dartback.name, layer: "ground", icon: "dartback1",
+    kinds: ["dartback1", "dartback2", "dartback3", "dartback4", "dartback5"] },
   // THE LIGHT: named for stars, armed with green lasers, and every laser
   // PIERCES — it takes every structure along its length (weapons.ts
   // pierce). Nothing flies; nothing is ballistic. Every tier heals or
@@ -2245,27 +2245,27 @@ export const FAMILIES = [
   // approach — there is no answering a Tusker that has arrived.
   { key: "tusker", name: FAMILY_NAMES.tusker.name, layer: "ground", icon: "tusker1",
     kinds: ["tusker1", "tusker2", "tusker3", "tusker4", "tusker5"] },
-  // THE GRAPNELS: the starfish — starfish1 to starfish5 — the slowest
+  // THE GRAPNELS: the starfish — grapnel1 to grapnel5 — the slowest
   // bodies in the game, and the only ones that carry no weapon.
   //
-  // IT DOES NOT SHOOT; IT ANSWERS. A hit that lands on a starfish has a
+  // IT DOES NOT SHOOT; IT ANSWERS. A hit that lands on a grapnel has a
   // chance of throwing a homing star back out of one of its five arms,
-  // and a starfish that dies throws five at once, one down every arm
-  // (UnitStats.starburst, weapons.ts STARFISH_STARS). From the elite up
+  // and a grapnel that dies throws five at once, one down every arm
+  // (UnitStats.starburst, weapons.ts GRAPNEL_STARS). From the elite up
   // every star is an element — rot, a soak that slows a gun's reload, or
   // fire — and every one of those bursts as well as bites.
   //
-  // AND IT FOLDS INTO ITSELF. A starfish reaches for the nearest of its
+  // AND IT FOLDS INTO ITSELF. A grapnel reaches for the nearest of its
   // own kind and merges with it on purpose, up to ten bodies and ten
   // times the health in one, with the star's bite adding the whole way
-  // (Sim.mergeStarfish).
+  // (Sim.mergeGrapnel).
   //
   // WHAT IT POSES: a body that punishes the board for doing anything to
   // it, and punishes it most for finishing the job. The answer is reach —
   // kill them far from the line, before they have found each other — and
   // spacing, so one death burst cannot take a patch.
-  { key: "starfish", name: FAMILY_NAMES.starfish.name, layer: "ground", icon: "starfish1",
-    kinds: ["starfish1", "starfish2", "starfish3", "starfish4", "starfish5"] },
+  { key: "grapnel", name: FAMILY_NAMES.grapnel.name, layer: "ground", icon: "grapnel1",
+    kinds: ["grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5"] },
 ] as const satisfies readonly {
   key: string;
   name: string;
@@ -2288,13 +2288,13 @@ export type FamilyKey = (typeof FAMILIES)[number]["key"];
  */
 export const FAMILY_ACCENT: Readonly<Record<FamilyKey, RGB>> = {
   ground: PAL.mech,
-  weaver: PAL.venom,
+  dartback: PAL.venom,
   groundSupport: PAL.star,
   air: PAL.bomber,
   naval: PAL.harpoon,
   navalSupport: PAL.wraith,
   tusker: PAL.tusk,
-  starfish: PAL.hook,
+  grapnel: PAL.hook,
 };
 
 /**
@@ -2319,7 +2319,7 @@ export const FAMILY_ACCENT: Readonly<Record<FamilyKey, RGB>> = {
  * empty sprites. They sit on the shelf instead, which keeps the promise
  * exact: off, the game is the six lines it shipped with.
  */
-export const SHELVED_FAMILIES: readonly FamilyKey[] = ANIMAL_ART ? [] : ["tusker", "starfish"];
+export const SHELVED_FAMILIES: readonly FamilyKey[] = ANIMAL_ART ? [] : ["tusker", "grapnel"];
 
 /** the families in play: the table, less the shelf */
 export const ACTIVE_FAMILIES: readonly FamilyKey[] = FAMILIES.map((f) => f.key).filter(
@@ -2483,7 +2483,7 @@ export const UNIT_NAMES: Record<UnitKind, string> = (() => {
     // have no upstream anything to fall back to (they are shelved off the
     // switch, SHELVED_FAMILIES), so they are named off the table either
     // way rather than reading as `Tusker3` in the level editor.
-    if (!ANIMAL_ART && f.key !== "tusker" && f.key !== "starfish") continue;
+    if (!ANIMAL_ART && f.key !== "tusker" && f.key !== "grapnel") continue;
     f.kinds.forEach((k, i) => {
       out[k] = `${FAMILY_NAMES[f.key].body} (${UNIT_RANKS[i]})`;
     });
@@ -3100,7 +3100,7 @@ export const WORLDS: LevelSpec[] = [
     //
     //   line       T1        T2       T3         T4         T5
     //   ironhide1     ironhide1    ironhide2     ironhide3   ironhide4    ironhide5
-    //   weaver1    weaver1   weaver2    weaver3    weaver4     weaver5
+    //   dartback1    dartback1   dartback2    dartback3    dartback4     dartback5
     //   support    starhart1      starhart2   starhart3     starhart4       starhart5
     //   air        stoop1     stoop2  stoop3     stoop4   stoop5
     //
