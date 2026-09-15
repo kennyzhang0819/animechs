@@ -46,6 +46,7 @@ import {
 import { IRON_TIERS, ironLegged, ironMech, type IronTier } from "./ironhideArt";
 import { TUSK_TIERS, tuskLegged, tuskMech } from "./tuskerArt";
 import { STARFISH_TIERS, starfishMech } from "./starfishArt";
+import { KING_TIER, king, kingGeom } from "./kingArt";
 
 /**
  * THE SHEET IS PACKED AT LOAD. Nothing in this file names a pixel
@@ -1076,6 +1077,39 @@ export const SF4_CELLS = sfMechCells(4, STARFISH_TIERS[3].n, 128);
 export const SF5_CELLS = sfMechCells(5, STARFISH_TIERS[4].n, 256);
 
 /**
+ * WHAT THE BOSS DRAWS AT: one and a half world px per native px against
+ * everything else's one. It is the boss's own multiplier and always has
+ * been — it was the disrupt's — and the boss is the only kind on the sheet
+ * with one, because presence is that unit's whole job. Every quad and
+ * every offset the king's rig hands the renderer is scaled by it (UNIT_ART
+ * and wingPart below), so the art, the wing roots and the beat all ride
+ * one number and the hitbox is authored to match.
+ */
+const BOSS_SCALE = 1.5;
+
+/**
+ * THE SOVEREIGN'S CELLS — the boss's, and the largest on the sheet by a
+ * long way. Three of them, like every other body on the wing rig: the
+ * composed sprite in a 512 cell, the body column, and one wing.
+ *
+ * 512 NATIVE PX IS THE EAGLE'S HITBOX, at BOSS_SCALE rather than at the
+ * 32 px a tile everything else on the sheet is drawn to: 512 x 0.625 x 1.5
+ * is 480 world px, a twenty-four-block body (kingArt.ts, levels.ts).
+ *
+ * IT DOES NOT PACK OVER THE STOCK BOSS. Every other animal draws into a
+ * cell the stock art already owned, and the boss's own cell (UV_BOSS) is a
+ * 256 holding a 243px hull — a quarter of the area the eagle needs. So the
+ * king asks the packer for room of its own, the way the Tuskers and the
+ * Grapnels do, and UV_BOSS is left exactly as it was: with ANIMAL_ART off
+ * these cells are never painted and the stock hull is back, byte for byte.
+ */
+const KING_CELLS = {
+  full: sprite("king", KING_TIER.n, KING_TIER.n),
+  body: column("king-body", KING_TIER.n + 1, KING_TIER.bw + 1),
+  wing: sprite("king-wing", KING_TIER.nw + 1, KING_TIER.nw + 1),
+};
+
+/**
  * WHERE A BODY'S TEAM CELL RIDES ON ITS BODY QUAD, filled in at pack time
  * (packTeamCells) and read by the renderer.
  *
@@ -1122,12 +1156,18 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   stoop2: { uv: UV_STOOP2, sprite: UNIT_SPRITE * 2 },
   stoop3: { uv: UV_STOOP3, sprite: UNIT_SPRITE * 2 },
   stoop4: { uv: UV_STOOP4, sprite: UNIT_SPRITE * 4 },
-  // the boss draws HALF AGAIN its native scale ON PURPOSE — the one unit
+  // THE BOSS DRAWS HALF AGAIN ITS NATIVE SCALE ON PURPOSE — the one unit
   // allowed to break the px-per-px convention, because presence is its
-  // job. At x6 it fills the same quad as stoop5, the widest thing on the
-  // roster. The hitbox grew with it (UNIT_STATS radius, UR * 7), so shots
-  // land where the art says they should
-  boss: { uv: UV_BOSS, sprite: UNIT_SPRITE * 6 },
+  // job, and the only thing about it that did not change when the Erekir
+  // hull became the Sovereign (kingArt.ts). Off the animal switch that is
+  // Mindustry's 243px disrupt on a 256 cell at x6, a 240px quad; on it, a
+  // 512px eagle at the same 1.5 px-per-px, a 480px quad — TWENTY-FOUR
+  // TILES, three and a third times the widest T5 there is. The hitbox
+  // follows the art either way (UNIT_STATS.hitbox), so shots land where
+  // the silhouette says they should
+  boss: ANIMAL_ART
+    ? { uv: KING_CELLS.full, sprite: (KING_TIER.n / 64) * UNIT_SPRITE * BOSS_SCALE }
+    : { uv: UV_BOSS, sprite: UNIT_SPRITE * 6 },
   // 320x321 on a 7.25-block hitbox: the sheet's biggest single piece, and
   // the only 384px cell on it — hence the odd multiplier, which is just
   // 384/64 like every other one here
@@ -1841,33 +1881,43 @@ if (ANIMAL_ART) {
     sil: { body: UV_WEAVER4_BODY_SIL, joint: UV_WEAVER4_JOINT_SIL, baseJoint: UV_WEAVER4_JOINT_BASE_SIL, foot: UV_WEAVER4_FOOT_SIL },
   }, 4);
   // ---- Stoop, Skate, Livewire ----
-  // the bat, the manta and the narwhal on the wing rig, each on its own
-  // kind's cells; the hulls' engines go (neither has jets), the wake
-  // stays, and the bat keeps its jet
+  // the bat, the manta and the narwhal on the wing rig — and the boss
+  // below them — each on its own kind's cells; the hulls' engines go
+  // (neither has jets), the wake stays, and the bat keeps its jet.
+  //
+  // `scl` is the world px per native px, 1 everywhere but the boss, whose
+  // quads AND offsets both ride BOSS_SCALE: a root scaled differently from
+  // the wing hanging off it puts the wing through the body
+  const wingPart = (k: UnitKind, T: FlyerTier, cells: readonly [UVRect, UVRect], g: StoopGeom, jets: boolean, scl = 1): void => {
+    const [body, wing] = cells;
+    const px = PX * scl;
+    FLYER_PARTS[k] = {
+      body,
+      wing,
+      sprite: cellPx(body) * px,
+      spriteH: cellPxH(body) * px,
+      wingSprite: cellPx(wing) * px,
+      rootX: g.rootX * px,
+      rootY: g.rootY * px,
+      wingX: g.wingX * px,
+      wingY: g.wingY * px,
+      fold: T.fold,
+      sweep: T.sweep,
+      rate: T.rate,
+    };
+    if (!jets) delete UNIT_ENGINES[k];
+  };
   const wingParts = (kinds: readonly UnitKind[], tiers: readonly FlyerTier[], cells: readonly (readonly [UVRect, UVRect])[], geom: (T: FlyerTier) => StoopGeom, jets: boolean): void =>
-    tiers.forEach((T, i) => {
-      const g = geom(T);
-      const [body, wing] = cells[i];
-      const k = kinds[i];
-      FLYER_PARTS[k] = {
-        body,
-        wing,
-        sprite: cellPx(body) * PX,
-        spriteH: cellPxH(body) * PX,
-        wingSprite: cellPx(wing) * PX,
-        rootX: g.rootX * PX,
-        rootY: g.rootY * PX,
-        wingX: g.wingX * PX,
-        wingY: g.wingY * PX,
-        fold: T.fold,
-        sweep: T.sweep,
-        rate: T.rate,
-      };
-      if (!jets) delete UNIT_ENGINES[k];
-    });
+    tiers.forEach((T, i) => wingPart(kinds[i], T, cells[i], geom(T), jets));
   wingParts(STOOP_KINDS, STOOP_TIERS, UV_STOOP_CELLS, stoopGeom, true);
   wingParts(MANTA_KINDS, MANTA_TIERS, UV_MANTA_CELLS, mantaGeom, false);
   wingParts(NARWHAL_KINDS, NARWHAL_TIERS, UV_NARWHAL_CELLS, narwhalGeom, false);
+  // ---- the Sovereign ----
+  // the boss on the same rig, on cells of its own and at the boss's own
+  // scale. Its ENGINES GO: the disrupt's two mirrored pairs of jets were
+  // an Erekir missile bomber's, and what is there now is a bird — the
+  // thing that keeps it in the air is the beat
+  wingPart("boss", KING_TIER, [KING_CELLS.body, KING_CELLS.wing], kingGeom(), false, BOSS_SCALE);
   frogLegArt("weaver5", 4, {
     body: UV_WEAVER5_BODY, joint: UV_WEAVER5_JOINT, baseJoint: UV_WEAVER5_JOINT_BASE, foot: UV_WEAVER5_FOOT, leg: UV_WEAVER5_LEG_SEG, legBase: UV_WEAVER5_LEG_BASE_SEG,
     sil: { body: UV_WEAVER5_BODY_SIL, joint: UV_WEAVER5_JOINT_SIL, baseJoint: UV_WEAVER5_JOINT_BASE_SIL, foot: UV_WEAVER5_FOOT_SIL },
@@ -2851,6 +2901,20 @@ function packAnimalArt(
   packWinged(STOOP_KINDS, STOOP_TIERS, [UV_STOOP1, UV_STOOP2, UV_STOOP3, UV_STOOP4, UV_STOOP5], UV_STOOP_CELLS, stoop);
   packWinged(MANTA_KINDS, MANTA_TIERS, [UV_SKATE1, UV_SKATE2, UV_SKATE3, UV_SKATE4, UV_SKATE5], UV_MANTA_CELLS, manta);
   packWinged(NARWHAL_KINDS, NARWHAL_TIERS, [UV_LIVEWIRE1, UV_LIVEWIRE2, UV_LIVEWIRE3, UV_LIVEWIRE4, UV_LIVEWIRE5], UV_NARWHAL_CELLS, narwhal);
+  // ---- the Sovereign ----
+  // the boss, into cells nobody else owns (see THE SOVEREIGN'S CELLS): the
+  // same three drawings as any other wing-rig body, and the stock hull's
+  // own cell left untouched under it
+  {
+    const a = king();
+    const full = toCanvas(a.full);
+    part(KING_CELLS.full, full);
+    const strip = bodyColumn(a.body, KING_TIER.bw);
+    part(KING_CELLS.body, toCanvasRect(strip.px, strip.w, strip.h));
+    part(KING_CELLS.wing, toCanvas(a.wing));
+    dropCell("boss");
+    teamCell("boss", full, toCanvas(a.cell), KING_CELLS.full, KING_TIER.n);
+  }
 }
 
 /** transparent margin round every packed team cell — the sheet's mip-3

@@ -11,6 +11,10 @@ elephant in `game/tuskerArt.ts`, the Grapnel starfish in
 engine in `game/turretArt.ts`, with what they share in
 `game/animalArt.ts` and the packing in `game/atlas.ts`.
 
+The Sovereign (`game/kingArt.ts`) is the boss and not a family at all —
+one body, one size, drawn to the same rules and sized so that nothing else
+on the sheet is in the same conversation (section 2).
+
 The Tusker is the first family drawn from nothing rather than over a
 Mindustry tree — there is no upstream hull under it and no sprite file to
 fall back to — so it is also the first proof that section 3 below is
@@ -295,6 +299,31 @@ footprint gets.
 | Livewire, the narwhal | `game/familyArt.ts` | body and two flippers | 44, 56, 80, 176, 232 |
 | Tusker, the elephant | `game/tuskerArt.ts` | mech to T3, four legs from T4 | 56, 72, 96, 136, 176 |
 | Grapnel, the starfish | `game/starfishArt.ts` | mech at every tier, and the leg cell is the rowing arms | 36, 52, 72, 116, 148 |
+| Sovereign, the sea eagle (the BOSS, one body) | `game/kingArt.ts` | body and two wings | 512 |
+
+**The boss is not a family, and it is the one body allowed to be a
+different order of size.** The Sovereign is drawn once, on a 512 grid, and
+it draws at ONE AND A HALF world px per native px where everything else on
+the sheet draws at one — so its quad is 480 world px, **twenty-four
+blocks**, against the widest T5's 7.25 and the heaviest walker's 5.5. That
+multiplier is not new and is not a licence: it is the boss's own, it was
+there when the boss was Mindustry's disrupt, and the boss is the only kind
+in `UNIT_ART` that has one, because presence is the whole of that unit's
+job. Nothing else about the drawing bends — the pairs, the reversed fold,
+the four-pixel floor, no eyes and no round pair, the quad being the box —
+and the hitbox followed the art, as an ellipse (24 blocks of span by 20 of
+length), because a bird really is wider than it is long.
+
+A body that big has one trap the small ones do not: **a chamfer laid over
+a flat sheds a one-pixel sliver of the flat a row at a time down its
+slope**, and on a 512 grid there are a lot of rows. Two answers, both in
+`kingArt.ts`: butt shapes that meet edge-on as straight-sided boxes (the
+torso is a box and a separate chamfered rump, not one octagon under the
+skull), and where a chamfer is wanted at the tip and not at the root, fill
+the root's corners back in (`tapered`). The rule is checkable —
+`node --experimental-transform-types --import ./scripts/ts-hooks.mjs
+scripts/king-concept.mjs` renders every part and lists every run under
+four pixels.
 
 **A family may be big, and the Tusker is the one that is.** Every other
 line opens on about a tile — a 32 grid, a tacker's own footprint — because

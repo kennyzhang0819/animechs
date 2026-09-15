@@ -29,6 +29,12 @@ import { BONE, scaler, segment, type IronTier } from "./ironhideArt";
 const BONE_R = rev(BONE);
 
 // ── shared: pens that move, and the wing rig's frame ───────────────────
+//
+// The frame below (Wing, Base, withCells, flyer, flyerGeom and the two
+// pens) is EXPORTED, because the bat, the manta and the narwhal are no
+// longer the only things on the wing rig: the boss rides it too (the
+// Sovereign, game/kingArt.ts). It is the rig's frame and not any family's,
+// so a new flyer needs a drawing and nothing else.
 /** the same pen, its origin moved */
 const shift = (P: Pen, dx: number, dy: number): Pen => ({
   box: (x0, y0, x1, y1, m) => P.box(x0 + dx, y0 + dy, x1 + dx, y1 + dy, m),
@@ -68,18 +74,18 @@ export interface FlyerTier {
 }
 /** where a wing sits on the composed grid: its root `rootX` out from the
  *  centre on row `rootY`, its extent rows y0..y1 and `reach` px outward */
-interface Wing { rootX: number; rootY: number; y0: number; y1: number; reach: number }
-type Base = Omit<FlyerTier, "bw" | "nw">;
+export interface Wing { rootX: number; rootY: number; y0: number; y1: number; reach: number }
+export type Base = Omit<FlyerTier, "bw" | "nw">;
 /** the tier with its cells sized off the layout: the wing cell two px
  *  clear of the wing all round */
-const withCells = (T: Base, L: Wing, bw: number): FlyerTier =>
+export const withCells = (T: Base, L: Wing, bw: number): FlyerTier =>
   ({ ...T, bw, nw: Math.max(L.reach, L.y1 - L.y0) + 4 });
 const margins = (T: FlyerTier, L: Wing): { m: number; my: number } =>
   ({ m: Math.floor((T.nw - L.reach) / 2), my: Math.floor((T.nw - (L.y1 - L.y0)) / 2) });
 /** the three drawings the wing rig packs: the composed sprite (and its
  *  accent cell), the body alone on the same grid, the right wing alone on
  *  its cell with the root where flyerGeom says */
-function flyer(T: FlyerTier, L: Wing, body: (P: Pen) => void, wing: (O: Pen) => void, accent: Mat): StoopArt {
+export function flyer(T: FlyerTier, L: Wing, body: (P: Pen) => void, wing: (O: Pen) => void, accent: Mat): StoopArt {
   const { n, nw } = T; const c = n / 2;
   const full = drawWithCell(n, (P) => { wing(outward(P, c - 1 - L.rootX, -1)); body(P); }, accent);
   const { m, my } = margins(T, L);
@@ -92,7 +98,7 @@ function flyer(T: FlyerTier, L: Wing, body: (P: Pen) => void, wing: (O: Pen) => 
 }
 /** pure numbers for FLYER_PARTS: the root off the body's centre (sideways,
  *  forward) and the wing cell's centre off its root */
-function flyerGeom(T: FlyerTier, L: Wing): StoopGeom {
+export function flyerGeom(T: FlyerTier, L: Wing): StoopGeom {
   const { n, nw } = T; const c = n / 2; const { m, my } = margins(T, L);
   return { rootX: L.rootX + 0.5, rootY: c - L.rootY, wingX: nw / 2 - m, wingY: -(nw / 2 - (my - L.y0 + L.rootY)) };
 }

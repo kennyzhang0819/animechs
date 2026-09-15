@@ -31,8 +31,8 @@ import { MUT_COUNT_MAX, MUT_FIRST_TIER, mutationBudget, mutationPicks } from "./
  * THE LADDER — ONE CLIMB PER WORLD, TEN RUNGS, FOUR NAMES, ONE SCRIPT.
  *
  * EVERY RUNG PLAYS THE WHOLE AUTHORED SCRIPT — all eight waves, wave 1 to
- * wave 8, the same eight every time, and EVERY BODY AT THE SAME HEALTH.
- * What changes is HOW MANY come and WHAT RULES they come under:
+ * wave 8, the same eight every time, and EVERY BODY AT THE SAME HEALTH BAR
+ * ONE. What changes is HOW MANY come and WHAT RULES they come under:
  *
  *   Incursion     a quarter of every wave's count       no rules
  *   Onslaught     half                                  no rules
@@ -46,6 +46,13 @@ import { MUT_COUNT_MAX, MUT_FIRST_TIER, mutationBudget, mutationPicks } from "./
  * returns, and one more: how much the XP it pays is multiplied by
  * (tierXpBonus). The four NAMED difficulties are a size ramp; the six
  * above them are a rules ramp on top of the biggest size.
+ *
+ * THE ONE BODY AT A DIFFERENT HEALTH IS THE BOSS, and it is that same size
+ * ramp wearing the only shape it can. A boss wave sends one body at every
+ * difficulty — a quarter of one boss is not a body — so the boss pays the
+ * rung's count share in HIT POINTS instead (tierBossHpScale, below the
+ * table it reads). It is the size ramp, not a health curve: the same
+ * quarter, half, three quarters, whole.
  *
  * THE HEALTH CURVE IS STILL HERE AND NOT USED. A rung used to be an enemy
  * LEVEL as well — every body's health times HP_PER_LEVEL ^ level, up to
@@ -202,6 +209,32 @@ export function rungLabel(tier: number): string {
 
 /** the count share a rung sends, 0.25 at the bottom, 1 from Nemesis up */
 export const tierCountScale = (tier: number): number => RUNGS[clampTier(tier)].countScale;
+
+/**
+ * ...AND WHAT A BOSS PAYS INSTEAD, because it cannot pay that.
+ *
+ * The size ramp is the whole of what the named difficulties are: a rung
+ * sends a SHARE OF EVERY WAVE'S COUNT. But a boss wave has a count of one
+ * and scaleWave floors it there on purpose — a quarter of one boss is not
+ * a body, and "a boss wave at Incursion is still a boss wave" is the rule
+ * that keeps it. Which left the one body on the roster that is an EVENT
+ * rather than a volume arriving at Incursion exactly as it arrives at
+ * Nemesis +6: the bottom of the ladder ending on the hardest thing in the
+ * game, unscaled, while everything in front of it came at a quarter
+ * strength.
+ *
+ * So THE BOSS PAYS THE RUNG'S SHARE IN HIT POINTS. The same number off the
+ * same table meaning the same thing — a quarter of the fight at Incursion,
+ * all of it from Nemesis up — applied to the one dial a single body has.
+ * Nothing else about it moves: armour, speed, hitbox and drop are what
+ * UNIT_STATS says at every rung, exactly as they are for every other body,
+ * and the drop in particular is deliberate (economy.ts prices scrap per
+ * kill, and a rung that paid more scrap would be an easier fight).
+ *
+ * It rides specForTier like the count does, so the sim, the audit and the
+ * picker's detail card all read one number.
+ */
+export const tierBossHpScale = (tier: number): number => tierCountScale(tier);
 
 /** how many mutator steps above Nemesis a rung stands — 0 on every named one */
 export const tierMutationStep = (tier: number): number =>
@@ -363,6 +396,20 @@ export const tierMutationCount = (tier: number): number =>
 export const unitHpAtLevel = (kind: UnitKind, level: number): number =>
   UNIT_STATS[kind].hp * HP_PER_LEVEL ** Math.max(0, level);
 
+/**
+ * ...and what one body of it is actually WORTH ON A RUNG: the level curve
+ * above, times the boss's share of the size ramp (tierBossHpScale) if this
+ * kind is the boss and nothing at all if it is not.
+ *
+ * Every price in this file and the health the sim hands a spawn go through
+ * here, so the strength the picker prints, the audit's totals and the body
+ * on the field cannot disagree about what a boss weighs. `bossHpScale`
+ * comes off the expanded spec (LevelSpec, specForTier); unset — the
+ * authored baseline the editor and the raw arithmetic use — is 1.
+ */
+export const unitHpOnRung = (kind: UnitKind, level: number, bossHpScale = 1): number =>
+  unitHpAtLevel(kind, level) * (UNIT_STATS[kind].boss === true ? bossHpScale : 1);
+
 // ---------- expansion ----------
 
 /**
@@ -386,7 +433,7 @@ export function specForTier(spec: LevelSpec, tier: number): LevelSpec {
           ...step,
           wave: scaleWave(step.wave, scale),
         }));
-  return { ...spec, script, tier: n, enemyLevel: tierLevel(n) };
+  return { ...spec, script, tier: n, enemyLevel: tierLevel(n), bossHpScale: tierBossHpScale(n) };
 }
 
 /** one wave at a share of its count — the group form keeps its region ids */
@@ -416,11 +463,11 @@ function scaleWave(
  * the wave. Armour, shields and air ride along as COMPOSITION — shares
  * reported next to the health, never multiplied into it.
  */
-export const waveHp = (step: LevelStep, level = 0): number => {
+export const waveHp = (step: LevelStep, level = 0, bossHpScale = 1): number => {
   let hp = 0;
   for (const g of waveGroups(step.wave))
     g.counts.forEach((count, i) => {
-      if (count > 0) hp += unitHpAtLevel(UNIT_KINDS[i], level) * count;
+      if (count > 0) hp += unitHpOnRung(UNIT_KINDS[i], level, bossHpScale) * count;
     });
   return hp;
 };
@@ -448,6 +495,7 @@ export interface Budget {
 export function budget(spec: LevelSpec, tier = 0): Budget {
   const run = specForTier(spec, tier);
   const level = run.enemyLevel ?? 0;
+  const bossHp = run.bossHpScale ?? 1;
   let units = 0;
   let hp = 0;
   let armour = 0;
@@ -460,7 +508,7 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
         if (count <= 0) return;
         const kind = UNIT_KINDS[i];
         const stats = UNIT_STATS[kind];
-        const h = unitHpAtLevel(kind, level) * count;
+        const h = unitHpOnRung(kind, level, bossHp) * count;
         units += count;
         hp += h;
         if (stats.armor >= 3) armour += h;
@@ -563,7 +611,7 @@ export interface WaveCost {
   drops: Drop;
 }
 
-export function waveCost(step: LevelStep, level = 0): WaveCost {
+export function waveCost(step: LevelStep, level = 0, bossHpScale = 1): WaveCost {
   const out: WaveCost = {
     units: 0,
     hp: 0,
@@ -580,7 +628,7 @@ export function waveCost(step: LevelStep, level = 0): WaveCost {
       if (count <= 0) return;
       const kind = UNIT_KINDS[i];
       const stats = UNIT_STATS[kind];
-      const h = unitHpAtLevel(kind, level) * count;
+      const h = unitHpOnRung(kind, level, bossHpScale) * count;
       out.units += count;
       out.hp += h;
       if (stats.tier >= 3) t3 += h;

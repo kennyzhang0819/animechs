@@ -52,13 +52,21 @@ export interface HitboxSpec {
 }
 
 /**
- * The sane range a saved extent may land in. The floor is a body a shot
- * can still be aimed at; the ceiling is comfortably past the widest thing
- * on the roster (the stoop5's 7.25-block hull, 145px), so it catches a
- * fat finger rather than expressing a design.
+ * The sane range an extent may land in — a saved one from the editor, and
+ * the authored roster through rebuild(). The floor is a body a shot can
+ * still be aimed at; the ceiling is comfortably past the widest thing on
+ * the roster, so it catches a fat finger rather than expressing a design.
+ *
+ * THE WIDEST THING ON THE ROSTER IS THE BOSS, and it is 480px: a
+ * twenty-four-block wingspan (levels.ts, kingArt.ts), where the widest
+ * unit of any family is the stoop5's 7.25 blocks at 145. The ceiling was
+ * 400 while the boss was a 7-block hull and would have CLAMPED the eagle
+ * silently — every reader here goes through clampExtent, the authored
+ * roster included — so it is 640 now: half again the largest body there
+ * is, which is the same headroom 400 gave the roster it was written for.
  */
 export const HITBOX_MIN = 2;
-export const HITBOX_MAX = 400;
+export const HITBOX_MAX = 640;
 
 const N = UNIT_KINDS.length;
 

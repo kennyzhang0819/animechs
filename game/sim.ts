@@ -134,7 +134,7 @@ import {
 
 /** module-local for the same getter reason as the constants block above */
 const UNIT_KINDS = UNIT_KINDS_IMPORT;
-import { unitHpAtLevel } from "./ladder";
+import { unitHpOnRung } from "./ladder";
 
 /**
  * THE TIDE: what a survive mission sends once its script is spent. The
@@ -5317,6 +5317,23 @@ export class Sim {
   }
 
   /**
+   * WHAT ONE BODY OF A KIND SPAWNS WITH, in one place because three
+   * callers need the same answer: the spawn itself, and the amphibious
+   * rule twice (which recomputes rather than remembers — see the note
+   * there on why compounding is the thing to avoid).
+   *
+   * Two dials, and they are the run's rather than the body's: the LEVEL
+   * curve (the spec's enemyLevel plus whatever the loop has added), and
+   * the BOSS'S SHARE OF THE SIZE RAMP (ladder.ts tierBossHpScale) — a
+   * quarter of its health at Incursion and all of it from Nemesis up,
+   * because one boss is one boss at every difficulty and the share has to
+   * land somewhere. Both come off the level document; unset is 1.
+   */
+  private baseHpOf(kind: UnitKind): number {
+    return unitHpOnRung(kind, (this.level.enemyLevel ?? 0) + this.loopLevel, this.level.bossHpScale ?? 1);
+  }
+
+  /**
    * THE AMPHIBIOUS RULE (mutation.ts): walkers come out of water better
    * than they went in.
    *
@@ -5341,7 +5358,6 @@ export class Sim {
   private updateAmphibious(dt: number): void {
     if (!this.amphibiousOn) return;
     const { upx, upy, uhp, uhpmax, uspd, uarmor, uwade, uwet01, ufly, unav, ukind } = this;
-    const level = (this.level.enemyLevel ?? 0) + this.loopLevel;
     for (let i = 0; i < this.n; i++) {
       if (ufly[i] || unav[i]) continue;
       const wet = this.inWater(upx[i], upy[i]);
@@ -5349,7 +5365,7 @@ export class Sim {
       if (wet && !uwet01[i] && uwade[i] < AMPHIBIOUS_MAX_STACKS) {
         const kind = UNIT_KINDS[ukind[i]];
         const stats = UNIT_STATS[kind];
-        const base = unitHpAtLevel(kind, level);
+        const base = this.baseHpOf(kind);
         uwade[i]++;
         // health goes on BOTH pools, so a stack is a heal and a bigger tank
         const gain = base * AMPHIBIOUS_HP;
@@ -5361,7 +5377,7 @@ export class Sim {
       }
       uwet01[i] = wet;
       if (uwade[i] > 0 && uhp[i] < uhpmax[i]) {
-        const base = unitHpAtLevel(UNIT_KINDS[ukind[i]], level);
+        const base = this.baseHpOf(UNIT_KINDS[ukind[i]]);
         uhp[i] = Math.min(uhp[i] + base * AMPHIBIOUS_REGEN * uwade[i] * dt, uhpmax[i]);
       }
     }
@@ -5936,7 +5952,7 @@ export class Sim {
       // both piecewise per rung rather than per level). Speed, hitbox and
       // drop stay exactly where UNIT_STATS put them however high the rung
       // climbs
-      const hp = unitHpAtLevel(kind, (this.level.enemyLevel ?? 0) + this.loopLevel);
+      const hp = this.baseHpOf(kind);
       this.upx[i] = x;
       this.upy[i] = y;
       this.uvx[i] = 0;

@@ -59,6 +59,7 @@ import {
   stageTable,
   waveCost,
   waveGuide,
+  tierBossHpScale,
   tierCountScale,
   tierLevel,
   tierMutationCount,
@@ -2229,7 +2230,7 @@ export default function Animechs() {
             // touching a price or a wave
             stages: () => stageAudit(WORLD),
             grind: () => console.log(stageTable(WORLD)),
-            wave: (i: number, tier = 0) => waveCost(WORLD.script[i], tierLevel(tier)),
+            wave: (i: number, tier = 0) => waveCost(WORLD.script[i], tierLevel(tier), tierBossHpScale(tier)),
           };
         }
         // hold the screen out to its minimum, then dissolve it. The game is

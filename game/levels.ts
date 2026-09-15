@@ -94,6 +94,19 @@ export const FAMILY_NAMES = {
 } as const satisfies Record<string, { name: string; body: string }>;
 
 /**
+ * WHAT THE ONE BOSS IS CALLED, beside the family names for the same reason
+ * they are in one place: a name written twice is a name that can disagree
+ * with itself, and this one is printed by both UNIT_TREES (the editor's
+ * rows) and UNIT_NAMES (every panel).
+ *
+ * It is the only proper noun on the roster, and it is one for the reason
+ * no BODY may have one: a body is its family and its rung, and there are
+ * twenty of those; there is exactly one Sovereign. Off the animal switch
+ * the Erekir hull is back on screen and the name goes with it.
+ */
+export const BOSS_NAME = ANIMAL_ART ? "Sovereign" : "Boss";
+
+/**
  * THE NAVAL TANKS RUN SLOWER THAN MINDUSTRY'S HULLS. A skate1's stock 1.1
  * units a tick is 8.25 tiles a second — more than twice an ironhide1 — and on
  * a water route a third the length of Confluence's march that is a body a
@@ -1393,35 +1406,60 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     flying: true,
     payload: { splash: 4500, radius: 128 * MU, fuse: 2.5 },
   },
-  // boss: THE FINAL BOSS — Erekir's tier-5 missile bomber, the one kind
-  // on the roster from the other planet. Base shape from
-  // mindustry/content/UnitTypes.java (hitSize 46; rotateSpeed 2;
-  // drag 0.07), boss-tuned in FOUR places. Health is Mindustry's 12000 x8
-  // (x4 at first; doubled again when the phase turrets melted it before it
-  // loomed, then x12 when x8 still fell too fast). Armour is 30
-  // over the official 9 — far past the ironhide5's 18, so anything hitting
-  // under ~33 pays the 10% floor: pellet AA, tackers and autocannons all read as
-  // sparks off the hull, and the answer is calibre, which is what the
-  // phase turrets are. Speed drops from the official 1 unit/tick
-  // (7.5 tiles/s, weaver1 pace — it would outrun its own escort and reach
-  // the AA line alone) to 2.0 tiles/s, the slowest thing in the game: a
-  // boss is a deadline the player watches coming, not a sprinter. Its
-  // suppression field and missile racks stay behind on Erekir — enemies
-  // here do not shoot — so what crosses the map is the hull, the looming
-  // pace, and 144000 health the board has to answer before it reaches the
-  // base. It also DRAWS half again its native scale (see UNIT_ART), and
-  // the hitbox follows the art: Mindustry's hitSize 46 grows to an
-  // effective 56 (UR * 7, just under stoop5's 7.25) so shots land where
-  // the silhouette says they should — a boss this size being HARD TO MISS
-  // is part of what the size is for.
+  // boss: THE SOVEREIGN — the crowned sea eagle (game/kingArt.ts), and the
+  // one body on the roster that is in no family, is never rolled and is
+  // never swapped. It replaced Erekir's tier-5 missile bomber, which with
+  // the animal art on was the last Mindustry sprite left on the field;
+  // what survives of that unit is `drag` 0.07 and the path under
+  // public/mindustry the eagle is packed BESIDE rather than over, so the
+  // hull is still there with the switch off (atlas.ts KING_CELLS).
+  //
+  // IT IS TWENTY-FOUR BLOCKS ACROSS. The widest thing any family fields is
+  // the stoop5 at 7.25 and the heaviest thing that walks is the tusker5 at
+  // 5.5, so the boss is three and a third times the one and over four
+  // times the other — it is not the biggest unit, it is a different order
+  // of object, and the whole design of the drawing is in service of that
+  // (see the file header there). The hitbox is the art: a 24-block span by
+  // a 20-block length, authored as an ELLIPSE (hitbox.ts) because a bird
+  // really is wider than it is long and a boss shaped like a circle throws
+  // away the one silhouette on the sheet a player cannot mistake. `radius`
+  // is the equal-area circle of that ellipse, so the halo, the mass and
+  // the splash reach agree with the shape.
+  //
+  // ARMOUR 200, and that is the number that decides the fight. Armour is a
+  // flat shave floored at a tenth (Sim.applyArmor), so a shot has to land
+  // for about 222 before the shave costs it less than the floor does — and
+  // as the rows are authored (constants.ts) only the two biggest calibres
+  // on the board do. Everything else — pellet AA, tackers, autocannons,
+  // every repeater — is sparks off the plate until the tree is spent on
+  // it, and the one thing that sidesteps the plate outright is BURNING,
+  // which skips applyArmor (pierceArmor). The answer to this
+  // body is not a wall of guns, it is the right guns, which is what the
+  // old 30 was reaching for and never reached: 30 still let a mid-calibre
+  // turret through at seventy per cent.
+  //
+  // HEALTH IS 720,000 AT NEMESIS, five times what the Erekir hull carried,
+  // and it is a SHARE OF THE RUNG (ladder.ts bossHpScale): a boss cannot
+  // pay the size ramp in bodies the way every other wave does — one boss
+  // is one boss at every difficulty — so it pays it in hit points, a
+  // quarter of them at Incursion and all of them from Nemesis up, which is
+  // exactly the count share the rest of the script is scaled by.
+  //
+  // Speed stays at 2.0 tiles/s, the slowest thing in the game, and the
+  // turn is slower than anything else that flies: a boss is a deadline the
+  // player watches coming, not a sprinter, and a body this wide that
+  // pivots quickly reads as weightless. It carries no weapon — enemies
+  // here do not shoot — so what crosses the map is the hull, the beat, the
+  // looming pace and the plate.
   boss: {
-    hp: 12000 * 12,
+    hp: 12000 * 60,
     speed: 2.0 * CELL,
-    armor: 30,
-    radius: UR * 7,
+    armor: 200,
+    radius: UR * 22,
+    hitbox: { long: 20 * CELL, wide: 24 * CELL },
     tier: 5,
     drag: 0.07,
-    rotateSpeed: 2,
+    rotateSpeed: 1,
     flying: true,
     boss: true,
   },
@@ -1997,7 +2035,7 @@ export const UNIT_TREES = [
   { key: "starfish", name: FAMILY_NAMES.starfish.name, kinds: ["starfish1", "starfish2", "starfish3", "starfish4", "starfish5"] },
   // not an upgrade path: the boss row holds the kinds that arrive as an
   // event rather than a stream, so its slots do not read as tiers
-  { key: "boss", name: "Boss", kinds: ["boss"] },
+  { key: "boss", name: BOSS_NAME, kinds: ["boss"] },
 ] as const satisfies readonly { key: string; name: string; kinds: readonly UnitKind[] }[];
 
 /**
@@ -2414,7 +2452,11 @@ export type UnitRank = (typeof UNIT_RANKS)[number];
  *
  * It is built off FAMILIES rather than typed out, so a family added to
  * that table is named the moment it has a `body` word and cannot go in
- * half-named. The boss is in no family and keeps its own name.
+ * half-named. THE BOSS IS IN NO FAMILY and so is named here by hand: it is
+ * the Sovereign, the crowned sea eagle (game/kingArt.ts), and it takes a
+ * proper noun for the same reason no other body may have one — there is
+ * exactly one of it, so the name says which thing rather than which rung.
+ * Off the animal switch it is Mindustry's hull again and reads "Boss".
  *
  * Off ANIMAL_ART the ids come back as the names, capitalised, along with
  * Mindustry's sprites — the whole promise of that switch.
@@ -2436,6 +2478,7 @@ export const UNIT_NAMES: Record<UnitKind, string> = (() => {
       out[k] = `${FAMILY_NAMES[f.key].body} (${UNIT_RANKS[i]})`;
     });
   }
+  out.boss = BOSS_NAME;
   return out;
 })();
 
@@ -2842,6 +2885,16 @@ export interface LevelSpec {
   enemyLevel?: number;
   /** which tier of the ladder this spec was expanded for; unset = baseline */
   tier?: number;
+  /**
+   * THE BOSS'S SHARE OF THE SIZE RAMP, and the boss's alone (ladder.ts
+   * tierBossHpScale): every unit's count is scaled to the rung, but a boss
+   * wave sends one body at every difficulty, so the boss pays that share
+   * in HEALTH instead — a quarter of it at Incursion, all of it from
+   * Nemesis up. Nothing else on the roster reads this.
+   *
+   * Unset (the authored baseline) means 1. Set by specForTier().
+   */
+  bossHpScale?: number;
   /**
    * THE FAMILIES THIS RUN SENDS — the die roll (rollFamilies) the deploy
    * made, in the order the deal walks them: the script's first wave plays

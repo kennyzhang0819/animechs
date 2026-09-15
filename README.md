@@ -448,20 +448,31 @@ own budget is printed beside the total as an advisory.
 
 **There is one run in the game and ten difficulties to play it at.** Every
 rung sends the whole authored script — all fifty waves, wave 1 to wave 50,
-the same fifty every time, **and every body at the same health**. What a
-rung changes is **how many** come and **what rules** they come under. The
-four named difficulties — **Incursion, Onslaught, Scourge, Nemesis** —
-send every wave at a quarter, a half, three quarters and the whole of its
-count, with no mutators. The six above them, shown as *Nemesis +1*
-through *+6*, send Nemesis's full swarm under a mutator roll that
-spends more and returns more with every step. "Level" is never the word
-for a difficulty: a level is the player's.
+the same fifty every time, **and every body at the same health bar one**.
+What a rung changes is **how many** come and **what rules** they come
+under. The four named difficulties — **Incursion, Onslaught, Scourge,
+Nemesis** — send every wave at a quarter, a half, three quarters and the
+whole of its count, with no mutators. The six above them, shown as
+*Nemesis +1* through *+6*, send Nemesis's full swarm under a mutator roll
+that spends more and returns more with every step. "Level" is never the
+word for a difficulty: a level is the player's.
+
+**The one body at a different health is the boss**, and it is the same
+rule wearing the only shape it can. A boss wave sends one Sovereign at
+every difficulty — a quarter of a boss is not a body, and a boss wave is a
+boss wave at every size — so the boss pays the rung's count share **in hit
+points instead**: 180,000 at Incursion, 720,000 from Nemesis up, off the
+same 25/50/75/100 table the rest of the script is scaled by
+(`tierBossHpScale`, `LevelSpec.bossHpScale`). Its plating, its speed, its
+hitbox and its drop are what the roster says at every rung, like every
+other body's.
 
 | rung | Incursion | Onslaught | Scourge | Nemesis | +1 | +2 | +3 | +4 | +5 | +6 |
 |---|---|---|---|---|---|---|---|---|---|---|
 | waves | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 |
 | count | 25% | 50% | 75% | 100% | 100% | 100% | 100% | 100% | 100% | 100% |
 | enemy health | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 |
+| boss health | 25% | 50% | 75% | 100% | 100% | 100% | 100% | 100% | 100% | 100% |
 | rules rolled | 0 | 0 | 0 | 0 | 3 | 3 | 3 | 3 | 4 | 4 |
 | mutator points | 0 | 0 | 0 | 0 | 8 | 10 | 11 | 13 | 15 | 17 |
 | XP bonus | ×0.4 | ×0.6 | ×0.8 | ×1.0 | ×1.2 | ×1.4 | ×1.6 | ×1.8 | ×2.0 | ×2.2 |
@@ -477,7 +488,7 @@ authored at level 0. Difficulty is rules, not hit points.
 **A wave lands every fifteen seconds** (`waveGap`, `WAVE_GAP_DEFAULT`),
 from the first second of the run, each stronger than the last: a few
 dozen Ironhide runts on wave 1, the first elites by wave 10, waves in the
-thousands by the forties, and the Boss as the boss that closes the
+thousands by the forties, and the Sovereign as the boss that closes the
 script. The gap is shorter than a wave takes to walk the lane, so the
 waves overlap and the field is a tide rather than a series of fights —
 which is the whole reason the sim is built for 10,000 to 15,000 bodies at
@@ -1007,7 +1018,7 @@ crosses every map now, and a fleet on a map with no channel simply drives
 — and deals them into the slots tier for tier, **a wave at a time**
 (`rollFamilies`, `transformScript` in levels.ts). Forty of the first
 ground body in the script are forty of whichever family took the line on
-that wave. The boss (Boss) is in no family and is never swapped.
+that wave. The boss (the Sovereign) is in no family and is never swapped.
 
 **In custom mode the hand is named instead, and what is named is what is
 sent** — the whole list, never a seed. Name one and *every wave of the
@@ -1048,8 +1059,19 @@ and these —
 — and a body is `Ironhide (runt)` through `Ironhide (apex)`. It is the
 same animal at five sizes, which is the rule the art is drawn to
 (`docs/unit-art.md`), and it means a player who has met one family can
-read every other family's ladder on sight. The boss is in no family and
-is called Boss.
+read every other family's ladder on sight.
+
+**The one exception is the boss, and it is the exception that states the
+rule.** It is in no family, has no rank and carries the roster's only
+proper noun: the **Sovereign**, a crowned sea eagle
+(`game/kingArt.ts`) — **twenty-four blocks across**, three and a third
+times the widest body any family fields and over four times the heaviest
+thing that walks, on wings that beat once every two seconds. It has no
+gun; what it has is **200 plating**, which puts everything on the board
+hitting for under about 222 onto the ten-percent floor, and up to 720,000
+health behind it. A body gets a proper noun for the reason no other may
+have one: there is exactly one of it, so the name says *which thing*
+rather than which rung.
 
 **The id is the family and the tier, and nothing else.** `UnitKind` runs
 `ironhide1` … `ironhide5`, `weaver1` … `livewire5`, plus `boss` — so the
