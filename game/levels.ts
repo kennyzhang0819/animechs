@@ -717,44 +717,6 @@ const wake = (o: Partial<WakeSpec> & Pick<WakeSpec, "x" | "length" | "scl">): Wa
   ...o,
 });
 
-/**
- * THE TANKINESS LADDER, and it is the shape of the whole roster: how long
- * a body lives under fire is the FIRST thing a family says about itself,
- * so the eight lines are ordered and the order is deliberate.
- *
- *   elephant > rhino >> manta > frog > stag > starfish > narwhal > bat
- *
- * The two walkers at the front are the wall — the Tusker by plating above
- * everything else (armour 104 at the apex puts nearly the whole catalogue
- * on the ten per cent floor), the Ironhide by health behind heavy plate —
- * and the DOUBLE step after the rhino is the point of the ladder: the
- * five lines behind it are not a second wall, they are bodies that do
- * something else and have to be killable while they do it. Inside that
- * group the manta is the toughest, because a naval hull that holds a
- * position is what the Skates are; and the narwhal and the bat are the
- * softest, because a fleet that blinks and cloaks and a bomber that
- * arrives before the guns answer are already hard to shoot.
- *
- * Read it off `hp` at the champion and the apex, which is where a family
- * is actually fought:
- *
- *   T4   10500  9000  8600  8000  7800  7400  7000  6500
- *   T5   25000 24000 20000 18000 17000 16000 15000 14000
- *
- * The starfish took the seat under the stag rather than one further up
- * for a reason that is not its role: it is the SLOWEST body in the game
- * and it spends the whole approach in the open, so every second of its
- * crawl is a second under fire. A family that is easy to shoot at for
- * longer does not also get to be hard to kill.
- *
- * Armour bends this against HEAVY guns — a 60-damage shot meets the
- * stag's plate before the frog's, so those two swap at the apex — and
- * against small arms it does not bend at all, since anything over about
- * a tenth of the shot puts it on the floor and the ladder is then health
- * alone. A NEW NUMBER IN THIS TABLE HAS TO KEEP THE ORDER: a line that
- * wants to be tougher takes it from the line below, and the first two
- * seats are spoken for.
- */
 /** per-kind combat stats (official Mindustry numbers) */
 export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // ironhide1: 150 hp, no armor, 1x1-block hitbox, 3.75 tiles/s
@@ -1485,13 +1447,13 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // it reach half again as far) and the skate4 is the drill (they age twice
   // and a half as fast). Kill them young, and kill those two first.
 
-  // skate1: the naval line's T1 — 260 hp, armor 2, a 1.25x1.25-block hitbox,
+  // skate1: the naval line's T1 — 208 hp, armor 2, a 1.25x1.25-block hitbox,
   // 1.1 units/tick = 8.25 tiles/s, the fastest hull there is. Note it
   // opens at well over half again the ironhide1's health with armour the
   // ironhide1 does not have: the naval T1 is not chaff, and a tacker's
   // 9-damage bolt is already paying 7 against it
   skate1: {
-    hp: 260,
+    hp: 208,
     speed: 8.25 * CELL * NAVAL_PACE,
     armor: 2,
     radius: UR * 1.25,
@@ -1503,10 +1465,10 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     veteran: HARPOON_VETERAN,
     wake: wake({ x: 4 * MU, length: 20, scl: 1.3 * MU }),
   },
-  // skate2: T2 — 560 hp, armor 4 (an ironhide2's plating), a 1.625x1.625-block
+  // skate2: T2 — 448 hp, armor 4 (an ironhide2's plating), a 1.625x1.625-block
   // hitbox, 0.9 units/tick = 6.75 tiles/s
   skate2: {
-    hp: 560,
+    hp: 448,
     speed: 6.75 * CELL * NAVAL_PACE,
     armor: 4,
     radius: UR * 1.625,
@@ -1518,14 +1480,14 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     veteran: HARPOON_VETERAN,
     wake: wake({ x: 5.5 * MU, y: -4 * MU, length: 20, scl: 1.9 * MU }),
   },
-  // skate3: T3 — 850 hp, armor 7, a 2.5x2.5-block hitbox, 0.85 units/tick
+  // skate3: T3 — 680 hp, armor 7, a 2.5x2.5-block hitbox, 0.85 units/tick
   // = 6.375 tiles/s. THE SPOTTER (spotterField): every 2 s it stamps every
   // body within ten tiles with half again its reach. A fleet already
   // firing from outside the board's reach fires from further still round
   // its spotter; it is the hull to kill, and it is the one that stays
   // back
   skate3: {
-    hp: 850,
+    hp: 680,
     speed: 6.375 * CELL * NAVAL_PACE,
     armor: 7,
     radius: UR * 2.5,
@@ -1538,18 +1500,18 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     spotterField: { mult: 1.5, reload: 2, range: 10 * CELL },
     wake: wake({ x: 7 * MU, y: -9 * MU, length: 22, scl: 1.5 * MU }),
   },
-  // skate4: T4 — 8600 hp, armor 12, a 4.875x4.875-block hitbox, 0.73
+  // skate4: T4 — 6880 hp, armor 12, a 4.875x4.875-block hitbox, 0.73
   // units/tick = 5.475 tiles/s. It sits a step UNDER the ironhide4 on both
   // health and plating now (9000 and 20) and moves twice as fast for it:
   // the fleet's champion is the toughest of the light lines and not a
-  // rival to the walkers' — see THE TANKINESS LADDER above.
+  // rival to the walkers'.
   //
   // THE DRILL (drillField): every 2 s it stamps every hull within ten
   // tiles so that its veterancy clock runs two and a half times as fast —
   // a fleet round a skate4 is a fleet at full strength in under a minute.
   // The T4 is the reason the fleet cannot be waited out
   skate4: {
-    hp: 8600,
+    hp: 6880,
     speed: 5.475 * CELL * NAVAL_PACE,
     armor: 12,
     radius: UR * 4.875,
@@ -1562,13 +1524,13 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drillField: { mult: 2.5, reload: 2, range: 10 * CELL },
     wake: wake({ x: 18 * MU, y: -21 * MU, length: 50, scl: 3 * MU }),
   },
-  // skate5: the fleet's T5 — 20000 hp, armor 16, and a 7.25x7.25-block
+  // skate5: the fleet's T5 — 16000 hp, armor 16, and a 7.25x7.25-block
   // hitbox, which is the stoop5's: the widest thing in the game, tied.
   // 0.62 units/tick = 4.65 tiles/s, and rotateSpeed 0.9 is the slowest
   // turn on the whole roster — this one cannot answer anything it did not
   // already have its nose pointed at
   skate5: {
-    hp: 20000,
+    hp: 16000,
     speed: 4.65 * CELL * NAVAL_PACE,
     armor: 16,
     radius: UR * 7.25,
@@ -1580,7 +1542,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     veteran: HARPOON_VETERAN,
     wake: wake({ x: 23 * MU, y: -32 * MU, length: 70, scl: 3.5 * MU }),
   },
-  // livewire1: the Wraith fleet's T1 — 200 hp, armor 2, a 1.375x1.375-block
+  // livewire1: the Wraith fleet's T1 — 160 hp, armor 2, a 1.375x1.375-block
   // hitbox, 0.9 units/tick = 6.75 tiles/s, and rotateSpeed 5, the stock
   // rate every ground unit turns at and the quickest hull on the water by
   // a distance. THE T1 IS THE FAMILY IN MINIATURE: one arc, one hop, one
@@ -1588,7 +1550,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // it twelve tiles up its route, once every four seconds. Its upstream
   // repair beam was a weapon and does not port
   livewire1: {
-    hp: 200,
+    hp: 160,
     speed: 6.75 * CELL * WRAITH_PACE,
     armor: 2,
     radius: UR * 1.375,
@@ -1601,12 +1563,12 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     blink: { dist: 12 * CELL, cooldown: 4 },
     wake: wake({ x: 5 * MU, length: 20, scl: 1.3 * MU }),
   },
-  // livewire2: Wraith T2 — 400 hp, armor 3, a 1.75x1.75-block hitbox, 0.83
+  // livewire2: Wraith T2 — 320 hp, armor 3, a 1.75x1.75-block hitbox, 0.83
   // units/tick = 6.225 tiles/s. Upstream's ability
   // (StatusFieldAbility(overclock)) does not port. The volume tier: a fast
   // short arc, and the quickest blink on the tree
   livewire2: {
-    hp: 400,
+    hp: 320,
     speed: 6.225 * CELL * WRAITH_PACE,
     armor: 3,
     radius: UR * 1.75,
@@ -1619,7 +1581,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     blink: { dist: 12 * CELL, cooldown: 3 },
     wake: wake({ x: 5.5 * MU, y: -4 * MU, length: 22, scl: 1.9 * MU }),
   },
-  // livewire3: Wraith T3 — 650 hp, armor 5, a 2.5x2.5-block hitbox, 0.86
+  // livewire3: Wraith T3 — 520 hp, armor 5, a 2.5x2.5-block hitbox, 0.86
   // units/tick = 6.45 tiles/s: fractionally quicker than the skate3 it
   // shares a hitbox with. The family's chain tier (four hops, weapons.ts),
   // and THE FIRST THAT CLOAKS: two and a half seconds gone in every nine,
@@ -1629,7 +1591,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // two answers to the same volley, and one of them has to give. Its upstream repair beam is a weapon, like livewire1's,
   // and goes the same way
   livewire3: {
-    hp: 650,
+    hp: 520,
     speed: 6.45 * CELL * WRAITH_PACE,
     armor: 5,
     radius: UR * 2.5,
@@ -1643,23 +1605,23 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     cloak: { duration: 2.5, period: 9 },
     wake: wake({ x: 9 * MU, y: -9 * MU, length: 23, scl: 2 * MU }),
   },
-  // livewire4: Wraith T4 — 7000 hp, armor 9, a 5.5x5.5-block hitbox,
+  // livewire4: Wraith T4 — 5600 hp, armor 9, a 5.5x5.5-block hitbox,
   // 0.7 units/tick = 5.25 tiles/s. It held the most health of any T4 on
   // the roster and now holds nearly the least, a body second only to the
-  // bomber's: this fleet is not hit, it is missed (THE TANKINESS LADDER
-  // above), and a hull that blinks and cloaks does not also get to soak
+  // bomber's: this fleet is not hit, it is missed, and a hull that blinks
+  // and cloaks does not also get to soak
   //
   // EnergyFieldAbility(40, 65, 180) is the reason to shoot it first, and
   // it does both halves here: the zap SHORTS every structure it reaches
   // (weapons.ts) and the heal mends the fleet. Its 22.5-TILE radius is
   // three times the 7.5 most fields on the roster reach — one livewire4
   // covers most of a lane — and it heals 1.5% of MAX health, so it mends
-  // a livewire5 for 300 a zap and a livewire1 for 4. sameTypeHealMult 0.5
+  // a livewire5 for 180 a zap and a livewire1 for 2. sameTypeHealMult 0.5
   // halves what it does for another livewire4, which is upstream's guard
   // against a pair of them being unkillable; a pair is still twice as
   // hard to remove as one
   livewire4: {
-    hp: 7000,
+    hp: 5600,
     speed: 5.25 * CELL * WRAITH_PACE,
     armor: 9,
     radius: UR * 5.5,
@@ -1680,7 +1642,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     },
     wake: wake({ x: 18 * MU, y: -17 * MU, length: 50, scl: 3.2 * MU }),
   },
-  // livewire5: the Wraith fleet's T5 — 15000 hp, armor 13, and the skate5's
+  // livewire5: the Wraith fleet's T5 — 12000 hp, armor 13, and the skate5's
   // 7.25x7.25-block hitbox, at 0.65 units/tick = 4.875 tiles/s. Its EMP
   // cannon is the family's long arc (weapons.ts), and it is THE FLAGSHIP:
   // when it cloaks — four and a half seconds in every twelve — every body
@@ -1689,7 +1651,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // largest; the seven and a half seconds it shows are the seven and a
   // half seconds to kill it in
   livewire5: {
-    hp: 15000,
+    hp: 12000,
     speed: 4.875 * CELL * WRAITH_PACE,
     armor: 13,
     radius: UR * 7.25,
@@ -1950,7 +1912,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // of runts the line cannot reach is a T1 problem that becomes one very
   // large T1 problem.
   //
-  // THE MIDDLE OF THE TANKINESS LADDER, deliberately: tougher than the
+  // THE MIDDLE OF THE ROSTER ON HEALTH, deliberately: tougher than the
   // fleets that blink and cloak, softer than anything that is meant to
   // be a wall. It is slow and it is in the open — plating it like a
   // rhino would make a family nothing answers in time.

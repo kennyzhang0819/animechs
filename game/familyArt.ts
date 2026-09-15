@@ -207,12 +207,12 @@ export function hartLegged(T: IronTier): LegParts {
 // The poison frog (the Dartbacks): the silhouette is the whole animal,
 // and A FROG SEEN FROM ABOVE IS WIDE — a broad mass of folded thigh at
 // the back, a body barely narrower, and a head nearly as wide again
-// tapering to a blunt snout. Two acid stripes run the length of the
-// back, the way a dart frog is marked. The machine is the venom: a steel
+// tapering to a blunt snout. Two acid dots sit out on the back, one a
+// side, the way a dart frog is spotted — bars on the apex. The machine is the venom: a steel
 // tank down the spine from T2, the spitter a steel tube from the tank
 // forward over the head to the snout from T3, a gunmetal collar at the
 // shoulders and a stack behind the tank from T4, a brow plate at T5 with
-// A SECOND WARNING BAND out on each thigh and the stack banded at both
+// THE DOTS DRAWN OUT INTO BARS and the stack banded at both
 // ends: the apex is the loudest one, which on a dart frog is the point.
 // Acid toes. The runt sits on the mech rig with its feet tucked; T2 up
 // ride the legged rig on FOUR legs, a frog's.
@@ -249,9 +249,9 @@ export const FROG_TIERS: readonly IronTier[] = [
 ];
 function frogBody(P: Pen, T: IronTier): void {
   const { n, t } = T; const { q, w } = scaler(n); const c = n / 2; const U = w(2);
-  // half the hide left between the two stripes: what the tank, the collar
+  // half the hide left between the two dots: what the tank, the collar
   // and the stack are all sized off, so nothing down the spine ever
-  // crowds a stripe whatever the grid rounds to
+  // crowds a dot whatever the grid rounds to
   const spine = q(8) - w(3);
   // Four overlapping octagons — a blunt snout, a jaw that widens fast,
   // a trunk, and the folded thighs, which are the widest thing on the
@@ -262,17 +262,28 @@ function frogBody(P: Pen, T: IronTier): void {
   P.octa(c - q(12), q(7), c + q(12), q(21), w(4), FROG);       // the trunk
   P.octa(c - q(11), q(4), c + q(11), q(14), w(4), FROG);       // the jaw
   P.octa(c - q(5), q(1), c + q(5), q(9), w(2), FROG);          // the snout, blunt
-  // the stripes: a band down each flank from the shoulder to the thighs,
-  // set a unit inside the trunk's own width so it can never run off the
-  // outline (the mirror does the right)
-  P.box(c - q(8), q(12), c - q(8) + w(3), n - q(6), ACID);
-  // A SECOND BAND ON THE APEX, short and out on the thigh, a clear gap
-  // outboard of the first: two stripes a side is what the loudest dart
-  // frogs wear, and it is the one addition that reads as more warning
-  // rather than as more machine. It sits inside the thighs' flat rows, so
-  // like everything else here it ends on straight edges only
-  if (t >= 5) P.box(c - q(11), q(18), c - q(8) - w(1), q(24), ACID);
-  // the tank down the spine from T2, between the stripes and wider than
+  // THE TWO MARKS, one a side and the mirror does the right: a dart
+  // frog's back is SPOTTED, so up to T4 each side wears a single square
+  // acid dot out on the flank over the thighs, mid-back. It is a box
+  // like everything else here — the body's grammar is straight edges
+  // and it holds for the marking too — sized off q() so it grows with
+  // the grid rather than off w(), whose four-pixel floor would leave the
+  // apex wearing the runt's spot. It sits far enough inboard that it can
+  // never run off the outline at its widest row
+  const dot = Math.max(w(2), q(2.5));
+  if (t < 5) P.box(c - q(8) - dot, q(17) - dot, c - q(8) + dot, q(17) + dot, ACID);
+  // THE APEX WEARS A BAR INSTEAD OF THE DOT, one a side, on the dot's
+  // own centre row and only half again as long as it — the loudest body
+  // in the family wears a STRETCHED SPOT, not a stripe down the back: a
+  // mark that ran the length of the flank stopped reading as a marking
+  // and started reading as trim. It keeps the narrow width too, because
+  // a mark as wide as it is long is a slab, and a slab on the flank is
+  // plate rather than skin
+  if (t >= 5) {
+    const bw = Math.max(w(1), q(1.5)); const bl = Math.round(dot * 1.7);
+    P.box(c - q(8) - bw, q(17) - bl, c - q(8) + bw, q(17) + bl, ACID);
+  }
+  // the tank down the spine from T2, between the dots and wider than
   // the tube it feeds, so the two read as plumbing and not as one bar.
   // Gunmetal under a steel tube: the bright metal on this body is the
   // barrel alone, and the vessel behind it is plate. It starts on the row
@@ -287,7 +298,7 @@ function frogBody(P: Pen, T: IronTier): void {
   // head to the snout, its bore at the tip
   if (t >= 3) { P.box(c - U, q(3), c + U, q(14), STEEL); P.box(c - U, q(3), c + U, q(3) + U, BORE); }
   // the collar at the shoulders and the stack behind the tank from T4, an
-  // acid heat band on it. The collar runs from one stripe to the other and
+  // acid heat band on it. The collar runs from one dot's line to the other and
   // stops there: a band that crosses the WHOLE body is a horizontal cut,
   // and a horizontal cut on a symmetrical body is a face
   if (t >= 4) {
