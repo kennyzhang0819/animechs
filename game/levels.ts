@@ -1428,15 +1428,23 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   //
   // ARMOUR 200, and that is the number that decides the fight. Armour is a
   // flat shave floored at a tenth (Sim.applyArmor), so a shot has to land
-  // for about 222 before the shave costs it less than the floor does — and
-  // as the rows are authored (constants.ts) only the two biggest calibres
-  // on the board do. Everything else — pellet AA, tackers, autocannons,
-  // every repeater — is sparks off the plate until the tree is spent on
-  // it, and the one thing that sidesteps the plate outright is BURNING,
-  // which skips applyArmor (pierceArmor). The answer to this
-  // body is not a wall of guns, it is the right guns, which is what the
-  // old 30 was reaching for and never reached: 30 still let a mid-calibre
-  // turret through at seventy per cent.
+  // for over 222 before the shave costs it less than the floor does — and
+  // as the rows are authored (constants.ts) the RAILHEAD's 1755 is the
+  // only one that does. Everything else is on the floor: the piercer, the
+  // cleaver, the repeater and the furnace all used to get seventy per cent
+  // of a shot through the old 30 and now get a tenth, which is where most
+  // of this plate's bite actually is — a tacker was already on the floor
+  // against 30 and has only the health multiplier to show for it.
+  //
+  // WHAT GETS THROUGH ANYWAY IS THE ARMOUR-PIERCING ROWS, and they are the
+  // design: `pierceArmor` skips applyArmor outright, so the TETHER's 550
+  // lance lands whole however thick the plate is, the repeater's tier-3
+  // Surge Shells (upgrades.ts) give the same to a turret that is otherwise
+  // sparks off it, and burning ignores plating the way it always has. The
+  // answer to this body is not a wall of guns, it is the right guns and
+  // the right nodes — which is what the old 30 was reaching for and never
+  // reached, because 30 still let a mid-calibre turret through at seventy
+  // per cent.
   //
   // HEALTH IS 720,000 AT NEMESIS, five times what the Erekir hull carried,
   // and it is a SHARE OF THE RUNG (ladder.ts bossHpScale): a boss cannot
