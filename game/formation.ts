@@ -175,10 +175,11 @@ export function rollFormation(
  * about a piece of map the size of a town.
  *
  * THE AMOUNTS ARE SQUARE NUMBERS AND THAT IS THE WHOLE REASON FOR THEM.
- * 4 is two copies by two and 9 is three by three, and since every shape
- * is a solid square that butts against its neighbours (below), a fleet is
- * simply THE SAME SQUARE, BIGGER: a x4 block is a solid 6x6 of turrets
- * and a x9 grid is a solid 12x12. The Amount button does one thing a
+ * 4 is two copies by two, 9 is three by three and 16 is four by four,
+ * and since every shape is a solid square that butts against its
+ * neighbours (below), a fleet is simply THE SAME SQUARE, BIGGER: a x4
+ * block is a solid 6x6 of turrets, a x9 grid is a solid 12x12 and a x16
+ * grid is a solid 16x16. The Amount button does one thing a
  * player can see at a glance — it enlarges the patch — and the footprint
  * they have to find ground for keeps the proportions of the card. They
  * were 5 and 10 once, which are not squares — 5 had to be laid out as a

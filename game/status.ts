@@ -17,22 +17,28 @@
  * (statusArt.ts). A player learns a symbol once.
  *
  * ORDER IS THE ORDER OF THIS FILE, everywhere, so the row over a body and
- * the row in the panel never disagree about which chip is which. ARMOUR
- * IS FIRST because it is the one that is always there.
+ * the row in the panel never disagree about which chip is which. THE
+ * PROPERTIES LEAD IT — what a gun hits for, how often it lets go, and
+ * what the thing is plated with — because those are always there and
+ * everything behind them is weather.
  *
  * WHAT IS A STATUS AND WHAT IS A STAT. A status is something that is TRUE
  * OF THIS BODY RIGHT NOW and could stop being true — the soak, the fire,
- * the shield, the rot. Plating is the exception, and it is deliberate: it
- * is the number every incoming hit is measured against, it is what a
- * player is really asking when they click a body, and it belongs at the
- * front of the row rather than in a caption. Speed, health and range are
- * NOT statuses; they are the thing itself.
+ * the shield, the rot. Plating is the oldest exception and the gun's two
+ * numbers are the newest, and both are deliberate: they are what a player
+ * is really asking when they click a thing — what can it take, what does
+ * it do — and they belong at the front of the row rather than in a
+ * caption nobody wrote. Speed, health and range are NOT statuses; they
+ * are the thing itself.
  */
 
-import { CELL, firesBullets, WET_SHOCK_MUL } from "./constants";
+import { CELL, firesBullets, WET_SHOCK_MUL, type BulletStats } from "./constants";
 import { UNIT_KINDS, UNIT_STATS, type UnitKind } from "./levels";
 import { AMPHIBIOUS_MAX_STACKS, HUNGRY_MAX_MEALS, LEADERSHIP_CAP, VIRUS_DPS } from "./mutation";
 import { PAL } from "./pixelArt";
+// a dead neighbour's parting charge is one of the clocks the cadence chip
+// has to fold in, and the sim keeps its size with the relic that grants it
+import { LAST_VOLLEY_RATE } from "./relics";
 import type { Sim } from "./sim";
 // the field row reads the picture's view of the bodies and not the sim: it is
 // drawn on the side that may not have one (simview.ts)
@@ -40,6 +46,12 @@ import type { UnitsView } from "./simview";
 import { isCore, type Structure, type Tower } from "./types";
 
 export type StatusId =
+  // WHAT THE GUN DOES AND HOW OFTEN — the two numbers a player clicking a
+  // turret asks for first, and the two that were nowhere on the screen.
+  // They lead the row for the reason plating used to: they are what the
+  // thing IS, and everything behind them is what is being done to it
+  | "damage"
+  | "firerate"
   | "armor"
   // the four TURRET TRAITS — properties of the gun, not events on it (see
   // STATUSES). They sit here, immediately behind plating, because that is
@@ -97,14 +109,15 @@ export interface StatusDef {
   /** what it does, in the player's words */
   blurb: string;
   /**
-   * DOES IT GO OVER THE BODY ON THE FIELD? Everything does except
-   * PLATING, and that is the whole of the exception.
+   * DOES IT GO OVER THE BODY ON THE FIELD? Every EVENT does; no PROPERTY
+   * does, and that is the whole of the exception.
    *
-   * A plate is a property rather than an event: every body on the map has
-   * one, so drawing it would put a symbol over all eight hundred of them
-   * at once — a field of identical chips that says nothing, on top of
-   * being the most expensive thing on the overlay. The panel is where
-   * "what is this made of" is asked, and the panel still leads with it.
+   * A plate — or a gun's damage, or its reload — is a property rather
+   * than an event: every body on the map has one, so drawing it would put
+   * a symbol over all eight hundred of them at once — a field of
+   * identical chips that says nothing, on top of being the most expensive
+   * thing on the overlay. The panel is where "what is this made of" is
+   * asked, and the panel still leads with it.
    */
   field: boolean;
 }
@@ -116,6 +129,30 @@ export interface StatusDef {
  * on the first page load rather than a blank square on the field.
  */
 export const STATUSES: readonly StatusDef[] = [
+  // ---- WHAT THE GUN DOES ----------------------------------------------
+  //
+  // Two chips that are TRUE OF THE GUN and never of a body: the hit and
+  // the cadence, read off the LIVE spec (upgrades, relics and this
+  // turret's own attributes folded in, Sim.resolveTower) and off the live
+  // clocks on top of it — a waterlogged gun, a jammed one, one running on
+  // a dead neighbour's charge says so in its own number rather than in a
+  // footnote. Properties, so never stamped on the field.
+  {
+    id: "damage",
+    name: "Damage",
+    color: PAL.ember,
+    blurb:
+      "What one of this gun's shots takes off what it hits, before the target's own plating is subtracted from it.",
+    field: false,
+  },
+  {
+    id: "firerate",
+    name: "Rate of fire",
+    color: PAL.flame,
+    blurb:
+      "How often the gun lets go — what it is reloading at RIGHT NOW, with the water, the jam and a parting charge already in the number.",
+    field: false,
+  },
   {
     id: "armor",
     name: "Plating",
@@ -761,12 +798,147 @@ export function structFieldStatuses(s: Structure, out: StatusId[]): number {
 }
 
 /**
+ * WHAT ONE HIT OF THIS AMMO IS WORTH. Usually the direct hit — but a
+ * LIQUID BALL does nothing at all on the way in and all of it in the
+ * blast (constants.ts douser, deluge), and a douser reading "0 a hit"
+ * with the real number in a clause after it is the panel lying with a
+ * true sentence. Where there is no direct hit, the blast IS the hit.
+ */
+const worth = (b: BulletStats): number => (b.damage > 0 ? b.damage : b.splash);
+
+/** ...and the clause that says where that number lands */
+const blast = (b: BulletStats): string =>
+  b.damage > 0
+    ? b.splash > 0
+      ? `, and ${num(b.splash)} more to everything in the blast`
+      : ""
+    : ", all of it in the blast";
+
+/**
+ * WHAT ONE GUN HITS FOR AND HOW OFTEN — the two chips that open a
+ * turret's row, as the numbers the turret has RIGHT NOW.
+ *
+ * BOTH ARE READ LIVE, and that is the whole point of putting them here
+ * rather than in a table on a wiki. The damage is off `Tower.spec`, which
+ * is the kind's stats with the save's tech rungs, the run's relics and
+ * this turret's own attributes already composed into it
+ * (Sim.resolveTower) — so a repeater that has been made a third stronger
+ * says so, and its neighbour that rolled nothing says its own smaller
+ * number. The cadence is that spec's reload divided by the very
+ * multiplier the fire loop divides by (Sim.step): the ground's water, a
+ * bomber's jam, a Grapnel's soak, a dead neighbour's parting charge. A
+ * player watching their line bog down under a flight can now see the
+ * reload move.
+ *
+ * A GUN IS NOT ALWAYS A VOLLEY. Three shapes answer here and each is
+ * described in its own terms, because "damage" means three different
+ * things to them: a VOLLEY gun hits for a number a shot, a BEAM does its
+ * number every damage interval for as long as it is lit, and a LOCK has
+ * no reload at all — it ramps on one body and the spool is its whole
+ * clock. A fixer has no gun and gets no chips.
+ *
+ * Returns null for anything that does not shoot, which is what drops both
+ * chips from the row.
+ */
+function gunReadout(t: Tower): { hit: number; damage: string; rate: string } | null {
+  const s = t.spec;
+  const b = s.bullet;
+  if (s.heal) return null; // a fixer's pulse is not a gun
+  // EXACTLY THE PRODUCT THE RELOAD RUNS AT (Sim.step): the turret's own
+  // rate — 1 unless the Hydrophobic rule waterlogged the ground it stands
+  // on — times a parting charge, times the sky's jam, times a soaked star
+  const rate =
+    t.fireRate * (t.boostT > 0 ? LAST_VOLLEY_RATE : 1) * (t.jamT > 0 ? t.jamRate : 1) *
+    (t.soakT > 0 ? t.soakRate : 1);
+  const cycle = s.reload / Math.max(rate, 0.0001);
+  if (b.lock) {
+    const peak = b.damage * b.lock.peak;
+    return {
+      hit: Math.round(b.damage),
+      damage: `${num(b.damage)} a second the instant it catches, up to ${num(peak)} spooled up`,
+      rate: `held on one body — ${dur(b.lock.spool)} of unbroken contact to full power`,
+    };
+  }
+  if (b.continuous) {
+    const c = b.continuous;
+    const perTick = b.damage / Math.max(c.damageInterval, 0.0001);
+    return {
+      hit: Math.round(perTick),
+      damage: `${num(perTick)} a second to everything under the beam`,
+      rate:
+        `${dur(c.duration)} of beam, then ${dur(cycle)} cooling` +
+        (rate === 1 ? "" : ` — ${dur(s.reload)} with nothing on it`),
+    };
+  }
+  // the ordinary gun. The SECOND NOZZLE is named where the two ammos
+  // disagree (constants.ts BulletStats.alt, deluge) — one number off a
+  // gun that throws two would be half a turret printed as the whole of it
+  const alt = b.alt && (b.alt.damage !== b.damage || b.alt.splash !== b.splash) ? b.alt : null;
+  const shot = alt ? `${num(worth(b))} and ${num(worth(alt))}` : num(worth(b));
+  // a volley is the number a player weighs, so it is spelled out: three
+  // shots of 105 is 315 arriving at once, and that is the sentence
+  const shots = Math.max(1, s.shots);
+  // ...and only where the shot IS one number. A shell that hits for one
+  // and blasts for another has no single total to print, and a volley
+  // line carrying just the direct half would read as the whole of it
+  const single = !alt && !(b.damage > 0 && b.splash > 0);
+  const volley =
+    shots > 1
+      ? `, ${shots} shots a volley${single ? ` (${num(worth(b) * shots)} at once)` : ""}`
+      : "";
+  // WHICH WAY ROUND THE CADENCE READS is the gun's own business and not
+  // the moment's: a slow gun is a WAIT between shots and a fast one is a
+  // COUNT a second. A repeater running on a parting charge reloads in a
+  // thirtieth of a second, and "a shot every 0s" is what one form alone
+  // printed. The form is picked off the stock reload so that the live
+  // number and the one it moved from are the same kind of number.
+  const noun = shots > 1 ? "volley" : "shot";
+  const fast = s.reload < 0.4;
+  const say = (cyc: number): string =>
+    fast ? `${num(1 / Math.max(cyc, 0.0001))} ${noun}s a second` : `a ${noun} every ${dur(cyc)}`;
+  return {
+    hit: Math.round(worth(b)),
+    damage: `${shot} a hit${alt ? " out of the two nozzles" : blast(b)}${volley}`,
+    // ...and what it would be with none of the clocks on it, so a number
+    // that has moved says what it moved from rather than looking wrong
+    rate:
+      say(cycle) +
+      (rate === 1 ? "" : ` — ${fast ? num(1 / s.reload) : dur(s.reload)} with nothing on it`),
+  };
+}
+
+/**
+ * THE TWO GUN CHIPS FOR THE WHOLE SELECTION, on plating's rule: one
+ * answer or none. Over a dragged box of identical repeaters that is the
+ * repeater's own numbers, which is a true sentence; over a box holding a
+ * lobber as well it is two answers, and two answers is no answer. The
+ * core carries no gun and so empties the pair, exactly as it empties the
+ * traits.
+ */
+function gunChips(picked: readonly Structure[]): StatusChip[] {
+  let first: { hit: number; damage: string; rate: string } | null = null;
+  for (const st of picked) {
+    if (isCore(st)) return [];
+    const g = gunReadout(st as Tower);
+    if (!g) return [];
+    if (first === null) first = g;
+    else if (g.damage !== first.damage || g.rate !== first.rate) return [];
+  }
+  if (!first) return [];
+  return [
+    { id: "damage", n: first.hit, note: first.damage },
+    { id: "firerate", n: null, note: first.rate },
+  ];
+}
+
+/**
  * THE ROW FOR A SELECTION OF BUILDINGS, which may be three hundred of
  * them (the marquee).
  *
- * PLATING LEADS, and it is printed only when every building picked wears
- * the same — an average over a mixed bag is a lie about all of them, which
- * is exactly why the panel's old armour caption was null for one.
+ * THE GUN LEADS — what it hits for and how often (gunChips) — and then
+ * PLATING, and all three are printed only when every building picked
+ * agrees on them: an average over a mixed bag is a lie about all of them,
+ * which is exactly why the panel's old armour caption was null for one.
  * Everything else is TALLIED: over a box the chip's number is how many of
  * the selection carry the thing ("rot on 4 of them" is the question a
  * player drags a box to ask), and over a single turret it is that
@@ -806,9 +978,17 @@ function turretTraits(picked: readonly Structure[]): StatusChip[] {
     const t = st as Tower;
     n++;
     if (firesBullets(t.kind)) nonbullet = false;
-    if (t.spec.bullet.burn === undefined) ignites = false;
-    if (t.spec.bullet.wet === undefined) soaks = false;
-    if (!t.spec.bullet.electric) electric = false;
+    // EVERY AMMO THE GUN LOADS, not just the first: a turret with a
+    // second nozzle (constants.ts BulletStats.alt — deluge) really does
+    // ignite what it hits and really does soak it, and a row reading the
+    // primary bullet alone would print one of its two halves and call
+    // that the turret. The trait holds where ANY of its ammos carries it;
+    // the "all of them" rule this loop is built on is about the PICKED
+    // turrets, which is a different question.
+    const ammo = [t.spec.bullet, ...(t.spec.bullet.alt ? [t.spec.bullet.alt] : [])];
+    if (!ammo.some((b) => b.burn !== undefined)) ignites = false;
+    if (!ammo.some((b) => b.wet !== undefined)) soaks = false;
+    if (!ammo.some((b) => b.electric)) electric = false;
   }
   if (n === 0) return [];
   const out: StatusChip[] = [];
@@ -865,6 +1045,8 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
     if (s.team === "enemy") bump("conquered");
   }
   const out: StatusChip[] = [];
+  // the gun first — what it DOES — and only then what it is made of
+  out.push(...gunChips(picked));
   if (armor !== null && !armorMixed)
     out.push({ id: "armor", n: Math.round(armor), note: num(armor) + " off every hit" });
   out.push(...turretTraits(picked));

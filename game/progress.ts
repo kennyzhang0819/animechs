@@ -176,6 +176,16 @@ export interface Progress {
    */
   panSpeed?: number;
   /**
+   * WHICH WAY THE WHEEL ZOOMS. The wheel's raw sign is not a fact about
+   * the player's intent: macOS's "natural scrolling" flips deltaY for
+   * mice as well as trackpads, so the same downward flick reads as
+   * negative on one machine and positive on the next, and no API tells us
+   * which. So the game ships the web convention — wheel down (positive
+   * deltaY) zooms out — and hands anyone whose machine disagrees the
+   * switch. Absent means INVERT_ZOOM_DEFAULT.
+   */
+  invertZoom?: boolean;
+  /**
    * WHEN A HEALTH BAR RIDES OVER A BODY ON THE FIELD, the player's own
    * (`allyBars`) and the swarm's (`enemyBars`) set apart — a player who
    * wants to see every wound coming in usually does not want their own
@@ -266,6 +276,8 @@ export const UI_SCALE_DEFAULT = 1;
  */
 export const PAN_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
 export const PAN_SPEED_DEFAULT = 1.5;
+/** the wheel follows its own sign until the Controls tab says otherwise */
+export const INVERT_ZOOM_DEFAULT = false;
 
 function readPanSpeed(p: { panSpeed?: unknown }): number | undefined {
   const s = p.panSpeed;
@@ -453,6 +465,21 @@ export function savePanSpeed(mult: number): void {
   const p = loadProgress();
   if ((p.panSpeed ?? PAN_SPEED_DEFAULT) === mult) return;
   saveProgress({ ...p, panSpeed: mult });
+}
+
+/** the Controls tab's zoom-direction switch */
+export function saveInvertZoom(on: boolean): void {
+  const p = loadProgress();
+  if ((p.invertZoom ?? INVERT_ZOOM_DEFAULT) === on) return;
+  saveProgress({ ...p, invertZoom: on });
+}
+
+/**
+ * The stored zoom direction on its own, for the map editor — a dev screen
+ * that stands outside the menu and so has nobody to hand it the knob.
+ */
+export function loadInvertZoom(): boolean {
+  return loadProgress().invertZoom ?? INVERT_ZOOM_DEFAULT;
 }
 
 

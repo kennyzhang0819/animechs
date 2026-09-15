@@ -1,16 +1,26 @@
 #!/usr/bin/env node
 /**
- * THE QUICK CHECK: everything that would make the game BREAK, and nothing
- * that takes a judgment call.
+ * THE CHECK: everything that would make the game BREAK, and nothing that
+ * takes a judgment call — in two sizes.
  *
- *   npm run check
+ *   npm run check          quick: does it compile, does it run, does it crash
+ *   npm run check:full     ...and does it still fit the frame, at the scale
+ *                          the game says it must carry — a minute or two
+ *   npm run check:full -- --only siege
+ *                          one clock, for iterating on it (frames, siege,
+ *                          scale, maps — a comma list)
  *
- * This is the one an agent runs, and the only one. It is a CRASH GATE, not
- * a balance gate: every check here has a right answer that needs no
- * knowledge of what the game is supposed to feel like, and the whole thing
- * is over in under twenty seconds, so it can be run after every edit rather
- * than saved up for the end. (`frames` is most of the back half of that: it
- * is the only check that has to run the game at load to learn anything.)
+ * QUICK is the one an agent runs after every edit. It is a CRASH GATE, not
+ * a balance gate: every check in it has a right answer that needs no
+ * knowledge of what the game is supposed to feel like, it never times
+ * anything, and it is over in seconds.
+ *
+ * FULL is the same plus the clocks — `frames` and the `siege` family below
+ * — which are the checks that have to run the game at load to learn
+ * anything, and so cost what a late wave costs to simulate, many times
+ * over. Run it before a change to the sim is called done, and any time
+ * something "feels slow": it reproduces the board that lagged, and it
+ * fails with the phase table that says why.
  *
  * What it asks:
  *
@@ -22,9 +32,23 @@
  *   worlds   all nine worlds construct: terrain, script, core
  *   sim      thirty sim-seconds of world 1 with turrets on the spawn —
  *            bodies spawn, walk, get shot and die, and nothing goes NaN
+ *
+ * ...and with --full:
+ *
  *   frames   the heaviest three waves the ladder sends, on a board full of
  *            turrets, timed: does one sim step still fit its share of a
  *            60fps frame
+ *   siege    the LATE board — nine thousand turrets, a hundred and fifty
+ *            modules, the T5s and a boss taking it apart — timed the same
+ *            way, with the swarm actually killing turrets while the clock
+ *            runs, which `frames` never does (see the check for why that
+ *            matters)
+ *   scale    the same siege at three, six, nine and twelve thousand
+ *            turrets, so the cost of the board is read as a CURVE and not
+ *            a point (held to SIEGE_LENIENT_MS for now — see there)
+ *   maps     the siege on every world, because a choke is a different
+ *            fight from an open field and the board that lags is the one
+ *            the player happens to be on
  *
  * WHAT IT DELIBERATELY DOES NOT DO IS PLAY THE GAME. It never reports a
  * wave reached or a core percentage, because those are numbers somebody
@@ -46,6 +70,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+/** --full: the clocks as well (see the header) */
+const FULL = process.argv.includes("--full");
+/** --only frames,siege,scale,maps: just those clocks, for iterating on one —
+ *  the quick checks always run, they are the crash gate and they are cheap */
+const ONLY = (() => {
+  const i = process.argv.indexOf("--only");
+  return i >= 0 && process.argv[i + 1] ? new Set(process.argv[i + 1].split(",")) : null;
+})();
+const wants = (name) => FULL && (!ONLY || ONLY.has(name));
 const DIST = path.join(ROOT, ".playtest", "check");
 const require = createRequire(import.meta.url);
 const t0 = Date.now();
@@ -128,6 +161,8 @@ function print() {
     `\n${failed ? "BROKEN" : "clean"} in ${wall}s` +
       `${stale ? "" : " (transpile cached)"} — compile ${(tCompile / 1000).toFixed(1)}s`,
   );
+  if (!FULL)
+    console.log("quick: compiles and runs. `npm run check:full` adds the clocks (a minute or two).");
   if (!failed)
     console.log("Balance and play are checked by hand. Do not run npm run playtest to satisfy this.");
 }
@@ -490,7 +525,7 @@ const SAMPLE = 2;
 
 const frameProblems = [];
 let frameDetail = "";
-try {
+if (wants("frames")) try {
   reseed(29);
   // the top of the ladder: tierCountScale plateaus at Nemesis, so this is
   // simply the most the script is ever asked to send
@@ -586,7 +621,286 @@ try {
 } catch (e) {
   frameProblems.push(e.stack?.split("\n").slice(0, 3).join(" / ") ?? e.message);
 }
-report("frames", frameProblems, frameDetail);
+if (wants("frames")) report("frames", frameProblems, frameDetail);
+
+// ---------- siege: the late board, with the swarm taking it apart ----------
+
+/**
+ * THE CHECK `frames` IS NOT, and the reason there are two clocks.
+ *
+ * `frames` times a board the swarm never breaks: its own scenario test
+ * FAILS if the core takes damage or half the turrets are eaten, so a run
+ * that passes it is a run where nothing on the board died. That is the
+ * right test for "does the loop fit the frame", and it was blind to an
+ * entire class of cost — everything the sim does WHEN A TURRET DIES. Two
+ * of those got through it and lagged a real wave-50 board to 69% of real
+ * time: a death re-composed every standing turret's stats (refreshSpecs,
+ * once per death, O(board)), and a death rebuilt the whole aim index the
+ * next time anything searched it (structBox). Neither is reachable from a
+ * board where nothing dies, and `frames` said 4ms a step while the game
+ * said 20.
+ *
+ * WHAT THIS BUILDS is the run that found them, as the player described it:
+ * a board about a third built, a hundred and fifty modules bought off the
+ * real M and G tables (so the mix is the game's — mostly commons, a few
+ * ultras — and not ten of everything), the late waves' worth of bodies
+ * streaming in through the doors at a steady rate — every tier, the T5s
+ * and a boss among them — and then, mid-fight, the rest of the board laid
+ * down at once, up to the nine thousand turrets a late run stands. A
+ * second boss goes in the moment the clock starts, because a boss is the
+ * widest thing that flies and the widest live hitbox is what every shot's
+ * broad phase pays for (Sim.rmaxAliveFor); one that dies in the march is
+ * one the sample never sees.
+ *
+ * THE SCENARIO IS CHECKED BEFORE THE CLOCK IS BELIEVED, as in `frames` —
+ * but the other way round: here the swarm MUST be killing turrets inside
+ * the window, the T5s must have reached the field, and a boss must be
+ * alive in it, or the sample is timing the board `frames` already times
+ * and this check is a duplicate. The clock is read off the sim's own
+ * phase profiler rather than a stopwatch, so a failure prints the phase
+ * table — which is the only form of the number that says WHY.
+ *
+ * THE CLOCK IS THE MIN OVER THREE SAMPLES OF THE MEDIAN STEP, against the
+ * same budget `frames` uses. This board runs close to that budget on
+ * purpose — it is the scale the game says it must carry — and a number
+ * that close to its line has to be read carefully: three back-to-back runs
+ * of one seed timed 10.4, 12.3 and 11.0ms while `frames` timed 4.1, 6.8
+ * and 5.1 on ITS unchanged board, which is the machine and not the game.
+ * Machine noise only ever runs one way (something else wanted the core;
+ * nothing ever makes a step cheaper than it is), so the least of several
+ * medians is the honest reading of what the step costs, and the one that
+ * does not flip on a busy laptop.
+ *
+ * THE SHARE OF STEPS OVER A WHOLE FRAME IS PRINTED, NOT GATED — except at
+ * a third, which is unplayable on any machine (the bugs above put it at
+ * 30 to 60 per cent). Below that it is what a player feels, and it is also
+ * the number most at the mercy of the machine, so it reads beside the
+ * step rather than deciding for it.
+ *
+ * The board is scattered rather than belted: a run this late has built
+ * everywhere it could, and a belt along the road would put the whole
+ * board in the swarm's teeth at once, which is a different (and easier)
+ * scenario than the one that lagged.
+ */
+
+/** modules bought before the board goes down — the M and G buttons, pressed */
+const SIEGE_BUYS = 150;
+/** turrets standing when the swarm arrives (a third of the board), and after
+ *  the mid-fight fill — the size a late run stands, and the size the gate is
+ *  read at. A run is EXPECTED to reach ten thousand; the ladder below is
+ *  gated to there and printed past it */
+const SIEGE_PRE = 3000;
+const SIEGE_FULL = 9000;
+/**
+ * THE BAR `scale` AND `maps` ARE HELD TO TODAY, in ms a step — and it is
+ * NOT the budget. Measured with every fix to date in, the siege at nine
+ * thousand turrets runs 15 to 20ms a step on five of the nine worlds
+ * (Maelstrom, Quagmire, Crater, Confluence, Greenwood) and at the 9k rung
+ * whenever a boss is alive, and in every case it is `projectiles`: 17 to
+ * 31 thousand shots in flight, each sweeping the hash for bodies, at 70%
+ * of the step. That is known and not yet fixed, so those two checks are
+ * held to this looser bar rather than failing on a cost nobody is
+ * changing today; `siege` itself, on the one world that fits, is still
+ * held to SIM_BUDGET_MS.
+ *
+ * WHEN THE PROJECTILE WORK LANDS, SET THIS BACK TO SIM_BUDGET_MS, and the
+ * over-frame share (SIEGE_LENIENT_OVER) back to SIEGE_OVER. The number is
+ * the worst least-median seen (20.5, Greenwood) plus room for the
+ * machine, so that it passes reliably now and fails if that cost grows.
+ */
+const SIEGE_LENIENT_MS = 25;
+const SIEGE_LENIENT_OVER = 1;
+/** bodies through the doors per step, the whole window — a wave streaming
+ *  in rather than a crowd dropped at once, so the field holds a steady
+ *  population that keeps the line under attack for the length of the sample */
+const SIEGE_RATE = 12;
+/** seconds the swarm walks before the fill and the clock */
+const SIEGE_MARCH = 3;
+/** samples timed, and seconds in each: the verdict is the least of their medians */
+const SIEGE_SAMPLES = 3;
+const SIEGE_SAMPLE = 2;
+/** the share of steps over a whole frame (STEP_BUDGET_MS) that fails outright */
+const SIEGE_OVER = 1 / 3;
+
+/** how many cells a world will take a tacker on — the room a board has */
+const legalCells = (world) => {
+  const s = new Sim(LA.specForTier(world, 0));
+  s.setTech(TR.techStateFor(60));
+  let n = 0;
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (s.canPlace(x, y, "tacker")) n++;
+  return n;
+};
+
+/**
+ * ONE SIEGE: the scenario above on `world`, filled to `full` turrets, timed.
+ * Returns the problems, the step, and a detail line. `gate` false times
+ * without judging — the ladder's rungs past what a run is expected to stand.
+ */
+function siege({
+  world,
+  full = SIEGE_FULL,
+  pre = SIEGE_PRE,
+  seed = 43,
+  budget = SIM_BUDGET_MS,
+  overMax = SIEGE_OVER,
+}) {
+  const problems = [];
+  let step = NaN, detail = "";
+  try {
+    reseed(seed);
+    const MO = R("mods.js"), RE = R("relics.js"), SR = R("simreport.js");
+    const spec = LA.specForTier(world, LA.RUNG_COUNT - 1);
+    const sim = new Sim(spec);
+    sim.setTech(TR.techStateFor(60));
+
+    // the purchases, off the game's own tables and odds: every fourth press
+    // is the G button, until the relics run out (a relic is held once —
+    // relics.ts — so a late run's G presses land on nothing and the player
+    // goes back to M, which is what this does too)
+    let bought = 0;
+    for (let i = 0; i < SIEGE_BUYS; i++) {
+      const relic = i % 4 === 3 ? RE.rollRelic(sim.relicsHeld) : null;
+      if (relic) { sim.takeRelic(relic); bought++; continue; }
+      const id = MO.rollMod();
+      if (id) { sim.takeMod(id); bought++; }
+    }
+
+    // the board, scattered over every legal cell: kinds round-robin, and a
+    // tacker where the kind in hand does not fit
+    const kinds = T.FIELDED_KINDS;
+    let ki = 0;
+    const scatter = (target) => {
+      for (let tries = 0; sim.towers.length < target && tries < 4e6; tries++) {
+        const x = (Math.random() * COLS) | 0, y = (Math.random() * ROWS) | 0;
+        const k = kinds[ki % kinds.length];
+        if (sim.canPlace(x, y, k)) { sim.placeTower(x, y, k); ki++; }
+        else if (sim.canPlace(x, y, "tacker")) sim.placeTower(x, y, "tacker");
+      }
+    };
+    scatter(Math.min(pre, full));
+
+    // the swarm: every kind on the roster, and a boss through the door as
+    // soon as a door will take one — the pads are crowded, so the boss is
+    // asked for first every step until it lands
+    const pool = L.UNIT_KINDS.filter((k) => k !== "boss");
+    let fed = 0, bosses = 0;
+    const feed = (wantBosses) => {
+      for (let j = 0; j < SIEGE_RATE; j++) {
+        const k = bosses < wantBosses && j === 0 ? "boss" : pool[(Math.random() * pool.length) | 0];
+        if (sim.spawnUnit(k)) { fed++; if (k === "boss") bosses++; }
+      }
+    };
+    for (let f = 0; f < SIEGE_MARCH * 60; f++) { feed(1); sim.update(1 / 60); }
+
+    // the rest of the board, all at once, with the fight on
+    scatter(full);
+    const standing = sim.towers.length;
+    const kills0 = sim.kills;
+
+    // ...and the clock, with a boss alive under it: the profiler armed once
+    // across every sample for the phases, and each step's own wall time
+    // kept beside it for the medians
+    sim.profile(true);
+    const seenT5 = new Set();
+    let bossAlive = false;
+    const medians = [];
+    for (let n = 0; n < SIEGE_SAMPLES; n++) {
+      const ms = [];
+      for (let f = 0; f < SIEGE_SAMPLE * 60; f++) {
+        feed(2);
+        const a = performance.now();
+        sim.update(1 / 60);
+        ms.push(performance.now() - a);
+        if (f % 30 === 0)
+          for (let i = 0; i < sim.n; i++) {
+            const k = L.UNIT_KINDS[sim.ukind[i]];
+            if (k === "boss") bossAlive = true;
+            else if (L.UNIT_STATS[k].tier === 5) seenT5.add(k);
+          }
+      }
+      ms.sort((a, b) => a - b);
+      medians.push(ms[ms.length >> 1]);
+    }
+    step = Math.min(...medians);
+    const p = sim.profileFull();
+    sim.profile(false);
+    const lost = standing - sim.towers.length;
+    const killed = sim.kills - kills0;
+    let air = 0;
+    for (let i = 0; i < sim.n; i++) if (sim.ufly[i]) air++;
+
+    // the scenario first
+    if (bought < SIEGE_BUYS * 0.9) problems.push(`only ${bought} of ${SIEGE_BUYS} module buys landed`);
+    if (sim.towers.length < full * 0.9)
+      problems.push(`the board reached only ${sim.towers.length} turrets of the ${full} asked for`);
+    if (killed === 0) problems.push("the turrets killed nothing in the window");
+    if (lost === 0) problems.push("the swarm killed no turret in the window — the death path went untimed, which is the one thing this check is for");
+    if (seenT5.size < 4) problems.push(`only ${seenT5.size} T5 kinds reached the field in the window`);
+    if (!bossAlive) problems.push("no boss was alive during the sample — the widest air hitbox went untimed");
+    if (sim.lost()) problems.push("the core fell");
+    // ...then the clock
+    const overShare = p.steps > 0 ? p.over / p.steps : 0;
+    const slow = [];
+    if (step > budget)
+      slow.push(
+        `a sim step takes ${step.toFixed(1)}ms of the ${budget.toFixed(1)}ms it is allowed ` +
+          `(the least of ${SIEGE_SAMPLES} medians: ${medians.map((m) => m.toFixed(1)).join(", ")})`,
+      );
+    if (overShare > overMax)
+      slow.push(
+        `${(overShare * 100).toFixed(0)}% of steps ran over a whole frame (${SR.STEP_BUDGET_MS.toFixed(1)}ms), ` +
+          `averaging ${p.slowMs.toFixed(1)}ms — unplayable on any machine`,
+      );
+    if (slow.length > 0) {
+      problems.push(...slow);
+      // the phase table, because a number without its phases cannot say why
+      for (const line of SR.profileLines(p).slice(5, 11)) problems.push(line);
+    }
+
+    detail =
+      `${sim.towers.length} turrets, ${sim.n} bodies (${air} air, ${seenT5.size} T5 kinds, ${bosses} bosses), ` +
+      `${lost} turrets lost, ${step.toFixed(1)}ms a step (least median of ${SIEGE_SAMPLES}; mean ${p.ms.toFixed(1)}, ` +
+      `worst ${p.worst.toFixed(0)}, ${(overShare * 100).toFixed(0)}% over the frame) against ${budget.toFixed(1)}ms`;
+  } catch (e) {
+    problems.push(e.stack?.split("\n").slice(0, 3).join(" / ") ?? e.message);
+  }
+  return { problems, step, detail };
+}
+
+if (FULL) {
+  const worlds = L.WORLDS.map((w) => ({ w, cells: legalCells(w) })).sort((a, b) => b.cells - a.cells);
+  const biggest = worlds[0].w;
+  // the gate: the world with the most ground, at the size a late run stands
+  if (wants("siege")) {
+    const main = siege({ world: biggest });
+    report("siege", main.problems, main.detail);
+  }
+
+  // the ladder: the cost of the board as a curve, gated to what a run is
+  // expected to stand and printed past it
+  const rungs = [3000, 6000, 9000, 12000];
+  const scaleProblems = [];
+  const curve = [];
+  if (wants("scale")) for (const full of rungs) {
+    const r = siege({ world: biggest, full, seed: 47, budget: SIEGE_LENIENT_MS, overMax: SIEGE_LENIENT_OVER });
+    curve.push(`${full / 1000}k ${Number.isFinite(r.step) ? r.step.toFixed(1) : "?"}ms`);
+    for (const p of r.problems) scaleProblems.push(`${full / 1000}k: ${p}`);
+  }
+  if (wants("scale")) report("scale", scaleProblems, `${curve.join(" · ")} a step (held to ${SIEGE_LENIENT_MS}ms until projectiles is fixed)`);
+
+  // every world: a choke is a different fight from an open field. A small
+  // map takes fewer buildings, so the target is what its ground will hold
+  const mapProblems = [];
+  const perWorld = [];
+  if (wants("maps")) for (const { w, cells } of worlds) {
+    const full = Math.min(SIEGE_FULL, Math.floor(cells / 8));
+    const r = siege({ world: w, full, seed: 53, budget: SIEGE_LENIENT_MS, overMax: SIEGE_LENIENT_OVER });
+    perWorld.push(`${w.name} ${Number.isFinite(r.step) ? r.step.toFixed(1) : "?"}`);
+    for (const p of r.problems) mapProblems.push(`${w.name}: ${p}`);
+  }
+  if (wants("maps")) report("maps", mapProblems, `ms a step, held to ${SIEGE_LENIENT_MS} until projectiles is fixed — ${perWorld.join(" · ")}`);
+}
+
 
 print();
 process.exit(failed ? 1 : 0);

@@ -171,6 +171,14 @@ export interface TurretUpgradeDef {
   glyph: UpgradeGlyph;
   /** the upgraded stats, given the board it stands on */
   apply: (s: TowerStats, ctx: UpgradeContext) => TowerStats;
+  /**
+   * THIS RUNG READS THE HEAD COUNT (UpgradeContext.count). Declared, not
+   * inferred, because the sim needs to know it WITHOUT running `apply`:
+   * a turret coming or going only moves the table for a kind whose bought
+   * rungs include one of these, and on a late board buildings come and go
+   * every step. The one rung today is tacker power (countSensitive).
+   */
+  counted?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -189,6 +197,27 @@ const withBullet = (s: TowerStats, b: Partial<BulletStats>): TowerStats => ({
 });
 
 /**
+ * THE SAME TRANSFORM ON EVERY AMMO THE GUN LOADS — its own bullet and,
+ * where it has one, the second nozzle's (constants.ts BulletStats.alt).
+ *
+ * The plain numeric nodes go through this rather than through withBullet,
+ * because a turret that throws two ammos throws them out of ONE gun: a
+ * damage mod that lifted only the first would leave deluge's fire half
+ * firing stock rounds off a fully modded turret, and the player would
+ * read the card's number against half a gun. The status-shaped helpers
+ * below do NOT go through it — a longer soak belongs to the ammo that
+ * soaks, and the ammo that does not carry the status is left alone by its
+ * own `if`.
+ */
+const eachAmmo = (
+  s: TowerStats,
+  f: (b: BulletStats) => BulletStats,
+): TowerStats => {
+  const b = f(s.bullet);
+  return { ...s, bullet: s.bullet.alt ? { ...b, alt: f(s.bullet.alt) } : b };
+};
+
+/**
  * Attack speed, which is the RECIPROCAL of reload: +100% rate is half the
  * wait. Every rate node in the file goes through this, so "+n%" always
  * means the same thing.
@@ -202,7 +231,7 @@ export const faster = (s: TowerStats, mul: number): TowerStats => ({ ...s, reloa
  * barrage, airburst — whose damage IS the blast.
  */
 export const stronger = (s: TowerStats, mul: number): TowerStats =>
-  withBullet(s, { damage: s.bullet.damage * mul, splash: s.bullet.splash * mul });
+  eachAmmo(s, (b) => ({ ...b, damage: b.damage * mul, splash: b.splash * mul }));
 
 /**
  * REACH, and everything that has to move with it.
@@ -214,27 +243,23 @@ export const stronger = (s: TowerStats, mul: number): TowerStats =>
  * mid-air — which is why this touches the lifetime and every hitscan
  * length there is rather than the range alone.
  */
-export const reaching = (s: TowerStats, mul: number): TowerStats => {
-  const b = s.bullet;
-  return {
-    ...s,
-    range: s.range * mul,
-    bullet: {
-      ...b,
-      lifetime: b.lifetime * mul,
-      ...(b.ray ? { ray: { ...b.ray, length: b.ray.length * mul } } : null),
-      ...(b.laser ? { laser: { ...b.laser, length: b.laser.length * mul } } : null),
-      ...(b.rail ? { rail: { ...b.rail, length: b.rail.length * mul } } : null),
-      ...(b.continuous
-        ? { continuous: { ...b.continuous, length: b.continuous.length * mul } }
-        : null),
-    },
-  };
-};
+export const reaching = (s: TowerStats, mul: number): TowerStats => ({
+  ...eachAmmo(s, (b) => ({
+    ...b,
+    lifetime: b.lifetime * mul,
+    ...(b.ray ? { ray: { ...b.ray, length: b.ray.length * mul } } : null),
+    ...(b.laser ? { laser: { ...b.laser, length: b.laser.length * mul } } : null),
+    ...(b.rail ? { rail: { ...b.rail, length: b.rail.length * mul } } : null),
+    ...(b.continuous
+      ? { continuous: { ...b.continuous, length: b.continuous.length * mul } }
+      : null),
+  })),
+  range: s.range * mul,
+});
 
 /** the blast's radius, left where the damage is */
 const wider = (s: TowerStats, mul: number): TowerStats =>
-  withBullet(s, { splashRadius: s.bullet.splashRadius * mul });
+  eachAmmo(s, (b) => ({ ...b, splashRadius: b.splashRadius * mul }));
 
 /** a flak shell's proximity fuse — how far off a body it goes off */
 const fusedAt = (s: TowerStats, mul: number): TowerStats =>
@@ -349,9 +374,24 @@ const TACKER: readonly TurretUpgradeDef[] = [
     name: "Tacker Power",
     blurb: "+1% damage for every OTHER tacker standing. A hundred tackers is +99% damage each.",
     glyph: "surge",
+    counted: true,
     apply: (s, ctx) => stronger(s, 1 + 0.01 * Math.max(0, ctx.count - 1)),
   },
 ];
+
+/**
+ * DOES THIS KIND'S TABLE MOVE WHEN ONE OF THEM IS PLACED OR LOST — that is,
+ * has the save bought a rung of it that reads the head count (`counted`)?
+ * Sim.flushSpecs asks this for every kind a step's deaths and placements
+ * touched, and skips the recount for every kind that says no, which is
+ * every kind but an upgraded tacker.
+ */
+export function countSensitive(kind: TowerKind, points: UpgradePoints): boolean {
+  const rungs = TURRET_UPGRADES[kind];
+  for (let i = 0; i < rungs.length; i++)
+    if (rungs[i].counted && (points[i] ?? 0) > 0) return true;
+  return false;
+}
 
 const AIRBURST: readonly TurretUpgradeDef[] = [
   {

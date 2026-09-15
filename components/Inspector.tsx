@@ -126,6 +126,21 @@ export function StatusGlyph({
  * the venom line's purple for rot. A player reading the row is being told
  * what is happening, not how lucky they got.
  */
+/**
+ * THE BADGE UNDER A SYMBOL, SHORT. It is eight pixels tall in the corner
+ * of a twenty-two pixel tile, and it is absolutely positioned — so a
+ * four-figure number (a railhead's shot, a furnace's beam, a big shield
+ * pool) does not wrap or clip, it runs out over the chip beside it. A
+ * thousand and up is printed in thousands; the hover card and the aria
+ * label still carry the number in full.
+ */
+const short = (n: number): string => {
+  const a = Math.abs(n);
+  if (a < 1000) return String(n);
+  if (a < 10000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+  return `${Math.round(n / 1000)}k`;
+};
+
 function StatusPip({ chip }: { chip: Chip }) {
   const tip = useHoverCard("up");
   const d = statusDef(chip.id);
@@ -138,7 +153,7 @@ function StatusPip({ chip }: { chip: Chip }) {
       aria-label={`${d.name}${chip.n !== null ? ` ${chip.n}` : ""}, ${chip.note}`}
     >
       <StatusGlyph id={chip.id} className="h-[15px] w-[15px]" />
-      {chip.n !== null && <span className="ms-tile-count">{chip.n}</span>}
+      {chip.n !== null && <span className="ms-tile-count">{short(chip.n)}</span>}
       {/* THE NOTE IS A STAT, NOT A TAG. It used to ride the title's line as
           a corner label, which was fine while every note was "3s left" and
           broke the moment they carried what a thing actually does — "60

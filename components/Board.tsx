@@ -135,6 +135,14 @@ export function BackButton({ label, onClick }: { label: string; onClick: () => v
  * the one showing: gold for the tree, pink for the codex. That is the only
  * signal on either board that says which set of rules you are reading, and
  * it has to survive being glanced at from across a room.
+ *
+ * IT IS THE SAME FRAME EVERY OTHER TAB STRIP IN THE GAME WEARS (.ms-seg —
+ * the settings tabs, the codex's own filters): one outlined plate holding
+ * flat blocks that share edges. It used to be an .ms-pane of GHOST
+ * buttons, and a ghost draws a DASHED pixel outline round itself — which
+ * is the kit's mark for a quiet control that is barely there, exactly
+ * wrong for the one strip that says which board you are on. The tint
+ * still lands on the selected tab: .ms-seg reads .ms-btn-tint too.
  */
 export function BoardTabs<T extends string>({
   tabs,
@@ -149,7 +157,7 @@ export function BoardTabs<T extends string>({
     <div
       role="tablist"
       aria-label="board"
-      className="pointer-events-auto ms-pane flex items-center gap-1 p-1"
+      className="pointer-events-auto ms-seg"
     >
       {tabs.map((t) => {
         const on = t.id === active;
@@ -159,9 +167,7 @@ export function BoardTabs<T extends string>({
             role="tab"
             aria-selected={on}
             onClick={() => onPick(t.id)}
-            className={`ms-btn h-9 gap-2 px-3 text-[15px] ${
-              on ? "ms-btn-tint ms-on" : "ms-btn-ghost text-[#a2a2a2]"
-            }`}
+            className="ms-btn ms-btn-tint h-9 gap-2 px-3 text-[15px]"
             style={{ "--ms-tint": t.color } as CSSProperties}
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden="true">

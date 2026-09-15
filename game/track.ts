@@ -241,7 +241,7 @@ const UNLOCKS: Readonly<Record<number, readonly TowerKind[]>> = {
 /**
  * THE SHAPES ARE NOT ON THE TRACK AT ALL (formation.ts). Every save owns
  * every one of the five squares from wave one, so nothing here deals one
- * and the Unlocks board has no Shapes tab. They were dealt once — three
+ * and the codex has no Shapes tab. They were dealt once — three
  * to open with and nine earned — back when a shape was an OUTLINE and
  * learning what a saltire was for was a reward in itself. A table of
  * plain squares has nothing to teach that way: gating the 6x6 behind
@@ -371,7 +371,7 @@ const RELIC_UNLOCKS: Readonly<Record<number, readonly RelicId[]>> = {
     if (!seen.has(d.id)) throw new Error(`the track never opens the relic "${d.id}"`);
   // A RELIC IS A LATE-GAME ANSWER AND THE TRACK HAS TO SAY SO. RELICS_FROM
   // is read by the G button, by the Deal's locked caption and by the
-  // Unlocks board; a table that opened one earlier than it claims would
+  // codex; a table that opened one earlier than it claims would
   // hand a relic over on a level the UI still calls shut
   if (first !== RELICS_FROM)
     throw new Error(`the first relic opens on level ${first}, and RELICS_FROM says ${RELICS_FROM}`);
@@ -499,10 +499,36 @@ const REWARD_ORDER: readonly Reward["kind"][] = [
 
 const rewardRank = (r: Reward): number => REWARD_ORDER.indexOf(r.kind);
 
-/** every reward a level hands out, in REWARD_ORDER */
+/**
+ * every reward a level hands out, in REWARD_ORDER.
+ *
+ * LEVEL 1 IS THE OPENING HAND, AND IT PRINTS EVERYTHING A FRESH SAVE
+ * ALREADY OWNS. Nothing HANDS those out — the starting roster, the four
+ * starting mods and the maps that were never locked are simply there from
+ * the first boot — and the row used to show only the turrets, so the mods
+ * and the open maps appeared on the board (unlocksOf shelves them at
+ * level 1) with no row of the track that accounted for them. A player
+ * reading the track top to bottom would see four guns on row 1 and a mod
+ * dealt on row 2 with no explanation of the four they already had.
+ *
+ * So the rule for row 1 is the same rule unlocksOf uses: anything whose
+ * unlock level is 1 is on it, whether the track deals it or it was never
+ * locked in the first place. It is not a reward for reaching level 1 — it
+ * is the inventory a save starts with, written where a player looks for
+ * an inventory.
+ *
+ * THE SHAPES ARE STILL NOT ON IT. Every save owns all five and no reward
+ * kind exists for one (see the note above on the deal's second roll) —
+ * they are a property of the deal, not a thing the campaign owns.
+ */
 export function rewardsAt(level: number): Reward[] {
   const out: Reward[] = [];
   for (const id of TURRETS_DEALT.get(level) ?? []) out.push({ kind: "turret", id });
+  if (level === 1) {
+    for (const id of STARTING_MODS) out.push({ kind: "mod", id });
+    for (const w of WORLDS)
+      if (worldUnlockLevel(w.id) === 1) out.push({ kind: "world", worldId: w.id });
+  }
   for (const id of MOD_UNLOCKS[level] ?? []) out.push({ kind: "mod", id });
   for (const id of RELIC_UNLOCKS[level] ?? []) out.push({ kind: "relic", id });
   for (const id of DEALT.get(level) ?? []) out.push({ kind: "upgrade", id });
@@ -645,7 +671,7 @@ export const TOWER_NAME: Readonly<Record<TowerKind, string>> = Object.fromEntrie
 ) as Record<TowerKind, string>;
 
 /**
- * EVERY UNLOCK IN THE GAME, FLAT — what the Unlocks board reads.
+ * EVERY UNLOCK IN THE GAME, FLAT — what the codex reads.
  *
  * The track is authored the other way round (a level, and what it hands
  * out), and that is the right shape for "where am I and what is next". It

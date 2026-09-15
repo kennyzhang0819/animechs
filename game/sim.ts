@@ -3,7 +3,14 @@
 // is allocated the ordinary way — sharing what nobody outside reads would
 // be memory handed over for nothing.
 import * as shared from "./shared";
-import { HEADER_LEN } from "./simreport";
+import {
+  HEADER_LEN,
+  NWORK,
+  STEP_BUDGET_MS,
+  type PhaseRead,
+  type ProfileCensus,
+  type ProfileRead,
+} from "./simreport";
 // the placement rule lives over grids so that the drawing side can ask it
 // too, without waiting on this thread (board.ts)
 import {
@@ -107,6 +114,9 @@ import {
   type PhysTables,
 } from "./physkernel";
 import { makePhysPort, type PhysLink, type PhysPort } from "./physport";
+// the clock's own two constants: a step's length, and the most wall time
+// one frame may bank. Both are read by the profiler (profLiveMs)
+import { DT_CAP, SIM_DT } from "./simclock";
 import {
   HB_A,
   HB_B,
@@ -198,6 +208,7 @@ import {
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
+import { countSensitive } from "./upgrades";
 import {
   applyTurretMods,
   modBit,
@@ -1536,7 +1547,8 @@ export class Sim {
    *
    * It is a CACHE, refreshed only when one of its two inputs moves: the
    * save's points (setTech) and the number of each kind standing
-   * (refreshSpecs, at every place a tower is added, sold or cleared).
+   * (refreshSpecs on the spot when the player buys; a per-kind recount at
+   * the step's end for whatever was placed or lost, see oweCount).
    * Neither can change between those moments, and tacker power's per-tacker
    * damage would otherwise mean a head count of the whole board on every
    * bullet — five hundred scans a tick to recompute a number that did not
@@ -1560,10 +1572,15 @@ export class Sim {
     return [...this.specs];
   }
 
-  /** how deep the placement batch is (batchPlacement), and whether anything
-   *  inside it asked for a spec refresh that is still owed */
+  /** how deep the placement batch is (batchPlacement), and whether a FULL
+   *  refresh is owed — a purchase made inside a batch. Paid at the batch's
+   *  end or the step's end, whichever comes first (flushSpecs) */
   private specsHold = 0;
   private specsPending = false;
+  /** the kinds whose HEAD COUNT moved since the last flush — a turret of
+   *  the kind placed, wrecked, sold or conquered (oweCount). Only a kind
+   *  with a count-reading rung bought is recomposed for it (countSensitive) */
+  private readonly countsOwed = new Set<TowerKind>();
   /**
    * THE RUN'S MODS (mods.ts), id to how many copies of it are owned — a
    * TALLY, because a mod is a number that grows and a run may hold any
@@ -1704,6 +1721,9 @@ export class Sim {
   /** the box each side's buildings stand in, and whether the board has
    *  moved under it — see structBox() */
   private readonly structBoxCache = { x0: 0, y0: 0, x1: 0, y1: 0, n: 0 };
+  /** the aim index (structBox) is owed a full rebuild — true only from
+   *  the reset until the first search; every add and removal after that
+   *  keeps it exact in place (indexStructure) */
   private structBoxDirty = true;
   /**
    * EVERY STRUCTURE, FILED BY SQUARE (AIM_BLOCK) — the aim index's coarse
@@ -2368,6 +2388,7 @@ export class Sim {
     const until = nowMs() + this.fieldBudgetMs;
     while (this.solveQueue.length > 0) {
       const left = until - nowMs();
+      this.fieldSlices++;
       if (!this.solveQueue[0].advance(Math.max(left, FIELD_MIN_SLICE))) return;
       this.solveQueue.shift();
       if (nowMs() >= until) return;
@@ -2827,6 +2848,7 @@ export class Sim {
       return;
     }
     this.specs.clear();
+    this.countsOwed.clear(); // a full refresh reads every count anyway
     const up = this.tech?.upgrades;
     const counts = up ? this.towerCounts() : null;
     for (const kind of TOWER_KINDS) {
@@ -2848,6 +2870,77 @@ export class Sim {
     for (const t of this.towers) if (t.team === "player") this.resolveTower(t);
     this.specsVersion++;
   }
+
+  /**
+   * A HEAD COUNT MOVED — a turret of this kind placed, wrecked, sold or
+   * conquered. The table is OWED a look, not given one.
+   *
+   * WHY A DEATH MAY NOT REFRESH ON THE SPOT. refreshSpecs re-composes every
+   * standing turret (resolveTower), which is O(board), and it was called
+   * once per death — inside hitStructure, inside the weapons pass. On a
+   * wave-50 board of five to ten thousand buildings, with something dying
+   * most steps and several dying on the bad ones, that was tens of
+   * thousands of re-compositions a step, billed to unitGuns and counted by
+   * nothing: the phase read as "each candidate got dearer" while its
+   * candidate counts sat flat, which is the exact signature simreport.ts
+   * warns about. Measured, it was the bulk of a 20ms step that should be
+   * under 7.
+   *
+   * WHY IT IS NOT EVEN ONE FULL REFRESH A STEP. Deferred to the step's end
+   * it was still O(board) on every step with a death — 11ms a refresh at
+   * eight and a half thousand turrets, the top line of the profile, and
+   * linear in the board. And almost all of it produced the table it
+   * started with: the only thing a coming or going turret changes is ONE
+   * kind's head count, and the only rung in the game that reads a head
+   * count is tacker power (upgrades.ts `counted`). So the flush asks each
+   * touched kind whether a count-reading rung of it is even bought
+   * (countSensitive) — no for every kind but an upgraded tacker — and does
+   * nothing for the ones that say no. For the one that says yes it recounts
+   * that kind and re-resolves that kind's turrets, and nobody else's.
+   *
+   * A player's own purchase (takeMod, takeRelic, setTech) still refreshes
+   * the whole table on the spot: those change every kind, they are rare,
+   * and the shelf should read right the instant it is pressed.
+   */
+  private oweCount(kind: TowerKind): void {
+    this.countsOwed.add(kind);
+  }
+
+  /**
+   * PAY WHAT IS OWED — the step's end, and the batch's. A full refresh if
+   * one is pending; otherwise the per-kind recount for the kinds touched.
+   */
+  private flushSpecs(): void {
+    if (this.specsHold > 0) return;
+    if (this.specsPending) {
+      this.specsPending = false;
+      this.refreshSpecs();
+      return;
+    }
+    if (this.countsOwed.size === 0) return;
+    const up = this.tech?.upgrades;
+    let changed = false;
+    if (up) {
+      const mine = this.countScratch;
+      for (const kind of this.countsOwed) {
+        const points = up[kind] ?? NO_UPGRADES;
+        if (!countSensitive(kind, points)) continue;
+        // one pass for the census and the turrets it applies to, together
+        mine.length = 0;
+        for (const t of this.towers) if (t.team === "player" && t.kind === kind) mine.push(t);
+        const spec = applyRelics(upgradedTower(kind, points, { count: mine.length }), this.relics);
+        if (spec === TOWERS[kind]) this.specs.delete(kind);
+        else this.specs.set(kind, spec);
+        for (let i = 0; i < mine.length; i++) this.resolveTower(mine[i]);
+        mine.length = 0;
+        changed = true;
+      }
+    }
+    this.countsOwed.clear();
+    if (changed) this.specsVersion++;
+  }
+  /** flushSpecs's scratch: the standing turrets of one kind */
+  private readonly countScratch: Tower[] = [];
 
   /**
    * ONE TURRET'S LIVE STATS AND POOL, composed: its kind's spec (above)
@@ -2977,8 +3070,10 @@ export class Sim {
    * pellet, because the two halves were asking different tables the same
    * question. Anything that wants a live bullet's stats comes through here.
    */
-  bulletFor(kind: TowerKind, frag: boolean): BulletStats {
-    const b = this.statsFor(kind).bullet;
+  bulletFor(kind: TowerKind, frag: boolean, alt = false): BulletStats {
+    const own = this.statsFor(kind).bullet;
+    // alt first, then frag — see bulletOf in constants.ts
+    const b = alt && own.alt ? own.alt : own;
     return frag && b.frag ? b.frag.bullet : b;
   }
 
@@ -3223,8 +3318,9 @@ export class Sim {
     tower.hp = tower.hpMax;
     this.claimGround(tower, true);
     // a count-dependent rung (tacker power) reads the board, so the board
-    // changing is what moves it
-    this.refreshSpecs();
+    // changing is what moves it — owed, and paid once at the batch's or
+    // the step's end (oweCount)
+    this.oweCount(kind);
   }
 
 
@@ -3263,8 +3359,146 @@ export class Sim {
   private profAt = 0;
   private profI = 0;
   private profSteps = 0;
+  /**
+   * THE HIGH-WATER MARKS over the tally's window. The census is read at
+   * PUBLISH time and so describes the board at the moment you asked —
+   * which is very often not the board that produced the worst step. A
+   * wave that spikes and clears leaves a census that makes the times look
+   * inexplicable; these are what say "there were nine hundred shots in
+   * the air at some point in that window", which is usually the answer.
+   */
+  private profPeakBodies = 0;
+  private profPeakShots = 0;
+  private profPeakRmax = 0;
+  /** where the step's own clock started, and the dearest whole step seen */
+  private profStepAt = 0;
+  private profStepMs = 0;
+  private profStepWorst = 0;
+  private profOver = 0;
   private readonly profNames: string[] = [];
   private readonly profTotal: number[] = [];
+  private readonly profWorst: number[] = [];
+  private readonly profProbes: number[] = [];
+  /** the probe count as it stood at the last mark, for this phase's share */
+  private profProbeAt = 0;
+
+  /**
+   * THE SLOW STEPS, TALLIED APART FROM THE REST — and this is the half of
+   * the reading that survives a long window.
+   *
+   * A mean is only an answer when the window is all one thing. Arm the
+   * clock and play for three minutes and most of those ten thousand steps
+   * were fine; the forty that hitched are what the player actually came
+   * to ask about, and they are four tenths of one per cent of the
+   * average. The mean says the sim is comfortable. The player says it
+   * stutters. BOTH ARE TRUE, and a reading that can only print the first
+   * one quietly argues the player out of a real complaint.
+   *
+   * So every step that misses the budget adds its phases into a SECOND
+   * set of totals. The main table stays what it was — what a step costs
+   * on this board — and this one answers the different question: when it
+   * goes wrong, where does the time go? A phase that is a tenth of the
+   * mean and half of the slow steps is the whole bug, and it is invisible
+   * in any single average of the two.
+   *
+   * It costs a per-phase array copy on slow steps only, which is to say
+   * on the steps that have already lost twenty milliseconds.
+   */
+  /** per phase, per counter: the work that phase did (flat, NWORK wide) */
+  private readonly profWork: number[] = [];
+  /**
+   * ...THE SAME, OVER THE SLOW STEPS ALONE, and it is the half that
+   * usually names the cause. A rare, expensive event — a route re-solve
+   * lands on one step in a hundred and fifty — averages to nothing per
+   * step and reads as a phase doing no work at all, while being the
+   * entire reason the game stutters. Averaged over the steps that ACTUALLY
+   * MISSED, the same event reads as 1.0 per slow step, which is the whole
+   * answer in one number.
+   */
+  private readonly profSlowWork: number[] = [];
+  /** this step's work per phase, held until the step is judged slow or not */
+  private readonly profStepWork: number[] = [];
+  /** each counter as it stood at the last mark */
+  private readonly profWorkAt: number[] = new Array(NWORK).fill(0);
+  private readonly profStepPhase: number[] = [];
+  private readonly profStepProbe: number[] = [];
+  private readonly profSlowTotal: number[] = [];
+  private readonly profSlowProbes: number[] = [];
+  private profSlowMs = 0;
+
+  /**
+   * WALL TIME THE SIM WAS ACTUALLY LIVE FOR, which is not the same thing
+   * as the window's length and not the same thing as its steps.
+   *
+   * THE STEP COUNT IS GAME TIME. Every step is SIM_DT exactly, so 3,000
+   * steps is fifty seconds of the WORLD however long they took to run.
+   * When the sim keeps up, fifty seconds of world is fifty seconds of
+   * wall and the two agree. When it does not, SimClock caps catch-up at
+   * SIM_STEPS_MAX and FORFEITS the rest (simclock.ts) — so a sim that
+   * cannot hold 60 steps a second does not fall behind and catch up, it
+   * quietly runs the world in slow motion. That is what "the bullets lag"
+   * looks like from the inside, and a phase table cannot show it: every
+   * step still costs what it costs, there are simply fewer of them.
+   *
+   * So the gap between one step and the next is banked here, CAPPED AT
+   * DT_CAP — the same cap the clock puts on a frame, and the reason a
+   * pause does not corrupt this. Held, the sim is not stepped at all
+   * (SimClock.advance returns early), so a pause is one enormous gap
+   * between two steps, and the cap counts it as a single slow frame
+   * rather than as the minutes it really was. Pausing costs this figure
+   * 50ms per pause and nothing else.
+   */
+  private profLiveMs = 0;
+  private profLastEnd = 0;
+  /** the board as it stood at the dearest step, not at the moment you asked */
+  private profWorstBodies = 0;
+  private profWorstShots = 0;
+
+  /**
+   * THE DENOMINATOR: every candidate the broad phase has handed the narrow
+   * one since the sim started. Each bucket sweep in this file adds the
+   * LENGTH of the row it is about to walk — one add per hash row, never
+   * one per body — so the counter costs nothing measurable and is kept
+   * whether the clock is armed or not, which is what lets `mark` take a
+   * difference without a branch in the sweeps themselves.
+   *
+   * WHY IT IS THE NUMBER THAT MATTERS. Milliseconds say WHICH pass is
+   * slow; they cannot say whether it is slow because there is more to do
+   * or because each thing costs more. Probes split those apart: ms over
+   * probes is the price of one candidate (which barely moves), and probes
+   * over the population is how many candidates each shot, each turret,
+   * each body is walking — which is exactly what a wide hitbox or a
+   * crowded bucket blows up, and exactly what a wave-count does not.
+   */
+  probes = 0;
+  /**
+   * ...AND THE OTHER KINDS OF WORK, because a step does more than one.
+   *
+   * THE MISTAKE THIS FIXES. There used to be only `probes`, and probes
+   * are body-hash candidates. Every phase whose work is NOT a body sweep
+   * therefore reported milliseconds against a denominator that did not
+   * describe it — and dividing one by the other produced a per-item cost
+   * that looked damning and meant nothing. A profiler that answers
+   * confidently with the wrong denominator is worse than one that says
+   * nothing, because it gets acted on.
+   *
+   * So each distinct kind of work the sim does has its own counter, and
+   * `mark` files ALL of them per phase. A phase then reports what it
+   * actually did, whatever that is, and a phase whose counters are all
+   * zero is visibly a phase doing something nobody is counting — which is
+   * a statement the reader can act on rather than a trap.
+   */
+  /** candidates walked out of the STRUCTURE index and the cell grid */
+  structCands = 0;
+  /** sight rays cast (hasSight), and the grid cells they walked */
+  rays = 0;
+  rayCells = 0;
+  /** per-body iterations of the big linear passes */
+  bodyIters = 0;
+  /** target searches actually run (pickAim) */
+  picks = 0;
+  /** flow-field solve slices spent (runSolveQueue) */
+  fieldSlices = 0;
 
   /** close the phase that just ran, open the next */
   private mark(name: string): void {
@@ -3274,8 +3508,43 @@ export class Sim {
     if (this.profNames.length <= i) {
       this.profNames.push(name);
       this.profTotal.push(0);
+      this.profWorst.push(0);
+      this.profProbes.push(0);
+      this.profSlowTotal.push(0);
+      this.profSlowProbes.push(0);
+      this.profStepPhase.push(0);
+      this.profStepProbe.push(0);
+      for (let w = 0; w < NWORK; w++) {
+        this.profWork.push(0);
+        this.profSlowWork.push(0);
+        this.profStepWork.push(0);
+      }
     }
-    this.profTotal[i] += t - this.profAt;
+    const ms = t - this.profAt;
+    const probes = this.probes - this.profProbeAt;
+    this.profTotal[i] += ms;
+    if (ms > this.profWorst[i]) this.profWorst[i] = ms;
+    this.profProbes[i] += probes;
+    // ...and kept for THIS step alone, because whether this step counts
+    // as a slow one is not known until every phase of it has run
+    this.profStepPhase[i] = ms;
+    this.profStepProbe[i] = probes;
+    this.profProbeAt = this.probes;
+    // EVERY COUNTER, into this phase's row. Six subtractions a mark, a
+    // hundred-odd a step — against the tens of milliseconds they exist to
+    // explain, and only while the clock is armed
+    const at = this.profWorkAt;
+    const row = i * NWORK;
+    const w = this.profWork;
+    const sw = this.profStepWork;
+    sw[row] = this.probes - at[0]; at[0] = this.probes;
+    sw[row + 1] = this.structCands - at[1]; at[1] = this.structCands;
+    sw[row + 2] = this.rays - at[2]; at[2] = this.rays;
+    sw[row + 3] = this.rayCells - at[3]; at[3] = this.rayCells;
+    sw[row + 4] = this.bodyIters - at[4]; at[4] = this.bodyIters;
+    sw[row + 5] = this.picks - at[5]; at[5] = this.picks;
+    sw[row + 6] = this.fieldSlices - at[6]; at[6] = this.fieldSlices;
+    for (let k = 0; k < NWORK; k++) w[row + k] += sw[row + k];
     this.profAt = t;
   }
 
@@ -3293,21 +3562,136 @@ export class Sim {
   profile(on: boolean): void {
     if (on) {
       this.profSteps = 0;
+      this.profStepMs = 0;
+      this.profStepWorst = 0;
+      this.profOver = 0;
+      this.profSlowMs = 0;
+      this.profLiveMs = 0;
+      this.profLastEnd = 0;
+      this.profPeakBodies = 0;
+      this.profPeakShots = 0;
+      this.profPeakRmax = 0;
+      this.profWorstBodies = 0;
+      this.profWorstShots = 0;
       this.profTotal.fill(0);
+      this.profWorst.fill(0);
+      this.profProbes.fill(0);
+      this.profSlowTotal.fill(0);
+      this.profSlowProbes.fill(0);
+      this.profWork.fill(0);
+      this.profSlowWork.fill(0);
     }
     this.profOn = on;
   }
 
   /**
-   * The phases, dearest first, in milliseconds PER STEP — which is the
-   * figure that has to fit in 16.7ms, and not the per-frame one the HUD
-   * prints (a slow frame runs the step more than once; see Game.simMs).
+   * THE WHOLE READING, and it is deliberately more than a list of times.
+   *
+   * A phase table alone has never been enough to act on. "projectiles
+   * 9.8ms" is the same sentence whether the board is firing nine hundred
+   * shots that each cost what a shot costs, or ninety that have each been
+   * made twenty times dearer by one wide body standing on the field — and
+   * those two have opposite fixes. So every figure here comes with the
+   * thing it has to be divided by:
+   *
+   *   MS AND PROBES, per phase. ms/probes is the price of one candidate
+   *   and is near-constant; probes/step is the work, and it is the number
+   *   that actually moves. A phase that doubled in ms with its probes
+   *   flat got slower per item (a new test, a cache miss, a trig call);
+   *   one whose probes doubled with it is simply doing twice as much.
+   *
+   *   WORST BESIDE MEAN, per phase and for the step. Lag is felt as a
+   *   SPIKE and averaged away as a mean: a 3ms mean with a 40ms worst is
+   *   a route re-solve or a wave spawn, and no amount of staring at the
+   *   mean will say so.
+   *
+   *   THE CENSUS, once. The populations every figure above is per: the
+   *   bodies, the shots, the turrets — and the widest live hitbox, which
+   *   is what sizes the broad-phase pad every sweep in this file pays
+   *   (rmaxAliveFor), and so the one dial that can multiply the probe
+   *   count of a board that has not otherwise changed.
+   *
+   * PER STEP, never per frame: the step is what has to fit in 16.7ms, and
+   * a slow frame runs it more than once (see Game.simMs).
    */
-  profileRead(): { name: string; ms: number }[] {
+  profileRead(): PhaseRead[] {
     const n = Math.max(1, this.profSteps);
+    const slow = Math.max(1, this.profOver);
     return this.profNames
-      .map((name, i) => ({ name, ms: this.profTotal[i] / n }))
+      .map((name, i) => ({
+        name,
+        ms: this.profTotal[i] / n,
+        worst: this.profWorst[i],
+        probes: this.profProbes[i] / n,
+        // ...and the same pass over the slow steps ALONE, which is a
+        // different average and very often a different ranking
+        slowMs: this.profSlowTotal[i] / slow,
+        slowProbes: this.profSlowProbes[i] / slow,
+        work: this.profWork.slice(i * NWORK, i * NWORK + NWORK).map((v) => v / n),
+        slowWork: this.profSlowWork
+          .slice(i * NWORK, i * NWORK + NWORK)
+          .map((v) => v / slow),
+      }))
       .sort((a, b) => b.ms - a.ms);
+  }
+
+  /** the reading with its denominators — what the console prints */
+  profileFull(): ProfileRead {
+    const n = Math.max(1, this.profSteps);
+    return {
+      steps: this.profSteps,
+      ms: this.profStepMs / n,
+      worst: this.profStepWorst,
+      over: this.profOver,
+      slowMs: this.profSlowMs / Math.max(1, this.profOver),
+      simMs: this.profSteps * SIM_DT * 1000,
+      liveMs: this.profLiveMs,
+      worstBodies: this.profWorstBodies,
+      worstShots: this.profWorstShots,
+      phases: this.profileRead(),
+      census: this.profileCensus(),
+    };
+  }
+
+  /**
+   * THE POPULATIONS, read where they live and costing one walk of the
+   * shot list. Everything here is a denominator for something in the
+   * phase table above; nothing here is measured, so it is as true of the
+   * instant it is asked as the header is.
+   */
+  profileCensus(): ProfileCensus {
+    let shots = 0, hostile = this.shots.length;
+    for (const p of this.projs) {
+      if (p.enemy) hostile++;
+      else shots++;
+    }
+    // THE PAD ONE BULLET PAYS, in hash cells: the sweep in
+    // updateProjectiles walks (2*span+1) squared of them, and span is set
+    // by the widest hitbox ALIVE rather than by anything about the bullet.
+    // One heavy body on the field therefore raises the price of every
+    // shot in the air, which is the single most surprising line in this
+    // whole report and the reason it is printed
+    const rmax = Math.max(this.rmaxAliveAir, this.rmaxAliveGround);
+    const span = Math.max(1, Math.ceil((rmax + 2.5) / HC));
+    return {
+      wave: this.currentWave(),
+      bodies: this.n,
+      air: this.nAliveAir,
+      ground: this.nAliveGround,
+      shots,
+      hostileShots: hostile,
+      towers: this.towers.length,
+      domes: this.shieldTowers.length,
+      corpses: this.corpses.length,
+      fx: this.fxN,
+      rmaxAir: this.rmaxAliveAir,
+      rmaxGround: this.rmaxAliveGround,
+      shotSpan: span,
+      shotCells: (2 * span + 1) * (2 * span + 1),
+      peakBodies: this.profPeakBodies,
+      peakShots: this.profPeakShots,
+      peakRmax: this.profPeakRmax,
+    };
   }
 
   update(dt: number): void {
@@ -3320,6 +3704,21 @@ export class Sim {
       this.profSteps++;
       this.profI = 0;
       this.profAt = performance.now();
+      this.profStepAt = this.profAt;
+      this.profProbeAt = this.probes;
+      const at = this.profWorkAt;
+      at[0] = this.probes;
+      at[1] = this.structCands;
+      at[2] = this.rays;
+      at[3] = this.rayCells;
+      at[4] = this.bodyIters;
+      at[5] = this.picks;
+      at[6] = this.fieldSlices;
+      // the wait since the last step, on the clock's own terms (DT_CAP)
+      if (this.profLastEnd > 0) {
+        const gap = this.profAt - this.profLastEnd;
+        this.profLiveMs += gap < DT_CAP * 1000 ? gap : DT_CAP * 1000;
+      }
     }
     this.runScript(dt);
     // a structure went up on, or came down off, open ground: shove anything
@@ -3400,6 +3799,13 @@ export class Sim {
     // decided what is on the field
     this.updateCorpses(dt);
     this.mark("corpses");
+    // THE TABLE THE STEP OWES, paid once against the finished board — after
+    // every pass that can kill or conquer (oweCount). Its own
+    // phase, so an O(board) re-composition is a line in the profile with a
+    // number beside it rather than a weight hidden inside whichever pass
+    // happened to land the killing blow
+    this.flushSpecs();
+    this.mark("specs");
 
     const { fxAge, fxTtl } = this;
     for (let e = this.fxN - 1; e >= 0; e--) {
@@ -3411,6 +3817,47 @@ export class Sim {
     // pile now, on its own thread, and take the answer at the next tick's
     // physics phase (physport.ts)
     this.physPort?.kick(this.n, this.tick);
+    // THE STEP AS ONE NUMBER, closed after the last phase. It is not the
+    // sum of the phases — the marks leave the gaps between them out, and
+    // a total that quietly differed from its own parts would be the first
+    // thing to mislead. Its WORST is the reading a player's "it stutters"
+    // actually points at; the mean is what fits in the budget on paper
+    if (this.profOn) {
+      const end = performance.now();
+      const ms = end - this.profStepAt;
+      this.profStepMs += ms;
+      this.profLiveMs += ms;
+      this.profLastEnd = end;
+      if (ms > this.profStepWorst) {
+        this.profStepWorst = ms;
+        // THE BOARD AT THE SPIKE. Over a long window the peaks below and
+        // the census at publish time can both be miles from whatever the
+        // dearest step was actually carrying, and without this there is
+        // nothing to divide that step's milliseconds by
+        this.profWorstBodies = this.n;
+        this.profWorstShots = this.projs.length;
+      }
+      if (ms > STEP_BUDGET_MS) {
+        this.profOver++;
+        this.profSlowMs += ms;
+        for (let i = 0; i < this.profI; i++) {
+          this.profSlowTotal[i] += this.profStepPhase[i];
+          this.profSlowProbes[i] += this.profStepProbe[i];
+          const row = i * NWORK;
+          for (let k = 0; k < NWORK; k++)
+            this.profSlowWork[row + k] += this.profStepWork[row + k];
+        }
+      }
+      // THE HIGH-WATER MARKS, taken at the END of the step and not its
+      // start. Sampled at the start they miss whatever this step spawned,
+      // and the census — which is read later still — can then come back
+      // HIGHER than its own peak, which reads as a broken instrument and
+      // costs the reader their trust in every other figure in the block
+      if (this.n > this.profPeakBodies) this.profPeakBodies = this.n;
+      if (this.projs.length > this.profPeakShots) this.profPeakShots = this.projs.length;
+      const rm = this.rmaxAliveAir > this.rmaxAliveGround ? this.rmaxAliveAir : this.rmaxAliveGround;
+      if (rm > this.profPeakRmax) this.profPeakRmax = rm;
+    }
   }
 
   // ---------- level script ----------
@@ -3707,6 +4154,7 @@ export class Sim {
    * water: neither stands above the floor (see airWalkMask, the same mask).
    */
   private hasSight(x0: number, y0: number, x1: number, y1: number): boolean {
+    this.rays++;
     let cx = clamp((x0 / CELL) | 0, 0, COLS - 1), cy = clamp((y0 / CELL) | 0, 0, ROWS - 1);
     const ex = clamp((x1 / CELL) | 0, 0, COLS - 1), ey = clamp((y1 / CELL) | 0, 0, ROWS - 1);
     if (cx === ex && cy === ey) return true;
@@ -3724,6 +4172,10 @@ export class Sim {
     // the walk cannot outlast the board even diagonally corner to corner;
     // the cap is there so a degenerate ray can never spin
     for (let n = COLS + ROWS + 2; n > 0; n--) {
+      // one add per CELL the ray walks: a ray's cost is its LENGTH, and a
+      // count of rays alone cannot tell a board of short ones from a
+      // board of ninety-tile ones
+      this.rayCells++;
       if (tx < ty) {
         cx += sx;
         tx += gx;
@@ -3869,6 +4321,12 @@ export class Sim {
     const consider = (bi: number): void => {
       const list = blocks[bi];
       if (!list) return;
+      // THE SWARM'S SEARCH IS A BROAD PHASE TOO, over the building index
+      // rather than the body hash. It is counted on the same terms and
+      // into the same number, so a phase that spends its time looking for
+      // turrets is not reported as a phase that walked nothing at all —
+      // which reads as "each item got dearer" and is the wrong diagnosis
+      this.structCands += list.length;
       for (let k = 0; k < list.length; k++) {
         const t = list[k];
         // the index is rebuilt from claimGround and can be a moment stale:
@@ -3914,6 +4372,49 @@ export class Sim {
     return best;
   }
 
+  /**
+   * ONE STRUCTURE IN OR OUT OF THE AIM INDEX, in place.
+   *
+   * The index used to be REBUILT — every block cleared and every standing
+   * building re-filed — the first time a search ran after anything at all
+   * changed (structBoxDirty). That is O(board) per change, and on a late
+   * board the changes are deaths, interleaved with the searches that pay
+   * for them: several a step, each one a walk of five to ten thousand
+   * buildings, and none of it in any counter. Filing the one building that
+   * moved is O(its block), and a block is sixty-four cells.
+   *
+   * The bounds and the widest half are only ever used to stop a search
+   * EARLY, so on a removal they are left where they are: a box a little
+   * too large, or a half a little too wide, stops a search a little later
+   * and never wrongly. The full rebuild still runs once after a reset,
+   * which is the only time the index and the board can disagree.
+   */
+  private indexStructure(s: Structure, on: boolean): void {
+    if (this.structBoxDirty) return; // a rebuild is owed and will file it
+    const b = this.structBoxCache;
+    const blocks = this.structBlocks;
+    const bi =
+      clamp((s.y / AIM_BLOCK_PX) | 0, 0, AIM_BROWS - 1) * AIM_BCOLS +
+      clamp((s.x / AIM_BLOCK_PX) | 0, 0, AIM_BCOLS - 1);
+    if (on) {
+      const half = (this.sizeOf(s) * CELL) / 2;
+      if (s.x - half < b.x0) b.x0 = s.x - half;
+      if (s.y - half < b.y0) b.y0 = s.y - half;
+      if (s.x + half > b.x1) b.x1 = s.x + half;
+      if (s.y + half > b.y1) b.y1 = s.y + half;
+      b.n++;
+      if (half > this.structMaxHalf) this.structMaxHalf = half;
+      (blocks[bi] ?? (blocks[bi] = [])).push(s);
+    } else {
+      const list = blocks[bi];
+      if (list) {
+        const k = list.indexOf(s);
+        if (k >= 0) list.splice(k, 1);
+      }
+      b.n--;
+    }
+  }
+
   /** every live structure whose footprint comes within r of a point, once each */
   private structuresWithin(
     x: number,
@@ -3923,12 +4424,23 @@ export class Sim {
     team: Team = "player",
   ): Structure[] {
     out.length = 0;
+    const seen = this.seenStructs;
+    seen.clear();
     const R = Math.ceil(r / CELL) + 1;
     const cx = (x / CELL) | 0, cy = (y / CELL) | 0;
+    // a square of cells, and every one of them a candidate looked at. The
+    // count is the WALK; the dedupe beside it is O(1) (seenStructs) and so
+    // the walk is the whole price. It was an `out.includes` scan, which
+    // made this quadratic in what it FINDS — see seenStructs for what that
+    // cost on a board with thousands of buildings on it
+    this.structCands +=
+      (Math.min(ROWS - 1, cy + R) - Math.max(0, cy - R) + 1) *
+      (Math.min(COLS - 1, cx + R) - Math.max(0, cx - R) + 1);
     for (let yy = Math.max(0, cy - R); yy <= Math.min(ROWS - 1, cy + R); yy++)
       for (let xx = Math.max(0, cx - R); xx <= Math.min(COLS - 1, cx + R); xx++) {
         const t = this.cellTower[yy * COLS + xx];
-        if (!t || out.includes(t)) continue;
+        if (!t || seen.has(t)) continue;
+        seen.add(t);
         if (this.enemyTowers > 0 && teamOf(t) !== team) continue;
         const half = (this.sizeOf(t) * CELL) / 2;
         const dx = t.x - x, dy = t.y - y;
@@ -3937,6 +4449,28 @@ export class Sim {
     return out;
   }
 
+  /**
+   * THE DEDUPE FOR EVERY GRID WALK OVER BUILDINGS (structuresWithin,
+   * structuresAlong). A building owns size x size cells and the occupancy
+   * grid points every one of them at it, so a sweep meets the same
+   * structure up to thirty-six times and has to take it once.
+   *
+   * IT WAS AN `out.includes` SCAN, and that is linear in what the sweep
+   * has ALREADY FOUND — so the walk was quadratic in its own output, on a
+   * board whose output grows with how much the player has built. A field
+   * weapon reaching twenty-two tiles walks some two thousand cells; on a
+   * board carrying six or seven thousand buildings it finds hundreds in
+   * them, and the scan turned that into over a million comparisons for ONE
+   * pulse. Measured on a wave-50 board it was the bulk of unitGuns, which
+   * was two thirds of the step — the sim was running at 83% of real time
+   * and forfeiting catch-up steps.
+   *
+   * Reused and cleared per call rather than allocated: these run thousands
+   * of times a step, and a fresh Set each time would hand the whole saving
+   * to the collector. The walk is never re-entered while it is filling, so
+   * one set serves both callers.
+   */
+  private readonly seenStructs = new Set<Structure>();
   private readonly splashOut: Structure[] = [];
   /** the arc's own scratch: the structures one chain has already struck */
   private readonly arcOut: Structure[] = [];
@@ -3965,6 +4499,8 @@ export class Sim {
     team: Team = "player",
   ): Structure[] {
     out.length = 0;
+    const seen = this.seenStructs;
+    seen.clear();
     const cos = Math.cos(angle), sin = Math.sin(angle);
     // the corridor: offsets square to the line, a cell apart, the centre
     // line always one of them
@@ -3973,12 +4509,14 @@ export class Sim {
     const grid = this.cellTower;
     for (let d = 0; d <= len; d += step) {
       const px = x + cos * d, py = y + sin * d;
+      this.structCands += lanes * 2 + 1;
       for (let l = -lanes; l <= lanes; l++) {
         const ox = px - sin * l * CELL, oy = py + cos * l * CELL;
         const cx = (ox / CELL) | 0, cy = (oy / CELL) | 0;
         if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) continue;
         const t = grid[cy * COLS + cx];
-        if (!t || out.includes(t)) continue;
+        if (!t || seen.has(t)) continue;
+        seen.add(t);
         if (this.enemyTowers > 0 && teamOf(t) !== team) continue;
         out.push(t);
       }
@@ -4167,6 +4705,7 @@ export class Sim {
    * body may FIRE at that is a separate question asked once per decision.
    */
   private pickAim(x: number, y: number, reach: number, sighted: boolean): Aim | null {
+    this.picks++;
     const s = this.nearestStructure(x, y, reach, sighted);
     if (!s) return null;
     return { x: s.x, y: s.y, half: (this.sizeOf(s) * CELL) / 2, s };
@@ -4206,6 +4745,7 @@ export class Sim {
       const kind = UNIT_KINDS[ukind[i]];
       const ws = UNIT_WEAPONS[kind];
       if (ws.length === 0) continue;
+      this.bodyIters++;
       const x = upx[i], y = upy[i];
       // A GROUND OR NAVAL BODY SHOOTS WHAT IT CAN SEE. Reach is not sight:
       // a hill between the two is a hill, and the swarm has to come round
@@ -5025,6 +5565,7 @@ export class Sim {
    */
   private updateEnemyShots(dt: number): void {
     const shots = this.shots;
+    this.bodyIters += shots.length;
     for (let p = shots.length - 1; p >= 0; p--) {
       const sh = shots[p];
       // A ROUND THAT STEERS (weapons.ts StarSpec.homing, the Grapnels'
@@ -5528,10 +6069,7 @@ export class Sim {
       return fn();
     } finally {
       this.specsHold--;
-      if (this.specsHold === 0 && this.specsPending) {
-        this.specsPending = false;
-        this.refreshSpecs();
-      }
+      this.flushSpecs();
     }
   }
 
@@ -5701,11 +6239,11 @@ export class Sim {
    */
   private claimGround(t: Structure, on: boolean): void {
     // EVERY structure that appears or leaves comes through here, which is
-    // what makes this the one place the aim boxes have to be told
-    // (structBox). Raised whatever the masks below decide: a footprint
+    // what makes this the one place the aim index has to be told
+    // (indexStructure). Told whatever the masks below decide: a footprint
     // laid entirely on cells the terrain already called rock changes no
     // mask and is still a thing that can be shot at.
-    this.structBoxDirty = true;
+    this.indexStructure(t, on);
     const { blocked } = this.terrain;
     const { walk, soft } = this.field;
     const nWalk = this.navalField.walk, nSoft = this.navalField.soft;
@@ -5775,7 +6313,9 @@ export class Sim {
     // leave it here, or its ring would keep being drawn over bare ground
     this.selStructs.delete(t);
     this.claimGround(t, false);
-    this.refreshSpecs();
+    // owed, not done: a sale is one call and pays at the step's end like a
+    // death does — see oweCount for why a death may not pay here
+    this.oweCount(t.kind);
   }
 
   /**
@@ -5854,7 +6394,9 @@ export class Sim {
     for (let gy = Math.max(0, hy - span); gy <= Math.min(HROWS - 1, hy + span); gy++) {
       const row = gy * HCOLS;
       const e = this.bStart[row + gx1 + 1];
-      for (let k = this.bStart[row + gx0]; k < e; k++) {
+      const e0 = this.bStart[row + gx0];
+      this.probes += e - e0;
+      for (let k = e0; k < e; k++) {
         const i = this.bUnits[k];
         if (i >= this.n || this.ufly[i] !== f) continue;
         // free means the physics circles wouldn't touch, so a fresh
@@ -6264,7 +6806,9 @@ export class Sim {
       for (let hy = hy0; hy <= hy1; hy++) {
         const row = hy * HCOLS;
         const e = this.bStart[row + hx1 + 1];
-        for (let b = this.bStart[row + hx0]; b < e; b++) {
+        const e0 = this.bStart[row + hx0];
+        this.probes += e - e0;
+        for (let b = e0; b < e; b++) {
           const j = this.bUnits[b];
           if (j >= this.n || uhp[j] <= 0) continue;
           const dx = upx[j] - upx[i], dy = upy[j] - upy[i];
@@ -6371,6 +6915,7 @@ export class Sim {
    */
   private updateStatus(dt: number): void {
     const { uburn, uwet, uhp, uhpmax, upx, upy, urad, uspawn } = this;
+    this.bodyIters += this.n;
     for (let i = this.n - 1; i >= 0; i--) {
       // the arrival clock. Nothing is drawn when it runs out any more:
       // Fx.spawn's accent square used to snap out on the frame `unmoving`
@@ -6425,7 +6970,6 @@ export class Sim {
           else if ((this.ucloakCd[i] -= dt) <= 0) {
             this.ucloakCd[i] = cl.period;
             this.ucloakT[i] = cl.duration;
-            this.pushFxCol(upx[i], upy[i], 22 / 60, FxKind.ShieldWave, 0, urad[i] * 3, PAL.wraith);
             if (cl.veil) this.veil(i, cl.veil, cl.duration);
           }
         } else if (this.ucloakT[i] > 0) this.ucloakT[i] -= dt;
@@ -6591,7 +7135,9 @@ export class Sim {
     for (let hy = hy0; hy <= hy1; hy++) {
       const row = hy * HCOLS;
       const e = bStart[row + hx1 + 1];
-      for (let k = bStart[row + hx0]; k < e; k++) {
+      const e0 = bStart[row + hx0];
+      this.probes += e - e0;
+      for (let k = e0; k < e; k++) {
         const j = bUnits[k];
         if (j === i || j >= this.n || uhp[j] <= 0) continue;
         if (uhungry[j] || uspawn[j] > 0 || KIND_BOSS[ukind[j]]) continue;
@@ -6775,7 +7321,9 @@ export class Sim {
     for (let hy = hy0; hy <= hy1; hy++) {
       const row = hy * HCOLS;
       const e = bStart[row + hx1 + 1];
-      for (let k = bStart[row + hx0]; k < e; k++) {
+      const e0 = bStart[row + hx0];
+      this.probes += e - e0;
+      for (let k = e0; k < e; k++) {
         const j = bUnits[k];
         // the broad phase is the frame's own hash, so a slot recycled
         // since it was built is re-tested against the live rows here
@@ -7465,6 +8013,7 @@ export class Sim {
   }
 
   private buildHash(): void {
+    this.bodyIters += this.n;
     buildHash(this.upx, this.upy, this.n, this.bStart, this.bCount, this.bUnits);
   }
 
@@ -7493,6 +8042,7 @@ export class Sim {
     // on the shove's own thread the answer for the tick just ended is
     // waiting (or is not, and this tick goes without); in this thread the
     // kernel runs here over the same arrays
+    this.bodyIters += this.n;
     const port = this.physPort;
     if (port && port.take(this.tick, this.n, this.uid, this.physOut)) return;
     // nothing new from the thread this tick: shove here. A thread that
@@ -7505,6 +8055,7 @@ export class Sim {
   }
 
   private updateUnits(dt: number): void {
+    this.bodyIters += this.n;
     const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, ulat, ushx, ushy, field, flowTmp } = this;
     const { uthx, uthy, ufcx, ufcy, ujx, ujy, ucellT, tick } = this;
     const { upullx, upully, uspawn, uwet, uwetSlow, uaimx, uaimy } = this;
@@ -8355,7 +8906,7 @@ export class Sim {
     // it is nobody's to select or sell any more, and the count-dependent
     // rungs have one turret fewer to read
     this.selStructs.delete(t);
-    this.refreshSpecs();
+    this.oweCount(t.kind); // the swarm took it: owed, paid at the step's end
     // the swarm's own colours over the taking: the crux ring, and the
     // shockwave that says a thing on the board just changed hands
     this.pushFxCol(t.x, t.y, 0.7, FxKind.ShieldWave, 0, (t.size * CELL) / 2, TEAM_CRUX_RGB);
@@ -8571,9 +9122,9 @@ export class Sim {
    * The ordinary click:
    *
    *   an ENEMY   — ASK WHAT IT IS: the panel answers for the tapped body
-   *                (setInspectUnit) and an arrow over it says which one is
-   *                being read. It is a question and nothing else — no
-   *                turret's aim moves for it
+   *                (setInspectUnit). It is a question and nothing else —
+   *                no turret's aim moves for it, and nothing is drawn over
+   *                the body itself
    *   a SHIELD TOWER   — the same question, of the mutator's structure
    *   a BUILDING OF OURS — SELECT IT, which is what draws its range ring
    *                and what the delete key sells. Shift (`add`) adds it to
@@ -8863,6 +9414,7 @@ export class Sim {
    */
   private fireTowers(dt: number): void {
     const { upx, upy, uvx, uvy } = this;
+    this.bodyIters += this.towers.length;
     // the core sheds soot under half its pool exactly as a turret does below
     {
       const c = this.core;
@@ -9311,6 +9863,10 @@ export class Sim {
     let best = -1, bs = Infinity;
     // a short field is cheaper to walk directly than through the buckets
     if (n <= 128) {
+      // ...and they are the same candidates, so they are the same probes:
+      // a counter that only saw the bucket path would report a board of a
+      // hundred bodies as doing no work at all
+      this.probes += n;
       for (let i = 0; i < n; i++) {
         if (ufly[i] !== 0 ? !air : !ground) continue;
         // hidden: not there to aim at, unless this gun goes through it
@@ -9335,7 +9891,9 @@ export class Sim {
     for (let hy = hy0; hy <= hy1; hy++) {
       const row = hy * HCOLS;
       const e = bStart[row + hx1 + 1];
-      for (let k = bStart[row + hx0]; k < e; k++) {
+      const e0 = bStart[row + hx0];
+      this.probes += e - e0;
+      for (let k = e0; k < e; k++) {
         const i = bUnits[k];
         if (i >= n) continue;
         if (ufly[i] !== 0 ? !air : !ground) continue;
@@ -9374,12 +9932,23 @@ export class Sim {
       x += -Math.sin(t.angle) * off;
       y += Math.cos(t.angle) * off;
     }
+    // WHICH AMMO THIS BARREL IS LOADED WITH (BulletStats.alt — deluge's
+    // fire nozzle, and nothing else today). It is read off the BARREL
+    // INDEX and not off the shot count, so the ammo and the mount it
+    // leaves by are one decision and stay one on a gun with more than two
+    // nozzles: even mounts throw the turret's own bullet, odd mounts the
+    // second. A turret with no alt never asks (and one with no second
+    // barrel cannot have an alt at all — checked at import,
+    // constants.ts).
+    const alt =
+      st.bullet.alt !== undefined && (t.shotCount % (st.barrels?.count ?? 1)) % 2 === 1;
+    const bul = alt ? st.bullet.alt! : st.bullet;
     t.shotCount++;
     // BulletType.shootEffect and smokeEffect, both fired at the muzzle
     // along the shot's angle. For torch the pair IS the weapon: the
     // bullet itself draws nothing at all
-    const shownShoot = this.bulletFx(st.bullet.shootFx, x, y, a, st.bullet.fxColor);
-    const shownSmoke = this.bulletFx(st.bullet.smokeFx, x, y, a, st.bullet.fxColor);
+    const shownShoot = this.bulletFx(bul.shootFx, x, y, a, bul.fxColor);
+    const shownSmoke = this.bulletFx(bul.smokeFx, x, y, a, bul.fxColor);
     // A SHOT MUST NEVER BE SILENT (Tower.flashT). The pool drops the
     // NEWEST push once it is over FX_CAP, which is to say it drops the
     // flash of the shot being fired while stale puffs linger — and a
@@ -9396,7 +9965,7 @@ export class Sim {
     // deliberately has neither is a bullet whose barrel is meant to be
     // quiet, and standing a flash in for an effect nobody wanted would
     // invent one
-    const wantsMuzzle = st.bullet.shootFx !== undefined || st.bullet.smokeFx !== undefined;
+    const wantsMuzzle = bul.shootFx !== undefined || bul.smokeFx !== undefined;
     if (wantsMuzzle && !shownShoot && !shownSmoke && this.fxOn) {
       t.flashT = MUZZLE_FLASH_LIFE;
       t.flashX = x;
@@ -9411,8 +9980,8 @@ export class Sim {
     // ...and the same for a BUILDING either side is aiming at (Tower.aimTower)
     const aimT = t.aimTower;
     const hitAimed = (): void => {
-      if (shrT) this.shieldTowerHit(shrT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
-      if (aimT) this.structureHit(aimT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
+      if (shrT) this.shieldTowerHit(shrT, bul.damage, bul.hitFx, a, bul.fxColor);
+      if (aimT) this.structureHit(aimT, bul.damage, bul.hitFx, a, bul.fxColor);
     };
     // THE SWARM'S OWN INSTANT WEAPONS SWEEP NOTHING (Conquest): every
     // sweep below walks the swarm's BODIES, and a conquered turret has
@@ -9428,81 +9997,81 @@ export class Sim {
     // decided for itself would be a second place the roster's judgement
     // about what counts as a bullet could drift from the first
     const nature = TOWER_NATURE[t.kind];
-    if (st.bullet.lightning) {
+    if (bul.lightning) {
       if (hostile) {
-        this.unitBolt(x, y, a, st.bullet.lightning.length, st.bullet.fxColor ?? PAL.piercerLaser);
+        this.unitBolt(x, y, a, bul.lightning.length, bul.fxColor ?? PAL.piercerLaser);
         hitAimed();
         return;
       }
       const pts = this.lightningBolt(
         x, y, a,
-        st.bullet.damage,
-        st.bullet.lightning.length,
-        st.bullet.hitRadius ?? 2.5,
-        st.bullet.collidesAir,
-        st.bullet.collidesGround,
-        st.bullet.hitFx,
-        st.bullet.fxColor,
+        bul.damage,
+        bul.lightning.length,
+        bul.hitRadius ?? 2.5,
+        bul.collidesAir,
+        bul.collidesGround,
+        bul.hitFx,
+        bul.fxColor,
         nature,
       );
-      this.pushBolt(x, y, st.bullet.lifetime, pts, true); // the bolt IS coil's shot
+      this.pushBolt(x, y, bul.lifetime, pts, true); // the bolt IS coil's shot
       hitAimed();
       return;
     }
-    if (st.bullet.laser) {
+    if (bul.laser) {
       const reached = hostile
-        ? st.bullet.laser.length
+        ? bul.laser.length
         : this.laserBeam(
             x, y, a,
-            st.bullet.laser.length,
-            st.bullet.damage,
-            st.bullet.laser.pierceCap,
-            st.bullet.armorMultiplier ?? 1,
-            st.bullet.pierceArmor ?? false,
-            st.bullet.collidesAir,
-            st.bullet.collidesGround,
-            st.bullet.hitFx,
-            st.bullet.fxColor,
+            bul.laser.length,
+            bul.damage,
+            bul.laser.pierceCap,
+            bul.armorMultiplier ?? 1,
+            bul.pierceArmor ?? false,
+            bul.collidesAir,
+            bul.collidesGround,
+            bul.hitFx,
+            bul.fxColor,
             nature,
           );
       // forced: the beam IS the shot for every laser turret (damage is
       // instant), and the style rides `sides` — piercer's blue sheet by
       // default, tether's mint lance where the table names one
       this.pushFx(
-        x, y, st.bullet.lifetime, FxKind.Laser, a, reached, 0,
+        x, y, bul.lifetime, FxKind.Laser, a, reached, 0,
         TOWER_LASER_STYLE[t.kind] ?? 0, true,
       );
       hitAimed();
       return;
     }
-    if (st.bullet.rail) {
+    if (bul.rail) {
       if (hostile) {
         // the line the player's rail draws, without the sweep behind it
-        const spec = st.bullet.rail;
-        if (st.bullet.pointFx !== undefined)
+        const spec = bul.rail;
+        if (bul.pointFx !== undefined)
           for (let d = 0; d <= spec.length; d += spec.pointSpacing)
-            this.bulletFx(st.bullet.pointFx, x + cos * d, y + sin * d, a, st.bullet.fxColor, true);
-        this.bulletFx(st.bullet.despawnFx, x, y, a, st.bullet.fxColor, true);
-      } else this.railShot(x, y, a, st.bullet, nature);
+            this.bulletFx(bul.pointFx, x + cos * d, y + sin * d, a, bul.fxColor, true);
+        this.bulletFx(bul.despawnFx, x, y, a, bul.fxColor, true);
+      } else this.railShot(x, y, a, bul, nature);
       hitAimed();
       return;
     }
-    if (st.bullet.ray) {
+    if (bul.ray) {
       if (!hostile)
         this.hitscanRay(
           x,
           y,
           a,
-          st.bullet.ray.length,
-          st.bullet.damage,
-          st.bullet.collidesAir,
-          st.bullet.collidesGround,
-          st.bullet.hitFx,
-          st.bullet.fxColor,
+          bul.ray.length,
+          bul.damage,
+          bul.collidesAir,
+          bul.collidesGround,
+          bul.hitFx,
+          bul.fxColor,
           nature,
         );
       // forced: the ray is cleaver's entire visible shot (damage is instant)
-      this.pushFx(x, y, st.bullet.lifetime, FxKind.Shrapnel, a, st.bullet.ray.length, 0, 0, true);
+      this.pushFx(x, y, bul.lifetime, FxKind.Shrapnel, a, bul.ray.length, 0, 0, true);
       hitAimed();
       return;
     }
@@ -9511,9 +10080,9 @@ export class Sim {
     // against the BULLET's own reach (speed x lifetime) rather than the
     // turret's range — the two differ, and dividing by the shorter turret
     // range stretched every shell past its aim point
-    let life = st.bullet.lifetime;
-    if (st.bullet.artillery) {
-      const reach = st.bullet.speed * st.bullet.lifetime;
+    let life = bul.lifetime;
+    if (bul.artillery) {
+      const reach = bul.speed * bul.lifetime;
       // scaleLifetimeOffset overshoots the aim point by a fraction, and
       // minRange is the FLOOR on the scale — a shell aimed inside it
       // overflies rather than landing short
@@ -9524,10 +10093,10 @@ export class Sim {
     }
     // lifeScaleRandMin/Max and velocityRnd: the two rolls that turn a
     // barrage's four shells from one hole into a pattern down the lane
-    const lr = st.bullet.lifeScaleRand;
+    const lr = bul.lifeScaleRand;
     if (lr) life *= lr[0] + Math.random() * (lr[1] - lr[0]);
     const vr = st.velocityRnd ?? 0;
-    const speed = st.bullet.speed * (vr > 0 ? 1 - vr + Math.random() * vr : 1);
+    const speed = bul.speed * (vr > 0 ? 1 - vr + Math.random() * vr : 1);
     this.projs.push({
       kind: t.kind,
       x,
@@ -9537,10 +10106,14 @@ export class Sim {
       life,
       age: 0,
       primeT: -1,
-      flakT: st.bullet.flak ? st.bullet.flak.interval : 0,
-      pierced: st.bullet.pierce ? [] : null,
+      flakT: bul.flak ? bul.flak.interval : 0,
+      pierced: bul.pierce ? [] : null,
       trailT: 0,
       frag: false,
+      // which nozzle threw it, so the ball answers for its own stats for
+      // the rest of its flight (Sim.bulletFor) and is drawn as the ammo
+      // that was actually fired
+      alt,
       // a shot of the swarm's flies past every body and lands on the
       // player's buildings instead (stepHostileProjectile)
       enemy: hostile,
@@ -9548,7 +10121,7 @@ export class Sim {
       // no visible body of its own, so when the pool refused its flame
       // there is nothing left on screen at all. Say so, and the renderer
       // draws the bullet itself down the lane (see Projectile.bare)
-      bare: !shownShoot && !st.bullet.sprite && !st.bullet.orb,
+      bare: !shownShoot && !bul.sprite && !bul.orb,
     });
   }
 
@@ -9646,6 +10219,9 @@ export class Sim {
         pierced: child.pierce ? [] : null,
         trailT: 0,
         frag: true,
+        // ...of the ammo the parent was: a fragment of the fire ball is
+        // the fire ball's child (bulletOf resolves alt before frag)
+        alt: pr.alt,
         // fragments belong to whoever threw the parent
         enemy: pr.enemy,
         // a fragment is thrown by a burst, not by a barrel: it has no
@@ -9741,7 +10317,9 @@ export class Sim {
     for (let hy = hy0; hy <= hy1; hy++) {
       const row = hy * HCOLS;
       const e = bStart[row + hx1 + 1];
-      for (let k = bStart[row + hx0]; k < e; k++) {
+      const e0 = bStart[row + hx0];
+      this.probes += e - e0;
+      for (let k = e0; k < e; k++) {
         const i = bUnits[k];
         if (i >= this.n || uhp[i] <= 0) continue;
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
@@ -9785,7 +10363,9 @@ export class Sim {
     for (let hy = hy0; hy <= hy1; hy++) {
       const row = hy * HCOLS;
       const e = bStart[row + hx1 + 1];
-      for (let k = bStart[row + hx0]; k < e; k++) {
+      const e0 = bStart[row + hx0];
+      this.probes += e - e0;
+      for (let k = e0; k < e; k++) {
         const i = bUnits[k];
         if (i >= this.n || uhp[i] <= 0) continue;
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
@@ -9823,7 +10403,9 @@ export class Sim {
     for (let hy = hy0; hy <= hy1; hy++) {
       const row = hy * HCOLS;
       const e = bStart[row + hx1 + 1];
-      for (let k = bStart[row + hx0]; k < e; k++) {
+      const e0 = bStart[row + hx0];
+      this.probes += e - e0;
+      for (let k = e0; k < e; k++) {
         const i = bUnits[k];
         if (i >= this.n || uhp[i] <= 0) continue;
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
@@ -9925,7 +10507,9 @@ export class Sim {
         for (let hy = hy0; hy <= hy1; hy++) {
           const row = hy * HCOLS;
           const e = bStart[row + hx1 + 1];
-          for (let k = bStart[row + hx0]; k < e; k++) {
+          const e0 = bStart[row + hx0];
+          this.probes += e - e0;
+          for (let k = e0; k < e; k++) {
             const j = bUnits[k];
             if (j >= this.n || uhp[j] <= 0 || chained.has(this.uid[j])) continue;
             if (KIND_FLYING[ukind[j]] ? !air : !ground) continue;
@@ -10042,7 +10626,9 @@ export class Sim {
     for (let hy = hy0; hy <= hy1; hy++) {
       const row = hy * HCOLS;
       const e = bStart[row + hx1 + 1];
-      for (let k = bStart[row + hx0]; k < e; k++) {
+      const e0 = bStart[row + hx0];
+      this.probes += e - e0;
+      for (let k = e0; k < e; k++) {
         const i = bUnits[k];
         if (i >= this.n || uhp[i] <= 0) continue;
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
@@ -10590,7 +11176,9 @@ export class Sim {
     for (let hy = hy0; hy <= hy1; hy++) {
       const row = hy * HCOLS;
       const e = this.bStart[row + hx1 + 1];
-      for (let b = this.bStart[row + hx0]; b < e; b++) {
+      const e0 = this.bStart[row + hx0];
+      this.probes += e - e0;
+      for (let b = e0; b < e; b++) {
         const j = this.bUnits[b];
         if (j >= this.n || j === i) continue;
         const dx = upx[j] - upx[i], dy = upy[j] - upy[i];
@@ -10600,7 +11188,6 @@ export class Sim {
         if (this.ucloakT[j] < duration) this.ucloakT[j] = duration;
       }
     }
-    this.pushFxCol(upx[i], upy[i], 30 / 60, FxKind.ShieldWave, 0, range, PAL.wraith);
   }
 
   /**
@@ -10690,7 +11277,9 @@ export class Sim {
       for (let hy = hy0; hy <= hy1; hy++) {
         const row = hy * HCOLS;
         const e = bStart[row + hx1 + 1];
-        for (let b = bStart[row + hx0]; b < e; b++) {
+        const e0 = bStart[row + hx0];
+        this.probes += e - e0;
+        for (let b = e0; b < e; b++) {
           const j = bUnits[b];
           if (j >= this.n || uhp[j] <= 0) continue;
           // THE LEADER IS NOT UNDER ITS OWN ORDER, and neither is any
@@ -10842,10 +11431,11 @@ export class Sim {
 
   private updateProjectiles(dt: number): void {
     const { upx, upy, uhp, uarmor, urad, projs, bStart, bUnits } = this;
+    this.bodyIters += projs.length;
     this.collectForceFields();
     for (let p = projs.length - 1; p >= 0; p--) {
       const pr = projs[p];
-      const b = this.bulletFor(pr.kind, pr.frag);
+      const b = this.bulletFor(pr.kind, pr.frag, pr.alt);
       // A SHOT OF THE SWARM'S (Conquest) runs its own, much shorter step:
       // it flies past every body and lands on the player's buildings, by
       // the cell it is over — the enemy shots' rule (updateEnemyShots) on
@@ -10954,7 +11544,9 @@ export class Sim {
         outer: for (let cy = Math.max(0, hy - sp); cy <= Math.min(HROWS - 1, hy + sp); cy++) {
           const row = cy * HCOLS;
           const e = bStart[row + cx1 + 1];
-          for (let k = bStart[row + cx0]; k < e; k++) {
+          const e0 = bStart[row + cx0];
+          this.probes += e - e0;
+          for (let k = e0; k < e; k++) {
             const i = bUnits[k];
             if (i >= this.n || uhp[i] <= 0) continue;
             if (this.ufly[i] !== 0 ? !b.collidesAir : !b.collidesGround) continue;
@@ -11106,7 +11698,9 @@ export class Sim {
     for (let hy = hy0; hy <= hy1; hy++) {
       const row = hy * HCOLS;
       const e = bStart[row + hx1 + 1];
-      for (let k = bStart[row + hx0]; k < e; k++) {
+      const e0 = bStart[row + hx0];
+      this.probes += e - e0;
+      for (let k = e0; k < e; k++) {
         const i = bUnits[k];
         if (i >= this.n || uhp[i] <= 0) continue;
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
@@ -11162,7 +11756,9 @@ export class Sim {
     for (let hy = hy0; hy <= hy1; hy++) {
       const row = hy * HCOLS;
       const e = bStart[row + hx1 + 1];
-      for (let k = bStart[row + hx0]; k < e; k++) {
+      const e0 = bStart[row + hx0];
+      this.probes += e - e0;
+      for (let k = e0; k < e; k++) {
         const i = bUnits[k];
         if (i >= this.n || uhp[i] <= 0) continue;
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;

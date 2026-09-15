@@ -84,6 +84,306 @@ export function writeHeader(sim: Sim): void {
   h[HDR.SPECS] = sim.specsVersion;
 }
 
+// ---------- the phase clock's reading ----------
+
+/** what one step has to fit in at 60fps — the line every figure is read against */
+export const STEP_BUDGET_MS = 1000 / 60;
+
+/**
+ * THE KINDS OF WORK A STEP DOES, in the order Sim files them.
+ *
+ * There is one entry here for every distinct thing the sim can spend a
+ * step on, because a phase's milliseconds mean nothing without the count
+ * of whatever that phase was actually doing — and the phases do not all
+ * do the same thing. A body sweep and a sight ray and a per-body pass are
+ * three different units of work, and dividing a phase's time by the wrong
+ * one produces a confident, wrong answer.
+ *
+ *   hashcands   bodies the broad phase handed the narrow one
+ *   structcands candidates walked out of the building index / cell grid
+ *   rays        sight rays cast (Sim.hasSight)
+ *   raycells    grid cells those rays walked — a ray's cost is its LENGTH
+ *   bodies      iterations of the big linear per-body / per-shot passes
+ *   picks       target searches actually run (Sim.pickAim)
+ *   solves      flow-field solve slices spent (Sim.runSolveQueue) — the
+ *               route re-solve is sliced across steps, so what explains a
+ *               spike is not how many cells it touched but WHETHER a
+ *               slice landed on this step at all
+ *
+ * A PHASE WITH TIME AND NO COUNTERS is not a phase doing cheap work — it
+ * is a phase doing work nobody counted, and it should read as exactly
+ * that rather than as a suspiciously expensive candidate.
+ */
+export const WORK_NAMES = [
+  "hashcands",
+  "structcands",
+  "rays",
+  "raycells",
+  "bodies",
+  "picks",
+  "solves",
+] as const;
+export const NWORK = WORK_NAMES.length;
+
+/**
+ * ONE PASS OF THE STEP, with the work beside the time. `ms` alone cannot
+ * tell a pass that got dearer per item from one that was handed more
+ * items, and those have opposite fixes — `probes` is the divisor that
+ * separates them (Sim.probes).
+ */
+export interface PhaseRead {
+  name: string;
+  /** mean milliseconds PER STEP, not per frame (a slow frame steps twice) */
+  ms: number;
+  /** the dearest single step this phase had — where a stutter actually lives */
+  worst: number;
+  /** broad-phase candidates this phase walked, per step (== work[0]) */
+  probes: number;
+  /** every kind of work this phase did, per step — indexed by WORK_NAMES */
+  work: number[];
+  /** ...and over the steps that missed the budget alone. See slowMs. */
+  slowWork: number[];
+  /**
+   * THE SAME TWO OVER THE STEPS THAT MISSED THE BUDGET, averaged over
+   * those alone (ProfileRead.over says how many there were; meaningless
+   * when that is zero). This is what a long window is read through: a
+   * phase that is small in `ms` and large here only costs anything when
+   * things go wrong, which is the definition of what makes a game stutter
+   * rather than run slow.
+   */
+  slowMs: number;
+  slowProbes: number;
+}
+
+/**
+ * THE POPULATIONS every figure in the table is per. Read straight off the
+ * sim, so it describes the instant it was asked rather than the window
+ * the times were averaged over — which is what you want: the times say
+ * what the slow part cost and this says what the board looked like while
+ * it did.
+ */
+export interface ProfileCensus {
+  wave: number;
+  bodies: number;
+  air: number;
+  ground: number;
+  /** the player's shots in the air, and the swarm's (projectiles + stars) */
+  shots: number;
+  hostileShots: number;
+  towers: number;
+  domes: number;
+  corpses: number;
+  fx: number;
+  /**
+   * THE WIDEST LIVE HITBOX on each layer, px. Every broad-phase pad in
+   * the sim is sized by this and not by the thing doing the asking
+   * (Sim.rmaxAliveFor), so one very wide body raises the price of every
+   * sweep on the board — and this is the only place that shows up.
+   */
+  rmaxAir: number;
+  rmaxGround: number;
+  /** the pad that follows, in hash cells, and the cells one shot sweeps */
+  shotSpan: number;
+  shotCells: number;
+  /**
+   * THE SAME THREE AT THEIR HIGHEST over the window the times were taken
+   * over. Everything above is the board as it stands NOW; the worst step
+   * in the table was very likely not now, and without these the two
+   * halves of the reading cannot be put together.
+   */
+  peakBodies: number;
+  peakShots: number;
+  peakRmax: number;
+}
+
+/** the whole reading: the step, its phases, and what the board held */
+export interface ProfileRead {
+  /** steps in the tally — the window every mean below is over */
+  steps: number;
+  /** mean whole-step ms, and the dearest single step of the window */
+  ms: number;
+  worst: number;
+  /** how many of those steps ran over STEP_BUDGET_MS */
+  over: number;
+  /** mean whole-step ms over THOSE steps alone — how bad a bad step is */
+  slowMs: number;
+  /**
+   * GAME TIME AND WALL TIME over the window, in ms. `simMs` is the steps
+   * times SIM_DT — how much WORLD went by. `liveMs` is how long the sim
+   * was live to produce it, pause excluded (Sim.profLiveMs). They agree
+   * while the sim keeps up; simMs falling behind liveMs is the clock
+   * forfeiting catch-up steps, which is the world running in slow motion
+   * and is what a player reports as things moving jerkily.
+   */
+  simMs: number;
+  liveMs: number;
+  /** what the board was carrying at the dearest step of all */
+  worstBodies: number;
+  worstShots: number;
+  phases: PhaseRead[];
+  census: ProfileCensus;
+}
+
+/**
+ * THE READING AS TEXT, and the reason this is a function rather than
+ * something the console draws itself: a profile is only useful when it is
+ * PASTEABLE. The whole point of arming the clock is to hand the numbers
+ * to somebody — a teammate, a bug report, a model — and a reading that
+ * has to be described in prose ("projectiles was about ten, I think the
+ * body count was high") is a reading that has already lost the two or
+ * three figures that would have identified the cause.
+ *
+ * So everything needed to reach a conclusion is in the block and nothing
+ * needs to be remembered alongside it: the window it was taken over, the
+ * board it was taken on, the pad every sweep is paying, and then the
+ * table — with each phase's per-candidate cost worked out, because that
+ * is the one division that says WHICH KIND of problem this is and it
+ * needs no knowledge of what the phase does.
+ *
+ * Deliberately NOT here: any table mapping a phase to "its" population.
+ * That table would have to be updated by hand every time a pass moved,
+ * and a stale one would quietly divide by the wrong number — which is
+ * worse than not dividing. The census is printed whole instead, and the
+ * arithmetic is left to the reader, who can see both halves.
+ */
+export function profileLines(p: ProfileRead): string[] {
+  const c = p.census;
+  const num = (n: number): string => Math.round(n).toLocaleString("en-US");
+  const out: string[] = [];
+  // THE WINDOW, and how much of it was actually bad. The share matters
+  // more than the mean on a long arm: three minutes of play is ten
+  // thousand steps, and forty bad ones are both a real stutter and a
+  // rounding error in the average
+  out.push(
+    `wave ${c.wave} · ${num(p.steps)} steps · step ${p.ms.toFixed(2)}ms mean, ` +
+      `${p.worst.toFixed(1)} worst ` +
+      `(${num(p.worstBodies)} bodies, ${num(p.worstShots)} shots at that step)`,
+  );
+  // GAME TIME AGAINST WALL TIME. The pace is the first thing to read: a
+  // sim under 100% is not merely slow, it is running the world in slow
+  // motion, and every figure below it is the cost of a step that the
+  // game could not afford to take often enough
+  const pace = p.liveMs > 0 ? (100 * p.simMs) / p.liveMs : 100;
+  out.push(
+    `pace:  ${(p.simMs / 1000).toFixed(1)}s of game time in ${(p.liveMs / 1000).toFixed(1)}s live ` +
+      `= ${pace.toFixed(0)}% of real time` +
+      // ...AND WHAT THAT MEANS, in three cases rather than two. Over real
+      // time is not a better score: it means nothing paced this window to
+      // a display at all — a headless harness stepping flat out — and the
+      // figure should be ignored rather than read as headroom
+      (pace > 150
+        ? `  (not frame-paced — a harness, not a played window; ignore this line)`
+        : pace < 95
+          ? `  ← THE SIM IS BEHIND: the clock is forfeiting catch-up steps, so the` +
+            ` world itself runs slow. Pause is excluded from this`
+          : "  (keeping up)"),
+  );
+  out.push(
+    p.over > 0
+      ? `slow:  ${num(p.over)} steps over ${STEP_BUDGET_MS.toFixed(1)} ` +
+        `(${((100 * p.over) / Math.max(1, p.steps)).toFixed(1)}% of the window), ` +
+        `averaging ${p.slowMs.toFixed(1)}ms — the "slow" column below is those steps alone`
+      : `slow:  no step missed ${STEP_BUDGET_MS.toFixed(1)}ms — nothing here stuttered`,
+  );
+  out.push(
+    `board: ${num(c.bodies)} bodies (${num(c.air)} air, ${num(c.ground)} ground) · ` +
+      `${num(c.shots)} shots, ${num(c.hostileShots)} hostile · ${num(c.towers)} turrets` +
+      `${c.domes > 0 ? `, ${num(c.domes)} domes` : ""}` +
+      `${c.corpses > 0 ? `, ${num(c.corpses)} corpses` : ""} · ${num(c.fx)} fx`,
+  );
+  // THE PAD, on its own line because it is the line that explains a board
+  // whose populations did not move and whose probe count did
+  out.push(
+    `peak:  ${num(c.peakBodies)} bodies · ${num(c.peakShots)} shots · widest hitbox ${c.peakRmax.toFixed(0)}px` +
+      `   (over the whole window — the board above is only right now)`,
+  );
+  out.push(
+    `pad: widest live hitbox ${c.rmaxAir.toFixed(0)}px air / ${c.rmaxGround.toFixed(0)}px ground` +
+      ` → each shot sweeps ${c.shotCells} hash cells (span ${c.shotSpan})`,
+  );
+  let total = 0;
+  for (const q of p.phases) total += q.ms;
+  /**
+   * A PHASE'S WORK, NAMED — and nothing it did not do. A counter under
+   * one per step is printed as the WINDOW TOTAL instead of a mean,
+   * because the mean of a rare event is zero and a zero here reads as
+   * "this phase did nothing", which is the opposite of the truth for the
+   * expensive rare ones.
+   */
+  const workOf = (w: readonly number[]): string => {
+    const did = WORK_NAMES.map((name, k) => [name, w[k] ?? 0] as const).filter(
+      ([, v]) => v > 0.004,
+    );
+    if (!did.length) return "— nothing counted here (see WORK_NAMES)";
+    return did
+      .map(([name, v]) =>
+        v >= 1 ? `${name} ${num(v)}` : `${name} ${v.toFixed(3)}`,
+      )
+      .join(" · ");
+  };
+  // the slow column is a column and not a second table so the two
+  // averages sit on one line per phase: the eye wants the RATIO of them,
+  // and a phase whose slow figure towers over its mean is the answer
+  const slowCol = p.over > 0;
+  out.push(
+    `${"phase".padEnd(13)}${"ms".padStart(7)}${"worst".padStart(8)}${"share".padStart(7)}` +
+      (slowCol ? `${"slow ms".padStart(9)}` : "") +
+      `   work (per step)`,
+  );
+  for (const q of p.phases) {
+    // a phase that costs nothing and walked nothing is noise in a block
+    // that is meant to be read at a glance — but never drop one that is
+    // quiet on average and dear when things go wrong, which is exactly
+    // the shape the whole slow column exists to find
+    if (q.ms < 0.02 && q.probes < 1 && (!slowCol || q.slowMs < 0.02)) continue;
+    const share = total > 0 ? (q.ms / total) * 100 : 0;
+    // EVERY COUNTER THIS PHASE MOVED, named, and none that it did not.
+    // The per-item cost is deliberately NOT computed here: a phase that
+    // moved three different counters has no single item, and picking one
+    // to divide by is how the last version of this block produced a
+    // confident wrong answer
+    out.push(
+      q.name.padEnd(13) +
+        q.ms.toFixed(2).padStart(7) +
+        q.worst.toFixed(1).padStart(8) +
+        `${share.toFixed(0)}%`.padStart(7) +
+        (slowCol ? q.slowMs.toFixed(2).padStart(9) : "") +
+        "   " +
+        workOf(q.work),
+    );
+    // ...AND WHAT A SLOW STEP DID DIFFERENTLY, under the phases that are
+    // actually dear when things go wrong. This is where a rare event
+    // shows itself: a route re-solve is 0.007 slices per step and 1.0 per
+    // slow step, and only the second number is an explanation
+    if (slowCol && q.slowMs >= 1) {
+      const sw = workOf(q.slowWork);
+      if (sw !== workOf(q.work))
+        out.push(`${" ".repeat(13)}${"on slow steps:".padStart(slowCol ? 31 : 22)}   ${sw}`);
+    }
+  }
+  // THE PER-UNIT COSTS, worked out only where a phase moved exactly ONE
+  // counter — the only case where the division is sound. This is the
+  // figure that says whether a phase is dear per item or simply busy, and
+  // it is printed for the phases it can honestly be printed for and no
+  // others
+  const unit: string[] = [];
+  for (const q of p.phases) {
+    if (q.ms < 0.02) continue;
+    const did = WORK_NAMES.map((w, k) => [w, q.work[k] ?? 0] as const).filter(
+      ([, v]) => v >= 0.5,
+    );
+    if (did.length !== 1) continue;
+    const [w, v] = did[0];
+    unit.push(`${q.name} ${((q.ms * 1e6) / v).toFixed(0)}ns/${w}`);
+  }
+  if (unit.length) out.push(`per unit: ${unit.join(" · ")}`);
+  out.push(
+    `${"phases".padEnd(13)}${total.toFixed(2).padStart(7)}` +
+      `  (the marks leave the gaps out; the step above is the honest total)`,
+  );
+  return out;
+}
+
 // ---------- the report ----------
 
 /** what the panel prints — see UiState.inspect for what each field means */
@@ -115,8 +415,14 @@ export interface WorldReport {
    * times a second. Null means "what you have is still right".
    */
   specs: [TowerKind, TowerStats][] | null;
-  /** the phase clock's reading while it is armed (Sim.profile), else null */
-  phases: { name: string; ms: number }[] | null;
+  /**
+   * THE PHASE CLOCK'S WHOLE READING while it is armed (Sim.profile), else
+   * null. It rides the report rather than the header because it is the
+   * one question about the sim that cannot be answered in a number, and
+   * because the sim answering it may be a thread away — a profiler that
+   * only worked in-thread would be a profiler for the build nobody plays.
+   */
+  profile: ProfileRead | null;
 }
 
 /**
@@ -132,7 +438,7 @@ export function reportOf(sim: Sim, specsSeen: number): WorldReport {
     relics: sim.ownedRelics(),
     inspect: inspectPanel(sim),
     specs: sim.specsVersion !== specsSeen ? sim.specTable() : null,
-    phases: sim.profiling ? sim.profileRead() : null,
+    profile: sim.profiling ? sim.profileFull() : null,
   };
 }
 

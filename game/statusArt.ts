@@ -178,6 +178,55 @@ function jammed(g: Pen): void {
 
 const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
   /**
+   * DAMAGE — a BURST: four spikes thrown out of a hot centre, which is
+   * what a round arriving looks like and what this catalog has no other
+   * picture of. The spikes go to the CORNERS rather than up-down-left-
+   * right, because a disc with four square arms is a plus and the plus in
+   * this file is the fixer's cross.
+   *
+   * The pale heart is PARTS and not embossing (rule 5) — the same cool
+   * body / hot core the flame is built from, in the same ember, so the
+   * turret half of the row is lit in one ink.
+   */
+  damage: (g) => {
+    // each spike is a triangle with its base straddling the middle, so
+    // the four of them meet under the core rather than at a seam
+    const spike = (tx: number, ty: number, bx: number, by: number): void =>
+      void g.poly([[0.5 - bx, 0.5 - by], [tx, ty], [0.5 + bx, 0.5 + by]], PAL.ember);
+    spike(0.98, 0.02, 0.12, 0.12);
+    spike(0.02, 0.98, 0.12, 0.12);
+    spike(0.98, 0.98, 0.12, -0.12);
+    spike(0.02, 0.02, 0.12, -0.12);
+    // the core is the DARK part and the heart inside it the hot one —
+    // parts, not a highlight traced round the edge (rule 5). It is also
+    // what keeps the four arms from meeting in a bright blob
+    g.disc(0.5, 0.5, 0.24, PAL.emberDark);
+    g.over((o) => o.disc(0.5, 0.46, 0.13, PAL.flame));
+  },
+
+  /**
+   * RATE OF FIRE — a DIAL with one hand, in the flame this catalog
+   * already spends on speed (see `speedBolt`). A reload is a clock and
+   * nothing else is, so it is drawn as one.
+   *
+   * IT IS NOT A BOLT, though speed is a bolt here three times over —
+   * `boost`, `electric`, `short`. Those three are things being DONE to a
+   * gun and they sit in the same row as this; a fourth bolt beside them
+   * would be a chip the player has to read the colour of. A ring with a
+   * hand in it is a different silhouette at seven pixels.
+   *
+   * ...and it is not `immune`'s ring either: that one is steel with a bar
+   * straight THROUGH it, edge to edge. This is hot, and its mark stops at
+   * the middle, which is what makes it a hand rather than a strike.
+   */
+  firerate: (g) => {
+    g.ring(0.5, 0.5, 0.46, 0.16, PAL.flame);
+    g.over((o) => o.box(0, 0.62, 1, 1, PAL.ember));
+    g.box(0.42, 0.24, 0.58, 0.54, PAL.flameLite); // the hand, straight up
+    g.box(0.42, 0.44, 0.76, 0.58, PAL.flameLite); // ...and out to the right
+  },
+
+  /**
    * PLATING — a heater shield, plated DOWN its middle. The strake is
    * vertical for rule 6: a pale band across a symmetrical shield is a
    * visor, and a visor is a face.

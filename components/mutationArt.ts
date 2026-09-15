@@ -14,7 +14,7 @@
  *
  * WHY 32 WHEN THE MOD GLYPHS ARE 16. Match the grid to the size the thing
  * is read at. A face is read at 20 to 56 CSS pixels — a deploy chip, a
- * reward chip, an unlocks tile — and Mindustry's own status effect
+ * reward chip, a codex tile — and Mindustry's own status effect
  * sprites, its icons for exactly this thing, are 32x32. A mod glyph is
  * read at 12 to 15 and is drawn at 16 for the same reason (modArt.ts).
  */

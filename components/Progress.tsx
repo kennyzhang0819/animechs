@@ -30,7 +30,7 @@ import { upgradeDef } from "@/game/upgrades";
 import { BackButton, BoardTabs } from "./Board";
 import { HoverCard, useHoverCard } from "./HoverCard";
 import { itemCount } from "./Items";
-import Unlocks from "./Unlocks";
+import Codex from "./Codex";
 import { bandFor, MutationFace, MUT_LIT } from "./mutationFace";
 import { Glyph } from "./Relics";
 import { RARITY, rarityDef } from "@/game/rarity";
@@ -49,9 +49,13 @@ import { tile } from "./tile";
  * is next", and both are within a glance of the centre. Nothing here is a
  * button: the track is not spent, it is climbed.
  *
- * THE UNLOCKS BOARD rides beside it as a second tab (Unlocks.tsx): every
- * turret, module, map and rule the track will ever hand out, filtered by
- * kind. The two answer the two halves of one question — this one is
+ * THE CODEX rides beside it as a second tab (Codex.tsx): every turret,
+ * module, map and rule the track will ever hand out, filtered by kind. It
+ * was called "Unlocks" until the name was weighed against what the board
+ * actually does — nothing on it is hidden and nothing is earned by
+ * looking, so a word about EARNING was the wrong sign over an index. The
+ * rest of the code had already settled on "codex" (mods.ts, mutation.ts,
+ * rarity.ts, and the pink in pixelArt.ts); the tab now agrees with it. The two answer the two halves of one question — this one is
  * "where am I and what is next", that one is "what is there at all" — and
  * the tab strip sits in the SAME corner on both, beside back, so
  * switching never moves the hand.
@@ -63,12 +67,13 @@ import { tile } from "./tile";
  */
 
 const TRACK_GLYPH = "M3 19h18v2H3zM3 6l5 4 4-7 4 7 5-4-2 11H5z";
-/** the unlocks board's own mark: a padlock, open */
-const UNLOCK_GLYPH =
-  "M12 2a5 5 0 0 1 5 5h-2a3 3 0 0 0-6 0v3h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5zm1 12h-2v4h2z";
+/** the codex's own mark: an open book. It was a padlock, which promised a
+ *  board about what is SHUT — the one thing this board never shows */
+const CODEX_GLYPH =
+  "M2 5c3-1 6-1 9 1v13c-3-2-6-2-9-1V5zm20 0c-3-1-6-1-9 1v13c3-2 6-2 9-1V5z";
 const TABS = [
   { id: "track", label: "Progress", color: "#FFD37F", glyph: TRACK_GLYPH },
-  { id: "unlocks", label: "Unlocks", color: MUT_LIT, glyph: UNLOCK_GLYPH },
+  { id: "codex", label: "Codex", color: MUT_LIT, glyph: CODEX_GLYPH },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -173,7 +178,7 @@ function RewardFace({ reward }: { reward: Reward }) {
  * their own, not by the fact of what kind of thing they are.
  * The track is where a player learns what the deal can hand them, and it
  * teaches the border at the same time it teaches the gun: the row that
- * opens a repeater is purple here, the tile on the unlocks board is purple
+ * opens a repeater is purple here, the tile on the codex is purple
  * there, and the card that turns one over mid-wave is purple too. Nothing
  * has to say so.
  */
@@ -221,7 +226,7 @@ function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
       >
         {/* THE FRAME FADES WITH THE FACE, so a reward the save has not
             reached reads as one dim thing rather than a lit border round
-            a ghost (Unlocks.tsx says the same). The hue rides through it:
+            a ghost (Codex.tsx says the same). The hue rides through it:
             a purple that is not open yet is still legibly a purple, which
             is why the chip is faded and not repainted grey.
 
@@ -368,9 +373,9 @@ export default function ProgressView({
     if (tab === "track") here.current?.scrollIntoView({ block: "center", behavior: "instant" });
   }, [tab, level]);
 
-  if (tab === "unlocks")
+  if (tab === "codex")
     return (
-      <Unlocks
+      <Codex
         onBack={onBack}
         backLabel={backLabel}
         // the board dims what the track has not opened — the level it
@@ -400,7 +405,7 @@ export default function ProgressView({
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#0B0B0D] text-[#EDEDEF]">
       {/* the chrome: back and the tabs, in the corner the codex board pins
-          them to as well (Unlocks), so the switch never moves. Both
+          them to as well (Codex), so the switch never moves. Both
           the chrome and the track opt into the UI-size knob (ui-zoom):
           this screen is read, not played, and a HUD set to 150% for a TV
           wants its progress list at 150% too */}

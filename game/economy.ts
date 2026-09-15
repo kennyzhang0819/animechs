@@ -189,8 +189,8 @@ export const MOD_ROLL_PRICE = 2000;
  * trade for what a relic ANSWERS: a wall of T5 hulls, which a board of
  * ordinary turrets does not beat by being a little bigger.
  *
- * The amount ladder still multiplies it, so x9 relics is one and a
- * third million — nine relics is nine relics.
+ * The amount ladder still multiplies it, so x16 relics is two and a
+ * quarter million — sixteen relics is sixteen relics.
  */
 export const RELIC_ROLL_PRICE = 150000;
 
@@ -198,17 +198,17 @@ export const RELIC_ROLL_PRICE = 150000;
  * THE AMOUNT LADDER — the corner's fourth button, which cycles through
  * these and multiplies whichever of the other three is pressed next.
  *
- * THEY ARE SQUARE NUMBERS, and that is the point of these three and not
- * some other three. On the turret button the amount TILES the shape
+ * THEY ARE SQUARE NUMBERS, and that is the point of these four and not
+ * some other four. On the turret button the amount TILES the shape
  * (formation.ts), so a square amount tiles into a square: 4 is two copies
- * by two and 9 is three by three, and a fleet comes out with the
- * proportions of the card that bought it. They were 5 and 10, which are
- * not squares, and an oblong number has to be laid out as something — a
- * plus, a five-by-two slab — that nobody designed and the player has to
- * find ground for anyway.
+ * by two, 9 is three by three and 16 is four by four, and a fleet comes
+ * out with the proportions of the card that bought it. They were 5 and
+ * 10, which are not squares, and an oblong number has to be laid out as
+ * something — a plus, a five-by-two slab — that nobody designed and the
+ * player has to find ground for anyway.
  *
  * IT IS A FLAT MULTIPLIER ON THE PRICE, with no bulk discount anywhere:
- * x9 turrets costs exactly nine roll fees. The button saves KEYSTROKES
+ * x16 turrets costs exactly sixteen roll fees. The button saves KEYSTROKES
  * and nothing else — a discount would make the single press strictly
  * wrong, and the single press is the whole T-click-T-click flow the deal
  * was built around.
@@ -217,9 +217,9 @@ export const RELIC_ROLL_PRICE = 150000;
  * button it is ONE card carrying the shape tiled N times (formation.ts —
  * one turret roll, one shape roll, a fleet on the ground). On the module
  * buttons it is N INDEPENDENT DRAWS, because there is no ground involved
- * and nothing to tile: nine relics is nine relics.
+ * and nothing to tile: sixteen relics is sixteen relics.
  */
-export const BUY_AMOUNTS = [1, 4, 9] as const;
+export const BUY_AMOUNTS = [1, 4, 9, 16] as const;
 export type BuyAmount = (typeof BUY_AMOUNTS)[number];
 
 /** the amount after this one, wrapping — what the fourth button does */

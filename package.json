@@ -13,6 +13,7 @@
     "build": "next build",
     "start": "next start",
     "check": "node scripts/check.mjs",
+    "check:full": "node scripts/check.mjs --full",
     "typecheck": "tsc --noEmit",
     "gen:tiles": "node --experimental-transform-types --import ./scripts/ts-hooks.mjs scripts/gen-tiles.mjs",
     "gen:turrets": "node --experimental-transform-types --import ./scripts/ts-hooks.mjs scripts/turret-concepts.mjs",

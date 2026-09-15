@@ -3,8 +3,8 @@
 /**
  * WHAT A MUTATOR LOOKS LIKE — its face, and the colour of how bad it is.
  *
- * IT LIVES HERE BECAUSE THREE SCREENS DRAW THE SAME RULE. The unlocks
- * board shelves every one of them, the progress track hands them out a
+ * IT LIVES HERE BECAUSE THREE SCREENS DRAW THE SAME RULE. The codex
+ * shelves every one of them, the progress track hands them out a
  * row at a time, and the deploy dialog draws the handful this run is
  * played under. A rule that reads as Brutal red on one screen and amber
  * on another is a bug a player cannot report, so the band lives here and
@@ -23,7 +23,7 @@ import { FACE_GRID, mutatorFace } from "./mutationArt";
 
 /** the codex's colour, kept from the old column — deliberately NOT the
  *  tree's gold, because gold on the other board means "bought, owned,
- *  yours", and there is nothing here to own. The unlocks tab wears it,
+ *  yours", and there is nothing here to own. The codex wears it,
  *  and so does a mutator chip's ring on both boards. */
 export const MUT_LIT = "#FF8ACB";
 
@@ -37,7 +37,7 @@ export const MUT_LIT = "#FF8ACB";
  * was one of the things answering "how bad is this". Every screen that
  * draws a face already answers it another way: the deploy chip borders
  * itself in the band (DealRuleCell, Animechs), and the track and the
- * unlocks board both hand the band to the hover card as its corner word
+ * codex both hand the band to the hover card as its corner word
  * (rewardLook, Progress) — which is the only place either of them ever
  * showed it, since a mutator chip wears the codex's pink on both.
  *

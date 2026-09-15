@@ -412,6 +412,24 @@ export interface BulletStats {
   // the child's own full speed. Whirl's plastanium flak is the one
   // that uses it: the burst is what makes a flak wall out of a single
   // turret
+  // THE SECOND AMMO IN THE MAGAZINE, and deluge is the only turret that
+  // loads one. A turret with `barrels` throws from its mounts in turn
+  // (ShootAlternate, Sim.fireShot), and where the ammo names an `alt` the
+  // ODD barrel loads it: the same volley leaves one nozzle as water and
+  // the other as fire. It is a WHOLE BulletStats and not a patch, because
+  // the two balls are two shots — their own burst radius, their own
+  // status, their own colour and effects — and a diff would have to name
+  // every field anyway.
+  //
+  // IT IS RESOLVED WHERE `frag` IS (bulletOf, Sim.bulletFor) and written
+  // onto the projectile as one more flag (Projectile.alt), so a ball in
+  // the air answers for its own stats and the renderer draws the ammo
+  // that was actually fired. Alt first, then frag: a fragment of the
+  // fire ball is the FIRE ball's child.
+  //
+  // An `alt` on an ammo whose turret has no second barrel is never
+  // loaded — checked at import below.
+  alt?: BulletStats;
   frag?: {
     count: number;
     spread: number; // rad — fragRandomSpread, the FULL cone
@@ -1283,16 +1301,35 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   //    puddles. The scatter is deliberately wider than douser's: at 190
   //    units of range a tight pair would soak one spot, and a burst this
   //    size can afford to miss by tiles and still catch the whole group.
-  //  - splash 20 a ball, so eight balls a second is 160 a second laid
+  //  - splash 26 a ball, so eight balls a second is 208 a second laid
   //    over everything in the burst, air and ground alike. Against
   //    barrage's 140 that reads as more, and it is not: a ball is ARMOUR
-  //    SHAVED LIKE ANY OTHER HIT (applyArmor), and twenty points shaved
-  //    flat eight times a second is what a lobber does to a heavy, while
-  //    barrage's seventy lands whole. What deluge has over the artillery
-  //    is the area — four times barrage's — and the four seconds of wet
+  //    SHAVED LIKE ANY OTHER HIT (applyArmor), and twenty-six points
+  //    shaved flat eight times a second is what a lobber does to a heavy,
+  //    while barrage's seventy lands whole. What deluge has over the
+  //    artillery is the area — four times barrage's — and the status
   //    under it. Wave chips at ten a ball and a ball and a third a second
   //    — a twelfth of this rate — so the two never read as the same
   //    turret at two prices: one softens a group, this one kills it.
+  //
+  // THE TWO NOZZLES THROW DIFFERENT AMMO, and that is the whole shape of
+  // the gun now: the even barrel throws WATER and the odd one throws
+  // FIRE (BulletStats.alt, loaded in Sim.fireShot). Four of each a
+  // second, same weight of splash, and the two statuses answer the two
+  // things a wall of bodies can be — the water slows a group so every
+  // other gun on the line gets more seconds on it, and the fire takes
+  // health off the pool with the plating ignored, which is the half that
+  // still works on an armoured hull.
+  //
+  // THEY QUENCH EACH OTHER WHERE THEY OVERLAP, and that is the roster's
+  // rule and not an oversight: burning and wet are opposites
+  // (Sim.applyBurn / applyWet), so a body caught by both takes whichever
+  // landed last and the other is spent putting it out. It reads as a
+  // patchwork rather than a stack BECAUSE OF THE SCATTER — 22 degrees of
+  // inaccuracy at 190 range throws the two balls tiles apart, so a
+  // volley covers two patches of ground and most bodies stand in one of
+  // them. A player who wants the whole crowd soaked still builds a
+  // douser; this one is a gun that is also weather.
   // The shot itself is upstream's heavy round — speed 4, lifetime 49 ticks
   // over 190 range — and the soak is upstream's duration (statusDuration
   // 60*4): wet units drive at 45% speed for 4 s, so anything crossing its
@@ -1318,7 +1355,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       speed: 4 * TICK * MU,
       damage: 0, // as douser: every point this shot deals is splash
       lifetime: 49 / TICK, // 196 units of flight over a 190 range
-      splash: 20,
+      splash: 26,
       splashRadius: 46 * MU,
       collidesAir: true,
       collidesGround: true,
@@ -1330,6 +1367,36 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       hitFx2: FxKind.HitLiquid,
       despawnFx: FxKind.HitLiquid,
       fxColor: PAL.water,
+      // THE OTHER NOZZLE (BulletStats.alt): the same ball, lit. Same
+      // weight of splash, a slightly tighter burst — fire pools where
+      // water spreads — and burning instead of wet, which is 4 s of
+      // BURN_DPS taken straight off the pool with the plating ignored.
+      // So the fire half answers exactly what the water half cannot: an
+      // armoured hull, which shaves nine points off every 26 the flood
+      // lands and nothing at all off the burn.
+      alt: {
+        speed: 4 * TICK * MU,
+        damage: 0,
+        lifetime: 49 / TICK,
+        splash: 26,
+        splashRadius: 40 * MU,
+        collidesAir: true,
+        collidesGround: true,
+        hitRadius: 6 * MU,
+        burn: 4, // statusDuration 60 * 4, as torch's
+        orb: 6 * MU,
+        shootFx: FxKind.Flame,
+        // THE FLOOD SHAPE IN FLAME COLOURS, and deliberately not
+        // Fx.blastExplosion: WaterBurst is the one hit effect drawn at
+        // the blast's REAL reach (Sim's splash branch hands it
+        // splashRadius), and a burst this wide has to be visible as the
+        // patch it is or the player cannot tell which nozzle covered
+        // which ground. Every layer of it takes the colour it is given.
+        hitFx: FxKind.WaterBurst,
+        hitFx2: FxKind.FlameHit,
+        despawnFx: FxKind.FlameHit,
+        fxColor: PAL.lightOrange,
+      },
     },
   },
   // ---------- THE SUPPORT PAIR ----------------------------------------
@@ -1726,6 +1793,21 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
 };
 
 /**
+ * A SECOND AMMO NEEDS A SECOND BARREL TO LEAVE BY — checked at import.
+ *
+ * Sim.fireShot picks the alt off the same counter that steps the mount
+ * point (ShootAlternate), so an `alt` on a turret with one barrel would
+ * be thrown out of the same nozzle every other shot: the two ammos would
+ * be invisible as two, which is the entire point of loading them. Author
+ * the barrels with the ammo or don't author the ammo.
+ */
+(() => {
+  for (const [kind, spec] of Object.entries(TOWERS))
+    if (spec.bullet.alt && (spec.barrels?.count ?? 1) < 2)
+      throw new Error(`"${kind}" loads a second ammo but has no second barrel to throw it from`);
+})();
+
+/**
  * WHAT A TURRET IS, in one sentence, for the card the tech tree opens over
  * its node.
  *
@@ -1762,7 +1844,8 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   cleaver: "Shoots three heavy rays at very close range.",
   hive: "Shoots homing missiles that explode on contact.",
   whirl: "Shoots a fast stream of shells that burst into fragments.",
-  deluge: "Throws heavy water balls that burst into a huge flood, soaking and shredding everything caught in it.",
+  deluge:
+    "Twin nozzles throw heavy balls of water and fire together. Each bursts into a huge cloud — the water leaves everything in it soaked and slow, the fire leaves it burning through its plating.",
   fixer: "Repairs nearby buildings every few seconds.",
   restorer: "Repairs nearby buildings faster and over a wider area.",
   repeater: "Shoots heavy bullets from two barrels without stopping.",
@@ -1840,8 +1923,16 @@ export const towerMaxHp = (kind: import("./types").TowerKind): number =>
  * sprite. One boolean rather than a stats pointer on every projectile
  * keeps Projectile a flat record, which is what the sim's hot loop wants.
  */
-export function bulletOf(kind: import("./types").TowerKind, frag: boolean): BulletStats {
-  const b = structStats(kind).bullet;
+export function bulletOf(
+  kind: import("./types").TowerKind,
+  frag: boolean,
+  alt = false,
+): BulletStats {
+  const own = structStats(kind).bullet;
+  // ALT FIRST, THEN FRAG: the second ammo is a whole shot of its own
+  // (BulletStats.alt), so a fragment thrown by the fire ball is the FIRE
+  // ball's child and not the water's
+  const b = alt && own.alt ? own.alt : own;
   return frag && b.frag ? b.frag.bullet : b;
 }
 

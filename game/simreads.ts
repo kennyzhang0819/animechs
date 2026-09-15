@@ -58,7 +58,7 @@ const emptyReport = (): WorldReport => ({
   relics: [],
   inspect: null,
   specs: null,
-  phases: null,
+  profile: null,
 });
 
 export class World {
@@ -205,8 +205,9 @@ export class World {
   }
 
   /** the same resolution for a bullet already in the air (Sim.bulletFor) */
-  bulletFor(kind: TowerKind, frag: boolean): BulletStats {
-    const b = this.statsFor(kind).bullet;
+  bulletFor(kind: TowerKind, frag: boolean, alt = false): BulletStats {
+    const own = this.statsFor(kind).bullet;
+    const b = alt && own.alt ? own.alt : own;
     return frag && b.frag ? b.frag.bullet : b;
   }
 

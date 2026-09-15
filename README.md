@@ -13,7 +13,8 @@ npm install
 npm run dev       # the desktop app: a PRODUCTION build served inside the Electron shell
 npm run dev:web   # the same production server, in a bare browser tab
 npm run dev:hot   # Next's dev server with hot reload — slow, and not what ships; only when you need it
-npm run check     # the crash gate, about twenty seconds — run this, and only this
+npm run check       # the crash gate, a few seconds — run this after every edit
+npm run check:full  # ...plus the clocks, at a late run's scale — a minute or two
 ```
 
 **The game is a desktop game**, shipped to Steam as an Electron app
@@ -34,9 +35,9 @@ on first run, or `cd desktop && npm install` by hand); see
 npm run check
 ```
 
-**One command, about twenty seconds, and it is the only one anybody is
-asked to run.** It is a CRASH GATE: every question it asks has a right
-answer that needs no opinion about how the game should feel, so it can be
+**One command, a few seconds, and the one run after every edit.** It is a
+CRASH GATE: every question it asks has a right answer that needs no opinion
+about how the game should feel, and it never times anything, so it can be
 run after every edit instead of saved up for the end. Non-zero exit means
 something is broken.
 
@@ -44,10 +45,57 @@ something is broken.
 |---|---|
 | `types` | `tsc --noEmit` over the tree — the broadest net, and what catches a renamed key |
 | `art` | every Foundry head the code names has a drawing in `docs/turret-concepts/` — the trap a turret rename walks into |
+| `cells` | every drawn body wears its family's accent, or the atlas refuses it at level load |
 | `docs` | every level and map document under `public/` parses and applies |
 | `worlds` | all nine worlds construct: terrain, script, core |
 | `sim` | the swarm is let out on world 1, a dozen tackers go down on its route, and a round has to connect |
+
+### The full check
+
+```bash
+npm run check:full                  # everything above, plus the clocks
+npm run check:full -- --only siege  # one clock, for iterating on it (frames, siege, scale, maps)
+```
+
+**The same gate plus the clocks, and it costs what a late wave costs to
+simulate, many times over — a minute or two.** Run it before a change to
+the sim is called done, and any time something feels slow. Every clock is
+read the same way: a scenario that has to have HAPPENED before the number
+is believed, then the step against the budget a frame leaves after the
+draw (`SIM_BUDGET_MS`), and on a failure the sim's own phase table, which
+is the only form of the number that says why.
+
+| | |
+|---|---|
 | `frames` | the ladder's heaviest three waves, on a board built out as far as the map allows, timed — one sim step has to fit its share of a 60fps frame |
+| `siege` | the LATE board: nine thousand turrets, a hundred and fifty modules bought off the real M and G tables, every tier and a boss streaming in through the doors, the rest of the board laid down mid-fight — and the swarm actually killing turrets while the clock runs |
+| `scale` | the same siege at three, six, nine and twelve thousand turrets, so the cost of the board reads as a curve |
+| `maps` | the siege on every world, because a choke is a different fight from an open field |
+
+**`scale` and `maps` are held to 25ms a step for now, not to the 11.7ms
+budget.** With every fix to date in, the siege at nine thousand turrets runs
+15 to 20ms a step on five of the nine worlds and at the 9k rung whenever a
+boss is alive, and in every case it is `projectiles` — 17 to 31 thousand
+shots in flight — at 70% of the step. That is known and not yet fixed
+(`SIEGE_LENIENT_MS` in `scripts/check.mjs` says what to set back when it
+is). `siege` itself is held to the budget.
+
+**Why `siege` exists beside `frames`.** The frames scenario FAILS if the
+core is hurt or half the board is eaten — so a board that passes it is a
+board where nothing died, and it is blind to everything the sim does when
+a turret dies. Two such costs got through it and lagged a real wave-50
+board to 69% of real time (a death re-composing every standing turret's
+stats; a death rebuilding the whole aim index) while `frames` read 4ms a
+step. The siege requires deaths in the window or it refuses to report a
+time. Measured on one base with only those fixes reverted, it fails at
+47% of steps over the frame with the phase table pointing at the cost;
+with them in, it passes at 3%.
+
+**Its clock is the least of three medians**, not a mean: this board runs
+close to the budget on purpose, and machine noise only ever runs one way,
+so the least of several medians is the reading that does not flip on a
+busy laptop. The share of steps over a whole frame is printed beside it
+and gated only at a third, which is unplayable anywhere.
 
 The sim leg **asks for a hit, not a kill**. A hit is the whole pipeline in
 one fact — a body was made, it moved, a turret found it, a round reached it
@@ -56,8 +104,8 @@ tunes a price or a hit point. It runs on a fixed seed (the sim rolls off
 `Math.random` directly, so an unseeded gate would be a coin flip), and it
 stops the moment the round lands, which is usually about five seconds in.
 
-The frames leg is the one that **asks how fast**, and the reason the gate
-is twenty seconds rather than ten. It stands up the worst honest hour of a
+The frames leg is the one that **asks how fast** at an ordinary late wave.
+It stands up the worst honest hour of a
 campaign — waves 34 to 36 at the count the top of the ladder sends them at,
 every body rolled independently out of all twenty-eight T1-4 kinds, fed in
 through the map's own mouths and given four seconds to walk into a line of
@@ -343,7 +391,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   (`currentBalanceDoc`) so neither admin page can wipe the other's afternoon
 - `components/Knob.tsx` — the dashboard's one slider-plus-field dial, shared
   by Balance and Rarities
-- `components/Unlocks.tsx` — its **second tab**: every turret, mod, relic,
+- `components/Codex.tsx` — its **second tab**: every turret, mod, relic,
   rule and map in the game on one page with a strip of filters over it —
   **turrets, mods, relics, mutators, maps**, the order a player thinks in,
   walking outward from the thing on the board to the world round it. The
@@ -702,7 +750,7 @@ chance riding every turret placed from now on, bought by the fistful off
 **late game's** answer: a rule over the whole board, bought once off **G**,
 every one of them something the board could not do before.
 
-They used to be one file behind a `scope` field, and the Unlocks board had
+They used to be one file behind a `scope` field, and the codex had
 one tab called *Upgrades* holding both of them plus the tech tree's rungs —
 three unrelated things under a word none of the three is called. Two
 categories, two files, two odds tables, two buttons, two tabs.
@@ -780,7 +828,7 @@ the shelf has to be able to keep reading it after they buy the fourth — and
 what a copy buys is the **effect**: three copies of +8% damage is +24% on
 every turret that wins the same one roll in three. Every mod's upside is
 linear in copies (`1 + (m − 1) × n`) and what it **charges** never scales: a
-second Sniper does not take another ninety per cent of the turret's health.
+second Sniper does not take another half of the turret's health.
 It is still one bit on the turret, so the strength is read off the run's
 ledger when the spec is composed (`applyTurretMods`) — which is how a copy
 bought mid-wave reaches the turrets already standing.
@@ -808,8 +856,8 @@ a relic.
 | **Prototype Chassis** | Rare | 10% | +12% damage, +12% fire rate |
 | **Bulwark Plating** | Rare | 10% | more health, armour and repair at once |
 | **Sabot Rounds** | Rare | 10% | +1 pierce and harder rounds with it |
-| **Giant** | **Ultra** | **per CARD** | vastly more health and damage, far less range, twice the footprint — and it eats the card |
-| **Sniper** | **Ultra** | | reaches four times as far and dies to a stiff breeze |
+| **Giant** | **Ultra** | **per CARD** | much more health and damage, far less range, twice the footprint — and it eats the card |
+| **Sniper** | **Ultra** | | outranges what it can, and folds when anything reaches it |
 | **All Round** | **Ultra** | | simply better at everything |
 
 (The exact steps are authored in `game/mods.ts` and turnable from the admin
@@ -923,10 +971,20 @@ once; a mod chip carries an ×3 when the run has three.
 
 **An ultra MOD is the turret changing species**, and that is the whole
 argument for the band: one draw in fifty, so when one lands it has to be
-worth the fifty. A **Sniper** reaches four times as far and dies to a stiff
-breeze; an **All Round** is simply a better turret at no cost at all; a
-**Giant** is twice the building and eats a whole card to be it. A "+15%" at
-the top band would be a betrayal of the border it wears.
+worth the fifty. A **Sniper** outranges what it can and folds when anything
+reaches it; an **All Round** is simply a better turret at no cost at all; a
+**Giant** is twice the building and eats a whole card to be it. What makes
+an ultra an ultra is that the turret is a **different thing** afterwards.
+
+**The ultras were cut to a third when the copies started counting.** They
+were authored as once-only prizes, each figure chosen to be worth a draw in
+fifty exactly once. Made linear in copies they ran away at the third — a
+Sniper reaching ten times as far, an All Round at four times damage and
+rate and health for no price at all. Each per-copy step is now about a
+third of what it shipped at, which puts **three** copies back at the number
+the mod was designed to be worth **once**. The prices did not shrink with
+them — a price that scaled would make a build impossible to repeat — with
+one exception, the Sniper's, noted below.
 
 **An ultra RELIC is the run stopping scaling like a run.** Ascendancy turns
 a 1% ultra-turret draw into 20% — the run stops hoping for a 4×4 and starts
@@ -938,9 +996,16 @@ with the hull already inside the line.
 **An ultra mod may charge for its size.** The catalog buffs the player on
 balance — weakening the swarm is the mutators' half of the game — but a
 top-band mod is allowed to gut a stat the build does not want, which is
-what makes it a build and not a bonus. That is the Sniper's tenth of a
-health pool and the Giant's half a range. **A relic never charges**: at
+what makes it a build and not a bonus. That is the Sniper's halved health
+pool and the Giant's half a range. **A relic never charges**: at
 150,000 the price is the cost.
+
+The Sniper's price used to be a **tenth** of the pool, and that was only
+ever payable because of the reach it came with: a turret that outranged the
+thing walking at it was never hit, so the price was one it rarely paid. At
+half again the reach it stands well inside the swarm's, and the same tenth
+would be a mod that simply dies. A trap is not a nerf, so the price came
+down with the upside.
 
 **Repair is a percentage of the turret's OWN ceiling, per second.**
 `Sim.resolveTower` multiplies `modRegen(mask)` by that turret's `hpMax`
@@ -1175,8 +1240,9 @@ the rot **identical under ten bodies and under three thousand** — the one
 mechanic on a field built for twenty thousand of them that did not care how
 many there were — and, being a fixed number of hit points a second, it aged
 out entirely against a pool that grows by multipliers. A late-run turret
-carrying Giant and Bulwark is a quarter of a million health, which at the old
-ceiling was eighty minutes of rot on a run that lasts twelve. The decay is
+carrying Giant and Bulwark is past fifty thousand health with one copy of
+each and past two hundred thousand on a deep stack, which at the old ceiling
+was tens of minutes of rot on a run that lasts twelve. The decay is
 the only bound now, and it is a self-correcting one. The counter is killing
 them, or out-mending them.
 
@@ -1330,8 +1396,9 @@ right answer, because that judgement is the design and not a number a
 check can hold.
 
 **So the loop for anyone working in here is: implement, `npm run check`,
-commit.** That is the whole of the assurance asked for — see
-[The quick check](#the-quick-check).
+commit — and `npm run check:full` before a change to the sim is called
+done.** That is the whole of the assurance asked for — see
+[The quick check](#the-quick-check) and [The full check](#the-full-check).
 
 **DO NOT RUN FULL SIM GAME CYCLES.** `npm run playtest` plays a whole map
 through the real sim and takes tens of minutes to do it — a single

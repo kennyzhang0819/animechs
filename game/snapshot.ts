@@ -101,7 +101,7 @@ type Barrel = { continuous?: Cont; fxColor?: RGB };
 const TOWER_F = 30;
 /** ...a dome, a shot of ours, and a shot of theirs */
 const DOME_F = 10;
-const PROJ_F = 9;
+const PROJ_F = 10;
 const SHOT_F = 7;
 /** ...and the core, which there is exactly one of */
 const CORE_F = 8;
@@ -301,6 +301,7 @@ export function packSnapshot(w: Packable, out: Snapshot, withPts = false): Snaps
     P[o + 6] = p.age;
     P[o + 7] = p.life;
     P[o + 8] = p.bare ? 1 : 0;
+    P[o + 9] = p.alt ? 1 : 0;
   }
 
   // ---- ...and theirs ----
@@ -472,13 +473,14 @@ class DomeMirror implements ShieldTowerView {
 class ProjMirror implements ProjectileView {
   x = 0; y = 0; vx = 0; vy = 0;
   kind: TowerKind = TOWER_KINDS[0];
-  frag = false; age = 0; life = 0; bare = false;
+  frag = false; age = 0; life = 0; bare = false; alt = false;
   read(P: Float32Array, o: number): void {
     this.x = P[o]; this.y = P[o + 1]; this.vx = P[o + 2]; this.vy = P[o + 3];
     this.kind = TOWER_KINDS[P[o + 4]] ?? TOWER_KINDS[0];
     this.frag = P[o + 5] !== 0;
     this.age = P[o + 6]; this.life = P[o + 7];
     this.bare = P[o + 8] !== 0;
+    this.alt = P[o + 9] !== 0;
   }
 }
 

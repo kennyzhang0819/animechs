@@ -81,7 +81,12 @@ import type { Sim } from "./sim";
 import type { SimHost } from "./simhost";
 import { makeHost } from "./workerhost";
 import type { World } from "./simreads";
-import type { InspectPanel } from "./simreport";
+import {
+  STEP_BUDGET_MS,
+  type InspectPanel,
+  type PhaseRead,
+  type ProfileRead,
+} from "./simreport";
 // the minimap is draw-side too, so it reads the world through the same
 // one window the renderer does (simview.ts)
 import type { CoreView, SimView, TowerView } from "./simview";
@@ -391,7 +396,9 @@ function paint(): Promise<void> {
 // What made cover the floor was that anything past it shows empty space.
 // Every map's rim is rock, and the darkness inside the hills
 // (Renderer.drawDarkness, Mindustry's own darkness buffer) takes that
-// rock to black on its own, so the world ends in a soft edge and the void
+// rock to black on its own (DARK_RIM holds the boundary at the full value
+// even though inland hills stop short of it), so the world ends in a soft
+// edge and the void
 // beyond it reads as deliberate rather than as a missing chunk of map.
 // That is what pays for this floor; the haze that used to be laid over
 // the rim on top of it is gone.
@@ -756,6 +763,8 @@ export class Game {
   private panMoved = 0;
   /** the Controls tab's multiplier on PAN_RATE, keys and edges alike */
   private panSpeed = 1;
+  /** the Controls tab's zoom direction — see Progress.invertZoom */
+  private invertZoom = false;
   /**
    * WHO WEARS A HEALTH BAR ON THE FIELD — the Interface tab's two knobs,
    * one a side (setHealthBars). They govern units and buildings alike:
@@ -1027,28 +1036,49 @@ export class Game {
     e.preventDefault();
     const r = this.uiCanvas.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return; // zero-sized: nothing to aim at
-    // mac trackpad pinches arrive as ctrl+wheel; real mouse wheels tick in
-    // coarse integer notches (or line-mode deltas). Everything else is
-    // two-finger trackpad scroll, which pans the camera instead of zooming.
+    /*
+     * ONE EVENT, TWO DEVICES. A mouse wheel and a two-finger trackpad
+     * scroll arrive as the SAME WheelEvent — macOS puts no device on it —
+     * and they want opposite things: the wheel is the only zoom a mouse
+     * has, and two fingers are the only pan a laptop has (there is no
+     * middle button on a trackpad to drag with, see onMouseDown). So this
+     * has to guess, and the guess is written to fail SAFE FOR THE MOUSE:
+     * it looks for evidence of a TRACKPAD and zooms when it finds none.
+     *
+     * The evidence is a delta a wheel cannot produce — a FRACTIONAL step,
+     * or any horizontal component at all. A notch is a whole number of
+     * pixels straight up or down; a pair of fingers on glass is neither.
+     *
+     * IT USED TO TEST THE SIZE OF THE STEP INSTEAD (|deltaY| >= 40 for "a
+     * real notch") and that is what made a mouse pan: a smooth-scrolling
+     * mouse sends small steps, they failed the size test, and the view
+     * slid up and down when it should have zoomed. Size says nothing
+     * about the device — a trackpad flick is enormous and a fine wheel is
+     * tiny — so the size test is gone and the SHAPE of the delta decides.
+     *
+     * A pinch is ctrl+wheel with tiny deltas and always zooms, whatever
+     * the rest of this says; deltaMode 1 counts lines, not pixels.
+     */
     const pinch = e.ctrlKey;
-    const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY; // lines -> px
-    const notchy =
-      e.deltaMode !== 0 ||
-      (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 40);
-    if (pinch || notchy) {
-      const before = this.mouseWorld(e);
-      this.zoom = clamp(
-        this.zoom * Math.exp(-dy * (pinch ? 0.012 : 0.0015)),
-        this.minZoom(),
-        ZOOM_MAX,
-      );
-      // keep the world point under the cursor fixed
-      this.tlx = before.x - ((e.clientX - r.left) / r.width) * this.visW();
-      this.tly = before.y - ((e.clientY - r.top) / r.height) * this.visH();
-    } else {
+    const trackpad =
+      e.deltaMode === 0 && (e.deltaX !== 0 || !Number.isInteger(e.deltaY));
+    if (!pinch && trackpad) {
       this.tlx += (e.deltaX / r.width) * this.visW();
       this.tly += (e.deltaY / r.height) * this.visH();
+      this.clampCamera();
+      return;
     }
+    let dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY; // lines -> px
+    if (this.invertZoom) dy = -dy;
+    const before = this.mouseWorld(e);
+    this.zoom = clamp(
+      this.zoom * Math.exp(-dy * (pinch ? 0.012 : 0.0015)),
+      this.minZoom(),
+      ZOOM_MAX,
+    );
+    // keep the world point under the cursor fixed
+    this.tlx = before.x - ((e.clientX - r.left) / r.width) * this.visW();
+    this.tly = before.y - ((e.clientY - r.top) / r.height) * this.visH();
     this.clampCamera();
   };
   private readonly onMouseDown = (e: MouseEvent): void => {
@@ -1962,6 +1992,11 @@ export class Game {
     this.panSpeed = Number.isFinite(mult) && mult > 0 ? mult : 1;
   }
 
+  /** the Controls tab's Reverse mouse zoom switch — live, mid-run */
+  setInvertZoom(on: boolean): void {
+    this.invertZoom = on;
+  }
+
 
   /**
    * The Interface tab's health-bar knobs, both sides at once — they are
@@ -2194,20 +2229,34 @@ export class Game {
   profile(on: boolean): void {
     this.host.profile(on);
   }
-  /** the clock's last published reading — empty until it has been armed */
-  profileRead(): { name: string; ms: number }[] {
-    return this.world.report.phases ?? [];
+  /**
+   * THE CLOCK'S LAST PUBLISHED READING — null until it has been armed.
+   * The whole thing, phases and census together: the console prints them
+   * as one block because reading either alone is how a wrong answer gets
+   * reached (see Sim.profileRead).
+   */
+  profileFull(): ProfileRead | null {
+    return this.world.report.profile;
   }
-  /** the four heaviest phases as one line for the readout, or "" while the clock is off */
+  /** just the phases, for the callers that only want the table */
+  profileRead(): PhaseRead[] {
+    return this.world.report.profile?.phases ?? [];
+  }
+  /** the three heaviest phases as one line for the readout, or "" while the clock is off */
   private phaseLine(): string {
-    const ph = this.profileRead();
-    if (ph.length === 0) return "";
-    return ph
-      .filter((p) => p.ms > 0)
-      .sort((a, b) => b.ms - a.ms)
-      .slice(0, 4)
-      .map((p) => `${p.name} ${p.ms.toFixed(1)}`)
+    const p = this.profileFull();
+    if (!p || p.phases.length === 0) return "";
+    const top = p.phases
+      .filter((q) => q.ms > 0)
+      .slice(0, 3)
+      .map((q) => `${q.name} ${q.ms.toFixed(1)}`)
       .join(" · ");
+    // THE STEP AND ITS WORST RIDE THE LINE TOO. The corner readout is
+    // what is being watched at the moment the board turns slow, and the
+    // mean is exactly the figure that hides a stutter — a line that
+    // printed only the top three phases would show nothing moving while
+    // the game visibly hitched
+    return `${p.ms.toFixed(1)}ms ${p.worst >= STEP_BUDGET_MS ? `(worst ${p.worst.toFixed(0)}) ` : ""}· ${top}`;
   }
 
   stats(): Stats {
@@ -3077,29 +3126,6 @@ export class Game {
       c.lineWidth = 1.5;
       const selPx = size * CELL;
       c.strokeRect(st.gx * CELL + 1, st.gy * CELL + 1, selPx - 2, selPx - 2);
-    }
-
-    // THE INSPECT MARK (Sim.setInspectUnit / setInspectShieldTower): a
-    // bobbing arrow over the tapped target, so which body the panel is
-    // talking about is never in doubt. It wears the SELECTION's amber and
-    // not a hostile red, because it is a cursor and not an order. Rides
-    // sim time, so it holds still under pause and keeps pace at 4x exactly
-    // as its target does
-    const mark = view.inspectMark;
-    if (mark) {
-      const bob = Math.sin(view.time * 6) * 3;
-      const ax = mark.x, ay = mark.top - 12 + bob;
-      c.beginPath();
-      c.moveTo(ax, ay + 10); // the tip, pointing down at the target
-      c.lineTo(ax - 8, ay - 2);
-      c.lineTo(ax - 3.5, ay - 2);
-      c.lineTo(ax - 3.5, ay - 11);
-      c.lineTo(ax + 3.5, ay - 11);
-      c.lineTo(ax + 3.5, ay - 2);
-      c.lineTo(ax + 8, ay - 2);
-      c.closePath();
-      c.fillStyle = "#FFD37F";
-      c.fill();
     }
 
     // WHAT EVERY STRUCTURE IS DOING, as a stack of bars over it (drawBars)

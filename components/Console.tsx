@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { Game, UiState } from "@/game/game";
+import { profileLines } from "@/game/simreport";
 
 /**
  * THE IN-GAME CONSOLE. Backquote (`) opens it over anything, in ANY build
@@ -41,7 +42,10 @@ const HELP: readonly string[] = [
   "profile [on|off]     arm the sim's phase clock; the heaviest phases show up here live",
   "                     the figures AVERAGE from the moment you arm it — `profile on` again",
   "                     at the slow part clears the tally and measures only from there",
-  "phases               EVERY phase of the step, heaviest first (the line above shows four)",
+  "phases               the whole reading, copied to the clipboard: the window, the board,",
+  "                     the broad-phase pad, and every phase with its worst step, the",
+  "                     candidates it walked and what one of them cost. Paste it whole —",
+  "                     the times alone cannot say WHY a pass is dear, and the rest can",
   "fps [on|off]         the frame counter (sim · draw · bodies · thread in dev builds)",
   "wave N               skip to wave N on the field this instant",
   "effects [on|off]     ambient effects (dressing; weapons always show)",
@@ -124,21 +128,34 @@ export default function GameConsole({ host }: { host: ConsoleHost }) {
       case "phases": {
         const gm = need();
         if (!gm) break;
-        // the corner line has room for four; a slow step usually hides in
-        // the tail, so this prints the lot with the total to check it against
-        const ph = gm.profileRead();
-        if (ph.length === 0) {
+        // THE WHOLE BLOCK, not a table of times: the window, the board,
+        // the pad and then the phases with their per-candidate cost. A
+        // phase table on its own cannot say whether a pass is dear
+        // because it was handed more work or because each piece of work
+        // got dearer, and those have opposite fixes (simreport.ts
+        // profileLines says the rest)
+        const p = gm.profileFull();
+        if (!p || p.phases.length === 0) {
           say("phase clock is off — run `profile` first, then play through the slow part", "err");
           break;
         }
-        let total = 0;
-        for (const p of ph) total += p.ms;
-        for (const p of [...ph].sort((a, b) => b.ms - a.ms)) {
-          if (p.ms < 0.02) continue;
-          const share = total > 0 ? (p.ms / total) * 100 : 0;
-          say(`${p.name.padEnd(14)} ${p.ms.toFixed(2)}ms  ${share.toFixed(0)}%`);
-        }
-        say(`${"step".padEnd(14)} ${total.toFixed(2)}ms  (the budget is 16.7)`);
+        const block = profileLines(p);
+        for (const l of block) say(l);
+        // ...AND ONTO THE CLIPBOARD, because the block exists to be
+        // handed to somebody. Selecting twenty lines out of a console
+        // overlay with a mouse, in a game, mid-run, is exactly the
+        // friction that turns a measurement into a paraphrase
+        // `?.` on the writeText alone would leave an undefined to call
+        // .then on wherever the page is not a secure context, which is a
+        // crash in the one command a slow board is being read with
+        const copied = navigator.clipboard?.writeText(block.join("\n"));
+        if (copied)
+          void copied.then(
+            () => say("(copied)"),
+            () => {
+              /* refused: the lines are above to select by hand */
+            },
+          );
         break;
       }
       case "fps": {
@@ -231,8 +248,13 @@ export default function GameConsole({ host }: { host: ConsoleHost }) {
         {lines.map((l, i) => (
           <div
             key={i}
+            // WHITESPACE IS CONTENT HERE. `phases` prints a column table
+            // padded with spaces, and HTML collapses runs of them — the
+            // block that reads straight in the clipboard would arrive on
+            // screen as one ragged smear without this
             className={
-              l.kind === "in" ? "text-[#FAFAFA]" : l.kind === "err" ? "text-[#F87171]" : "text-[#D4D4D8]"
+              "whitespace-pre-wrap " +
+              (l.kind === "in" ? "text-[#FAFAFA]" : l.kind === "err" ? "text-[#F87171]" : "text-[#D4D4D8]")
             }
           >
             {l.kind === "in" ? `> ${l.text}` : l.text}

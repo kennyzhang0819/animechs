@@ -12,8 +12,9 @@
  * rim so the world ended in a soft edge (Mindustry's borderDarkness). It
  * is gone: every map's rim is rock now, and the darkness inside the hills
  * (Renderer.drawDarkness, Mindustry's own darkness buffer) already takes
- * the rim to black on its own, so the haze was a second fade over the
- * first.
+ * the rim to black on its own — DARK_RIM keeps that true even though an
+ * inland hill now stops short of black — so the haze was a second fade
+ * over the first.
  */
 
 /**

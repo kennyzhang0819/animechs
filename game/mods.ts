@@ -103,9 +103,25 @@ import { armored, faster, piercing, reaching, stronger } from "./upgrades";
  * the band a run banks by the fistful. So every unnamed tick is half what
  * it shipped at — five per cent and twelve rather than ten and
  * twenty-five — and the SECOND copy is where a player gets back to the
- * number they used to buy with the first. The rares and the ultras were
- * left alone: at a tenth of a draw and a fiftieth, a run holding three of
- * one has earned whatever that is.
+ * number they used to buy with the first.
+ *
+ * AND THEN THE ULTRAS WERE CUT TO A THIRD, for the same reason one step
+ * later. "A run holding three of one has earned whatever that is" was the
+ * rule here, and it does not survive contact with what three of one
+ * actually came to: the ultras were authored as ONCE-ONLY prizes, back
+ * when a copy bought better odds rather than a bigger number, and every
+ * figure in them was chosen to be worth a draw in fifty exactly once.
+ * Made linear in copies they became nonsense at the third — a sniper
+ * reaching TEN times as far, an all round at four times damage and four
+ * times rate and four times health for no price at all.
+ *
+ * So each ultra's per-copy step is about a THIRD of what it shipped at,
+ * which puts THREE copies back at the number the mod was designed to be
+ * worth once. One copy is still plainly an ultra and still changes what
+ * the turret is; it is the stack that no longer runs away. The PRICES did
+ * not shrink with the upsides — a price that scaled would make a build
+ * impossible to repeat (see above) — with one exception, the sniper's,
+ * which was only ever payable because of the reach it came with (below).
  *
  * ONLY THE RARE AND ULTRA MODS HAVE NAMES. A common is not a character,
  * it is a tick: "+10% damage" IS its name, and a made-up one over the top
@@ -124,10 +140,12 @@ import { armored, faster, piercing, reaching, stronger } from "./upgrades";
  *
  * AN ULTRA MOD IS THE TURRET CHANGING SPECIES. One draw in fifty
  * (MOD_WEIGHTS), so when one lands it has to be worth the fifty: a
- * SNIPER that reaches four times as far and dies to a stiff breeze, an
- * ALL ROUND that is simply better at everything, and a GIANT that is
- * twice the building and eats the whole card to be it. A "+15%" at the
- * top band would be a betrayal of the border it wears.
+ * SNIPER that outranges what it can and folds when anything reaches it,
+ * an ALL ROUND that is simply better at everything, and a GIANT that is
+ * twice the building and eats the whole card to be it. What makes an
+ * ultra an ultra is that the turret is a DIFFERENT THING afterwards, and
+ * all three still are at one copy; the numbers came down (see above) but
+ * none of the three identities did.
  */
 
 /**
@@ -483,10 +501,10 @@ const TURRET_MODS: readonly ModDef[] = [
   {
     id: "giant",
     name: "Giant",
-    tweak: "+500% health, +200% damage, +10 armor, −50% range, twice the footprint",
+    tweak: "+150% health, +75% damage, +3 armor, −50% range, twice the footprint",
     // the short sight and the footprint are the PRICE and never scale, so
     // they read the same at every count — see `scale`
-    total: bothOf(pctOf(6, "health"), pctOf(3, "damage"), flatOf(10, "armor"), () =>
+    total: bothOf(pctOf(2.5, "health"), pctOf(1.75, "damage"), flatOf(3, "armor"), () =>
       "−50% range, twice the footprint"),
     rarity: "ultra",
     glyph: "giant",
@@ -495,37 +513,41 @@ const TURRET_MODS: readonly ModDef[] = [
     // the loosest of the three because it costs the whole card to happen
     chance: 0.05,
     blurb:
-      "A card has a chance to come out GIANT instead: one building, twice the size, six times the health, ten more plating and triple the damage — but it sees half as far, so it has to be put where the swarm is already coming.",
+      "A card has a chance to come out GIANT instead: one building, twice the size, two and a half times the health, three more plating and nearly double the damage — but it sees half as far, so it has to be put where the swarm is already coming.",
     // THE FOOTPRINT AND THE SHORT SIGHT ARE THE PRICE AND DO NOT STACK
     // (see `scale`): copies buy a harder-hitting, tougher, better plated
     // giant standing on exactly the same ground, still seeing half as far
     // as its kind
     apply: (t, n) =>
-      bigger(armored(tougher(reaching(stronger(t, per(3, n)), 0.5), per(6, n)), 10 * Math.max(1, n)), GIANT_SCALE),
+      bigger(armored(tougher(reaching(stronger(t, per(1.75, n)), 0.5), per(2.5, n)), 3 * Math.max(1, n)), GIANT_SCALE),
     scale: GIANT_SCALE,
     solo: true,
   },
   {
     id: "sniper",
     name: "Sniper",
-    tweak: "+300% range, +200% fire rate, +100% damage, −90% health",
-    total: bothOf(pctOf(4, "range"), pctOf(3, "fire rate"), pctOf(2, "damage"), () => "−90% health"),
+    tweak: "+50% range, +50% fire rate, +25% damage, −50% health",
+    total: bothOf(pctOf(1.5, "range"), pctOf(1.5, "fire rate"), pctOf(1.25, "damage"), () => "−50% health"),
     rarity: "ultra",
     glyph: "scope",
     chance: 0.04,
     blurb:
-      "New turrets have a chance to be born SNIPER: four times the reach, triple the rate of fire and double the damage — on a tenth of the health. It kills everything it can see and dies to anything that reaches it.",
-    // the tenth of a health pool is the PRICE and is paid once, however
-    // many copies the run holds — see the header
-    apply: (t, n) => tougher(faster(reaching(stronger(t, per(2, n)), per(4, n)), per(3, n)), 0.1),
+      "New turrets have a chance to be born SNIPER: half again the reach, half again the rate of fire and a quarter more damage — on half the health. It outranges what it can, and folds the moment anything reaches it.",
+    // the halved health pool is the PRICE and is paid once, however many
+    // copies the run holds — see the header. It was a TENTH, which only
+    // ever made sense next to four times the reach: a sniper that outranged
+    // the thing walking at it was never hit, so the price was one it rarely
+    // paid. At half again the reach it is well inside the swarm's, so the
+    // same tenth would be a mod that simply dies, and a trap is not a nerf
+    apply: (t, n) => tougher(faster(reaching(stronger(t, per(1.25, n)), per(1.5, n)), per(1.5, n)), 0.5),
   },
   {
     id: "allround",
     name: "All Round",
-    tweak: "+100% damage, +100% fire rate, +100% health, +50% range, +3 pierce",
+    tweak: "+35% damage, +35% fire rate, +35% health, +15% range, +1 pierce",
     total: bothOf(
-      pctOf(2, "damage"), pctOf(2, "fire rate"), pctOf(2, "health"), pctOf(1.5, "range"),
-      flatOf(3, "pierce"),
+      pctOf(1.35, "damage"), pctOf(1.35, "fire rate"), pctOf(1.35, "health"), pctOf(1.15, "range"),
+      flatOf(1, "pierce"),
     ),
     rarity: "ultra",
     glyph: "allround",
@@ -534,11 +556,11 @@ const TURRET_MODS: readonly ModDef[] = [
     // this one is simply a better turret (see the header)
     chance: 0.03,
     blurb:
-      "New turrets have a chance to be born ALL ROUND: double damage, double rate of fire, double health, half again the reach, and the round punches through three more bodies. No cost at all — it is simply a better turret.",
+      "New turrets have a chance to be born ALL ROUND: more damage, more rate of fire, more health, a little more reach, and the round punches through one more body. No cost at all — it is simply a better turret.",
     apply: (t, n) =>
       piercing(
-        tougher(reaching(faster(stronger(t, per(2, n)), per(2, n)), per(1.5, n)), per(2, n)),
-        3 * Math.max(1, n),
+        tougher(reaching(faster(stronger(t, per(1.35, n)), per(1.35, n)), per(1.15, n)), per(1.35, n)),
+        1 * Math.max(1, n),
       ),
   },
 ];

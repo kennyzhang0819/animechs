@@ -497,6 +497,12 @@ export interface Projectile {
   // flag rather than a stats pointer keeps a projectile a flat record —
   // see bulletOf() in constants.ts
   frag: boolean;
+  // thrown by the ODD BARREL of a turret that loads two ammos
+  // (constants.ts BulletStats.alt — deluge's fire nozzle, and nothing
+  // else today), so its stats are that second bullet's rather than the
+  // turret's own. One more flag rather than a stats pointer, for the same
+  // reason `frag` is one: a projectile stays a flat record
+  alt: boolean;
   // fired by one of the SWARM's turrets (Tower.team): it flies past every
   // unit and lands on the player's structures, by the cell it is over —
   // the enemy shots' rule (updateEnemyShots) on the turrets' own bullets

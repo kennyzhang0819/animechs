@@ -365,9 +365,10 @@ export interface UnitWeapon {
    *
    * IT IS THE ONE THING ON THE FIELD THAT DOES NOT CARE HOW BIG YOU BUILT
    * IT. Every other number the swarm throws is flat, and a turret's pool
-   * is not: Giant and Bulwark (mods.ts) put a late-run gun past a quarter
-   * of a million health, which is minutes of the venom line's rot and
-   * tens of seconds of anything else. A share of the pool is the same
+   * is not: Giant and Bulwark (mods.ts) put a late-run gun past fifty
+   * thousand health with one copy of each and past two hundred thousand
+   * on a deep stack, which is minutes of the venom line's rot and tens of
+   * seconds of anything else. A share of the pool is the same
    * number of SECONDS against a tacker and against that, so the answer to a
    * Tusker is never "a bigger turret" — it is not letting one arrive.
    *

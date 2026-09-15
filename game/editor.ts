@@ -11,6 +11,7 @@ import {
   type PaletteSet,
 } from "./maps";
 import { ALL_LAYERS, Renderer, type TerrainLayers } from "./renderer";
+import { loadInvertZoom } from "./progress";
 import { canHoldSpawn, isWaterFloor } from "./terrain";
 import { WALL_DEEP, WALL_PINE, type Prop, type Terrain } from "./terrain";
 
@@ -187,6 +188,7 @@ export class MapEditor {
     private readonly map: MapData,
     atlas: HTMLCanvasElement,
   ) {
+    this.invertZoom = loadInvertZoom(); // the player's own zoom direction
     this.terrain = terrainFromMap(map);
     this.rows = this.terrain.rows;
     this.renderer = new Renderer(glCanvas, atlas);
@@ -511,27 +513,36 @@ export class MapEditor {
 
   private readonly onBlur = (): void => this.keysDown.clear();
 
+  /** the Controls tab's zoom direction, read off the save at construction */
+  private readonly invertZoom: boolean;
+
   private readonly onWheel = (e: WheelEvent): void => {
     e.preventDefault();
     const r = this.uiCanvas.getBoundingClientRect();
+    // two fingers pan and a wheel zooms, told apart the same way the field
+    // tells them apart — see Game.onWheel for why it is the SHAPE of the
+    // delta and not its size. The editor has no settings screen of its
+    // own, so it reads the player's zoom direction off the save at
+    // construction (invertZoom).
     const pinch = e.ctrlKey;
-    const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
-    const notchy =
-      e.deltaMode !== 0 ||
-      (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 40);
-    if (pinch || notchy) {
-      const before = this.mouseWorld(e);
-      this.zoom = clamp(
-        this.zoom * Math.exp(-dy * (pinch ? 0.012 : 0.0015)),
-        this.minZoom(),
-        ZOOM_MAX,
-      );
-      this.tlx = before.x - ((e.clientX - r.left) / r.width) * this.visW();
-      this.tly = before.y - ((e.clientY - r.top) / r.height) * this.visH();
-    } else {
+    const trackpad =
+      e.deltaMode === 0 && (e.deltaX !== 0 || !Number.isInteger(e.deltaY));
+    if (!pinch && trackpad) {
       this.tlx += (e.deltaX / r.width) * this.visW();
       this.tly += (e.deltaY / r.height) * this.visH();
+      this.clampCamera();
+      return;
     }
+    let dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+    if (this.invertZoom) dy = -dy;
+    const before = this.mouseWorld(e);
+    this.zoom = clamp(
+      this.zoom * Math.exp(-dy * (pinch ? 0.012 : 0.0015)),
+      this.minZoom(),
+      ZOOM_MAX,
+    );
+    this.tlx = before.x - ((e.clientX - r.left) / r.width) * this.visW();
+    this.tly = before.y - ((e.clientY - r.top) / r.height) * this.visH();
     this.clampCamera();
   };
 

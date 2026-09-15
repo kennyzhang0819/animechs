@@ -434,27 +434,60 @@ uniform vec4 uCam;    // camera x, y, w, h in Mindustry world units
 uniform vec2 uInv;    // 1 / (w, h): a UV step of one world unit
 uniform float uTime;  // Mindustry ticks
 uniform float uDp;
+// THE RIM'S WAVE, and the whole of what makes one field look unlike
+// another: (period, amplitude, kink, snap). period and amplitude are
+// world units — how far apart the crests sit and how far the sampling is
+// thrown. KINK slides the crest from a sine (0) to a TRIANGLE (1): a
+// triangle's slope jumps at every peak, and that corner is what puts a
+// zigzag on the outline, which no amplitude of sine can do. SNAP, over
+// zero, quantises the phase to that many ticks so the pattern RE-ROLLS
+// instead of crawling. A shield breathes; a cloak crackles; same shader
+uniform vec4 uZig;
+// the whole blit's opacity — a shield stands at 1, a cloak reads under it
+uniform float uAlpha;
+// the INTERIOR's share of that. A shield is a VOLUME — the wash is what
+// says the ground inside it is sheltered — so it stands at 1. A cloak is
+// not a volume and has nothing to shelter: it is a line drawn round the
+// bodies that went dark, and a wash inside it would say the opposite of
+// what the mechanic does. At 0 the rim is the whole drawing
+uniform float uFill;
+// how far outside the outline the rim is found, in world units. Mindustry's
+// is a flat 2 and the shields keep it: a shield carries an interior wash,
+// so its rim can thin out at low zoom and the shape still reads. A ring
+// with NO interior has only the line, so the field pass resolves this from
+// the zoom and keeps the line a constant thickness on screen
+uniform float uEdge;
 in vec2 vUV;
 out vec4 o;
 const float ALPHA = 0.18;
-const float EDGE = 2.0;
+const float TAU = 6.2831853;
 // fills at or above this keep Mindustry's travelling diagonals; below it
 // (but still over the 0.9 the edge detect wants) the interior gets the
 // same flat wash with no hatch crossing it — see the SHIELD_PLAIN note
 const float HATCH_MIN = 0.97;
+// a triangle wave over [-1, 1] on the SAME period as sin, so uZig.x reads
+// the same either side of the kink
+float tri(float x) { return abs(fract(x / TAU) * 2.0 - 1.0) * 2.0 - 1.0; }
+float wave(float x) { return mix(sin(x), tri(x), uZig.z); }
 void main() {
   vec2 T = vUV;
   vec2 coords = vec2(T.x * uCam.z + uCam.x, (1.0 - T.y) * uCam.w + uCam.y);
-  T += vec2(sin(coords.y / 3.0 + uTime / 20.0), sin(coords.x / 3.0 + uTime / 20.0)) * uInv;
+  // the phase either DRIFTS (a field breathing) or SNAPS (a field
+  // crackling). The golden angle between snaps is what keeps successive
+  // rolls from reading as steps of one animation: each looks unrelated
+  // to the last, which is what an electrical field does and a wobble
+  // never can
+  float ph = uZig.w > 0.0 ? floor(uTime / uZig.w) * 2.3999632 : uTime / 20.0;
+  T += vec2(wave(coords.y / uZig.x + ph), wave(coords.x / uZig.x + ph)) * uZig.y * uInv;
   vec4 color = texture(uTex, T);
   vec4 maxed = max(max(max(
-    texture(uTex, T + vec2(0.0, EDGE) * uInv),
-    texture(uTex, T + vec2(0.0, -EDGE) * uInv)),
-    texture(uTex, T + vec2(EDGE, 0.0) * uInv)),
-    texture(uTex, T + vec2(-EDGE, 0.0) * uInv));
+    texture(uTex, T + vec2(0.0, uEdge) * uInv),
+    texture(uTex, T + vec2(0.0, -uEdge) * uInv)),
+    texture(uTex, T + vec2(uEdge, 0.0) * uInv)),
+    texture(uTex, T + vec2(-uEdge, 0.0) * uInv));
   if (color.a < 0.9 && maxed.a > 0.9) {
     // maxed.a * 100 saturates: the rim is drawn at full opacity
-    o = vec4(maxed.rgb, 1.0);
+    o = vec4(maxed.rgb, 1.0) * uAlpha;
   } else if (color.a > 0.5) {
     // Mindustry tests "> 0" here, over fills that are hard-edged
     // polygons. These fills are one disc sprite, antialiased in the sheet
@@ -470,7 +503,7 @@ void main() {
           + sin(coords.x / uDp / 5.0) * 3.0
           + sin(coords.y / uDp / 5.0) * 3.0
           + uTime / 4.0, 10.0) < 2.0) rgb *= 1.65;
-    o = vec4(rgb * ALPHA, ALPHA);
+    o = vec4(rgb * ALPHA, ALPHA) * uAlpha * uFill;
   } else {
     o = vec4(0.0);
   }
@@ -492,6 +525,54 @@ const SHIELD_DP = 1;
  */
 const SHIELD_PLAIN = 0.94;
 /**
+ * The shield rim's wave (SHIELD_FS uZig): Mindustry's own gentle sine, one
+ * world unit deep on a 2*pi*3-unit period, drifting. Kink 0 and snap 0 are
+ * what make the shader's `wave` collapse back to the plain `sin` this pass
+ * has always run — the shields are not changed by any of this, they simply
+ * name what they were already doing.
+ */
+const SHIELD_ZIG = new Float32Array([3, 1, 0, 0]);
+/**
+ * THE ENERGY FIELD'S RIM, and it is the same shader doing something else
+ * entirely: a full triangle (kink 1) at a wide period and a deep throw, on
+ * a phase that re-rolls ten times a second rather than drifting. A shield
+ * breathes; this crackles, because what it encloses is not a wall but a
+ * body's REACH — every structure inside takes the pulse and rolls for a
+ * short (sim.ts, case "field"), and the line has to say electrical.
+ *
+ * THE TEETH ARE AUTHORED IN SCREEN PIXELS, not world units, and resolved
+ * against the zoom every frame (blitShields). A tooth measured in world
+ * units goes sub-pixel the moment the camera pulls back, and a rim whose
+ * teeth are finer than the pixels under it is not a zigzag — it is a
+ * shimmer, and a crawling one.
+ */
+const FIELD_TOOTH_PX = 42;
+const FIELD_DEPTH_PX = 15;
+/** the rim's thickness on SCREEN (SHIELD_FS uEdge), for the same reason the
+ *  teeth are a screen size: the line is the whole drawing, so it cannot be
+ *  allowed to thin away as the camera pulls back */
+const FIELD_EDGE_PX = 4;
+/** Mindustry's own flat rim reach, which the shields keep unchanged */
+const SHIELD_EDGE = 2;
+/** ticks between re-rolls of the crackle (SHIELD_FS uZig.w) */
+const FIELD_SNAP = 6;
+/**
+ * How far under a shield the energy field reads (SHIELD_FS uAlpha).
+ *
+ * It sits higher than it looks, because the rim is the ONLY mark the field
+ * makes (FIELD_FILL): there is no wash under it carrying half the reading,
+ * so the line has to hold the shape on its own.
+ */
+const FIELD_ALPHA = 1;
+/**
+ * No interior wash (SHIELD_FS uFill). A shield's wash says the ground
+ * inside it is SHELTERED; this ring means the exact opposite — everything
+ * inside is being shot — and forty-five tiles of lit ground over a lane
+ * full of turrets is a screen of wash with a battle somewhere underneath.
+ * The boundary is the whole message, so the boundary is the whole drawing.
+ */
+const FIELD_FILL = 0;
+/**
  * The scene's clear colour — the void the map sits in, and what the
  * shield pass has to hand back after borrowing the clear for its own
  * buffer.
@@ -505,7 +586,10 @@ const SHIELD_PLAIN = 0.94;
  * IT IS PURE BLACK BECAUSE THE MAP'S OWN EDGE ALREADY IS. Every campaign
  * map is walled in, and the inside of a wall mass saturates to opaque
  * black a few cells deep (DARK_RADIUS, Mindustry's addDarkness) — so the
- * last thing the map draws at its rim is #000000. This was #0B0B0B, two
+ * last thing the map draws at its rim is #000000. An inland range stops
+ * short of black now (DARK_MAX) so its rock can still be read; the RIM is
+ * held at the full value for this reason (DARK_RIM), which is the same
+ * requirement the paragraph below states, met from the other side. This was #0B0B0B, two
  * levels lighter, and the difference drew a crisp rectangle around the
  * whole board: the eye cannot read either shade as a colour but it reads
  * the HARD EDGE between them instantly, which told the player exactly
@@ -564,11 +648,14 @@ const KIND_SEG_ART: readonly (SegmentArt | null)[] = UNIT_KINDS.map((k) => SEGME
 const KIND_SEGS: readonly (SegmentSpec | null)[] = UNIT_KINDS.map((k) => UNIT_STATS[k].segments ?? null);
 /** the held beam or charged shot each kind carries (UNIT_HELD), null for the rest */
 const KIND_HELD = UNIT_KINDS.map((k) => UNIT_HELD[k]);
-/** the kinds whose weapon is an energy field: the orbit is drawn round them always */
+/** the kinds whose weapon is an energy field (livewire4): the orb is drawn
+ *  on them always, and the REACH is drawn as a field ring (drawFieldRings) */
 const KIND_FIELD = UNIT_KINDS.map((k): null | { range: number; color: RGB } => {
   const w = UNIT_WEAPONS[k].find((x) => x.fx === "field");
   return w ? { range: w.range, color: w.fieldColor ?? PAL.heal } : null;
 });
+/** is any field-caster on the roster? the ring pass is skipped when not */
+const HAS_FIELD = KIND_FIELD.some(Boolean);
 /** the naval wake each kind drags, null for everything that is not a hull */
 const KIND_WAKE = UNIT_KINDS.map((k) => UNIT_STATS[k].wake ?? null);
 /** is any hull on the roster at all? the wake pass is skipped outright
@@ -721,7 +808,9 @@ export const WALL_SHADOW_A = 0.71;
  * cell on a LINEAR-filtered texture, drawn as black at alpha
  * min((dark + 0.5) / 4, 1) — nothing on the rim, 0.375 one cell past it,
  * then 0.625, 0.875 and solid — so a ridge keeps its lit face and a range
- * goes black inside, and the bilinear ramp between cells is the gradient.
+ * goes dark inside, and the bilinear ramp between cells is the gradient.
+ * (How dark is DARK_MAX's business, below: this ramp is Mindustry's, the
+ * ceiling on it is not.)
  * (Mindustry also marks a cell at 4 whose four neighbours are all at 4
  * with a 5; that draws identically, so it is not kept.) It is drawn over
  * the ground units, the effects and the shields — Layer.darkness sits
@@ -730,6 +819,43 @@ export const WALL_SHADOW_A = 0.71;
  * terrain wherever it is (see pushUnitPass).
  */
 const DARK_RADIUS = 4;
+/**
+ * ...BUT NOT TO BLACK. Mindustry's ramp tops out at alpha 1 and a range's
+ * interior is then a solid black hole in the map: the rock under it is
+ * painted, batched and uploaded, and none of it is ever seen. That reads
+ * as a HOLE rather than as height — you cannot tell a deep range from a
+ * gap in the world, and the linocut rock (tiles.ts) does its best work in
+ * exactly the cells that were swallowing it.
+ *
+ * So the whole ramp is scaled by this ceiling rather than clamped at the
+ * top: the rim keeps its light face, the gradient between cells keeps its
+ * shape, and the deepest interior settles at DARK_MAX instead of 1. What
+ * is left is a fifth of the rock's own tone — enough to read grain, the
+ * family's hue and the shape of a ridge, not enough to argue with the
+ * units and shots that are the thing actually being looked at.
+ *
+ * It is the one number to turn if the hills want to be darker or lighter.
+ */
+const DARK_MAX = 0.8;
+/**
+ * ...EXCEPT AT THE MAP'S RIM, WHICH STILL GOES TO BLACK.
+ *
+ * The rim and a deep inland range are the SAME darkness value — the cells
+ * past the map's edge are no neighbours at all (see the erosion below), so
+ * the boundary saturates exactly as a range's middle does. One ceiling
+ * therefore cannot serve both, and they want opposite things: a range
+ * wants its rock back, and the rim wants #000000, because the void behind
+ * the map is pure black and the last thing the map draws has to match it
+ * (see CLEAR). Capped flat at DARK_MAX the rim lands around #181412 — and
+ * on a snow or salt map nearer #221e1b — which is the crisp rectangle
+ * round the whole board that CLEAR exists to prevent.
+ *
+ * So the ceiling is lifted back to 1 over the last DARK_RIM cells of the
+ * map. Inland is DARK_MAX and readable, the boundary is black and the
+ * world still ends in nothing, and the texture's own bilinear filter
+ * carries the few cells between.
+ */
+const DARK_RIM = 5;
 /** which terrain layers the static batches draw; the editor hides one to
  * work on what sits underneath it */
 export interface TerrainLayers {
@@ -1081,11 +1207,29 @@ export class Renderer {
    * SHIELD_FS, which is what merges overlapping bubbles into one shape
    */
   private readonly shields: Batch;
+  /**
+   * the ENERGY FIELD fills for this frame, and a second batch rather than
+   * more quads in `shields` for one reason: the blit merges everything it
+   * finds into one shape under one rim. That is the whole point of drawing
+   * the fields this way — two livewire4s standing in one lane are ONE
+   * threatened area, not two overlapping circles — but a field and a force
+   * field are unrelated mechanics, and a ring brushing a carrier's bubble
+   * would come out as a single shape claiming they were the same thing.
+   * One pass each: same buffer, same program, cleared and blitted twice
+   */
+  private readonly fields: Batch;
   private readonly shieldProg: WebGLProgram;
   private readonly uShieldCam: WebGLUniformLocation;
   private readonly uShieldInv: WebGLUniformLocation;
   private readonly uShieldTime: WebGLUniformLocation;
   private readonly uShieldDp: WebGLUniformLocation;
+  private readonly uShieldZig: WebGLUniformLocation;
+  private readonly uShieldAlpha: WebGLUniformLocation;
+  private readonly uShieldFill: WebGLUniformLocation;
+  private readonly uShieldEdge: WebGLUniformLocation;
+  /** the field pass's uZig, refilled per frame from the zoom — the teeth are
+   *  a screen-space size (FIELD_TOOTH_PX), so they cannot be a constant */
+  private readonly fieldZig = new Float32Array([1, 1, 1, FIELD_SNAP]);
   /** the fullscreen quad the blit runs over, on the shared corner VBO */
   private readonly blitVao: WebGLVertexArrayObject;
   private shieldFbo: WebGLFramebuffer | null = null;
@@ -1202,6 +1346,8 @@ export class Renderer {
     // one quad per hexagonal bubble; a polygon of any other side count
     // takes one per side, so this holds a wave's worth either way
     this.shields = this.makeBatch(2048);
+    // one quad per field-caster on screen, and they arrive in tens
+    this.fields = this.makeBatch(512);
 
     this.waterProg = this.link(WATER_VS, WATER_FS);
     const needWater = (name: string): WebGLUniformLocation => {
@@ -1225,6 +1371,10 @@ export class Renderer {
     this.uShieldInv = needIn("uInv");
     this.uShieldTime = needIn("uTime");
     this.uShieldDp = needIn("uDp");
+    this.uShieldZig = needIn("uZig");
+    this.uShieldAlpha = needIn("uAlpha");
+    this.uShieldFill = needIn("uFill");
+    this.uShieldEdge = needIn("uEdge");
     // the blit is one quad off the shared corner VBO — no instance data,
     // so it takes attribute 0 alone
     const bvao = gl.createVertexArray();
@@ -1884,11 +2034,21 @@ export class Renderer {
       }
     }
     const darkMask = new Uint8Array(n * 4);
+    // how black THIS cell is allowed to get: DARK_MAX inland, ramping back
+    // to fully opaque over the map's last DARK_RIM cells (see DARK_RIM)
+    const ceiling = (x: number, y: number): number => {
+      const d = Math.min(x, y, mapCols - 1 - x, mapRows - 1 - y);
+      return d >= DARK_RIM ? DARK_MAX : DARK_MAX + (1 - DARK_MAX) * (1 - d / DARK_RIM);
+    };
     for (let i = 0; i < n; i++) {
       if (dark[i] === 0) continue;
       // BlockRenderer.updateDarkness: 1 - min((darkness + 0.5) / 4, 1) on a
-      // white buffer, and darkness.frag draws black at one minus that
-      const a = Math.round(Math.min((dark[i] + 0.5) / 4, 1) * 255);
+      // white buffer, and darkness.frag draws black at one minus that —
+      // scaled by the cell's ceiling so the deepest cells darken rather
+      // than erase, while the map's rim still reaches black
+      const a = Math.round(
+        Math.min((dark[i] + 0.5) / 4, 1) * ceiling(i % COLS, (i / COLS) | 0) * 255,
+      );
       darkMask[i * 4] = darkMask[i * 4 + 1] = darkMask[i * 4 + 2] = darkMask[i * 4 + 3] = a;
     }
     gl.bindTexture(gl.TEXTURE_2D, this.darkTex);
@@ -2247,7 +2407,7 @@ export class Renderer {
       // the SIM's resolution, not the static table: a tacker the tree has
       // upgraded fires a different bullet, and drawing the stock one made
       // the graphite round invisible as a graphite round
-      const b = sim.bulletFor(p.kind, p.frag);
+      const b = sim.bulletFor(p.kind, p.frag, p.alt);
       // LiquidBulletType.draw: a water orb is not a sprite pair but a
       // filled disc of the liquid's own colour — Fill.circle(x, y,
       // orbSize). (The fout()/100 lerp toward white is a 1% shade and is
@@ -2656,11 +2816,13 @@ export class Renderer {
     const dyn = this.dyn;
     dyn.n = 0;
     this.shields.n = 0;
+    this.fields.n = 0;
     // settled before the fills are gathered, because it decides what they
     // ARE: solid shapes for the shader to work on, or the finished
     // no-shader drawing
     const buffered = this.ensureShieldTarget(this.canvas.width, this.canvas.height);
     this.drawForceFields(sim, buffered);
+    this.drawFieldRings(sim, buffered);
     for (const t of sim.towers) {
       // THE FOOTPRINT IT ACTUALLY STANDS ON (Tower.size), not the table's:
       // a GIANT is twice its kind's edge, so its sprite is drawn over four
@@ -2765,15 +2927,17 @@ export class Renderer {
     // round a livewire4. Each follows its hull as Mindustry's do
     // (parentizeEffects), which a pooled effect at a fixed point cannot
     {
-      const { ubeamT, ucharge, uheldRot, aiming, urot } = sim;
+      const { ubeamT, ucharge, uheldRot, urot } = sim;
       for (let i = 0; i < n; i++) {
         const k = ukind[i];
         const held = KIND_HELD[k], field = KIND_FIELD[k];
         if (!held && !field) continue;
-        const reach = Math.max(held?.range ?? 0, field?.range ?? 0) + 40;
+        // only a HELD beam reaches off the hull now — the field's orb is
+        // drawn at the body, so it no longer widens this margin
+        const reach = (held?.range ?? 0) + 40;
         if (upx[i] < vx0 - reach || upx[i] > vx1 + reach || upy[i] < vy0 - reach || upy[i] > vy1 + reach)
           continue;
-          if (field) this.drawEnergyField(dyn, upx[i], upy[i], urot[i], field.range, field.color, sim.time, aiming[i] !== 0);
+          if (field) this.drawEnergyField(dyn, upx[i], upy[i], urot[i], field.color, sim.time);
         if (!held) continue;
         if (ubeamT[i] > 0 && held.beam && held.beamStyle) {
           // ContinuousLaserBulletType: held at full, then out over fadeTime (16 ticks)
@@ -3261,6 +3425,57 @@ export class Renderer {
   }
 
 
+  /**
+   * THE ENERGY FIELD'S REACH (weapons.ts fx "field", the livewire4) — one
+   * disc a caster, filled into the field buffer and blitted through the
+   * shield shader with a crackling zigzag rim.
+   *
+   * WHAT THE RING MEANS, which is why it is worth drawing at all: every
+   * structure inside it takes the pulse — eighty damage and a roll for a
+   * one-second SHORT, twenty-five of them at a time, every sixty-five
+   * ticks (sim.ts, case "field"). A shorted turret runs nothing at all
+   * until its clock is out. The boundary is a real line on the board: a
+   * turret a tile outside it is untouched and a turret a tile inside is
+   * being switched off.
+   *
+   * IT USED TO BE FIVE ROTATING ARCS AT THAT RADIUS, and the trouble was
+   * never the information — it was that five smooth arcs turning forever
+   * around a forty-five-tile circle, once per caster, is a screen of
+   * overlapping rings. The union fixes the count (two casters in one lane
+   * are ONE threatened area, under one rim) and the zigzag fixes the
+   * character: this is not a shield, and it should not read like one.
+   *
+   * ONLY WHILE THE FIELD HAS SOMETHING TO HIT (`aiming`), as upstream's
+   * curStroke gated the old arcs. A caster walking up an empty lane
+   * threatens nothing yet, and drawing the ring then is what made it feel
+   * constant.
+   */
+  private drawFieldRings(sim: SimView, buffered: boolean): void {
+    if (!HAS_FIELD) return;
+    const { upx, upy, ukind, aiming, n } = sim;
+    const { vx0, vy0, vx1, vy1 } = this;
+    const b = this.fields;
+    for (let i = 0; i < n; i++) {
+      const f = KIND_FIELD[ukind[i]];
+      if (!f || aiming[i] === 0) continue;
+      const rad = f.range;
+      // the rim reaches a couple of world units past the outline, well
+      // inside this margin
+      const bm = rad + 16;
+      if (upx[i] < vx0 - bm || upx[i] > vx1 + bm || upy[i] < vy0 - bm || upy[i] > vy1 + bm)
+        continue;
+      if (buffered) {
+        this.fillDisc(b, upx[i], upy[i], rad, f.color, SHIELD_PLAIN);
+      } else {
+        // no buffer, no union: one outline a caster, and still no
+        // interior. Thinner and fainter than the buffered rim, because
+        // there are about to be several of them lying on top of each other
+        this.strokeCircle(b, upx[i], upy[i], rad, MU, f.color[0], f.color[1], f.color[2], 0.45);
+      }
+    }
+  }
+
+
   private ensureShieldTarget(w: number, h: number): boolean {
     if (!this.shieldReady) return false;
     if (this.shieldFbo && this.shieldW === w && this.shieldH === h) return true;
@@ -3303,6 +3518,12 @@ export class Renderer {
    * over in those: the visible world is uRes/zoom px across, starting at
    * -off/zoom, and MU px make one unit.
    */
+  /**
+   * THE TWO FIELD PASSES, in the order they stack: the force fields and
+   * domes first, the energy fields over them. Each is its own gather, its
+   * own clear and its own blit, because the shader merges whatever it is
+   * handed into ONE shape — see the `fields` batch.
+   */
   private blitShields(
     zoom: number,
     offX: number,
@@ -3311,13 +3532,41 @@ export class Renderer {
     time: number,
     buffered: boolean,
   ): void {
-    if (this.shields.n === 0) return;
+    this.blitField(this.shields, SHIELD_ZIG, 1, 1, SHIELD_EDGE, zoom, offX, offY, kPx, time, buffered);
+    // THE TEETH ARE A SCREEN SIZE, so the wave is resolved against this
+    // frame's zoom rather than baked in world units (FIELD_TOOTH_PX).
+    // uZig.x is the sine's divisor, so a world period P is P / 2pi
+    const pxPerUnit = kPx * zoom * MU;
+    const zig = this.fieldZig;
+    zig[0] = FIELD_TOOTH_PX / pxPerUnit / (Math.PI * 2);
+    zig[1] = FIELD_DEPTH_PX / pxPerUnit;
+    this.blitField(this.fields, zig, FIELD_ALPHA, FIELD_FILL, FIELD_EDGE_PX / pxPerUnit,
+      zoom, offX, offY, kPx, time, buffered);
+  }
+
+  /** one field pass: fill the buffer with `b`, blit it through SHIELD_FS
+   *  under the rim `zig` asks for — `edge` thick, at `alpha`, with `fill`
+   *  of an interior */
+  private blitField(
+    b: Batch,
+    zig: Float32Array,
+    alpha: number,
+    fill: number,
+    edge: number,
+    zoom: number,
+    offX: number,
+    offY: number,
+    kPx: number,
+    time: number,
+    buffered: boolean,
+  ): void {
+    if (b.n === 0) return;
     const gl = this.gl;
     const w = this.canvas.width, h = this.canvas.height;
     // no buffer: the batch already holds the finished no-shader drawing,
     // so it goes straight over the frame like any other geometry
     if (!buffered) {
-      this.draw(this.shields, true);
+      this.draw(b, true);
       return;
     }
 
@@ -3347,7 +3596,7 @@ export class Renderer {
     // antialiased rim of one disc laid over another's interior takes the
     // larger of the two instead of punching a translucent ring into it.
     gl.blendEquation(gl.MAX);
-    this.draw(this.shields, true);
+    this.draw(b, true);
     gl.blendEquation(gl.FUNC_ADD);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -3358,6 +3607,10 @@ export class Renderer {
     // Shaders.ShieldShader: u_time is Time.time / dp, in ticks
     gl.uniform1f(this.uShieldTime, (time * 60) / SHIELD_DP);
     gl.uniform1f(this.uShieldDp, SHIELD_DP);
+    gl.uniform4fv(this.uShieldZig, zig);
+    gl.uniform1f(this.uShieldAlpha, alpha);
+    gl.uniform1f(this.uShieldFill, fill);
+    gl.uniform1f(this.uShieldEdge, edge);
     gl.bindTexture(gl.TEXTURE_2D, this.shieldTex);
     gl.bindVertexArray(this.blitVao);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -4433,20 +4686,30 @@ export class Renderer {
 
   /**
    * EnergyFieldAbility.draw: the orb over the hull — a disc of the field's
-   * colour with a white core, both breathing on absin(20, 0.1) — five arc
-   * sectors turning one way just outside it, and, while the field has
-   * something to hit (curStroke), five more turning the other way out at
-   * the field's range: the ring the livewire4 is known by.
+   * colour with a white core, both breathing on absin(20, 0.1) — and five
+   * arc sectors turning just outside it. All of it sits ON THE HULL.
+   *
+   * UPSTREAM ALSO DRAWS FIVE SECTORS OUT AT THE FIELD'S RANGE, and they
+   * are gone. The reach is twenty-two and a half tiles, so those five arcs
+   * were a forty-five-tile circle standing on the board for as long as the
+   * body had anything to shoot — which, on the unit whose whole job is to
+   * stand in a lane full of turrets, is always. One was a diagram; a wave
+   * of them was a screen of overlapping rings with a battle somewhere
+   * underneath.
+   *
+   * NOTHING IS LOST BY DROPPING IT, because the field already draws its
+   * own reach far better than a ring can: the pulse WALKS its targets
+   * nearest to nearest (sim.ts, case "field"), so every second and a bit
+   * the lightning traces the real edge of what this body can touch — the
+   * actual twenty-five things, not the circle they might have been in.
    */
   private drawEnergyField(
     dyn: Batch,
     x: number,
     y: number,
     rot: number,
-    range: number,
     col: RGB,
     time: number,
-    active: boolean,
   ): void {
     const ticks = time * 60;
     const orb = 5 * MU * (1 + ABSIN(ticks, 20, 0.1));
@@ -4458,11 +4721,6 @@ export class Renderer {
       const a = rot + (i * Math.PI * 2) / SECTORS - ticks * SPEED;
       this.strokeArc(dyn, x, y, orb + 3 * MU, a, SECTOR * Math.PI * 2, stroke, col, 1);
     }
-    if (active)
-      for (let i = 0; i < SECTORS; i++) {
-        const a = rot + (i * Math.PI * 2) / SECTORS + ticks * SPEED;
-        this.strokeArc(dyn, x, y, range, a, SECTOR * Math.PI * 2, stroke, col, 1);
-      }
   }
 
   /** Lines.arc: a `sweep`-wide slice of a ring, stroked at a constant width */

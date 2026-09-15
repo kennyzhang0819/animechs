@@ -15,7 +15,7 @@ import { HoverCard, useHoverCard } from "./HoverCard";
 import { tile } from "./tile";
 
 /**
- * THE UNLOCKS BOARD — everything the track will ever hand out, on one
+ * THE CODEX — everything the track will ever hand out, on one
  * screen, with a filter over it.
  *
  * IT REPLACES THE MUTATOR CODEX, and it replaces the shape that codex
@@ -58,7 +58,11 @@ import { tile } from "./tile";
  * already learned downstairs. A tile redrawn at a bigger size drifts; a
  * tile SCALED cannot.
  *
- * NOTHING HERE IS BUYABLE and nothing is hidden. Every unlock that exists
+ * NOTHING HERE IS BUYABLE and nothing is hidden — which is why it is not
+ * called "Unlocks" any more. A word about EARNING was the wrong sign over
+ * a board that draws the whole game whether you have reached it or not;
+ * this is the index the rest of the code already called a codex
+ * (pixelArt.ts names the pink it is tinted with). Every entry that exists
  * is drawn, exactly as a StarCraft II player can read the mutator list
  * before queueing — the surprise is meant to be WHICH ones a run rolls,
  * not what exists.
@@ -249,7 +253,7 @@ function UnlockTile({
   );
 }
 
-export default function Unlocks({
+export default function Codex({
   onBack,
   backLabel,
   level,
@@ -280,7 +284,7 @@ export default function Unlocks({
       </div>
 
       <div className="ui-zoom mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden px-4 pt-[5rem]">
-        <div role="tablist" aria-label="unlocks" className="ms-seg mb-4 flex self-center">
+        <div role="tablist" aria-label="codex categories" className="ms-seg mb-4 flex self-center">
           {FILTERS.map((f) => (
             <button
               key={f.id}
@@ -296,7 +300,7 @@ export default function Unlocks({
 
         <div
           role="list"
-          aria-label={`${FILTERS.find((f) => f.id === filter)?.label} unlocks`}
+          aria-label={`${FILTERS.find((f) => f.id === filter)?.label} entries`}
           className="flex flex-1 flex-wrap content-start justify-center gap-1.5 overflow-y-auto pb-12"
         >
           {items.length === 0 ? (

@@ -11,6 +11,7 @@ import {
   type RefObject,
 } from "react";
 import { ADMIN_ENABLED } from "@/game/env";
+import { profileLines } from "@/game/simreport";
 import { usePathname, useRouter } from "next/navigation";
 import GameConsole from "./Console";
 import {
@@ -80,6 +81,7 @@ import {
   saveShowFps,
   saveUiScale,
   savePanSpeed,
+  saveInvertZoom,
   saveAllyBars,
   saveEnemyBars,
   saveStatusMarks,
@@ -91,6 +93,7 @@ import {
   type StatusMode,
   PAN_SPEED_DEFAULT,
   PAN_SPEEDS,
+  INVERT_ZOOM_DEFAULT,
   UI_SCALE_DEFAULT,
   UI_SCALES,
   saveRunPick,
@@ -1920,6 +1923,7 @@ export default function Animechs() {
    * the moment they are touched (Game.setPanSpeed, Game.setEdgePan).
    */
   const [panSpeed, setPanSpeed] = useState<number>(PAN_SPEED_DEFAULT);
+  const [invertZoom, setInvertZoom] = useState(INVERT_ZOOM_DEFAULT);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("game");
   /**
    * THE DISPLAY, as the desktop shell has it: the mode the window is in,
@@ -2027,6 +2031,7 @@ export default function Animechs() {
     setShowFps(p.showFps ?? false);
     setUiScale(p.uiScale ?? UI_SCALE_DEFAULT);
     setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
+    setInvertZoom(p.invertZoom ?? INVERT_ZOOM_DEFAULT);
     setAllyBars(p.allyBars ?? HEALTH_BARS_DEFAULT);
     setEnemyBars(p.enemyBars ?? HEALTH_BARS_DEFAULT);
     setStatusMarks(p.statusMarks ?? STATUS_MARKS_DEFAULT);
@@ -2197,6 +2202,7 @@ export default function Animechs() {
         g.setEffects(save.effects ?? true);
         // the controls, off the save for the same reason as the effects
         g.setPanSpeed(save.panSpeed ?? PAN_SPEED_DEFAULT);
+        g.setInvertZoom(save.invertZoom ?? INVERT_ZOOM_DEFAULT);
         g.setHealthBars(save.allyBars ?? HEALTH_BARS_DEFAULT, save.enemyBars ?? HEALTH_BARS_DEFAULT);
         g.setStatusMarks(save.statusMarks ?? STATUS_MARKS_DEFAULT);
         // the minimap's canvas is already mounted under the loading screen
@@ -2302,11 +2308,15 @@ export default function Animechs() {
        * when you stop it, and it has already cost a real measurement once.
        */
       if (game) {
-        const phases = game.profileRead();
-        if (phases.some((p) => p.ms > 0))
+        const profile = game.profileFull();
+        if (profile && profile.phases.some((p) => p.ms > 0))
           (window as unknown as Record<string, unknown>).__animechsLastProfile = {
             stats: game.stats(),
-            phases,
+            profile,
+            // ...and the block as text beside it, so the reading that
+            // outlived the run can be pasted rather than unpicked out of
+            // a devtools object (simreport.ts profileLines)
+            text: profileLines(profile).join("\n"),
           };
       }
       game?.destroy();
@@ -2769,6 +2779,27 @@ export default function Animechs() {
                 gameRef.current?.setPanSpeed(mult); // live, mid-run
               }}
             />
+            {/* WHICH WAY THE WHEEL ZOOMS. The wheel's own sign is not a
+                fact about what the player meant by the flick: macOS's
+                "natural scrolling" flips deltaY for mice as well as
+                trackpads, and nothing the page can read says whether it
+                is on. So the field ships the web convention — wheel down
+                zooms out — and this is the switch for the machines where
+                that comes out backwards. */}
+            <SettingRow label="Reverse mouse zoom">
+              <button
+                aria-pressed={invertZoom}
+                onClick={() => {
+                  const next = !invertZoom;
+                  setInvertZoom(next);
+                  saveInvertZoom(next); // remembered across sessions
+                  gameRef.current?.setInvertZoom(next); // live, mid-run
+                }}
+                className="ms-btn w-16 shrink-0 px-3 py-1.5 text-[15px]"
+              >
+                {invertZoom ? "On" : "Off"}
+              </button>
+            </SettingRow>
           </SettingsBox>
         )}
 

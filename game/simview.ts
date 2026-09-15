@@ -254,6 +254,9 @@ export interface ProjectileView {
    *  the pair `bulletFor` takes */
   readonly kind: TowerKind;
   readonly frag: boolean;
+  /** ...and which nozzle threw it, where the turret loads two ammos
+   *  (constants.ts BulletStats.alt): the flag that picks its stats */
+  readonly alt: boolean;
   /** seconds flown, out of how many it has: the shot's fade in and out */
   readonly age: number;
   readonly life: number;
@@ -289,7 +292,7 @@ export interface ShotsView {
   readonly projs: readonly ProjectileView[];
   readonly shots: readonly ShotView[];
   /** the bullet table, which is a pure lookup and crosses no threads */
-  bulletFor(kind: TowerKind, frag: boolean): BulletStats;
+  bulletFor(kind: TowerKind, frag: boolean, alt?: boolean): BulletStats;
 }
 
 /**
