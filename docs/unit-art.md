@@ -385,6 +385,16 @@ art. Turret fire aimed at a silhouette now hits it.
 
 ## 3. Adding a family
 
+A worked example of step 1 that has not been taken any further:
+[docs/air-concepts.md](air-concepts.md) draws three candidate flyers for
+a second air family (`game/skyConceptArt.ts`, `npm run gen:air`) and says
+what each one would cost to build. It is also where four passes' worth of
+what goes wrong with a BIRD on this grid is written down — the short
+version being that the Stoop's wing is nearly twice as deep as it is long,
+which is right for a bat and wrong for everything with feathers, and a
+drawing that fills the box with body and hangs a deep slab off each side
+comes out a bottle with wings every time.
+
 1. Pick the animal and draw the T5 first on the turret engine, facing
    up, left half only, on its hitbox grid. If it does not read as that
    animal in silhouette, stop there.

@@ -317,6 +317,12 @@ stale tab or a cached bundle looks exactly like a fix not working.
   take. Packed over the stock cells while `ANIMAL_ART`
   (`game/animalFlag.ts`) is on. The style, the sizing rule and how to
   add a family are in [docs/unit-art.md](docs/unit-art.md)
+- `game/skyConceptArt.ts` — DRAWINGS AND NOTHING ELSE: three candidates
+  for a second air family (a goose, a vulture and an albatross) on the
+  wing rig, with the gimmick each one is for. Nothing is wired into the
+  game — no kind ids, no cells, no stats — and `npm run gen:air` renders
+  the sheets into `docs/air-concepts/`. The brief, the three answers and
+  the recommendation are in [docs/air-concepts.md](docs/air-concepts.md)
 - `game/ironhideArt.ts`, `game/familyArt.ts`, `game/tuskerArt.ts` — the
   seven families on the
   turrets' engine and grammar: paired colours shaded dark-left
