@@ -312,6 +312,17 @@ export interface BoardView {
   /** is the Hydrophobic rule in force at all — the overlay only shades for it
    *  when there is a mask to shade from */
   readonly hydrophobicOn: boolean;
+  /**
+   * WHICH OF THE MAP'S RELAYS ARE SWITCHED ON, indexed into
+   * `terrain.relays` (Sim.relayOn). One byte each, held by reference like
+   * every other grid here — WHERE the relays are is in the terrain, which
+   * both sides build for themselves, so this is the only part of them that
+   * has to cross.
+   *
+   * The renderer reads it to tint the buildings and the overlay reads it to
+   * price them.
+   */
+  readonly relayOn: Uint8Array;
 }
 
 /**

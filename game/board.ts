@@ -29,10 +29,13 @@ import {
   CELL,
   clamp,
   COLS,
+  CORE_POWER_R,
   HC,
   HCOLS,
   HROWS,
   NCELLS,
+  RELAY_POWER_R,
+  RELAY_SIZE,
   ROWS,
   structStats,
 } from "./constants";
@@ -61,6 +64,21 @@ export interface BoardGrids {
   readonly occupied: Uint8Array;
   /** the Hydrophobic rule's mask, or null where the rule is not in force */
   readonly waterlogged: Uint8Array | null;
+  /**
+   * THE POWER GRID: 1 on every cell the base or a bought relay lights, and
+   * nothing may be built anywhere else.
+   *
+   * It is a MASK and not a list of circles for the same reason `occupied`
+   * is a mask and not a list of buildings: the drawing side reads it every
+   * frame — once per cell under the cursor for the ghost, and the whole of
+   * it for the overlay — and a cell test has to be one array read, not a
+   * walk of every relay on the board.
+   *
+   * ALWAYS AN ARRAY, never absent. Where the rule is off (the sandbox, the
+   * two editors) it is all ones and every cell passes — see the note in
+   * Sim.rebuildPower for why "off" is a mask of ones rather than no mask.
+   */
+  readonly powered: Uint8Array;
 }
 
 /**
@@ -148,6 +166,105 @@ export function groundClear(g: BoardGrids, gx: number, gy: number, sz: number): 
   return true;
 }
 
+/**
+ * ONE CIRCLE OF BUILDABLE GROUND: the core's, or a relay that has been
+ * switched on. `r` is per-disc rather than looked up off a kind, because
+ * the core and a relay light different distances (constants.ts
+ * CORE_POWER_R, RELAY_POWER_R) and nothing below should have to know which
+ * of the two it is holding.
+ */
+export interface PowerDisc {
+  readonly x: number;
+  readonly y: number;
+  readonly r: number;
+}
+
+/**
+ * EVERY CIRCLE LIGHTING GROUND RIGHT NOW — the core first, then one per
+ * relay the run has bought.
+ *
+ * IT IS HERE, IN board.ts, FOR THE REASON THE WHOLE FILE IS HERE: the sim
+ * paints its mask from this and the DRAWING side reads it to ring the
+ * relays on screen. Two copies of "where does the light reach" would be
+ * two pictures of one board, and the one a player is aiming at would be
+ * the wrong one.
+ *
+ * `relayOn` is indexed the same as `terrain.relays` and is the ONLY thing
+ * about relays that crosses between threads — where they are and what they
+ * cost is in the map document, which both sides read for themselves.
+ */
+export function powerDiscsOf(
+  terrain: { readonly relays: readonly { readonly x: number; readonly y: number }[] },
+  relayOn: Uint8Array,
+  coreX: number,
+  coreY: number,
+): PowerDisc[] {
+  const out: PowerDisc[] = [{ x: coreX, y: coreY, r: CORE_POWER_R }];
+  const rs = terrain.relays;
+  for (let i = 0; i < rs.length; i++) {
+    if (!relayOn[i]) continue;
+    out.push({ ...relayCentre(rs[i]), r: RELAY_POWER_R });
+  }
+  return out;
+}
+
+/** a relay's centre in world px, from the top-left cell the map wrote */
+export const relayCentre = (r: { readonly x: number; readonly y: number }): { x: number; y: number } => ({
+  x: (r.x + RELAY_SIZE / 2) * CELL,
+  y: (r.y + RELAY_SIZE / 2) * CELL,
+});
+
+/**
+ * PAINT THE DISCS INTO A CELL MASK, from scratch every time.
+ *
+ * SPAN FILL rather than a per-cell distance test: the core's disc alone is
+ * better than twenty-five thousand cells, and this way each ROW costs one
+ * square root instead of one per cell. A cell is lit when its own CENTRE
+ * falls inside a disc, which is the line poweredClear then tests footprints
+ * against — so the mask and the rule agree by construction.
+ */
+export function paintPower(into: Uint8Array, discs: readonly PowerDisc[]): void {
+  into.fill(0);
+  for (const d of discs) {
+    const r2 = d.r * d.r;
+    const gy0 = Math.max(0, Math.floor((d.y - d.r) / CELL));
+    const gy1 = Math.min(ROWS - 1, Math.ceil((d.y + d.r) / CELL));
+    for (let gy = gy0; gy <= gy1; gy++) {
+      const dy = (gy + 0.5) * CELL - d.y;
+      const rem = r2 - dy * dy;
+      if (rem < 0) continue;
+      const half = Math.sqrt(rem);
+      const a = Math.max(0, Math.ceil((d.x - half) / CELL - 0.5));
+      const b = Math.min(COLS - 1, Math.floor((d.x + half) / CELL - 0.5));
+      const row = gy * COLS;
+      for (let gx = a; gx <= b; gx++) into[row + gx] = 1;
+    }
+  }
+}
+
+/**
+ * IS THIS FOOTPRINT ON LIT GROUND — every cell of it, not the middle one.
+ *
+ * ALL OR NOTHING because the overlay draws the mask exactly as it is: a
+ * rule that took a building whose corner hung over the dark would be a
+ * rule the picture on screen does not describe, and the picture is the
+ * only way a player knows where the line is.
+ *
+ * This is the test a RELAY passes too, and that is the whole chain: a mast
+ * may only stand on ground something already lights, so the lit region
+ * grows outward from the core one mast at a time and can never leap.
+ */
+export function poweredClear(
+  powered: Uint8Array,
+  gx: number,
+  gy: number,
+  sz: number,
+): boolean {
+  for (let y = gy; y < gy + sz; y++)
+    for (let x = gx; x < gx + sz; x++) if (!powered[y * COLS + x]) return false;
+  return true;
+}
+
 /** a LIVE dome owns its ground: it rose on free rock and holds it */
 export function domesClear(
   domes: readonly BoardDome[],
@@ -167,8 +284,8 @@ export function domesClear(
 /**
  * THE WHOLE TEST, in the order that refuses soonest and reads least: the
  * tech gate first (no grid at all), then the footprint against the masks,
- * then the domes, then the bodies — which is the only part that walks a
- * spatial hash.
+ * then the POWER grid, then the domes, then the bodies — which is the only
+ * part that walks a spatial hash.
  *
  * THE TECH GATE, AND NO PRICE GATE AT ALL. A turret is bought as a CARD and
  * the card is placed for nothing, so by the time a footprint is being tested
@@ -199,6 +316,7 @@ export function canPlaceOn(
   if (unlocked && !unlocked.has(kind)) return false;
   const sz = size ?? structStats(kind).size;
   if (!groundClear(g, gx, gy, sz)) return false;
+  if (!poweredClear(g.powered, gx, gy, sz)) return false;
   if (!domesClear(domes, domeSize, gx, gy, sz)) return false;
   return bodiesClear(b, gx, gy, sz);
 }

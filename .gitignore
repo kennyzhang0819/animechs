@@ -19,3 +19,6 @@ next-env.d.ts
 # build-static.sh builds from a staged copy of the tree here, so a running
 # dev server never has to let go of app/api for the export
 /.static-stage
+
+# the map graph editor keeps a timestamped copy of every file it overwrites
+.backups/

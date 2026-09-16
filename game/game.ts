@@ -16,6 +16,8 @@ import {
   clamp,
   COLS,
   H,
+  RELAY_POWER_R,
+  RELAY_SIZE,
   ROWS,
   structStats,
   targetingLine,
@@ -23,6 +25,9 @@ import {
   towerMaxHp,
   W,
 } from "./constants";
+// the lit circles, the SAME list the sim paints its mask from — see the
+// header of board.ts for why there is only one of it
+import { powerDiscsOf, relayCentre, type PowerDisc } from "./board";
 import { loadBalanceDoc } from "./balance";
 import {
   loadLevelDocs,
@@ -105,13 +110,15 @@ import {
  * WHAT ONE OF THE TWO MODULE BUTTONS CAN DO RIGHT NOW: draw, or the reason
  * it cannot. The two reasons are genuinely different and the button has to
  * say which — "all owned" is a run that has taken everything there is, and
- * "locked" is a save the track has not dealt that category to yet (track.ts
- * MOD_UNLOCKS, RELIC_UNLOCKS, RELICS_FROM). A player told "all owned" on
- * their first run would be told a lie about their save.
+ * "locked" is a category the track has not dealt to this save (track.ts
+ * MOD_UNLOCKS, relicsAt). A player told "all owned" on their first run
+ * would be told a lie about their save.
  *
  * ONLY THE G BUTTON EVER READS "owned". A relic is held once and there are
- * fourteen, so the relic half runs out; a mod has no cap, so the M button is
- * OPEN or LOCKED and nothing else (Game.modDeal).
+ * fourteen, so the relic half can run out; a mod has no cap, so the M
+ * button is OPEN or LOCKED and nothing else (Game.modDeal). While the
+ * relics are reserved the G button reads LOCKED on every campaign run and
+ * "owned" is reachable only on a free board.
  */
 export type DealHalf = "open" | "owned" | "locked";
 
@@ -1110,6 +1117,16 @@ export class Game {
         this.ruler = e.shiftKey;
         if (!this.ruler) this.buildTo(p, false);
       } else {
+        // A RELAY UNDER THE CURSOR IS THE PRESS, and nothing else is. It is
+        // tested before the marquee because a relay sits on rock where
+        // there is nothing to select anyway, and because buying ground is
+        // the one press on an empty cursor that spends money — it must not
+        // be something a player discovers by dragging over it
+        const relay = this.relayAt(p);
+        if (relay >= 0 && !this.world.relayOn[relay]) {
+          this.buyRelay(relay);
+          return;
+        }
         // normal cursor: a press starts a marquee and decides nothing.
         // What it meant is settled on release (onMouseUp)
         this.selecting = true;
@@ -1571,8 +1588,9 @@ export class Game {
     return this.tech ? this.tech.mods : null;
   }
 
-  /** ...and the relics the G button may turn over (TechState.relics), which
-   *  a save below RELICS_FROM has none of */
+  /** ...and the relics the G button may turn over (TechState.relics),
+   *  which is NONE at any level while they are reserved (track.ts). Null —
+   *  the free board — is still the whole catalog */
   private relicPool(): ReadonlySet<RelicId> | null {
     return this.tech ? this.tech.relics : null;
   }
@@ -1587,10 +1605,15 @@ export class Game {
   }
 
   /**
-   * ...AND WHAT THE G BUTTON CAN DO, which has all three answers. A save
-   * below RELICS_FROM reads LOCKED, and a run holding all fourteen reads
-   * OWNED — a relic is held once, so this half genuinely runs out
-   * (relics.ts).
+   * ...AND WHAT THE G BUTTON CAN DO, which has all three answers: LOCKED
+   * when the track has dealt the save no relic, OWNED when a run holds
+   * every relic it could draw — a relic is held once, so this half
+   * genuinely runs out (relics.ts) — and OPEN otherwise.
+   *
+   * IT READS LOCKED ON EVERY CAMPAIGN RUN while the relics are reserved
+   * (track.ts relicsAt hands back an empty bag at every level). The three
+   * answers are kept rather than collapsed because nothing about the half
+   * has been deleted and it comes back through this function.
    */
   private relicDeal(): DealHalf {
     if (!anyRelicOpen(this.relicPool())) return "locked";
@@ -2192,6 +2215,7 @@ export class Game {
       () => this.view.shieldTowers,
       () => this.tech?.unlocked ?? null,
       w.airRoutes,
+      w.relayOn,
     );
     this.publish();
   }
@@ -2483,6 +2507,244 @@ export class Game {
         if (!at(x + 1, y)) { p.moveTo(x0 + CELL, y0); p.lineTo(x0 + CELL, y0 + CELL); }
       }
     return p;
+  }
+
+  /**
+   * EVERY LIT CIRCLE, as the drawing side sees it — the same list the sim
+   * paints its mask from (board.ts powerDiscsOf), built here off the
+   * terrain and the shared relayOn bytes rather than asked for across a
+   * thread. Both sides read the same map document, so both already know
+   * where the relays are; the only thing that ever crosses is which of
+   * them are switched on.
+   */
+  private powerDiscs(): PowerDisc[] {
+    const t = this.world.terrain;
+    const b = t.base;
+    return powerDiscsOf(t, this.world.relayOn, (b.x + b.size / 2) * CELL, (b.y + b.size / 2) * CELL);
+  }
+
+  /**
+   * WHAT ONE RELAY COSTS ON THIS BOARD: the price the map author wrote on
+   * it, or nothing at all where building is free (the sandbox, the two
+   * editors), which is the same rule every other price on the board plays
+   * by (Game.rollPrice).
+   */
+  private relayPrice(i: number): number {
+    const r = this.world.terrain.relays[i];
+    if (!r || !this.dealing) return 0;
+    return Math.max(0, Math.round(r.price));
+  }
+
+  /**
+   * THE RELAY UNDER A WORLD POINT, or -1. Its own footprint plus half a
+   * cell of slack on every side, because a relay stands on a HILL — the
+   * cursor is over rock either way, nothing else on that ground can be
+   * clicked, and a target a player has to be precise about is a target
+   * they will miss mid-wave.
+   */
+  private relayAt(p: { x: number; y: number }): number {
+    const rs = this.world.terrain.relays;
+    const reach = (RELAY_SIZE * CELL) / 2 + CELL / 2;
+    for (let i = 0; i < rs.length; i++) {
+      const c = relayCentre(rs[i]);
+      if (Math.abs(p.x - c.x) <= reach && Math.abs(p.y - c.y) <= reach) return i;
+    }
+    return -1;
+  }
+
+  /**
+   * SWITCH A RELAY ON — the one purchase in this game that buys GROUND.
+   *
+   * It is the turret button's money path and not a new one: the world is
+   * charged here so the HUD's purse moves this frame, and the host is told
+   * so the sim's does too (see Game.buyTurretCard). The sim itself takes
+   * nothing — by the time setRelayOn runs, the scrap is already gone.
+   *
+   * NOTHING IS REFUNDED AND NOTHING IS UNDONE. A relay cannot be destroyed
+   * and cannot be sold: the ground it opens is open for the rest of the
+   * run, which is the whole reason the price on a far one is allowed to be
+   * brutal. Returns whether the bank could cover it.
+   */
+  buyRelay(i: number): boolean {
+    if (this.world.lost || this.won() || this.menuOpen) return false;
+    const rs = this.world.terrain.relays;
+    if (i < 0 || i >= rs.length || this.world.relayOn[i]) return false;
+    const price = this.relayPrice(i);
+    if (!this.world.spend(price)) return false;
+    this.host.spend(price);
+    this.host.setRelayOn(i);
+    return true;
+  }
+
+  /**
+   * THE EDGE OF THE BUILDABLE REGION — the union of every lit circle,
+   * drawn as one closed outline with no arcs running through the middle
+   * of it.
+   *
+   * WHY THE COMPOSITE AND NOT JUST STROKING THE CIRCLES. Stroking each
+   * circle draws the parts of it that are INSIDE another circle too, so
+   * two relays whose ground overlaps read as two rings crossing rather
+   * than as the one piece of ground they actually make. What a player
+   * needs is the border of the region, so the border is what is drawn:
+   * fill the union solid, then punch the union inset by the line width
+   * back out of it (`destination-out`), and what is left is exactly the
+   * rim. Arcs that fell inside a neighbour are punched away with the rest
+   * of the interior.
+   *
+   * It runs first on a freshly cleared canvas, which is what makes the
+   * punch safe: there is nothing under it yet to erase.
+   *
+   * TWO PASSES, DARK THEN AMBER. A single amber line is invisible over
+   * sand and obvious over water, and this line has to read the same on
+   * every floor in the game. The second pass is `source-atop`, so the
+   * amber lands only where the dark rim already is and leaves a thin dark
+   * lip standing outside it.
+   *
+   * The widths are divided by the camera scale, so the rim is the same
+   * number of SCREEN pixels at every zoom — it is a piece of interface,
+   * not a thing on the ground with a size of its own.
+   */
+  private drawPowerEdge(c: CanvasRenderingContext2D): void {
+    const discs = this.powerDiscs();
+    if (discs.length === 0) return;
+    const s = this.scale * this.zoom;
+    const union = (inset: number): void => {
+      c.beginPath();
+      for (const d of discs) {
+        const r = Math.max(0, d.r - inset);
+        // moveTo before each arc, or canvas joins them into one path with
+        // a line between the circles
+        c.moveTo(d.x + r, d.y);
+        c.arc(d.x, d.y, r, 0, Math.PI * 2);
+      }
+      c.fill();
+    };
+    const rim = (width: number, colour: string, mode: GlobalCompositeOperation): void => {
+      c.save();
+      c.globalCompositeOperation = mode;
+      c.fillStyle = colour;
+      union(0);
+      c.globalCompositeOperation = "destination-out";
+      union(width);
+      c.restore();
+    };
+    rim(5 / s, "rgba(24,16,4,0.85)", "source-over");
+    rim(3.5 / s, "rgba(255,211,127,0.95)", "source-atop");
+  }
+
+  /**
+   * THE RELAYS THEMSELVES — the diamond on the hill, what it costs, and
+   * what it would open.
+   *
+   * DRAWN ON THE OVERLAY RATHER THAN BY THE RENDERER, which is where every
+   * other thing standing on the board is drawn. A relay is not really a
+   * thing standing on the board: it has no health bar, nothing targets it,
+   * nothing walks into it, and most of what has to be said about one is
+   * TEXT — a price, in screen pixels, legible at any zoom. That is this
+   * canvas's job and not the sprite batch's.
+   *
+   * THREE STATES, AND THE THIRD IS THE ONE THAT MATTERS. A bought relay is
+   * a filled amber diamond and says nothing else. An affordable one is
+   * hollow with its price under it. One the bank cannot cover yet wears
+   * the price in red — which is the number a run spends most of its middle
+   * saving towards, and it should be readable from across the map.
+   */
+  private drawRelayGain(c: CanvasRenderingContext2D): void {
+    const rs = this.world.terrain.relays;
+    if (rs.length === 0) return;
+    const on = this.world.relayOn;
+    const s = this.scale * this.zoom;
+
+    // ONE RING PER RELAY, and each shows ONLY THE GROUND IT WOULD ADD.
+    //
+    // A relay's circle is mostly not an offer. Where it laps ground the run
+    // has already opened — the base's own light, or a relay bought earlier
+    // — buying it changes nothing there, and a ring drawn across that ground
+    // is a line saying so in the one place it is not true. So the rings are
+    // stroked first and then the ALREADY-BUILDABLE region is punched out of
+    // them (destination-out): what survives is the arc of new ground and
+    // nothing else. A relay entirely inside what you already own draws
+    // nothing at all, which is exactly what it is worth.
+    //
+    // STROKED PER RELAY rather than filled as a union, unlike the region
+    // outline below. Two unbought relays are two separate offers and you
+    // buy one at a time, so where their circles cross, both arcs belong on
+    // screen — merging them would draw a shape nobody can buy.
+    //
+    // It runs first on a freshly cleared canvas, which is what makes the
+    // punch safe: there is nothing under it yet to erase.
+    c.save();
+    c.setLineDash([12 / s, 9 / s]);
+    c.strokeStyle = "rgba(255,211,127,0.75)";
+    c.lineWidth = 2.5 / s;
+    let any = false;
+    for (let i = 0; i < rs.length; i++) {
+      if (on[i]) continue;
+      const p = relayCentre(rs[i]);
+      c.beginPath();
+      c.arc(p.x, p.y, RELAY_POWER_R, 0, Math.PI * 2);
+      c.stroke();
+      any = true;
+    }
+    c.setLineDash([]);
+    if (any) {
+      c.globalCompositeOperation = "destination-out";
+      c.beginPath();
+      for (const d of this.powerDiscs()) {
+        c.moveTo(d.x + d.r, d.y);
+        c.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+      }
+      c.fill();
+    }
+    c.restore();
+  }
+
+  /**
+   * WHAT EACH UNBOUGHT RELAY COSTS, over the building the renderer drew.
+   *
+   * THE BUILDING ITSELF IS NOT DRAWN HERE. A relay is a real 2x2 block with
+   * real art and it goes through the sprite batch with everything else on
+   * the board (renderer.ts, beside the shield towers) — dark while it is
+   * for sale and lit once it is bought. What this canvas adds is the one
+   * thing the batch cannot: a number, in SCREEN pixels, so a price stays
+   * readable at the zoom a player reads the whole map at.
+   *
+   * RED WHEN THE BANK CANNOT COVER IT. That is the number a run spends most
+   * of its middle saving towards, and it should be legible from across the
+   * board.
+   */
+  private drawRelayPrices(c: CanvasRenderingContext2D): void {
+    const rs = this.world.terrain.relays;
+    if (rs.length === 0) return;
+    const on = this.world.relayOn;
+    const half = (RELAY_SIZE * CELL) / 2;
+    const labels: { x: number; y: number; text: string; poor: boolean }[] = [];
+    for (let i = 0; i < rs.length; i++) {
+      if (on[i]) continue;
+      const price = this.relayPrice(i);
+      if (price <= 0) continue;
+      const p = relayCentre(rs[i]);
+      labels.push({ x: p.x, y: p.y + half, text: String(price), poor: this.world.scrap < price });
+    }
+    if (labels.length === 0) return;
+    const s = this.scale * this.zoom;
+    c.save();
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.font = "bold 12px var(--font-display), system-ui, sans-serif";
+    c.textAlign = "center";
+    c.textBaseline = "top";
+    for (const l of labels) {
+      const sx = (l.x - this.tlx) * s;
+      const sy = (l.y - this.tly) * s + 4;
+      // a dark plate under the number rather than a stroke around it: a
+      // stroked glyph at 12px on a busy floor reads as a smudge
+      const w = c.measureText(l.text).width + 10;
+      c.fillStyle = "rgba(10,12,20,0.8)";
+      c.fillRect(sx - w / 2, sy - 1, w, 15);
+      c.fillStyle = l.poor ? "#FF7468" : "#FFD37F";
+      c.fillText(l.text, sx, sy + 1);
+    }
+    c.restore();
   }
 
   private buildSoakLayer(): HTMLCanvasElement | null {
@@ -3025,6 +3287,34 @@ export class Game {
     // world-space transform through the camera
     const s = this.scale * this.zoom;
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
+
+    // WHERE THIS BUILDING MAY GO, while one is in hand: the OUTLINE of the
+    // buildable region and nothing else.
+    //
+    // IT IS A LINE AND NOT A WASH, AND THAT IS THE WHOLE POINT. This was a
+    // veil over the unbuildable ground once, and a veil is a fog: it made
+    // two thirds of the board dimmer than the rest, so a player reading a
+    // wave coming in across it was reading it through a filter that exists
+    // for a different question entirely. THERE IS NO FOG IN THIS GAME —
+    // every acre of the field is lit the same and always has been, and
+    // "may I build here" must not be the thing that changes that. So the
+    // answer is drawn as the shape it actually is, an edge, and the ground
+    // on both sides of it is left alone.
+    //
+    // THE GAIN RINGS GO FIRST, because they are drawn by ERASING (see
+    // drawRelayGain) and the only safe moment to erase on this canvas is
+    // while nothing else is on it. The region outline is stroked over them
+    // afterwards, so the edge of what you own stays unbroken even where an
+    // offer runs up against it.
+    if (this.buildKind) {
+      this.drawRelayGain(c);
+      this.drawPowerEdge(c);
+    }
+
+    // THE PRICES over the relays the sprite batch drew, always — what a
+    // piece of ground costs is a thing to plan around between waves, not
+    // only while a building is in hand
+    this.drawRelayPrices(c);
 
     // THE TAXED SHORE, while a turret is in hand. Under the routes and the
     // ghost, both of which are decisions being made ON TOP of it

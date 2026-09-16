@@ -292,7 +292,11 @@ export default function SaveEditorView() {
           <div>
             <Tally label="Turrets on the roster" have={turretsAt(plays).size} all={FIELDED_KINDS.length} />
             <Tally label="Mods in the bag" have={modsAt(plays).size} all={MODS.length} />
-            <Tally label="Relics in the bag" have={relicsAt(plays).size} all={RELICS.length} />
+            {/* reads 0 at every level, and that is the answer: the relics
+                are off the track (game/track.ts relicsAt). The row stays so
+                that a dev checking what a level opens is told so, rather
+                than being left to wonder where the relics went */}
+            <Tally label="Relics (reserved)" have={relicsAt(plays).size} all={RELICS.length} />
             <Tally label="Mutators in the deck" have={mutatorsAt(plays).size} all={MUTATIONS.length} />
             <Tally
               label="Maps open"

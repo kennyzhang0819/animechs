@@ -1,0 +1,460 @@
+{
+  "id": "saltmouth",
+  "name": "Saltmouth",
+  "seed": 23063,
+  "archetype": "PICK ONE",
+  "rock": {
+    "threshold": 0.45,
+    "scale": 22,
+    "warp": 13
+  },
+  "water": {
+    "scale": 42,
+    "level": 0.46,
+    "shore": 0.08,
+    "warp": 16,
+    "bias": [
+      {
+        "kind": "const",
+        "v": -0.14
+      },
+      {
+        "kind": "ramp",
+        "dir": "north",
+        "at": 26,
+        "span": 205,
+        "amount": 0.56
+      },
+      {
+        "kind": "spread",
+        "axis": "x",
+        "at": 128,
+        "span": 96,
+        "amount": 0.4
+      }
+    ]
+  },
+  "floors": {
+    "scale": 34,
+    "warp": 12,
+    "families": [
+      {
+        "floor": 9,
+        "wall": 18,
+        "weight": 0.5
+      },
+      {
+        "floor": 36,
+        "wall": 16,
+        "weight": 0.26
+      },
+      {
+        "floor": 12,
+        "wall": 20,
+        "weight": 0.24
+      }
+    ]
+  },
+  "beach": {
+    "floor": 12,
+    "depth": 3
+  },
+  "flats": {
+    "floor": 36,
+    "clear": 10
+  },
+  "rooms": [
+    {
+      "x": 128,
+      "y": 200,
+      "r": 16
+    },
+    {
+      "x": 78,
+      "y": 158,
+      "r": 13
+    },
+    {
+      "x": 62,
+      "y": 104,
+      "r": 13,
+      "dry": true
+    },
+    {
+      "x": 54,
+      "y": 56,
+      "r": 12,
+      "dry": true
+    },
+    {
+      "x": 178,
+      "y": 158,
+      "r": 13
+    },
+    {
+      "x": 196,
+      "y": 106,
+      "r": 13,
+      "dry": true
+    },
+    {
+      "x": 206,
+      "y": 58,
+      "r": 12,
+      "dry": true
+    },
+    {
+      "x": 128,
+      "y": 96,
+      "r": 14,
+      "water": true
+    },
+    {
+      "x": 128,
+      "y": 168,
+      "r": 11,
+      "water": true
+    },
+    {
+      "x": 26,
+      "y": 34,
+      "r": 15,
+      "note": "ground entry"
+    },
+    {
+      "x": 86,
+      "y": 22,
+      "r": 15,
+      "note": "ground entry"
+    },
+    {
+      "x": 172,
+      "y": 22,
+      "r": 15,
+      "note": "ground entry"
+    },
+    {
+      "x": 230,
+      "y": 36,
+      "r": 15,
+      "note": "ground entry"
+    },
+    {
+      "x": 112,
+      "y": 14,
+      "r": 13,
+      "water": true,
+      "note": "water entry"
+    },
+    {
+      "x": 148,
+      "y": 14,
+      "r": 13,
+      "water": true,
+      "note": "water entry"
+    }
+  ],
+  "core": {
+    "x": 126,
+    "y": 226,
+    "r": 9
+  },
+  "chokes": [
+    {
+      "x": 128,
+      "y": 216,
+      "w": 10,
+      "reach": 8
+    }
+  ],
+  "holes": 4,
+  "lumps": 10,
+  "ruins": 2,
+  "coreWaterReach": 70,
+  "roads": [
+    {
+      "ends": [
+        13,
+        7
+      ],
+      "width": [
+        18,
+        24
+      ],
+      "water": true
+    },
+    {
+      "ends": [
+        7,
+        8
+      ],
+      "width": [
+        18,
+        24
+      ],
+      "water": true
+    },
+    {
+      "ends": [
+        14,
+        7
+      ],
+      "width": [
+        18,
+        24
+      ],
+      "water": true
+    },
+    {
+      "ends": [
+        7,
+        8
+      ],
+      "width": [
+        18,
+        24
+      ],
+      "water": true
+    },
+    {
+      "ends": [
+        9,
+        3
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        3,
+        2
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        2,
+        1
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        1,
+        0
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        0,
+        -1
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        10,
+        3
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        3,
+        2
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        2,
+        1
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        1,
+        0
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        0,
+        -1
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        11,
+        6
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        6,
+        5
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        5,
+        4
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        4,
+        0
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        0,
+        -1
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        12,
+        6
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        6,
+        5
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        5,
+        4
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        4,
+        0
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        0,
+        -1
+      ],
+      "width": [
+        8,
+        14
+      ]
+    },
+    {
+      "ends": [
+        2,
+        3
+      ],
+      "width": [
+        6,
+        9
+      ]
+    },
+    {
+      "ends": [
+        5,
+        6
+      ],
+      "width": [
+        6,
+        9
+      ]
+    },
+    {
+      "ends": [
+        1,
+        2
+      ],
+      "width": [
+        6,
+        9
+      ]
+    },
+    {
+      "ends": [
+        4,
+        5
+      ],
+      "width": [
+        6,
+        9
+      ]
+    }
+  ]
+}

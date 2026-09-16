@@ -68,6 +68,8 @@ export type FromWorker =
       isGoal: Uint8Array;
       occupied: Uint8Array;
       waterlogged: Uint8Array | null;
+      powered: Uint8Array;
+      relayOn: Uint8Array;
       airRoutes: { pts: number[] }[];
     }
   | { t: "frame"; snapshot: Snapshot; report: WorldReport }
@@ -87,8 +89,10 @@ export class WorkerHost implements SimHost {
   /**
    * THE BOLT PATHS, OWNED HERE. The one member of the flat world that is
    * not a typed array and so cannot be shared: it crosses packed in the
-   * snapshot and is unpacked into this at every sync, and the renderer
-   * reads it through `world.flat.fxPts` as it reads everything else.
+   * snapshot — on its own buffer, so the bytes are COPIED by the message
+   * rather than re-viewed (snapshot.ts `fitOwn`) — and is unpacked into
+   * this at every sync, and the renderer reads it through
+   * `world.flat.fxPts` as it reads everything else.
    */
   private readonly pts: (readonly number[] | null)[];
 
@@ -112,6 +116,8 @@ export class WorkerHost implements SimHost {
       isGoal: ready.isGoal,
       occupied: ready.occupied,
       waterlogged: ready.waterlogged,
+      powered: ready.powered,
+      relayOn: ready.relayOn,
       airRoutes: ready.airRoutes,
     });
     worker.onmessage = (e: MessageEvent<FromWorker>) => {
@@ -214,6 +220,9 @@ export class WorkerHost implements SimHost {
   }
   placeTower(gx: number, gy: number, kind: TowerKind): void {
     this.cmd("placeTower", gx, gy, kind);
+  }
+  setRelayOn(i: number): void {
+    this.cmd("setRelayOn", i);
   }
   placeMany(towers: readonly Placement[]): void {
     this.cmd("placeMany", towers);

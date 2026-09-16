@@ -20,7 +20,6 @@ import {
   rewardBlurb,
   rewardNote,
   rewardText,
-  ROSTER_TOP,
   TRACK,
   type Reward,
   type UnlockEntry,
@@ -40,7 +39,8 @@ import { tile } from "./tile";
 /**
  * THE PROGRESS SCREEN: the track, centred on where the save stands.
  *
- * One list, thirty rows, each row a level and what reaching it hands out
+ * One list, one row a level to the top of the track (MAX_LEVEL), each row
+ * a level and what reaching it hands out
  * (track.ts). The level the save is ON sits in the middle of the screen
  * with its bar to the next one, and the rest of the track expands out from
  * it: the levels already climbed fade off above, the ones still to earn

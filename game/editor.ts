@@ -1,8 +1,21 @@
 import { buildAtlas, DECOR_TILES, FLOOR_SHALLOW_WATER, SHALLOW_FOR_DEEP } from "./atlas";
 import { fitZoom } from "./fit";
-import { CELL, clamp, COLS, BASE_SIZE, H, ROWS, TOWERS, W } from "./constants";
+import {
+  CELL,
+  clamp,
+  COLS,
+  BASE_SIZE,
+  H,
+  MAX_RELAYS,
+  RELAY_POWER_R,
+  RELAY_SIZE,
+  ROWS,
+  TOWERS,
+  W,
+} from "./constants";
 import {
   contentRows,
+  defaultRelayPrice,
   SPAWN_STYLE,
   PALETTE,
   terrainFromMap,
@@ -13,7 +26,7 @@ import {
 import { ALL_LAYERS, Renderer, type TerrainLayers } from "./renderer";
 import { loadInvertZoom } from "./progress";
 import { canHoldSpawn, isWaterFloor } from "./terrain";
-import { WALL_DEEP, WALL_PINE, type Prop, type Terrain } from "./terrain";
+import { WALL_DEEP, WALL_PINE, type MapRelay, type Prop, type Terrain } from "./terrain";
 
 // THE ZOOM FLOOR IS NO LONGER COVER. It used to be 1 — "the world fills
 // the viewport" — which meant the one view an author needs most, the whole
@@ -42,6 +55,7 @@ interface Snapshot {
   spawn: Uint8Array;
   pines: Prop[];
   decor: Prop[];
+  relays: MapRelay[];
   base: { x: number; y: number; size: number };
 }
 
@@ -256,6 +270,7 @@ export class MapEditor {
     this.terrain.spawn.set(s.spawn);
     this.terrain.pines = s.pines;
     this.terrain.decor = s.decor;
+    this.terrain.relays = s.relays;
     this.terrain.base = s.base;
     this.dirty = true;
     this.renderer.rebuildTerrain(this, this.layers);
@@ -280,6 +295,7 @@ export class MapEditor {
       spawn: this.terrain.spawn.slice(),
       pines: this.terrain.pines.map((p) => ({ ...p })),
       decor: this.terrain.decor.map((p) => ({ ...p })),
+      relays: this.terrain.relays.map((r) => ({ ...r })),
       base: { ...this.terrain.base },
     });
     if (this.undoStack.length > UNDO_CAP) this.undoStack.shift();
@@ -428,6 +444,54 @@ export class MapEditor {
    * itself plus a one-cell apron — because a base sitting in rock is one
    * the swarm can never reach.
    */
+  /**
+   * STAMP A RELAY HERE, or take the one that is already here back off.
+   *
+   * ONE CLICK, BOTH WAYS, because a relay is a point and not a stroke:
+   * there is no brush size, no drag and nothing to erase over. Clicking a
+   * relay removes it, which is the only gesture an author needs and the
+   * one they will reach for.
+   *
+   * IT LANDS ON ROCK AND NOWHERE ELSE. A relay stands on a hill precisely
+   * so that nothing can reach it (terrain.ts MapRelay) — one placed on
+   * open ground would be a relay in the swarm's way, which is a promise
+   * this game does not keep about them. A click on floor does nothing
+   * rather than raising rock to oblige: the author asked for a relay, not
+   * for terrain.
+   *
+   * THE PRICE IS A GUESS (maps.ts defaultRelayPrice) off how far out it
+   * lands, and tuning it is a JSON edit. That is deliberate: a price is
+   * where a mission is written, and a number that can be nudged with a
+   * brush is a number that gets nudged by accident.
+   */
+  private toggleRelay(gx: number, gy: number): void {
+    const T = this.terrain;
+    const half = (RELAY_SIZE / 2) | 0;
+    const x0 = clamp(gx - half, 0, COLS - RELAY_SIZE);
+    const y0 = clamp(gy - half, 0, ROWS - RELAY_SIZE);
+    // a click anywhere on a standing relay takes it off
+    const hit = T.relays.findIndex(
+      (r) => gx >= r.x && gx < r.x + RELAY_SIZE && gy >= r.y && gy < r.y + RELAY_SIZE,
+    );
+    if (hit >= 0) {
+      T.relays.splice(hit, 1);
+      this.dirty = true;
+      return;
+    }
+    if (T.relays.length >= MAX_RELAYS) return;
+    // every cell of the footprint has to be rock, and none of it a tree:
+    // a pine is a prop the swarm can clear out from under it
+    for (let y = y0; y < y0 + RELAY_SIZE; y++)
+      for (let x = x0; x < x0 + RELAY_SIZE; x++) {
+        const i = y * COLS + x;
+        if (!T.blocked[i] || T.wall[i] === WALL_PINE) return;
+      }
+    const bx = T.base.x + T.base.size / 2, by = T.base.y + T.base.size / 2;
+    const d = Math.hypot(x0 + RELAY_SIZE / 2 - bx, y0 + RELAY_SIZE / 2 - by);
+    T.relays.push({ x: x0, y: y0, price: defaultRelayPrice(d) });
+    this.dirty = true;
+  }
+
   private placeBase(gx: number, gy: number): void {
     const T = this.terrain;
     const half = (BASE_SIZE / 2) | 0;
@@ -455,6 +519,10 @@ export class MapEditor {
   private paintAt(gx: number, gy: number): void {
     if (this.set.kind === "base") {
       this.placeBase(gx, gy);
+      return;
+    }
+    if (this.set.kind === "relay") {
+      this.toggleRelay(gx, gy);
       return;
     }
     if (this.set.kind === "path") {
@@ -736,6 +804,55 @@ export class MapEditor {
     const s = this.scale * this.zoom;
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
 
+    // THE RELAYS THIS MAP CARRIES, always — they are a layer of the
+    // document and an author has to be able to see the shape they make
+    // without holding the brush that draws them. Each with the circle of
+    // ground it opens, because a relay is that circle: two of them whose
+    // discs overlap completely are one relay and a wasted price.
+    //
+    // On the OVERLAY rather than in the terrain batch (Renderer.
+    // rebuildTerrain) because relays are not tiles — they are a list with
+    // numbers on it, and the price has to be drawn as text.
+    if (this.terrain.relays.length > 0) {
+      const side = RELAY_SIZE * CELL;
+      c.setLineDash([12 / s, 10 / s]);
+      c.strokeStyle = "rgba(255,211,127,0.35)";
+      c.lineWidth = 1.5 / s;
+      for (const r of this.terrain.relays) {
+        c.beginPath();
+        c.arc((r.x + RELAY_SIZE / 2) * CELL, (r.y + RELAY_SIZE / 2) * CELL, RELAY_POWER_R, 0, Math.PI * 2);
+        c.stroke();
+      }
+      c.setLineDash([]);
+      c.fillStyle = "rgba(255,211,127,0.85)";
+      c.strokeStyle = "rgba(20,14,4,0.9)";
+      c.lineWidth = 1.5 / s;
+      for (const r of this.terrain.relays) {
+        c.fillRect(r.x * CELL, r.y * CELL, side, side);
+        c.strokeRect(r.x * CELL, r.y * CELL, side, side);
+      }
+      // the prices in SCREEN px, for the same reason the game draws them
+      // there: a number that shrank with the camera is a number an author
+      // cannot read at the zoom they lay a map out at
+      c.save();
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.font = "bold 11px system-ui, sans-serif";
+      c.textAlign = "center";
+      c.textBaseline = "top";
+      for (const r of this.terrain.relays) {
+        const sx = ((r.x + RELAY_SIZE / 2) * CELL - this.tlx) * s;
+        const sy = ((r.y + RELAY_SIZE) * CELL - this.tly) * s + 3;
+        const text = `${r.price}`;
+        const w = c.measureText(text).width + 8;
+        c.fillStyle = "rgba(10,12,20,0.8)";
+        c.fillRect(sx - w / 2, sy, w, 14);
+        c.fillStyle = "#FFD37F";
+        c.fillText(text, sx, sy + 1);
+      }
+      c.restore();
+      c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
+    }
+
     // NOTHING MARKS THE SPAWN LAYER HERE ANY MORE. It used to be a ring per
     // drop zone, drawn over plain ground; the tiles are painted now, so the
     // terrain pass draws them (Renderer.rebuildTerrain) and the overlay is
@@ -754,6 +871,26 @@ export class MapEditor {
       c.strokeStyle = "rgba(255,211,127,0.9)";
       c.lineWidth = 2 / s;
       c.strokeRect(x0, y0, side, side);
+      return;
+    }
+    if (this.set.kind === "relay") {
+      const half = (RELAY_SIZE / 2) | 0;
+      const x0 = clamp(this.hoverGx - half, 0, COLS - RELAY_SIZE) * CELL;
+      const y0 = clamp(this.hoverGy - half, 0, ROWS - RELAY_SIZE) * CELL;
+      const side = RELAY_SIZE * CELL;
+      c.fillStyle = "rgba(255,211,127,0.25)";
+      c.fillRect(x0, y0, side, side);
+      c.strokeStyle = "rgba(255,211,127,0.9)";
+      c.lineWidth = 2 / s;
+      c.strokeRect(x0, y0, side, side);
+      // ...and the circle it would open, which is the whole reason to care
+      // where it goes
+      c.beginPath();
+      c.arc(x0 + side / 2, y0 + side / 2, RELAY_POWER_R, 0, Math.PI * 2);
+      c.setLineDash([12 / s, 10 / s]);
+      c.lineWidth = 1.5 / s;
+      c.stroke();
+      c.setLineDash([]);
       return;
     }
     if (this.set.kind === "path") {

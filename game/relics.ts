@@ -45,10 +45,13 @@ import { faster, piercing, stronger } from "./upgrades";
  * still mends, the ironhide5 still stamps its plating — the player just has an
  * answer to it.
  *
- * AND THE TRACK SAYS SO (track.ts RELICS_FROM). The relic half of the
- * catalog opens in the LATE half of the campaign, where the mutator phase
- * is and where the heavies arrive, and every one of the fourteen is dealt
- * after it. A save's front half is mods; its back half is relics.
+ * THE TRACK DEALS NONE OF THEM RIGHT NOW (track.ts: see the relic note
+ * there). They used to be the LATE half of a campaign, one a level up the
+ * back of the track where the mutator phase is and the heavies arrive —
+ * which put the board's biggest rules on the same rows that were raising
+ * the difficulty. So the catalog is RESERVED: everything in this file is
+ * live and correct, the codex draws all fourteen, and no level hands one
+ * over and no run can roll one until they are given a door of their own.
  *
  * EVERY RELIC IS POWERFUL, AND THE PRICE IS WHY. A hundred and fifty
  * thousand scrap (economy.ts RELIC_ROLL_PRICE) is a hundred and fifty
@@ -485,9 +488,13 @@ export const RELIC_ODDS: WeightDial = weightDial(RELIC_WEIGHTS);
  * six figures to be told it already has the thing. Null when the whole
  * half is owned out, which is the one case the R button must refuse.
  *
- * `open` IS WHAT THE TRACK HAS DEALT (track.ts relicsAt). Null is every
- * relic there is, which is what a free board draws from — the sandbox and
- * the editors are not a campaign and have nothing to unlock.
+ * `open` IS WHAT THE TRACK HAS DEALT (track.ts relicsAt), which is
+ * currently NOTHING at any level — so a campaign run passes an empty set
+ * and this returns null every time, which is what takes the relics out of
+ * play. Null is every relic there is, which is what a FREE BOARD draws
+ * from: the sandbox and the editors are not a campaign, have nothing to
+ * unlock, and are the one door the catalog can still be exercised
+ * through.
  */
 export function rollRelic(
   held: RelicsHeld = new Set(),

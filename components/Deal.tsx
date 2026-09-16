@@ -20,10 +20,19 @@ import { Glyph, ModReveal } from "./Relics";
 import { HoverCard, useHoverCard } from "./HoverCard";
 import { tile } from "./tile";
 
-/** what a shut half of the catalog says under its label (game.ts DealHalf) */
+/**
+ * What a shut half of the catalog says under its label (game.ts DealHalf).
+ *
+ * "RESERVED" RATHER THAN "LOCKED" for the shut case, because the relics
+ * are the only half that is ever shut now and a lock implies a key: the
+ * track used to open them at a level and does not deal them at all any
+ * more (track.ts), so "locked" would be promising a level that is never
+ * coming. The M button cannot reach this row — a save owns four mods from
+ * its first boot.
+ */
 const HALF_SUB: Record<Exclude<DealHalf, "open">, string> = {
   owned: "all owned",
-  locked: "locked",
+  locked: "reserved",
 };
 
 /**
@@ -536,14 +545,13 @@ export function DealCorner({
               mods.
               A DARK BUTTON SAYS WHICH KIND OF DARK IT IS (game.ts
               DealHalf): "all owned" is a run that has taken everything
-              there is, and "locked" is a save the track has not dealt that
-              category to yet. Only the G button ever reads "all owned" —
+              there is, and "reserved" is a category the track has dealt
+              this save none of. Only the G button ever reads "all owned" —
               a relic is held once and there are fourteen, while a mod has
-              no cap — and only the G button starts LOCKED, because relics
-              are the late game's answer and open at a level (track.ts
-              RELICS_FROM) rather than from wave one, so a player owed an
-              explanation gets one rather than being told they own relics
-              they have never seen */}
+              no cap — and right now only the G button is ever dark at all:
+              the relics are off the track (track.ts) and no campaign run
+              can roll one, so the button stands where it stands, says so,
+              and is ready for the day they come back */}
           <BuyButton
             keyCap="M"
             label="Mods"
@@ -566,7 +574,7 @@ export function DealCorner({
                 ? `Buy ${n} mod${n > 1 ? "s" : ""} for ${modCost} scrap, shortcut M`
                 : hud.modDeal === "owned"
                   ? "Buy mods — every mod is owned"
-                  : "Buy mods — locked until the track opens one"
+                  : "Buy mods — the track has dealt this save none"
             }
           />
           <BuyButton
@@ -587,7 +595,7 @@ export function DealCorner({
                 ? `Buy ${n} relic${n > 1 ? "s" : ""} for ${relicCost} scrap, shortcut G`
                 : hud.relicDeal === "owned"
                   ? "Buy relics — every relic is owned"
-                  : "Buy relics — locked until the track opens one"
+                  : "Buy relics — relics are reserved and not in play"
             }
           />
           {/* THE AMOUNT COMES LAST, in the far corner of the square,

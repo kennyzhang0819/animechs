@@ -21,9 +21,9 @@ export interface TechState {
    *  as the turrets are */
   mods: ReadonlySet<ModId>;
   /** ...and the RELICS the G button may (relics.ts). Two sets because they
-   *  are two categories: a save below RELICS_FROM has an empty one here and
-   *  a full one above, which is what makes the G button say "locked" and
-   *  the M button not */
+   *  are two categories — and this one is EMPTY AT EVERY LEVEL while the
+   *  relics are reserved (track.ts relicsAt), which is what makes the G
+   *  button say "locked" on every run and the M button not */
   relics: ReadonlySet<RelicId>;
   /** each turret's upgrade rungs, as the sim folds them (upgradedTower) */
   upgrades: Record<TowerKind, UpgradePoints>;

@@ -17,6 +17,8 @@ import {
   canPlaceOn,
   domesClear,
   groundClear,
+  paintPower,
+  powerDiscsOf,
   rulerCells,
   waterloggedUnder,
   type BoardGrids,
@@ -27,6 +29,7 @@ import {
   HN,
   HROWS,
   CORE_HP,
+  MAX_RELAYS,
   INF,
   MOVE_LAYERS,
   NAVAL_LAND_SPEED,
@@ -1377,6 +1380,32 @@ export class Sim {
    */
   readonly occupied = shared.u8(NCELLS);
   /**
+   * THE POWER GRID: 1 on every cell the core or a connected relay lights.
+   *
+   * NOTHING IS BUILT ANYWHERE ELSE (board.ts poweredClear) and nothing
+   * standing anywhere else fires (fireTowers). It is the one grid in this
+   * game the PLAYER draws: the core lights a generous piece of home ground
+   * for free, and every cell past that edge was paid for with a mast.
+   *
+   * SHARED, for the reason `occupied` is shared and then some. The build
+   * cursor tests a footprint against it every frame, and the overlay paints
+   * the WHOLE of it while a card is in hand — neither can wait on this
+   * thread for an answer, so the answer lives in memory both threads hold.
+   *
+   * REBUILT, NEVER PATCHED (rebuildPower). A mast going down can darken
+   * ground on the far side of the board, because the grid is a TREE rooted
+   * at the core rather than a union of discs — so there is no incremental
+   * edit that is correct, and the whole thing is repainted on the few
+   * events that can move it: a relay built, a relay lost, a new board.
+   */
+  readonly powered = shared.u8(NCELLS);
+  /**
+   * ...and a counter that goes up every time it is repainted, so the
+   * drawing side knows its overlay layer is stale without diffing 262,144
+   * cells to find out (simreport.ts HDR.POWER).
+   */
+  powerVersion = 0;
+  /**
    * THE SCALARS THE GAME READS, one slot each, on shared memory — the
    * clock, the count, the purse, the wave (simreport.ts HDR). Written by
    * writeHeader after every step and every command, read by the game
@@ -1989,11 +2018,19 @@ export class Sim {
    * round a mountain the way the rest of the swarm does and only crosses
    * one where there is no way round.
    *
-   * A HILL IS NOT AN OBSTACLE, only a detour: nothing collides a flyer
-   * with terrain (see updateUnits — every wall test there is behind
-   * `!fly`), so a crowd CAN shove one inside a peak. The field has no
-   * heading in there, and airHeading falls back to the straight line at
-   * the core, which flies it back out into open sky.
+   * A HILL IS A WALL, and it is the only one a flyer has. updateUnits
+   * collides every airborne body against THIS field's mask — so a mountain
+   * stops one exactly as it stops a walker, and the route above is a route
+   * the body is actually held to rather than advice a crowd shove could
+   * push it through.
+   *
+   * It used to be a detour and nothing more: no wall test in updateUnits
+   * applied to a flyer, so the crowd could shove one inside a peak and
+   * bodies ended up sitting in rock. The safety valve from those days is
+   * kept and still earns its place — the field has no heading inside a
+   * hill, airHeading falls back to the straight line at the core, and the
+   * slide lets a body already inside rock move freely until it is out. A
+   * hill stops a flyer; it never traps one.
    *
    * Structures are not in it (the footprint list is empty): a turret is
    * something to fly over, not around. Which is also why it is never
@@ -2193,6 +2230,12 @@ export class Sim {
         this.cellTower[y * COLS + x] = this.core;
         this.occupied[y * COLS + x] = 1;
       }
+    // ...and the ground it lights, which on a fresh board is the whole of
+    // the grid: no relay has been bought yet, so the core's own disc IS
+    // where this run may build. A NEW BOARD IS A NEW MAP, so the relays
+    // this run has switched on go with the old one
+    this.relayOn.fill(0);
+    this.rebuildPower();
     this.buildPads();
     // a new map is a new set of mouths, and a new pad list for the hulls
     // to be cut from (waterPads)
@@ -2768,6 +2811,13 @@ export class Sim {
   setTech(tech: TechState | null): void {
     this.tech = tech;
     this.refreshSpecs();
+    // ...AND THE POWER GRID, because this is what decides whether there is
+    // one (powerOn rides the tech gate). A board is built and reset before
+    // anybody says what it may field, so the grid painted back there was
+    // painted under the sandbox's rule — no rule at all — and switching the
+    // rule on without repainting would leave a campaign run holding an
+    // all-dark mask and unable to build anywhere at all.
+    this.rebuildPower();
   }
 
   /** unlimited income: the balance goes bottomless, spending stops
@@ -5958,6 +6008,19 @@ export class Sim {
     return this.waterlogged;
   }
 
+  /** the lit cells — the mask the drawing side holds by reference, for the
+   *  ghost's test and for the overlay that paints the whole region while a
+   *  card is in hand. Always the array, never null (see rebuildPower) */
+  poweredMask(): Uint8Array {
+    return this.powered;
+  }
+
+  /** ...and which of the map's relays are switched on, for the drawing
+   *  side to light and price them (the array itself, held by reference) */
+  relayOnMask(): Uint8Array {
+    return this.relayOn;
+  }
+
   /**
    * Would a turret of `kind` placed here fire slowed? True if ANY
    * cell of its footprint is within reach of water — a turret is one
@@ -6003,7 +6066,101 @@ export class Sim {
       isGoal: this.field.isGoal,
       occupied: this.occupied,
       waterlogged: this.waterlogged,
+      powered: this.powered,
     };
+  }
+
+  /**
+   * IS THE POWER RULE IN FORCE? It rides the TECH GATE and nothing else: a
+   * campaign run has a roster it may field and ground it may field it on,
+   * and both are the same kind of allowance. A sandbox and the two editors
+   * have neither — they build anything, anywhere, for nothing, and a board
+   * with nothing to defend has nothing to power.
+   */
+  get powerOn(): boolean {
+    return this.tech !== null;
+  }
+
+  /**
+   * WHICH OF THE MAP'S RELAYS HAVE BEEN SWITCHED ON, one byte each, indexed
+   * into terrain.relays.
+   *
+   * SHARED, because the drawing side has to know which of them to light and
+   * which to price, every frame, and this is one byte per relay against a
+   * message. WHERE they are does not cross at all: both threads build their
+   * own terrain from the same map document, so both already have the list.
+   *
+   * IT ONLY EVER GOES UP. A relay stands on rock, cannot be targeted and
+   * cannot be destroyed (see MapRelay in terrain.ts) — so buying one is a
+   * permanent widening of the board and nothing in the game turns one back
+   * off. That is what lets the power mask only ever grow, which is in turn
+   * what lets a placed turret never lose its ground.
+   */
+  readonly relayOn = shared.u8(MAX_RELAYS);
+
+  /**
+   * SWITCH ONE ON — the whole of the relay mechanic, and it is a purchase
+   * and not a placement: there is no footprint to test, no ground to claim
+   * and nothing to roll. The circle around it becomes buildable, for the
+   * rest of the run.
+   *
+   * IT TAKES NO MONEY, exactly as placeTower takes none. The scrap is gone
+   * before this is called (Game.buyRelay pays the world and tells the host,
+   * which is the one money path every purchase in this game goes down) —
+   * charging again here would charge a run twice for one press.
+   *
+   * Returns whether anything changed, so a stale press can be ignored: an
+   * index off the end, or a relay that is already on.
+   */
+  setRelayOn(i: number): boolean {
+    if (!this.terrain.relays[i] || this.relayOn[i]) return false;
+    this.relayOn[i] = 1;
+    this.rebuildPower();
+    return true;
+  }
+
+  /**
+   * EVERYTHING LIGHTING GROUND RIGHT NOW: the core, which lights for free
+   * and always, then every relay that has been bought.
+   *
+   * A FLAT UNION AND NOT A TREE. An earlier cut of this had relays daisy-
+   * chaining out from the core, each needing the one behind it — which is a
+   * real mechanic, and the wrong one for relays that cannot be destroyed:
+   * with nothing able to cut a chain, the chain was only ever a second way
+   * of saying what the prices already say. The price IS the gate now, and
+   * an author who wants a far relay to require a near one prices it that
+   * way.
+   */
+  powerDiscs(): { x: number; y: number; r: number }[] {
+    return powerDiscsOf(this.terrain, this.relayOn, this.core.x, this.core.y);
+  }
+
+  /**
+   * REPAINT THE POWER GRID: the core's disc, plus one per bought relay.
+   *
+   * SPAN FILL rather than a per-cell distance test — at ninety cells the
+   * core's disc alone is better than twenty-five thousand cells, and each
+   * row is solved with one square root. It runs when a relay is bought and
+   * when a board is loaded, never in a step and never in a frame.
+   */
+  private rebuildPower(): void {
+    this.powerVersion++;
+    // WHERE THE RULE IS OFF THE MASK IS ALL ONES, rather than absent.
+    //
+    // It used to be handed over as null on a free board, and that was a bug
+    // with a long fuse: the drawing side takes its reference to this array
+    // ONCE, when the level loads (simreads.ts World), and whether the rule
+    // is on is not known until setTech runs a moment later — so a campaign
+    // run captured the null and could never build anywhere.
+    //
+    // A mask that is always an array and always true has no such moment. It
+    // costs 262,144 bytes on a board that does not need them and removes
+    // every question about when the answer becomes known.
+    if (!this.powerOn) {
+      this.powered.fill(1);
+      return;
+    }
+    paintPower(this.powered, this.powerDiscs());
   }
 
 
@@ -8347,17 +8504,34 @@ export class Sim {
       // window edge, so 1-wide corridors and their L-bends stay threadable.
       // Only a zero-progress axis redirects its speed into the free one, and
       // a unit already overlapping a wall (crowd shoves) skips the veto
-      // entirely so it can always walk back out. Flyers skip walls wholesale
+      // entirely so it can always walk back out.
+      //
+      // A FLYER COLLIDES TOO, AND WITH THE HILLS ONLY. It used to skip this
+      // wholesale — `wedged` was forced true for anything airborne — which
+      // meant the air field's careful route round a mountain was advice a
+      // flyer could be shoved straight through: the crowd pushes on the air
+      // layer like any other, and the push landed bodies inside peaks with
+      // no heading to read (see airField). A mountain stops a flyer now.
+      // What it collides WITH is airField, not the walkers' field, and the
+      // difference is the whole point of using it: its mask is the hills
+      // (airWalkMask) and its footprint list is empty, so a flyer still
+      // crosses water, still crosses a turret, and is stopped by rock.
       const x0 = upx[i], y0 = upy[i];
-      const wedged = fly || mf.hitsWall(upx[i], upy[i], WALL_R);
+      const cf = fly ? this.airField : mf;
+      // ...and the escape is the same one a walker gets: a body ALREADY
+      // inside rock skips the veto so it can always move back out. That is
+      // what keeps a hill from becoming a trap for anything a shove, a
+      // spawn or a pull has managed to put inside one — airHeading hands it
+      // a straight line out of the peak and this lets it take it
+      const wedged = cf.hitsWall(upx[i], upy[i], WALL_R);
       let nx = upx[i] + dxT;
-      if (!wedged && mf.hitsWall(nx, upy[i], WALL_R)) {
+      if (!wedged && cf.hitsWall(nx, upy[i], WALL_R)) {
         const cX =
           dxT > 0
             ? Math.floor((nx + WALL_R) / CELL) * CELL - WALL_R
             : Math.ceil((nx - WALL_R) / CELL) * CELL + WALL_R;
         const fwd = dxT > 0 ? cX > upx[i] : cX < upx[i];
-        if (fwd && !mf.hitsWall(cX, upy[i], WALL_R)) nx = cX;
+        if (fwd && !cf.hitsWall(cX, upy[i], WALL_R)) nx = cX;
         else {
           nx = upx[i];
           uvy[i] += Math.sign(uvy[i] || flowTmp.y || 1) * Math.abs(uvx[i]) * 0.6;
@@ -8366,13 +8540,13 @@ export class Sim {
         }
       }
       let ny = upy[i] + dyT;
-      if (!wedged && mf.hitsWall(nx, ny, WALL_R)) {
+      if (!wedged && cf.hitsWall(nx, ny, WALL_R)) {
         const cY =
           dyT > 0
             ? Math.floor((ny + WALL_R) / CELL) * CELL - WALL_R
             : Math.ceil((ny - WALL_R) / CELL) * CELL + WALL_R;
         const fwd = dyT > 0 ? cY > upy[i] : cY < upy[i];
-        if (fwd && !mf.hitsWall(nx, cY, WALL_R)) ny = cY;
+        if (fwd && !cf.hitsWall(nx, cY, WALL_R)) ny = cY;
         else {
           ny = upy[i];
           uvx[i] += Math.sign(uvx[i] || flowTmp.x || 1) * Math.abs(uvy[i]) * 0.6;

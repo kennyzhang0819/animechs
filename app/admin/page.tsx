@@ -247,6 +247,16 @@ function AdminInner() {
               {label}
             </button>
           ))}
+          {/* NOT A TAB — a door. The map editor above paints a finished
+              document; the graph editor draws the SPEC a document is
+              generated from, which is a different thing to be editing and
+              lives on its own route (app/admin/mapgraph) */}
+          <button
+            onClick={() => router.push("/admin/mapgraph")}
+            className="-mb-px ml-auto border-b-2 border-transparent px-4 py-2 text-[15px] font-bold text-[#71717C] transition-colors hover:text-[#A6A6AF]"
+          >
+            Map graph →
+          </button>
         </div>
 
         {tab === "balance" &&

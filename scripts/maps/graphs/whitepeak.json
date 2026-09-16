@@ -1,0 +1,266 @@
+{
+  "id": "whitepeak",
+  "name": "Whitepeak",
+  "seed": 4478,
+  "archetype": "RACE THE ENEMY",
+  "rock": {
+    "threshold": 0.54,
+    "scale": 30,
+    "warp": 16
+  },
+  "water": {
+    "scale": 60,
+    "level": 0.26,
+    "shore": 0.06,
+    "bias": [
+      {
+        "kind": "const",
+        "v": 0.2
+      },
+      {
+        "kind": "well",
+        "x": 60,
+        "y": 60,
+        "r": 14,
+        "depth": 0.5
+      }
+    ]
+  },
+  "floors": {
+    "scale": 40,
+    "warp": 14,
+    "families": [
+      {
+        "floor": 39,
+        "wall": 14,
+        "weight": 0.5
+      },
+      {
+        "floor": 33,
+        "wall": 12,
+        "weight": 0.32
+      },
+      {
+        "floor": 36,
+        "wall": 16,
+        "weight": 0.18
+      }
+    ]
+  },
+  "beach": {
+    "floor": 33,
+    "depth": 2
+  },
+  "flats": {
+    "floor": 36,
+    "clear": 14
+  },
+  "rooms": [
+    {
+      "x": 128,
+      "y": 128,
+      "r": 24,
+      "wobble": 0.24
+    },
+    {
+      "x": 128,
+      "y": 70,
+      "r": 13
+    },
+    {
+      "x": 128,
+      "y": 186,
+      "r": 13
+    },
+    {
+      "x": 70,
+      "y": 128,
+      "r": 13
+    },
+    {
+      "x": 186,
+      "y": 128,
+      "r": 13
+    },
+    {
+      "x": 70,
+      "y": 66,
+      "r": 9,
+      "water": true
+    },
+    {
+      "x": 128,
+      "y": 18,
+      "r": 15,
+      "note": "ground entry"
+    },
+    {
+      "x": 128,
+      "y": 238,
+      "r": 15,
+      "note": "ground entry"
+    },
+    {
+      "x": 18,
+      "y": 128,
+      "r": 15,
+      "note": "ground entry"
+    },
+    {
+      "x": 238,
+      "y": 128,
+      "r": 15,
+      "note": "ground entry"
+    },
+    {
+      "x": 20,
+      "y": 20,
+      "r": 12,
+      "water": true,
+      "note": "water entry"
+    }
+  ],
+  "core": {
+    "x": 126,
+    "y": 126,
+    "r": 10
+  },
+  "chokes": [],
+  "holes": 8,
+  "lumps": 20,
+  "ruins": 2,
+  "coreWaterReach": 110,
+  "roads": [
+    {
+      "ends": [
+        10,
+        5
+      ],
+      "width": [
+        17,
+        23
+      ],
+      "water": true
+    },
+    {
+      "ends": [
+        6,
+        1
+      ],
+      "width": [
+        9,
+        16
+      ]
+    },
+    {
+      "ends": [
+        1,
+        -1
+      ],
+      "width": [
+        9,
+        16
+      ]
+    },
+    {
+      "ends": [
+        7,
+        2
+      ],
+      "width": [
+        9,
+        16
+      ]
+    },
+    {
+      "ends": [
+        2,
+        -1
+      ],
+      "width": [
+        9,
+        16
+      ]
+    },
+    {
+      "ends": [
+        8,
+        3
+      ],
+      "width": [
+        9,
+        16
+      ]
+    },
+    {
+      "ends": [
+        3,
+        -1
+      ],
+      "width": [
+        9,
+        16
+      ]
+    },
+    {
+      "ends": [
+        9,
+        4
+      ],
+      "width": [
+        9,
+        16
+      ]
+    },
+    {
+      "ends": [
+        4,
+        -1
+      ],
+      "width": [
+        9,
+        16
+      ]
+    },
+    {
+      "ends": [
+        1,
+        3
+      ],
+      "width": [
+        8,
+        11
+      ]
+    },
+    {
+      "ends": [
+        1,
+        4
+      ],
+      "width": [
+        8,
+        11
+      ]
+    },
+    {
+      "ends": [
+        2,
+        3
+      ],
+      "width": [
+        8,
+        11
+      ]
+    },
+    {
+      "ends": [
+        2,
+        4
+      ],
+      "width": [
+        8,
+        11
+      ]
+    }
+  ]
+}

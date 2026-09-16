@@ -58,6 +58,10 @@ export const HDR = {
   INSPECTED_UNIT: 16,
   /** goes up every time the live spec table is recomposed (Sim.refreshSpecs) */
   SPECS: 17,
+  /** ...and every time the power grid is repainted (Sim.rebuildPower). The
+   *  overlay paints a layer off 262,144 cells and must not do it per frame,
+   *  so this is what tells it the layer it holds is stale */
+  POWER: 18,
 } as const;
 export const HEADER_LEN = 20;
 
@@ -82,6 +86,7 @@ export function writeHeader(sim: Sim): void {
   h[HDR.CHARGING] = sim.charging ? 1 : 0;
   h[HDR.INSPECTED_UNIT] = sim.inspectedUnit;
   h[HDR.SPECS] = sim.specsVersion;
+  h[HDR.POWER] = sim.powerVersion;
 }
 
 // ---------- the phase clock's reading ----------

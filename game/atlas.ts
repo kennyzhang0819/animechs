@@ -15,6 +15,9 @@ import { ANIMAL_ART } from "./animalFlag";
 import { FOUNDRY_ART } from "./turretFlag";
 import { FOUNDRY_BASE_URLS, FOUNDRY_CORE_URL, FOUNDRY_HEAD_URLS, foundryHeadUrl } from "./foundryArt";
 import { TOWER_ICONS } from "./towerIcons";
+// the Foundry's palette, for the one block whose art is drawn here rather
+// than loaded from a file (relayBlock)
+import { BORE, GUN, POWER, STEEL, type Mat } from "./turretArt";
 import type { TowerKind } from "./types";
 import {
   toCanvas,
@@ -684,6 +687,15 @@ export const UV_TOWER_BASE4 = flat("tower-base-4", 128);
 export const UV_SHIELD_TOWER = flat("shield-tower", 96);
 export const UV_RESTORER = flat("restorer", 128);
 export const UV_FIXER = flat("fixer", 64);
+/**
+ * THE RELAY, a 2x2 block like the projector and, like it, one that never
+ * turns — a mast has no front. Its art is the only structure art in the
+ * game with no source file behind it at all: it is DRAWN here, at pack
+ * time (relayBlock), because there is no Mindustry block it is a port of
+ * and a hand-authored PNG for four flat shapes would be a file to keep in
+ * step with a palette that already lives in turretArt.ts.
+ */
+export const UV_RELAY = flat("relay", 128);
 /**
  * Tether's beam, the two regions Drawf.laser stretches between the
  * turret and its target. The line is packed ROTATED — its 4x48 source runs
@@ -2457,6 +2469,74 @@ function liquidTurret(
  * block's own silhouette, and outlining it would draw a black ring in the
  * middle of the sprite.
  */
+/**
+ * THE RELAY'S BLOCK, drawn rather than vendored.
+ *
+ * It follows the Foundry's rules for a head (docs/turret-factions.md and
+ * the header of turretArt.ts) because it stands on the same plate as one:
+ * no outline of its own, flat colours butted together, every material a
+ * PAIR whose dark half is on the left of the sprite and light half on the
+ * right, boxes and 45-degree cuts only, and nothing narrower than four
+ * native pixels — eight here, since this is a 64px block drawn at 2x.
+ *
+ * FOUR PARTS AND NO DRESSING: a gunmetal plate, a steel diamond, a dark
+ * bore, and the lamp. The diamond is the whole silhouette decision — not
+ * one of the seventeen heads is a diamond, so a mast is the one thing on
+ * the board you can find without reading it, which is exactly what you
+ * want of the building every other building's power runs through.
+ */
+function relayBlock(): HTMLCanvasElement {
+  const S = 128;
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = S;
+  const c = cv.getContext("2d");
+  if (!c) throw new Error("2d context unavailable for the relay block");
+  c.imageSmoothingEnabled = false;
+  // THE SHADE IS THE WHOLE OF THE LIGHTING and it is applied per PART, not
+  // per drawing: each shape is filled twice, clipped to one half of the
+  // sprite, so the form stays symmetric by construction and only the light
+  // is not (turretArt.ts)
+  const halves = (path: () => void, mat: Mat): void => {
+    for (let side = 0; side < 2; side++) {
+      c.save();
+      c.beginPath();
+      c.rect(side === 0 ? 0 : S / 2, 0, S / 2, S);
+      c.clip();
+      c.beginPath();
+      path();
+      c.fillStyle = mat[side];
+      c.fill();
+      c.restore();
+    }
+  };
+  const octagon = (a: number, b: number, ch: number): void => {
+    c.moveTo(a + ch, a);
+    c.lineTo(b - ch, a);
+    c.lineTo(b, a + ch);
+    c.lineTo(b, b - ch);
+    c.lineTo(b - ch, b);
+    c.lineTo(a + ch, b);
+    c.lineTo(a, b - ch);
+    c.lineTo(a, a + ch);
+    c.closePath();
+  };
+  const diamond = (r: number): void => {
+    c.moveTo(S / 2, S / 2 - r);
+    c.lineTo(S / 2 + r, S / 2);
+    c.lineTo(S / 2, S / 2 + r);
+    c.lineTo(S / 2 - r, S / 2);
+    c.closePath();
+  };
+  // the plate, inside the stock margin so the base course shows around it
+  halves(() => octagon(12, 116, 20), GUN);
+  halves(() => diamond(40), STEEL);
+  halves(() => diamond(26), BORE);
+  // the lamp, 24px across the midline — the shade cuts it in two, so it is
+  // authored at three times the minimum rather than at the minimum
+  halves(() => c.rect(52, 52, 24, 24), POWER);
+  return cv;
+}
+
 function mendBlock(base: HTMLImageElement, top: HTMLImageElement): HTMLCanvasElement {
   const cv = outlined(base, BLOCK_OUTLINE, BLOCK_OUTLINE_R);
   const cc = cv.getContext("2d");
@@ -3366,6 +3446,10 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   draw(UV_SHIELD_TOWER, outlinedBlock(img.shieldTower));
   draw(UV_RESTORER, antialiased(mendBlock(img.restorer, img.restorerTop)));
   draw(UV_FIXER, antialiased(mendBlock(img.fixer, img.fixerTop)));
+  // ...and the mast, generated rather than loaded (relayBlock), through the
+  // same outline and antialias pass every other block goes through so it
+  // sits on the board as one of them
+  draw(UV_RELAY, outlinedBlock(relayBlock()));
 
   // the base building at native 160px: the block, then the team overlay
   // tinted sharded-yellow the way Mindustry composites team regions

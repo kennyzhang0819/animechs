@@ -25,68 +25,76 @@ import {
  *
  * A save has one number, its lifetime XP (progress.ts), and the level read
  * off it (economy.ts) is a tier on this track. Every tier hands out fixed
- * rewards: a map opens, a fast-forward pace switches on, a turret joins
- * the roster. Nothing is chosen and nothing is bought — the player levels,
- * the game hands them things, exactly as a commander levels in co-op.
+ * rewards: a map opens, a turret joins the roster, a module joins the bag.
+ * Nothing is chosen and nothing is bought — the player levels, the game
+ * hands them things, exactly as a commander levels in co-op.
  *
- * THE TRACK HAS TWO PHASES, AND THEY PULL OPPOSITE WAYS.
+ * THE TRACK HAS TWO PHASES, THEY DO NOT OVERLAP, AND THE SEAM IS THE TOP
+ * OF THE BUILD PHASE.
  *
- *   THE ROSTER PHASE, levels 1 to ROSTER_TOP. What opens here is a
- *   turret — and therefore a card in the DRAW POOL, since the deal
- *   (rarity.ts) rolls over exactly what the track has handed out. A fresh
- *   save opens with STARTING_ROSTER, the four that make a first board; the
- *   other thirteen come by UNLOCKS below. There is no gate inside a run.
+ *   THE BUILD PHASE, levels 1 to ROSTER_TOP. Everything a player builds
+ *   WITH is dealt here, and all of it is dealt by the top: the turrets —
+ *   and therefore the cards in the DRAW POOL, since the deal (rarity.ts)
+ *   rolls over exactly what the track has handed out — the mods that ride
+ *   them, and the maps to take the lot to. A fresh save opens with
+ *   STARTING_ROSTER and STARTING_MODS; a save that reaches ROSTER_TOP owns
+ *   the game's whole toolkit and will never be handed another piece of it.
  *
  *   THE MUTATOR PHASE, MUTATORS_FROM to MAX_LEVEL. What a level hands out
- *   here is a RULE, added to the deck the deploy roll draws from
- *   (MUTATOR_UNLOCKS). The reward for climbing is that the game is allowed
- *   to be harder — which is the reward a tower defence player is actually
+ *   here is a RULE and never anything else, added to the deck the deploy
+ *   roll draws from (MUTATOR_UNLOCKS). Nothing new to build with: the
+ *   reward for climbing past the seam is that the game is ALLOWED TO BE
+ *   HARDER, which is the reward a tower defence player is actually
  *   climbing for.
  *
- *   THE TWO PHASES OVERLAP ON PURPOSE. They used to be back to back, the
- *   roster finished at 14 and the rules starting at 15, so the whole track
- *   was 21 levels and every one of them carried something. It is spread
- *   out now: the three purples are levels 12, 16 and 20, the maps run to
- *   22, and the rules land on the levels between them. Every level still
- *   carries something — the modules are placed last, into whatever the
- *   guns and the maps left empty.
+ * THE TWO PHASES USED TO OVERLAP, AND ON PURPOSE. The roster ran to 20 and
+ * the modules to 30, threaded between the rules so that every level of a
+ * 30-level track carried something. What that bought was two different
+ * promises on one row — this level makes the game harder, and also here is
+ * a purple to answer it with — and a ceiling spent over thirty clears. The
+ * seam is the fix, and it is the whole shape of the campaign now: BUILD,
+ * then FIGHT.
  *
- * AND THE MODULES ARE DEALT IN TWO HALVES, IN THAT ORDER. The mods
- * (MOD_UNLOCKS) fill the FRONT of the track, levels 2 to 14, and the
- * relics (RELIC_UNLOCKS) fill the BACK, RELICS_FROM to MAX_LEVEL. That is
- * not housekeeping, it is the two categories being two answers to two
- * halves of a campaign: a mod makes a gun better, which is the answer for
- * as long as a better gun is enough, and a relic changes a rule, which is
- * the answer once the T5 hulls arrive. The relics therefore open in the
- * same half of the track as the mutator phase and the purple turrets —
- * where the game starts being hard — and not one of them is in the bag
- * before then. A fresh save opens on four mods and no relics at all.
+ * EVERY LEVEL STILL CARRIES SOMETHING, and it is CHECKED at import rather
+ * than trusted (see the last invariant in this file). A row of the
+ * progress screen that hands out nothing is a row with no reason to be
+ * looked at; two dense phases back to back is how the track keeps that
+ * true without a 30-level stretch to fill.
  *
- * THE TWO HALVES USED TO BE INTERLEAVED, a relic dealt on level 3 and the
- * pair of them alternating to the top. That put the board's biggest rules
- * in a player's hands before they had seen a second map, and it left the
- * back of the track handing out "+4% damage" against twenty thousand
- * health. The order below is the fix and it is the whole pacing of the
- * catalog: mods, then relics.
+ * THE RELICS ARE OFF THE TRACK ENTIRELY — see the relic note below. They
+ * used to fill the back half, which is the mutator phase's half; nothing
+ * deals one now and no run can roll one, and the catalog is intact for
+ * when they come back.
  *
- * THE UPGRADE RUNGS ARE OFF THE TRACK (UPGRADES_ON_TRACK): the branches in
- * upgrades.ts are intact and waiting to be put back somewhere. They are
- * not a third category — nothing deals one, nothing sells one, and no
- * screen groups them under a word of their own (see mods.ts: there are
- * two categories, and "upgrade" is not one of them).
+ * THE UPGRADE BRANCHES ARE OFF IT TOO (UPGRADES_ON_TRACK): upgrades.ts is
+ * intact and waiting to be put back somewhere. They are not a third
+ * category — nothing deals one, nothing sells one, and no screen groups
+ * them under a word of their own (see mods.ts: there are two categories,
+ * and "upgrade" is not one of them).
  */
-
-/** the level at which the last turret opens and the roster is complete */
-export const ROSTER_TOP = 20;
 
 /**
- * THE LEVEL THE MUTATOR PHASE OPENS, and the one gate on the ladder: the
- * difficulties that roll rules (Nemesis +1 and up) are shut until a save
- * has rules to roll. THIS NUMBER IS LOAD-BEARING — Animechs.tsx prints it
- * at a player looking at a locked difficulty — and it is the one thing on
- * the track that is not free to move.
+ * THE LAST LEVEL OF THE BUILD PHASE. Every turret, every mod and every map
+ * is dealt at or below this, and nothing but rules is dealt above it.
+ *
+ * IT IS THE PHASE'S TOP, NOT THE ROSTER'S, though it is still named for the
+ * roster. Every row from 2 up hands over one gun and one module, so the
+ * tables empty at the rate the CATALOGS run out rather than on a level
+ * chosen for them: the bag is spent at 12, the roster at 14, and 15 is the
+ * ninth map on its own. What fixes this number is the seam below it — move
+ * it and MUTATORS_FROM moves, which is the one gate on the ladder.
  */
-export const MUTATORS_FROM = 15;
+export const ROSTER_TOP = 15;
+
+/**
+ * THE LEVEL THE MUTATOR PHASE OPENS — one past the build phase's top, and
+ * the one gate on the ladder: the difficulties that roll rules (Nemesis +1
+ * and up) are shut until a save has rules to roll. THIS NUMBER IS
+ * LOAD-BEARING — Animechs.tsx prints it at a player looking at a locked
+ * difficulty — and every table in this file is authored to the seam it
+ * names.
+ */
+export const MUTATORS_FROM = ROSTER_TOP + 1;
 
 /**
  * THE RULES, LIGHTEST FIRST, by the level that opens them.
@@ -99,35 +107,41 @@ export const MUTATORS_FROM = 15;
  * mutator-bearing difficulty can actually afford, and a run above Nemesis
  * is a different run from its first outing.
  *
- * After that it is cheapest first, every other level, threaded between the
- * two purples and the last maps rather than crowded onto consecutive ones.
+ * AFTER THAT IT IS ONE A LEVEL, CHEAPEST FIRST, TO THE TOP. The phase used
+ * to deal every other level, because the maps, modules and relics sat in
+ * the gaps; nothing sits in them now, so a gap would be an empty row. Ten
+ * rules on ten consecutive levels after the opening three is what sets
+ * MAX_LEVEL.
  */
 const MUTATOR_UNLOCKS: Readonly<Record<number, readonly MutationId[]>> = {
   // CHEAPEST FIRST, and the order is the CATALOG's (mutation.ts), which is
   // re-authored whenever the costs are — a rule that got dearer moves down
   // this table with it, or the phase would be handing out its hardest
   // rules first and calling them an opening hand
-  15: ["amphibious", "shieldTowers", "volatile"],
+  16: ["amphibious", "shieldTowers", "volatile"],
   17: ["armored"],
-  19: ["hydrophobic"],
-  21: ["leadership"],
-  23: ["mitosis"],
-  25: ["conquest"],
-  26: ["mechVirus"],
-  27: ["overshields"],
-  // THE TAIL RUNS BACK TO BACK, and that is the every-other-level rhythm
-  // ending rather than being broken: the gaps above are where the maps,
-  // modules and turrets sit, and by level 26 the track has dealt all of
-  // those. A level that opens nothing at all is a level with no reason to
-  // be looked at, so the dearest rules take the last rows one after
-  // another rather than leaving empty ones between them.
-  28: ["reconstruction"],
-  29: ["speedy"],
-  30: ["hungry"],
+  18: ["hydrophobic"],
+  19: ["leadership"],
+  20: ["mitosis"],
+  21: ["conquest"],
+  22: ["mechVirus"],
+  23: ["overshields"],
+  24: ["reconstruction"],
+  25: ["speedy"],
+  26: ["hungry"],
 };
 
-/** the last level that hands anything out — the bottom of the progress screen */
-export const MAX_LEVEL = 30;
+/**
+ * THE LAST LEVEL THAT HANDS ANYTHING OUT — the bottom of the progress
+ * screen, and the dearest rule's row.
+ *
+ * IT IS NOT THE LEVEL CAP. The curve runs to LEVEL_CAP (economy.ts) and a
+ * save is free to climb past the track's top; there is simply nothing
+ * above here left to hand over. It came down from 30 with the relics: the
+ * back half was fourteen relics threaded through thirteen rules, and
+ * without them the rules close the track on their own.
+ */
+export const MAX_LEVEL = 26;
 
 /** THE CATALOG IS DEALT WHOLE, ONCE EACH, INSIDE THE PHASE — checked at import */
 (() => {
@@ -165,22 +179,33 @@ export type Reward =
   | { kind: "upgrade"; id: UpgradeKind };
 
 /**
- * THE MAPS, and the spine of the campaign: one every other level through
- * the opening, then stretched out as the levels get dearer, so a save that
- * has seen everything the roster can do still has somewhere new to take
- * it. They used to be levels 2 through 9 back to back, which spent the
- * whole campaign in the first hour and left the rest of the track handing
- * out nothing a player could stand on.
+ * THE MAPS, and the spine of the build phase: ONE EVERY OTHER LEVEL from 2
+ * to 14, then the ninth on ROSTER_TOP beside the last purple. Every second
+ * row of the opening is somewhere new to take what the row before handed
+ * over, and the phase closes on a map and the gun to christen it with.
+ *
+ * ONE MAP A LEVEL AND NEVER TWO. A map is the biggest thing a row can
+ * carry and the eye reads it last (REWARD_ORDER), so a row carries one or
+ * it carries none; the odd levels are where the gun and the module stand on
+ * their own. The last of the nine is the whole of level 15 — the roster and
+ * the bag both run out under it, so the phase closes on somewhere new to
+ * take everything it just finished handing over.
+ *
+ * They used to run to level 22 — stretched out across the old 30-level
+ * track so the back half had something to hand over besides rules. Two of
+ * the nine therefore landed past the point where a player had stopped
+ * being promised anything to build with, which is the wrong half of a
+ * campaign to be opening new ground in.
  */
 const PLACED: readonly { level: number; reward: Reward }[] = [
   { level: 2, reward: { kind: "world", worldId: "4" } },
   { level: 4, reward: { kind: "world", worldId: "2" } },
   { level: 6, reward: { kind: "world", worldId: "5" } },
   { level: 8, reward: { kind: "world", worldId: "6" } },
-  { level: 11, reward: { kind: "world", worldId: "7" } },
-  { level: 14, reward: { kind: "world", worldId: "3" } },
-  { level: 18, reward: { kind: "world", worldId: "8" } },
-  { level: 22, reward: { kind: "world", worldId: "9" } },
+  { level: 10, reward: { kind: "world", worldId: "7" } },
+  { level: 12, reward: { kind: "world", worldId: "3" } },
+  { level: 14, reward: { kind: "world", worldId: "8" } },
+  { level: 15, reward: { kind: "world", worldId: "9" } },
 ];
 
 /**
@@ -222,20 +247,23 @@ const UNLOCKS: Readonly<Record<number, readonly TowerKind[]>> = {
   5: ["douser"],
   6: ["barrage"],
   // the first amber comes early for the same reason, and the blue that
-  // follows it keeps the middle of the track from settling into a pattern
+  // follows it keeps the middle of the phase from settling into a pattern
   7: ["hive"],
   8: ["tether"],
-  9: ["whirl"],
-  10: ["cleaver"],
-  11: ["deluge"],
-  // THE PURPLES ARE SPREAD, four levels apart, and the last of them is the
-  // top of the roster. A 4x4 is the thing a run is hoping the deal turns
-  // over, and handing all three out on consecutive levels spent the whole
-  // ceiling of the game in three clears. The gaps are the point: a save
-  // plays a good while WITH the repeater before the furnace turns up
-  12: ["repeater"],
-  16: ["furnace"],
-  20: ["railhead"],
+  // THE PURPLES ARE SPREAD, and the last of them closes the roster. A 4x4
+  // is the thing a run is hoping the deal turns over, and handing all three
+  // out on consecutive levels spent the whole ceiling of the game in three
+  // clears. The gaps are the point — a save plays a good while WITH the
+  // repeater before the furnace turns up — and the blues and ambers below
+  // are what stands in them. Three levels apart, then two: the roster runs
+  // out one level before the phase does now that every row from 2 carries a
+  // gun, and the railhead would rather land a row early than leave a hole
+  9: ["repeater"],
+  10: ["whirl"],
+  11: ["cleaver"],
+  12: ["furnace"],
+  13: ["deluge"],
+  14: ["railhead"],
 };
 
 /**
@@ -252,8 +280,8 @@ const UNLOCKS: Readonly<Record<number, readonly TowerKind[]>> = {
  */
 
 /**
- * THE MODS (mods.ts) — the front half of the module catalog, and the
- * third thing the track deals.
+ * THE MODS (mods.ts) — the whole of the module catalog the track deals,
+ * and the third thing the build phase hands over.
  *
  * A FRESH SAVE OPENS THE M BUTTON ON FOUR TICKS. The whole catalog used to
  * be on offer from level one: every module in the bag, so a first run's M
@@ -263,10 +291,18 @@ const UNLOCKS: Readonly<Record<number, readonly TowerKind[]>> = {
  * one per stat, so the first mod a run buys teaches what a mod IS (a
  * chance riding every turret placed) without also asking what a sabot is.
  *
- * THE ORDER IS CHEAPEST BAND FIRST and the whole half is dealt by level
- * 14, so a save arrives at the mutator phase with the mod catalog complete
- * and the relic catalog empty. The three ultras close it, back to back,
- * where the mod half finishes strongest right as the relic half opens.
+ * THE ORDER IS CHEAPEST BAND FIRST and ONE A LEVEL FROM 2, so the catalog
+ * is spent by level 12 and a save arrives at the mutator phase with nothing
+ * left to be handed. The three ultras close it, back to back: the bag
+ * finishes strongest right where the track stops filling it. Eleven mods
+ * against thirteen guns means the bag runs dry two rows before the roster
+ * does, which is the right way round — a module with no gun to ride is
+ * worth less than a gun with no module on it.
+ *
+ * THERE IS NO SECOND HALF ANY MORE. The mods used to be the FRONT half of
+ * a module catalog whose back half was the relics, dealt from 16 up; the
+ * relics are off the track (see the relic note below), so the mods are the
+ * whole of what a level can put in a bag.
  */
 export const STARTING_MODS: readonly ModId[] = ["dmg1", "rate1", "hp1", "range1"];
 
@@ -281,70 +317,50 @@ const MOD_UNLOCKS: Readonly<Record<number, readonly ModId[]>> = {
   7: ["prototype"],
   8: ["bulwark"],
   9: ["sabot"],
-  // 10 and 11 deal no mod: 11 opens the seventh map, and the gap between
-  // the rares and the ultras is where the purples are spread rather than
-  // stacked — the same reason UNLOCKS puts four levels between its own
-  12: ["giant"],
-  13: ["sniper"],
-  14: ["allround"],
+  // the ultras, back to back, closing the bag
+  10: ["giant"],
+  11: ["sniper"],
+  12: ["allround"],
 };
 
 /**
- * THE RELICS (relics.ts) — the BACK half, and the one half of a corner
- * button that starts SHUT.
+ * THE RELICS (relics.ts) ARE RESERVED, AND NO LEVEL DEALS ONE.
  *
- * RELICS_FROM IS THE WHOLE DESIGN STATEMENT. A relic changes the game and
- * costs a hundred and fifty thousand (economy.ts); what it is FOR is the
- * back half of a campaign, where a wall of T5 hulls walks up the lane and
- * a better gun has stopped being an answer. So the half opens the level
- * after the mutator phase does — where the game is first allowed to be
- * hard — and the G button prints "locked" until then. It used to open on
- * level 3, which handed a player Overclock Core before their second map.
+ * They used to be the BACK HALF of the module catalog: one a level from 16
+ * to the top of a 30-level track, cheapest band first, closing the
+ * campaign on Ascendancy Protocol. What a relic is FOR was the late game,
+ * where a wall of T5 hulls walks up the lane and a better gun has stopped
+ * being an answer.
  *
- * CHEAPEST BAND FIRST, one a level from RELICS_FROM to the TOP OF THE
- * TRACK, so the campaign's last row hands over Ascendancy Protocol — the
- * relic that changes what the deal itself deals — rather than finishing on
- * a rule with a purple stranded a row above it.
+ * WHY THEY CAME OFF: a relic is a RULE OVER THE WHOLE BOARD, and so is a
+ * mutator. Dealing both up the back half meant one half of the track was
+ * making the game harder with one hand and handing over the answer with
+ * the other, on alternating rows. The back half is the mutator phase now
+ * and it is only that. The relics get a door of their own, and it is not
+ * this one.
  *
- * ONE GAP, at 18, because fourteen relics do not quite fill fifteen rows.
- * It sits on a level that already opens a MAP, which is the same choice the
- * mod half makes with its own gap at 11: a row that is already carrying
- * something is the row that can afford to carry nothing else.
+ * NOTHING IS DELETED AND NOTHING IS ROLLABLE. The catalog, the prices,
+ * what each one does to a board, the G button, the reveal card and the
+ * codex's Relics tab are all intact; what is gone is the LEVEL TABLE. So
+ * relicsAt hands back an empty bag at every level — which is the pool the
+ * deal draws from (game.ts relicPool), so the G button sits dark on every
+ * campaign run and says "reserved" under its label (Deal.tsx HALF_SUB) —
+ * and relicUnlockLevel answers past the top of the track, so the codex
+ * draws all fourteen tiles and lights none of them.
+ *
+ * The band order the table dealt in is not lost with it: it is the order
+ * RELICS itself is written in (relics.ts), commons first, which is where
+ * to start when they are placed again.
  */
-export const RELICS_FROM = 16;
 
-const RELIC_UNLOCKS: Readonly<Record<number, readonly RelicId[]>> = {
-  // the commons: the board, turned up — and every one of them is still a
-  // doubling, because a common relic is the one that comes up OFTEN and
-  // not the one that does least (relics.ts)
-  16: ["overclock"],
-  17: ["coolant"],
-  // 18 deals no relic: it opens the Riverlands (see the note above)
-  19: ["scavenger"],
-  // the uncommons: what a death is worth, whose ever it was
-  20: ["insurance"],
-  21: ["phosphor"],
-  22: ["lastVolley"],
-  23: ["cascade"],
-  // the rares: the arithmetic of a heavy body
-  24: ["phoenix"],
-  25: ["twinfire"],
-  26: ["monofil"],
-  27: ["titan"],
-  // the ultras, and the last row of the campaign is the biggest of them
-  28: ["undying"],
-  29: ["terminal"],
-  30: ["ascendancy"],
-};
-
-/** every MOD exactly once, in the front half — checked at import */
+/** every MOD exactly once, inside the build phase — checked at import */
 (() => {
   const seen = new Set<ModId>(STARTING_MODS);
   if (seen.size !== STARTING_MODS.length) throw new Error("a starting mod is dealt twice");
   for (const [level, row] of Object.entries(MOD_UNLOCKS)) {
     if (row.length === 0) throw new Error(`level ${level} opens no mod`);
-    if (+level < 2 || +level >= RELICS_FROM)
-      throw new Error(`the track opens a mod on level ${level}, outside the mod half (2 to ${RELICS_FROM - 1})`);
+    if (+level < 2 || +level > ROSTER_TOP)
+      throw new Error(`the track opens a mod on level ${level}, outside the build phase (2 to ${ROSTER_TOP})`);
     for (const id of row) {
       if (seen.has(id)) throw new Error(`the track opens the mod "${id}" twice`);
       seen.add(id);
@@ -352,29 +368,14 @@ const RELIC_UNLOCKS: Readonly<Record<number, readonly RelicId[]>> = {
   }
   for (const m of MODS)
     if (!seen.has(m.id)) throw new Error(`the track never opens the mod "${m.id}"`);
-})();
-
-/** ...and every RELIC exactly once, in the back half, from RELICS_FROM up */
-(() => {
-  const seen = new Set<RelicId>();
-  let first = MAX_LEVEL + 1;
-  for (const [level, row] of Object.entries(RELIC_UNLOCKS)) {
-    if (row.length === 0) throw new Error(`level ${level} opens no relic`);
-    if (+level > MAX_LEVEL) throw new Error(`the track opens a relic on level ${level}, off the track`);
-    for (const id of row) {
-      if (seen.has(id)) throw new Error(`the track opens the relic "${id}" twice`);
-      seen.add(id);
-      first = Math.min(first, +level);
-    }
-  }
-  for (const d of RELICS)
-    if (!seen.has(d.id)) throw new Error(`the track never opens the relic "${d.id}"`);
-  // A RELIC IS A LATE-GAME ANSWER AND THE TRACK HAS TO SAY SO. RELICS_FROM
-  // is read by the G button, by the Deal's locked caption and by the
-  // codex; a table that opened one earlier than it claims would
-  // hand a relic over on a level the UI still calls shut
-  if (first !== RELICS_FROM)
-    throw new Error(`the first relic opens on level ${first}, and RELICS_FROM says ${RELICS_FROM}`);
+  // one module a level from 2, unbroken — the same rule the roster is dealt
+  // by, and the bag simply runs out first
+  Object.keys(MOD_UNLOCKS)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .forEach((l, i) => {
+      if (l !== i + 2) throw new Error(`the bag skips level ${i + 2} — one mod a level from 2`);
+    });
 })();
 
 /** the mods a level has dealt: the opening four and every one since */
@@ -385,12 +386,16 @@ export function modsAt(level: number): Set<ModId> {
   return out;
 }
 
-/** ...and the relics, which a fresh save has none of (RELICS_FROM) */
-export function relicsAt(level: number): Set<RelicId> {
-  const out = new Set<RelicId>();
-  for (const [l, row] of Object.entries(RELIC_UNLOCKS))
-    if (+l <= level) for (const id of row) out.add(id);
-  return out;
+/**
+ * ...AND THE RELICS, WHICH NO LEVEL EVER DEALS — an empty bag at every
+ * level, the top of the track included (see the relic note above). This is
+ * the pool the G button rolls over (game.ts relicPool), so the empty
+ * answer here is the ONE PLACE the relics are taken out of play: relics.ts
+ * is untouched, and putting them back is giving this function a table
+ * again.
+ */
+export function relicsAt(_level: number): Set<RelicId> {
+  return new Set();
 }
 
 /** the level a mod joins the deal — 1 for the opening four */
@@ -400,9 +405,14 @@ export function modUnlockLevel(id: ModId): number {
   return MAX_LEVEL + 1;
 }
 
-/** ...and the level a relic does */
-export function relicUnlockLevel(id: RelicId): number {
-  for (const [l, row] of Object.entries(RELIC_UNLOCKS)) if (row.includes(id)) return +l;
+/**
+ * ...and the level a relic does, which is PAST THE TOP OF THE TRACK for
+ * every one of them. The codex shelves and dims its Relics tab off this
+ * (unlocksOf), and a level no save can reach is what keeps all fourteen
+ * tiles DRAWN — the board's promise is that everything which exists is on
+ * it — and every one of them dim.
+ */
+export function relicUnlockLevel(_id: RelicId): number {
   return MAX_LEVEL + 1;
 }
 
@@ -436,9 +446,16 @@ const TURRETS_DEALT = dealTurrets();
     if (+level < 2 || +level > ROSTER_TOP)
       throw new Error(`the track opens a turret on level ${level}, outside the roster phase`);
   }
-  const top = Math.max(...Object.keys(UNLOCKS).map(Number));
-  if (top !== ROSTER_TOP)
-    throw new Error(`the last turret opens on level ${top}, and ROSTER_TOP says ${ROSTER_TOP}`);
+  // ...AND THE ROWS ARE UNBROKEN FROM 2. One gun a level is the rule the
+  // phase is dealt by, so a hole in the run is the failure to catch — the
+  // roster is allowed to finish before the phase does (it does, at 14), but
+  // it may not skip a row on the way there
+  Object.keys(UNLOCKS)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .forEach((l, i) => {
+      if (l !== i + 2) throw new Error(`the roster skips level ${i + 2} — one turret a level from 2`);
+    });
 })();
 
 /** the level a turret joins the roster — 1 for the starting four */
@@ -447,7 +464,15 @@ export function turretUnlockLevel(kind: TowerKind): number {
   return 1;
 }
 
-const TIER_FROM: Readonly<Record<number, number>> = { 1: 2, 2: 8, 3: 14, 4: 20 };
+/**
+ * THE EARLIEST LEVEL AN UPGRADE TIER MAY BE DEALT ON, keyed by tier —
+ * quarters of the BUILD PHASE, so a turret's fourth branch cannot land on
+ * the level that hands the turret over. Shelved with dealUpgrades
+ * (UPGRADES_ON_TRACK) and kept in step with ROSTER_TOP so that switching
+ * it back on deals into the phase that exists rather than into the old
+ * 20-level roster these numbers were written for.
+ */
+const TIER_FROM: Readonly<Record<number, number>> = { 1: 2, 2: 6, 3: 10, 4: 14 };
 
 function dealUpgrades(): Map<number, UpgradeKind[]> {
   const order = new Map<TowerKind, number>(BY_MINDUSTRY_VALUE.map((k, i) => [k, i]));
@@ -530,7 +555,6 @@ export function rewardsAt(level: number): Reward[] {
       if (worldUnlockLevel(w.id) === 1) out.push({ kind: "world", worldId: w.id });
   }
   for (const id of MOD_UNLOCKS[level] ?? []) out.push({ kind: "mod", id });
-  for (const id of RELIC_UNLOCKS[level] ?? []) out.push({ kind: "relic", id });
   for (const id of DEALT.get(level) ?? []) out.push({ kind: "upgrade", id });
   for (const id of MUTATOR_UNLOCKS[level] ?? []) out.push({ kind: "mutator", id });
   for (const p of PLACED) if (p.level === level) out.push(p.reward);
@@ -545,7 +569,22 @@ export const TRACK: readonly { level: number; rewards: Reward[] }[] = Array.from
   (_, i) => ({ level: i + 1, rewards: rewardsAt(i + 1) }),
 );
 
-/** the mutators a level has put in the deck — empty through the whole roster phase */
+/**
+ * EVERY LEVEL OF THE TRACK CARRIES SOMETHING — the header's claim, checked
+ * at import rather than trusted. The two phases are dense and back to back
+ * now, so a bare row means a table has drifted off the seam (a mod moved
+ * out of the build phase, a rule dropped, MAX_LEVEL raised past the last
+ * one) and not a deliberate breather.
+ */
+(() => {
+  const bare = TRACK.filter((r) => r.rewards.length === 0).map((r) => r.level);
+  if (bare.length > 0)
+    throw new Error(
+      `the track hands nothing out on level${bare.length > 1 ? "s" : ""} ${bare.join(", ")}`,
+    );
+})();
+
+/** the mutators a level has put in the deck — empty through the whole build phase */
 export function mutatorsAt(level: number): Set<MutationId> {
   const out = new Set<MutationId>();
   for (const [l, row] of Object.entries(MUTATOR_UNLOCKS))
@@ -670,7 +709,7 @@ export const TOWER_NAME: Readonly<Record<TowerKind, string>> = Object.fromEntrie
  * out), and that is the right shape for "where am I and what is next". It
  * is the wrong shape for the other question a player has, which is "what
  * is there, and when do I get it": answering that off TRACK means walking
- * twenty-three rows looking for the turrets. So this inverts it once, at
+ * every row of the track looking for the turrets. So this inverts it once, at
  * import, and every category is derived from the same source the track
  * deals from — a new turret or module appears on the board by existing.
  *

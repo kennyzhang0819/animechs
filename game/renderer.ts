@@ -49,6 +49,7 @@ import {
   UV_TOWER_BASE1,
   UV_TOWER_BASE3,
   UV_TOWER_BASE4,
+  UV_RELAY,
   UV_SHIELD_TOWER,
   UV_DISC_BIG,
   UV_TORCH,
@@ -91,6 +92,7 @@ import {
   MERGE_GROWTH,
   NCELLS,
   PAL as PAL_IMPORT,
+  RELAY_SIZE,
   ROWS as ROWS_IMPORT,
   TEAM_CRUX_RGB,
   TOWERS as TOWERS_IMPORT,
@@ -2889,6 +2891,32 @@ export class Renderer {
       const t3 = (s.hp * 3) / s.hpMax;
       const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
       this.push(dyn, s.x, s.y, spx, spx, 0, UV_SHIELD_TOWER, tint[0], tint[1], tint[2], 1);
+    }
+    // THE RELAYS, beside the shield towers because they are the same kind of
+    // thing: a block that stands where the map put it, never turns, and is
+    // nobody's to place or sell. They are drawn here rather than in the
+    // TERRAIN batch (rebuildTerrain) because their tint moves — a relay
+    // switched on is lit and one still for sale is dark — and the terrain
+    // batch is built once per map.
+    //
+    // A relay is on a HILL, so nothing overlaps it and there is no base
+    // plate under it: the block's own art carries its plating (atlas.ts
+    // relayBlock).
+    {
+      const rpx = RELAY_SIZE * CELL;
+      const rs = sim.terrain.relays;
+      for (let i = 0; i < rs.length; i++) {
+        const r = rs[i];
+        const x = (r.x + RELAY_SIZE / 2) * CELL, y = (r.y + RELAY_SIZE / 2) * CELL;
+        if (x < vx0 - rpx || x > vx1 + rpx || y < vy0 - rpx || y > vy1 + rpx) continue;
+        // DARK UNTIL IT IS BOUGHT, and full colour after. The unlit one is
+        // drawn at a third rather than greyed, so it still reads as the
+        // same building and a player learns the silhouette before they can
+        // afford one
+        const lit = sim.relayOn[i] !== 0;
+        const k = lit ? 1 : 0.34;
+        this.push(dyn, x, y, rpx, rpx, 0, UV_RELAY, k, k, k, 1);
+      }
     }
     // a lock turret's beam sits over the turrets and under the body it is
     // burning — it has no bullet, so this is its only visual

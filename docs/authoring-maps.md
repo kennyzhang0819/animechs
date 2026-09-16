@@ -298,3 +298,104 @@ The atlas indices a generator paints with are COPIED into
 and the atlas reaches for a canvas at load. Keep the names identical and
 grep both when a family moves. `scripts/maps/seal.mjs` still brings an
 older or imported document up to the sealed-rim rule in place.
+
+## Relays: where a run may build
+
+**A run may only build where its base and its bought relays light the
+ground.** The base lights a circle 90 cells across the radius
+(`CORE_POWER_R`), free and from wave one; everything past that edge is
+bought, one relay at a time, at the price written on it.
+
+A relay is **map furniture, not a building** (`MapRelay`, `game/terrain.ts`).
+It stands on a 2x2 of rock, on a hill, where nothing can reach it: no health,
+never targeted, never destroyed, never placed by a player. What it has is a
+circle it opens (`RELAY_POWER_R`, 60 cells) and a price. Buying one is
+permanent — the ground stays open for the rest of the run, and nothing
+refunds or reverses it, which is what lets a far relay be priced brutally.
+
+**This is where a map's mission is written.** Deciding which circle of
+ground a run can afford to open, and when, is most of what makes one map
+play differently from another. Move a relay forty cells and you have
+rewritten the mission; halve its price and you have rewritten it again.
+
+### Authoring them
+
+The **Relay** brush is in the editor's Zones section. A click stamps one on
+rock and a click on a standing one takes it off; the ghost shows the circle
+it would open, and every relay on the map is drawn with its own circle and
+price whatever brush is in hand — two relays whose circles almost coincide
+are one relay and a wasted price.
+
+### The three price bands
+
+**A relay is priced like a turret is priced** — in one of the game's three
+bands (`RELAY_TIER_PRICE`, `game/maps.ts`), by how far from the base it sits:
+
+| band | range from base | price | what it is |
+| --- | --- | --- | --- |
+| 1 | up to 200 cells | **3,000** | three turret rolls; a stage-one purchase a run makes two or three of without agonising |
+| 2 | 200–330 cells | **12,000** | twelve rolls; the stage-two buy that trades a board of guns for a piece of map |
+| 3 | beyond 330 cells | **40,000** | forty rolls; more than a railhead, and a stage-three commitment made once, on purpose |
+
+The cuts are **absolute distances, not a split of whatever one map carries** —
+"far" has to mean the same thing on every board. They come off the radii: the
+base lights 90 cells and a relay adds 60, so 200 is about the first ring a run
+can reach from home and 330 the second. A compact map simply has no band-3
+relay, which is the truth about a compact map.
+
+**Every map carries the same ladder: 4 band-1, 5 band-2, 4 band-3.** Opening
+a whole board costs **232,000 scrap on every map** — 4x3,000 + 5x12,000 +
+4x40,000 — against the ~1.32M a full fifty-wave clear earns, so about 18%.
+That is the point of fixing it: the band prices are used across the campaign's
+whole progression, so the cost of opening a board has to be one number the
+campaign can be designed against, not nine numbers that depend on which board
+is loaded.
+
+What differs between maps is **where** the ladder runs, never what it costs.
+Confluence's rungs sit at 120/163/173/183 then 249/250/250/281/313 then
+337/374/393/430; Crater's are tighter and Greenwood's reach past 570. The
+seeder fills each band separately and relaxes its spacing rather than come up
+short, because a board one rung light would have a different progression from
+every other board — and it says so loudly if terrain ever makes that
+impossible.
+
+A stamped relay lands in the band its distance puts it in. **That is still a
+draft** — the price that ships is the one in the document, and it is the one
+field in a map document meant to be argued with. A mission is written by
+making one particular circle of ground cheap or brutal.
+
+### The generator overwrites them
+
+`scripts/maps/*.mjs` does not emit relays, and re-running a spec writes the
+whole document — so a regenerated map comes back with none, and any
+hand-tuned prices on it are gone. The seeding pass puts a playable draft
+back:
+
+```
+node --experimental-transform-types --import ./scripts/ts-hooks.mjs scripts/seed-relays.mjs
+```
+
+It scatters relays on bare 2x2 rock outside the base's light and prices them
+off the same curve the editor stamps with. It **leaves any map that already
+carries relays alone** — hand placement is the point of the feature — so
+pass `--force` (or a list of map ids) to redo one.
+
+The scatter is **deliberately irregular inside each band**. An earlier cut
+walked candidates nearest-first against a fixed spacing, which pinned three or
+four relays at identical range from the base on every board. It now works one
+band at a time, shuffling candidates and varying the spacing each pick demands
+across a wide band, so a ring comes out as clumps and gaps rather than a
+circle of dots. The randomness is seeded off the map id, so re-running
+reproduces the same draft and a diff means something.
+
+The ladder never starts inside the base's own light: a relay there would cost
+3,000 and open a sliver of nothing, so the nearest rung is at least 15 cells
+past the 90 the base already covers.
+
+`PER_MAP` at the top of the script takes `perBand` and `spacing` overrides.
+Changing `perBand` changes what opening that board costs, which is a
+progression decision rather than a map one — think twice.
+
+Relays a map is meant to keep across a regen belong in its spec, not in the
+seeder. Until a spec emits them, treat a regen of a tuned map as a change
+that costs its relay layer.

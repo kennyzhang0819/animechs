@@ -204,15 +204,15 @@ stale tab or a cached bundle looks exactly like a fix not working.
   and authored to zero), and the audit/check arithmetic over the authored
   script — the **stage table** (`stageAudit`) that the turret prices are
   tuned against
-- `game/track.ts` — the **level track**: the roster phase — a fresh save
+- `game/track.ts` — the **level track**: the **build phase** — a fresh save
   owns four turrets (`STARTING_ROSTER`) and four mods (`STARTING_MODS`), and
-  the track hands out a turret and a mod a level (`UNLOCKS`, `MOD_UNLOCKS`)
-  to a complete mod catalog at 14 and a complete roster at `ROSTER_TOP` —
-  then the **late half**, where the mutator phase opens with a whole band
-  (`MUTATORS_FROM` = 15) and the **relics** start one level later
-  (`RELIC_UNLOCKS`, `RELICS_FROM` = 16), one a level to the top of the track
-  at 30, one a level. **Mods across the front, relics across the back**, because the two
-  categories are two answers to two halves of a run. Plus
+  every level from 2 hands over one turret and one mod (`UNLOCKS`,
+  `MOD_UNLOCKS`) until each catalog empties — the bag at 12, the roster at
+  14, the ninth map alone on `ROSTER_TOP` — then the **mutator phase**, which
+  opens with a whole band (`MUTATORS_FROM` = 16) and deals a rule a level to
+  `MAX_LEVEL` = 26. **Build, then fight**: nothing to build with is handed out
+  above the seam. The **relics** are off the track entirely — nothing deals
+  one and no run can roll one, though the catalog is intact. Plus
   `techStateFor(level)`, what a save at that level may do. The turret
   upgrade rungs are off the track for now (`UPGRADES_ON_TRACK`) and are not
   a category: nothing deals one and no tab is named for them
@@ -579,8 +579,17 @@ multiplier.** A random map — the menu's default — used to pay a quarter
 more on top, and does not any more: Random is the default because it is
 the best way to play the campaign, not because it is bribed, and a bonus
 on it made every deliberate map choice feel like a tax on knowing what
-you want. XP turns into **player level** through a power-law curve
-(`xpToNext`), and **every level is a step on the track** (`game/track.ts`)
+you want. XP turns into **player level** through **StarCraft II's mastery
+ladder, cut by a third** (`xpToNext`) — their 90-row table verbatim, with
+`SC2_SCALE` the only thing done to it, which makes every rung cost about **a
+third fewer clears** than it costs them. Their 15 commander levels are
+deliberately *not* here: starting at their mastery 0 is what makes the opening
+cheap, so level 2 lands a fifteenth of a clear in, the **whole toolkit is owned
+by 4.7 clears** and the last rule on the track by 12. From there it is **90
+mastery levels**, each paying a point *that has nothing to spend it on yet*,
+reaching mastery 90 at 277 clears; then a flat **300,000 a level forever**,
+because a farm needs a known rate. **Every level is a step on the track**
+(`game/track.ts`)
 that hands out a map, a turret, a mod, a relic or a mutator — nothing is
 chosen and nothing is bought.
 
@@ -1042,19 +1051,21 @@ too few or too many of its band (`STAGE_BOARDS`).
 
 ### The level track
 
-**A fresh save owns four turrets** — the tacker, the lobber, the airburst and
-the autocannon (`STARTING_ROSTER` in `game/track.ts`) — and **every one of
-levels 2 to 14 opens one more** (`UNLOCKS`), commons first, then the
-blues, the ambers threaded through them, and the three purples last:
-the repeater at 12, the furnace at 13, the railhead at 14, when the
-roster is complete. **The roster IS the draw pool** — the deal rolls over
-exactly what the track has handed out, which is what makes a level-2 save
-draw commons and a level-14 one draw anything. The levels between also
-carry the maps. Past 14 there is nothing left to build, so a level hands
+**A fresh save owns four turrets and four mods** — the tacker, the lobber,
+the airburst and the autocannon, and one common per stat (`STARTING_ROSTER`
+and `STARTING_MODS` in `game/track.ts`) — and **every level from 2 hands over
+one more turret and one more mod**, unbroken, until each catalog runs out:
+the bag is complete at **12**, the roster at **14**, and level **15** carries
+the ninth map on its own. Turrets come commons first, then the blues, the
+ambers threaded through them, and the three purples last — the repeater at 9,
+the furnace at 12, the railhead at 14. **The roster IS the draw pool** — the
+deal rolls over exactly what the track has handed out, which is what makes a
+level-2 save draw commons and a level-14 one draw anything. The even levels
+also carry the maps. Past 15 there is nothing left to build, so a level hands
 out **rules** instead, into the deck the deploy roll draws from. **Level
-15 opens three at once** — the whole Light band — because a deck with one
+16 opens three at once** — the whole Light band — because a deck with one
 card in it does not roll, it deals the same rule every run; after that it
-is one a level, cheapest first, to the top of the track at 21. The
+is one a level, cheapest first, to the top of the track at 26. The
 progress screen lists the whole track, every turret and shape chip
 bordered in its rarity; the results screen names what a climb handed out.
 

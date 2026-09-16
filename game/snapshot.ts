@@ -120,6 +120,36 @@ const fit = (a: Float32Array, need: number): Float32Array => {
 };
 
 /**
+ * ...and the same grow for the ONE buffer that is deliberately NOT shared:
+ * the bolt paths. `postMessage` copies an ordinary buffer's bytes and only
+ * re-views a shared one, so this is what makes a published frame's paths a
+ * private copy the sim cannot touch again.
+ *
+ * WHY THIS ONE. Everything else here is fixed-width rows — a turret is
+ * thirty floats at `i * 30` — so a reader that sees a later frame's bytes
+ * under an earlier frame's count still reads well-formed rows, and draws a
+ * turret a pixel stale. The paths are self-describing records,
+ * [slot, count, x, y, ...], where the count in the data says where the next
+ * record begins: read one from the wrong frame and every read after it is
+ * misaligned, the count lane lands on a coordinate, and `new Array(1873.4)`
+ * throws RangeError — which is how this was found, on a board packed with
+ * turrets taking wraith chain lightning (game/weapons.ts livewire).
+ *
+ * THE TWO SNAPSHOTS DID NOT COVER IT (sim.worker.ts): alternating buffers
+ * give the reader ONE tick of slack, about 33ms, and a frame that draws a
+ * full board goes over that — the worker laps the rotation and repacks the
+ * buffer under the read. A copy costs a memcpy of a few tens of KB at the
+ * very worst and ends the whole class of problem for the one array that
+ * cannot survive being read a frame late.
+ */
+const fitOwn = (a: Float32Array, need: number): Float32Array => {
+  if (a.length >= need) return a;
+  let n = Math.max(64, a.length);
+  while (n < need) n *= 2;
+  return new Float32Array(n);
+};
+
+/**
  * THE FLATTENED WORLD. One array a category, laid out field after field per
  * item, plus the count of how many of the array is live. Float32 throughout
  * — every value here is a coordinate, a clock, a colour channel or a small
@@ -150,6 +180,10 @@ export interface Snapshot {
    * shared. Packed as [slot, count, x, y, x, y, ...] per effect that
    * carries one, `ptsN` floats of it. Only filled when asked (packSnapshot
    * withPts): in one thread the array itself is read by reference.
+   *
+   * ON ITS OWN BUFFER, NOT SHARED MEMORY, alone among the arrays here.
+   * `fitOwn` says why: read a frame late, the rest of these only LOOK
+   * wrong, and this one throws.
    */
   ptsN: number;
   pts: Float32Array;
@@ -171,7 +205,7 @@ export const emptySnapshot = (): Snapshot => ({
   selectedN: 0,
   mark: shared.f32(4),
   ptsN: 0,
-  pts: shared.f32(0),
+  pts: new Float32Array(0),
 });
 
 /** what packSnapshot reads — the sim side of SimView, and nothing else */
@@ -338,7 +372,7 @@ export function packSnapshot(w: Packable, out: Snapshot, withPts = false): Snaps
       const p = w.fxPts[f];
       if (p) need += 2 + p.length;
     }
-    out.pts = fit(out.pts, need);
+    out.pts = fitOwn(out.pts, need);
     const Q = out.pts;
     let k = 0;
     for (let f = 0; f < w.fxN; f++) {
@@ -373,9 +407,18 @@ export function packSnapshot(w: Packable, out: Snapshot, withPts = false): Snaps
 export function readPts(s: Snapshot, into: (readonly number[] | null)[]): void {
   into.fill(null);
   const Q = s.pts;
-  for (let k = 0; k < s.ptsN; ) {
+  const n = Math.min(s.ptsN, Q.length);
+  for (let k = 0; k < n; ) {
     const f = Q[k++];
     const len = Q[k++];
+    // A RECORD THAT DOES NOT FIT means this buffer and this count are not
+    // from the same frame, and every record after it is misread too — so
+    // the rest of them are dropped rather than decoded out of alignment.
+    // `fitOwn` is what stops that happening, and this is two comparisons a
+    // bolt to keep the day it happens anyway a missing effect rather than
+    // a RangeError out of `new Array` that takes the run with it
+    if (!Number.isInteger(len) || len < 0 || k + len > n) return;
+    if (!Number.isInteger(f) || f < 0 || f >= into.length) return;
     const p = new Array<number>(len);
     for (let j = 0; j < len; j++) p[j] = Q[k++];
     into[f] = p;
@@ -763,6 +806,8 @@ export class DrawView implements SimView {
     private readonly domes: () => readonly BoardDome[],
     private readonly unlocked: () => ReadonlySet<TowerKind> | null,
     airRoutes: readonly { pts: readonly number[] }[] = [],
+    /** the relays this run has switched on (Sim.relayOn), by reference */
+    readonly relayOn: Uint8Array = new Uint8Array(0),
   ) {
     this.airRoutes = airRoutes;
     this.upx = src.upx;

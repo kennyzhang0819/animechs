@@ -140,6 +140,38 @@ export function airWalkMask(t: Terrain): Uint8Array {
   return m;
 }
 
+/**
+ * ONE RELAY, as the map document carries it — and it is MAP FURNITURE, not
+ * a building.
+ *
+ * WHAT A RELAY IS. It stands on a hill, on rock, where nothing can reach
+ * it: it has no health, it is never targeted, it cannot be destroyed and
+ * it is never placed. What it has is a CIRCLE OF GROUND it opens for
+ * building (constants.ts RELAY_POWER_R) and a PRICE to switch on. The
+ * core lights the home ground for free and every cell past that edge is
+ * bought, one relay at a time, at the price the author wrote on it.
+ *
+ * THAT IS WHY IT IS AUTHORED AND NOT GENERATED. Where the relays are is
+ * where the map's decisions are — a mission is written by deciding which
+ * piece of ground a run can afford to open and when, and a scatter rule
+ * cannot make that decision. Moving one relay forty cells is a mission
+ * edit.
+ *
+ * THE PRICE IS AUTHORED TOO, per relay, rather than derived from how far
+ * out it sits. A curve would be consistent and would also be the same
+ * curve on every map, which is exactly what a map wanting to be different
+ * from the others cannot have. The seeding pass writes a distance-derived
+ * price as a STARTING POINT (scripts/seed-relays.mjs) and every number it
+ * writes is meant to be argued with.
+ */
+export interface MapRelay {
+  /** top-left cell of its RELAY_SIZE footprint */
+  x: number;
+  y: number;
+  /** what switching it on costs, in scrap */
+  price: number;
+}
+
 export interface Terrain {
   blocked: Uint8Array; // mountains, forests, rocks — everything units can't cross
   floor: Uint8Array; // UV_FLOORS index per cell (pine cells: the grass underneath)
@@ -161,6 +193,10 @@ export interface Terrain {
   pines: Prop[]; // blocking tree cells, drawn as overhanging props
   decor: Prop[]; // non-blocking props: boulders, shrubs
   valleyY: Float32Array; // carved main-valley centerline per column
+  /** the relays standing on this map's hills, as authored (maps.ts
+   *  MapRelay) — where the buildable ground can be extended to, and what
+   *  each extension costs */
+  relays: MapRelay[];
   /** this map's base: top-left cell + edge length, in cells */
   base: { x: number; y: number; size: number };
   /** how many columns of the grid this map actually uses — the horizontal
@@ -463,6 +499,10 @@ export function generateTerrain(seed: number): Terrain {
 
   return {
     blocked, floor, wall, spawn, pines, decor, valleyY,
+    // the generated fallback board carries NONE: relays are authored, and
+    // a board nobody authored has nothing to say about where a run may
+    // spread to. It plays inside the circle its base lights
+    relays: [],
     base: { ...BASE }, rows: ROWS, cols: COLS,
   };
 }

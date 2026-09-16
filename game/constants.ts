@@ -1793,6 +1793,47 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
 };
 
 /**
+ * HOW FAR POWER REACHES, in pixels, from the two things that carry it.
+ *
+ * THE CORE'S IS THE HOME GROUND and it is deliberately large: a player
+ * should never be asked to buy permission to defend their own base. Ninety
+ * cells is better than a third of the board across, which on every
+ * official map covers the approach, the chokes either side of it and room
+ * behind to stack a second line — everything a run does before it has any
+ * business thinking about the rest of the map.
+ *
+ * A RELAY'S IS SMALLER THAN THAT AND BIGGER THAN ANY GUN. Sixty cells is
+ * a shade under a railhead's reach (500 MU, ~62 cells), which is the
+ * comparison that matters: one relay opens enough ground to stand the
+ * longest gun in the game and give it somewhere to shoot from.
+ *
+ * BOTH ARE MEASURED FROM THE CENTRE, and a cell is lit when its own centre
+ * falls inside the disc — see Sim.rebuildPower.
+ */
+export const CORE_POWER_R = 90 * CELL;
+export const RELAY_POWER_R = 60 * CELL;
+
+/**
+ * A RELAY'S FOOTPRINT, in cells. It stands on ROCK (see MapRelay in
+ * maps.ts) and claims no ground the swarm could ever want, so this is a
+ * drawing measurement and nothing else — there is no placement to test and
+ * nothing to occupy.
+ */
+export const RELAY_SIZE = 2;
+
+/**
+ * THE MOST RELAYS ONE MAP MAY CARRY.
+ *
+ * It is a cap because which relays are BOUGHT has to live on memory both
+ * threads hold (Sim.relayOn), and a shared array has to be sized before
+ * the map that fills it is read. Sixty-four is far past what any map
+ * should want — the official nine are authored at a dozen or so — and it
+ * costs 64 bytes, so the ceiling is set where nobody will ever meet it
+ * rather than where the current maps happen to sit.
+ */
+export const MAX_RELAYS = 64;
+
+/**
  * A SECOND AMMO NEEDS A SECOND BARREL TO LEAVE BY — checked at import.
  *
  * Sim.fireShot picks the alt off the same counter that steps the mount

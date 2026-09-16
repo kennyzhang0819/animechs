@@ -157,11 +157,13 @@ export const TURRET_ROLL_PRICE = 1000;
  * player pressing the third button is buying certainty and the second one
  * is buying odds, and the prices have to say so.
  *
- * THE TWO PRICES ARE ALSO THE TWO HALVES OF THE TRACK. The mods are dealt
- * across the front of a campaign and the relics across the back (track.ts
- * RELICS_FROM), so a mod at two thousand is what a run spends on in the
- * middle and a relic at a hundred and fifty thousand is what the late game
- * saves for.
+ * THE TWO PRICES ARE ALSO THE TWO ERAS THEY WERE WRITTEN FOR. A mod at two
+ * thousand is what a run spends on in the middle; a relic at a hundred and
+ * fifty thousand is what a late game saves for. The track used to say the
+ * same thing — mods across the front of a campaign, relics across the back
+ * — and it no longer deals a relic at all (track.ts: they are reserved),
+ * so for now the relic price is a number waiting for its door rather than
+ * one a run can reach.
  *
  * Flat, like the roll fee and for the same reason: numbers a player can
  * hold in their head, and numbers a balance sweep turns.
@@ -374,33 +376,85 @@ export function missionXp(cleared: number, waves: number): number {
 }
 
 /**
- * THE CLIMB IS A STRAIGHT LINE AND THEN A WALL.
+ * THE CLIMB IS STARCRAFT II'S MASTERY LADDER, CUT BY A THIRD. The table
+ * below is Blizzard's own, transcribed, and SC2_SCALE is the only thing
+ * done to it.
  *
- * Level 1 -> 2 costs XP_LEVEL_BASE; level XP_LEVEL_PLATEAU - 1 -> PLATEAU
- * costs XP_LEVEL_FLAT; every step between is the straight line joining
- * them, which works out to a clean XP_LEVEL_BASE x level. From the plateau
- * to LEVEL_CAP every level costs XP_LEVEL_FLAT flat — the climb stops
- * getting steeper, so the hundreds are a grind of KNOWN length rather than
- * a curve that quietly leaves the player behind.
+ *   THE MASTERY LADDER, levels 1 to ASCENSION_FROM — MASTERY_LEVELS of
+ *   them, their mastery 0 being our level 1. Theirs pays a mastery point a
+ *   level; ours pays one too, and THERE IS NOTHING TO SPEND IT ON YET. The
+ *   points bank against a system that is not written, and that is fine: the
+ *   ladder already pays in the track (track.ts), which deals the whole
+ *   toolkit over the first 15 levels and then a rule a level to MAX_LEVEL,
+ *   opening the rungs that roll them at MUTATORS_FROM.
  *
- * It used to be a power curve with a knee; linear is the same shape a
- * player can actually hold in their head — "the next level costs five
- * thousand times its number, until a hundred."
+ *   THE ASCENSION WALL, ASCENSION_FROM to LEVEL_CAP: XP_LEVEL_FLAT a level,
+ *   forever. Nothing is handed over up here in their game or in ours. A
+ *   farm has to have a KNOWN rate, and a wall is the only honest shape for
+ *   one — a cost that kept climbing past the last reward is a curve quietly
+ *   leaving the player behind.
+ *
+ * THEIR COMMANDER LEVELS ARE DELIBERATELY NOT HERE. SC2 runs 15 commander
+ * levels BEFORE mastery opens, and those levels are the reason its mastery
+ * table is allowed to start at 5,000 — a player reaching mastery 0 has
+ * already paid 1,045,000 for the privilege. Dropping that phase and
+ * starting at mastery 0 is what makes this ladder cheap early ON PURPOSE:
+ * the toolkit is handed over inside the first FIVE clears, and the long
+ * climb is the rules and the points, not the guns.
+ *
+ * SC2_SCALE MAKES IT EASIER THAN THEIRS, TWICE OVER, and the factor is
+ * doing real work rather than decorating. A Brutal clear pays them 44,000;
+ * a Nemesis clear pays us MISSION_XP, which is 2.27 times that, so their
+ * numbers left alone would already cost us 56% fewer clears than they cost
+ * a co-op player. Scaling by 1.5 hands a third of that discount back and
+ * keeps the rest: we charge about A THIRD FEWER CLEARS than SC2 for the
+ * same rung. Their mastery 90 is 420 Brutal clears and ours is 277; their
+ * ascension level is 4.55 and ours is 3.
+ *
+ * THIS IS THE ONE KNOB. Every number on the ladder is SC2's times this, so
+ * moving it moves the whole grind and nothing else — and the table is all
+ * multiples of 500, so any sane factor lands on whole XP.
  */
-export const XP_LEVEL_BASE = 5000;
-/** the level the ramp reaches the plateau, and the first flat one */
-export const XP_LEVEL_PLATEAU = 100;
-/** what every level from the plateau up costs — and what the ramp climbs to */
-export const XP_LEVEL_FLAT = 500_000;
+
+/** what our clear is worth against a Brutal one — every SC2 number below is
+ *  multiplied by this, and nothing else is done to any of them */
+export const SC2_SCALE = 1.5;
+
+/** SC2's mastery levels: 0 -> 1 up to 89 -> 90, verbatim */
+const SC2_MASTERY: readonly number[] = [
+  5_000, 20_000, 20_500, 21_000, 21_500, 22_000, 22_500, 23_000, 24_000, 25_000, 26_000, 27_000,
+  28_000, 30_000, 32_000, 34_000, 36_000, 38_000, 41_000, 44_000, 47_000, 50_000, 54_000, 58_000,
+  62_000, 66_000, 71_000, 76_000, 81_000, 86_000, 89_000, 92_000, 95_000, 99_000, 103_000, 107_000,
+  111_000, 115_000, 119_000, 123_000, 127_000, 131_000, 135_000, 139_000, 143_000, 147_000, 151_000,
+  155_000, 160_000, 165_000, 170_000, 175_000, 180_000, 185_000, 191_000, 197_000, 203_000, 209_000,
+  215_000, 222_000, 229_000, 236_000, 243_000, 250_000, 258_000, 266_000, 274_000, 282_000, 290_000,
+  299_000, 308_000, 317_000, 326_000, 335_000, 345_000, 355_000, 365_000, 375_000, 385_000, 395_000,
+  415_000, 445_000, 485_000, 535_000, 595_000, 665_000, 745_000, 835_000, 935_000, 1_035_000,
+];
+
+/** how many mastery levels there are; each is a point, unspendable for now */
+export const MASTERY_LEVELS = SC2_MASTERY.length;
+/** the first level of the wall, where the last mastery point has been paid */
+export const ASCENSION_FROM = MASTERY_LEVELS + 1;
+/** what every level from the wall up costs (SC2's ascension level, scaled) */
+export const XP_LEVEL_FLAT = 200_000 * SC2_SCALE;
 /** the highest level a save can stand at; XP past it banks and does nothing */
 export const LEVEL_CAP = 1000;
+
+/** every step the curve authors, level 1 -> 2 first; past it, the wall */
+const STEPS: readonly number[] = SC2_MASTERY.map((x) => Math.round(x * SC2_SCALE));
+
+/** THE TABLE IS TRANSCRIBED BY HAND, SO THE SHAPE IS CHECKED AT IMPORT */
+(() => {
+  if (MASTERY_LEVELS !== 90) throw new Error(`the mastery ladder has ${MASTERY_LEVELS} levels, not 90`);
+  if (STEPS.length !== ASCENSION_FROM - 1)
+    throw new Error(`the curve authors ${STEPS.length} steps, not ${ASCENSION_FROM - 1}`);
+})();
 
 /** XP needed to climb from `level` to `level + 1` */
 export function xpToNext(level: number): number {
   const l = Math.max(1, Math.floor(level));
-  if (l >= XP_LEVEL_PLATEAU) return XP_LEVEL_FLAT;
-  const t = (l - 1) / (XP_LEVEL_PLATEAU - 1);
-  return Math.round(XP_LEVEL_BASE + (XP_LEVEL_FLAT - XP_LEVEL_BASE) * t);
+  return l <= STEPS.length ? STEPS[l - 1] : XP_LEVEL_FLAT;
 }
 
 /** total XP at which `level` is reached — level 1 is zero */

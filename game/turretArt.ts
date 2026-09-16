@@ -61,6 +61,16 @@ export const GUN_R: Mat = rev(GUN);
  *  standing around it. A head is still gunmetal, steel and a bore */
 export const SLATE: Mat = ["#343846", "#4e5464"];
 export const IRON: Mat = ["#5a5f6e", "#8b90a0"];
+/**
+ * THE RELAY'S LAMP, and the one accent on this list that is not the colour
+ * of something a turret throws (ACCENT below). A mast throws nothing — what
+ * it hands out is the player's own permission to build, so it wears the
+ * player's own amber, the colour the core is drawn in and the colour every
+ * selection ring and price on the HUD is written in. Nothing else in the
+ * roster is that hue, which is the point: a mast should be findable on a
+ * board of seventeen gunmetal heads at a glance.
+ */
+export const POWER: Mat = ["#f6a53a", "#ffd37f"];
 
 /** what a turret throws, and the colour it wears for it */
 export type AmmoGroup = "bullet" | "shell" | "flame" | "beam" | "water" | "field" | "missile";

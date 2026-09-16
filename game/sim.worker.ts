@@ -47,6 +47,7 @@ const COMMANDS = new Set<string>([
   "skipToWave",
   "placeFormation",
   "placeTower",
+  "setRelayOn",
   "placeMany",
   "placeLine",
   "placeRuler",
@@ -82,10 +83,19 @@ let last = 0;
 let timer: ReturnType<typeof setTimeout> | 0 = 0;
 /**
  * TWO SNAPSHOTS, ALTERNATING. The one just published is being read on
- * the other side while the next tick packs into the other, so a frame's
- * object half is never overwritten under the reader. (The flat arrays
- * are read live and may tear by a step's motion — see shared.ts for why
- * that is accepted and this is not.)
+ * the other side while the next tick packs into the other. (The flat
+ * arrays are read live and may tear by a step's motion — see shared.ts
+ * for why that is accepted.)
+ *
+ * WHAT THIS BUYS IS ONE TICK OF SLACK AND NOT MORE: about 33ms, after
+ * which the rotation comes back round and a buffer is repacked whether
+ * the other side has finished with it or not — and a frame that draws a
+ * full board goes over 33ms. Everything packed here survives that, being
+ * fixed-width rows a reader cannot misalign on: the worst a lap costs is
+ * a frame's motion on some of the picture, which is what the flat arrays
+ * cost anyway. The ONE thing that did not survive it has been taken off
+ * shared memory entirely and crosses as a copy — snapshot.ts `fitOwn`,
+ * which is worth reading before anything variable-length is added here.
  */
 const snaps: [Snapshot, Snapshot] = [emptySnapshot(), emptySnapshot()];
 let flip = 0;
@@ -154,6 +164,8 @@ async function init(spec: LevelSpec, field: MessagePort | null, phys: MessagePor
     isGoal: s.field.isGoal,
     occupied: s.occupied,
     waterlogged: s.waterloggedMask(),
+    powered: s.poweredMask(),
+    relayOn: s.relayOnMask(),
     airRoutes: s.airRoutes(),
   });
   last = performance.now();

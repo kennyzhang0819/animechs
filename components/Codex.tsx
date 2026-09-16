@@ -76,10 +76,14 @@ import { tile } from "./tile";
  * rule over the whole board. Two categories, two tabs, and no tab named
  * for a thing that does not exist.
  *
- * THE TWO TABS ALSO READ AS THE TWO HALVES OF THE TRACK. The mods are all
- * dealt by level 14 and the relics all after RELICS_FROM (track.ts), so a
- * save part way up sees a Mods tab that is mostly lit and a Relics tab
- * that is mostly dim — which is the pacing of the catalog, visible.
+ * THE MODS TAB IS A LADDER AND THE RELICS TAB IS A PROMISE. Every mod is
+ * dealt inside the build phase (track.ts), so a save part way up sees a
+ * Mods tab filling in as it climbs — the pacing of the catalog, visible.
+ * The RELICS are reserved: no level deals one, so all fourteen tiles are
+ * drawn and every one of them is dim, at level 1 and at the top of the
+ * track alike. They stay ON THE BOARD because this board's whole promise
+ * is that everything which exists is drawn here, whether it can be reached
+ * or not.
  *
  * A LOCKED TILE IS DIMMED AND SAYS NOTHING ELSE. No level badged on it,
  * no line in its card about what hands it over. The track next door is

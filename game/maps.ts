@@ -1,4 +1,4 @@
-import { BASE, COLS, NCELLS, ROWS } from "./constants";
+import { BASE, COLS, MAX_RELAYS, NCELLS, ROWS } from "./constants";
 
 /**
  * The grid width every map was authored at before the board grew. Documents
@@ -6,7 +6,7 @@ import { BASE, COLS, NCELLS, ROWS } from "./constants";
  * Never change it — it is a fact about files already on disk.
  */
 export const LEGACY_COLS = 128;
-import { canHoldSpawn, WALL_DEEP, WALL_PINE, type Prop, type Terrain } from "./terrain";
+import { canHoldSpawn, WALL_DEEP, WALL_PINE, type MapRelay, type Prop, type Terrain } from "./terrain";
 import {
   FLOOR_BASALT,
   FLOOR_DEEP_TAINTED_WATER,
@@ -94,6 +94,17 @@ export interface MapData {
   // carved-valley centerline per column — generator metadata the sim's
   // seed-tower search reads; older documents fall back to a flat line
   valleyY?: number[];
+  /**
+   * THE RELAYS THIS MAP CARRIES (see MapRelay). Absent or empty means a map
+   * whose only buildable ground is the circle around its own base — which
+   * is what every document written before relays existed means, and a
+   * playable if very small board.
+   *
+   * A LIST AND NOT A LAYER, unlike the spawn tiles: there are a dozen of
+   * these on a map, each with a price on it, and a cell-per-entry grid
+   * cannot carry a price at all.
+   */
+  relays?: MapRelay[];
   /** where this map's base sits (top-left cell). Absent = the default BASE
    * position, which is what every pre-per-base document means */
   base?: { x: number; y: number };
@@ -194,6 +205,9 @@ export type PaintKind =
   | "erase"
   | "path"
   | "base"
+  /** a relay on a hill (terrain.ts MapRelay): a click stamps one on rock
+   *  and a click on one takes it back off */
+  | "relay"
   /** deep water: blocks the swarm like a wall, takes no tower like a pine
    *  — a floor index plus the WALL_DEEP sentinel (see terrain.ts) */
   | "deep"
@@ -394,6 +408,13 @@ export const PALETTE: readonly PaletteSet[] = [
   // clears the ground it lands on, since a walled base is unreachable
   { id: "base", label: "Base", kind: "base", variants: [0], noRandom: true,
     icons: ["/mindustry/sprites/blocks/storage/core-nucleus.png"] },
+  // the relays: where a run may BUY its way out of the circle the base
+  // lights. A click stamps one on rock and a click on one takes it off;
+  // the price it lands with is a starting guess off its distance from the
+  // base (defaultRelayPrice), and tuning it is a JSON edit, because a
+  // price is a mission decision and not a brush setting
+  { id: "relay", label: "Relay", kind: "relay", variants: [0], noRandom: true,
+    icons: ["/mindustry/sprites/blocks/power/power-node-large.png"] },
   // the swarm's buildings — the player's roster, on the swarm's side —
   // one swatch a kind: a click stamps one on open ground and the eraser
   // takes it back off (MapData.enemies)
@@ -429,7 +450,7 @@ export const PALETTE_SECTIONS: readonly { label: string; ids: readonly string[] 
   // the veins are their own group rather than a stray swatch among the
   // floors: ore is not a floor tile at all but a layer over one (T.ore),
   // and it is the only brush that decides what a run EARNS
-  { label: "Zones", ids: ["spawn", "base"] },
+  { label: "Zones", ids: ["spawn", "base", "relay"] },
   { label: "Tools", ids: ["erase"] },
 ];
 
@@ -621,6 +642,7 @@ export function mapFromTerrain(
     spawnTiles: spawnTileList(t.spawn, n),
     pines: t.pines.map((p) => ({ ...p })),
     decor: t.decor.map((p) => ({ ...p })),
+    relays: t.relays.map((r) => ({ ...r })),
     valleyY: Array.from(t.valleyY).map((v) => Math.round(v * 100) / 100),
   };
 }
@@ -643,6 +665,72 @@ function lift(src: readonly number[], pad: number, srcW: number): Uint8Array {
     for (let x = 0; x < cols; x++) out[y * COLS + x] = src[y * srcW + x];
   return out;
 }
+
+/**
+ * THE THREE PRICE BANDS, AND THE TWO RANGES THAT CUT THEM.
+ *
+ * A RELAY IS PRICED LIKE A TURRET IS PRICED. This game has three bands and
+ * everything a run buys sits in one of them (economy.ts TOWER_TIER, and the
+ * three STAGES of a fifty-wave run that roughly pay for them) — so ground is
+ * bought the same way. A relay near home is a band-1 purchase, the next ring
+ * out is band 2, the far edge is band 3. It used to be a continuous curve,
+ * which gave every relay on the map its own arbitrary four-figure number and
+ * nothing for a player to hold in their head; three prices is a ladder
+ * somebody can actually plan against.
+ *
+ * THE CUTS ARE ABSOLUTE DISTANCES, not a split of whatever this map happens
+ * to carry. "Far" has to mean the same thing on every board, or a compact
+ * map's outer ring would cost what a sprawling one's does for a third of the
+ * reach. The numbers come off the radii: the base lights 90 cells and a relay
+ * adds 60, so 200 is about the first ring a run can reach from home and 330
+ * is about the second. A tight map simply has no band-3 relay, which is the
+ * truth about a tight map.
+ */
+export const RELAY_TIER_FROM: readonly [number, number] = [200, 330];
+
+/**
+ * WHAT EACH BAND COSTS, read against what a run actually earns.
+ *
+ * A fifty-wave clear takes about 1.32 million scrap, split roughly 215k /
+ * 410k / 700k across the three stages (ladder.ts stageAudit), and the unit of
+ * mid-run spending is the thousand-scrap turret roll. So:
+ *
+ *   BAND 1, three thousand — three turret rolls. A stage-one purchase: a run
+ *   opens two or three of these while it is still finding its feet, and
+ *   never has to agonise over one.
+ *
+ *   BAND 2, twelve thousand — twelve rolls, and a real decision. This is the
+ *   stage-two buy, the one that trades a board's worth of guns for a piece
+ *   of map, and a run should not be able to take all of them.
+ *
+ *   BAND 3, forty thousand — forty rolls. A stage-three commitment and the
+ *   most expensive single thing in the game by some way (a railhead is
+ *   twelve). Opening the far edge of a board should be the sort of thing a
+ *   run does once, on purpose, because the mission asked for it.
+ *
+ * A WHOLE MAP IS MEANT TO BE UNAFFORDABLE. Taking every relay on the biggest
+ * board runs to about a quarter of everything a full clear earns, which is
+ * the point: the ground a run opens is a shape it chose, not a box it ticked.
+ */
+export const RELAY_TIER_PRICE: readonly [number, number, number] = [3000, 12000, 40000];
+
+/** which band a relay this far from the base sits in — 1, 2 or 3 */
+export const relayTier = (cellsFromBase: number): 1 | 2 | 3 =>
+  cellsFromBase <= RELAY_TIER_FROM[0] ? 1 : cellsFromBase <= RELAY_TIER_FROM[1] ? 2 : 3;
+
+/**
+ * WHAT A RELAY SHOULD COST, given how far from the base it sits — the number
+ * the editor stamps one with and the number the seeding pass writes
+ * (scripts/seed-relays.mjs).
+ *
+ * IT IS STILL A DRAFT. The price that ships is the one in the document
+ * (MapRelay.price), and an author is expected to argue with it: a mission is
+ * written by making one particular circle of ground cheap or brutal, and a
+ * band cannot make that decision. What the bands buy is a sane starting
+ * point that reads the same on every map.
+ */
+export const defaultRelayPrice = (cellsFromBase: number): number =>
+  RELAY_TIER_PRICE[relayTier(cellsFromBase) - 1];
 
 export function terrainFromMap(m: MapData): Terrain {
   // pad short documents with rock (blocked 1) wearing the dark carbon wall
@@ -667,6 +755,13 @@ export function terrainFromMap(m: MapData): Terrain {
     valleyY: m.valleyY
       ? Float32Array.from(m.valleyY)
       : new Float32Array(COLS).fill(base.y + base.size / 2),
+    // THE RELAYS, read straight through and CAPPED (constants.ts
+    // MAX_RELAYS): which ones are switched on lives in a shared array of
+    // that length, so a hand-edited document with a hundred of them would
+    // be a document whose last forty could never be bought. Dropping them
+    // here, where the document is read, is the one place that stays true
+    // for both threads — each builds its own terrain from the same file
+    relays: (m.relays ?? []).slice(0, MAX_RELAYS).map((r) => ({ ...r })),
     base,
     rows: Math.max(1, Math.min(ROWS, Math.floor(m.floor.length / sw))),
     cols: Math.max(1, Math.min(COLS, sw)),

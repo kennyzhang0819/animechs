@@ -222,6 +222,29 @@ const { COLS, ROWS, CELL } = C;
  * It stops at the goal, at a dead end, or on a cell it has already stood
  * on, so a field with a flat patch in it ends the walk instead of looping.
  */
+/**
+ * EVERY RELAY ON THIS MAP SWITCHED ON — what a harness does before it
+ * builds a board.
+ *
+ * A run may only build where its base and the relays it has BOUGHT light
+ * the ground (Sim.rebuildPower), and on a fresh board that is one circle
+ * around the base. Every check below that fills a board is asking a
+ * question about the SIM — does a round connect, does a step still fit in
+ * a frame, does the death path get timed — and none of them is asking
+ * whether the economy would have let a player open that much ground. A
+ * board confined to the base's circle would answer all three wrongly: the
+ * turrets would sit in a heap the swarm takes most of a minute to walk to,
+ * and the contact these checks exist to time would never happen.
+ *
+ * So the harnesses buy the whole map open, for free, and the power rule is
+ * tested where it belongs — by the placement test itself, and by the one
+ * assertion in the sim check that the grid grows when a relay is bought.
+ */
+const openBoard = (s) => {
+  for (let i = 0; i < s.terrain.relays.length; i++) s.setRelayOn(i);
+  return s;
+};
+
 const roadToCore = (sim, from) => {
   const route = [];
   const seen = new Set();
@@ -378,6 +401,21 @@ try {
   // machine is — see FIELD_BUDGET_MS in sim.ts
   sim.setFieldBudget(Infinity);
   sim.setTech(TR.techStateFor(15));
+  // EVERY RELAY SWITCHED ON, because this check is about the COMBAT
+  // pipeline and not about the power grid. A campaign run may only build
+  // inside the circle its base lights plus whatever relays it has bought
+  // (Sim.rebuildPower), so on a fresh board the only legal stretch of the
+  // route is the last few cells before the core — and a body takes most of
+  // a minute to walk that far, which would make this a test of the clock.
+  // Buying the board open puts the turrets back where the check means to
+  // put them: on the earliest stretch of the road.
+  const lit0 = sim.powered.reduce((a, b) => a + b, 0);
+  openBoard(sim);
+  // ...and while we are here, the cheapest possible gate on the grid
+  // itself: a map with relays on it must light more ground with them on
+  // than without, or something has quietly stopped painting
+  if (sim.terrain.relays.length > 0 && sim.powered.reduce((a, b) => a + b, 0) <= lit0)
+    simProblems.push("switching every relay on lit no new ground");
 
   const half = () => { for (let s = 0; s < 30; s++) sim.update(1 / 60); };
   let nan = null;
@@ -412,10 +450,18 @@ try {
     if (placed === 0) simProblems.push("nowhere on the route the game would take a turret");
   }
 
-  // 4. a round connects — every seed tried landed one inside thirteen
-  //    seconds, so twenty-five is margin and not a horizon worth tuning
+  // 4. a round connects.
+  //
+  //    THE HORIZON IS NINETY SECONDS AND IT USED TO BE TWENTY-FIVE. That
+  //    was margin on a thirteen-second answer, back when a turret could go
+  //    down anywhere and the check put its dozen right beside the drop
+  //    zone. It cannot any more: a run may only build where the base and
+  //    its bought relays light the ground (Sim.rebuildPower), and on every
+  //    official map the spawn edge is further out than the last relay — so
+  //    the earliest LEGAL stretch of the road is a long way down it, and
+  //    what this now waits for is a body to walk there.
   let hitAt = null;
-  const until = sim.time + 25;
+  const until = sim.time + 90;
   while (hitAt === null && sim.time < until && !sim.lost() && !sim.won()) {
     half();
     scan();
@@ -428,7 +474,7 @@ try {
   if (nan) simProblems.push(nan);
   if (!Number.isFinite(sim.core.hp)) simProblems.push(`core hp is ${sim.core.hp}`);
   if (placed > 0 && hitAt === null)
-    simProblems.push(`${placed} turrets on the route hit nothing in twenty-five seconds`);
+    simProblems.push(`${placed} turrets on the route hit nothing in ninety seconds`);
   simDetail =
     `bodies at ${spawnedAt}s, ${placed} turrets on the route, ` +
     `${hitAt === null ? "no hit" : `first hit ${hitAt}s`}, ${sim.kills} kills, ${Math.round(sim.time)}s simulated`;
@@ -535,8 +581,10 @@ if (wants("frames")) try {
     .reduce((a, r) => a + r.units, 0);
   const sim = new Sim(spec);
   // the save that has everything, so the board is built out of the whole
-  // catalogue rather than the opening tier
+  // catalogue rather than the opening tier — and the whole map open to
+  // build on, which is the other half of "everything" now (openBoard)
   sim.setTech(TR.techStateFor(60));
+  openBoard(sim);
   // ...and the SHIPPED field budget, deliberately: setFieldBudget(Infinity)
   // is right for the sim check, which wants one settled field and does not
   // care what it cost, and wrong here, where a re-route solved whole would
@@ -726,6 +774,7 @@ const SIEGE_OVER = 1 / 3;
 const legalCells = (world) => {
   const s = new Sim(LA.specForTier(world, 0));
   s.setTech(TR.techStateFor(60));
+  openBoard(s);
   let n = 0;
   for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (s.canPlace(x, y, "tacker")) n++;
   return n;
@@ -752,6 +801,7 @@ function siege({
     const spec = LA.specForTier(world, LA.RUNG_COUNT - 1);
     const sim = new Sim(spec);
     sim.setTech(TR.techStateFor(60));
+    openBoard(sim);
 
     // the purchases, off the game's own tables and odds: every fourth press
     // is the G button, until the relics run out (a relic is held once —
