@@ -104,6 +104,14 @@ export const DRAW_GOAL_MS = 8;
 
 const say = (s) => (JSON_OUT ? process.stderr : process.stdout).write(s + "\n");
 
+// A SIGNAL ENDS THE RUN, NOW. Playwright's own handlers close the browser
+// gracefully first, and a browser whose GPU process has wedged never
+// closes — which is how `timeout` on this script came to mean nothing
+for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => process.exit(130));
+/** the browser closed, or given ten seconds and abandoned */
+const closeBrowser = (b) =>
+  Promise.race([b.close().catch(() => {}), new Promise((r) => setTimeout(r, 10_000))]);
+
 // ---------- the transpile ----------
 
 const run = (cmd, args) =>
@@ -174,6 +182,8 @@ const resolveFile = (url) => {
   return path.join(PUBLIC, p);
 };
 const server = http.createServer((req, res) => {
+  // the browser asks for one on every page; there is none and it does not matter
+  if (req.url === "/favicon.ico") { res.statusCode = 204; res.end(); return; }
   const file = path.normalize(resolveFile(req.url ?? "/"));
   const inside = [DIST, PUBLIC, path.join(HERE, "bench")].some((d) => file.startsWith(d + path.sep) || file === d);
   const ok = inside && fs.existsSync(file) && fs.statSync(file).isFile();
@@ -256,7 +266,7 @@ const hasWebgl2 = async (b) => {
 let software = SOFTWARE;
 let browser = await launch(software);
 if (browser && !software && !(await hasWebgl2(browser))) {
-  await browser.close();
+  await closeBrowser(browser);
   say("no WebGL2 on the GPU path; falling back to SwiftShader");
   software = true;
   browser = await launch(true);
@@ -274,7 +284,9 @@ let failed = false;
 try {
   const ctx = await browser.newContext({ viewport: { width: VW, height: VH }, deviceScaleFactor: 1 });
   const page = await ctx.newPage();
-  page.setDefaultTimeout(15 * 60 * 1000);
+  // an evaluate that outlives this is a scene that hung, and the page has
+  // its own shorter watchdog on frames (bench.js FRAME_DEADLINE_MS)
+  page.setDefaultTimeout(20 * 60 * 1000);
   page.on("pageerror", (e) => say(`  page error: ${e.message}`));
   page.on("console", (m) => {
     if (VERBOSE || m.type() === "error" || m.type() === "warning") say(`  console.${m.type()}: ${m.text()}`);
@@ -327,7 +339,7 @@ try {
   failed = true;
   rows.push({ error: e.message });
 } finally {
-  await browser.close();
+  await closeBrowser(browser);
   server.close();
 }
 

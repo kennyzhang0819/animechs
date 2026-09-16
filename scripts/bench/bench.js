@@ -52,6 +52,23 @@ const log = (s) => {
   console.log(`[bench] ${s}`);
 };
 
+/** the most a frame may take before the sample is declared dead — a
+ *  software GPU takes seconds; a compositor that has stopped takes forever */
+const FRAME_DEADLINE_MS = 20_000;
+/**
+ * `n` frames off the Game, or a failure when they stop coming. A run whose
+ * frames stalled used to sit until the runner's timeout — which on a
+ * stuck GPU process it never reached — and read as a hang rather than as
+ * the fact it is: the page stopped drawing, and the number cannot be had.
+ */
+const frames = (g, n, what) =>
+  Promise.race([
+    g.sampleFrames(n),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${what}: ${n} frames did not land in ${(n * FRAME_DEADLINE_MS) / 1000}s — the page stopped drawing`)), n * FRAME_DEADLINE_MS),
+    ),
+  ]);
+
 // A SEEDED PAGE. The board is rolled with Math.random (which cell, which
 // kind), and two runs of one scene must roll the same board or the numbers
 // cannot be compared — mulberry32 over Math.random itself, as the checks
@@ -106,7 +123,7 @@ const openBoard = (g) => {
  */
 const settle = async (g, ms) => {
   await new Promise((r) => setTimeout(r, ms));
-  await g.sampleFrames(1);
+  await frames(g, 1, "settle");
 };
 
 /** the T1-5 roster, evenly — `n` bodies, kinds dealt round-robin, one
@@ -209,7 +226,7 @@ window.__bench = {
   /** `n` frames of an empty world, to learn how long a frame is here */
   async probe(n) {
     const g = await fresh(still());
-    return g.sampleFrames(n);
+    return frames(g, n, "probe");
   },
   async scene(name) {
     reseed(11);
@@ -226,10 +243,10 @@ window.__bench = {
     if (c.simStep < 0) throw new Error(`${name}: the sim reported no clock — it is not stepping`);
     return c;
   },
-  async measure(zoom, frames, warm) {
+  async measure(zoom, n, warm) {
     game.setCamera(zoom);
-    await game.sampleFrames(warm);
-    const s = await game.sampleFrames(frames);
+    await frames(game, warm, `warm at zoom ${zoom.toFixed(2)}`);
+    const s = await frames(game, n, `sample at zoom ${zoom.toFixed(2)}`);
     return { zoom: game.stats().zoom, ...s, ...this.census() };
   },
   zoomRange: () => game.zoomRange(),

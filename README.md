@@ -104,10 +104,15 @@ Chromium on a software GPU. Five scenes (`turrets`, `enemies`, `battle`,
 `upgrades`, `waves`; see the script's header) are each read at five zooms
 from the camera's floor to its ceiling, and the verdict per cell is the
 median `drawMs` over 120 frames against `DRAW_GOAL_MS` (8ms). `drawMs` is
-the main thread's JavaScript and never the GPU's time, which is why a
-software GPU can measure it honestly; the frame gap is printed beside it
-for information and is SwiftShader's. `npm run bench -- --headed` watches
-it; `--scenes`, `--zooms`, `--frames` and `--n` narrow it for iterating.
+the main thread's JavaScript and never the GPU's time, which is why it
+reads the same on any machine; the frame gap is printed beside it for
+information only. The bench uses the machine's GPU when headless Chromium
+can, and falls back to SwiftShader (or takes `--software`) when it cannot
+— a software frame is seconds long, because it draws the whole terrain
+batch on the CPU, so there the sample is cut to 24 frames a cell and the
+render clock takes half an hour or more; on a machine with a GPU it is
+minutes. `npm run bench -- --headed` watches it; `--scenes`, `--zooms`,
+`--frames`, `--viewport` and `--n` narrow it for iterating.
 
 **The isolated clocks stand boards no run stands, on purpose.** Ten
 thousand of one turret is not a game; it is the question "what does THIS

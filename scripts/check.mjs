@@ -1036,7 +1036,9 @@ if (FULL) {
     const c = p.census;
     // the heaviest phase, named — the one line of the table a list can carry
     const top = p.phases.filter((q) => q.ms > 0).sort((a, b) => b.ms - a.ms)[0];
-    const why = `${Math.round(c.shots + c.hostileShots).toLocaleString("en-US")} shots, ${c.fx} fx` +
+    // rounds IN FLIGHT — an instant weapon (a beam, a flame, speed 0) never
+    // has one, so a kind can be firing flat out and read as 0 shots here
+    const why = `${Math.round(c.shots + c.hostileShots).toLocaleString("en-US")} shots in flight, ${c.fx} fx` +
       (top ? `; ${top.name} ${top.ms.toFixed(1)}ms` : "");
     const slow = step > budget
       ? `${step.toFixed(1)}ms a step (p95 ${p95.toFixed(1)}) of ${budget.toFixed(1)} — ${why}`
@@ -1193,7 +1195,9 @@ if (FULL) {
   // — under a hundred random upgrade nodes off the real trees, rather than
   // the save's own rungs. A rung changes what a turret IS (its bullet, its
   // reach, its reload), and a hundred of them at once is a table no save
-  // composes, which is the point of rolling it.
+  // composes, which is the point of rolling it. The trees hold fewer than
+  // a hundred today, so today this is every node there is, in a random
+  // order; the number is the standard's, and the report says how many lit.
   if (wants("upgrades")) {
     const UP = R("upgrades.js");
     const UPGRADE_NODES = 100;
