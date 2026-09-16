@@ -273,6 +273,20 @@ stale tab or a cached bundle looks exactly like a fix not working.
   desktop shell (through the bridge `desktop/src/preload.ts` puts on
   `window`), and the display controls the Video tab of Settings drives
   over the same bridge
+- `game/missions.ts` — **where a crosser walks**: the hard-coded roads the
+  *intercept* mission sends its Borers down, one list per map id, in
+  cells. A road is AUTHORED rather than pathfound and is on screen from
+  wave one, because the whole of that archetype is a question about
+  whether a player will pay to put guns somewhere that defends nothing —
+  and a question nobody can plan the answer to is not that question. The
+  mission's own numbers (how many, which road, how far apart, how many may
+  get past) are in `WORLDS`; see
+  [docs/mission-design.md](docs/mission-design.md)
+- `game/wormArt.ts` — **the Borer**, and the first thing on the sheet that
+  is not an animal: a boring machine drawn as a train — a steel cutter
+  head, seven gunmetal cars on a hot seam, a tail with two stacks. One
+  Borer is NINE BODIES in a line, each shootable on its own, so the sheet
+  carries three drawings and the car is packed once and drawn seven times
 - `game/maps.ts` — map documents: terrain layers, spawn circles, the
   core's cell. **Every campaign map is 512x512 — twice Mindustry's Ground
   Zero — and is generated, never drawn**: `scripts/maps/<id>.mjs` is a few

@@ -300,6 +300,18 @@ footprint gets.
 | Tusker, the elephant | `game/tuskerArt.ts` | mech to T3, four legs from T4 | 56, 72, 96, 136, 176 |
 | Grapnel, the starfish | `game/grapnelArt.ts` | mech at every tier, and the leg cell is the rowing arms | 36, 52, 72, 116, 148 |
 | Sovereign, the sea eagle (the BOSS, one body) | `game/kingArt.ts` | body and two wings | 512 |
+| Borer, the crosser (the MISSION's, three pieces) | `game/wormArt.ts` | none — one flat quad a piece | 96, 96, 96 |
+
+**The Borer is not an animal, and it is the one body on the sheet that is
+allowed not to be.** Everything in section 1 is a rule about drawing a
+creature, and the Borer is a machine: the crosser of the *intercept*
+mission (`docs/mission-design.md`), a thing that walks a fixed road across
+the map on rails it laid itself. Nothing else about the grammar bends for
+it — the material pairs, the reversed fold, the four-pixel floor, no eyes
+and no round pair, the quad is the box — and the one rule it does not keep
+is the one that says a family is an animal. It is not a family: it is
+three pieces of one object, drawn on one grid, and its three kinds are in
+no `FAMILIES` row so nothing can ever roll one into a wave.
 
 **The boss is not a family, and it is the one body allowed to be a
 different order of size.** The Sovereign is drawn once, on a 512 grid, and

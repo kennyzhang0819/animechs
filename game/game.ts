@@ -9,6 +9,7 @@ import {
   refreshMap,
   SPAWN_STYLE,
 } from "./maps";
+import { roadsFor } from "./missions";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { towerBaseIcon, towerGhostIcon } from "./towerIcons";
 import {
@@ -176,6 +177,15 @@ export interface UiState {
   mission: Mission;
   /** seconds left on a survive mission's clock; 0 where there is no clock */
   timeLeft: number;
+  /**
+   * THE INTERCEPT MISSION'S LEDGER (levels.ts InterceptMission): crossers
+   * destroyed, crossers that got past, and how many are on the board now.
+   * All zero on every other mission, which is what the objective panel
+   * reads `mission.kind` for rather than reading these.
+   */
+  crossKilled: number;
+  crossLeaked: number;
+  crossLive: number;
   kills: number;
   /** the esc game menu is up: sim held, resume or abandon from the overlay */
   menuOpen: boolean;
@@ -2122,6 +2132,9 @@ export class Game {
       won: this.won(),
       mission: w.level.mission,
       timeLeft: Math.max(0, w.deadline - w.time),
+      crossKilled: w.crossKilled,
+      crossLeaked: w.crossLeaked,
+      crossLive: w.crossLive,
       kills: w.kills,
       menuOpen: this.menuOpen,
       scrap: w.charging ? Math.floor(w.scrap) : null,
@@ -3280,6 +3293,55 @@ export class Game {
     }
   }
 
+  /**
+   * THE LINE A CROSSER WALKS, on a map that carries one. Two dashes wide
+   * and half transparent, in the swarm's own red: it is a thing of
+   * theirs, laid across ground the player does not own, and the arrowhead
+   * on the last leg says which way the traffic runs.
+   *
+   * It reads the ROADS off the map id and the mission off the level, both
+   * of which are plain data this side of the seam (levels.ts, missions.ts)
+   * — nothing about the line is a question for the sim, because nothing
+   * about it ever changes during a run.
+   */
+  private drawCrosserRoads(c: CanvasRenderingContext2D): void {
+    const level = this.world.level;
+    if (level.mission.kind !== "intercept") return;
+    const roads = roadsFor(level.map);
+    if (roads.length === 0) return;
+    c.save();
+    c.strokeStyle = SPAWN_STYLE.css;
+    c.globalAlpha = 0.28;
+    c.lineWidth = 3;
+    c.setLineDash([26, 18]);
+    for (const road of roads) {
+      const p = road.pts;
+      c.beginPath();
+      c.moveTo(p[0], p[1]);
+      for (let k = 2; k < p.length; k += 2) c.lineTo(p[k], p[k + 1]);
+      c.stroke();
+    }
+    c.setLineDash([]);
+    // the arrowhead, on the last leg of each line and a good deal more
+    // solid than the line: the road is background and the direction is
+    // the one thing on it a player actually has to read
+    c.fillStyle = SPAWN_STYLE.css;
+    c.globalAlpha = 0.6;
+    for (const road of roads) {
+      const p = road.pts;
+      const ex = p[p.length - 2], ey = p[p.length - 1];
+      const a = Math.atan2(ey - p[p.length - 3], ex - p[p.length - 4]);
+      const hx = ex - Math.cos(a) * 46, hy = ey - Math.sin(a) * 46;
+      c.beginPath();
+      c.moveTo(ex, ey);
+      c.lineTo(hx - Math.sin(a) * 22, hy + Math.cos(a) * 22);
+      c.lineTo(hx + Math.sin(a) * 22, hy - Math.cos(a) * 22);
+      c.closePath();
+      c.fill();
+    }
+    c.restore();
+  }
+
   private drawOverlay(view: SimView): void {
     const c = this.uictx;
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -3330,6 +3392,18 @@ export class Game {
         c.globalAlpha = 1;
       }
     }
+
+    // THE CROSSERS' ROADS (missions.ts), on the maps that have them and
+    // ALWAYS — not behind the routes key like the drop zones are.
+    //
+    // A mission has no surprises in it (docs/mission-design.md): there is
+    // no fog, the objective is on screen from the first wave, and its
+    // whole pressure is affordability and timing. A road a player had to
+    // press a key to see would be a road they discovered the first time
+    // something walked down it, which is a different and much worse
+    // mission. So it is drawn thin and dark under everything — a line on
+    // the ground, not a marker over it.
+    this.drawCrosserRoads(c);
 
     // ROUTES, under everything else so a selection ring still reads on top
     if (this.showRoutes) {

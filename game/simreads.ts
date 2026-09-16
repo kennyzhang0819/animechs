@@ -186,6 +186,17 @@ export class World {
   get wavesCleared(): number {
     return this.header[HDR.WAVES_CLEARED];
   }
+  /** THE INTERCEPT MISSION'S LEDGER (levels.ts InterceptMission) — what
+   *  the objective panel counts. Zero on every other mission */
+  get crossKilled(): number {
+    return this.header[HDR.CROSS_KILLED];
+  }
+  get crossLeaked(): number {
+    return this.header[HDR.CROSS_LEAKED];
+  }
+  get crossLive(): number {
+    return this.header[HDR.CROSS_LIVE];
+  }
   /** is building charged? (Sim.charging) */
   get charging(): boolean {
     return this.header[HDR.CHARGING] !== 0;

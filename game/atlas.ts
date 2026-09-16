@@ -23,6 +23,7 @@ import {
   toCanvas,
   toCanvasRect,
   column as bodyColumn,
+  type Art,
   type LegParts,
   type MechParts,
   type StoopArt,
@@ -48,6 +49,7 @@ import {
 } from "./familyArt";
 import { IRON_TIERS, ironLegged, ironMech, type IronTier } from "./ironhideArt";
 import { TUSK_TIERS, tuskLegged, tuskMech } from "./tuskerArt";
+import { WORM_N, wormCar, wormHead, wormTail } from "./wormArt";
 import { GRAPNEL_TIERS, grapnelMech } from "./grapnelArt";
 import { KING_TIER, king, kingGeom } from "./kingArt";
 
@@ -1143,6 +1145,32 @@ export interface CellArt {
 /** every body's team cell, by kind — empty until the sheet is packed */
 export const UNIT_CELL: Partial<Record<UnitKind, CellArt>> = {};
 
+/**
+ * THE CROSSER'S CELLS, and they are on the sheet for the same reason the
+ * Tuskers' are: nothing upstream is called a `wormcar`, so the three
+ * pieces ask the packer for room of their own rather than going over
+ * anything (see THE TUSKERS' CELLS above).
+ *
+ * ALL THREE ARE ONE SIZE. A worm is nine bodies in a line (levels.ts
+ * WORM_CHAIN) drawn on one 96 grid — three tiles — in the smallest
+ * 64-multiple cell that holds it, so the head, the seven cars and the
+ * tail keep the sheet's 0.625 world px per native px and the whole train
+ * rides one quad size. The head fills its grid and the cars are drawn
+ * narrower inside it, which is the 60x50 and 56x44 the hitboxes say.
+ *
+ * NO TEAM CELL AND NO SILHOUETTE. A Borer is a machine rather than an
+ * animal (game/wormArt.ts): it wears the crimson as paint laid in the
+ * drawing itself, not as the tinted accent overlay a family's body
+ * carries, and nothing on the roster casts it as a shadow puppet. So the
+ * three go down the renderer's plain-quad path — one cell, one quad, the
+ * heading the sim turned it to.
+ */
+const WORM_CELLS = {
+  head: sprite("wormhead", 128, WORM_N),
+  car: sprite("wormcar", 128, WORM_N),
+  tail: sprite("wormtail", 128, WORM_N),
+};
+
 // per-kind unit art: atlas cell + world quad size. Both ride at true
 // Mindustry scale — ironhide1 48px art = 1.5 tiles, ironhide2 64px art = 2 tiles
 export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
@@ -1210,6 +1238,10 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   grapnel3: { uv: SF3_CELLS.body, sprite: UNIT_SPRITE * 2 },
   grapnel4: { uv: SF4_CELLS.body, sprite: UNIT_SPRITE * 2 },
   grapnel5: { uv: SF5_CELLS.body, sprite: UNIT_SPRITE * 4 },
+  // the crosser's three pieces, a 96px drawing in a 128 cell apiece
+  wormhead: { uv: WORM_CELLS.head, sprite: UNIT_SPRITE * 2 },
+  wormcar: { uv: WORM_CELLS.car, sprite: UNIT_SPRITE * 2 },
+  wormtail: { uv: WORM_CELLS.tail, sprite: UNIT_SPRITE * 2 },
 };
 
 // Mindustry world units → px (CELL / 8, see constants.ts)
@@ -2865,6 +2897,30 @@ function clearCell(c: CanvasRenderingContext2D, uv: UVRect): void {
 }
 
 /**
+ * THE CROSSER INTO THE SHEET (game/wormArt.ts) — three cells nobody else
+ * owns, drawn at native size through the same antialias pass every sprite
+ * file goes through, and turned the same quarter turn so an up-facing
+ * drawing faces +x like the rest of the sheet.
+ *
+ * IT IS NOT BEHIND ANIMAL_ART. That switch is the animal trial: with it
+ * off, every family it covers falls back to a Mindustry sprite that
+ * really is on disk. There is no Mindustry sprite of a boring machine, so
+ * a Borer behind the switch would be a mission with three empty quads in
+ * it. It packs either way, which is also why it has no silhouette and no
+ * team cell to requeue — see THE CROSSER'S CELLS.
+ */
+function packWormArt(c: CanvasRenderingContext2D): void {
+  const pack = (u: UVRect, art: Art): void => {
+    const cv = toCanvas(art);
+    clearCell(c, u);
+    drawCell(c, u, antialiased(cv), [cv.width, cv.height]);
+  };
+  pack(WORM_CELLS.head, wormHead());
+  pack(WORM_CELLS.car, wormCar());
+  pack(WORM_CELLS.tail, wormTail());
+}
+
+/**
  * THE ANIMAL ART INTO THE SHEET, after every stock cell is drawn: each
  * part cleared and redrawn at native size, through the same antialias and
  * silhouette passes as the sprite files, and each body's team cell
@@ -3502,6 +3558,10 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
       if (i >= 0) cellJobs.splice(i, 1);
     });
   }
+
+  // ...and the mission's crosser, which is nobody's trial and is packed
+  // whichever way the switch is thrown (see packWormArt)
+  packWormArt(c);
 
   // last, because it is the only thing on the sheet whose cells are cut
   // to art that had to be drawn first: every body's team cell
