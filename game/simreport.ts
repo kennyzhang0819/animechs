@@ -456,11 +456,12 @@ export interface InspectPanel {
 }
 
 export interface WorldReport {
-  /** every OBJECTIVE body on the field — bosses and Borer trains — for the
-   *  HUD's bar stack (Sim.objectiveBars). Named here rather than keyed by
-   *  unit kind, because a train is a pool over twenty pieces and has no one
-   *  kind to be named after */
-  objectives: { id: number; name: string; hp: number; max: number }[];
+  /** every OBJECTIVE body on the field — bosses, Borer trains and the
+   *  escort's own hauler — for the HUD's bar stack (Sim.objectiveBars).
+   *  Named here rather than keyed by unit kind, because a train is a pool
+   *  over twenty pieces and has no one kind to be named after; `ally` is
+   *  whose side the row is on, which is what the HUD paints it off */
+  objectives: { id: number; name: string; hp: number; max: number; ally: boolean }[];
   /** the player's live turrets per kind (Sim.towerCounts) */
   counts: Record<TowerKind, number>;
   /** the shelf: every mod the run owns with its count, and every relic */

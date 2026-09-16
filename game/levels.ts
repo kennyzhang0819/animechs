@@ -2359,10 +2359,22 @@ export const CONVOY_HP = 250000;
  *  (TowerStats.armor) — enough that the runts chewing at it as they walk
  *  past are a nuisance and the heavies are the threat */
 export const CONVOY_ARMOR = 40;
-/** its footprint in cells — what the swarm's guns aim at and what the
- *  sight ray clips to. A big square on purpose: the objective should be
- *  the most legible thing on the board */
-export const CONVOY_SIZE = 6;
+/**
+ * ITS FOOTPRINT IN CELLS — what the swarm's guns aim at, what the sight
+ * ray clips to, and (times CELL) the world quad the art is stretched onto
+ * (atlas.ts CONVOY_QUAD, which has to move with this number).
+ *
+ * TWELVE TILES, WHICH IS TWICE WHAT IT WAS. Six was already "a big square
+ * on purpose" and it was not big enough: the cart is the one body on the
+ * board a player has to find from across a map, while the swarm is on the
+ * screen and the camera is far enough out to see the road, and at six
+ * tiles it read as a turret somebody had left in a field. Twelve is wider
+ * than anything else on the board bar the Sovereign, which is the size an
+ * objective should be. Nothing downstream cares: the cart claims no ground
+ * and is in no occupancy grid (see the note in Sim.launchConvoy), so the
+ * footprint is only ever a hitbox and a quad.
+ */
+export const CONVOY_SIZE = 12;
 /**
  * WHICH TURRET'S STATS THE CART'S ARE A COPY OF, with its name, footprint
  * and plating written over them (Sim.launchConvoy).
@@ -3524,8 +3536,18 @@ export interface EscortMission {
    * Fractions and not cells, because a halt is a point ON THE JOURNEY —
    * "a fifth of the way" — and a road edited by a corner should carry its
    * halts with it rather than leaving four cell coordinates pointing at
-   * ground the line no longer passes. Thornway's four are chosen to land
-   * in the clearings the terrain already has.
+   * ground the line no longer passes. Thornway's four on the road are
+   * chosen to land in the clearings the terrain already has.
+   *
+   * A HALT AT 0 IS THE DEPOT and is the first entry of every escort that
+   * puts its cart down at the start of the run (`first: 0`). It is not a
+   * special case in the sim — updateConvoys asks for the next halt before
+   * it asks about the arrival, so a cart launched at s = 0 stops at 0 on
+   * its first tick — it is only the shape the cart has to be parked in,
+   * because a cart that spawns already rolling gives the player nothing to
+   * price a position against. scripts/check.mjs allows 0 here for this
+   * reason and nothing else; 1 is still illegal, since a halt at the post
+   * is a delivery the mission would never count.
    */
   halts: readonly number[];
   /** how long it stands at each, seconds */
@@ -3625,6 +3647,125 @@ export function missionCount(
   return { done: Math.min(target, state.wavesCleared), of: target, noun: "waves held" };
 }
 
+/**
+ * ONE REQUIREMENT OF THE MISSION, as a line of text the player reads.
+ *
+ * `state` is what the line is COLOURED off and nothing else: a requirement
+ * already satisfied, one already broken, or one still open. A broken line
+ * only ever shows for the instant before the run's own loss screen takes
+ * the panel — it is there because a panel that went from "0/1" to a score
+ * screen never said which of the two requirements was the one that went.
+ */
+export interface MissionLine {
+  /** the requirement in the player's words, e.g. "Destroy 7 Borers" */
+  text: string;
+  /** the count beside it — "1 / 7" — or "" where it has no number */
+  count: string;
+  state: "open" | "met" | "failed";
+}
+
+/**
+ * WHAT THIS MISSION ASKS, ONE REQUIREMENT A LINE (the HUD's objective box,
+ * components/Animechs.tsx ObjectivePane).
+ *
+ * IT IS A LIST BECAUSE A MISSION IS A LIST, and the panel used to pretend
+ * otherwise. It had one big number, one bar and a row of pips, and every
+ * one of those is an answer to "how is it going" — none of them is the
+ * question. On the intercept the question is TWO questions that are not
+ * the same shape: seven Borers have to die (a thing to achieve) and no
+ * more than one may cross (a thing not to do), and a player reading a
+ * fraction and a row of lamps has to work out for themselves which of the
+ * two ends the run. Written out as sentences there is nothing to work out.
+ *
+ * SUCCESS AND FAILURE ARE BOTH ON IT, always, and in that order: what the
+ * run is for, then what would end it. The last line of every mission is
+ * the core, because the core is the stake on all four of them (see
+ * Mission) and a panel that only named it on the maps where it is the
+ * whole objective was a panel that let the player forget.
+ *
+ * A COUNT NEVER OVERSHOOTS ITS TARGET — an eighth kill on a mission asking
+ * for seven still reads "7 / 7", because the seventh was the one that met
+ * it. An ALLOWANCE does overshoot, and has to: "2 / 1" beside "let no more
+ * than 1 past you" is the whole of why the run just ended, and clamping it
+ * to "1 / 1" would print the same thing a clean run at its limit prints,
+ * with only the colour to tell them apart.
+ */
+export function missionLines(
+  mission: Mission,
+  target: number,
+  state: {
+    wavesCleared: number;
+    timeLeft: number;
+    crossKilled: number;
+    crossLeaked: number;
+    convoyDone: number;
+    convoyLost: number;
+  },
+): MissionLine[] {
+  const out: MissionLine[] = [];
+  /** "n / of", and whether that is all of them */
+  const of = (text: string, n: number, cap: number): void => {
+    const done = Math.min(cap, Math.max(0, n));
+    out.push({ text, count: `${done} / ${cap}`, state: done >= cap ? "met" : "open" });
+  };
+  /** an ALLOWANCE: how much of it is spent, and it is broken one past the
+   *  limit rather than at it — `leaks: 1` means one may go by. The spent
+   *  side is NOT clamped: past the limit the overshoot is the news */
+  const upTo = (text: string, spent: number, limit: number): void => {
+    out.push({
+      text,
+      count: `${Math.max(0, spent)} / ${limit}`,
+      state: spent > limit ? "failed" : "open",
+    });
+  };
+  /** "3 Haulers", "1 Hauler" — the noun agrees, which it did not when this
+   *  was written inline and printed "no more than 1 Haulers" */
+  const many = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
+  if (mission.kind === "survive") {
+    const left = Math.max(0, Math.ceil(state.timeLeft));
+    out.push({
+      text: `Survive ${mission.minutes} minutes`,
+      count: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left`,
+      state: left <= 0 ? "met" : "open",
+    });
+  } else if (mission.kind === "intercept") {
+    of(`Destroy ${many(mission.kills, WORM_NAME)}`, state.crossKilled, mission.kills);
+    upTo(
+      `Let no more than ${many(mission.leaks, WORM_NAME)} past you`,
+      state.crossLeaked,
+      mission.leaks,
+    );
+  } else if (mission.kind === "escort") {
+    of(
+      mission.deliver === 1
+        ? `Get the ${CONVOY_NAME} to the far post`
+        : `Deliver ${many(mission.deliver, CONVOY_NAME)}`,
+      state.convoyDone,
+      mission.deliver,
+    );
+    // ...AND `losses: 0` IS NOT A COUNTER. "0 / 0" is a fraction with
+    // nothing to fill, and the requirement it is standing for is the
+    // flattest sentence in the game: the one cart has to live
+    if (mission.losses === 0)
+      out.push({
+        text: `Do not lose the ${CONVOY_NAME}`,
+        count: "",
+        state: state.convoyLost > 0 ? "failed" : "open",
+      });
+    else
+      upTo(
+        `Lose no more than ${many(mission.losses, CONVOY_NAME)}`,
+        state.convoyLost,
+        mission.losses,
+      );
+  } else {
+    of(`Hold the line for ${target} waves`, state.wavesCleared, target);
+  }
+  out.push({ text: "Keep the core standing", count: "", state: "open" });
+  return out;
+}
+
 export interface LevelSpec {
   /**
    * save key — the world's ordinal as a string, e.g. "2". It is NOT shown
@@ -3632,7 +3773,23 @@ export interface LevelSpec {
    * must stay stable even when a world is renamed, or saves break
    */
   id: string;
-  /** the world's only display name, e.g. "Confluence" */
+  /**
+   * THE WORLD'S ONLY DISPLAY NAME — and it is named for the MISSION rather
+   * than for the terrain, e.g. "Borer Intercept" and not "Coldline".
+   *
+   * It used to be the map's name, from back when a map WAS the assignment
+   * and the mission was "clear the script" on all of them. It is not any
+   * more (see Mission — the script is an engine that never runs out), and
+   * a picker offering "Coldline" and "Thornway" was asking the player to
+   * choose between two place names for two completely different games.
+   * The terrain is still on the screen beside the name — the picker draws
+   * the map's own thumbnail — so nothing is lost by the name being about
+   * the thing the player is choosing.
+   *
+   * The shelved fifteen (PLAYABLE_WORLD_IDS) still carry terrain names:
+   * every one of them is a hold on undressed ground, so there is no
+   * mission yet to name them after. Naming one is part of finishing it.
+   */
   name: string;
   /** official map id this level plays on; the first official map when unset */
   map?: string;
@@ -4040,7 +4197,7 @@ export const WORLDS: LevelSpec[] = [
   },
   {
     id: "11",
-    name: "Coldline",
+    name: "Borer Intercept",
     map: "coldline",
     // INTERCEPT THE CROSSER — two convoy roads west to east with the core
     // on its own ground between them, and the first mission in the game
@@ -4092,7 +4249,7 @@ export const WORLDS: LevelSpec[] = [
   },
   {
     id: "12",
-    name: "Thornway",
+    name: "Hauler Escort",
     map: "thornway",
     // ESCORT THE CROSSER — one road, a double S from the core in the
     // bottom-left corner to the post in the top-right, and the second
@@ -4115,13 +4272,26 @@ export const WORLDS: LevelSpec[] = [
     // minutes and the only thing that matters for the ninety seconds the
     // cart is standing in it.
     //
-    // THE CLOCK. It rolls out at 1:30 and drives at 1.6 tiles a second
-    // (CONVOY_SPEED), so the driving is twelve and a half minutes; four
-    // halts of forty-five seconds put the arrival a little past
-    // seventeen. The halts are at 22, 40, 60 and 76 per cent, each chosen
-    // to land in a clearing the terrain already has — a stopped cart is
-    // the easiest target on the board, and standing it in a corridor
-    // would be asking the player to defend a place they cannot build in.
+    // THE CLOCK. It is ON THE BOARD FROM THE FIRST FRAME (`first: 0`) and
+    // the first thing it does is STAND STILL: the halt at 0 is the depot
+    // it is loaded at, so the mission opens with the cart parked outside
+    // the core for forty-five seconds rather than with ninety seconds of
+    // empty road and then a spawn.
+    //
+    // THAT IS THE WHOLE REASON FOR IT. An escort is a thing the player is
+    // asked to spend against, and until it exists there is nothing to
+    // spend against — a cart that materialises at 1:30 is a cart whose
+    // first leg is defended by whatever happened to be there. Parked at
+    // the start it is a fact about the board the player can see, walk the
+    // camera along, and price a battery against before it moves.
+    //
+    // Then it drives at 1.6 tiles a second (CONVOY_SPEED), so the driving
+    // is twelve and a half minutes; five halts of forty-five seconds put
+    // the arrival a little past sixteen. The four on the road are at 22,
+    // 40, 60 and 76 per cent, each chosen to land in a clearing the
+    // terrain already has — a stopped cart is the easiest target on the
+    // board, and standing it in a corridor would be asking the player to
+    // defend a place they cannot build in.
     //
     // ONE CART AND NO SPARE. `losses: 0` is the honest reading of an
     // escort: the thing either arrives or it does not, and a second
@@ -4131,10 +4301,10 @@ export const WORLDS: LevelSpec[] = [
       kind: "escort",
       deliver: 1,
       losses: 0,
-      first: 90,
+      first: 0,
       every: 300,
       pattern: [0],
-      halts: [0.22, 0.4, 0.6, 0.76],
+      halts: [0, 0.22, 0.4, 0.6, 0.76],
       haltSeconds: CONVOY_HALT,
       mend: CONVOY_MEND,
     },
@@ -4222,15 +4392,23 @@ export function worldById(id: string): LevelSpec | null {
  *
  * IT IS A LIST OF WHAT IS IN RATHER THAN OF WHAT IS OUT, and it was the
  * other way round until the shelf got longer than the game. Seventeen
- * boards are drawn and three are FINISHED — Confluence, which is the
- * first board and the one the campaign is tuned against, and the two
- * boards that carry a built mission, Coldline's intercept and Thornway's
- * escort (docs/mission-design.md). Everything else
- * is terrain with a hold mission on it and no reason yet to be played, so
- * naming the fifteen would be writing the catalog down twice and
- * forgetting one of them the next time a board lands.
+ * boards are drawn and TWO are in the game: the two that carry a built
+ * mission — Coldline's intercept and Thornway's escort (docs/mission-
+ * design.md). Everything else is terrain with a hold mission on it and no
+ * reason yet to be played, so naming the fifteen would be writing the
+ * catalog down twice and forgetting one of them the next time a board
+ * lands.
+ *
+ * CONFLUENCE CAME OFF THE LIST with the rest of the holds. It is still the
+ * board the campaign's numbers are tuned against, still world 1, still
+ * what the menu backdrop is drawn from, and still constructed by
+ * scripts/check.mjs — what it is not is a MISSION. Its assignment is
+ * "clear the script", and the script does not run out any more (see
+ * Mission and the tide): so it is a map that can only be played until the
+ * player gets bored, offered in a picker that now names each row after the
+ * thing it asks for. It comes back the day it is given one.
  */
-export const PLAYABLE_WORLD_IDS: readonly string[] = ["1", "11", "12"];
+export const PLAYABLE_WORLD_IDS: readonly string[] = ["11", "12"];
 
 /** is this world off the menu? — everything the list above does not name */
 export const worldHidden = (id: string): boolean => !PLAYABLE_WORLD_IDS.includes(id);

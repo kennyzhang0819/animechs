@@ -31,6 +31,7 @@ import {
 import { powerDiscsOf, beaconCentre, type PowerDisc } from "./board";
 import { loadBalanceDoc } from "./balance";
 import {
+  CONVOY_SIZE,
   loadLevelDocs,
   UNIT_ID,
   UNIT_KINDS,
@@ -174,11 +175,12 @@ export interface UiState {
   /**
    * EVERY OBJECTIVE BODY ON THE FIELD, one thin HUD bar each, stacked in
    * this order (Sim.objectiveBars): the Sovereigns first, keyed by spawn
-   * id, then the Borer trains in launch order. A train is ONE bar over its
-   * whole twenty-piece pool, which is why a row carries a name rather than
-   * a unit kind.
+   * id, then the Borer trains in launch order, then the escort's haulers.
+   * A train is ONE bar over its whole twenty-piece pool, which is why a
+   * row carries a name rather than a unit kind — and `ally` is whose thing
+   * it is, so the player's hauler is not painted in the swarm's crimson.
    */
-  objectives: { id: number; name: string; hp: number; max: number }[];
+  objectives: { id: number; name: string; hp: number; max: number; ally: boolean }[];
   /** seconds until the next wave, or 0 while one is already coming in */
   nextWaveIn: number;
   /** seconds of simulated time since the run started (Sim.time) */
@@ -236,11 +238,18 @@ export interface UiState {
   convoyHp: number;
   convoyHpMax: number;
   /**
-   * HOW FAR THROUGH ITS OBJECTIVE THE RUN IS, 0 to 1 — what every progress
-   * bar on the screen draws (Sim.missionProgress, levels.ts
+   * HOW FAR THROUGH ITS OBJECTIVE THE RUN IS, 0 to 1 — what the END
+   * SCREENS' bar draws (Sim.missionProgress, levels.ts
    * missionProgress). It is the MISSION's fraction and never the script's:
    * waves cleared of a hold's target, seconds of a survive's clock,
    * crossers down of an intercept's count.
+   *
+   * THE OBJECTIVE PANEL NO LONGER READS IT. That panel is a list of
+   * requirements in text now (levels.ts missionLines), and a bar over it
+   * was answering "how is it going" to a player who had not yet been told
+   * what was being asked. The number stays because the two end screens
+   * still draw it, where "how far did that run get" is the only question
+   * left.
    */
   missionProgress: number;
   /**
@@ -713,9 +722,15 @@ const MM_CONVOY_PING_ID = -1;
 /** the escort road's colour on the board overlay — the player's amber
  *  (turretArt.ts POWER), against the swarm's red a Borer's line wears */
 const ROAD_MINE = "#ffd37f";
-/** how wide a halt's ring is drawn, world px — a little over the cart's
- *  own six tiles, so the cart sits INSIDE the mark when it arrives */
-const HALT_RING_R = 80;
+/**
+ * HOW WIDE A HALT'S RING IS DRAWN, world px — a third again the cart's own
+ * half-width, so the cart sits INSIDE the mark when it arrives.
+ *
+ * DERIVED FROM CONVOY_SIZE, because it was typed (80, for a six-tile cart)
+ * and the cart then doubled: a fixed ring became a ring the cart parks on
+ * top of, which is a mark that has stopped marking anything.
+ */
+const HALT_RING_R = (CONVOY_SIZE * CELL * 2) / 3;
 /** scratch for the road sampler on the draw side — one call site */
 const ROAD_AT = { x: 0, y: 0, dx: 0, dy: 0 };
 const MM_CROSS_EDGE = mmColor(0x00, 0x00, 0x00);

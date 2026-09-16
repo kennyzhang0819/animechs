@@ -22,10 +22,13 @@
  *     is a thing that is going somewhere, which is the one fact about this
  *     body a player has to read.
  *
- * IT IS THE BIGGEST SINGLE BODY ON THE BOARD after the Sovereign — a six-
- * tile square, half again the widest turret — because an objective that
- * has to be found from across a map while the swarm is on the screen
- * cannot be the size of the things shooting it.
+ * IT IS THE BIGGEST SINGLE BODY ON THE BOARD after the Sovereign — a
+ * TWELVE-tile square, three times the widest turret (levels.ts
+ * CONVOY_SIZE) — because an objective that has to be found from across a
+ * map while the swarm is on the screen cannot be the size of the things
+ * shooting it. Six tiles was the first answer and it was not enough: on a
+ * camera pulled far enough out to see the road it read as a turret
+ * somebody had left in a field.
  *
  * The grammar is the families' and the turrets' (docs/unit-art.md): a
  * material is a PAIR, dark on the left half and light on the right, the
@@ -49,16 +52,25 @@ const HAUL_R: Mat = [HAUL[1], HAUL[0]];
 const TRACK: Mat = ["#232322", "#3b3b38"];
 
 /**
- * THE GRID: 192 native px, six tiles, which is CONVOY_SIZE. The quad is
- * the box like every other body drawn on this engine — the cart is not
- * scaled up the way the boss and the Borer are, it is simply big.
+ * THE GRID: 192 native px, which is the resolution the cart is DRAWN at
+ * and no longer the size it is drawn AT. atlas.ts CONVOY_QUAD stretches
+ * the cell to CONVOY_SIZE tiles, so this grid is magnified about two to
+ * one on the board — the one cell on the sheet that is.
+ *
+ * IT STAYS AT 192 because every coordinate below is a pixel on this grid
+ * and the drawing is already made of slabs: the narrowest run on it is
+ * the four-px floor (docs/unit-art.md) and most of it is twelve or more,
+ * which is a shape that survives magnification. Redrawing it at 384 would
+ * buy detail the cart does not want — it is a working vehicle read as a
+ * silhouette from across a map, not a body inspected up close.
  */
 export const CONVOY_N = 192;
 
 /**
  * The cart, facing up: tracks down both flanks, a cab at the front, and
  * the cargo on the deck behind it. Only the left half is drawn — `draw`
- * mirrors it — so every x here is under the midline at 96.
+ * mirrors it — so every x here is under the midline at 96. The numbers
+ * are pixels on the 192 grid, which is not tiles: see CONVOY_N.
  */
 function haulerArt(P: Pen): void {
   const n = CONVOY_N;

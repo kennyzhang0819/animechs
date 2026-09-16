@@ -1203,9 +1203,10 @@ the design is drawn from):
   with the core standing**, and the first that can be **met with the
   script still sending**.
 - **escort** — get `deliver` convoys to the far post, which is
-  **Thornway**: ONE Hauler, rolling out of the core at 1:30 and crossing
-  the whole map at 1.6 tiles a second down a double S twelve hundred cells
-  long. It is the intercept in a mirror — the same roads
+  **Thornway**: ONE Hauler, twelve tiles square, parked outside the core
+  from the first frame of the run and rolling out of its depot halt at
+  0:45, then crossing the whole map at 1.6 tiles a second down a double S
+  twelve hundred cells long. It is the intercept in a mirror — the same roads
   (`game/missions.ts`), the same money spent on the same far-flung ground
   — and the opposite feeling, because a Borer you fail to kill is a number
   on a panel and a hauler you fail to hold is gone.
@@ -1219,9 +1220,13 @@ the design is drawn from):
   walking past on the ten-percent floor and makes calibre and rot the
   things that actually threaten it.
 
-  **It stops four times** (`EscortMission.halts`, at 22/40/60/76% of the
-  road, each in a clearing the terrain already has), stands for 45
-  seconds and mends 2,000 a second while it waits. That is the mercy and
+  **It stops five times** (`EscortMission.halts` — the depot at 0, then
+  22/40/60/76% of the road, each in a clearing the terrain already has),
+  stands for 45 seconds and mends 2,000 a second while it waits. The depot
+  is why the cart is on the board from the first frame rather than ninety
+  seconds in: an escort the player cannot see yet is an escort they cannot
+  spend against, and a standing start is the same halt mechanism as every
+  other stop. That is the mercy and
   the trap in one: a bad leg is paid back by the halt at the end of it,
   and a cart standing still for three quarters of a minute is the easiest
   target on the board. Every halt is a position that had to be bought
@@ -1229,8 +1234,28 @@ the design is drawn from):
 
 **Every progress bar on the screen reads the mission** — one number
 (`missionProgress` in `game/levels.ts`, published by the sim and drawn by
-the objective panel and both end screens). A bar drawn off the wave count
-would fill to the brim and quietly start over.
+both end screens). A bar drawn off the wave count would fill to the brim
+and quietly start over.
+
+**The objective panel is not one of them any more.** Top-left, it is a
+boxed LIST OF REQUIREMENTS in plain text — `missionLines` in
+`game/levels.ts`, one line a requirement, what the run is for first and
+what would end it under that, each with its own count:
+
+```
+Destroy 7 Borers                    1 / 7
+Let no more than 1 Borer past you   0 / 1
+Keep the core standing
+```
+
+It used to be a forty-pixel number, a caption, a row of leak pips and one
+or two bars, and every one of those answered *how is it going* to a player
+who already knew what was being asked. None of them said that the seventh
+kill wins and the second leak loses. The colour is the only state on it —
+green for a requirement met, red for one broken — and what is true only
+*right now* (the tide, the Borers crossing, whether the cart is rolling)
+sits under a rule beneath the list, so nothing the player cannot fail is
+mixed in with the things they can.
 
 **The objective bodies are the Sovereign and the Borer** (`OBJECTIVE_KINDS`
 in `game/levels.ts`), and **a wave cannot send either**. The boss used to be
@@ -1240,16 +1265,24 @@ strips them from any wave whatever the document says, and the level editor
 does not offer their rows — a mission puts them down and nothing else can.
 Each wears a **health bar** at the top of the screen while it is on the field
 (`Sim.objectiveBars`), stacked downward when there are several; a Borer gets
-one bar over its whole twenty-piece pool. **The Hauler wears one too**, in
-the player's amber rather than the swarm's red — it is the same kind of
-thing, the body a map is about, and the colour is the whole of what says
-which way the mission runs.
+one bar over its whole twenty-piece pool. **The Hauler wears one too, and
+it is WHITE** rather than the swarm's red (`ally` on the bar row, set in
+the sim) — it is the same kind of thing, the body a map is about, and the
+colour is the whole of what says which way the mission runs. A player's own
+objective painted in the colour this game uses for "shoot this" read as a
+target.
 
-**Only three boards are in the game** (`PLAYABLE_WORLD_IDS`): Confluence,
-Coldline and Thornway. The other fourteen are drawn terrain on the shelf, and
-`npm run check` holds them to constructing without throwing and to nothing
-else — the playable ones it also holds to having a core, a door for the
-swarm, and a mission the sim can actually meet.
+**Only two boards are in the game** (`PLAYABLE_WORLD_IDS`): the intercept
+and the escort — and they are OFFERED BY MISSION rather than by map, so
+the picker is titled Mission and the rows read "Borer Intercept" and
+"Hauler Escort" (`LevelSpec.name`) with the terrain shown beside them as a
+thumbnail. Confluence came off the list with the other holds: its
+assignment is "clear the script" and the script does not run out any more,
+so it is a board with no way to be finished. The other fifteen are drawn
+terrain on the shelf, and `npm run check` holds them to constructing
+without throwing and to nothing else — the playable ones it also holds to
+having a core, a door for the swarm, and a mission the sim can actually
+meet.
 
 ### One script, a deal that turns every wave
 

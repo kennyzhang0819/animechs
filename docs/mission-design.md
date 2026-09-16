@@ -63,14 +63,19 @@ Three consequences, and every archetype below is shaped by them:
 
 ## What is built
 
-**Three of the eight, counting the plain one — and the last two are the
-PAIR.** Confluence plays *hold the
-line* — fifty waves broken with the core standing, the assignment the
-whole campaign is tuned against. Coldline plays *intercept the crosser*:
-seven Borers — twenty-car boring machines — cross the map on two fixed
-roads while the wave script runs at the core underneath, and a run that
-lets two of them reach the far side is over whether or not the base is
-still standing.
+**Two of the eight, and they are the PAIR.** Coldline plays *intercept the
+crosser* — offered as **Borer Intercept**, since the picker names a row
+after its mission and not after its ground: seven Borers — twenty-car
+boring machines — cross the map on two fixed roads while the wave script
+runs at the core underneath, and a run that lets two of them reach the far
+side is over whether or not the base is still standing.
+
+**The plain one is no longer among them.** Confluence plays *hold the
+line*, it is still the board the campaign's numbers are tuned against, and
+it is off the menu (`PLAYABLE_WORLD_IDS`) for the reason this whole
+document exists: a hold's assignment is the script, the script goes round
+forever, and a board that cannot be finished is not a mission. It comes
+back the day it is given one.
 
 Where it lives, since a mission is spread across the file the way one has
 to be:
@@ -85,11 +90,21 @@ to be:
 | whether the script loops under it | `Sim.tideTurns` — every mission but a hold that has staged its count |
 | what the player sees | the objective pane in `components/Animechs.tsx`, the road overlay in `Game.drawMissionRoads`, and the arrival ping on the corner map |
 
-**Thornway plays *escort the crosser*, which is Coldline in a mirror**:
-one Hauler of the player's own, rolling out of the core at 1:30 and
-crossing twelve hundred cells of double S at 1.6 tiles a second to the
-post in the far corner, stopping four times on the way to mend. Losing it
-loses the run. It cost almost no new mechanism and taught the most about
+**Thornway plays *escort the crosser*, which is Coldline in a mirror** —
+offered as **Hauler Escort**: one Hauler of the player's own, twelve tiles
+square, standing outside the core from the first frame of the run and
+rolling out of its depot halt forty-five seconds in, then crossing twelve
+hundred cells of double S at 1.6 tiles a second to the post in the far
+corner, stopping four more times on the way to mend. Losing it loses the
+run.
+
+It is **on the board before it moves** on purpose. An escort is a thing
+the player is asked to spend against, and until it exists there is nothing
+to spend against: a cart that materialises ninety seconds in is a cart
+whose first leg is defended by whatever happened to already be there. The
+depot is the halt at fraction 0 (`EscortMission.halts`), so the standing
+start is the same mechanism as every other stop rather than a case written
+for the opening. It cost almost no new mechanism and taught the most about
 the first one — everything the intercept needed in order to be a mission
 (an authored line, a clock read off run time, a body that is not the
 swarm, a bar that is the objective) the escort needed too, and the only
@@ -103,7 +118,8 @@ thing it added was a body the SWARM shoots rather than one the board does.
 | what keeps the swarm off it | `Sim.aimIsConvoy` — the cart is a target and never a destination |
 
 The other five archetypes have a MAP each and no rule yet (`WORLDS`, the
-mission sketches). **Those boards are SHELVED and not in the game**
+mission sketches), and so do the holds. **Those boards are SHELVED and not
+in the game**
 (`PLAYABLE_WORLD_IDS` in `game/levels.ts`): terrain that is drawn with no
 reason to be played, carrying a placeholder hold. `npm run check` holds
 them to constructing without throwing and to nothing else — a shelved

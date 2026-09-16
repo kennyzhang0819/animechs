@@ -2447,10 +2447,22 @@ export class Sim {
       for (const r of named)
         if (!this.roads[r]) bad.push(`the pattern names road ${r} and the map has ${this.roads.length}`);
       for (const road of this.roads) bad.push(...roadProblems(road));
-      // ...and a halt is a fraction of a road, so it has to be one
-      if (mission.kind === "escort")
-        for (const h of mission.halts)
-          if (!(h > 0 && h < 1)) bad.push(`a halt at ${h} is not a fraction of the road`);
+      // ...and a halt is a fraction of a road, so it has to be one — in
+      // order, and 0 is the DEPOT (levels.ts EscortMission.halts): an
+      // escort whose cart is on the board from the first frame parks it at
+      // the start, and updateConvoys asks for the next halt before it asks
+      // about the arrival, so a cart launched at s = 0 stops there on its
+      // first tick with nothing special written for it. ONE IS STILL
+      // ILLEGAL: a halt at the post is a delivery the cart would stand
+      // next to forever without the mission ever counting it.
+      if (mission.kind === "escort") {
+        let prev = -1;
+        for (const h of mission.halts) {
+          if (!(h >= 0 && h < 1)) bad.push(`a halt at ${h} is not a fraction of the road`);
+          else if (h <= prev) bad.push(`a halt at ${h} comes after one at ${prev}`);
+          prev = h;
+        }
+      }
       if (bad.length > 0)
         throw new Error(`${this.level.name}: ${bad.join("; ")}`);
     }
@@ -3684,15 +3696,26 @@ export class Sim {
    * a glitch), a crosser by its launch order, and the crossers after the
    * bosses. The HUD stacks them downward in this order.
    *
+   * `ally` IS WHOSE THING THE BAR IS OVER, and it is on the row rather
+   * than worked out in the HUD off the name. Every bar in this stack used
+   * to be painted the swarm's crimson, which was true of every row in it
+   * until the escort landed — and then the one body on the board the
+   * player is paying to keep alive wore the colour this game uses for
+   * "shoot this". A player glancing at the top of the screen read their
+   * own hauler as another thing to kill. The sim knows which side a row
+   * came off; the HUD does not, and matching a display name against a
+   * string constant to find out would be a second place for the answer to
+   * live (see the note on the seam in CLAUDE.md).
+   *
    * The boss scan early-exits off the census the way collectForceFields
    * does, so a board with no boss on it pays nothing.
    */
-  objectiveBars(): { id: number; name: string; hp: number; max: number }[] {
-    const out: { id: number; name: string; hp: number; max: number }[] = [];
+  objectiveBars(): { id: number; name: string; hp: number; max: number; ally: boolean }[] {
+    const out: { id: number; name: string; hp: number; max: number; ally: boolean }[] = [];
     let left = 0;
     for (const k of BOSS_KINDS) left += this.aliveByKind[k];
     if (left > 0) {
-      const bosses: { id: number; name: string; hp: number; max: number }[] = [];
+      const bosses: { id: number; name: string; hp: number; max: number; ally: boolean }[] = [];
       for (let i = 0; i < this.n && bosses.length < left; i++) {
         const k = this.ukind[i];
         if (!KIND_BOSS[k]) continue;
@@ -3701,6 +3724,7 @@ export class Sim {
           name: unitName(UNIT_KINDS[k]),
           hp: Math.max(0, this.uhp[i]),
           max: this.uhpmax[i],
+          ally: false,
         });
       }
       bosses.sort((a, b) => a.id - b.id);
@@ -3717,13 +3741,15 @@ export class Sim {
         name: WORM_NAME,
         hp: Math.max(0, w.hp),
         max: w.hpMax,
+        ally: false,
       });
     }
     // ...AND THE CART, which wears the same bar as the things trying to
     // kill it. It is the player's, and that is exactly why it belongs
     // here: an objective bar is "the thing this map is about, and how it
     // is doing", and on Thornway that thing is a hauler rather than a
-    // Borer. The HUD paints it in the player's own colour off the name
+    // Borer. `ally` is what the HUD paints it WHITE off — the swarm's
+    // crimson on the player's own objective read as a target.
     for (let id = 0; id < this.convoys.length; id++) {
       const c = this.convoys[id];
       if (c.dead || c.home) continue;
@@ -3732,6 +3758,7 @@ export class Sim {
         name: CONVOY_NAME,
         hp: Math.max(0, c.struct.hp),
         max: c.struct.hpMax,
+        ally: true,
       });
     }
     return out;

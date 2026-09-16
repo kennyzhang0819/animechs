@@ -37,6 +37,7 @@ import {
   familyFlies,
   loadLevelDocs,
   missionCount,
+  missionLines,
   missionTarget,
   missionText,
   rollFamilies,
@@ -47,6 +48,7 @@ import {
   WORLD,
   worldById,
   VISIBLE_WORLDS,
+  WORM_NAME,
   type FamilyKey,
   type LevelSpec,
   type TowerKind,
@@ -459,11 +461,13 @@ function PickerDialog({
   footer?: ReactNode;
   /**
    * HOW WIDE THE ROWS ARE, and the whole of why it is a knob: a row is
-   * ONE LINE and a truncated one is a row a player cannot read. The map
-   * and difficulty lists hold short proper nouns and fit the default;
-   * the factions and the mutators run to two words ("Harpoon fleet",
-   * "Armored Swarms") that need the wider column, and the dialog widens
-   * with them so the detail pane does not pay for it.
+   * ONE LINE and a truncated one is a row a player cannot read. The
+   * difficulty list holds short proper nouns and fits the default; the
+   * MISSIONS, the factions and the mutators run to two words ("Hauler
+   * Escort", "Harpoon fleet", "Armored Swarms") that need the wider
+   * column, and the dialog widens with them so the detail pane does not
+   * pay for it. The mission list moved onto this the day its rows stopped
+   * being place names — "Borer Inte…" is not a row.
    */
   wide?: boolean;
 }) {
@@ -602,143 +606,110 @@ const TOP_RULELESS_TIER = Math.max(
 
 /**
  * THE OBJECTIVE PANEL — WHAT THIS RUN IS FOR, top-left under the shelf,
- * and on EVERY mission now (levels.ts Mission).
+ * and on EVERY mission (levels.ts Mission).
  *
- * IT USED TO BE THE INTERCEPT'S ALONE, because a hold and a survive asked
- * for the thing the player was already doing and a panel saying "clear
- * every wave" over a board clearing every wave was furniture. That stopped
- * being true when the waves stopped being the objective: the script goes
- * round forever now (Sim.loadStep), so "how much of this is left" is a
- * question about the MISSION and there is nowhere else on the screen that
- * answers it.
+ * IT IS A LIST OF REQUIREMENTS IN PLAIN TEXT, in a box, and that is a
+ * rewrite of what it was rather than a restyle. It used to be a display:
+ * a forty-pixel number, a caption under it, a row of lamps, a progress
+ * bar, and on the escort a second bar for the cart's health. Five widgets,
+ * none of which said what the mission WAS — the number was "1 / 7" and the
+ * lamps were the leak allowance, and a player who had not read the deploy
+ * panel had no way to learn from this panel that the seventh kill wins and
+ * the second leak loses. A display answers "how is it going" to somebody
+ * who already knows what is being asked. This answers what is being asked.
  *
- * ONE BAR, FILLED FROM ONE NUMBER (`hud.missionProgress`), whichever
- * mission is being played — waves held, seconds survived, crossers down.
- * The bar is the shape a player reads at a glance and the line above it is
- * the number they read when they want the number; both come off the same
- * fraction, so they cannot drift.
+ * ONE LINE A REQUIREMENT (levels.ts missionLines), success first and
+ * failure under it, each with its own count on the right:
  *
- * THE INTERCEPT KEEPS ITS TWO EXTRA LINES, because both halves of that
- * mission are state: the kills are the progress and the leaks are the
- * allowance, and a player who can see one without the other cannot tell
- * whether the run is going well. The allowance is drawn as pips rather
- * than a fraction — "0/1" is a number to work out and two pips is a thing
- * to look at — and the live count only shows while something is on the
- * board, because that is the only moment it means anything.
+ *     Destroy 7 Borers               1 / 7
+ *     Let no more than 1 Borer past  0 / 1
+ *     Keep the core standing
  *
- * AND THE TIDE RIDES ON THE END OF IT. Past the script's last wave the
- * swarm doubles in health every cycle and nothing else about it changes
- * (Sim.loopCycle), so a player watching the same bodies take twice as long
- * to drop has to be told why — otherwise the first honest thought is that
- * their guns broke.
+ * THE COLOUR IS THE ONLY STATE ON IT. A requirement met goes green, one
+ * broken goes crimson, and an open one is the panel's own white — so the
+ * shape a player reads at a glance is "how many of these lines are green
+ * yet", which is the actual question, and no line needs a widget of its
+ * own to carry it.
+ *
+ * THE BARS ARE GONE and nothing is missing. The journey bar is the count
+ * beside its line; the cart's health has a bar already — the white one at
+ * the top of the screen, over the cart itself (the objective stack), which
+ * is where a player watching the cart is looking.
+ *
+ * SMALLER THAN THE DISPLAY IT REPLACED, deliberately. The forty-pixel
+ * number was sized to be read without looking away from the board, which
+ * is the right size for one number and the wrong size for three sentences:
+ * at that weight the panel was the loudest thing on the screen and it is
+ * not the thing being played. Thirteen and fourteen px is the size of the
+ * rest of the HUD's text.
+ *
+ * WHAT IS STILL NOT A REQUIREMENT stays under the box: the tide, the
+ * crossers on the board, and whether the cart is moving. Those are facts
+ * about right now, and mixing them into a list of requirements would be
+ * putting things the player cannot fail on a list of things they can.
  */
 function ObjectivePane({ hud }: { hud: UiState }): React.ReactElement | null {
   const m = hud.mission;
-  const count = missionCount(m, missionTarget(m, hud.scriptWaves), hud);
-  const frac = Math.max(0, Math.min(1, hud.missionProgress));
-  const headline =
-    m.kind === "survive" ? clock(hud.timeLeft) : `${count.done} / ${count.of}`;
-  const under = m.kind === "survive" ? "left on the clock" : count.noun;
+  const lines = missionLines(m, missionTarget(m, hud.scriptWaves), hud);
   return (
-    <div className="ms-pane px-4 py-3">
-      <div className="flex items-center gap-4">
-        {/* THE NUMBER, AT THE SIZE THE THING DESERVES. It is the answer to
-            the only question that decides whether a run is going well, and
-            it used to be set at fifteen pixels beside a caption at
-            thirteen — the size of a label, on a board where the scrap in
-            the opposite corner is twenty and the clock under the minimap
-            is twenty. A player checking their objective was reading the
-            smallest text on the screen. */}
-        <span className="font-display text-[40px] font-bold leading-none tabular-nums text-[#EDEDEF] [text-shadow:0_2px_4px_rgba(0,0,0,0.7)]">
-          {headline}
-        </span>
-        <div className="flex min-w-0 flex-col gap-1">
-          <span className="font-display text-[15px] font-bold uppercase leading-none tracking-widest text-[#A6A6AF]">
-            {under}
-          </span>
+    <div className="ms-pane px-3.5 py-2.5">
+      <div className="font-display text-[11px] font-bold uppercase leading-none tracking-widest text-[#71717C]">
+        Mission
+      </div>
+      <div className="mt-2 flex flex-col gap-1.5">
+        {lines.map((l) => (
+          <div key={l.text} className="flex items-baseline gap-3">
+            <span
+              className="min-w-0 flex-1 text-[14px] leading-tight"
+              style={{
+                color: l.state === "met" ? "#7BE58A" : l.state === "failed" ? "#F25555" : "#EDEDEF",
+              }}
+            >
+              {l.text}
+            </span>
+            {l.count !== "" && (
+              <span
+                className="shrink-0 font-display text-[14px] font-bold tabular-nums leading-tight"
+                style={{
+                  color:
+                    l.state === "met" ? "#7BE58A" : l.state === "failed" ? "#F25555" : "#A6A6AF",
+                }}
+              >
+                {l.count}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+      {/* ...AND THE RUNNING COMMENTARY, under the rule and in the quieter
+          grey: what is true this second, which is not a requirement and
+          must not be read as one */}
+      {(hud.loopCycle > 0 ||
+        (m.kind === "intercept" && hud.crossLive > 0) ||
+        (m.kind === "escort" && hud.convoyHpMax > 0)) && (
+        <div className="mt-2 flex flex-col gap-1 border-t border-[#2a2a31] pt-2 text-[13px] leading-tight text-[#A6A6AF]">
           {/* THE TIDE, once it has turned: x2, x4, x8 — every body's
               health, and nothing else (ladder.ts LEVELS_PER_DOUBLING) */}
           {hud.loopCycle > 0 && (
-            <span
-              className="font-display text-[15px] font-bold uppercase leading-none tracking-widest text-[#FFD37F]"
-              title="The script has run out and is going again, heavier"
-            >
-              Tide x{2 ** hud.loopCycle}
+            <span className="text-[#FFD37F]" title="The script has run out and is going again, heavier">
+              The tide has turned — every body has x{2 ** hud.loopCycle} health
+            </span>
+          )}
+          {m.kind === "intercept" && hud.crossLive > 0 && (
+            <span>
+              {hud.crossLive === 1
+                ? `One ${WORM_NAME} is crossing now`
+                : `${hud.crossLive} ${WORM_NAME}s are crossing now`}
+            </span>
+          )}
+          {m.kind === "escort" && hud.convoyHpMax > 0 && (
+            <span>
+              {hud.convoyHalted
+                ? `Holding — mending, ${hud.convoyHalts} ${hud.convoyHalts === 1 ? "halt" : "halts"} to go`
+                : `On the road — ${Math.round(100 * Math.max(0, Math.min(1, hud.convoyAt)))}% of the way`}
             </span>
           )}
         </div>
-        {/* THE INTERCEPT'S ALLOWANCE, as pips. Both halves of that mission
-            are state — the kills are the progress and the leaks are what
-            is left of the margin — and a player who can see one without
-            the other cannot tell whether the run is going well. Pips
-            rather than a fraction: "0/1" is a number to work out and two
-            lamps is a thing to look at. */}
-        {m.kind === "intercept" && (
-          <span className="ml-auto flex shrink-0 items-center gap-2">
-            <span className="font-display text-[13px] uppercase tracking-widest text-[#71717C]">
-              past you
-            </span>
-            {Array.from({ length: m.leaks + 1 }, (_, i) => (
-              <span
-                key={i}
-                className={`inline-block h-4 w-4 rounded-full ${
-                  i < Math.min(m.leaks + 1, hud.crossLeaked) ? "bg-[#e55454]" : "bg-[#3a3a42]"
-                }`}
-              />
-            ))}
-          </span>
-        )}
-        {/* THE ESCORT'S HALTS LEFT, which is the same kind of fact as the
-            intercept's allowance and the one number a player planning
-            where to spend next actually wants: how many more times the
-            cart is going to stand still, and therefore how many more
-            positions are worth paying for (levels.ts EscortMission.halts) */}
-        {m.kind === "escort" && hud.convoyHpMax > 0 && (
-          <span className="ml-auto flex shrink-0 flex-col items-end gap-0.5">
-            <span className="font-display text-[22px] font-bold leading-none tabular-nums text-[#FFD37F]">
-              {hud.convoyHalts}
-            </span>
-            <span className="font-display text-[13px] uppercase leading-none tracking-widest text-[#71717C]">
-              {hud.convoyHalts === 1 ? "halt to go" : "halts to go"}
-            </span>
-          </span>
-        )}
-      </div>
-      {/* THE JOURNEY, or the waves, or the clock — one bar off one number
-          (levels.ts missionProgress), at double the height it was. A bar
-          is the shape a player reads without looking away from the board,
-          and the thin one read as a divider between two lines of text */}
-      <div className="ms-bar mt-2 h-[26px] w-full">
-        <div
-          className="transition-[width] duration-300 ease-linear"
-          style={{ width: `${100 * frac}%`, background: "#7BE58A" }}
-        />
-      </div>
-      {m.kind === "intercept" && hud.crossLive > 0 && (
-        <div className="mt-1.5 font-display text-[15px] uppercase tracking-widest text-[#A6A6AF]">
-          {hud.crossLive === 1 ? "One is crossing now" : `${hud.crossLive} are crossing now`}
-        </div>
-      )}
-      {/* THE CART'S OWN POOL, under the journey and in the player's amber.
-          TWO BARS, because an escort is two facts and they move
-          independently: how far it has got, and whether it is going to
-          get any further. One bar carrying both would be a bar that falls
-          when the thing it measures has not gone backwards. */}
-      {m.kind === "escort" && hud.convoyHpMax > 0 && (
-        <>
-          <div className="ms-bar mt-1.5 h-[18px] w-full">
-            <div
-              className="transition-[width] duration-150 ease-linear"
-              style={{
-                width: `${Math.max(0, Math.min(100, (100 * hud.convoyHp) / hud.convoyHpMax))}%`,
-                background: "#FFD37F",
-              }}
-            />
-          </div>
-          <div className="mt-1.5 font-display text-[15px] uppercase tracking-widest text-[#A6A6AF]">
-            {hud.convoyHalted ? "Holding — mending" : "On the road"}
-          </div>
-        </>
       )}
     </div>
   );
@@ -750,18 +721,26 @@ function ObjectivePane({ hud }: { hud: UiState }): React.ReactElement | null {
 const xpShareText = (mult: number): string => `${Math.round(mult * 100)}% XP`;
 
 /**
- * THE MAP LIST — CUSTOM MODE'S ONLY (GameMode). Regular rolls its map on
- * Start and never opens this: a run's map is the campaign's to deal, and
- * it is the default there because it is the best way to play the
- * campaign, not because it is bribed.
+ * THE MISSION LIST — CUSTOM MODE'S ONLY (GameMode). Regular rolls its
+ * mission on Start and never opens this: a run's board is the campaign's
+ * to deal, and it is the default there because it is the best way to play
+ * the campaign, not because it is bribed.
+ *
+ * IT IS CALLED MISSION AND THE ROWS ARE NAMED FOR MISSIONS, not for the
+ * terrain they are played on (levels.ts LevelSpec.name). The picker was
+ * "Map", offering "Coldline" and "Thornway" — two place names for two
+ * completely different games, which asked the player to remember which
+ * was the one where Borers cross and which was the one with the cart. The
+ * terrain has not gone anywhere: the thumbnail on the right IS the map,
+ * and it is a picture, which is the form a place is worth saying in.
  *
  * Random leads and is the default here too. Under it, every world by
  * name, one line each — and every one of them is PLAYABLE, the track's
- * locks included, because a custom run pays nothing for reaching a map
+ * locks included, because a custom run pays nothing for reaching a board
  * early (see the note in the body). THE PICTURE IS ON THE RIGHT AND ONLY
  * AFTER A CLICK: the list is names, the cursor starts on Random, and a
- * row click puts that map's thumbnail, mission and standing beside it.
- * No map is ranked against another: every map is as hard as the
+ * row click puts that board's thumbnail, objective and standing beside
+ * it. Nothing is ranked against anything: every board is as hard as the
  * difficulty it is played at, and the difficulty is another macro.
  */
 function MapPicker({
@@ -835,7 +814,7 @@ function MapPicker({
         <div className="font-display text-[17px] font-bold uppercase tracking-widest text-[#EDEDEF]">
           Random
         </div>
-        <p className="text-[14px] text-[#A6A6AF]">Any map, picked on start.</p>
+        <p className="text-[14px] text-[#A6A6AF]">Any mission, picked on start.</p>
         <SelectButton onClick={() => onPick(null)} />
       </>
     );
@@ -853,7 +832,7 @@ function MapPicker({
         <div className="font-display text-[17px] font-bold uppercase tracking-widest text-[#EDEDEF]">
           {world.name}
         </div>
-        <DetailLine label="Mission">{mission.title}</DetailLine>
+        <DetailLine label="Objective">{mission.title}</DetailLine>
         <p className="text-[14px] text-[#A6A6AF]">{mission.detail}</p>
         <DetailLine label="Best">
           {best > 0 ? (
@@ -874,7 +853,7 @@ function MapPicker({
     );
   }
 
-  return <PickerDialog title="Map" onClose={onClose} list={list} detail={detail} />;
+  return <PickerDialog title="Mission" wide onClose={onClose} list={list} detail={detail} />;
 }
 
 /**
@@ -3197,7 +3176,7 @@ export default function Animechs() {
                   <div className="flex flex-col gap-2">
                     {mode === "custom" && (
                       <MacroButton
-                        label="Map"
+                        label="Mission"
                         value={pickedWorld ? pickedWorld.name : "Random"}
                         onClick={() => setPicker("maps")}
                       >
@@ -3420,27 +3399,43 @@ export default function Animechs() {
             Paused
           </div>
         )}
-        {/* ONE THIN BAR PER OBJECTIVE BODY ON THE FIELD — a Sovereign or a
-            Borer train (Sim.objectiveBars) — stacked top-centre, newest
-            DOWNWARD, and keyed by an id that never repeats so a bar cannot
-            trade places with its neighbour when one of them dies.
+        {/* ONE THIN BAR PER OBJECTIVE BODY ON THE FIELD — a Sovereign, a
+            Borer train, or the escort's own hauler (Sim.objectiveBars) —
+            stacked top-centre, newest DOWNWARD, and keyed by an id that
+            never repeats so a bar cannot trade places with its neighbour
+            when one of them dies.
 
             A TRAIN GETS ONE BAR, not twenty: the Borer is twenty hurtboxes
             over one health pool, and a stack of twenty near-identical bars
             would say nothing a single one does not.
+
+            AND THE PLAYER'S OWN THINGS ARE WHITE (`ally`, set in the sim).
+            Every row here used to be the swarm's crimson, which was true
+            of the stack until the escort landed — and then the one body on
+            the board the player is spending money to keep ALIVE wore the
+            colour this game uses for "shoot this", at the top of the
+            screen, in the largest readout on it. White is not a second
+            faction colour: it is the absence of the crimson, which is the
+            whole of what has to be said.
 
             pointer-events-none: it is a readout, never a control. */}
         {hud && hud.objectives.length > 0 && (
           <div className="ui-zoom pointer-events-none absolute left-1/2 top-[0.75rem] z-10 flex w-[min(40vw,22rem)] -translate-x-1/2 flex-col gap-1.5">
             {hud.objectives.map((b) => (
               <div key={b.id}>
-                <div className="mb-0.5 text-center text-[12px] font-bold uppercase tracking-widest text-[#F25555] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
+                <div
+                  className="mb-0.5 text-center text-[12px] font-bold uppercase tracking-widest [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]"
+                  style={{ color: b.ally ? "#EDEDEF" : "#F25555" }}
+                >
                   {b.name}
                 </div>
                 <div className="ms-bar w-full">
                   <div
-                    className="bg-[#e55454] transition-[width] duration-150 ease-linear"
-                    style={{ width: `${Math.max(0, Math.min(100, (100 * b.hp) / Math.max(1, b.max)))}%` }}
+                    className="transition-[width] duration-150 ease-linear"
+                    style={{
+                      width: `${Math.max(0, Math.min(100, (100 * b.hp) / Math.max(1, b.max)))}%`,
+                      background: b.ally ? "#EDEDEF" : "#e55454",
+                    }}
                   />
                 </div>
               </div>

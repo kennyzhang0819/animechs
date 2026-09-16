@@ -1,4 +1,4 @@
-import { UNIT_SPRITE } from "./constants";
+import { CELL, UNIT_SPRITE } from "./constants";
 import { LINOCUT_TERRAIN } from "./terrainFlag";
 import {
   floorCanvas,
@@ -10,7 +10,7 @@ import {
   type FloorKind,
   type WallKind,
 } from "./tiles";
-import type { UnitKind } from "./levels";
+import { CONVOY_SIZE, type UnitKind } from "./levels";
 import { ANIMAL_ART } from "./animalFlag";
 import { FOUNDRY_ART } from "./turretFlag";
 import { FOUNDRY_BASE_URLS, FOUNDRY_CORE_URL, FOUNDRY_HEAD_URLS, foundryHeadUrl } from "./foundryArt";
@@ -1262,17 +1262,32 @@ export const UNIT_CELL: Partial<Record<UnitKind, CellArt>> = {};
  * going over anything.
  *
  * A 192px drawing in a 256 cell, which is the smallest 64-multiple that
- * holds it, so the world px per native px is the sheet's own 0.625 and
- * the art lands at exactly CONVOY_SIZE tiles — the box the swarm's guns
- * are aiming at. NO TEAM CELL: the cart is the PLAYER'S, and a team cell
- * is the tinted accent overlay a body of the swarm's wears. What it wears
+ * holds it. NO TEAM CELL: the cart is the PLAYER'S, and a team cell is
+ * the tinted accent overlay a body of the swarm's wears. What it wears
  * instead is the player's amber, painted into the drawing itself.
  */
 export const UV_CONVOY = sprite("convoy", 256, CONVOY_N);
-/** the world quad the cell is stretched onto: the cell's own 256 native px
- *  at the sheet's 0.625, so the 192px drawing inside it lands on exactly
- *  the CONVOY_SIZE tiles the hitbox says */
-export const CONVOY_QUAD = 160;
+/**
+ * THE WORLD QUAD THE CELL IS STRETCHED ONTO, and it is CONVOY_SIZE tiles
+ * of it — the box the swarm's guns are aiming at, so the art is the
+ * hitbox and the two cannot drift.
+ *
+ * `CONVOY_SIZE * CELL` is the cart's own twelve tiles (240px) and the
+ * ratio 256 : 192 is the cell's padding, which has to be carried or the
+ * drawing lands at five sixths of the box it is standing in. The number
+ * is DERIVED rather than typed because it was typed once — 160, back when
+ * the cart was six tiles — and doubling the footprint left the art at
+ * half size with a typecheck that had nothing to say about it.
+ *
+ * It does mean the sheet is magnifying: 256 native px over 320 world px
+ * is 1.25 world px a pixel where every other cell on the sheet is 0.625.
+ * That is the price of a twelve-tile body drawn on a six-tile grid, and
+ * it is the right price — the cart is drawn in slabs (convoyArt.ts,
+ * nothing on it narrower than four px) and it is almost always on screen
+ * at a camera zoomed out far enough to see a road, where the quad is
+ * downsampled anyway.
+ */
+export const CONVOY_QUAD = (256 / CONVOY_N) * CONVOY_SIZE * CELL;
 
 const WORM_CELLS = {
   head: sprite("wormhead", 128, WORM_N),

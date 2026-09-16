@@ -458,11 +458,11 @@ report("docs", docProblems, `${docCount} documents`);
  * ONLY THE BOARDS THAT ARE IN THE GAME (levels.ts PLAYABLE_WORLD_IDS).
  *
  * It used to be all seventeen, which was the wrong bar in both directions.
- * Fifteen of them are SHELVED — terrain that is drawn and has no reason to
- * be played yet — and holding unfinished work to the standard finished
+ * All but two are SHELVED — terrain that is drawn and has no reason to be
+ * played yet — and holding unfinished work to the standard finished
  * work is held to means one of two things happens: either the shelf gets
  * hacked up to pass a gate nobody is playing it against, or the gate gets
- * loosened until it stops catching anything on the two boards that ARE
+ * loosened until it stops catching anything on the boards that ARE
  * shipped. Neither is a check. A shelved board is allowed to be broken;
  * that is what shelving it says.
  *
@@ -540,8 +540,17 @@ for (const w of L.WORLDS) {
       say(`the pattern sends ${m.pattern.length} convoys and the mission asks for ${m.deliver}`);
     if (m.pattern.length - m.losses < m.deliver)
       say(`${m.losses} losses allowed out of ${m.pattern.length} sent, which cannot reach ${m.deliver}`);
+    // ...and a halt is a fraction of the road. ZERO IS LEGAL AND IS THE
+    // DEPOT (levels.ts EscortMission.halts): an escort that puts its cart
+    // down at the start of the run parks it there first, so 0 is the shape
+    // a stationary opening takes rather than a coordinate somebody fumbled.
+    // ONE IS STILL ILLEGAL — a halt at the post is a delivery the mission
+    // would stand next to forever without ever counting.
     for (const h of m.halts)
-      if (!(h > 0 && h < 1)) say(`a halt at ${h} is not a fraction of the road`);
+      if (!(h >= 0 && h < 1)) say(`a halt at ${h} is not a fraction of the road`);
+    for (let i = 1; i < m.halts.length; i++)
+      if (!(m.halts[i] > m.halts[i - 1]))
+        say(`halts out of order: ${m.halts[i - 1]} then ${m.halts[i]}`);
   } else {
     say(`mission kind "${m.kind}" has no objective the sim knows how to meet`);
   }
@@ -556,7 +565,10 @@ report(
 
 // ---------- sim: does the loop still run ----------
 
-// World 1, the swarm let out, and a dozen tackers PUT IN ITS WAY: wait for
+// The first board in the game (VISIBLE_WORLDS[0] — Coldline since
+// Confluence came off the list, and the test cares only that it is a board
+// somebody ships), the swarm let out, and a dozen tackers PUT IN ITS WAY:
+// wait for
 // the first bodies, follow the flow field from one of them to the core,
 // and build on the earliest stretch of that path the game will allow
 // (`canPlace` refuses the drop zone and the base line, so the first legal
@@ -749,7 +761,18 @@ let frameDetail = "";
 if (wants("frames")) try {
   reseed(29);
   // the top of the ladder: tierCountScale plateaus at Nemesis, so this is
-  // simply the most the script is ever asked to send
+  // simply the most the script is ever asked to send.
+  //
+  // THE BOARD IS THE FIRST ONE IN THE GAME and that is now Coldline, not
+  // Confluence — which came off PLAYABLE_WORLD_IDS with the other holds.
+  // SO THE NUMBER HERE MOVED WHEN THE BOARD DID, and a jump in it is not
+  // by itself a sim regression: Coldline stands up about 1,850 turrets
+  // where Confluence stood 1,390, and a third again as many guns is a
+  // third again as much step. It fits the budget on both — but if this
+  // line goes red and nothing in the sim was touched, the board is the
+  // first thing to rule out, and it is STILL a real red line when it
+  // comes, because Coldline is a board people play (see the note on the
+  // FULL clocks at the bottom of this file).
   const spec = LA.specForTier(L.VISIBLE_WORLDS[0], LA.RUNG_COUNT - 1);
   const want = LA.waveGuide(spec)
     .filter((r) => r.wave >= LOAD_WAVES[0] && r.wave <= LOAD_WAVES[1])
