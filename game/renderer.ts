@@ -2316,12 +2316,51 @@ export class Renderer {
     this.draw(this.walls, false);
   }
 
+  /**
+   * NOTHING IS DRAWN OUTSIDE THE MAP — a GL scissor on the world rect,
+   * set once a frame and left on for everything the camera draws.
+   *
+   * THE THING THAT NEEDED IT is the crosser. A Borer is laid on its road
+   * a whole train-length before the entry point (missions.ts, the run-up),
+   * which is a hundred cells of road off the west rim, so for the first
+   * half-minute of a launch most of the train is at negative world x —
+   * and it was being DRAWN there, a line of cars crawling across the black
+   * outside the board toward a map they had not entered yet. It gave away
+   * the arrival before the arrival and it looked like a bug, because it
+   * was one.
+   *
+   * A SCISSOR AND NOT A CULL. Dropping bodies whose centre is off the map
+   * leaves half a car hanging over the edge, and dropping them by their
+   * full extent pops six tiles of train into existence at the rim. The
+   * scissor cuts at the pixel, so a train crawls out of the edge the way
+   * it crawls out of rock.
+   *
+   * IT IS SET AFTER THE CLEAR, which is the one ordering that matters:
+   * glClear obeys the scissor, so a scissor set first would leave last
+   * frame's pixels standing wherever the map does not reach.
+   */
+  private scissorWorld(zoom: number, offX: number, offY: number, kPx: number): void {
+    const gl = this.gl;
+    const cw = this.canvas.width, ch = this.canvas.height;
+    const x0 = Math.round(offX * kPx), x1 = Math.round((W * zoom + offX) * kPx);
+    const y0 = Math.round(offY * kPx), y1 = Math.round((H * zoom + offY) * kPx);
+    // clamped into the canvas, and GL counts y from the BOTTOM
+    const sx = Math.max(0, Math.min(cw, x0));
+    const sw = Math.max(0, Math.min(cw, x1) - sx);
+    const sy = Math.max(0, Math.min(ch, ch - y1));
+    const sh = Math.max(0, Math.min(ch, ch - y0) - sy);
+    gl.scissor(sx, sy, sw, sh);
+    gl.enable(gl.SCISSOR_TEST);
+  }
+
   /** per-frame GL setup shared by the game and terrain-only render paths */
   private begin(zoom: number, offX: number, offY: number, kPx: number): void {
     const gl = this.gl;
     this.view = { zoom, offX, offY, kPx };
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.disable(gl.SCISSOR_TEST); // the clear is the whole canvas (scissorWorld)
     gl.clear(gl.COLOR_BUFFER_BIT);
+    this.scissorWorld(zoom, offX, offY, kPx);
     gl.useProgram(this.prog);
     gl.uniform2f(this.uRes, this.canvas.width / kPx, this.canvas.height / kPx);
     gl.uniform1f(this.uZoom, zoom);
@@ -3660,7 +3699,13 @@ export class Renderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.shieldFbo);
     gl.viewport(0, 0, w, h);
     gl.clearColor(0, 0, 0, 0);
+    // THE WHOLE BUFFER IS CLEARED, scissor off (begin/scissorWorld): this
+    // one is blitted back over the frame as a texture, so a texel left
+    // stale outside the map rect is a texel the shield shader reads and
+    // paints. The FILLS below stay scissored like everything else
+    gl.disable(gl.SCISSOR_TEST);
     gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.SCISSOR_TEST);
     gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1); // begin() clears with this
     // the fills ride the sprite program under the same camera
     gl.useProgram(this.prog);

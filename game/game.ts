@@ -3611,6 +3611,16 @@ export class Game {
     const roads = roadsFor(level.map);
     if (roads.length === 0) return;
     c.save();
+    // CLIPPED TO THE BOARD, like everything the renderer draws
+    // (Renderer.scissorWorld). A road's first and last legs run off the
+    // rim on purpose — they are the run-up the train crawls in along and
+    // the exit it leaves by — and once the bodies themselves stopped
+    // being drawn out there, this dashed line was the only thing left in
+    // the void, which read as the overlay having escaped the map rather
+    // than as a road arriving from somewhere.
+    c.beginPath();
+    c.rect(0, 0, W, H);
+    c.clip();
     c.strokeStyle = SPAWN_STYLE.css;
     c.globalAlpha = 0.28;
     c.lineWidth = 3;

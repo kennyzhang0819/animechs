@@ -2222,25 +2222,30 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // a gun. The head leads and is the toughest; the cars are the body; the
   // tail is the piece that says the train has ended.
   //
-  // THE POOL IS THE DIAL, and it is 45,000 for a whole worm. What that
-  // buys, measured on the map rather than guessed at: a battery of eight
-  // tier-three heads (cleavers) beside the south line takes a whole Borer
-  // apart in fourteen seconds as it passes, and six do not finish one —
-  // the tail walks off the far edge. So the mission's price is somewhere
-  // around eight guns and the beacon that reaches them, twice, and the
-  // cliff between "nearly" and "enough" is deliberately sharp: a road
-  // half covered is a road not covered.
+  // THE POOL IS THE DIAL, and it is 126,000 for a whole worm at the first
+  // launch: twenty-one car-equivalents (the head is worth two, the tail
+  // one) at 6,000 apiece. It is a SHARED pool — every piece reports it and
+  // a hit on any car comes off it (Sim.drainCrosser) — so these three
+  // numbers are a way of writing one number down with the head's share
+  // of it visible, and nothing reads them per piece any more.
   //
-  // THE POOL IS THE DIAL AND THE COUNT IS NOT. Going from nine pieces to
-  // twenty is a change to how the train READS — a longer body crossing
-  // more of the road at once, more pieces to finish — and it must not be
-  // a silent tripling of the mission's difficulty, so the per-piece pools
-  // came DOWN to hold the 45,000 the measurement above was taken against:
-  // twenty-one car-equivalents (the head is worth two, the tail one) at
-  // 2,150 apiece. Move the three numbers together and the mission gets
-  // harder or easier without anything else in the file changing.
+  // IT WAS 45,000 AND IT WAS FAR TOO LITTLE. Two things had quietly
+  // undercut the measurement it was set from: the roads were refit
+  // straighter and shorter, and the train stopped taking the wet slow, so
+  // the seconds a board gets a Borer under fire fell twice over while the
+  // pool stayed where it was. A first train that a starting board rolls
+  // over is not an opening question, it is a cutscene.
+  //
+  // WHAT IT COSTS NOW, scaled from the one measurement there is rather
+  // than re-guessed: eight tier-three heads beside the south line were
+  // worth about 3,200 damage a second against a Borer, so the opening
+  // train is forty seconds of that battery and the last of the pattern is
+  // a shade over two minutes — against a crossing of four and three
+  // quarter minutes, most of which is spent out of any one battery's
+  // reach. The mission's price is now several batteries and the beacons
+  // to reach them, which is the decision the map is for.
   wormhead: {
-    hp: 4300,
+    hp: 12000,
     speed: WORM_SPEED,
     armor: 12,
     // HALF AGAIN THE NATIVE SCALE, like the boss and for the same reason:
@@ -2264,7 +2269,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     unslowable: true,
   },
   wormcar: {
-    hp: 2150,
+    hp: 6000,
     speed: WORM_SPEED,
     armor: 12,
     radius: UR * 3.75,
@@ -2274,7 +2279,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     unslowable: true,
   },
   wormtail: {
-    hp: 2150,
+    hp: 6000,
     speed: WORM_SPEED,
     armor: 12,
     radius: UR * 3.75,
@@ -2320,7 +2325,7 @@ export const WORM_LENGTH = (WORM_CHAIN.length - 1) * WORM_SPACING;
 
 /**
  * EVERY TRAIN IS TOUGHER THAN THE ONE BEFORE IT — what launch `n` (0 for
- * the first) multiplies every piece's health pool by.
+ * the first) multiplies the whole chain's health pool by.
  *
  * WHY IT IS A RAMP AND NOT A FLAT POOL. The launches are three and a
  * third minutes apart and the run gets RICHER between them: by the fifth
@@ -2331,13 +2336,21 @@ export const WORM_LENGTH = (WORM_CHAIN.length - 1) * WORM_SPACING;
  * walk — which is the only way five repetitions of one event stay a
  * decision instead of a chore.
  *
- * IT IS CENTRED, NOT STACKED ON TOP. 0.7 at the first launch and 1.3 at
- * the fifth, which is the SAME TOTAL health across the pattern's seven
- * worms as a flat 1.0 would be (the weighted mean over
- * bottom/top/both/bottom/both is 1.04). So this changes the SHAPE of the
- * mission and not its price: the opening Borer is one a fresh board can
- * actually finish, and the last is nearly twice it. Raise the step and
- * the tail gets heavier; raise the base and the whole mission does.
+ * IT IS GEOMETRIC, AND IT USED TO BE A CENTRED LINE. 0.7 stepping to 1.3
+ * was built to hold the mission's total where a flat pool would have put
+ * it, which made it a rule about SHAPE — and the shape was not the
+ * problem. Across the whole pattern it was worth 1.86x from first to
+ * last, so the fifth train met a board with thirteen extra minutes of
+ * scrap in it and was under twice the first one. The player out-scaled it
+ * and the back half of the mission got easier as it went.
+ *
+ * Compounding a third a launch is what a curve has to do to stay ahead of
+ * a board that is itself compounding: x1.00, x1.35, x1.82, x2.46, x3.32,
+ * and x4.48 for the spare. From 6,000 a car at the first launch that is
+ * just under 20,000 at the fifth, and the pattern's seven worms are 1.9M
+ * of health against the 330k they used to be. This is the mission being
+ * MUCH harder, on purpose, and the growth rate is the one number to move
+ * if the back half overshoots.
  *
  * THE SPARE KEEPS CLIMBING. It is launched at index `pattern.length`, so
  * the replacement for a train that got through is the heaviest thing the
@@ -2346,10 +2359,9 @@ export const WORM_LENGTH = (WORM_CHAIN.length - 1) * WORM_SPACING;
  * kind's authored health like every other body's (unitDrop), the same way
  * the level curve leaves drops alone however high the rung climbs.
  */
-export const WORM_RAMP_BASE = 0.7;
-export const WORM_RAMP_STEP = 0.15;
+export const WORM_RAMP_GROWTH = 1.35;
 export const wormRamp = (launch: number): number =>
-  WORM_RAMP_BASE + WORM_RAMP_STEP * Math.max(0, launch);
+  WORM_RAMP_GROWTH ** Math.max(0, launch);
 
 /**
  * IS THIS KIND A PIECE OF A TRAIN — one flag per kind id, for the readers
@@ -3697,14 +3709,14 @@ export const WORLDS: LevelSpec[] = [
     // seven. Two through and it is over: there is no second spare and
     // the arithmetic says so before the player has to work it out.
     //
-    // ...AND EACH LAUNCH IS HEAVIER THAN THE LAST (wormRamp): the fifth
-    // Borer carries nearly twice the first one's health and the spare
-    // more again, on a board that has had thirteen more minutes of scrap
-    // to spend. The five launches are the same total health they would be
-    // flat, so this is the mission's SHAPE and not its price — a battery
-    // that answered the first train is not the battery that answers the
-    // fifth, which is what keeps the third repetition from being the
-    // second one again.
+    // ...AND EACH LAUNCH IS HEAVIER THAN THE LAST (wormRamp), by a third
+    // again every time: the fifth Borer carries three and a third times
+    // the first one's health and the spare four and a half, on a board
+    // that has had thirteen more minutes of scrap to spend. Compounding
+    // is what it takes to stay ahead of a board that is itself
+    // compounding — a battery that answered the first train is nowhere
+    // near the battery that answers the fifth, which is what keeps the
+    // third repetition from being the second one again.
     //
     // THE CLOCK. First launch at 2:30, one every 3:20 after it, the last
     // of the pattern at 15:50 and the spare at 19:10; a Borer is on the
