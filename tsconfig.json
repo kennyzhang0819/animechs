@@ -35,6 +35,7 @@
     ".next-3001/types/**/*.ts",
     ".next-3199/types/**/*.ts",
     ".next-3311/types/**/*.ts",
+    ".next-3501/types/**/*.ts",
     ".next-3903/types/**/*.ts",
     ".next-3961/types/**/*.ts",
     ".next-4000/types/**/*.ts",
@@ -46,7 +47,7 @@
     ".next-4719/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-3501/types/**/*.ts"
+    ".next-4009/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

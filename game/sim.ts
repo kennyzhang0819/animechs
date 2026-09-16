@@ -361,6 +361,8 @@ const FX_CAP = 1400;
  * lines is a couple of thousand quads, which the draw does not feel.
  */
 const FX_WEAPON_CAP = 3000;
+/** the most links a chain-lightning path is built from (chainFx) */
+const CHAIN_LINKS_MAX = 64;
 /**
  * Footfall dust gets 140 of those and no more — a fixed slice, not a share,
  * so raising the budget above buys room for shots rather than for grit. It
@@ -3419,6 +3421,14 @@ export class Sim {
   // reset(), so a scene is a scene; and a bench range bypasses every stamp
   // and module a real reach carries (the spotter, the relics, the mods) on
   // purpose — it means "always has a target", not a number.
+  //
+  // A BENCH REACH IS A GATE AND NEVER A FOOTPRINT. It widens what a body
+  // may PICK and what a weapon may FIRE AT; it does not widen what the
+  // weapon's effect covers — the radius a field pulse walks, the length a
+  // piercing beam is walked and drawn, a scatter's cone (updateUnitWeapons
+  // wreach / wspan). When it did, every cost proportional to range was
+  // paid over the whole 512x512 board: the livewire4 clock read 71ms a
+  // step and the starhart2 clock 25ms, and neither number was the game's.
 
   /** every turret's reach, while the bench has set one (resolveTower) */
   private benchTowerRange: number | null = null;
@@ -6223,8 +6233,21 @@ export class Sim {
         const wpDamage = wp.damage * fed;
         const wpSplash = (wp.splash ?? 0) * fed;
         const slot = i * MAX_WEAPONS + w;
-        // this weapon's reach, the spotter's stamp folded in
-        const wrange = this.benchUnitRange ?? wp.range * reachMul;
+        // this weapon's reach, the spotter's stamp folded in — TWO NUMBERS
+        // that are the same number everywhere but on the bench. `wreach`
+        // is the GATE: how far a target may stand for this weapon to fire
+        // at it. `wspan` is the FOOTPRINT: how far the weapon's effect
+        // itself extends — the radius a field pulse walks, the length a
+        // piercing beam or rail is walked and drawn, the cone a scatter
+        // sweeps. A bench reach (setBench) widens the gate so every body
+        // on the board has something to shoot, and must NOT widen the
+        // footprint: with the map's diagonal as its radius a field pulse
+        // walked all 262,144 cells of the board — 24.8 million cell reads
+        // a step on the livewire4 clock, 66ms of a 71ms step — and a
+        // starhart2's beam was walked the length of the map three times a
+        // volley. Those were the bench's numbers, not the game's
+        const wspan = wp.range * reachMul;
+        const wreach = this.benchUnitRange ?? wspan;
         if (wp.beam) {
           // a held beam: while it burns it bites every interval, and the
           // reload only starts once it has gone out. Fx.hitMeltHeal (its
@@ -6249,12 +6272,12 @@ export class Sim {
                 // THE STARLIGHT RULE: a held beam bites everything under
                 // it, every interval, the width of its own washes
                 const halfW = ((wp.beamStyle?.width ?? 4) * MU) / 2;
-                const hit = this.structuresAlong(x, y, uheldRot[i], wrange, halfW, this.alongOut);
+                const hit = this.structuresAlong(x, y, uheldRot[i], wspan, halfW, this.alongOut);
                 for (let k = 0; k < hit.length; k++) {
                   this.hitStructure(hit[k], wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
                   if (k < 4) this.pushFxCol(hit[k].x, hit[k].y, 12 / 60, FxKind.HitMeltHeal, 0, 0, wp.beamStyle?.colors[2][0] ?? PAL.heal);
                 }
-              } else if (tgt && this.aimReach(tgt, x, y, wrange)) {
+              } else if (tgt && this.aimReach(tgt, x, y, wreach)) {
                 this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
                 this.pushFxCol(tgt.x, tgt.y, 12 / 60, FxKind.HitMeltHeal, 0, 0, wp.beamStyle?.colors[2][0] ?? PAL.heal);
               }
@@ -6273,7 +6296,7 @@ export class Sim {
             continue;
           }
           ucd[slot] -= dt;
-          if (ucd[slot] <= 0 && tgt && this.aimReach(tgt, x, y, wrange)) {
+          if (ucd[slot] <= 0 && tgt && this.aimReach(tgt, x, y, wreach)) {
             uheldRot[i] = Math.atan2(tgt.y - y, tgt.x - x);
             if (wp.charge) ucharge[i] = wp.charge;
             else {
@@ -6289,13 +6312,13 @@ export class Sim {
           if (ucharge[i] > 0) {
             ucharge[i] -= dt;
             if (ucharge[i] <= 0) {
-              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp, wrange, true, fed);
+              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp, wreach, true, fed, wspan);
               ucd[slot] = wp.reload - wp.charge;
             }
             continue;
           }
           ucd[slot] -= dt;
-          if (ucd[slot] <= 0 && tgt && this.aimReach(tgt, x, y, wrange)) {
+          if (ucd[slot] <= 0 && tgt && this.aimReach(tgt, x, y, wreach)) {
             uheldRot[i] = Math.atan2(tgt.y - y, tgt.x - x);
             ucharge[i] = wp.charge;
           }
@@ -6303,7 +6326,7 @@ export class Sim {
         }
         ucd[slot] -= dt;
         if (ucd[slot] > 0) continue;
-        if (!tgt || !this.aimReach(tgt, x, y, wrange)) {
+        if (!tgt || !this.aimReach(tgt, x, y, wreach)) {
           ucd[slot] = 0; // ready, waiting for something in reach
           continue;
         }
@@ -6360,7 +6383,7 @@ export class Sim {
           case "laser": {
             // a volley of them fans by ShootSpread (the starhart2's three)
             for (let k = 0; k < shots; k++)
-              this.fireUnitLaser(x, y, aim + (k - (shots - 1) / 2) * (wp.spread ?? 0), tgt, wp, wrange, KIND_TIER[ukind[i]] >= 4, fed);
+              this.fireUnitLaser(x, y, aim + (k - (shots - 1) / 2) * (wp.spread ?? 0), tgt, wp, wreach, KIND_TIER[ukind[i]] >= 4, fed, wspan);
             break;
           }
           case "sap": {
@@ -6382,7 +6405,7 @@ export class Sim {
             for (let k = 0; k < shots; k++) {
               this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
               const a = aim + (k - (shots - 1) / 2) * (wp.spread ?? 0);
-              if (st) this.pushFx(x, y, 10 / 60, FxKind.Shrapnel, a, wrange, 0, st.id, true);
+              if (st) this.pushFx(x, y, 10 / 60, FxKind.Shrapnel, a, wspan, 0, st.id, true);
             }
             this.pushFxCol(x, y, FX_LIFE[FxKind.SparkShoot], FxKind.SparkShoot, aim, 0, PAL.white);
             break;
@@ -6495,7 +6518,7 @@ export class Sim {
             // tiers (`big`)
             const big = KIND_TIER[ukind[i]] >= 4;
             if (wp.pierce) {
-              const hit = this.structuresAlong(x, y, aim, wrange, CELL * 0.5, this.alongOut);
+              const hit = this.structuresAlong(x, y, aim, wspan, CELL * 0.5, this.alongOut);
               for (let k = 0; k < hit.length; k++) {
                 this.hitStructure(hit[k], wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
                 if (k < 6) this.pushFxCol(hit[k].x, hit[k].y, 14 / 60, FxKind.RailHit, aim, 0, rc, 0, big);
@@ -6505,7 +6528,7 @@ export class Sim {
               this.pushFxCol(tgt.x, tgt.y, 14 / 60, FxKind.RailHit, aim, 0, rc, 0, big);
             }
             const dx = tgt.x - x, dy = tgt.y - y;
-            const along = wp.pierce ? wrange : Math.min(wrange, Math.sqrt(dx * dx + dy * dy));
+            const along = wp.pierce ? wspan : Math.min(wspan, Math.sqrt(dx * dx + dy * dy));
             this.pushFxCol(x, y, 16 / 60, FxKind.RailShoot, aim, along, rc, big ? 1 : 0, true);
             break;
           }
@@ -6516,7 +6539,7 @@ export class Sim {
             // the cap; the fan out of the muzzle is the whole of what is
             // drawn (FxKind.Scatter), plus the sparks on what it struck
             const cone = wp.cone ?? Math.PI;
-            const hit = this.structuresInCone(x, y, aim, wrange, cone, sighted, this.splashOut);
+            const hit = this.structuresInCone(x, y, aim, wspan, cone, sighted, this.splashOut);
             const max = wp.maxTargets ?? hit.length;
             const fall = wp.falloff ?? 1;
             const col = wp.scatterColor ?? PAL.bomber;
@@ -6525,7 +6548,7 @@ export class Sim {
               const half = (this.sizeOf(t) * CELL) / 2;
               const dx = t.x - x, dy = t.y - y;
               const d = Math.max(0, Math.sqrt(dx * dx + dy * dy) - half);
-              const share = 1 - (1 - fall) * Math.min(1, d / wrange);
+              const share = 1 - (1 - fall) * Math.min(1, d / wspan);
               this.hitStructure(t, wpDamage * share, wp.poison ?? 0, wp.poisonChance ?? 1);
               if (k < 6)
                 this.pushFxCol(t.x, t.y, FX_LIFE[FxKind.BulletHit], FxKind.BulletHit, Math.atan2(dy, dx), 0, col, 0,
@@ -6534,7 +6557,7 @@ export class Sim {
             // the fan carries its cone in degrees down the style lane
             const deg = Math.min(255, Math.round((cone * 180) / Math.PI));
             for (let k = 0; k < shots; k++)
-              this.pushFxCol(x, y, 13 / 60, FxKind.Scatter, aim, wrange, col, deg, true,
+              this.pushFxCol(x, y, 13 / 60, FxKind.Scatter, aim, wspan, col, deg, true,
                 (Math.random() * 0x7fffffff) | 0);
             break;
           }
@@ -6594,7 +6617,7 @@ export class Sim {
             // targets, same damage on every one of them — the hop order is
             // the only thing the walk decides, and it decides it so the
             // line is short and legible rather than so the chain is fair
-            const hit = this.structuresWithin(x, y, wrange, this.splashOut);
+            const hit = this.structuresWithin(x, y, wspan, this.splashOut);
             const max = Math.min(hit.length, wp.maxTargets ?? hit.length);
             const col = wp.fieldColor ?? PAL.heal;
             let cx = x, cy = y;
@@ -6797,17 +6820,22 @@ export class Sim {
    * through the structure it hit and on to its length. The target takes
    * the damage; the shootEffect (Fx.hitPiercer, or stoop5's shockwave)
    * goes off at the muzzle
+   *
+   * `range` is the GATE (may the target be fired at from here) and `span`
+   * the beam's LENGTH — walked and drawn. One number in the game, two on
+   * the bench, where the gate is the whole map and the length must stay
+   * the weapon's own (see wreach / wspan in updateUnitWeapons)
    */
   private fireUnitLaser(
     x: number, y: number, aim: number, tgt: Aim | null, wp: UnitWeapon, range = wp.range, big = true,
-    fed = 1,
+    fed = 1, span = range,
   ): void {
     const st = wp.laser;
     if (wp.pierce) {
       // THE STARLIGHT RULE (UnitWeapon.pierce): everything the beam
       // crosses takes the hit, the corridor the style's own width
       const halfW = ((st?.width ?? 6) * MU) / 2;
-      const hit = this.structuresAlong(x, y, aim, range, halfW, this.alongOut);
+      const hit = this.structuresAlong(x, y, aim, span, halfW, this.alongOut);
       for (let k = 0; k < hit.length; k++) {
         this.hitStructure(hit[k], wp.damage * fed, wp.poison ?? 0, wp.poisonChance ?? 1);
         if (wp.short) this.shortTower(hit[k], wp.short, wp.shortChance ?? 1);
@@ -6823,7 +6851,7 @@ export class Sim {
     // ambient cap were a thousand bodies firing invisibly on the wave that
     // most needed to be read. The muzzle flash and the hit blast below stay
     // dressing
-    this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, range, 0, st.id, true);
+    this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, span, 0, st.id, true);
     if (wp.shoot === FxKind.Shockwave) this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, wp.shootLen ?? 0);
     else if (wp.shoot !== undefined)
       this.pushFxCol(x, y, fxLife(wp.shoot), wp.shoot, aim, 0, st?.colors[1][0] ?? PAL.heal, 0, false, (Math.random() * 0x7fffffff) | 0);
@@ -6869,7 +6897,16 @@ export class Sim {
     if (dst < 1) return;
     const nx = dx / dst, ny = dy / dst;
     const range = 6 * MU;
-    const links = Math.max(1, Math.ceil(dst / range));
+    // ...AND NO MORE THAN CHAIN_LINKS_MAX OF THEM. The count is the
+    // distance to the target, and the longest chain the roster fires (the
+    // livewire5's, thirty-two tiles) is forty-four links — under the cap,
+    // so no arc in the game draws differently. Over it a link is simply
+    // longer. The cap exists for the bench, where every target is in
+    // reach and so may be the far side of the map: a chain to a core seven
+    // hundred tiles off was six hundred and sixty links, three arrays of
+    // them a step for every livewire2 firing, and building those lists
+    // was the whole of that clock's 23ms — a draw cost, billed to unitGuns
+    const links = Math.min(CHAIN_LINKS_MAX, Math.max(1, Math.ceil(dst / range)));
     const spacing = dst / links;
     const pts: number[] = [x, y];
     for (let k = 0; k < links; k++) {

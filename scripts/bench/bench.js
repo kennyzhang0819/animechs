@@ -107,11 +107,11 @@ async function fresh(spec) {
   return game;
 }
 
-/** every relay on, so the whole map is legal ground — what the checks do
+/** every beacon on, so the whole map is legal ground — what the checks do
  *  (openBoard): the board's cost is the question, not the economy's */
 const openBoard = (g) => {
   const h = g.benchHost();
-  for (let i = 0; i < h.world.terrain.relays.length; i++) h.setRelayOn(i);
+  for (let i = 0; i < h.world.terrain.beacons.length; i++) h.setBeaconOn(i);
 };
 
 /**
