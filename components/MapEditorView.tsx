@@ -244,7 +244,7 @@ export default function MapEditorView({
   const [ladder, setLadderState] = useState<number[]>(() => beaconLadderOf(map.beaconPrices));
   /** how many beacons are standing — polled, because the brush places them
    *  on the canvas and nothing here would otherwise hear about it */
-  const [beacons, setBeacons] = useState(() => (map.beacons ?? map.relays ?? []).length);
+  const [beacons, setBeacons] = useState(() => (map.beacons ?? []).length);
   const setLadder = (next: number[]): void => {
     setLadderState(next);
     const ed = editorRef.current;

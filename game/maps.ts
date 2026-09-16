@@ -121,12 +121,6 @@ export interface MapData {
    * the last rung repeats — a ceiling, deliberately reachable.
    */
   beaconPrices?: number[];
-  /** THE SAME FIELD UNDER ITS OLD NAME. A beacon was called a relay until
-   *  it grew a plate and a panel, and documents written before the rename
-   *  are on disk — the editor's own backups, and any map an author exported
-   *  — so the reader still takes `relays`. Nothing writes it: mapFromTerrain
-   *  emits `beacons` only. */
-  relays?: MapBeacon[];
   /** where this map's base sits (top-left cell). Absent = the default BASE
    * position, which is what every pre-per-base document means */
   base?: { x: number; y: number };
@@ -756,7 +750,11 @@ export function terrainFromMap(m: MapData): Terrain {
     // be a document whose last forty could never be bought. Dropping them
     // here, where the document is read, is the one place that stays true
     // for both threads — each builds its own terrain from the same file
-    beacons: (m.beacons ?? m.relays ?? []).slice(0, MAX_BEACONS).map((r) => ({ x: r.x, y: r.y })),
+    // ...and nothing but WHERE each one stands: a document's own `price`
+    // per beacon, and the `relays` this field was called two renames ago,
+    // are both gone from every map on disk and from the type. A stray one
+    // in a hand-edited document is dropped here rather than half-read
+    beacons: (m.beacons ?? []).slice(0, MAX_BEACONS).map((r) => ({ x: r.x, y: r.y })),
     // ...and the one price they all share, rung by rung (beaconLadderOf)
     beaconPrices: beaconLadderOf(m.beaconPrices),
     base,

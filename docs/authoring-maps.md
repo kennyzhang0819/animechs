@@ -345,6 +345,12 @@ an author is comparing all of them at once, which is the whole job.
 A stamp centres its 3x3 on the cursor and **lands only where all nine cells
 are rock**, so a beacon never hangs half off a hill.
 
+The order beacons sit in the document is **documentary, not a rule**: every
+official map lists them nearest the base first, which is the order they were
+priced in under the old bands and reads as the ladder a run climbs. Which
+rung a particular beacon costs is decided when it is BOUGHT, not by where it
+sits in the list — a run that opens the far edge first pays rung 1 for it.
+
 Beacons are a **layer** (`TerrainLayers.beacon`), listed with the others in
 the Tools panel. Hide it to paint the rock a beacon stands on without
 disturbing it: a hidden layer is out of reach of every tool, the brush and
@@ -377,8 +383,9 @@ going to open. Where that acre is, is the player's business, and the far edge
 of a board is reachable early by a run willing to spend its middle game on
 one acre.
 
-Documents written before the ladder still carry a `price` on each beacon.
-Nothing reads it, and a map saved from the editor drops it.
+No document carries a `price` on a beacon any more — every official map was
+stripped of the field and it is gone from `MapBeacon`. A stray one in a
+hand-edited document is ignored: a beacon is two coordinates.
 
 ### Editing the ladder
 

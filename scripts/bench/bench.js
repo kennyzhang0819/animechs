@@ -107,11 +107,15 @@ async function fresh(spec) {
   return game;
 }
 
-/** every relay on, so the whole map is legal ground — what the checks do
- *  (openBoard): the board's cost is the question, not the economy's */
+/** every beacon on, so the whole map is legal ground — what the checks do
+ *  (openBoard): the board's cost is the question, not the economy's.
+ *
+ *  It said `relays` and `setRelayOn` until now, which is what a beacon was
+ *  called two renames ago: the read threw on every scene and took the whole
+ *  render bench down with it (`Cannot read properties of undefined`). */
 const openBoard = (g) => {
   const h = g.benchHost();
-  for (let i = 0; i < h.world.terrain.relays.length; i++) h.setRelayOn(i);
+  for (let i = 0; i < h.world.terrain.beacons.length; i++) h.setBeaconOn(i);
 };
 
 /**

@@ -168,10 +168,12 @@ export interface MapBeacon {
   /** top-left cell of its BEACON_SIZE footprint */
   x: number;
   y: number;
-  /** LEGACY, read and never written: what this one beacon used to cost
-   *  before the price became the map's (maps.ts BEACON_LADDER). Documents
-   *  written before the ladder still carry it; nothing reads it */
-  price?: number;
+  // A BEACON IS A PLACE AND NOTHING ELSE. It used to carry a `price` of
+  // its own; every official document has been stripped of it and the
+  // field is gone from the type, so there is one place a price can be
+  // written and it is the map's ladder. A stray `price` in a hand-edited
+  // or exported document is simply ignored — terrainFromMap reads the two
+  // coordinates and builds the beacon from those.
 }
 
 export interface Terrain {
