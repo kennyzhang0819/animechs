@@ -6,7 +6,7 @@ import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // import must never become a value one or the two files form a cycle
 import type { MutationId } from "./mutation";
 
-export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5"] as const;
+export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "wormhead", "wormcar", "wormtail"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -53,6 +53,11 @@ export const UNIT_ID: Record<UnitKind, number> = {
   grapnel3: 38,
   grapnel4: 39,
   grapnel5: 40,
+  // the crosser's three pieces (see WORM_CHAIN) — no family, no tier
+  // ladder, and never rolled into a wave
+  wormhead: 41,
+  wormcar: 42,
+  wormtail: 43,
 };
 
 /**
@@ -105,6 +110,18 @@ export const FAMILY_NAMES = {
  * the Erekir hull is back on screen and the name goes with it.
  */
 export const BOSS_NAME = ANIMAL_ART ? "Sovereign" : "Boss";
+
+/**
+ * WHAT THE CROSSER IS CALLED, beside the boss's name for the same reason:
+ * it is in no family either, and a name written in two files is a name
+ * that can disagree with itself.
+ *
+ * "Borer" and not "worm": the id says worm because that is the shape of
+ * the thing in the sim's arrays — a chain of bodies on a line — and the
+ * PLAYER is looking at a machine with a cutter head on the front
+ * (game/wormArt.ts). Nothing alive crosses Coldline.
+ */
+export const WORM_NAME = "Borer";
 
 /**
  * THE NAVAL TANKS RUN SLOWER THAN MINDUSTRY'S HULLS. A skate1's stock 1.1
@@ -729,6 +746,16 @@ const wake = (o: Partial<WakeSpec> & Pick<WakeSpec, "x" | "length" | "scl">): Wa
   y: -3 * MU,
   ...o,
 });
+
+/**
+ * HOW FAST A WORM CROSSES, world px/s. Coldline's south line is 13,100 px
+ * of walking and its north line 10,900, so at 2.35 tiles a second a Borer
+ * is on the board for 4:39 on the long road and 3:53 on the short one —
+ * long enough that a player who sees one enter has time to decide whether
+ * to answer it, and short enough that five launches and a spare fit
+ * inside a run of about twenty minutes (WORLDS, Coldline).
+ */
+const WORM_SPEED = 2.35 * CELL;
 
 /** per-kind combat stats (official Mindustry numbers) */
 export const UNIT_STATS: Record<UnitKind, UnitStats> = {
@@ -2019,7 +2046,89 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 1.8,
     starburst: { chance: 0.3, cooldown: 2.4, merge: 10 },
   },
+
+  // ---- THE CROSSER: ONE WORM, IN NINE PIECES ----
+  //
+  // The train that walks Coldline's two roads (missions.ts) while nothing
+  // else on the field knows it is there. It is on the WALKERS' layer and
+  // it is UNARMED, and both of those are the archetype rather than an
+  // oversight: "something moves across the map ignoring the base, and
+  // must die before it leaves" (docs/mission-design.md). It never turns
+  // toward the core, it never shoots a turret, and a board that ignores
+  // it loses nothing this minute — which is exactly what makes paying for
+  // guns out on a road that defends nothing a decision.
+  //
+  // WHY THREE KINDS AND NOT ONE. A worm is nine bodies in a line
+  // (WORM_CHAIN), each with its own pool, because the mission asks the
+  // player to kill the WHOLE train: a single body with a chain drawn
+  // behind it would have one hurtbox at its nose, and a twenty-tile
+  // silhouette whose back half cannot be shot is a lie about where to put
+  // a gun. The head leads and is the toughest; the cars are the body; the
+  // tail is the piece that says the train has ended.
+  //
+  // THE POOL IS THE DIAL, and it is 45,000 for a whole worm. What that
+  // buys, measured on the map rather than guessed at: a battery of eight
+  // tier-three heads (cleavers) beside the south line takes a whole Borer
+  // apart in fourteen seconds as it passes, and six do not finish one —
+  // the tail walks off the far edge. So the mission's price is somewhere
+  // around eight guns and the relay that reaches them, twice, and the
+  // cliff between "nearly" and "enough" is deliberately sharp: a road
+  // half covered is a road not covered.
+  //
+  // Move the three numbers together — the head is worth two cars and the
+  // tail one — and the mission gets harder or easier without anything
+  // else in the file changing.
+  wormhead: {
+    hp: 9000,
+    speed: WORM_SPEED,
+    armor: 12,
+    radius: UR * 2.75,
+    // the drawing's own extent: 96 native px of hull by the cutter drum's
+    // 72, at the sheet's 0.625 world px per native px (game/wormArt.ts).
+    // The quad is the box on this body like every other one
+    hitbox: { long: 60, wide: 46 },
+    tier: 4,
+    // it turns as fast as the road does: the heading is the road's
+    // tangent, written straight onto the body (Sim.updateCrosser), so
+    // nothing here is ever asked to catch up with a corner
+    rotateSpeed: 30,
+  },
+  wormcar: {
+    hp: 4500,
+    speed: WORM_SPEED,
+    armor: 12,
+    radius: UR * 2.5,
+    hitbox: { long: 56, wide: 44 },
+    tier: 4,
+    rotateSpeed: 30,
+  },
+  wormtail: {
+    hp: 4500,
+    speed: WORM_SPEED,
+    armor: 12,
+    radius: UR * 2.5,
+    hitbox: { long: 56, wide: 44 },
+    tier: 4,
+    rotateSpeed: 30,
+  },
 };
+
+/**
+ * THE TRAIN, nose to tail: what one worm is made of, in order. Nine
+ * pieces — a head, seven cars and a tail — laid on the road WORM_SPACING
+ * apart, which is a little under a car's own length so the couplings
+ * overlap and the thing reads as one body rather than nine.
+ *
+ * A worm is DESTROYED when every piece of it is down and LEAKED when any
+ * piece of it reaches the far edge (Sim.updateCrosser). Blowing the head
+ * off does not stop the rest: a train with no driver still rolls, and a
+ * mission that ended at the nose would be a mission about one turret.
+ */
+export const WORM_CHAIN: readonly UnitKind[] = [
+  "wormhead", "wormcar", "wormcar", "wormcar", "wormcar", "wormcar", "wormcar", "wormcar", "wormtail",
+];
+/** the gap between one piece's centre and the next, world px */
+export const WORM_SPACING = 52;
 
 /**
  * Mindustry's unit trees: each line is one factory's upgrade path, in tier
@@ -2046,6 +2155,15 @@ export const UNIT_TREES = [
   // not an upgrade path: the boss row holds the kinds that arrive as an
   // event rather than a stream, so its slots do not read as tiers
   { key: "boss", name: BOSS_NAME, kinds: ["boss"] },
+  // ...and the tenth: the mission's crosser, whose three pieces are not
+  // tiers either. It is in the editor's rows because every kind must be
+  // (see the check under this table) and NOT in FAMILIES, which is what
+  // keeps it out of every ROLL — no deploy can deal it and no wave can be
+  // re-cast into it, and the only thing that puts a Borer on a road is
+  // the mission it belongs to (Sim.launchCrosser). An author who types a
+  // count into this row anyway gets what they asked for: an unarmed body
+  // walking at the core off a drop zone, on no road and in nobody's train
+  { key: "worm", name: WORM_NAME, kinds: ["wormhead", "wormcar", "wormtail"] },
 ] as const satisfies readonly { key: string; name: string; kinds: readonly UnitKind[] }[];
 
 /**
@@ -2489,6 +2607,14 @@ export const UNIT_NAMES: Record<UnitKind, string> = (() => {
     });
   }
   out.boss = BOSS_NAME;
+  // THE CROSSER'S THREE PIECES, named here for the reason the boss is: no
+  // family, so no `Body (rank)` to build them out of. They are named for
+  // what they ARE on the board — a player who shoots the third car has to
+  // be told it was a car, or the health bar that did not finish the job
+  // says nothing about why
+  out.wormhead = `${WORM_NAME} (head)`;
+  out.wormcar = `${WORM_NAME} (car)`;
+  out.wormtail = `${WORM_NAME} (tail)`;
   return out;
 })();
 
@@ -2846,7 +2972,58 @@ export function waveGroups(
  */
 export type Mission =
   | { kind: "hold" }
-  | { kind: "survive"; minutes: number };
+  | { kind: "survive"; minutes: number }
+  | InterceptMission;
+
+/**
+ * INTERCEPT THE CROSSER (docs/mission-design.md, archetype 2): a fixed
+ * number of things cross the map on roads of their own (missions.ts), and
+ * the run is what stops them.
+ *
+ * IT IS THE FIRST MISSION THAT CAN BE FAILED WITHOUT LOSING THE CORE, and
+ * the first that can be MET while the script still has waves to send —
+ * the swarm and the crossers are two clocks, and the base still has to be
+ * standing at the end of both. A hold's objective is the waves; this
+ * one's is beside them.
+ *
+ * THE SCHEDULE IS AUTHORED HERE AND NOWHERE ELSE. The sim reads these
+ * numbers and does what they say (Sim.runCrossers), so the whole shape of
+ * the mission — how many come, on which road, how far apart, and how much
+ * may get past — is one block a designer can read in one go.
+ */
+export interface InterceptMission {
+  kind: "intercept";
+  /** how many crossers must be destroyed for the mission to be met */
+  kills: number;
+  /** how many may reach the far side before the run is lost. One more
+   *  than this gets through and the mission cannot be met, so it is over */
+  leaks: number;
+  /** seconds from the run's start to the first launch */
+  first: number;
+  /** seconds between one launch and the next */
+  every: number;
+  /**
+   * WHICH ROADS EACH LAUNCH USES, by index into the map's roads
+   * (missions.ts ROAD_SPECS). One entry a launch; a launch that names two
+   * roads sends one crosser down each at the same moment, which is the
+   * whole of what "both" means and the only way this mission asks the
+   * player to have paid for two positions rather than one.
+   */
+  pattern: readonly (readonly number[])[];
+  /**
+   * THE SPARE LAUNCH, sent one `every` after the last of the pattern and
+   * ONLY if something has already got through.
+   *
+   * It is what makes `leaks` a real allowance rather than a lie. The
+   * pattern sends exactly `kills` crossers, so a run that lets one past
+   * could not reach the count however well it played afterwards, and the
+   * mission would be over at the moment of the leak while pretending it
+   * was not. The spare is the second chance the allowance promises —
+   * and it is not sent at all to a run that never needed it, so a clean
+   * run ends when the pattern does.
+   */
+  spare: readonly number[];
+}
 
 /** the mission as the deploy panel and the HUD say it: a headline and a clause */
 export function missionText(spec: LevelSpec): { title: string; detail: string } {
@@ -2856,6 +3033,14 @@ export function missionText(spec: LevelSpec): { title: string; detail: string } 
     return {
       title: `Survive ${m.minutes} minutes`,
       detail: "The waves do not stop until the clock does. The core must stand.",
+    };
+  if (m.kind === "intercept")
+    return {
+      title: `Destroy ${m.kills} ${WORM_NAME.toLowerCase()}s`,
+      detail:
+        `They cross the map and never come near you. ` +
+        `${m.leaks === 1 ? "One may reach the far side" : `${m.leaks} may reach the far side`}; ` +
+        `the next one that does ends the run. The core must stand.`,
     };
   return { title: `Hold the line — ${waves} waves`, detail: "Clear every wave. The core must stand." };
 }
@@ -3202,10 +3387,15 @@ export const WORLDS: LevelSpec[] = [
   // ================= THE MISSION SKETCHES =========================
   //
   // One world per archetype (docs/mission-design.md), each on a map the
-  // graph editor drew. They play the campaign's own script like every
-  // other world — the MISSION each is named for is not implemented yet,
-  // so what they are for now is the TERRAIN: eight boards that ask a run
-  // to spend in eight different shapes.
+  // graph editor drew. All eight play the campaign's own wave script like
+  // every other world; what differs is what each ASKS on top of it.
+  //
+  // ONE OF THE EIGHT IS BUILT. Coldline carries INTERCEPT THE CROSSER —
+  // seven Borers on two roads, and a run that lets two past is over (see
+  // its block below, InterceptMission, and game/missions.ts). The other
+  // seven are still sketches and still play `hold`, so for now what they
+  // are is the TERRAIN: boards that ask a run to spend in seven different
+  // shapes, waiting for the rule that spends it.
   //
   // NOTHING PLACES THEM ON THE TRACK, so worldUnlockLevel answers 1 and
   // all eight are open from the start (game/track.ts). That is on purpose
@@ -3223,8 +3413,42 @@ export const WORLDS: LevelSpec[] = [
     id: "11",
     name: "Coldline",
     map: "coldline",
-    // INTERCEPT THE CROSSER — two parallel convoy roads with the core between them
-    mission: { kind: "hold" },
+    // INTERCEPT THE CROSSER — two convoy roads west to east with the core
+    // on its own ground between them, and the first mission in the game
+    // that is not the waves (docs/mission-design.md).
+    //
+    // WHAT IT COSTS. Neither road passes within a hundred cells of the
+    // core, so every gun that shoots a Borer is a gun bought outside the
+    // ground the core lights, on a relay paid for out of the same purse
+    // the defence comes out of (the map carries nine at 3,000 to 12,000).
+    // Nothing built on a road defends the base, and the sale returns
+    // nothing, so the whole difficulty of this map is that one decision
+    // made five or six times.
+    //
+    // THE PATTERN IS THE DESIGN. South, north, both, south, both — seven
+    // Borers in five launches, which is exactly the seven the mission
+    // asks for, so a run that lets one through has spent its allowance
+    // and the spare (north, one launch later) is the only way back to
+    // seven. Two through and it is over: there is no second spare and
+    // the arithmetic says so before the player has to work it out.
+    //
+    // THE CLOCK. First launch at 2:30, one every 3:20 after it, the last
+    // of the pattern at 15:50 and the spare at 19:10; a Borer is on the
+    // board for 3:53 to 4:39 (WORM_SPEED). So a board that kills a train
+    // where it meets it is done about sixteen minutes in, one that grinds
+    // each one down near the far end about twenty, and a run that spent
+    // its allowance and earned the spare about twenty-three. The wave
+    // script underneath all of that is the campaign's own and is tuned
+    // separately.
+    mission: {
+      kind: "intercept",
+      kills: 7,
+      leaks: 1,
+      first: 150,
+      every: 200,
+      pattern: [[0], [1], [0, 1], [0], [0, 1]],
+      spare: [1],
+    },
     waveGap: WAVE_GAP_DEFAULT,
     script: [],
   },

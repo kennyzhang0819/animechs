@@ -27,6 +27,29 @@ Three consequences, and every archetype below is shaped by them:
   is not an objective. The objective needs a deadline, a window, or a
   cost that climbs while it is ignored.
 
+## What is built
+
+**One of the eight.** Coldline plays *intercept the crosser*: seven
+Borers — nine-car boring machines — cross the map on two fixed roads
+while the wave script runs at the core underneath, and a run that lets
+two of them reach the far side is over whether or not the base is still
+standing.
+
+Where it lives, since a mission is spread across the file the way one has
+to be:
+
+| | |
+|---|---|
+| `Mission` / `InterceptMission` | `game/levels.ts` — the type, and Coldline's authored numbers: how many, on which road, how far apart, how many may get past |
+| the roads | `game/missions.ts` — the hard-coded lines, in cells, per map id |
+| the Borer | `game/levels.ts` (`WORM_CHAIN`, the three kinds) and `game/wormArt.ts` (the drawing) |
+| what happens | `Sim.runCrossers`, `launchCrosser`, `updateCrosser`, `leakCrosser`, and the two lines in `won()` and `lost()` |
+| what the player sees | the objective pane in `components/Animechs.tsx` and the road overlay in `Game.drawCrosserRoads` |
+
+The other seven archetypes have a MAP each and no rule yet
+(`WORLDS`, the mission sketches) — the terrain is drawn and the boards
+are playable as plain holds.
+
 ## The eight archetypes
 
 A map carries ONE of these. Two stacked reads as noise, and the player
@@ -41,7 +64,7 @@ shield projectors denying your ground · railguns chipping the base from
 out of range · nests that spawn forever once woken · suppressors that
 darken your zones.
 
-### 2. Intercept the crosser
+### 2. Intercept the crosser — BUILT, on Coldline
 
 Something moves across the map ignoring the base, and must die before it
 leaves.
@@ -49,6 +72,35 @@ leaves.
 Variants: an armoured convoy · a fleeing courier · a roaming beast · a
 builder planting enemy structures as it walks · a herd that must be
 thinned.
+
+What Coldline does with it, and what the shape turned out to need:
+
+- **A crosser is a CHAIN, not a body.** The Borer is nine separately
+  shootable pieces laid nose to tail, and it counts as destroyed only
+  when every one of them is down. One hurtbox on a twenty-tile
+  silhouette is a mission about hitting a nose; nine is a mission about
+  how much of a road you have under fire, which is the thing the
+  archetype is actually asking the player to pay for.
+- **It walks an AUTHORED line and it walks it kinematically.** Not the
+  flow field, not the crowd shove, not wall collision — a position read
+  off a polyline at an arc length. Everything else on the board ends up
+  at the core, so the one thing a crosser must never do is drift toward
+  it, and a Borer wedged in a corner by a knockback would make "did it
+  get across" a question about physics.
+- **The roads are on screen from wave one.** Drawn under everything, dark
+  and dashed, with an arrowhead on the last leg. A mission with no fog in
+  it has no discovery in it either (see above), so a road a player found
+  out about by watching something walk down it would be a different and
+  worse mission.
+- **The allowance needs a SPARE.** The pattern sends exactly as many
+  crossers as the mission asks you to kill, so the one leak the rules
+  permit would be a lie without an extra launch to make it back — and the
+  spare is only sent to a run that needed it, so a clean run ends when
+  the pattern does.
+- **It is the first mission that can be failed with the core standing.**
+  Two through and the count can never be reached, so the run is over at
+  that moment rather than twenty minutes later. The loss screen had to
+  learn to say which of the two things went wrong.
 
 ### 3. Escort the crosser
 

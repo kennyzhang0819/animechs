@@ -597,6 +597,57 @@ const TOP_RULELESS_TIER = Math.max(
   ...Array.from({ length: RUNG_COUNT }, (_, t) => t).filter((t) => tierMutationCount(t) === 0),
 );
 
+/**
+ * THE INTERCEPT MISSION'S OBJECTIVE PANEL (levels.ts InterceptMission) —
+ * three numbers and a sentence, top-left under the shelf.
+ *
+ * IT COUNTS UP AND IT COUNTS DOWN AT THE SAME TIME, because both halves
+ * are the state: the kills are the progress and the leaks are the
+ * allowance, and a player who can see one without the other cannot tell
+ * whether the run is going well. The allowance is drawn as pips rather
+ * than a fraction for the same reason the wave progress is a bar — "0/1"
+ * is a number to work out and two pips is a thing to look at.
+ *
+ * THE LIVE COUNT IS THE THIRD LINE and only shows while something is on
+ * the board, because that is the only moment it means anything: "two on
+ * the line" is a sentence about a decision to make in the next minute,
+ * and a nought sitting there the rest of the time is just noise.
+ */
+function ObjectivePane({ hud }: { hud: UiState }): React.ReactElement | null {
+  const m = hud.mission;
+  if (m.kind !== "intercept") return null;
+  const done = Math.min(m.kills, hud.crossKilled);
+  const spent = Math.min(m.leaks + 1, hud.crossLeaked);
+  return (
+    <div className="ms-pane px-3 py-2">
+      <div className="flex items-baseline gap-2">
+        <span className="font-display text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+          {done} / {m.kills}
+        </span>
+        <span className="text-[13px] uppercase tracking-widest text-[#A6A6AF]">destroyed</span>
+        <span className="ml-auto flex items-center gap-1.5">
+          <span className="text-[13px] uppercase tracking-widest text-[#71717C]">past you</span>
+          {/* one pip per leak the run is allowed, plus the one that ends
+              it — a lit pip is a leak already spent */}
+          {Array.from({ length: m.leaks + 1 }, (_, i) => (
+            <span
+              key={i}
+              className={`inline-block h-2.5 w-2.5 rounded-full ${
+                i < spent ? "bg-[#e55454]" : "bg-[#3a3a42]"
+              }`}
+            />
+          ))}
+        </span>
+      </div>
+      {hud.crossLive > 0 && (
+        <div className="mt-0.5 text-[13px] text-[#A6A6AF]">
+          {hud.crossLive === 1 ? "One is crossing now" : `${hud.crossLive} are crossing now`}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** a rung's multiplier as its share of the mission pot: Incursion prints
  *  "40% XP", Nemesis — the rung the pot is priced for — "100% XP", the
  *  top rung "220% XP" */
@@ -3285,6 +3336,17 @@ export default function Animechs() {
                 is a RULE in force for the rest of the run, so it heads the
                 corner that holds what is true of the run for good. */}
             <RelicShelf relics={hud.shelfRelics} mods={hud.shelfMods} />
+            {/* THE OBJECTIVE LINES, on the missions that have an objective
+                BESIDE the waves. A hold and a survive get none: what those
+                two ask is the thing the player is already doing, and a
+                panel saying "clear every wave" over a board clearing every
+                wave is furniture. An intercept is the other case — the
+                count it is kept to is the only place the run's real state
+                is written down, and nothing else on the screen would ever
+                say it. */}
+            {hud.mission.kind === "intercept" && !hud.lost && !hud.won && (
+              <ObjectivePane hud={hud} />
+            )}
             {admin && !hud.lost && !hud.won && !hud.menuOpen && (
               /* THE SANDBOX'S ONE CONTROL: the wave jump.
                  THE PACE STRIP IS GONE, and with it every multiplier. A
@@ -3596,11 +3658,23 @@ export default function Animechs() {
         {hud?.lost && (
           <div className="ms-screen absolute inset-0 flex items-center justify-center">
             <div className="ui-zoom ms-pane-solid w-80 max-w-[calc(100vw-2rem)] border-[#6b2a2a] p-6 text-center">
+              {/* WHAT ACTUALLY WENT WRONG. An intercept is the first
+                  mission that can be failed with the core still standing
+                  (Sim.lost), so this headline stopped being a constant the
+                  day it shipped: a run that let one Borer too many across
+                  and is told its core was destroyed is being lied to about
+                  the thing it has to do differently next time. */}
               <div className="font-display text-xl font-bold uppercase tracking-widest text-[#e55454]">
-                Core destroyed
+                {hud.coreHp > 0 ? "They got through" : "Core destroyed"}
               </div>
               <div className="mt-4 space-y-1 text-base text-[#EDEDEF]">
-                {hud.mission.kind === "survive" ? (
+                {hud.mission.kind === "intercept" ? (
+                  <div>
+                    <span className="font-bold text-[#EDEDEF]">{hud.crossKilled}</span> of{" "}
+                    {hud.mission.kills} destroyed,{" "}
+                    <span className="font-bold text-[#EDEDEF]">{hud.crossLeaked}</span> past you
+                  </div>
+                ) : hud.mission.kind === "survive" ? (
                   <div>
                     Survived{" "}
                     <span className="font-bold text-[#EDEDEF]">{clock(hud.timeLeft)}</span> left
@@ -3685,13 +3759,23 @@ export default function Animechs() {
           <div className="ms-screen absolute inset-0 flex items-center justify-center">
             <div className="ui-zoom ms-pane-solid w-80 max-w-[calc(100vw-2rem)] border-[#2f5a3a] p-6 text-center">
               <div className="font-display text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
-                {hud.mission.kind === "survive" ? "Survived" : "Line held"}
+                {hud.mission.kind === "survive"
+                  ? "Survived"
+                  : hud.mission.kind === "intercept"
+                    ? "Line cut"
+                    : "Line held"}
               </div>
               <div className="mt-1 text-[14px] uppercase tracking-widest text-[#71717C]">
                 <span style={{ color: rungColor(hud.tier) }}>{rungLabel(hud.tier)}</span> ·{" "}
                 {missionText(level).title}
               </div>
               <div className="mt-4 space-y-1.5 text-base text-[#EDEDEF]">
+                {hud.mission.kind === "intercept" && (
+                  <div>
+                    <span className="font-bold text-[#EDEDEF]">{hud.crossKilled}</span> destroyed,{" "}
+                    <span className="font-bold text-[#EDEDEF]">{hud.crossLeaked}</span> past you
+                  </div>
+                )}
                 <div>
                   Kills <span className="font-bold text-[#EDEDEF]">{hud.kills}</span>
                 </div>

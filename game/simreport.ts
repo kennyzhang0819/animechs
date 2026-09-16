@@ -62,8 +62,18 @@ export const HDR = {
    *  overlay paints a layer off 262,144 cells and must not do it per frame,
    *  so this is what tells it the layer it holds is stale */
   POWER: 18,
+  /**
+   * THE INTERCEPT MISSION'S LEDGER (levels.ts InterceptMission): crossers
+   * destroyed whole, crossers that got across, and how many are on the
+   * board right now. Three slots rather than a row in the report because
+   * the objective panel reads them every frame and a mission a frame
+   * stale is a mission that says "6 of 7" over a won run.
+   */
+  CROSS_KILLED: 19,
+  CROSS_LEAKED: 20,
+  CROSS_LIVE: 21,
 } as const;
-export const HEADER_LEN = 20;
+export const HEADER_LEN = 24;
 
 /** the sim's scalars, into its own header — after every step, and on reset */
 export function writeHeader(sim: Sim): void {
@@ -87,6 +97,9 @@ export function writeHeader(sim: Sim): void {
   h[HDR.INSPECTED_UNIT] = sim.inspectedUnit;
   h[HDR.SPECS] = sim.specsVersion;
   h[HDR.POWER] = sim.powerVersion;
+  h[HDR.CROSS_KILLED] = sim.crossKilled;
+  h[HDR.CROSS_LEAKED] = sim.crossLeaked;
+  h[HDR.CROSS_LIVE] = sim.crossersLive();
 }
 
 // ---------- the phase clock's reading ----------

@@ -1341,6 +1341,14 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   grapnel3: [],
   grapnel4: [],
   grapnel5: [],
+  // THE CROSSER CARRIES NOTHING, and that is the archetype rather than a
+  // gap in the table (levels.ts, the worm block): a Borer walks its road
+  // and never looks at the base or at anything the player built beside
+  // it. What it costs a run is the guns bought to reach it, never the
+  // guns it takes down.
+  wormhead: [],
+  wormcar: [],
+  wormtail: [],
 };
 
 /**

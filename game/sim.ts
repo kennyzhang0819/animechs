@@ -138,6 +138,8 @@ import {
   waveGroups,
   WAVE_GAP_OPENING,
   WAVE_RELEASE_SECONDS,
+  WORM_CHAIN,
+  WORM_SPACING,
   type LegSpec,
   type SegmentSpec,
   type LevelSpec,
@@ -210,6 +212,7 @@ import {
   VOLATILE_RADIUS,
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
+import { roadAt, roadProblems, roadsFor, type Road } from "./missions";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
 import { countSensitive } from "./upgrades";
 import {
@@ -1295,6 +1298,43 @@ export class Sim {
    */
   readonly uvirus = shared.u8(MAX_UNITS);
   /**
+   * THE CROSSER A BODY BELONGS TO — its index into `crossers` — or -1,
+   * which is everything the script ever sent (levels.ts InterceptMission,
+   * missions.ts).
+   *
+   * A crosser does not read the flow field, is not shoved by the crowd,
+   * and does not collide with rock: it walks a road somebody drew, and
+   * `ucrossS` is how far along that road it has got, in world px. So the
+   * two arrays together are the whole of a Borer's movement — see
+   * updateCrosser, which is the branch updateUnits takes for these bodies
+   * instead of everything else it does.
+   *
+   * THEY ARE NOT SHARED. The renderer draws a Borer off upx/upy/urot like
+   * any other body, because that is all a body IS on the sheet — the
+   * chain it belongs to is a fact about the mission, not about the
+   * picture.
+   */
+  private readonly ucross = new Int16Array(MAX_UNITS);
+  private readonly ucrossS = new Float32Array(MAX_UNITS);
+  /**
+   * THE CROSSERS THIS RUN HAS LAUNCHED, in launch order and never
+   * reordered — `ucross` is an index into this, and an index that moved
+   * would put a car in somebody else's train. A dead crosser keeps its
+   * entry with `alive` at zero.
+   */
+  private crossers: { road: number; alive: number; leaked: boolean }[] = [];
+  /** the roads this map carries (missions.ts), empty on every other map */
+  private roads: readonly Road[] = [];
+  /** crossers destroyed whole — every piece of them down before the exit */
+  crossKilled = 0;
+  /** crossers that got a piece of themselves to the far side */
+  crossLeaked = 0;
+  /** launches made, counting into the pattern and then the spare */
+  private crossLaunched = 0;
+  /** seconds until the next launch; -1 once there is nothing left to send */
+  private crossT = -1;
+
+  /**
    * THE WAVE EVERY BODY BELONGS TO, 1-based: the number loadStep staged
    * it under, and a brood member's is its parent's. It is what makes a
    * wave an OBJECTIVE (MISSION_XP in economy.ts): a wave is cleared when
@@ -2181,6 +2221,26 @@ export class Sim {
     // the mission sets the clock (levels.ts); the core's pool is CORE_HP on every map
     const mission = this.level.mission;
     this.deadline = mission.kind === "survive" ? mission.minutes * 60 : 0;
+    // ...and an INTERCEPT sets a second one, which is the crossers'
+    // (runCrossers). The roads come off the map id rather than off the
+    // mission, so the geometry lives with the terrain it was drawn over
+    // and a mission put on a map with no roads says so instead of
+    // quietly sending nothing
+    this.crossers.length = 0;
+    this.crossKilled = 0;
+    this.crossLeaked = 0;
+    this.crossLaunched = 0;
+    this.crossT = mission.kind === "intercept" ? mission.first : -1;
+    this.roads = mission.kind === "intercept" ? roadsFor(this.level.map) : [];
+    if (mission.kind === "intercept") {
+      const named = new Set(mission.pattern.flat().concat(mission.spare));
+      const bad: string[] = [];
+      for (const r of named)
+        if (!this.roads[r]) bad.push(`the pattern names road ${r} and the map has ${this.roads.length}`);
+      for (const road of this.roads) bad.push(...roadProblems(road));
+      if (bad.length > 0)
+        throw new Error(`${this.level.name}: ${bad.join("; ")}`);
+    }
     this.loopLevel = 0;
     this.projs.length = 0;
     // drop the fx pool: the count is the pool, but the bolt-path refs must
@@ -2772,7 +2832,28 @@ export class Sim {
    * The core falling is the only way: the swarm exists to knock it down.
    */
   lost(): boolean {
-    return this.core.hp <= 0;
+    if (this.core.hp > 0) {
+      // ...OR THE MISSION HAS BECOME IMPOSSIBLE, which is the second way
+      // to lose and the only one that is not about the base. An intercept
+      // sends exactly `kills` crossers plus one spare (levels.ts
+      // InterceptMission), so the allowance is real arithmetic: once more
+      // than `leaks` have got across, the count can never be reached
+      // however the rest of the run goes, and a run that cannot be won is
+      // over. Saying it here rather than letting it play out is the whole
+      // difference between a mission and a formality.
+      const m = this.level.mission;
+      if (m.kind !== "intercept") return false;
+      if (this.crossLeaked > m.leaks) return true;
+      // ...and the same fact arrived at from the other side: nothing left
+      // to send (runCrossers has disarmed), nothing left on the board, and
+      // the count short. Today the allowance and the spare make that the
+      // line above said twice — but the two are separate arithmetic, and
+      // the day a mission is authored with two leaks allowed and one spare
+      // this is what stops the run hanging on a count it can no longer
+      // reach instead of ending on it
+      return this.crossT < 0 && this.crossersLive() === 0 && this.crossKilled < m.kills;
+    }
+    return true;
   }
 
   /**
@@ -2790,6 +2871,13 @@ export class Sim {
    */
   won(): boolean {
     if (this.lost()) return false;
+    // AN INTERCEPT IS MET BY ITS COUNT AND BY NOTHING ELSE (levels.ts
+    // InterceptMission): the waves are still coming, the script may have
+    // half of itself left to send, and the mission is over the moment the
+    // seventh Borer is down. The two clocks are separate on purpose — the
+    // swarm is what can lose the run, and the crossers are what wins it
+    const m = this.level.mission;
+    if (m.kind === "intercept") return this.crossKilled >= m.kills;
     if (this.deadline > 0) return this.time >= this.deadline;
     return this.totalWaves > 0 && this.remaining() <= 0;
   }
@@ -3771,6 +3859,10 @@ export class Sim {
       }
     }
     this.runScript(dt);
+    // ...and the mission's own clock, where it has one (levels.ts
+    // InterceptMission): the crossers are an appointment somewhere else
+    // on the map, not a wave
+    this.runCrossers(dt);
     // a structure went up on, or came down off, open ground: shove anything
     // standing in its cells clear now, and re-solve the routes when the
     // board settles (solveDirtyFields)
@@ -4171,6 +4263,198 @@ export class Sim {
       left--;
     }
     if (left === 0) this.nextStep();
+  }
+
+  // ---------- the crossers ----------
+
+  /**
+   * THE MISSION'S SECOND CLOCK (levels.ts InterceptMission): one launch
+   * every `every` seconds until the pattern is spent, and then the spare
+   * if the run has earned one.
+   *
+   * IT IS NOT THE WAVE SCRIPT AND IT MUST NOT BE. The waves are a tide
+   * that answers the core; a launch is an appointment somewhere else on
+   * the map, and putting it on the wave cursor would tie it to whatever
+   * the script happens to be doing at the time — a mission whose fifth
+   * Borer arrives late because a big wave is congesting a drop zone.
+   * This one runs off the run's own clock and nothing else.
+   *
+   * THE SPARE DOES NOT HAVE A DEADLINE, and that is the one thing about
+   * this loop that is not obvious. It cannot be "one `every` after the
+   * pattern, if a leak has happened by then": the last launch of the
+   * pattern is still walking at that point, and a Borer takes longer to
+   * cross than the gap between launches — so the leak that earns the
+   * spare routinely lands AFTER the moment a timed spare would have been
+   * decided. A run that let its last one through would then be six kills
+   * out of seven with nothing left to send and no way to lose either,
+   * which is a run that never ends. So once the pattern is spent this
+   * waits, asking every tick, and sends the spare the instant a leak is
+   * on the books.
+   */
+  private runCrossers(dt: number): void {
+    const m = this.level.mission;
+    if (m.kind !== "intercept" || this.crossT < 0) return;
+    if (this.crossT > 0) {
+      this.crossT -= dt;
+      if (this.crossT > 0) return;
+      // PARKED AT EXACTLY ZERO, and the clamp is load-bearing: -1 is this
+      // clock's "nothing left to send" and the guard above reads it as a
+      // sign, so a countdown allowed to overshoot by the last frame's
+      // eight milliseconds would disarm the mission by arithmetic. It cost
+      // a spare launch that was owed and a run that ended six kills out of
+      // seven with nothing on the board
+      this.crossT = 0;
+    }
+    // the pattern, on its own beat
+    if (this.crossLaunched < m.pattern.length) {
+      for (const r of m.pattern[this.crossLaunched]) this.launchCrosser(r);
+      this.crossLaunched++;
+      this.crossT = m.every;
+      return;
+    }
+    // ...and then the spare, owed to any run that has let one through
+    if (this.crossLeaked > 0) {
+      for (const r of m.spare) this.launchCrosser(r);
+      this.crossT = -1;
+      return;
+    }
+    // nothing owed, and nothing still walking that could come to owe it:
+    // the pattern was the whole mission and the board took all of it
+    if (this.crossersLive() === 0) this.crossT = -1;
+  }
+
+  /**
+   * ONE BORER ONTO ONE ROAD: the whole chain laid nose to tail at the
+   * road's entry, head furthest along (levels.ts WORM_CHAIN).
+   *
+   * WAVE ZERO, and that is the load-bearing line. A crosser is not part
+   * of any wave — it was not staged by loadStep, it pays no XP, and a
+   * wave must not be held open waiting for a train to die three minutes
+   * later. `wavesCleared` counts from wave 1, so a body booked under 0 is
+   * invisible to every ledger that pays the save (economy.ts MISSION_XP).
+   * What it IS worth is scrap, like every other kill, because that is a
+   * fact about a body dying rather than about a wave.
+   */
+  private launchCrosser(roadIdx: number): void {
+    const road = this.roads[roadIdx];
+    if (!road) return;
+    const id = this.crossers.length;
+    const worm = { road: roadIdx, alive: 0, leaked: false };
+    this.crossers.push(worm);
+    const lead = (WORM_CHAIN.length - 1) * WORM_SPACING;
+    for (let k = 0; k < WORM_CHAIN.length; k++) {
+      const s = lead - k * WORM_SPACING;
+      roadAt(road, s, this.roadTmp);
+      if (!this.spawnUnit(WORM_CHAIN[k], { x: this.roadTmp.x, y: this.roadTmp.y, exact: true }, 0)) break;
+      const i = this.n - 1;
+      this.ucross[i] = id;
+      this.ucrossS[i] = s;
+      // the heading is the road's, from the first frame: a piece that
+      // spawned facing +x and swung round over the next second would
+      // enter the map sideways
+      const ang = Math.atan2(this.roadTmp.dy, this.roadTmp.dx);
+      this.urot[i] = ang;
+      this.ubrot[i] = ang;
+      this.uaimx[i] = this.roadTmp.dx;
+      this.uaimy[i] = this.roadTmp.dy;
+      // THE SWARM'S ROLLS ARE NOT THE CROSSER'S. Hungry and Mech Virus are
+      // rules about the crowd walking at the core (mutation.ts); a machine
+      // on a road eats nothing and infects nothing, and a Borer that swelled
+      // a meal at a time would stop matching the hitbox the mission is
+      // asking the player to hit
+      this.uhungry[i] = 0;
+      this.uvirus[i] = 0;
+      worm.alive++;
+    }
+  }
+
+  /**
+   * HOW MANY CROSSERS ARE ON THE BOARD — worms, not pieces. A train with
+   * one car left is still one thing to shoot, and a panel counting bodies
+   * would read "14 on the line" for two half-dead worms.
+   */
+  crossersLive(): number {
+    let n = 0;
+    for (const w of this.crossers) if (w.alive > 0) n++;
+    return n;
+  }
+
+  /** scratch for the road sampler — one call site, never nested */
+  private readonly roadTmp = { x: 0, y: 0, dx: 0, dy: 0 };
+
+  /**
+   * ONE TICK OF A BORER'S PIECE, and it is KINEMATIC: the road says where
+   * the body is, not a velocity integrated against a wall.
+   *
+   * NOTHING ELSE IN THE FILE MOVES LIKE THIS, and the reason is that the
+   * mission is a promise about geometry. A crosser that read the flow
+   * field would turn for the core; one that took the crowd shove would be
+   * pushed off its line by the wave it walked through; one that collided
+   * with rock could be wedged in a corner by a knockback and sit there
+   * for the rest of the run, which on a mission whose whole question is
+   * "did it get across" is not a bug that can be shrugged at. So the
+   * position is read off the road at an arc length this advances, and the
+   * heading is the road's own tangent.
+   *
+   * WHAT STILL REACHES IT is everything that is done TO a body rather than
+   * by it: the wet slow and the haste stamp both scale the advance, so a
+   * liquid turret out on the road really does buy the board seconds — and
+   * that is the one thing on the map that changes how long a Borer is
+   * under fire.
+   *
+   * Returns true when the piece has reached the exit, which is a LEAK: the
+   * caller lifts it off the board (see updateUnits).
+   */
+  private updateCrosser(i: number, dt: number): boolean {
+    const worm = this.crossers[this.ucross[i]];
+    const road = this.roads[worm.road];
+    // NO ARRIVAL CLOCK IS READ HERE, because a crosser never has one:
+    // launchCrosser spawns through the brood door, which is the door that
+    // hands out no invincibility and no unmoving half-second (spawnUnit).
+    // A Borer is walking from its first frame — the road is where it came
+    // from, and a train that stood still for half a second on the rim
+    // would be standing still in the one place nothing can reach it
+    const haste = HAS_HASTE_AURA && this.uhasteT[i] > 0 ? this.uhasteMul[i] : 1;
+    const spd = this.uspd[i] * (this.uwet[i] > 0 ? this.uwetSlow[i] : 1) * haste;
+    const s = this.ucrossS[i] + spd * dt;
+    this.ucrossS[i] = s;
+    if (s >= road.length) return true;
+    roadAt(road, s, this.roadTmp);
+    this.upx[i] = this.roadTmp.x;
+    this.upy[i] = this.roadTmp.y;
+    // the velocity is reported rather than integrated — the weapons pass
+    // and the renderer's walk cycle both read it, and a body whose stated
+    // speed disagreed with the ground going past under it would lead
+    // every turret's aim wrong
+    this.uvx[i] = this.roadTmp.dx * spd;
+    this.uvy[i] = this.roadTmp.dy * spd;
+    const ang = Math.atan2(this.roadTmp.dy, this.roadTmp.dx);
+    this.urot[i] = ang;
+    this.ubrot[i] = ang;
+    this.uaimx[i] = this.uvx[i];
+    this.uaimy[i] = this.uvy[i];
+    this.uwalk[i] += spd * dt;
+    return false;
+  }
+
+  /**
+   * A PIECE HAS REACHED THE FAR SIDE. The whole worm is booked as leaked
+   * on the FIRST piece through, never once per piece: a train that got
+   * half of itself across got across, and counting nine leaks for one
+   * would end the run on the first one.
+   *
+   * Everything still behind it keeps walking and can still be shot. It
+   * cannot save the worm — the leak is already booked — but a run does not
+   * get to stop paying attention to a thing on the board because the
+   * ledger has already written it off.
+   */
+  private leakCrosser(i: number): void {
+    const worm = this.crossers[this.ucross[i]];
+    if (worm && !worm.leaked) {
+      worm.leaked = true;
+      this.crossLeaked++;
+    }
+    this.removeUnit(i);
   }
 
   // ---------- the swarm's weapons ----------
@@ -5971,7 +6255,14 @@ export class Sim {
     if (!this.amphibiousOn) return;
     const { upx, upy, uhp, uhpmax, uspd, uarmor, uwade, uwet01, ufly, unav, ukind } = this;
     for (let i = 0; i < this.n; i++) {
-      if (ufly[i] || unav[i]) continue;
+      // ...and NEITHER IS A CROSSER, which is the third body this rule is
+      // not about. A stack adds SPEED, and a Borer's speed is the mission's
+      // clock (levels.ts WORM_SPEED): a road that happens to ford a lake
+      // would hand the swarm a faster train on Amphibious runs and a
+      // slower one otherwise, for no reason a player could see. It also
+      // swells the sprite off its own hitbox, on the one body the whole
+      // map is about hitting
+      if (ufly[i] || unav[i] || this.ucross[i] >= 0) continue;
       const wet = this.inWater(upx[i], upy[i]);
       // THE CROSSING, not the standing: only a dry -> wet step pays
       if (wet && !uwet01[i] && uwade[i] < AMPHIBIOUS_MAX_STACKS) {
@@ -6621,7 +6912,7 @@ export class Sim {
    */
   private spawnUnit(
     kind: UnitKind,
-    brood?: { x: number; y: number },
+    brood?: { x: number; y: number; exact?: boolean },
     wave = this.wavesStarted,
   ): boolean {
     const stats = UNIT_STATS[kind];
@@ -6643,7 +6934,16 @@ export class Sim {
     const tries = brood ? MITOSIS_TRIES : 8;
     for (let a = 0; a < tries; a++) {
       let x: number, y: number;
-      if (brood) {
+      if (brood?.exact) {
+        // EXACTLY HERE, and none of the tests below. It is what the
+        // crossers use (launchCrosser): a Borer's pieces are laid on a
+        // road at fixed intervals, and a spot moved a few px to miss a
+        // rock would put a car through the side of the one in front. A
+        // crosser walks through rock anyway (updateCrosser), so there is
+        // nothing for the wall test to protect it from.
+        x = brood.x;
+        y = brood.y;
+      } else if (brood) {
         // a ring around the body, clamped inside the world — the wall and
         // crowding tests below are the same ones a door spot has to pass,
         // so a brood never lands in rock or aground on a shoreline
@@ -6664,7 +6964,10 @@ export class Sim {
       // tank that is the one with the deep water open, which is what lets
       // it land half in a channel and half on its bank
       const wallField = layer === "water" ? this.navalField : this.field;
-      if ((!fly && wallField.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly, span))
+      if (
+        !brood?.exact &&
+        ((!fly && wallField.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly, span))
+      )
         continue;
       const i = this.n++;
       // LEVEL SCALING: health rides the level curve, and the rung adds a
@@ -6799,6 +7102,10 @@ export class Sim {
       this.ucellT[i] = -1;
       this.utcell[i] = -1;
       this.uinview[i] = 0;
+      // ...and nothing walks a road unless the mission puts it on one
+      // (launchCrosser writes these two straight after the spawn)
+      this.ucross[i] = -1;
+      this.ucrossS[i] = 0;
       this.uid[i] = this.nextId++;
       this.ukind[i] = UNIT_ID[kind];
       this.ufly[i] = fly ? 1 : 0;
@@ -7298,6 +7605,12 @@ export class Sim {
         const j = bUnits[k];
         if (j === i || j >= this.n || uhp[j] <= 0) continue;
         if (uhungry[j] || uspawn[j] > 0 || KIND_BOSS[ukind[j]]) continue;
+        // ...and a CROSSER is not food, for the boss's reason and one of
+        // its own. A Borer is a machine on a road (levels.ts, the worm
+        // block), and a meal takes a body off the board whole — so a
+        // Hungry run would have the swarm destroying the player's own
+        // objective for free, which is a mission met by a die roll
+        if (this.ucross[j] >= 0) continue;
         if (ufly[j] !== fly || unav[j] !== nav) continue;
         const dx = upx[j] - x, dy = upy[j] - y;
         const d2 = dx * dx + dy * dy;
@@ -7364,10 +7677,17 @@ export class Sim {
       if ((usqzT[i] += dt) < MERGE_HOLD) continue;
       // the partner has to still be the body the physics pass saw — alive,
       // the same kind, both arrived, neither a boss, and room in the stack
+      // ...and NEVER A CROSSER. Two of a Borer's cars ride a road four px
+      // closer than their own hitboxes (levels.ts WORM_SPACING), which is
+      // a squeeze by every test here — and a train that folded its own
+      // couplings together would be one car of double size, one piece
+      // short of the count the mission is keeping, and carrying one of
+      // the two arc lengths that used to be two bodies
       if (
         j === i || j >= this.n || uid[j] !== usqzU[i] || ukind[j] !== ukind[i] ||
         uhp[j] <= 0 || uhp[i] <= 0 || uspawn[i] > 0 || uspawn[j] > 0 ||
-        KIND_BOSS[ukind[i]] || ustack[i] + ustack[j] > KIND_MERGE_MAX[ukind[i]]
+        KIND_BOSS[ukind[i]] || this.ucross[i] >= 0 || this.ucross[j] >= 0 ||
+        ustack[i] + ustack[j] > KIND_MERGE_MAX[ukind[i]]
       ) continue;
       uhp[i] += uhp[j];
       uhpmax[i] += uhpmax[j];
@@ -7513,7 +7833,13 @@ export class Sim {
     // is not one yet. A body that has ALREADY risen (urisen) falls
     // straight through, which is what keeps the rule one generation deep
     // however long a wave lasts.
-    if (this.reconstructOn && !this.urisen[i]) {
+    // ...and a CROSSER never stands back up. Reconstruction puts a body
+    // back through spawnUnit (updateCorpses), which knows nothing about
+    // roads: what would get up is a Borer's car walking to the core,
+    // outside the train it belongs to and outside the count the mission
+    // is keeping. The rule is about the swarm, and the swarm is the thing
+    // walking at the base
+    if (this.reconstructOn && !this.urisen[i] && this.ucross[i] < 0) {
       this.pushDeathFx(x, y);
       this.removeUnit(i);
       // ...and the wave is held open behind it. removeUnit has just booked
@@ -7590,6 +7916,9 @@ export class Sim {
     // means the brood only ever lands on slots those lists have already
     // finished with, and a stale index there meets a body with health,
     // which every one of them re-tests for
+    // ...and nothing breaks out of a Borer for the same reason (a brood
+    // walks; `wasBrood` is already 1 on a crosser, since launchCrosser
+    // spawns through the brood door, so this is belt and braces)
     if (this.mitosisOn && !wasBrood) this.splitUnit(x, y, kind, wave);
   }
 
@@ -7761,6 +8090,18 @@ export class Sim {
   private removeUnit(i: number): void {
     this.aliveByKind[this.ukind[i]]--;
     this.waveDown[this.uwave[i]] = (this.waveDown[this.uwave[i]] ?? 0) + 1;
+    // A CROSSER'S LEDGER IS KEPT HERE, at the one door out, and not in
+    // killUnit — a Borer's piece can leave the board killed, devoured
+    // (Hungry), blown apart by a cascade, or walked off the far edge, and
+    // a count kept at the kill would miss three of those four. The worm is
+    // DESTROYED when its last piece goes and it was not already booked as
+    // leaked: a train that got across is not a train the board killed,
+    // however much of it was left smoking on the road behind it.
+    const cross = this.ucross[i];
+    if (cross >= 0) {
+      const worm = this.crossers[cross];
+      if (worm && --worm.alive <= 0 && !worm.leaked) this.crossKilled++;
+    }
     const n = --this.n;
     // the projectile pass holds its force-field carriers by index, and a
     // shot that kills what it hits reshuffles them mid-pass: the dead
@@ -7849,6 +8190,11 @@ export class Sim {
     this.uled[i] = this.uled[n];
     this.uvirus[i] = this.uvirus[n];
     this.uwave[i] = this.uwave[n];
+    // ...and the road the moved body was walking, with how far along it
+    // had got: a crosser that inherited a stale slot would be a car in
+    // somebody else's train, or a runt teleported onto a road
+    this.ucross[i] = this.ucross[n];
+    this.ucrossS[i] = this.ucrossS[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
     this.ufly[i] = this.ufly[n];
@@ -8229,7 +8575,19 @@ export class Sim {
     // narrow passage, shoving it back out of the entry window forever
     const PR = WALL_R + 4, REP = 55;
 
+    // THE CROSSERS COME OFF THIS PASS ENTIRELY (updateCrosser): they are
+    // kinematic, and a body whose position is read off a road has no use
+    // for a heading, a shove, a wall or a steering force. The ones that
+    // reach the exit are lifted afterwards rather than in the loop —
+    // removeUnit swaps the last row down into the dead one's slot, and a
+    // descending walk that removed in place would step straight over
+    // whatever landed there
+    let leaked: number[] | null = null;
     for (let i = this.n - 1; i >= 0; i--) {
+      if (this.ucross[i] >= 0) {
+        if (this.updateCrosser(i, dt)) (leaked ??= []).push(i);
+        continue;
+      }
       const fly = this.ufly[i] !== 0;
       const nav = this.unav[i] !== 0;
       const mf = nav ? this.navalField : field;
@@ -8601,6 +8959,9 @@ export class Sim {
       if (chain) this.updateSegments(i, chain, len, dt);
       if (nav) this.updateWake(i, dt, water[ci] !== 0);
     }
+    // the exits, highest slot first so each swap-remove only ever moves a
+    // row this list has already finished with
+    if (leaked) for (const i of leaked) this.leakCrosser(i);
   }
 
   /**
