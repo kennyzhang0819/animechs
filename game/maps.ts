@@ -6,6 +6,7 @@ import { BASE, BEACON_LADDER, COLS, MAX_BEACONS, NCELLS, ROWS } from "./constant
  * Never change it — it is a fact about files already on disk.
  */
 export const LEGACY_COLS = 128;
+import { railsFor } from "./missions";
 import { canHoldSpawn, WALL_DEEP, WALL_PINE, type MapBeacon, type Prop, type Terrain } from "./terrain";
 import {
   FLOOR_BASALT,
@@ -757,6 +758,11 @@ export function terrainFromMap(m: MapData): Terrain {
     beacons: (m.beacons ?? []).slice(0, MAX_BEACONS).map((r) => ({ x: r.x, y: r.y })),
     // ...and the one price they all share, rung by rung (beaconLadderOf)
     beaconPrices: beaconLadderOf(m.beaconPrices),
+    // THE RAILS, by the document's own id — so the bed on the ground and
+    // the line the mission's bodies walk are the same line, read out of
+    // the same table (missions.ts ROAD_SPECS). A map that carries no road
+    // gets an empty list and draws nothing
+    rails: railsFor(m.id),
     base,
     rows: Math.max(1, Math.min(ROWS, Math.floor(m.floor.length / sw))),
     cols: Math.max(1, Math.min(COLS, sw)),

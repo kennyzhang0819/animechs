@@ -1,4 +1,5 @@
 import { BASE, BEACON_LADDER, CELL, clamp, COLS, NCELLS, ROWS } from "./constants";
+import type { RailTile } from "./missions";
 import { DECOR_TILES, WATER_FLOOR_GROUPS } from "./atlas";
 
 export interface Prop {
@@ -210,6 +211,17 @@ export interface Terrain {
    * ladder shorter than the map's beacon count is a ceiling, not a bug.
    */
   beaconPrices: number[];
+  /**
+   * THE RAIL BED, if this map carries a road mission: one painted piece a
+   * cell (missions.ts railsFor, game/railArt.ts).
+   *
+   * It is DERIVED, not loaded. A map document says nothing about rails and
+   * should not — the line lives in ROAD_SPECS, and a copy of it on disk
+   * would be a second place for a corner to be wrong. The loader walks the
+   * line for the map's own id and this is the answer; a document with no
+   * road in that table gets an empty list and draws no bed.
+   */
+  rails: readonly RailTile[];
   /** this map's base: top-left cell + edge length, in cells */
   base: { x: number; y: number; size: number };
   /** how many columns of the grid this map actually uses — the horizontal
@@ -518,6 +530,9 @@ export function generateTerrain(seed: number): Terrain {
     // beacons to buy, the ladder over them is the shared default
     beacons: [],
     beaconPrices: [...BEACON_LADDER],
+    // ...and no rails, for the same reason: a road is authored against a
+    // map id (missions.ts ROAD_SPECS) and this board has none
+    rails: [],
     base: { ...BASE }, rows: ROWS, cols: COLS,
   };
 }

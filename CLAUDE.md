@@ -40,7 +40,8 @@ enough.
 game/sim.ts            the authority — bodies, towers, combat, missions. The big one.
 game/levels.ts         the data — unit stats, FAMILIES, waves, WORLDS, Mission
 game/constants.ts      tunables + TOWERS
-game/missions.ts       the authored roads the road missions walk
+game/missions.ts       the authored roads the road missions walk + their rails
+game/railArt.ts        the rail bed those roads are painted as
 game/flowfield.ts      pathing; everything routes to the core
 game/economy.ts track.ts progress.ts        scrap, XP, the level track, saves
 game/weapons.ts status.ts upgrades.ts       shots, statuses, stat dials
@@ -73,7 +74,13 @@ docs/                  mission-design, authoring-maps, authoring-waves, unit-art
    dark/light pairs, mirrored, nothing under 4px, drawn facing up.
 5. **Maps and levels are data.** Put no rules in `public/maps/*.json`, and note that
    re-running `scripts/maps/<id>.mjs` wipes painted spawns and seeded beacons.
-6. **The file headers are the documentation.** `sim.ts`, `levels.ts`, `missions.ts`
+6. **A road is on a lattice.** Every leg of a `ROAD_SPECS` line is along an
+   axis or exactly diagonal and every corner is 45 degrees, because the rail
+   bed is drawn as tiles and those are the only headings a pixel grid draws
+   exactly. `roadProblems` refuses anything else at load. Move a road and the
+   terrain follows it — `scripts/maps/railbed.mjs`, not the map generator,
+   which would wipe the painted layers.
+7. **The file headers are the documentation.** `sim.ts`, `levels.ts`, `missions.ts`
    and the art files carry long headers explaining *why* a thing is the way it is.
    Read the header before editing the file, and update it when you change the reason.
 

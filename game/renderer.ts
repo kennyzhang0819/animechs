@@ -1,3 +1,4 @@
+import { RAIL_SPAN } from "./railArt";
 import { FLOOR_STYLE, WATER_VARIANTS, WATER_WAVE_VARIANT, type FloorKind } from "./tiles";
 import { LINOCUT_TERRAIN } from "./terrainFlag";
 import {
@@ -18,6 +19,7 @@ import {
   UV_FLOORS,
   UV_PINE,
   UV_PINES,
+  UV_RAILS,
   UV_SPAWN,
   UV_RING,
   UV_CLEAVER,
@@ -868,6 +870,8 @@ export interface TerrainLayers {
   wall: boolean;
   props: boolean;
   spawn: boolean;
+  /** the rail bed a road mission's line is drawn on (missions.ts railsFor) */
+  rails: boolean;
   base: boolean;
   /** the beacons (terrain.ts MapBeacon) — their blocks, the circles they
    *  open, and the ring of vision each burns in the darkness. Hidden, they
@@ -879,6 +883,7 @@ export const ALL_LAYERS: TerrainLayers = {
   wall: true,
   props: true,
   spawn: true,
+  rails: true,
   base: true,
   beacon: true,
 };
@@ -893,6 +898,10 @@ export const GAME_LAYERS: TerrainLayers = {
   wall: true,
   props: true,
   spawn: false,
+  // ...but the RAILS are not an authoring layer. They are the mission
+  // telling the player where the thing is going to walk, which is a fact
+  // a match wants said louder than anything else on the ground
+  rails: true,
   base: true,
   beacon: true,
 };
@@ -2129,6 +2138,33 @@ export class Renderer {
     // frame. The tint is the layer's one colour (SPAWN_STYLE), multiplied
     // over the pad sprite's own grey-pink, and the alpha lets the floor
     // beneath read through: what the pads mark is ground, still.
+    // THE RAIL BED, under the pads and under everything else on the
+    // ground (missions.ts railsFor, game/railArt.ts).
+    //
+    // It rides THIS batch rather than the floor one because a bed is
+    // something laid ON the ground and not a kind of ground: the floors
+    // below it are the map's own, the hills' rim shadow is already down,
+    // and a piece drawn here sits on top of both the way a spawn pad
+    // does. It is static like the rest of the batch — a line is a few
+    // hundred pieces, built once with the terrain and free per frame.
+    //
+    // ONE QUAD IS THREE CELLS SQUARE, because that is the window a piece
+    // is painted in (RAIL_SPAN): the bed is under three cells and the
+    // neighbouring pieces' windows overlap, but their PAINT does not —
+    // each one stops dead at the edge of its own cell, which is what lets
+    // them be stamped in any order with nothing double-blended.
+    //
+    // The rotation is a multiple of a quarter turn and never anything
+    // else. That is the whole of what the lattice in missions.ts buys:
+    // there is no angle here that the art was not drawn for.
+    if (layers.rails) {
+      const span = RAIL_SPAN * CELL;
+      for (const r of T.rails) {
+        const x = (r.x + 0.5) * CELL, y = (r.y + 0.5) * CELL;
+        const lit = this.litAt(x, y);
+        this.push(w, x, y, span, span, r.rot * (Math.PI / 2), UV_RAILS[r.piece], lit, lit, lit, 1);
+      }
+    }
     if (layers.spawn) {
       const [sr, sg, sb] = SPAWN_STYLE.tint;
       for (let y = 0; y < mapRows; y++)

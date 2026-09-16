@@ -25,6 +25,27 @@
  * grid a map is authored and read on (scripts/maps, the map editor). They
  * are turned into world px here, once, on the first ask.
  *
+ * EVERY LEG IS ON THE EIGHT-HEADING LATTICE AND EVERY CORNER IS 45
+ * DEGREES. A leg runs along an axis or exactly on the diagonal — dx or dy
+ * zero, or the two equal — and a corner turns by one step of that lattice
+ * and no other amount. `roadProblems` refuses a road that breaks either,
+ * so this is an invariant of the file and not a habit of the numbers.
+ *
+ * THE REASON IS THE RAILS (game/railArt.ts). The line is drawn on the
+ * ground now, as tiles, one per cell, and 0/45/90/135 are the only
+ * headings a square pixel grid draws exactly: a 45-degree line is one
+ * pixel across for one pixel along, so a rail piece is painted once and
+ * stamped with a quarter turn, never rotated and never resampled. A road
+ * free to bend 37 degrees would need its art turned to match, and a
+ * turned pixel sprite is a blurred one. The maps were moved to fit the
+ * lines rather than the other way about — which is also why these three
+ * came out with FEWER corners than the hand-fitted ones they replace
+ * (Coldline's south went from nine to six) instead of more.
+ *
+ * A RUN IS AT LEAST THREE CELLS, checked with the rest. A bend's tile
+ * covers the three cells around its corner, so two corners closer than
+ * that would each paint over the other's.
+ *
  * A ROAD RUNS OFF BOTH EDGES. The first and last points sit outside the
  * open ground on purpose: a worm is a KILOMETRE of train (levels.ts
  * WORM_LENGTH — twenty pieces, seventy-four tiles nose to tail), and one
@@ -36,15 +57,22 @@
  * THE FIRST LEG IS THE RUN-UP AND IT IS SIZED OFF THE TRAIN. Sim.launch-
  * Crosser lays the head a whole WORM_LENGTH past the entry point, so the
  * run-up has to be LONGER THAN THE TRAIN or the head is put down in open
- * ground with half the map already behind it. Both of Coldline's are
- * about a hundred cells, which is the seventy-four of train plus the
- * distance from the rim to the first corner, and both are drawn COLLINEAR
- * with the leg that follows so the train does not kink as it enters.
+ * ground with half the map already behind it. Coldline's are 114 cells and
+ * 163, both comfortably past the seventy-four of train, and both are the
+ * SAME LEG as the one that follows rather than a separate collinear one —
+ * on the lattice a run-up that continued the first heading simply is the
+ * first leg, so there is no join for the train to kink at.
  * Lengthen the chain and these two numbers have to grow with it — there
  * is no check that can catch it, because a head placed in the open is a
  * legal position, just a bad one.
  */
 import { CELL, COLS, ROWS } from "./constants";
+import { RAIL_DIRS, RAIL_PIECES } from "./railArt";
+
+/** the shortest straight run a road may carry, in cells: a bend's tile
+ *  covers the three cells around its corner, so two corners closer than
+ *  this would each paint over the other's */
+const MIN_RUN = 3;
 
 /** one road, as authored: a name for the panel and a line in cells */
 export interface RoadSpec {
@@ -77,31 +105,30 @@ export interface Road {
  * coldline.mjs): two roads west to east with the core on its own ground
  * between them, far enough from each that one battery cannot cover both.
  *
- * THEY ARE FIT TO THE TERRAIN, NOT DRAWN OVER IT. Each line is the
- * shortest route from rim to rim that never comes within six cells of
- * rock (five on the north line, which is tighter), pulled taut and then
- * cut down to the fewest corners that hold that margin — so a Borer keeps
- * to the middle of the ground the generator carved and the player can
- * read where it is going a long way ahead. That margin is what makes the
- * line WALKABLE-LOOKING rather than merely legal: the train is seventy
- * tiles of body and six cells of daylight either side is what stops it
- * appearing to grind along a cliff.
+ * THE TERRAIN IS NOW FIT TO THEM, which is the reversal the lattice
+ * bought. These lines used to be traced by hand through whatever gap the
+ * generator happened to leave, which is why the south one once carried
+ * eleven corners and a 77-degree hairpin. They are laid on the lattice
+ * first now and the rock along them is cut back to a seven-cell corridor
+ * afterwards (scripts/maps/railbed.mjs) — so the corridor is as wide as
+ * the drawing needs everywhere instead of only where the noise was kind.
  *
- * THEY USED TO WANDER. The south line was eleven corners with a 77-degree
- * hairpin in it, because it was traced by hand over a document that had
- * rock in places this one no longer does. Refitting the same two rooms
- * against the current terrain cut the south line's total turning from 422
- * degrees to 153 and the north's from 226 to 111, with no corner sharper
- * than 37. A road that bends less is a road a player can commit a battery
- * to before the train reaches it, which is the decision the map is about.
+ * FEWER CORNERS, EACH OF THEM BIGGER, and that trade is worth saying out
+ * loud. The south line went from nine corners to six; the north kept its
+ * eight. But every corner is a full 45 degrees where the old ones
+ * averaged 17, so total turning went UP, from 153 degrees to 270 on the
+ * south. The number that matters to a player is the COUNT: six places
+ * the line changes its mind is easier to commit a battery against than
+ * nine, and a train now kinks by the same amount at every one of them
+ * instead of by an assortment between 8 and 37.
  *
- * WHAT THE SOUTH LINE GIVES UP for that: it crosses the open plain at its
- * closest about 77 cells from the core, which is INSIDE the core's own
- * lit ground (constants.ts CORE_POWER_R is 90). So one stretch of it can
- * be covered by guns bought on free power, where the rest of both roads
- * still costs a beacon. That is a deliberate trade and not an oversight —
- * the alternative was keeping the road outside the disc, which put five
- * more corners back into it.
+ * WHAT THE SOUTH LINE STILL BUYS: it crosses the open plain at its
+ * closest 71 cells from the core, which is INSIDE the core's own lit
+ * ground (constants.ts CORE_POWER_R is 90). So one stretch of it can be
+ * covered by guns bought on free power, where the rest of both roads
+ * still costs a beacon. That was a deliberate trade on the hand-drawn
+ * line and it was held through the refit on purpose; the north line stays
+ * well outside it, at 136.
  *
  * SOUTH FIRST, and the order is the mission's: the pattern in levels.ts
  * names roads by index, and "bottom, top, both, bottom, both" is the
@@ -112,20 +139,25 @@ export const ROAD_SPECS: Record<string, readonly RoadSpec[]> = {
   coldline: [
     {
       name: "the south line",
-      // 14,100 px rim to rim. The first leg is the run-up (see above);
-      // the last runs off the east rim below the corner
+      // 13,780 px rim to rim, in six corners. The first leg is the run-up
+      // — 114 cells due east, comfortably past the 74 of train — and the
+      // last runs off the east rim on the same heading it arrives at
       cells: [
-        [-75, 502], [31, 488], [68, 483], [91, 460], [162, 367], [211, 338],
-        [291, 319], [396, 348], [427, 381], [493, 434], [518, 455],
+        [-59, 488], [55, 488], [216, 327], [339, 327], [354, 342],
+        [391, 342], [483, 434], [519, 434],
       ],
     },
     {
       name: "the north line",
-      // 12,000 px rim to rim, and the straighter of the two: one shallow
-      // dogleg round the rock at 110 and then most of the map in a line
+      // 12,270 px rim to rim, and still the straighter of the two: four
+      // long east-west runs with a single diagonal step between each. The
+      // step at 314 is the one corner here that the TERRAIN put in rather
+      // than the shape — the lake at 322 is deep water, which railbed.mjs
+      // will not drain, so the line steps down early to keep the bed's
+      // shoulder off it
       cells: [
-        [-76, 120], [20, 124], [96, 127], [112, 134], [188, 130], [242, 110],
-        [373, 123], [440, 122], [499, 133], [518, 136],
+        [-70, 124], [93, 124], [101, 132], [199, 132], [217, 114],
+        [314, 114], [322, 122], [464, 122], [475, 133], [525, 133],
       ],
     },
   ],
@@ -145,15 +177,21 @@ export const ROAD_SPECS: Record<string, readonly RoadSpec[]> = {
    * be able to commit a battery to it a long way ahead. A convoy is ONE
    * CART: it turns on the spot, and what the road is for is to take it
    * as far from the core as the map allows and keep it there. So this one
-   * is left as the terrain drew it — 646 degrees of turning and a hairpin
-   * at the top of the eastern climb, every one of them a place the swarm
-   * crosses the line while the cart is still on it.
+   * keeps NINETEEN corners where Coldline's south keeps six — every one
+   * of them a place the swarm crosses the line while the cart is still
+   * on it.
    *
-   * THE CART DOES NOT COLLIDE (Sim.updateConvoy), so the margin here is
-   * about the PICTURE and not about fitting: the line never comes within
-   * three cells of rock, which on a five-tile cart is half a cell of
-   * daylight at the tightest corner and a comfortable lane everywhere
-   * else.
+   * THE LATTICE TOOK THE HAIRPIN AND NOTHING ELSE. The hand-drawn line
+   * turned 88 degrees at the top of the eastern climb; no corner here is
+   * anything but 45, which cost two corners and 150 degrees of total
+   * turning and left the shape — out east along the bottom, up the right,
+   * back west across the middle, up the left, east again along the top —
+   * exactly where it was. The halts moved by at most three cells, so
+   * their fractions below did not have to move at all.
+   *
+   * THE CART DOES NOT COLLIDE (Sim.updateConvoy), so the corridor cut for
+   * this line is about the PICTURE and not about fitting: seven cells of
+   * cleared ground under a five-tile cart is a lane, not a squeeze.
    *
    * NO RUN-UP AND NO RUN-OFF, which is the other difference. A Borer is
    * laid down off the rim because it comes from somewhere; a convoy rolls
@@ -163,14 +201,14 @@ export const ROAD_SPECS: Record<string, readonly RoadSpec[]> = {
   thornway: [
     {
       name: "the long way round",
-      // 23,750 px, core to post. The halts (levels.ts EscortMission) are
+      // 23,970 px, core to post. The halts (levels.ts EscortMission) are
       // fractions of it, chosen to land in the clearings at 22, 40, 60
       // and 76 per cent
       cells: [
-        [74, 448], [136, 418], [167, 414], [233, 422], [254, 433], [349, 393],
-        [396, 377], [421, 338], [372, 304], [279, 287], [244, 284], [154, 215],
-        [122, 144], [156, 99], [226, 76], [255, 72], [279, 47], [330, 50],
-        [369, 41], [391, 46], [428, 64], [463, 55], [486, 32],
+        [74, 448], [90, 448], [119, 419], [308, 419], [337, 390], [376, 390],
+        [415, 351], [415, 342], [372, 299], [315, 299], [302, 286], [236, 286],
+        [129, 179], [129, 133], [183, 79], [247, 79], [278, 48], [402, 48],
+        [414, 60], [458, 60], [486, 32],
       ],
     },
   ],
@@ -242,6 +280,127 @@ export function roadAt(road: Road, s: number, out: { x: number; y: number; dx: n
   out.dy = (y1 - y0) / len;
 }
 
+// ---------------------------------------------------------------------
+// THE RAILS: the same line, as ground
+// ---------------------------------------------------------------------
+
+/** one painted cell of rail bed — which piece, and how far round */
+export interface RailTile {
+  /** the cell the piece is centred on; it covers RAIL_SPAN cells square */
+  x: number;
+  y: number;
+  /** an index into railArt RAIL_PIECES */
+  piece: number;
+  /** quarter turns clockwise to apply when it is stamped */
+  rot: number;
+}
+
+/** the lattice heading an offset points along, or -1 — the inverse of
+ *  railArt RAIL_DIRS, small enough to search */
+const dirOf = (dx: number, dy: number): number =>
+  RAIL_DIRS.findIndex((d) => d[0] === Math.sign(dx) && d[1] === Math.sign(dy));
+
+/**
+ * WHICH PAINTING JOINS THESE TWO HEADINGS, and how far round it is turned.
+ *
+ * A cell's piece is the UNORDERED PAIR of neighbours its line connects, so
+ * this is the whole vocabulary: sixteen straight-through pairs and eight
+ * bends, every one of them one of railArt's four paintings at one of four
+ * quarter turns. The table is built from RAIL_PIECES rather than typed
+ * out, because a hand-written 8x8 of piece-and-rotation is a place for a
+ * corner to be quietly wrong and this is a place it cannot be.
+ *
+ * A quarter turn is TWO STEPS of the eight, and the renderer's rotation
+ * runs the same way the headings are numbered (x right, y down), so
+ * turning a piece by `rot` maps the heading `k` it was drawn for onto
+ * `k + 2 * rot`.
+ */
+const PIECE_AT: (readonly [number, number] | null)[][] = (() => {
+  const t: (readonly [number, number] | null)[][] = Array.from({ length: 8 }, () =>
+    new Array<readonly [number, number] | null>(8).fill(null),
+  );
+  RAIL_PIECES.forEach((p, i) => {
+    if (p.b === null) return;
+    for (let rot = 0; rot < 4; rot++) {
+      const a = (p.a + 2 * rot) % 8, b = (p.b + 2 * rot) % 8;
+      t[a][b] = [i, rot];
+      t[b][a] = [i, rot];
+    }
+  });
+  return t;
+})();
+
+/** the same for a line that simply STOPS in this cell: one heading, no pair */
+const CAP_AT: (readonly [number, number] | null)[] = (() => {
+  const t = new Array<readonly [number, number] | null>(8).fill(null);
+  RAIL_PIECES.forEach((p, i) => {
+    if (p.b !== null) return;
+    for (let rot = 0; rot < 4; rot++) t[(p.a + 2 * rot) % 8] = [i, rot];
+  });
+  return t;
+})();
+
+/** every cell a line passes through, corner to corner, ends included */
+function walkCells(spec: RoadSpec): [number, number][] {
+  const out: [number, number][] = [];
+  for (let i = 1; i < spec.cells.length; i++) {
+    const [ax, ay] = spec.cells[i - 1], [bx, by] = spec.cells[i];
+    const sx = Math.sign(bx - ax), sy = Math.sign(by - ay);
+    const n = Math.max(Math.abs(bx - ax), Math.abs(by - ay));
+    // the far end of each leg is the near end of the next, so it is left
+    // to that leg to add — except on the last, which has no next
+    for (let t = 0; t < n; t++) out.push([ax + sx * t, ay + sy * t]);
+  }
+  out.push([...spec.cells[spec.cells.length - 1]] as [number, number]);
+  return out;
+}
+
+const RAILS = new Map<string, readonly RailTile[]>();
+
+/**
+ * THE RAIL BED THIS MAP CARRIES, one piece a cell, made once and kept.
+ *
+ * It is DERIVED FROM THE ROAD and stored nowhere else — not in the map
+ * document, not in the graph the map is generated from. A line and the
+ * rails under it cannot drift apart if there is only one of them, and
+ * moving a corner in ROAD_SPECS moves the drawing with it on the next
+ * load. The cost is one walk of a few hundred cells at map load.
+ *
+ * CELLS OFF THE BOARD ARE DROPPED. A crosser's road hangs off both rims
+ * on purpose (the run-up above) and there is no ground out there to lay
+ * anything on; the renderer scissors the board anyway, so a piece out
+ * there would be invisible work.
+ */
+export function railsFor(mapId: string | undefined): readonly RailTile[] {
+  if (!mapId) return [];
+  const had = RAILS.get(mapId);
+  if (had) return had;
+  const specs = ROAD_SPECS[mapId];
+  if (!specs) return [];
+  const out: RailTile[] = [];
+  const seen = new Set<number>();
+  for (const spec of specs) {
+    const cells = walkCells(spec);
+    for (let i = 0; i < cells.length; i++) {
+      const [x, y] = cells[i];
+      if (x < 0 || y < 0 || x >= COLS || y >= ROWS) continue;
+      // a cell two lines share, or one a line crosses twice, is painted
+      // once: a second piece on it would blend over the first
+      const key = y * COLS + x;
+      if (seen.has(key)) continue;
+      const back = i > 0 ? dirOf(cells[i - 1][0] - x, cells[i - 1][1] - y) : -1;
+      const on = i < cells.length - 1 ? dirOf(cells[i + 1][0] - x, cells[i + 1][1] - y) : -1;
+      const pick =
+        back >= 0 && on >= 0 ? PIECE_AT[back][on] : CAP_AT[back >= 0 ? back : on] ?? null;
+      if (!pick) continue;
+      seen.add(key);
+      out.push({ x, y, piece: pick[0], rot: pick[1] });
+    }
+  }
+  RAILS.set(mapId, out);
+  return out;
+}
+
 /**
  * Does this road stay on the board? A crosser's entry and exit are meant
  * to hang off the rim (see the note at the top) and everything between
@@ -259,5 +418,39 @@ export function roadProblems(road: Road): string[] {
       out.push(`${road.name}: corner ${i} at (${Math.round(x)}, ${Math.round(y)}) is off the board`);
   }
   if (road.length <= 0) out.push(`${road.name}: a road of no length`);
+  // THE LATTICE, CHECKED RATHER THAN TRUSTED (see the note at the top of
+  // this file). Every one of these is a rule the RAILS depend on, and
+  // every one of them is invisible in the numbers: a leg two cells off
+  // the diagonal still draws a fine dashed line on the overlay and still
+  // carries a train perfectly well — it simply cannot be tiled, so the
+  // bed under it would come out as a staircase of half-joined pieces.
+  // Better to refuse the map at load and say which corner did it.
+  let last = -1;
+  for (let i = 1; i < n; i++) {
+    const dx = road.pts[i * 2] - road.pts[i * 2 - 2];
+    const dy = road.pts[i * 2 + 1] - road.pts[i * 2 - 1];
+    const ax = Math.abs(dx), ay = Math.abs(dy);
+    if (!(ax < 1e-6 || ay < 1e-6 || Math.abs(ax - ay) < 1e-6)) {
+      out.push(
+        `${road.name}: leg ${i} runs ${Math.round(dx / CELL)},${Math.round(dy / CELL)} cells — ` +
+          `every leg must be along an axis or exactly diagonal`,
+      );
+      continue;
+    }
+    if (Math.max(ax, ay) < MIN_RUN * CELL)
+      out.push(
+        `${road.name}: leg ${i} is ${Math.round(Math.max(ax, ay) / CELL)} cells — ` +
+          `a run under ${MIN_RUN} leaves two bends painting over each other`,
+      );
+    const d = dirOf(dx, dy);
+    // |steps| round the eight-heading dial, 0 (collinear) to 4 (reversed)
+    const turn = last < 0 ? 1 : Math.abs(((d - last + 12) % 8) - 4);
+    if (turn !== 1)
+      out.push(
+        `${road.name}: corner ${i - 1} turns ${turn * 45} degrees — ` +
+          `every corner must be exactly 45`,
+      );
+    last = d;
+  }
   return out;
 }

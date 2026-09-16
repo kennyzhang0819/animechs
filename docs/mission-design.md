@@ -178,10 +178,18 @@ What Coldline does with it, and what the shape turned out to need:
   it, and a Borer wedged in a corner by a knockback would make "did it
   get across" a question about physics.
 - **The roads are on screen from wave one.** Drawn under everything, dark
-  and dashed, with an arrowhead on the last leg. A mission with no fog in
-  it has no discovery in it either (see above), so a road a player found
-  out about by watching something walk down it would be a different and
-  worse mission.
+  and dashed, with an arrowhead on the last leg — and now painted on the
+  GROUND as well, as a rail bed (`game/railArt.ts`). A mission with no fog
+  in it has no discovery in it either (see above), so a road a player
+  found out about by watching something walk down it would be a different
+  and worse mission.
+- **The line is on an eight-heading lattice and every corner is 45
+  degrees**, checked at load by `roadProblems`. That is what makes the bed
+  drawable: 0/45/90/135 are the only headings a square pixel grid draws
+  exactly, so a rail piece is painted once and stamped with a quarter
+  turn. The consequence for authoring is that the LINE COMES FIRST and the
+  terrain is cut to it afterwards (`scripts/maps/railbed.mjs`), which is
+  the reverse of how Coldline's roads were originally traced.
 - **The allowance needs a SPARE.** The pattern sends exactly as many
   crossers as the mission asks you to kill, so the one leak the rules
   permit would be a lie without an extra launch to make it back — and the
@@ -231,9 +239,10 @@ What Thornway does with it, and what the mirror turned out to need:
 - **The road's requirement is the opposite one.** A Borer's line is
   straightened until it barely bends, because a seventy-tile train kinks
   at a corner and because a battery has to be committed to it a long way
-  ahead. A cart is one body that turns on the spot, so its road is left
-  as the terrain drew it: 646 degrees of turning, and every bend a place
-  the swarm crosses the line while the cart is still on it.
+  ahead. A cart is one body that turns on the spot, so its road keeps
+  NINETEEN corners against Coldline's six — every bend a place the swarm
+  crosses the line while the cart is still on it. What the lattice took
+  off it was the 88-degree hairpin and nothing else.
 - **Three grid reads had to learn about it, and none of them failed
   loudly.** The cart is not in the occupancy grid, because it moves — and
   three separate things use that grid as their "is this still standing"
