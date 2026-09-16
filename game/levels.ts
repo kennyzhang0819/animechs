@@ -3800,23 +3800,33 @@ export function worldById(id: string): LevelSpec | null {
 }
 
 /**
- * THE WORLDS OFF THE MENU, and the whole of how one gets there: name it
- * here. A hidden world keeps everything — its entry, its map, its
- * document, its place in the admin editor and the save editor — it is
- * simply never OFFERED: not a row in the map picker, not in Random's hat,
- * not a reward on the progress screen, and not a pick a save may restore.
- * It is the SHELVED_FAMILIES of the map table, and for the same reason: a
- * board that is not ready to be met should not be met, and deleting it to
- * say so loses the work.
+ * THE WORLDS THAT ARE IN THE GAME TODAY, and the whole of how a board
+ * gets on or off the menu: name it here. A world NOT on this list keeps
+ * everything — its entry, its map, its document, its place in the admin
+ * editor and the save editor — it is simply never OFFERED: not a row in
+ * the map picker, not in Random's hat, not a reward on the progress
+ * screen, and not a pick a stale save may restore. It is the
+ * SHELVED_FAMILIES of the map table, and for the same reason: a board
+ * that is not ready to be met should not be met, and deleting it to say
+ * so loses the work.
  *
  * It is not a lock. A lock is the track saying "not yet, come back at
  * level 8" (worldLock, progress.ts) and it is printed as a promise; this
  * is the map not being in the game today.
+ *
+ * IT IS A LIST OF WHAT IS IN RATHER THAN OF WHAT IS OUT, and it was the
+ * other way round until the shelf got longer than the game. Seventeen
+ * boards are drawn and two are FINISHED — Confluence, which is the first
+ * board and the one the campaign is tuned against, and Coldline, which is
+ * the one mission that is built (docs/mission-design.md). Everything else
+ * is terrain with a hold mission on it and no reason yet to be played, so
+ * naming the fifteen would be writing the catalog down twice and
+ * forgetting one of them the next time a board lands.
  */
-export const HIDDEN_WORLD_IDS: readonly string[] = ["1", "11"];
+export const PLAYABLE_WORLD_IDS: readonly string[] = ["1", "11"];
 
-/** is this world off the menu? */
-export const worldHidden = (id: string): boolean => HIDDEN_WORLD_IDS.includes(id);
+/** is this world off the menu? — everything the list above does not name */
+export const worldHidden = (id: string): boolean => !PLAYABLE_WORLD_IDS.includes(id);
 
 /**
  * The worlds a player may be offered — the table, less the hidden ones.
