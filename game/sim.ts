@@ -887,6 +887,17 @@ const KIND_LAND_SPEED = Float32Array.from(
 /** the gait of every legged kind, indexed like UNIT_KINDS — null for the
  * mechs and flyers, whose animation is one sliding pair of leg sprites */
 const KIND_LEGS = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
+/**
+ * WHAT ONE TICK DID TO A PIECE OF A TRAIN (Sim.updateCrosser). Three
+ * outcomes and not a boolean, because a Borer's piece leaves the board
+ * two different ways and they are opposite in the ledger: a LEAK is the
+ * mission failing and a DEATH is it being met.
+ */
+type CrosserStep = 0 | 1 | 2;
+const CROSS_WALKING: CrosserStep = 0;
+const CROSS_LEAKED: CrosserStep = 1;
+const CROSS_DEAD: CrosserStep = 2;
+
 /** the worm rig of every segmented kind (levels.ts SegmentSpec), null for the rest */
 const KIND_SEGS = UNIT_KINDS.map((k) => UNIT_STATS[k].segments ?? null);
 /** the wake of every naval kind, indexed like UNIT_KINDS — null for
@@ -1340,7 +1351,25 @@ export class Sim {
    * would put a car in somebody else's train. A dead crosser keeps its
    * entry with `alive` at zero.
    */
-  private crossers: { road: number; alive: number; leaked: boolean }[] = [];
+  /**
+   * ONE WORM, ONE HEALTH POOL. `hp`/`hpMax` are the TRAIN'S, not a
+   * piece's: every car on it reports this number and every hit on any car
+   * comes off it (damageUnit, drainCrosser), so a Borer is twenty
+   * hurtboxes on ONE body rather than twenty bodies in a line.
+   *
+   * WHY, when the pieces were separate for a good reason. They still are:
+   * the chain exists so the whole length of the train is shootable, which
+   * is what makes the mission about how much ROAD you have under fire
+   * rather than about hitting a nose. What the separate POOLS added on top
+   * of that was a train that came apart — cars popping off one at a time,
+   * gaps opening in the middle, a head sailing on alone — and that reads
+   * as twenty machines travelling together, which is not what it is. The
+   * hurtboxes stay twenty; the thing they belong to is one.
+   *
+   * `hpMax` is the sum of what the pieces spawned with, so the level
+   * curve and the launch ramp both still land exactly as they did.
+   */
+  private crossers: { road: number; alive: number; leaked: boolean; hp: number; hpMax: number }[] = [];
   /** the roads this map carries (missions.ts), empty on every other map */
   private roads: readonly Road[] = [];
   /** crossers destroyed whole — every piece of them down before the exit */
@@ -4370,25 +4399,18 @@ export class Sim {
     const road = this.roads[roadIdx];
     if (!road) return;
     const id = this.crossers.length;
-    const worm = { road: roadIdx, alive: 0, leaked: false };
+    const worm = { road: roadIdx, alive: 0, leaked: false, hp: 0, hpMax: 0 };
     this.crossers.push(worm);
     const ramp = wormRamp(launch);
+    const slots: number[] = [];
     for (let k = 0; k < WORM_CHAIN.length; k++) {
       const s = WORM_LENGTH - k * WORM_SPACING;
       roadAt(road, s, this.roadTmp);
       if (!this.spawnUnit(WORM_CHAIN[k], { x: this.roadTmp.x, y: this.roadTmp.y, exact: true }, 0)) break;
       const i = this.n - 1;
+      slots.push(i);
       this.ucross[i] = id;
       this.ucrossS[i] = s;
-      // THIS LAUNCH'S POOL, on both bars at once. It goes on AFTER the
-      // spawn rather than through a spawnUnit argument because it is not a
-      // fact about the kind and not a rung of the level curve — it is this
-      // train's number, and the ONLY place a Borer's health differs from
-      // the roster's. uhpmax moves with uhp so the bar over it still reads
-      // full, and every ledger that divides by it (the drop is not one —
-      // see wormRamp) keeps its meaning
-      this.uhp[i] *= ramp;
-      this.uhpmax[i] *= ramp;
       // the heading is the road's, from the first frame: a piece that
       // spawned facing +x and swung round over the next second would
       // enter the map sideways
@@ -4406,6 +4428,53 @@ export class Sim {
       this.uvirus[i] = 0;
       worm.alive++;
     }
+    // THE POOL, ONCE EVERY PIECE IS DOWN: what the twenty spawned with,
+    // added up, times this launch's ramp.
+    //
+    // It is SUMMED FROM THE BODIES rather than computed from the roster,
+    // and that is what keeps two other systems working without knowing
+    // this one exists. The level curve scales a body's health as it
+    // spawns (spawnUnit, baseHpOf), so reading the pieces back means a
+    // Borer on a high rung is exactly as much tougher as every other body
+    // on that rung. The ramp then goes on the total, which is the same
+    // number it used to go on per piece.
+    //
+    // ...and then onto EVERY PIECE, both bars. uhp and uhpmax are the
+    // train's from here on, so every read of the fraction — the bar, the
+    // damage tint, the smoke, the execute line — is a fact about the
+    // WORM, and all twenty cars say the same thing at the same time.
+    for (const i of slots) worm.hpMax += this.uhp[i];
+    worm.hpMax *= ramp;
+    worm.hp = worm.hpMax;
+    for (const i of slots) {
+      this.uhp[i] = worm.hp;
+      this.uhpmax[i] = worm.hpMax;
+    }
+  }
+
+  /**
+   * A HIT ON ANY CAR, TAKEN OFF THE TRAIN. The one place a crosser's
+   * health moves, and the reason damageUnit branches at all.
+   *
+   * IT DOES NOT TOUCH `uhp` AND IT DOES NOT KILL. Both are deliberate.
+   * Mirroring the pool onto twenty slots here would be a scan of the
+   * field on every point of damage a busy board deals, and killing from
+   * inside a damage callback would reorder the unit slots under whichever
+   * loop is spending a blast — which is exactly why every other reaper in
+   * this file collects its dead and reaps after. updateCrosser does both
+   * jobs a tick later, on a pass that is already walking these bodies:
+   * the bars catch up and the train dies whole.
+   */
+  private drainCrosser(id: number, amount: number): void {
+    const worm = this.crossers[id];
+    if (!worm || worm.hp <= 0) return;
+    worm.hp -= amount;
+    // TERMINAL PROTOCOL (relics.ts) reads the pool like every other
+    // execute, which on a shared pool means it takes the whole train. That
+    // is the honest reading of the rule — the body it is knocking over is
+    // the worm — and it is the one relic that can end a Borer early
+    if (this.executeAt > 0 && worm.hp > 0 && worm.hp <= worm.hpMax * this.executeAt)
+      worm.hp = 0;
   }
 
   /**
@@ -4449,9 +4518,24 @@ export class Sim {
    * Returns true when the piece has reached the exit, which is a LEAK: the
    * caller lifts it off the board (see updateUnits).
    */
-  private updateCrosser(i: number, dt: number): boolean {
+  private updateCrosser(i: number, dt: number): CrosserStep {
     const worm = this.crossers[this.ucross[i]];
     const road = this.roads[worm.road];
+    // THE TRAIN'S HEALTH ONTO THIS CAR, every tick. The pool is the truth
+    // (drainCrosser) and these two are the copy every other reader sees —
+    // the bar over the body, the damage tint, the smoke. Copied on the
+    // pass that is already here rather than at the hit, so a board putting
+    // a hundred rounds a second into a Borer pays twenty writes a tick
+    // instead of twenty per round.
+    this.uhp[i] = worm.hp;
+    this.uhpmax[i] = worm.hpMax;
+    // ...AND THE TRAIN DIES WHOLE. The pool emptied, so every piece goes
+    // this tick, together, wherever on the road it happens to be: the
+    // caller reaps them after the loop for the reason it reaps the
+    // leakers there (removeUnit moves slots under a descending walk). A
+    // car that popped on its own would be the thing the shared pool
+    // exists to stop.
+    if (worm.hp <= 0) return CROSS_DEAD;
     // NO ARRIVAL CLOCK IS READ HERE, because a crosser never has one:
     // launchCrosser spawns through the brood door, which is the door that
     // hands out no invincibility and no unmoving half-second (spawnUnit).
@@ -4464,7 +4548,7 @@ export class Sim {
     const spd = this.uspd[i] * slow * haste;
     const s = this.ucrossS[i] + spd * dt;
     this.ucrossS[i] = s;
-    if (s >= road.length) return true;
+    if (s >= road.length) return CROSS_LEAKED;
     roadAt(road, s, this.roadTmp);
     this.upx[i] = this.roadTmp.x;
     this.upy[i] = this.roadTmp.y;
@@ -4480,7 +4564,7 @@ export class Sim {
     this.uaimx[i] = this.uvx[i];
     this.uaimy[i] = this.uvy[i];
     this.uwalk[i] += spd * dt;
-    return false;
+    return CROSS_WALKING;
   }
 
   /**
@@ -8629,9 +8713,12 @@ export class Sim {
     // descending walk that removed in place would step straight over
     // whatever landed there
     let leaked: number[] | null = null;
+    let slain: number[] | null = null;
     for (let i = this.n - 1; i >= 0; i--) {
       if (this.ucross[i] >= 0) {
-        if (this.updateCrosser(i, dt)) (leaked ??= []).push(i);
+        const step = this.updateCrosser(i, dt);
+        if (step === CROSS_LEAKED) (leaked ??= []).push(i);
+        else if (step === CROSS_DEAD) (slain ??= []).push(i);
         continue;
       }
       const fly = this.ufly[i] !== 0;
@@ -9009,6 +9096,10 @@ export class Sim {
     }
     // the exits, highest slot first so each swap-remove only ever moves a
     // row this list has already finished with
+    // the dead first, then the leakers: a piece can only be one of the two
+    // and both lists were gathered on the same descending walk, so the
+    // order is only about reading the code
+    if (slain) for (const i of slain) this.killUnit(i);
     if (leaked) for (const i of leaked) this.leakCrosser(i);
   }
 
@@ -11636,7 +11727,16 @@ export class Sim {
       this.ushield[i] -= soaked;
       amount -= soaked;
     }
-    if (amount > 0) {
+    // A CROSSER'S HEALTH IS NOT ITS OWN (drainCrosser): the hit comes off
+    // the train's pool, and this body's own bar catches up on the next
+    // tick. Everything above this line still applies to the CAR that was
+    // hit — its plating, the soak on it, the cap over it — because that is
+    // what the shot actually struck; only where the remainder is spent
+    // moves.
+    const cross = this.ucross[i];
+    if (cross >= 0) {
+      if (amount > 0) this.drainCrosser(cross, amount);
+    } else if (amount > 0) {
       this.uhp[i] -= amount;
       // TERMINAL PROTOCOL (relics.ts): a body knocked to the last fraction
       // of its own pool does not get to spend it. Zeroing the health is

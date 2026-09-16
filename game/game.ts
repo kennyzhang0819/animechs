@@ -590,7 +590,37 @@ const MM_STRUCT_PX = 4.5;
  * its own colour and on top of everything — the nose of the train, which
  * is the end a player is trying to get in front of.
  */
-const MM_CROSS_PX = 7;
+const MM_CROSS_PX = 12;
+
+/**
+ * THE ARRIVAL PING — what the corner does for the first two and a half
+ * seconds of a train's life, and it is StarCraft's minimap alert with the
+ * serial numbers filed off because that is the thing it has to be.
+ *
+ * WHY A STATIC ICON IS NOT ENOUGH. A Borer enters at the rim, on a road
+ * nowhere near the core, while the wave the player is actually looking at
+ * is walking into their guns. A mark that is simply THERE is a mark that
+ * gets noticed when somebody happens to glance down — and the whole
+ * mission is a question about spending money BEFORE the train arrives, so
+ * a glance thirty seconds late is the same as no glance at all. Motion is
+ * the only thing the eye picks up outside the fovea, so the mark moves:
+ * three rings, each starting at three and a half times the icon and
+ * closing onto it, which reads across a whole screen as "something
+ * happened over here".
+ *
+ * IT IS A RING AND NOT A BLOB, for the reason SC2's is: a filled shape
+ * that big covers the ground it is pointing at, and the player looks down
+ * to find the thing and sees the marker instead. A ring closing on the
+ * icon points at it twice — once by moving, once by ending.
+ *
+ * THREE PULSES AND THEN IT STOPS. A ping that never ends is furniture
+ * within a minute, and the icon that is left behind is the thing the
+ * player is meant to read for the next four minutes.
+ */
+const MM_PING_SECONDS = 2.5;
+const MM_PING_PULSES = 3;
+/** how much bigger than the icon each ring starts */
+const MM_PING_SCALE = 3.5;
 /**
  * THE MINIMAP'S MARKS, PACKED A PIXEL AT A TIME instead of a byte.
  *
@@ -879,6 +909,21 @@ export class Game {
   private mmPx32: Uint32Array | null = null;
   /** the minimap's CSS width in px and the countdown to measuring it
    *  again (MM_CSS_EVERY) — what a dilated mark's size is worked out from */
+  /**
+   * WHEN EACH TRAIN'S HEAD FIRST APPEARED ON THE BOARD, by spawn id — the
+   * clock the arrival ping runs off (MM_PING_SECONDS, drawMinimap).
+   *
+   * Keyed on `uid` and not on the slot, because a slot is recycled the
+   * moment anything dies and a recycled slot would re-ping a train that
+   * has been walking for three minutes. It is pruned against the heads
+   * actually on the field each frame, so a destroyed train's entry goes
+   * with it rather than living as long as the run does.
+   *
+   * The clock is the SIM'S, so a paused game holds the ping where it is
+   * instead of spending it behind a menu.
+   */
+  private readonly mmPing = new Map<number, number>();
+  private readonly mmPingSeen = new Set<number>();
   private mmCssW = 0;
   private mmCssTick = 0;
   private mmDrag = false;
@@ -3045,10 +3090,30 @@ export class Game {
         if (x1 > x0) px.fill(col, y * cols + x0, y * cols + x1);
       }
     };
+    /** the same diamond as an OUTLINE — `t` px of edge and nothing inside */
+    const diamondRing = (gx: number, gy: number, r: number, t: number, col: number): void => {
+      for (let dy = -r; dy <= r; dy++) {
+        const y = gy + dy;
+        if (y < 0 || y >= rows) continue;
+        const half = r - (dy < 0 ? -dy : dy);
+        const row = y * cols;
+        // the two tips are solid: at |dy| within t of the point there is
+        // no inside left to leave out
+        if (half <= t) {
+          const x0 = Math.max(0, gx - half), x1 = Math.min(cols, gx + half + 1);
+          if (x1 > x0) px.fill(col, row + x0, row + x1);
+          continue;
+        }
+        const l0 = Math.max(0, gx - half), l1 = Math.min(cols, gx - half + t);
+        if (l1 > l0) px.fill(col, row + l0, row + l1);
+        const r0 = Math.max(0, gx + half - t + 1), r1 = Math.min(cols, gx + half + 1);
+        if (r1 > r0) px.fill(col, row + r0, row + r1);
+      }
+    };
     // the swarm red, and everything of ours white, so the map answers
     // "us or them" at a glance
     // instead of asking for three colours to be told apart at a pixel each
-    const { upx, upy, ukind, n } = view;
+    const { upx, upy, ukind, uid, n } = view;
     const uoff = (unitSz - 1) >> 1;
     for (let i = 0; i < n; i++) {
       const gx = (upx[i] / CELL) | 0, gy = (upy[i] / CELL) | 0;
@@ -3076,12 +3141,60 @@ export class Game {
     // MM_CROSS_PX is the mark's WIDTH and the diamond takes a radius, so
     // the half is not a fudge — a diamond of r spans 2r + 1 cells
     const crossR = Math.max(2, Math.round(MM_CROSS_PX / perCell / 2));
+    const now = view.time;
+    this.mmPingSeen.clear();
     for (let i = 0; i < n; i++) {
       if (ukind[i] !== WORM_HEAD_ID) continue;
       const gx = (upx[i] / CELL) | 0, gy = (upy[i] / CELL) | 0;
+      // A TRAIN SPAWNS OFF THE WEST RIM and crawls in (missions.ts — the
+      // run-up is a hundred cells of road outside the map), so the head
+      // exists for a moment before there is anywhere to draw it. The ping
+      // starts when it is ON THE BOARD, not when it is made: a ring
+      // pulsing half off the canvas is a ring nobody reads, and the alert
+      // is worth spending at the moment the thing becomes real.
+      if (gx < 0 || gy < 0 || gx >= cols || gy >= rows) continue;
+      const id = uid[i];
+      this.mmPingSeen.add(id);
+      let since = this.mmPing.get(id);
+      if (since === undefined) {
+        since = now;
+        this.mmPing.set(id, now);
+      }
+      const age = now - since;
+      if (age >= 0 && age < MM_PING_SECONDS) {
+        // three rings, each closing from MM_PING_SCALE onto the icon. The
+        // square on the remaining fraction is what makes a ring spend most
+        // of its life NEAR the icon and cross the outside fast, which is
+        // the shape SC2's has and the reason it reads as an arrival rather
+        // than as a throb
+        const beat = MM_PING_SECONDS / MM_PING_PULSES;
+        const phase = (age % beat) / beat;
+        const left = 1 - phase;
+        const ringR = Math.round(crossR * (1 + (MM_PING_SCALE - 1) * left * left));
+        // THE RING IS PULLED BACK ONTO THE CANVAS, the icon is not.
+        //
+        // A Borer enters at the west rim, which is where the alert is
+        // worth the most and where a ring three and a half times the icon
+        // is half cut off by the edge it is standing on — the first and
+        // biggest pulse, the one that has to catch the eye, was the one
+        // losing the most of itself. So the ring is clamped inside the
+        // map by its own radius and the ICON stays exactly where the head
+        // is: the alert is whole, and because the clamp relaxes as the
+        // ring closes, the ring slides onto the icon as it shrinks and
+        // points at it on the way. It is what SC2 does with an alert that
+        // fires off the edge of its minimap, for the same reason.
+        const rx = ringR + 1 > cols - 1 - ringR ? gx : clamp(gx, ringR + 1, cols - 2 - ringR);
+        const ry = ringR + 1 > rows - 1 - ringR ? gy : clamp(gy, ringR + 1, rows - 2 - ringR);
+        diamondRing(rx, ry, ringR + 1, 2, MM_CROSS_EDGE);
+        diamondRing(rx, ry, ringR, 2, MM_CROSS);
+      }
       diamond(gx, gy, crossR, MM_CROSS_EDGE);
       diamond(gx, gy, crossR - 1, MM_CROSS);
     }
+    // the trains that are no longer on the field let go of their clocks,
+    // so a run does not carry an entry per Borer it has ever launched
+    if (this.mmPing.size > this.mmPingSeen.size)
+      for (const id of this.mmPing.keys()) if (!this.mmPingSeen.has(id)) this.mmPing.delete(id);
     lc.putImageData(img, 0, 0);
 
     c.setTransform(1, 0, 0, 1, 0, 0);
