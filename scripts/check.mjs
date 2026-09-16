@@ -1038,7 +1038,10 @@ if (FULL) {
     const top = p.phases.filter((q) => q.ms > 0).sort((a, b) => b.ms - a.ms)[0];
     // rounds IN FLIGHT — an instant weapon (a beam, a flame, speed 0) never
     // has one, so a kind can be firing flat out and read as 0 shots here
-    const why = `${Math.round(c.shots + c.hostileShots).toLocaleString("en-US")} shots in flight, ${c.fx} fx` +
+    // ...and the bodies LIVE at the clock, not the count that landed: a
+    // crowd folds into stacks where it squeezes (Sim.mergeSqueezed)
+    const why = `${c.bodies.toLocaleString("en-US")} bodies, ` +
+      `${Math.round(c.shots + c.hostileShots).toLocaleString("en-US")} shots in flight, ${c.fx} fx` +
       (top ? `; ${top.name} ${top.ms.toFixed(1)}ms` : "");
     const slow = step > budget
       ? `${step.toFixed(1)}ms a step (p95 ${p95.toFixed(1)}) of ${budget.toFixed(1)} — ${why}`
