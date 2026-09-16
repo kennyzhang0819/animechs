@@ -80,16 +80,31 @@ import { KING_TIER, king, kingGeom } from "./kingArt";
  *     wide enough that a mip-3 texel at its edge reads only its own
  *     transparent margin (MIP_MARGIN), sized from the art it declares.
  *
- * The sheet is 2560x4096. A WebGL2 context only has to guarantee
+ * The sheet is 3584x4096. A WebGL2 context only has to guarantee
  * MAX_TEXTURE_SIZE 2048 and every device that runs the game clears 4096,
  * so 4096 is the longest side allowed. If the roster outgrows it, the
- * packer throws at import with the name of the cell that did not fit,
- * and the one thing to change is ATLAS_W: every UV is a fraction of the
- * sheet, so a wider sheet moves nothing anyone can see. It went from 2048
- * to 2560 when each water kind grew from one painted block to three (see
- * FLOOR_CELLS) and the boxer's cell no longer fit.
+ * packer throws with the name of the cell that did not fit and how full
+ * the sheet was when it gave up, and the one thing to change is ATLAS_W:
+ * every UV is a fraction of the sheet, so a wider sheet moves nothing
+ * anyone can see. It went from 2048 to 2560 when each water kind grew
+ * from one painted block to three (see FLOOR_CELLS) and the boxer's cell
+ * no longer fit.
+ *
+ * IT WENT FROM 2560 TO 3584 WHEN THE KETTLES LANDED, and the jump is two
+ * steps rather than one on purpose. The roster's cells are 9.2M px and a
+ * 2560 sheet is 10.5M, so the packer was being asked for 88% PACKING
+ * DENSITY — which MaxRects cannot reach on cells that run from 16px
+ * bullets to a 512px eagle, whatever order they arrive in. It did not
+ * fail because the sheet was full; it failed because what was left was
+ * in the wrong shapes, which is why the last thing packed (a 69x78 team
+ * cell) is the one that threw and why nothing before it noticed.
+ *
+ * 3072 fits today at 73% and leaves four hundred rows spare — one more
+ * family and it is back here. 3584 sits at 63%, which is inside what this
+ * packer actually achieves, and 4096 is still in hand after it. The cost
+ * is VRAM and it is linear: 42MB of texture became 59, 78 with mipmaps.
  */
-const ATLAS_W = 2560;
+const ATLAS_W = 3584;
 const ATLAS_H = 4096;
 const TAU = Math.PI * 2;
 
@@ -183,8 +198,21 @@ function place(name: string, w: number, h: number): Rect {
       bl = l;
     }
   }
-  if (best < 0)
-    throw new Error(`atlas is full: no room for ${name} (${w}x${h} with its gutter) — raise ATLAS_W in game/atlas.ts`);
+  if (best < 0) {
+    // WHAT THE SHEET LOOKED LIKE WHEN IT GAVE UP, because "full" is
+    // almost never the reason. This packer fails on SHAPE long before it
+    // fails on area — see the note on ATLAS_W — and the two are fixed by
+    // the same dial but tell you very different things about how much
+    // room the next family has. An error that only names the cell sends
+    // the reader to count sprites; one that says "63% used, biggest free
+    // rect 40x2100" says it in a line.
+    const big = FREE.reduce((a, f) => (f.w * f.h > a.w * a.h ? f : a), { x: 0, y: 0, w: 0, h: 0 });
+    throw new Error(
+      `atlas is full: no room for ${name} (${w}x${h} with its gutter) — ` +
+        `${atlasFill().cells} cells fill ${atlasFill().pct}% of ${ATLAS_W}x${ATLAS_H}, ` +
+        `biggest free rect ${big.w}x${big.h}. Raise ATLAS_W in game/atlas.ts (ceiling 4096).`,
+    );
+  }
   const r: Rect = { x: FREE[best].x, y: FREE[best].y, w, h };
   const next: Rect[] = [];
   for (const f of FREE) {
@@ -212,6 +240,35 @@ function place(name: string, w: number, h: number): Rect {
   }
   return r;
 }
+
+/**
+ * HOW FULL THE SHEET IS RIGHT NOW — the cells handed out, the px they
+ * cover and that as a percentage of the whole.
+ *
+ * It is exported because the ONE THING that can overflow this sheet is
+ * invisible to `npm run check`: the team cells are cut to art that has to
+ * be drawn first, so they are reserved inside the pack pass, and the pack
+ * pass needs a canvas that Node does not have (see the `atlas` stage in
+ * scripts/check.mjs). What Node CAN run is everything declared at module
+ * scope, which is most of the sheet — so the check reads this after the
+ * import and prints the trend. A gate cannot catch the last cell; a
+ * number that says 85% on the run before is what would have.
+ */
+export function atlasFill(): { cells: number; px: number; pct: number } {
+  let px = 0;
+  for (const cell of CELLS.values()) px += cell.w * cell.h;
+  return { cells: CELLS.size, px, pct: +((100 * px) / (ATLAS_W * ATLAS_H)).toFixed(1) };
+}
+
+/** the biggest rectangle the packer could still hand out — the number that
+ *  actually predicts the next failure, since this one fails on shape */
+export function atlasLargestFree(): { w: number; h: number } {
+  const big = FREE.reduce((a, f) => (f.w * f.h > a.w * a.h ? f : a), { x: 0, y: 0, w: 0, h: 0 });
+  return { w: big.w, h: big.h };
+}
+
+/** the sheet, for anything that has to print it */
+export const ATLAS_SIZE: readonly [number, number] = [ATLAS_W, ATLAS_H];
 
 /**
  * A CELL ON THE SHEET, `w` x `h` sheet px, as the UV rect the renderer
@@ -3629,7 +3686,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
  *
  * Packing is not cheap — it decodes every sprite, runs the EPX antialias
  * pass over each in JavaScript, outlines the units, and composites the lot
- * into a 2048x4096 canvas — and it depends on nothing but the sprite files,
+ * into a 3584x4096 canvas — and it depends on nothing but the sprite files,
  * so a second call can only produce a byte-identical sheet. It used to run
  * on every Game.create, which meant paying the whole cost again on every
  * level start. Now the first caller pays and everyone after shares.

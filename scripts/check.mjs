@@ -135,7 +135,7 @@ const transpileJob = stale
       "tsc",
       // the entry points; everything else the checks touch is pulled in
       // behind these through their own imports
-      "game/sim.ts", "game/ladder.ts", "game/track.ts", "game/foundryArt.ts",
+      "game/sim.ts", "game/ladder.ts", "game/track.ts", "game/foundryArt.ts", "game/atlas.ts",
       "--outDir", DIST, "--module", "commonjs", "--target", "es2022",
       "--moduleResolution", "node", "--esModuleInterop", "--skipLibCheck",
       // the transpile is for RUNNING the sim, not for judging it: the
@@ -293,6 +293,50 @@ const artMissing = artWanted
   .filter(([, url]) => !existsSync(drawingFor(url)))
   .map(([what, url]) => `${what}: ${url} has no ${path.relative(ROOT, drawingFor(url)).replace(/\\/g, "/")}`);
 report("art", artMissing, `${artWanted.length} drawings`);
+
+// ---------- atlas: how much room is left on the sheet ----------
+
+// THE SHEET IS THE ONE THING THIS CHECK CANNOT FULLY RUN, and the outage
+// that put this stage here is the reason to say so out loud rather than
+// leave the gap where somebody has to rediscover it.
+//
+// Importing game/atlas.ts runs the packer over every cell declared at
+// module scope — the floors, the walls, the bullets, every hull and every
+// part of one — which is the great majority of the sheet, and it is pure
+// arithmetic that Node runs happily. What it does NOT run is the last
+// step: a body's TEAM CELL is cut to art that has to be drawn before its
+// size is known, so those are reserved inside buildAtlas, which needs a
+// canvas. Node has none. The Kettles landed, the sheet went past what
+// MaxRects could pack, and the cell that threw was a team cell — the one
+// class of cell no gate could see — so `check` was green and the game
+// would not boot.
+//
+// SO THIS IS A TREND LINE, NOT A GATE. It prints how full the static pass
+// leaves the sheet and how big the largest free rectangle still is, and
+// it fails only on the thing it can actually prove: that the static pass
+// itself did not overflow. A packer that fails on SHAPE cannot be
+// predicted from an area figure (at 2560 the sheet was 85% spoken for and
+// had 1.5M px free — in the wrong shapes), so what this buys is a number
+// that climbs in front of you run after run instead of a cliff.
+const atlasProblems = [];
+let atlasDetail = "";
+try {
+  const A = R("atlas.js");
+  const fill = A.atlasFill();
+  const room = A.atlasLargestFree();
+  atlasDetail =
+    `${fill.cells} static cells, ${fill.pct}% of ${A.ATLAS_SIZE[0]}x${A.ATLAS_SIZE[1]}` +
+    `, biggest free rect ${room.w}x${room.h}` +
+    ` (team cells are packed at runtime and are NOT counted — see this stage)`;
+  if (fill.pct > 80)
+    atlasProblems.push(
+      `the static pass alone fills ${fill.pct}% of the sheet; the team cells go on top of that at load. ` +
+        `Raise ATLAS_W in game/atlas.ts before it throws in the browser (ceiling 4096)`,
+    );
+} catch (e) {
+  atlasProblems.push(`game/atlas.ts did not import: ${e.message}`);
+}
+report("atlas", atlasProblems, atlasDetail);
 
 // ---------- cells: a body whose TEAM CELL is empty takes the game down ----------
 
