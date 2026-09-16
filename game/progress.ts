@@ -1,4 +1,4 @@
-import { cleanFamilies, WORLD, WORLDS, type FamilyKey } from "./levels";
+import { cleanFamilies, VISIBLE_WORLDS, WORLD, WORLDS, type FamilyKey } from "./levels";
 import { cleanMutations, type MutationId } from "./mutation";
 import { tierXpBonus, TOP_TIER } from "./ladder";
 import { ADMIN_ENABLED } from "./env";
@@ -350,10 +350,13 @@ function readDifficulty(p: { difficulty?: unknown }): number | undefined {
     : undefined;
 }
 
-/** the remembered map, if it is still a world; anything else reads Random */
+/** the remembered map, if it is still a world ON THE MENU; anything else
+ *  — a renamed id, or one since hidden (levels.ts HIDDEN_WORLD_IDS) —
+ *  reads Random, so a save cannot restore a pick the picker would not
+ *  offer today */
 function readMapPick(p: { map?: unknown }): string | undefined {
   const m = p.map;
-  return typeof m === "string" && WORLDS.some((w) => w.id === m) ? m : undefined;
+  return typeof m === "string" && VISIBLE_WORLDS.some((w) => w.id === m) ? m : undefined;
 }
 
 /** the remembered mode; anything the game does not recognise reads regular */
@@ -536,7 +539,21 @@ export const bestClearOn = (p: Progress, worldId: string): number =>
  * track opens it at, or null when the map is open. Returns the level
  * rather than a boolean because every caller that cares needs to SAY it.
  */
+/**
+ * EVERY MAP IS PLAYABLE FROM THE FIRST RUN WHILE THE BOARDS ARE BEING
+ * LOOKED AT. The track still PROMISES them where it always did (track.ts
+ * PLACED, and the progress screen reads the same), it simply does not bar
+ * any of them: seventeen boards went in at once and the point of having
+ * them is to sit down on each one, not to grind eight levels first.
+ *
+ * Flip this back to false and the gates are exactly what they were —
+ * nothing else moved. What is off the MENU entirely is a different
+ * question and lives in one list (levels.ts HIDDEN_WORLD_IDS).
+ */
+const EVERY_MAP_OPEN = true;
+
 export const worldLock = (p: Progress, worldId: string): { level: number } | null => {
+  if (EVERY_MAP_OPEN) return null;
   const level = worldUnlockLevel(worldId);
   return effectiveLevel(p) >= level ? null : { level };
 };

@@ -1,5 +1,5 @@
 import { targetingLine, TOWER_DESC, TOWERS } from "./constants";
-import { WORLDS } from "./levels";
+import { VISIBLE_WORLDS, WORLDS } from "./levels";
 import { MODS, modBlurb, modDef, modName, type ModId } from "./mods";
 import { RELICS, relicDef, type RelicId } from "./relics";
 import { MUTATIONS, mutationById, mutationCostOf, type MutationId } from "./mutation";
@@ -551,7 +551,9 @@ export function rewardsAt(level: number): Reward[] {
   for (const id of TURRETS_DEALT.get(level) ?? []) out.push({ kind: "turret", id });
   if (level === 1) {
     for (const id of STARTING_MODS) out.push({ kind: "mod", id });
-    for (const w of WORLDS)
+    // the VISIBLE table: a map nobody may pick is not a reward, and a
+    // progress screen that promises one is lying about what is in the game
+    for (const w of VISIBLE_WORLDS)
       if (worldUnlockLevel(w.id) === 1) out.push({ kind: "world", worldId: w.id });
   }
   for (const id of MOD_UNLOCKS[level] ?? []) out.push({ kind: "mod", id });
@@ -763,7 +765,7 @@ function rarityRank(reward: Reward): number {
 export function unlocksOf(kind: UnlockKind): UnlockEntry[] {
   const out: UnlockEntry[] = [];
   if (kind === "world")
-    for (const w of WORLDS)
+    for (const w of VISIBLE_WORLDS)
       out.push({ reward: { kind: "world", worldId: w.id }, level: worldUnlockLevel(w.id) });
   if (kind === "turret")
     for (const k of FIELDED_KINDS)

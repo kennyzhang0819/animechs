@@ -2,12 +2,12 @@
 
 This is the direction the enemy art settled on after the animal trial
 (behind `ANIMAL_ART` in `game/animalFlag.ts`), written down so the next
-family is drawn to the same rules without re-running the trial. All eight
+family is drawn to the same rules without re-running the trial. All nine
 families are on the turrets' grammar now (section 1b): the Ironhide rhino
 in `game/ironhideArt.ts`, the Starhart stag, Stoop bat, Dartback poison frog,
 Skate manta and Livewire narwhal in `game/familyArt.ts`, the Tusker
 elephant in `game/tuskerArt.ts`, the Grapnel starfish in
-`game/grapnelArt.ts`, on the turret
+`game/grapnelArt.ts`, the Kettle vulture in `game/kettleArt.ts`, on the turret
 engine in `game/turretArt.ts`, with what they share in
 `game/animalArt.ts` and the packing in `game/atlas.ts`.
 
@@ -299,6 +299,7 @@ footprint gets.
 | Livewire, the narwhal | `game/familyArt.ts` | body and two flippers | 44, 56, 80, 176, 232 |
 | Tusker, the elephant | `game/tuskerArt.ts` | mech to T3, four legs from T4 | 56, 72, 96, 136, 176 |
 | Grapnel, the starfish | `game/grapnelArt.ts` | mech at every tier, and the leg cell is the rowing arms | 36, 52, 72, 116, 148 |
+| Kettle, the vulture | `game/kettleArt.ts` | body and two wings, one chord out to the wrist and slotted into fingers | 40, 56, 88, 168, 216 |
 | Sovereign, the sea eagle (the BOSS, one body) | `game/kingArt.ts` | body and two wings | 512 |
 | Borer, the crosser (the MISSION's, three pieces) | `game/wormArt.ts` | none — one flat quad a piece, shown at 1.5x | 96, 96, 96 |
 
@@ -396,6 +397,16 @@ kind, behind the same flag.
 art. Turret fire aimed at a silhouette now hits it.
 
 ## 3. Adding a family
+
+A worked example of step 1 that has not been taken any further:
+[docs/air-concepts.md](air-concepts.md) draws three candidate flyers for
+a second air family (`game/skyConceptArt.ts`, `npm run gen:air`) and says
+what each one would cost to build. It is also where four passes' worth of
+what goes wrong with a BIRD on this grid is written down — the short
+version being that the Stoop's wing is nearly twice as deep as it is long,
+which is right for a bat and wrong for everything with feathers, and a
+drawing that fills the box with body and hangs a deep slab off each side
+comes out a bottle with wings every time.
 
 1. Pick the animal and draw the T5 first on the turret engine, facing
    up, left half only, on its hitbox grid. If it does not read as that

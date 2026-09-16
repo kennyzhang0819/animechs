@@ -754,6 +754,33 @@ const venomOrb = (size: number, o: { trail?: boolean } = {}): ShotLook => ({
  * a flash at the muzzle does not; the reload, damage and range are the
  * same numbers they were.
  */
+/**
+ * THE KETTLES' WING PODS — the one weapon the vultures carry, and the one
+ * kind of row this family has. A mirrored PAIR on every tier, mounted
+ * where the gunmetal strap runs out along each arm (game/kettleArt.ts),
+ * firing the same instant round the copper guns above do in the family's
+ * own rust.
+ *
+ * IT IS A PLAIN GUN ON PURPOSE. The Kettles went on the board with no
+ * ability of any kind (levels.ts, the Kettles' stat block) — no aura, no
+ * charge, no field — so what a tier buys here is what a tier buys on the
+ * ground mechs: CALIBRE and REACH, and nothing that needs explaining.
+ * A body that arrives at the core has to be able to do something to it,
+ * and this is the smallest thing that is true of.
+ */
+const pods = (name: string, reload: number, damage: number, reach: number): UnitWeapon => ({
+  name,
+  reload: t(reload),
+  mounts: 2,
+  damage,
+  range: u(reach),
+  speed: 0,
+  fx: "gun",
+  shoot: FxKind.ShootSmall,
+  smoke: FxKind.SmokeSmall,
+  shootColor: PAL.carrion,
+});
+
 const copper = (name: string, reload: number, mounts: number, damage = 9): UnitWeapon => ({
   name,
   reload: t(reload),
@@ -1357,6 +1384,24 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   grapnel3: [],
   grapnel4: [],
   grapnel5: [],
+  // ---- the Kettles, the vulture -------------------------------------
+  //
+  // THE ONLY THING THIS FAMILY DOES. A kettle does not dive and does not
+  // go off (levels.ts): it crosses the board, holds at the core's edge
+  // and fires these, so the reach has to clear the hover — a flyer parks
+  // about a tile and a half off the core's own edge — at every tier, and
+  // the runt's twenty-eight units is already well past it.
+  //
+  // The ladder is the ground mechs' (see the ironhide1 row): one weapon
+  // class, five tiers, and what a tier buys is calibre and reach. Eighteen
+  // a round to a hundred and ten, on a pair of mounts, at a rate that
+  // barely moves — the apex is not firing faster, it is hitting harder
+  // from further out.
+  kettle1: [pods("kettle1-pod", 45, 18, 28)],
+  kettle2: [pods("kettle2-pod", 42, 30, 32)],
+  kettle3: [pods("kettle3-pod", 40, 48, 38)],
+  kettle4: [pods("kettle4-pod", 38, 76, 46)],
+  kettle5: [pods("kettle5-pod", 36, 110, 54)],
   // THE CROSSER CARRIES NOTHING, and that is the archetype rather than a
   // gap in the table (levels.ts, the worm block): a Borer walks its road
   // and never looks at the base or at anything the player built beside

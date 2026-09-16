@@ -332,14 +332,24 @@ stale tab or a cached bundle looks exactly like a fix not working.
   take. Packed over the stock cells while `ANIMAL_ART`
   (`game/animalFlag.ts`) is on. The style, the sizing rule and how to
   add a family are in [docs/unit-art.md](docs/unit-art.md)
-- `game/ironhideArt.ts`, `game/familyArt.ts`, `game/tuskerArt.ts` — the
-  seven families on the
+- `game/skyConceptArt.ts` — DRAWINGS AND NOTHING ELSE: the two candidates
+  for a second air family that were NOT built (a goose and an albatross)
+  on the wing rig, with the gimmick each one is for. No kind ids, no
+  cells, no stats — and `npm run gen:air` renders the sheets into
+  `docs/air-concepts/`. The third candidate, the vulture, was picked and
+  shipped as the Kettles (`game/kettleArt.ts`). The brief, the three
+  answers and what each would cost to build are in
+  [docs/air-concepts.md](docs/air-concepts.md)
+- `game/ironhideArt.ts`, `game/familyArt.ts`, `game/tuskerArt.ts`,
+  `game/grapnelArt.ts`, `game/kettleArt.ts` — the
+  nine families on the
   turrets' engine and grammar: paired colours shaded dark-left
   light-right, nothing under four pixels, every body drawn at its hitbox
   on 32 px a tile. The rhino in the first file, the stag, bat, poison frog,
-  manta and narwhal in the second, the elephant in the third — the one
-  family with no Mindustry hull under it, drawn into cells of its own at
-  boxes nearly twice everyone else's
+  manta and narwhal in the second, the elephant in the third, the
+  starfish in the fourth and the vulture in the fifth — the three
+  families with no Mindustry hull under them, drawn into cells of their
+  own
 - `game/turretArt.ts` — the player's turrets as FOUNDRY, one gunmetal
   plating with a silhouette a kind and an accent per ammo, generated the
   same way and packed over the stock turret cells while `FOUNDRY_ART`

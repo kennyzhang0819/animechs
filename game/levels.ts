@@ -6,7 +6,7 @@ import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // import must never become a value one or the two files form a cycle
 import type { MutationId } from "./mutation";
 
-export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "wormhead", "wormcar", "wormtail"] as const;
+export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -53,11 +53,16 @@ export const UNIT_ID: Record<UnitKind, number> = {
   grapnel3: 38,
   grapnel4: 39,
   grapnel5: 40,
+  kettle1: 41,
+  kettle2: 42,
+  kettle3: 43,
+  kettle4: 44,
+  kettle5: 45,
   // the crosser's three pieces (see WORM_CHAIN) — no family, no tier
   // ladder, and never rolled into a wave
-  wormhead: 41,
-  wormcar: 42,
-  wormtail: 43,
+  wormhead: 46,
+  wormcar: 47,
+  wormtail: 48,
 };
 
 /**
@@ -96,6 +101,11 @@ export const FAMILY_NAMES = {
   // the eighth family, and the second with no upstream hull under it: the
   // starfish (game/grapnelArt.ts), named for the thing on its back
   grapnel: { name: "Grapnels", body: "Grapnel" },
+  // the ninth line, the third with no upstream hull under it, and the
+  // SECOND thing in the sky: the vulture (game/kettleArt.ts), named for
+  // what a flock of them wheeling is called — a flight word like the
+  // bat's Stoop, and not a proper noun
+  kettle: { name: "Kettles", body: "Kettle" },
 } as const satisfies Record<string, { name: string; body: string }>;
 
 /**
@@ -2088,6 +2098,111 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     starburst: { chance: 0.3, cooldown: 2.4, merge: 10 },
   },
 
+  // ── THE KETTLES, the vulture (game/kettleArt.ts) ──────────────────────
+  //
+  // THE SECOND THING IN THE SKY, AND THE FIRST THAT ARRIVES. The Skyfall
+  // bombers are five bodies that ARE bombs: each picks a structure inside
+  // its seek reach, leaves the route, dives it and goes off on contact
+  // (`payload`), and goes off the same way wherever it is shot down. That
+  // makes the whole family answerable ANYWHERE — a stoop killed over the
+  // outer wall has spent itself on the outer wall, and the line behind it
+  // is never tested.
+  //
+  // A KETTLE CARRIES NO CHARGE. It does not dive, it does not pick a
+  // building, it does not go off when it dies. It flies the air field
+  // straight at the core over every gun on the board, holds at the core's
+  // edge and works on it with the pods under its wings (weapons.ts) until
+  // one of them is gone. The whole of what the board has to do is stop it
+  // ON THE WAY, which is the one thing the sky has never asked for here.
+  //
+  // AND IT HAS NOTHING ELSE. No aura, no field, no charge, no veterancy,
+  // no blink, no cloak, no death burst — deliberately, and this stat block
+  // is as short as it is for that reason. The family was picked off a
+  // concept sheet (docs/air-concepts.md) for a gimmick it does NOT yet
+  // carry: the carrion mechanic, where every body that dies under a kettle
+  // feeds it. The drawing has the crop for it and the sim has nothing, so
+  // what is on the board today is a plain flyer with a gun, which is a
+  // thing this roster did not have and is worth fielding on its own.
+  //
+  // THE PACE IS A SOARER'S: 5.5 tiles/s down to 3.5, a hair under the
+  // Stoop's 8-to-4 at the light end and level with it at the heavy. The
+  // bomber is racing the guns to a drop and this one is not racing
+  // anything — it has to cross the whole board either way, so what it
+  // trades its speed for is the health to still be flying at the end of
+  // the crossing.
+  //
+  // THE HEALTH IS THE MIDDLE OF THE ROSTER, above the bombers at every
+  // rung and under the walls. A stoop5 is 14,000 on the softest plate in
+  // the game because it only has to reach one building; a kettle5 has to
+  // reach the core and then STAY there, so it is 15,000 behind armour 16
+  // — still nowhere near the tusker5's 25,000 and 104, because a body
+  // that ignores the maze must never also be the body that ignores the
+  // guns.
+  //
+  // THESE ARE A FIRST CUT. The shape is argued above; the numbers want a
+  // pass on the balance page and a playtest before anyone calls them
+  // settled (README, the note on who owns balance).
+  //
+  // rotateSpeed falls hard up the tree, as it does on the bombers: a
+  // heavy flyer that snaps onto a new heading reads as weightless, and
+  // the apex at 1.3 visibly swings round.
+  //
+  // The boxes are the drawings' own, which on this grammar is the same
+  // statement twice: UR x 1.25 / 1.75 / 2.75 / 5.25 / 6.75 is the 40, 56,
+  // 88, 168 and 216 px grids kettleArt.ts draws on at 32 px a tile. The
+  // apex is wide — under the stoop5's 7.25 and over everything else — and
+  // that is the one thing a player is meant to see coming.
+  kettle1: {
+    hp: 220,
+    speed: 5.5 * CELL,
+    armor: 2,
+    radius: UR * 1.25,
+    tier: 1,
+    drag: 0.03,
+    rotateSpeed: 3.5,
+    flying: true,
+  },
+  kettle2: {
+    hp: 760,
+    speed: 5 * CELL,
+    armor: 4,
+    radius: UR * 1.75,
+    tier: 2,
+    drag: 0.03,
+    rotateSpeed: 3,
+    flying: true,
+  },
+  kettle3: {
+    hp: 1900,
+    speed: 4.5 * CELL,
+    armor: 7,
+    radius: UR * 2.75,
+    tier: 3,
+    drag: 0.035,
+    rotateSpeed: 2.4,
+    flying: true,
+  },
+  kettle4: {
+    hp: 7200,
+    speed: 4 * CELL,
+    armor: 13,
+    radius: UR * 5.25,
+    tier: 4,
+    drag: 0.04,
+    rotateSpeed: 1.8,
+    flying: true,
+  },
+  kettle5: {
+    hp: 15000,
+    speed: 3.5 * CELL,
+    armor: 16,
+    radius: UR * 6.75,
+    tier: 5,
+    drag: 0.04,
+    rotateSpeed: 1.3,
+    flying: true,
+  },
+
   // ---- THE CROSSER: ONE WORM, IN TWENTY PIECES ----
   //
   // The train that walks Coldline's two roads (missions.ts) while nothing
@@ -2270,6 +2385,8 @@ export const UNIT_TREES = [
   { key: "tusker", name: FAMILY_NAMES.tusker.name, kinds: ["tusker1", "tusker2", "tusker3", "tusker4", "tusker5"] },
   // the eighth row: the crawlers, on the walkers' layer
   { key: "grapnel", name: FAMILY_NAMES.grapnel.name, kinds: ["grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5"] },
+  // the ninth row: the second air line, on the flyers' layer
+  { key: "kettle", name: FAMILY_NAMES.kettle.name, kinds: ["kettle1", "kettle2", "kettle3", "kettle4", "kettle5"] },
   // not an upgrade path: the boss row holds the kinds that arrive as an
   // event rather than a stream, so its slots do not read as tiers
   { key: "boss", name: BOSS_NAME, kinds: ["boss"] },
@@ -2501,6 +2618,20 @@ export const FAMILIES = [
   // spacing, so one death burst cannot take a patch.
   { key: "grapnel", name: FAMILY_NAMES.grapnel.name, layer: "ground", icon: "grapnel1",
     kinds: ["grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5"] },
+  // THE KETTLES: the vultures — kettle1 to kettle5 — the second thing in
+  // the sky and the first that does not blow itself up. A bomber spends
+  // itself on the first structure it reaches, so the Skyfall line is
+  // answered by killing it ANYWHERE; a kettle carries no charge, ignores
+  // every gun it passes over, flies the straight line to the core and
+  // parks on it, firing. Wing pods at every tier and nothing else: no
+  // aura, no field, no charge, no death burst (UNIT_STATS below).
+  //
+  // WHAT IT POSES: the whole crossing is the fight, and nothing about the
+  // board's SHAPE takes part in it. The answer is reach that points up,
+  // far enough out that a flight is dead before the core is in its range
+  // — an AA line hugging the core is an AA line being shot at.
+  { key: "kettle", name: FAMILY_NAMES.kettle.name, layer: "air", icon: "kettle1",
+    kinds: ["kettle1", "kettle2", "kettle3", "kettle4", "kettle5"] },
 ] as const satisfies readonly {
   key: string;
   name: string;
@@ -2530,6 +2661,7 @@ export const FAMILY_ACCENT: Readonly<Record<FamilyKey, RGB>> = {
   navalSupport: PAL.wraith,
   tusker: PAL.tusk,
   grapnel: PAL.hook,
+  kettle: PAL.carrion,
 };
 
 /**
@@ -2554,7 +2686,7 @@ export const FAMILY_ACCENT: Readonly<Record<FamilyKey, RGB>> = {
  * empty sprites. They sit on the shelf instead, which keeps the promise
  * exact: off, the game is the six lines it shipped with.
  */
-export const SHELVED_FAMILIES: readonly FamilyKey[] = ANIMAL_ART ? [] : ["tusker", "grapnel"];
+export const SHELVED_FAMILIES: readonly FamilyKey[] = ANIMAL_ART ? [] : ["tusker", "grapnel", "kettle"];
 
 /** the families in play: the table, less the shelf */
 export const ACTIVE_FAMILIES: readonly FamilyKey[] = FAMILIES.map((f) => f.key).filter(
@@ -2592,11 +2724,12 @@ export const FAMILIES_PER_RUN = 4;
  * already hands over the difficulty and the mutators; the swarm's cast is
  * the same kind of dial.
  *
- * TEN IS HEADROOM, not a promise. The roster fields seven families today
+ * TEN IS HEADROOM, not a promise. The roster fields nine families today
  * (ACTIVE_FAMILIES) and a hand cannot name one that does not exist, so
- * the picker fills at seven and this number does nothing until an eighth
+ * the picker fills at nine and this number does nothing until a tenth
  * family ships. It is here so that the day one does, the only thing that
- * has to change is the table.
+ * has to change is the table — which is exactly what happened when the
+ * Grapnels and then the Kettles went on.
  *
  * THE FLOOR IS ONE, and one is a real answer: a hand of a single family
  * plays every wave of the campaign in that family (transformScript), which
@@ -2718,7 +2851,7 @@ export const UNIT_NAMES: Record<UnitKind, string> = (() => {
     // have no upstream anything to fall back to (they are shelved off the
     // switch, SHELVED_FAMILIES), so they are named off the table either
     // way rather than reading as `Tusker3` in the level editor.
-    if (!ANIMAL_ART && f.key !== "tusker" && f.key !== "grapnel") continue;
+    if (!ANIMAL_ART && f.key !== "tusker" && f.key !== "grapnel" && f.key !== "kettle") continue;
     f.kinds.forEach((k, i) => {
       out[k] = `${FAMILY_NAMES[f.key].body} (${UNIT_RANKS[i]})`;
     });
@@ -3388,7 +3521,7 @@ export const WORLDS: LevelSpec[] = [
     // in three families (ground, ground support, air) and those are its
     // three SLOTS — ROLES, not families: "the line", "the support behind
     // it", "the third thing". A deploy rolls FAMILIES_PER_RUN of the
-    // seven families and the deal re-lets the roles EVERY WAVE
+    // nine families and the deal re-lets the roles EVERY WAVE
     // (transformScript), so the counts travel to every map and the bodies
     // are whatever the die said.
     //
@@ -3665,6 +3798,33 @@ export const WORLD = WORLDS[0];
 export function worldById(id: string): LevelSpec | null {
   return WORLDS.find((w) => w.id === id) ?? null;
 }
+
+/**
+ * THE WORLDS OFF THE MENU, and the whole of how one gets there: name it
+ * here. A hidden world keeps everything — its entry, its map, its
+ * document, its place in the admin editor and the save editor — it is
+ * simply never OFFERED: not a row in the map picker, not in Random's hat,
+ * not a reward on the progress screen, and not a pick a save may restore.
+ * It is the SHELVED_FAMILIES of the map table, and for the same reason: a
+ * board that is not ready to be met should not be met, and deleting it to
+ * say so loses the work.
+ *
+ * It is not a lock. A lock is the track saying "not yet, come back at
+ * level 8" (worldLock, progress.ts) and it is printed as a promise; this
+ * is the map not being in the game today.
+ */
+export const HIDDEN_WORLD_IDS: readonly string[] = ["1", "11"];
+
+/** is this world off the menu? */
+export const worldHidden = (id: string): boolean => HIDDEN_WORLD_IDS.includes(id);
+
+/**
+ * The worlds a player may be offered — the table, less the hidden ones.
+ * The SAME OBJECTS as WORLDS holds, never copies, because a level
+ * document is overlaid onto its entry IN PLACE (applyLevelDoc below): a
+ * copy here would be a second world that never gets its script.
+ */
+export const VISIBLE_WORLDS: LevelSpec[] = WORLDS.filter((w) => !worldHidden(w.id));
 
 // ---------- level documents ----------
 
