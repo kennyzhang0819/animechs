@@ -8,7 +8,11 @@
  *                          the game says it must carry — a minute or two
  *   npm run check:full -- --only siege
  *                          one clock, for iterating on it (frames, siege,
- *                          scale, maps — a comma list)
+ *                          scale, maps, turrets, enemies, swarmfirst,
+ *                          upgrades, render — a comma list)
+ *   npm run check:full -- --only turrets --kinds torch,lobber --n 2000
+ *                          the isolated clocks narrowed: these kinds, at
+ *                          this many of each (the goal is ten thousand)
  *
  * QUICK is the one an agent runs after every edit. It is a CRASH GATE, not
  * a balance gate: every check in it has a right answer that needs no
@@ -50,6 +54,30 @@
  *            fight from an open field and the board that lags is the one
  *            the player happens to be on
  *
+ * ...and THE STANDARD, which is what the game is held to at endgame and
+ * the reason the rest of these exist: ten thousand turrets on the map,
+ * ten thousand bodies, both sides shooting, under a hundred random
+ * upgrades — and drawing well at every zoom while it happens. Each clock
+ * below asks one part of that in isolation, so a failure names a KIND
+ * rather than a fight:
+ *
+ *   turrets  every fielded turret kind, TEN THOUSAND OF IT ALONE, every
+ *            one of them in reach of one body that cannot die — the
+ *            heaviest fire a kind can put out, and nothing else on the
+ *            step. Timed per kind; a kind over budget is named
+ *   enemies  every body kind, ten thousand of it alone, every one in reach
+ *            of a core that cannot fall — and once more with the whole
+ *            T1-5 roster mixed. Timed per kind
+ *   swarmfirst  ten thousand bodies on the field FIRST, then the board
+ *            spammed down under them, a card a step — what a late run does
+ *            when it panic-builds, with the whole swarm already in reach
+ *   upgrades the siege under a hundred random upgrade nodes off the real
+ *            trees, on top of its hundred and fifty modules
+ *   render   the other half of the frame, which nothing above can time:
+ *            the same boards stood in a real Game in a headless browser
+ *            (scripts/bench.mjs) and the DRAW read at a ladder of zooms
+ *            from the whole map to the closest, against DRAW_GOAL_MS
+ *
  * WHAT IT DELIBERATELY DOES NOT DO IS PLAY THE GAME. It never reports a
  * wave reached or a core percentage, because those are numbers somebody
  * has to weigh and an agent cannot. Balance and correctness are checked by
@@ -72,12 +100,24 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 /** --full: the clocks as well (see the header) */
 const FULL = process.argv.includes("--full");
-/** --only frames,siege,scale,maps: just those clocks, for iterating on one —
+/** --only frames,siege,...: just those clocks, for iterating on one —
  *  the quick checks always run, they are the crash gate and they are cheap */
+const argAfter = (name) => {
+  const i = process.argv.indexOf(name);
+  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : null;
+};
 const ONLY = (() => {
-  const i = process.argv.indexOf("--only");
-  return i >= 0 && process.argv[i + 1] ? new Set(process.argv[i + 1].split(",")) : null;
+  const v = argAfter("--only");
+  return v ? new Set(v.split(",")) : null;
 })();
+/** --kinds a,b: the isolated clocks (turrets, enemies) over these kinds only */
+const KINDS = (() => {
+  const v = argAfter("--kinds");
+  return v ? new Set(v.split(",")) : null;
+})();
+/** --n <count>: how many of one thing the standard stands — ten thousand is
+ *  the goal; smaller is for iterating on a clock, never for passing one */
+const N = Number(argAfter("--n") ?? 10000);
 const wants = (name) => FULL && (!ONLY || ONLY.has(name));
 const DIST = path.join(ROOT, ".playtest", "check");
 const require = createRequire(import.meta.url);
@@ -792,6 +832,9 @@ function siege({
   seed = 43,
   budget = SIM_BUDGET_MS,
   overMax = SIEGE_OVER,
+  /** the save the board is built under; the whole catalogue unless a clock
+   *  hands one in (upgrades) */
+  tech = null,
 }) {
   const problems = [];
   let step = NaN, detail = "";
@@ -800,7 +843,7 @@ function siege({
     const MO = R("mods.js"), RE = R("relics.js"), SR = R("simreport.js");
     const spec = LA.specForTier(world, LA.RUNG_COUNT - 1);
     const sim = new Sim(spec);
-    sim.setTech(TR.techStateFor(60));
+    sim.setTech(tech ?? TR.techStateFor(60));
     openBoard(sim);
 
     // the purchases, off the game's own tables and odds: every fourth press
@@ -918,7 +961,11 @@ function siege({
 }
 
 if (FULL) {
-  const worlds = L.WORLDS.map((w) => ({ w, cells: legalCells(w) })).sort((a, b) => b.cells - a.cells);
+  // a world that will not construct was already reported above (`worlds`);
+  // the clocks run on the ones that will rather than dying on the first
+  const worlds = L.WORLDS.flatMap((w) => {
+    try { return [{ w, cells: legalCells(w) }]; } catch { return []; }
+  }).sort((a, b) => b.cells - a.cells);
   const biggest = worlds[0].w;
   // the gate: the world with the most ground, at the size a late run stands
   if (wants("siege")) {
@@ -949,6 +996,250 @@ if (FULL) {
     for (const p of r.problems) mapProblems.push(`${w.name}: ${p}`);
   }
   if (wants("maps")) report("maps", mapProblems, `ms a step, held to ${SIEGE_LENIENT_MS} until projectiles is fixed — ${perWorld.join(" · ")}`);
+
+  // ---------- the standard: ten thousand of everything ----------
+
+  // ONE ISOLATED CLOCK. `build` stands the board on a fresh sim of `world`
+  // with NOTHING TO SEND (the script emptied, so nothing arrives that the
+  // clock did not put there), with building free and uncapped (tech null —
+  // ten thousand of one kind is a board no save allows, and the cap is not
+  // the question). Then ISO_WARM steps pass, ISO_SAMPLE are timed with the
+  // phase clock armed, and the verdict is the median against the budget,
+  // the p95, the census and the phase table beside it. The sim comes back
+  // too, for the scenario tests that read the board after the clock.
+  const ISO_WARM = 60;
+  const ISO_SAMPLE = 120;
+  /** a reach no cell on the board is outside of, and a pool no shot empties */
+  const EVERYWHERE = 1e9;
+  const IMMORTAL = 1e12;
+  const isolated = ({ world, build, seed = 61, budget = SIM_BUDGET_MS }) => {
+    reseed(seed);
+    const SR = R("simreport.js");
+    const spec = { ...LA.specForTier(world, LA.RUNG_COUNT - 1), script: [] };
+    const sim = new Sim(spec);
+    sim.setTech(null);
+    openBoard(sim);
+    const info = build(sim) ?? {};
+    for (let f = 0; f < ISO_WARM; f++) sim.update(1 / 60);
+    sim.profile(true);
+    const ms = [];
+    for (let f = 0; f < ISO_SAMPLE; f++) {
+      const a = performance.now();
+      sim.update(1 / 60);
+      ms.push(performance.now() - a);
+    }
+    const p = sim.profileFull();
+    sim.profile(false);
+    ms.sort((a, b) => a - b);
+    const step = ms[ms.length >> 1], p95 = ms[Math.floor(ms.length * 0.95)];
+    const c = p.census;
+    // the heaviest phase, named — the one line of the table a list can carry
+    const top = p.phases.filter((q) => q.ms > 0).sort((a, b) => b.ms - a.ms)[0];
+    const why = `${Math.round(c.shots + c.hostileShots).toLocaleString("en-US")} shots, ${c.fx} fx` +
+      (top ? `; ${top.name} ${top.ms.toFixed(1)}ms` : "");
+    const slow = step > budget
+      ? `${step.toFixed(1)}ms a step (p95 ${p95.toFixed(1)}) of ${budget.toFixed(1)} — ${why}`
+      : null;
+    return { sim, info, step, p95, census: c, why, slow, table: SR.profileLines(p).slice(5, 9) };
+  };
+  /** the open cell nearest the middle of the map — where the dummy stands */
+  const middleOf = (sim) => {
+    const cx = COLS >> 1, cy = ROWS >> 1;
+    for (let r = 0; r < 200; r++)
+      for (let dy = -r; dy <= r; dy++)
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const x = cx + dx, y = cy + dy;
+          if (x < 0 || y < 0 || x >= COLS || y >= ROWS) continue;
+          if (!sim.field.walk[y * COLS + x]) return { x: (x + 0.5) * CELL, y: (y + 0.5) * CELL };
+        }
+    return { x: cx * CELL, y: cy * CELL };
+  };
+  /** the T1-5 roster dealt evenly over `n` bodies, plus one boss */
+  const spawnMixed = (sim, n, opts) => {
+    const pool = L.UNIT_KINDS.filter((k) => k !== "boss");
+    const each = Math.floor(n / pool.length);
+    let made = 0;
+    for (const k of pool) made += sim.spawnMany(k, each, opts);
+    made += sim.spawnMany(pool[0], n - each * pool.length, opts);
+    made += sim.spawnMany("boss", 1, opts);
+    return made;
+  };
+  const kindOk = (k) => !KINDS || KINDS.has(k);
+  const ms1 = (x) => (Number.isFinite(x) ? x.toFixed(1) : "?");
+
+  // TURRETS: every fielded kind, ten thousand of it alone, every one of
+  // them in reach of one body that cannot die. The board is the whole
+  // legal map; the dummy is the lightest ground body there is, standing
+  // in the middle, its pool pinned so the step never empties the field.
+  if (wants("turrets")) {
+    const problems = [], line = [];
+    const dummy = L.UNIT_KINDS.find((k) => L.UNIT_STATS[k].tier === 1 && !L.UNIT_STATS[k].flying) ?? L.UNIT_KINDS[0];
+    for (const kind of T.FIELDED_KINDS.filter(kindOk)) {
+      try {
+        const r = isolated({
+          world: biggest,
+          build: (sim) => {
+            // the kind and nothing else: the ground takes what it takes
+            // of a wide footprint, and the count is printed, not judged
+            const built = sim.scatterTowers([kind], N, false);
+            sim.setBench({ towerRange: EVERYWHERE });
+            const made = sim.spawnMany(dummy, 1, { at: middleOf(sim), hp: IMMORTAL });
+            return { built, made };
+          },
+        });
+        line.push(`${kind} ${ms1(r.step)}${r.info.built < N * 0.9 ? ` (${r.info.built} fit)` : ""}`);
+        if (r.info.made === 0) problems.push(`${kind}: the dummy could not land — nothing was shot at`);
+        if (r.info.built < N * 0.1) problems.push(`${kind}: the ground took only ${r.info.built} of ${N}`);
+        if (r.sim.n === 0) problems.push(`${kind}: the dummy died — its pool was meant to be bottomless`);
+        if (r.slow) { problems.push(`${kind}: ${r.slow}`); for (const l of r.table) problems.push(`    ${l}`); }
+      } catch (e) {
+        problems.push(`${kind}: ${e.stack?.split("\n").slice(0, 2).join(" / ") ?? e.message}`);
+      }
+    }
+    report("turrets", problems, `${N} of one kind on ${biggest.name}, ms a step of ${SIM_BUDGET_MS.toFixed(1)} — ${line.join(" · ")}`);
+  }
+
+  // ENEMIES: every body kind, ten thousand of it alone, scattered over the
+  // field and every one of them in reach of a core that cannot fall — so
+  // every gun on the field is firing from the first step. The boss is a
+  // hundred, not ten thousand: a body that wide could not land ten
+  // thousand times on any map, and a hundred is more than a run ever sees.
+  // Then the roster mixed, which is the board a wave actually is.
+  if (wants("enemies")) {
+    const problems = [], line = [];
+    const BOSSES = 100;
+    const one = (name, spawn) => {
+      try {
+        const r = isolated({
+          world: biggest,
+          build: (sim) => {
+            sim.setBench({ unitRange: EVERYWHERE, coreHp: IMMORTAL });
+            return { want: 0, ...spawn(sim) };
+          },
+        });
+        line.push(`${name} ${ms1(r.step)}${r.info.made < r.info.want * 0.9 ? ` (${r.info.made} fit)` : ""}`);
+        if (r.info.made < r.info.want * 0.1) problems.push(`${name}: the field took only ${r.info.made} of ${r.info.want}`);
+        if (r.sim.lost()) problems.push(`${name}: the core fell — its pool was meant to be bottomless`);
+        if (r.slow) { problems.push(`${name}: ${r.slow}`); for (const l of r.table) problems.push(`    ${l}`); }
+      } catch (e) {
+        problems.push(`${name}: ${e.stack?.split("\n").slice(0, 2).join(" / ") ?? e.message}`);
+      }
+    };
+    for (const kind of L.UNIT_KINDS.filter(kindOk)) {
+      const want = kind === "boss" ? BOSSES : N;
+      one(kind, (sim) => ({ want, made: sim.spawnMany(kind, want, { scatter: true }) }));
+    }
+    if (kindOk("mixed")) one("mixed", (sim) => ({ want: N, made: spawnMixed(sim, N, { scatter: true }) }));
+    report("enemies", problems, `${N} of one kind on ${biggest.name}, ms a step of ${SIM_BUDGET_MS.toFixed(1)} — ${line.join(" · ")}`);
+  }
+
+  // SWARM FIRST: ten thousand bodies on the field before a single turret,
+  // then the board spammed down under them, a card's worth a step for the
+  // whole window — the placement path (a batch, the specs re-composed, the
+  // aim index, the ground claimed) timed WITH the swarm already in reach
+  // of everything it lays down, which is the panic-build a late run does.
+  // Under the real save and a bottomless purse, so what goes down is what
+  // a player's card puts down: its mods rolled, its rungs composed.
+  if (wants("swarmfirst")) {
+    const problems = [];
+    let detail = "";
+    try {
+      reseed(67);
+      const SR = R("simreport.js");
+      const spec = { ...LA.specForTier(biggest, LA.RUNG_COUNT - 1), script: [] };
+      const sim = new Sim(spec);
+      sim.setTech(TR.techStateFor(60));
+      sim.setRich(true);
+      openBoard(sim);
+      sim.setBench({ coreHp: IMMORTAL });
+      const made = spawnMixed(sim, N, { scatter: true });
+      for (let f = 0; f < ISO_WARM; f++) sim.update(1 / 60);
+      const CARD = 300;
+      sim.profile(true);
+      const ms = [];
+      for (let f = 0; f < ISO_SAMPLE; f++) {
+        const a = performance.now();
+        if (sim.towers.length < N) sim.scatterTowers(T.FIELDED_KINDS, Math.min(N, sim.towers.length + CARD));
+        sim.update(1 / 60);
+        ms.push(performance.now() - a);
+      }
+      const p = sim.profileFull();
+      sim.profile(false);
+      ms.sort((a, b) => a - b);
+      const step = ms[ms.length >> 1], p95 = ms[Math.floor(ms.length * 0.95)];
+      if (made < N * 0.9) problems.push(`the field took only ${made} of ${N} bodies`);
+      if (sim.placed === 0) problems.push("nothing was placed in the window");
+      if (step > SIM_BUDGET_MS) {
+        problems.push(`a step with a card on it takes ${step.toFixed(1)}ms (p95 ${p95.toFixed(1)}) of ${SIM_BUDGET_MS.toFixed(1)}`);
+        for (const l of SR.profileLines(p).slice(5, 9)) problems.push(`    ${l}`);
+      }
+      detail = `${made} bodies first, then ${sim.placed} turrets down at ${CARD} a step, ${sim.towers.length} standing, ` +
+        `${sim.kills} kills — ${step.toFixed(1)}ms a step (p95 ${p95.toFixed(1)}) of ${SIM_BUDGET_MS.toFixed(1)}`;
+    } catch (e) {
+      problems.push(e.stack?.split("\n").slice(0, 3).join(" / ") ?? e.message);
+    }
+    report("swarmfirst", problems, detail);
+  }
+
+  // UPGRADES: the siege — the board, the modules, the swarm killing turrets
+  // — under a hundred random upgrade nodes off the real trees, rather than
+  // the save's own rungs. A rung changes what a turret IS (its bullet, its
+  // reach, its reload), and a hundred of them at once is a table no save
+  // composes, which is the point of rolling it.
+  if (wants("upgrades")) {
+    const UP = R("upgrades.js");
+    const UPGRADE_NODES = 100;
+    reseed(71);
+    const tech = TR.techStateFor(60);
+    const pool = UP.ALL_UPGRADES.slice(), on = new Set();
+    for (let i = 0; i < UPGRADE_NODES && pool.length > 0; i++)
+      on.add(pool.splice((Math.random() * pool.length) | 0, 1)[0].id);
+    const upgrades = {};
+    for (const k of Object.keys(UP.TURRET_UPGRADES))
+      upgrades[k] = UP.TURRET_UPGRADES[k].map((u) => (on.has(u.id) ? 1 : 0));
+    const r = siege({ world: biggest, seed: 73, tech: { ...tech, upgrades } });
+    report("upgrades", r.problems, `${on.size} random upgrade nodes on — ${r.detail}`);
+  }
+
+  // RENDER: the other half of the frame. The same boards, stood in a real
+  // Game in a headless browser (scripts/bench.mjs, which owns the goal and
+  // the scenes), and the draw read at a ladder of zooms from the whole map
+  // down to the closest. Its JSON is the gate; its table is printed under
+  // the line so the numbers are here without re-running it.
+  if (wants("render")) {
+    const problems = [];
+    let detail = "";
+    const r = await run(process.execPath, [
+      path.join(ROOT, "scripts", "bench.mjs"), "--json", "--world", biggest.id, "--n", String(N),
+    ]);
+    let out = null;
+    try {
+      const last = r.out.trim().split("\n").pop();
+      out = last ? JSON.parse(last) : null;
+    } catch {}
+    if (!out) {
+      problems.push(`the bench did not report: ${(r.err || r.out).trim().split("\n").slice(-6).join(" / ")}`);
+    } else {
+      const rows = out.rows.filter((x) => !x.error);
+      for (const x of out.rows.filter((x) => x.error)) problems.push(`the bench failed: ${x.error}`);
+      for (const x of rows)
+        if (x.drawMed > out.goalMs)
+          problems.push(
+            `${x.scene} at zoom ${x.zoom.toFixed(2)}: the draw takes ${x.drawMed.toFixed(1)}ms a frame (p95 ${x.drawP95.toFixed(1)}) ` +
+              `of ${out.goalMs} — ${x.bodies} bodies, ${x.towers} turrets, ${x.shots} shots, ${x.fx} fx`,
+          );
+      // per scene, its worst zoom — the one number a line can carry
+      const perScene = [];
+      for (const scene of [...new Set(rows.map((x) => x.scene))]) {
+        const worst = rows.filter((x) => x.scene === scene).sort((a, b) => b.drawMed - a.drawMed)[0];
+        perScene.push(`${scene} ${worst.drawMed.toFixed(1)} @${worst.zoom.toFixed(1)}`);
+      }
+      detail = `ms of draw a frame at its worst zoom, of ${out.goalMs} — ${perScene.join(" · ")}`;
+      if (problems.length > 0) for (const l of r.err.split("\n").filter((l) => /^\S/.test(l) && !/^transpiled/.test(l)).slice(0, 40)) problems.push(`    ${l}`);
+    }
+    report("render", problems, detail);
+  }
 }
 
 

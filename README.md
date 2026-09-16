@@ -53,17 +53,27 @@ something is broken.
 ### The full check
 
 ```bash
-npm run check:full                  # everything above, plus the clocks
-npm run check:full -- --only siege  # one clock, for iterating on it (frames, siege, scale, maps)
+npm run check:full                  # everything above, plus the clocks — ten minutes or so
+npm run check:full -- --only siege  # one clock, for iterating on it
+npm run check:full -- --only turrets --kinds torch,lobber --n 2000
+                                    # an isolated clock narrowed to these kinds, at this many of each
+npm run bench                       # the render half on its own, as a table (scripts/bench.mjs)
 ```
 
 **The same gate plus the clocks, and it costs what a late wave costs to
-simulate, many times over — a minute or two.** Run it before a change to
-the sim is called done, and any time something feels slow. Every clock is
-read the same way: a scenario that has to have HAPPENED before the number
-is believed, then the step against the budget a frame leaves after the
-draw (`SIM_BUDGET_MS`), and on a failure the sim's own phase table, which
-is the only form of the number that says why.
+simulate, many times over — ten minutes or so.** Run it before a change to
+the sim or the renderer is called done, and any time something feels slow.
+Every clock is read the same way: a scenario that has to have HAPPENED
+before the number is believed, then the step against the budget a frame
+leaves after the draw (`SIM_BUDGET_MS`), and on a failure the sim's own
+phase table, which is the only form of the number that says why.
+
+**The standard the clocks are held to** is the endgame board: ten thousand
+turrets on the map, ten thousand bodies, both sides shooting, under a
+hundred random upgrades — and drawing well at every zoom while it happens.
+The first four clocks are the fights the game already has; the rest ask
+one part of the standard each in isolation, so a failure names a kind
+rather than a fight.
 
 | | |
 |---|---|
@@ -71,6 +81,11 @@ is the only form of the number that says why.
 | `siege` | the LATE board: nine thousand turrets, a hundred and fifty modules bought off the real M and G tables, every tier and a boss streaming in through the doors, the rest of the board laid down mid-fight — and the swarm actually killing turrets while the clock runs |
 | `scale` | the same siege at three, six, nine and twelve thousand turrets, so the cost of the board reads as a curve |
 | `maps` | the siege on every world, because a choke is a different fight from an open field |
+| `turrets` | every fielded turret kind, TEN THOUSAND OF IT ALONE on the roomiest world, every one in reach of one body that cannot die — the heaviest fire a kind can put out, timed per kind |
+| `enemies` | every body kind, ten thousand of it alone, scattered over the field, every one in reach of a core that cannot fall — timed per kind, and once more with the whole T1–5 roster mixed |
+| `swarmfirst` | ten thousand bodies on the field FIRST, then the board spammed down under them at a card a step, under the real save — the panic-build, with the placement path on the clock |
+| `upgrades` | the siege under a hundred random upgrade nodes off the real trees, on top of its hundred and fifty modules |
+| `render` | the other half of the frame: the same boards stood in a real Game in a headless browser (`scripts/bench.mjs`), the DRAW read at a ladder of zooms from the whole map to the closest, against `DRAW_GOAL_MS` |
 
 **`scale` and `maps` are held to 25ms a step for now, not to the 11.7ms
 budget.** With every fix to date in, the siege at nine thousand turrets runs
@@ -79,6 +94,29 @@ boss is alive, and in every case it is `projectiles` — 17 to 31 thousand
 shots in flight — at 70% of the step. That is known and not yet fixed
 (`SIEGE_LENIENT_MS` in `scripts/check.mjs` says what to set back when it
 is). `siege` itself is held to the budget.
+
+**The render clock is the one that reads the draw, and it is the only one
+that can.** `scripts/bench.mjs` transpiles `game/` to ES modules, serves
+them beside `public/` with the cross-origin-isolation headers the site
+sets (so the sim runs on its worker, as it ships), and drives a real
+`Game` — this renderer, the HUD overlay, the corner minimap — in headless
+Chromium on a software GPU. Five scenes (`turrets`, `enemies`, `battle`,
+`upgrades`, `waves`; see the script's header) are each read at five zooms
+from the camera's floor to its ceiling, and the verdict per cell is the
+median `drawMs` over 120 frames against `DRAW_GOAL_MS` (8ms). `drawMs` is
+the main thread's JavaScript and never the GPU's time, which is why a
+software GPU can measure it honestly; the frame gap is printed beside it
+for information and is SwiftShader's. `npm run bench -- --headed` watches
+it; `--scenes`, `--zooms`, `--frames` and `--n` narrow it for iterating.
+
+**The isolated clocks stand boards no run stands, on purpose.** Ten
+thousand of one turret is not a game; it is the question "what does THIS
+kind cost the step with nothing else on it", asked once per kind so that
+the answer names the kind. They build through three bench-only commands on
+the sim (`Sim.setBench`, `spawnMany`, `scatterTowers`) that the browser
+half reaches through the worker seam and the headless half calls
+directly, so both halves stand the identical board. `--n` shrinks the
+board for iterating on a clock; it is never how one is passed.
 
 **Why `siege` exists beside `frames`.** The frames scenario FAILS if the
 core is hurt or half the board is eaten — so a board that passes it is a

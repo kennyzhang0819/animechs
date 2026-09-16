@@ -14,6 +14,7 @@
     "start": "next start",
     "check": "node scripts/check.mjs",
     "check:full": "node scripts/check.mjs --full",
+    "bench": "node scripts/bench.mjs",
     "typecheck": "tsc --noEmit",
     "gen:tiles": "node --experimental-transform-types --import ./scripts/ts-hooks.mjs scripts/gen-tiles.mjs",
     "gen:turrets": "node --experimental-transform-types --import ./scripts/ts-hooks.mjs scripts/turret-concepts.mjs",
@@ -36,6 +37,7 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "playwright": "^1.63.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

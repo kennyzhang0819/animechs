@@ -41,6 +41,7 @@ import type { ModId } from "./mods";
 import type { RelicId } from "./relics";
 import type { TechState } from "./tech";
 import type { TowerKind } from "./types";
+import type { UnitKind } from "./levels";
 import { SimClock } from "./simclock";
 import { emptySnapshot, flatOf, packSnapshot, type Snapshot } from "./snapshot";
 import { reportOf, writeHeader } from "./simreport";
@@ -117,9 +118,18 @@ export interface SimHost {
   /** the sim's phase clock (Sim.profile); its reading rides the report */
   profile(on: boolean): void;
 
+  // ---- the bench (Sim.setBench): the perf suite's board, never a run's ----
+  setBench(opts: BenchOpts): void;
+  spawnMany(kind: UnitKind, n: number, opts?: SpawnManyOpts): void;
+  scatterTowers(kinds: readonly TowerKind[], n: number, fill?: boolean): void;
+
   /** the level is over: let go of whatever the host holds */
   destroy(): void;
 }
+
+/** what Sim.setBench takes, spelled once for both hosts */
+export type BenchOpts = Parameters<Sim["setBench"]>[0];
+export type SpawnManyOpts = NonNullable<Parameters<Sim["spawnMany"]>[2]>;
 
 /**
  * THE SIM, IN THIS THREAD. Every command is the call it always was, made
@@ -237,6 +247,15 @@ export class LocalHost implements SimHost {
   }
   profile(on: boolean): void {
     this.sim.profile(on);
+  }
+  setBench(opts: BenchOpts): void {
+    this.sim.setBench(opts);
+  }
+  spawnMany(kind: UnitKind, n: number, opts?: SpawnManyOpts): void {
+    this.sim.spawnMany(kind, n, opts);
+  }
+  scatterTowers(kinds: readonly TowerKind[], n: number, fill?: boolean): void {
+    this.sim.scatterTowers(kinds, n, fill);
   }
   destroy(): void {
     // the sim goes with the Game; the thread its route solver runs on

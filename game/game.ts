@@ -284,6 +284,13 @@ export interface UiState {
   targeting: Record<TowerKind, string>;
 }
 
+/** one frame per index — what Game.sampleFrames hands back */
+export interface FrameSample {
+  gap: number[];
+  sim: number[];
+  draw: number[];
+}
+
 export interface Stats {
   units: number;
   kills: number;
@@ -979,6 +986,14 @@ export class Game {
    */
   private simEma = 0;
   private drawEma = 0;
+  /** the bench's open sample, while one is being taken (sampleFrames) */
+  private benchSink: {
+    gap: number[];
+    sim: number[];
+    draw: number[];
+    want: number;
+    done: (r: FrameSample) => void;
+  } | null = null;
   private destroyed = false;
 
   private readonly onResize = (): void => this.resize();
@@ -1813,6 +1828,49 @@ export class Game {
     if (kind) this.host.clearStructSelection();
   }
 
+  // ---------- the bench (scripts/bench.mjs) ----------
+  //
+  // THE RENDER HALF OF THE PERF SUITE drives a real Game in a headless
+  // browser — this renderer, this overlay, this minimap, the sim on its
+  // worker — and reads the frame off these four. They are dev tooling in
+  // the sense diagnose() is: reachable from a script, never from the UI.
+
+  /**
+   * THE HOST, for the bench to stand its board through: the seam every
+   * change to the world crosses (simhost.ts), which is the only way a
+   * script can reach a sim that is on another thread. A debug handle like
+   * `sim`; no read path in the game goes through it.
+   */
+  benchHost(): SimHost {
+    return this.host;
+  }
+
+  /** the camera's floor and ceiling right now — the floor fits the map
+   *  (minZoom), and moves with the canvas */
+  zoomRange(): { min: number; max: number } {
+    return { min: this.minZoom(), max: ZOOM_MAX };
+  }
+
+  /** the camera put somewhere: `zoom` clamped to the range, centred on a
+   *  world point, or on the core when none is given */
+  setCamera(zoom: number, wx?: number, wy?: number): void {
+    this.zoom = clamp(zoom, this.minZoom(), ZOOM_MAX);
+    const core = this.view.core;
+    this.lookAt(wx ?? core.x, wy ?? core.y);
+  }
+
+  /**
+   * THE NEXT `n` FRAMES, RAW: each one's wall gap, its sim share and its
+   * draw share in ms (see UiState.simMs for what the two halves do and do
+   * not include — on the worker path `sim` is the handover only). One
+   * sample at a time; a second call before the first lands takes over.
+   */
+  sampleFrames(n: number): Promise<FrameSample> {
+    return new Promise((done) => {
+      this.benchSink = { gap: [], sim: [], draw: [], want: Math.max(1, n | 0), done };
+    });
+  }
+
   /**
    * THE HAIRLINE DIAGNOSTIC. `?diag=1` on the sandbox door runs it: the
    * next few frames are drawn at a handful of zooms, each frame is read
@@ -2460,6 +2518,18 @@ export class Game {
     this.drawOverlay(this.view);
     this.drawMinimap(this.view);
     const drawMs = performance.now() - t1;
+    // THE BENCH TAKES THE RAW NUMBERS, never the smoothed ones below: a
+    // median over a window is the reading, and an EMA is what hides a hitch
+    const sink = this.benchSink;
+    if (sink) {
+      sink.gap.push(raw * 1000);
+      sink.sim.push(simMs);
+      sink.draw.push(drawMs);
+      if (sink.draw.length >= sink.want) {
+        this.benchSink = null;
+        sink.done({ gap: sink.gap, sim: sink.sim, draw: sink.draw });
+      }
+    }
 
     // THE COUNTER READS THE FRAME. It used to measure off `dt`, which is
     // capped at 0.05s for the sim's sake — so the lowest number the corner

@@ -2138,6 +2138,9 @@ export class Sim {
     this.n = 0;
     this.time = 0;
     this.kills = 0;
+    // a new board owes the bench nothing (setBench)
+    this.benchTowerRange = null;
+    this.benchUnitRange = null;
     this.devoured = 0;
     this.merged = 0;
     this.killsByKind.fill(0);
@@ -3007,6 +3010,8 @@ export class Sim {
     // the effect, so a copy bought mid-wave lands on the board already
     // standing, through this very call
     t.spec = applyTurretMods(kind, t.mods, this.mods);
+    // ...under the bench's reach when one is set — see setBench
+    if (this.benchTowerRange !== null) t.spec = { ...t.spec, range: this.benchTowerRange };
     const max = t.spec.health * TOWER_HP_SCALE;
     if (max !== t.hpMax) {
       const f = t.hpMax > 0 ? t.hp / t.hpMax : 1;
@@ -3014,6 +3019,95 @@ export class Sim {
       t.hp = Math.min(max, Math.max(1, f * max));
     }
     t.regen = modRegen(t.mods, this.mods) * max;
+  }
+
+  // ---------- the bench (scripts/check.mjs, scripts/bench.mjs) ----------
+  //
+  // THREE COMMANDS THAT EXIST FOR THE CLOCKS AND NOTHING ELSE. The perf
+  // suite stands boards no run ever stands — ten thousand of ONE turret,
+  // ten thousand of ONE body — to ask the two questions a real fight makes
+  // impossible to ask in isolation: what does this kind cost the step, and
+  // what does it cost the draw. They live on the sim rather than in the
+  // harness so that the headless check and the browser bench (which
+  // reaches the sim only through the worker seam, sim.worker.ts COMMANDS)
+  // build the identical board from the identical code.
+  //
+  // None of this is a rule of the game. The overrides are cleared by
+  // reset(), so a scene is a scene; and a bench range bypasses every stamp
+  // and module a real reach carries (the spotter, the relics, the mods) on
+  // purpose — it means "always has a target", not a number.
+
+  /** every turret's reach, while the bench has set one (resolveTower) */
+  private benchTowerRange: number | null = null;
+  /** every body's — the pick's and each weapon's (updateUnitWeapons) */
+  private benchUnitRange: number | null = null;
+
+  setBench(opts: { towerRange?: number | null; unitRange?: number | null; coreHp?: number | null }): void {
+    if (opts.unitRange !== undefined) this.benchUnitRange = opts.unitRange;
+    if (opts.towerRange !== undefined && opts.towerRange !== this.benchTowerRange) {
+      this.benchTowerRange = opts.towerRange;
+      // the standing board re-composed under the new reach — the walk a
+      // relic bought mid-wave takes (refreshSpecs)
+      for (const t of this.towers) this.resolveTower(t);
+    }
+    if (opts.coreHp != null) {
+      this.core.hpMax = opts.coreHp;
+      this.core.hp = opts.coreHp;
+    }
+  }
+
+  /**
+   * `n` bodies of one kind through the doors — or, `scatter`, dropped over
+   * the whole field at once the way a brood lands (spawnUnit): a random
+   * open cell of the body's own layer, tested for rock and for crowding
+   * exactly as an arrival is. `at` drops them round one point instead.
+   * `hp` pins the pool, both hp and max, which is how the bench makes a
+   * body that never dies. Returns how many landed.
+   */
+  spawnMany(
+    kind: UnitKind,
+    n: number,
+    opts: { scatter?: boolean; at?: { x: number; y: number }; hp?: number } = {},
+  ): number {
+    const fly = !!UNIT_STATS[kind].flying;
+    const walkField = this.layerOf(kind) === "water" ? this.navalField : this.field;
+    let made = 0;
+    for (let a = 0, tries = n * 8; a < tries && made < n; a++) {
+      let ok: boolean;
+      if (opts.at) ok = this.spawnUnit(kind, opts.at);
+      else if (opts.scatter) {
+        const c = (Math.random() * NCELLS) | 0;
+        if (!fly && walkField.walk[c]) continue;
+        ok = this.spawnUnit(kind, { x: ((c % COLS) + 0.5) * CELL, y: (((c / COLS) | 0) + 0.5) * CELL });
+      } else ok = this.spawnUnit(kind);
+      if (!ok) continue;
+      if (opts.hp !== undefined) {
+        this.uhp[this.n - 1] = opts.hp;
+        this.uhpmax[this.n - 1] = opts.hp;
+      }
+      made++;
+    }
+    return made;
+  }
+
+  /**
+   * A BOARD THROWN DOWN AT RANDOM: `kinds` dealt round-robin onto random
+   * cells until `n` turrets stand — and, `fill`, a tacker where the kind
+   * in hand does not fit (its size, its cap), which is how a late board
+   * looks; off, the board is `kinds` and nothing else, however many of
+   * them the ground takes, which is what an isolated clock wants. One
+   * board change, like a card (batchPlacement). Returns the board's size.
+   */
+  scatterTowers(kinds: readonly TowerKind[], n: number, fill = true): number {
+    return this.batchPlacement(() => {
+      let ki = 0;
+      for (let t = 0, tries = Math.max(n * 400, 1e5); t < tries && this.towers.length < n; t++) {
+        const x = (Math.random() * COLS) | 0, y = (Math.random() * ROWS) | 0;
+        if (this.placeTower(x, y, kinds[ki % kinds.length]) === "ok") ki++;
+        else if (fill) this.placeTower(x, y, "tacker");
+      }
+      return this.towers.length;
+    });
   }
 
   // ---------- the run's modules: mods (mods.ts) and relics (relics.ts) ----------
@@ -4807,7 +4901,7 @@ export class Sim {
       // has is this much longer while it lasts — the longest gun's, for
       // the pick, and each weapon's own below
       const reachMul = HAS_SPOTTER && this.ureachT[i] > 0 ? this.ureachMul[i] : 1;
-      const reach = KIND_SEEK[ukind[i]] * reachMul;
+      const reach = this.benchUnitRange ?? KIND_SEEK[ukind[i]] * reachMul;
       // ...and its VETERANCY (uvet): what every hit below is multiplied by
       // (hitStructure), and what a shot leaving the muzzle carries
       this.dmgMul = HAS_VET ? this.uvet[i] : 1;
@@ -4896,7 +4990,7 @@ export class Sim {
         const wpSplash = (wp.splash ?? 0) * fed;
         const slot = i * MAX_WEAPONS + w;
         // this weapon's reach, the spotter's stamp folded in
-        const wrange = wp.range * reachMul;
+        const wrange = this.benchUnitRange ?? wp.range * reachMul;
         if (wp.beam) {
           // a held beam: while it burns it bites every interval, and the
           // reload only starts once it has gone out. Fx.hitMeltHeal (its

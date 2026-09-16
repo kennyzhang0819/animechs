@@ -32,7 +32,7 @@
  */
 import { SHARED_MEMORY } from "./shared";
 import { Sim } from "./sim";
-import type { LevelSpec } from "./levels";
+import type { LevelSpec, UnitKind } from "./levels";
 import type { ModId } from "./mods";
 import type { RelicId } from "./relics";
 import type { TechState } from "./tech";
@@ -40,7 +40,14 @@ import type { TowerKind } from "./types";
 import { readPts, type FlatWorld, type Snapshot } from "./snapshot";
 import type { WorldReport } from "./simreport";
 import { World } from "./simreads";
-import { LocalHost, type Cell, type Placement, type SimHost } from "./simhost";
+import {
+  LocalHost,
+  type BenchOpts,
+  type Cell,
+  type Placement,
+  type SimHost,
+  type SpawnManyOpts,
+} from "./simhost";
 import { spawnFieldWorker, spawnPhysWorker } from "./fieldspawn";
 
 /** what the game sends the worker */
@@ -268,6 +275,15 @@ export class WorkerHost implements SimHost {
   }
   setEffects(on: boolean): void {
     this.cmd("setEffects", on);
+  }
+  setBench(opts: BenchOpts): void {
+    this.cmd("setBench", opts);
+  }
+  spawnMany(kind: UnitKind, n: number, opts?: SpawnManyOpts): void {
+    this.cmd("spawnMany", kind, n, opts);
+  }
+  scatterTowers(kinds: readonly TowerKind[], n: number, fill?: boolean): void {
+    this.cmd("scatterTowers", kinds, n, fill);
   }
   profile(on: boolean): void {
     this.cmd("profile", on);

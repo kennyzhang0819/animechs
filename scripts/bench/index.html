@@ -1,0 +1,26 @@
+<!doctype html>
+<!--
+  THE BENCH PAGE (scripts/bench.mjs): the real Game on the real renderer,
+  with nothing of the site around it — no React, no HUD, no menu. The
+  runner serves this at / beside the transpiled game modules and public/,
+  drives it through window.__bench (bench.js), and reads frames back.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Animechs bench</title>
+  <style>
+    html, body { margin: 0; background: #000; overflow: hidden; }
+    canvas.field { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+    #mm { position: fixed; right: 8px; bottom: 8px; width: 256px; height: 256px; }
+    #log { position: fixed; left: 8px; top: 8px; color: #9f9; font: 12px monospace; white-space: pre; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <canvas id="gl" class="field"></canvas>
+  <canvas id="ui" class="field"></canvas>
+  <canvas id="mm"></canvas>
+  <div id="log"></div>
+  <script type="module" src="/bench.js"></script>
+</body>
+</html>

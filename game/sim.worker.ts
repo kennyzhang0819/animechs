@@ -64,6 +64,10 @@ const COMMANDS = new Set<string>([
   "setRich",
   "setEffects",
   "profile",
+  // the bench's three (Sim.setBench) — the perf suite's, never the game's
+  "setBench",
+  "spawnMany",
+  "scatterTowers",
 ]);
 
 // `self` here is a DedicatedWorkerGlobalScope; the project's lib is the
