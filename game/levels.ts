@@ -3466,6 +3466,33 @@ export function worldById(id: string): LevelSpec | null {
   return WORLDS.find((w) => w.id === id) ?? null;
 }
 
+/**
+ * THE WORLDS OFF THE MENU, and the whole of how one gets there: name it
+ * here. A hidden world keeps everything — its entry, its map, its
+ * document, its place in the admin editor and the save editor — it is
+ * simply never OFFERED: not a row in the map picker, not in Random's hat,
+ * not a reward on the progress screen, and not a pick a save may restore.
+ * It is the SHELVED_FAMILIES of the map table, and for the same reason: a
+ * board that is not ready to be met should not be met, and deleting it to
+ * say so loses the work.
+ *
+ * It is not a lock. A lock is the track saying "not yet, come back at
+ * level 8" (worldLock, progress.ts) and it is printed as a promise; this
+ * is the map not being in the game today.
+ */
+export const HIDDEN_WORLD_IDS: readonly string[] = ["1", "11"];
+
+/** is this world off the menu? */
+export const worldHidden = (id: string): boolean => HIDDEN_WORLD_IDS.includes(id);
+
+/**
+ * The worlds a player may be offered — the table, less the hidden ones.
+ * The SAME OBJECTS as WORLDS holds, never copies, because a level
+ * document is overlaid onto its entry IN PLACE (applyLevelDoc below): a
+ * copy here would be a second world that never gets its script.
+ */
+export const VISIBLE_WORLDS: LevelSpec[] = WORLDS.filter((w) => !worldHidden(w.id));
+
 // ---------- level documents ----------
 
 /**

@@ -44,7 +44,7 @@ import {
   waveGroups,
   WORLD,
   worldById,
-  WORLDS,
+  VISIBLE_WORLDS,
   type FamilyKey,
   type LevelSpec,
   type TowerKind,
@@ -652,7 +652,7 @@ function MapPicker({
       <PickRow selected={pick == null} focused={focus === null} onPick={() => setFocus(null)}>
         <span className={`${rowText} text-[#EDEDEF]`}>Random</span>
       </PickRow>
-      {WORLDS.map((w) => (
+      {VISIBLE_WORLDS.map((w) => (
         <PickRow
           key={w.id}
           selected={pick === w.id}
@@ -2506,7 +2506,7 @@ export default function Animechs() {
     const custom = mode === "custom";
     // the hat Random draws from: the campaign's own maps, or every map
     // there is when the run pays nothing for reaching one early
-    const hat = custom ? WORLDS : WORLDS.filter((w) => worldLock(p, w.id) == null);
+    const hat = custom ? VISIBLE_WORLDS : VISIBLE_WORLDS.filter((w) => worldLock(p, w.id) == null);
     // REGULAR NEVER READS THE MAP MACRO — its map is rolled, always. In
     // custom a remembered pick is taken as it stands, locks and all
     const picked = custom ? pickedWorld : null;
