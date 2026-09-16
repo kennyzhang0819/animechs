@@ -142,6 +142,19 @@ export const OFFICIAL_MAP_IDS: readonly string[] = [
   "shoals",
   "riverlands",
   "estuary",
+  // THE MISSION SKETCHES — one map per archetype in docs/mission-design.md,
+  // drawn in the graph editor (/admin/mapgraph) rather than hand-typed.
+  // They paint NO spawn tiles of their own: a graph says where the ground
+  // is and nothing about where the swarm enters it, so these come in on
+  // the western strip (spawnTilesOf's fallback) until someone paints them
+  "sear",
+  "coldline",
+  "thornway",
+  "sporering",
+  "twinshale",
+  "whitepeak",
+  "emberdeep",
+  "saltmouth",
 ];
 
 /**

@@ -4,7 +4,7 @@
   "seed": 4478,
   "archetype": "RACE THE ENEMY",
   "rock": {
-    "threshold": 0.54,
+    "threshold": 0.515,
     "scale": 30,
     "warp": 16
   },
@@ -92,32 +92,37 @@
       "x": 128,
       "y": 18,
       "r": 15,
-      "note": "ground entry"
+      "note": "ground entry",
+      "wobble": 0.2
     },
     {
       "x": 128,
       "y": 238,
       "r": 15,
-      "note": "ground entry"
+      "note": "ground entry",
+      "wobble": 0.2
     },
     {
       "x": 18,
       "y": 128,
       "r": 15,
-      "note": "ground entry"
+      "note": "ground entry",
+      "wobble": 0.2
     },
     {
       "x": 238,
       "y": 128,
       "r": 15,
-      "note": "ground entry"
+      "note": "ground entry",
+      "wobble": 0.2
     },
     {
       "x": 20,
       "y": 20,
       "r": 12,
       "water": true,
-      "note": "water entry"
+      "note": "water entry",
+      "wobble": 0.15
     }
   ],
   "core": {

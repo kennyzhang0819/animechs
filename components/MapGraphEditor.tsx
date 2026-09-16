@@ -197,24 +197,21 @@ export default function MapGraphEditor() {
   }, [spec]);
 
   /**
-   * THE PLAYABLE DOCUMENT, into public/maps. This is the step that makes
-   * a graph a map a person can load: Save keeps the SOURCE, this writes
-   * the OUTPUT. It still is not in the game until the id is listed in
-   * OFFICIAL_MAP_IDS (game/maps.ts), which is a hand edit on purpose.
+   * PUBLISH — write public/maps/<id>.json for an id that is not a map
+   * yet. Save already rewrites the document of one that IS, so this is
+   * only the first time: a graph that has never been a map has nothing to
+   * update, and nothing should be created behind an author's back.
    */
-  const exportMap = useCallback(async () => {
+  const publishMap = useCallback(async () => {
     setBusy(true);
     try {
       const r = await fetch("/api/mapgen", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "export", spec }),
+        body: JSON.stringify({ action: "save", spec, alsoMap: true }),
       });
       const j = (await r.json()) as { wrote?: string[]; error?: string };
-      setNote(
-        j.error ??
-          `wrote ${j.wrote?.join("")} — add "${spec.id}" to OFFICIAL_MAP_IDS to play it`,
-      );
+      setNote(j.error ?? `wrote ${j.wrote?.join(", ")}`);
     } finally {
       setBusy(false);
     }
@@ -581,12 +578,12 @@ export default function MapGraphEditor() {
             Save spec
           </button>
           <button
-            onClick={() => void exportMap()}
+            onClick={() => void publishMap()}
             disabled={busy}
-            title="write public/maps/<id>.json — the document the game loads"
+            title="write public/maps/<id>.json for an id that is not a map yet — Save already updates one that is"
             className="rounded bg-[#1C1C22] px-3 py-1.5 text-[12px] text-[#A8A8B4] hover:bg-[#25252D] disabled:opacity-50"
           >
-            Export map
+            Publish map
           </button>
           <label className="ml-1 flex items-center gap-1 text-[11px] text-[#8A8A96]">
             <input type="checkbox" checked={darkHills} onChange={(e) => setDarkHills(e.target.checked)} />

@@ -4,7 +4,7 @@
   "seed": 49181,
   "archetype": "INTERCEPT THE CROSSER",
   "rock": {
-    "threshold": 0.46,
+    "threshold": 0.45,
     "scale": 26,
     "warp": 14
   },
@@ -122,32 +122,37 @@
       "x": 14,
       "y": 102,
       "r": 15,
-      "note": "ground entry"
+      "note": "ground entry",
+      "wobble": 0.2
     },
     {
       "x": 14,
       "y": 154,
       "r": 15,
-      "note": "ground entry"
+      "note": "ground entry",
+      "wobble": 0.2
     },
     {
       "x": 242,
       "y": 102,
       "r": 15,
-      "note": "ground entry"
+      "note": "ground entry",
+      "wobble": 0.2
     },
     {
       "x": 242,
       "y": 154,
       "r": 15,
-      "note": "ground entry"
+      "note": "ground entry",
+      "wobble": 0.2
     },
     {
       "x": 128,
       "y": 246,
       "r": 12,
       "water": true,
-      "note": "water entry"
+      "note": "water entry",
+      "wobble": 0.15
     }
   ],
   "core": {

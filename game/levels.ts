@@ -3199,6 +3199,89 @@ export const WORLDS: LevelSpec[] = [
     waveGap: WAVE_GAP_DEFAULT,
     script: [],
   },
+  // ================= THE MISSION SKETCHES =========================
+  //
+  // One world per archetype (docs/mission-design.md), each on a map the
+  // graph editor drew. They play the campaign's own script like every
+  // other world — the MISSION each is named for is not implemented yet,
+  // so what they are for now is the TERRAIN: eight boards that ask a run
+  // to spend in eight different shapes.
+  //
+  // NOTHING PLACES THEM ON THE TRACK, so worldUnlockLevel answers 1 and
+  // all eight are open from the start (game/track.ts). That is on purpose
+  // while they are being looked at rather than played through.
+  {
+    id: "10",
+    name: "Sear",
+    map: "sear",
+    // VENTURE AND DESTROY — the basalt caldera, the core hard on the east edge, five objectives laddering west
+    mission: { kind: "hold" },
+    waveGap: WAVE_GAP_DEFAULT,
+    script: [],
+  },
+  {
+    id: "11",
+    name: "Coldline",
+    map: "coldline",
+    // INTERCEPT THE CROSSER — two parallel convoy roads with the core between them
+    mission: { kind: "hold" },
+    waveGap: WAVE_GAP_DEFAULT,
+    script: [],
+  },
+  {
+    id: "12",
+    name: "Thornway",
+    map: "thornway",
+    // ESCORT THE CROSSER — one road, an S from the bottom, and a single shortcut
+    mission: { kind: "hold" },
+    waveGap: WAVE_GAP_DEFAULT,
+    script: [],
+  },
+  {
+    id: "13",
+    name: "Spore Ring",
+    map: "sporering",
+    // HOLD REMOTE GROUND — the core dead centre, six arcs in, three of them worth owning
+    mission: { kind: "hold" },
+    waveGap: WAVE_GAP_DEFAULT,
+    script: [],
+  },
+  {
+    id: "14",
+    name: "Twin Shale",
+    map: "twinshale",
+    // PROTECT THE SECOND THING — two arms off a southern stem, split by a river only the hulls cross
+    mission: { kind: "hold" },
+    waveGap: WAVE_GAP_DEFAULT,
+    script: [],
+  },
+  {
+    id: "15",
+    name: "Whitepeak",
+    map: "whitepeak",
+    // RACE THE ENEMY — the open board, almost no chokes, every position bought rather than found
+    mission: { kind: "hold" },
+    waveGap: WAVE_GAP_DEFAULT,
+    script: [],
+  },
+  {
+    id: "16",
+    name: "Emberdeep",
+    map: "emberdeep",
+    // STOP THE RITUAL — the other end of the dial, a branching tunnel system to an arena at the far end
+    mission: { kind: "hold" },
+    waveGap: WAVE_GAP_DEFAULT,
+    script: [],
+  },
+  {
+    id: "17",
+    name: "Saltmouth",
+    map: "saltmouth",
+    // PICK ONE — two peninsulas either side of an estuary, and nothing reaches both
+    mission: { kind: "hold" },
+    waveGap: WAVE_GAP_DEFAULT,
+    script: [],
+  },
 ];
 
 /**

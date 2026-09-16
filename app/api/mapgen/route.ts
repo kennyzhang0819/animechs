@@ -142,6 +142,52 @@ async function keep(file: string): Promise<void> {
   }
 }
 
+
+/**
+ * THE PLAYABLE DOCUMENT, built exactly as `run()` builds it — and refused
+ * on a failing check for exactly the same reason: a map that does not pass
+ * is not a map, and half of one in public/maps is worse than none. The
+ * editor has already shown the picture, so the author is not being told
+ * "no" without being told why.
+ */
+async function buildDocument(
+  gen: Gen,
+  spec: GraphSpec,
+): Promise<{ doc: Record<string, unknown> } | { error: string; fails?: string[] }> {
+  const quiet = console.log;
+  console.log = () => {};
+  try {
+    const scaled = gen.scaleSpec(toSpec(spec));
+    const m = gen.build(scaled);
+    const fails = gen.check(scaled, m);
+    if (fails.length)
+      return { error: `${fails.length} check(s) failed — fix them before writing the map`, fails };
+    return {
+      doc: {
+        id: spec.id,
+        name: spec.name,
+        w: gen.SIZE,
+        base: m.base,
+        floor: Array.from(m.floor),
+        wall: Array.from(m.wall),
+        blocked: Array.from(m.blocked),
+        // SPAWNS ARE OMITTED WHEN THERE ARE NONE, never written empty: an
+        // empty array is truthy, so spawnTilesOf would take the drop-zone
+        // branch, paint nothing, and leave a map with no way in at all.
+        // Absent falls through to the western strip instead, which is a
+        // map that plays until someone paints the tiles they want.
+        ...(m.spawns.length ? { spawns: m.spawns } : {}),
+        pines: m.pines,
+        decor: m.decor,
+      },
+    };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    console.log = quiet;
+  }
+}
+
 const GRAPHS = () => path.join(process.cwd(), "scripts", "maps", "graphs");
 
 function badId(id: unknown): id is string {
@@ -152,7 +198,12 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!ADMIN_ENABLED)
     return NextResponse.json({ error: "the map graph editor is a dev tool" }, { status: 403 });
 
-  const body = (await req.json()) as { action?: string; spec?: GraphSpec; id?: string };
+  const body = (await req.json()) as {
+    action?: string;
+    spec?: GraphSpec;
+    id?: string;
+    alsoMap?: boolean;
+  };
   const action = body.action ?? "generate";
 
   if (action === "list") {
@@ -202,54 +253,35 @@ export async function POST(req: Request): Promise<NextResponse> {
     await keep(specFile);
     await writeFile(graphFile, JSON.stringify(spec, null, 2));
     await writeFile(specFile, specSource(spec, tileNames(gen)));
-    return NextResponse.json({
-      ok: true,
-      wrote: [`scripts/maps/graphs/${spec.id}.json`, `scripts/maps/${spec.id}.mjs`],
-    });
+    const wrote = [`scripts/maps/graphs/${spec.id}.json`, `scripts/maps/${spec.id}.mjs`];
+    // AND THE MAP ITSELF, if this id already is one. Saving the source and
+    // leaving the document the game loads on the old terrain is a save
+    // that did nothing a player can see, so an edit to a map that exists
+    // updates that map rather than making a second thing to reconcile.
+    const doc = await buildDocument(gen, spec);
+    if ("error" in doc) return NextResponse.json({ ok: true, wrote, mapError: doc.error });
+    const mapFile = path.join(process.cwd(), "public", "maps", `${spec.id}.json`);
+    let exists = true;
+    try {
+      await readFile(mapFile);
+    } catch {
+      exists = false;
+    }
+    if (exists || body.alsoMap) {
+      await keep(mapFile);
+      await writeFile(mapFile, JSON.stringify(doc.doc));
+      wrote.push(`public/maps/${spec.id}.json`);
+    }
+    return NextResponse.json({ ok: true, wrote });
   }
 
   if (action === "export") {
-    // THE PLAYABLE DOCUMENT, written exactly as `run()` writes it — and
-    // REFUSED on a failing check for exactly the same reason: a map that
-    // does not pass is not a map, and half of one in public/maps is worse
-    // than none. The editor has already shown the picture.
-    const quiet = console.log;
-    console.log = () => {};
-    let m: Generated;
-    let fails: string[];
-    try {
-      const scaled = gen.scaleSpec(toSpec(spec));
-      m = gen.build(scaled);
-      fails = gen.check(scaled, m);
-    } catch (err) {
-      console.log = quiet;
-      return NextResponse.json(
-        { error: err instanceof Error ? err.message : String(err) },
-        { status: 400 },
-      );
-    } finally {
-      console.log = quiet;
-    }
-    if (fails.length)
-      return NextResponse.json(
-        { error: `${fails.length} check(s) failed — fix them before exporting`, fails },
-        { status: 400 },
-      );
-    const doc = {
-      id: spec.id,
-      name: spec.name,
-      w: gen.SIZE,
-      base: m.base,
-      floor: Array.from(m.floor),
-      wall: Array.from(m.wall),
-      blocked: Array.from(m.blocked),
-      spawns: m.spawns,
-      pines: m.pines,
-      decor: m.decor,
-    };
+    const built = await buildDocument(gen, spec);
+    if ("error" in built)
+      return NextResponse.json({ error: built.error, fails: built.fails }, { status: 400 });
     const file = path.join(process.cwd(), "public", "maps", `${spec.id}.json`);
     await keep(file);
-    await writeFile(file, JSON.stringify(doc));
+    await writeFile(file, JSON.stringify(built.doc));
     return NextResponse.json({ ok: true, wrote: [`public/maps/${spec.id}.json`] });
   }
 
