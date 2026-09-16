@@ -130,7 +130,7 @@ function Slider({
   );
 }
 
-export default function MapGraphEditor() {
+export default function MapGraphEditor({ openId }: { openId?: string }) {
   const [spec, setSpec] = useState<GraphSpec>(() => blankSpec("sketch"));
   const [tool, setTool] = useState<Tool>("select");
   const [sel, setSel] = useState<Sel>(null);
@@ -247,6 +247,17 @@ export default function MapGraphEditor() {
       setNote(`loaded ${id}`);
     } else setNote(j.error ?? "could not load");
   }, []);
+
+  // OPENED ONTO ONE MAP. The door on a map's card in the admin list
+  // carries its id, so the editor lands on that graph rather than on a
+  // blank board somebody then has to find their map in
+  const opened = useRef(false);
+  useEffect(() => {
+    if (!openId || opened.current) return;
+    opened.current = true;
+    void load(openId);
+  }, [openId, load]);
+
 
   // ---------- the picture ----------
   useEffect(() => {

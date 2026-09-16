@@ -81,6 +81,7 @@ function MapCard({
   ready,
   onEditMap,
   onEditLevel,
+  onEditGraph,
 }: {
   map: MapData;
   /** the world played on this map, if any */
@@ -89,6 +90,10 @@ function MapCard({
   ready: boolean;
   onEditMap: () => void;
   onEditLevel: () => void;
+  /** absent when this map has no graph behind it — the nine campaign maps
+   *  were hand-typed as specs and were never drawn, which is fine and
+   *  permanent: there is nothing to load and nothing to offer */
+  onEditGraph?: () => void;
 }) {
   const stats = level ? levelStats(level) : null;
   return (
@@ -132,6 +137,15 @@ function MapCard({
           Edit level
         </button>
       </div>
+      {onEditGraph && (
+        <button
+          onClick={onEditGraph}
+          title="draw the rooms, roads and chokes this map is generated from"
+          className="mt-2 w-full rounded border border-[#2E2E36] px-3 py-1.5 text-[15px] font-bold text-[#A6A6AF] transition-colors hover:border-[#4A4A55] hover:text-[#EDEDEF]"
+        >
+          Edit graph
+        </button>
+      )}
     </div>
   );
 }
@@ -155,6 +169,9 @@ function AdminInner() {
       ? raw
       : "content";
   const [maps, setMaps] = useState<MapData[]>([]);
+  // THE MAPS THAT WERE DRAWN rather than hand-typed. Only those can offer
+  // an Edit graph door, so the listing is fetched rather than assumed
+  const [graphIds, setGraphIds] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<MapData | null>(null);
   // level documents overlay WORLDS in place, so this is a "have they landed
   // yet" flag rather than a piece of state — the editor must not open on the
@@ -177,6 +194,20 @@ function AdminInner() {
     loadBalanceDoc().then(() => {
       if (alive) setBalanceReady(true);
     });
+    void (async () => {
+      try {
+        const r = await fetch("/api/mapgen", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "list" }),
+        });
+        if (!r.ok) return;
+        const j = (await r.json()) as { ids?: string[] };
+        if (alive) setGraphIds(new Set(j.ids ?? []));
+      } catch {
+        // the graph editor's route is dev-only and may simply not be there
+      }
+    })();
     return () => {
       alive = false;
     };
@@ -309,6 +340,11 @@ function AdminInner() {
                 level={level}
                 ready={levelsReady}
                 onEditMap={() => router.push(`/admin?map=${encodeURIComponent(m.id)}`)}
+                onEditGraph={
+                  graphIds.has(m.id)
+                    ? () => router.push(`/admin/mapgraph?id=${encodeURIComponent(m.id)}`)
+                    : undefined
+                }
                 onEditLevel={() =>
                   level && router.push(`/admin?level=${encodeURIComponent(level.id)}`)
                 }

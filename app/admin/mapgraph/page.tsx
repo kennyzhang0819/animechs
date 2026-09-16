@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import MapGraphEditor from "@/components/MapGraphEditor";
 import { ADMIN_ENABLED } from "@/game/env";
 
@@ -14,8 +15,11 @@ import { ADMIN_ENABLED } from "@/game/env";
  * pixel the panel does not: the header is one line, the shell never
  * scrolls, and the editor sizes its own square to what is left.
  */
-export default function MapGraphPage() {
+function MapGraphInner() {
   const router = useRouter();
+  // /admin/mapgraph?id=<map> opens straight onto that map's graph, which
+  // is the door on its card in the admin map list
+  const id = useSearchParams().get("id") ?? undefined;
   if (!ADMIN_ENABLED)
     return <main className="p-8 text-[#8A8A96]">The map graph editor is a development tool.</main>;
   return (
@@ -35,8 +39,16 @@ export default function MapGraphPage() {
         </button>
       </header>
       <div className="min-h-0 flex-1">
-        <MapGraphEditor />
+        <MapGraphEditor openId={id} />
       </div>
     </main>
+  );
+}
+
+export default function MapGraphPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen bg-[#0B0B0E]" />}>
+      <MapGraphInner />
+    </Suspense>
   );
 }
