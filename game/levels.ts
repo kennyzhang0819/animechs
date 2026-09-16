@@ -111,21 +111,25 @@ export const BOSS_NAME = ANIMAL_ART ? "Sovereign" : "Boss";
  * units a tick is 8.25 tiles a second — more than twice an ironhide1 — and on
  * a water route a third the length of Confluence's march that is a body a
  * wave-1 board sees for five seconds. Every naval speed below carries
- * this factor. IT IS THE SNIPER FAMILY NOW (weapons.ts, the Harpoon
- * fleet): it fires from beyond the board's reach and GROWS THE LONGER IT
- * LIVES (veteran), so the crawl is the point — a hull that took two
- * minutes to reach the guns has been shooting them for two minutes and
- * hits three times as hard when it gets there. Change it here, not per
- * hull — and note the number is the STAT: half again afloat, half ashore
- * (constants.ts NAVAL_WATER_SPEED / NAVAL_LAND_SPEED).
+ * this factor. IT IS THE SNIPER FAMILY (weapons.ts, the Harpoon fleet):
+ * it fires from beyond the board's reach, so the crawl is the point — a
+ * hull that takes two minutes to reach the guns has been shooting them
+ * for two minutes, and every second of that is a second the board spent
+ * being hit by something it could not answer. THE CRAWL USED TO BUY A
+ * SECOND THING as well: the fleet carried a veterancy that multiplied
+ * every hit by how long the hull had been alive, and a slow arrival was
+ * a strong one. That is gone (see the rows in weapons.ts), and the pace
+ * stands on reach alone. Change it here, not per hull — and note the
+ * number is the STAT: half again afloat, half ashore (constants.ts
+ * NAVAL_WATER_SPEED / NAVAL_LAND_SPEED).
  */
 const NAVAL_PACE = 0.45;
 
 /**
  * ...AND THE WRAITH FLEET RUNS AT TWICE THAT. The crawl is the SNIPER
- * family's premise, not this one's: a wraith carries no rail and no
- * veterancy, it BLINKS forward out of a hit and the top three go dark on
- * a cycle (blink, cloak), and every one of those reads as speed. At the
+ * family's premise, not this one's: a wraith carries no rail, it BLINKS
+ * forward out of a hit and the top three go dark on a cycle (blink,
+ * cloak), and every one of those reads as speed. At the
  * Harpoon fleet's pace the fleet that is supposed to be impossible to
  * hold a target on arrived slowly enough to be shot at leisure between
  * the hops, which made the whole family a worse Harpoon fleet.
@@ -144,14 +148,22 @@ const WRAITH_PACE = NAVAL_PACE * 2;
  */
 const WRAITH_LAND_SPEED = 0.8;
 
-/**
- * THE HARPOON FLEET'S VETERANCY (UnitStats.veteran), one number for all
- * five hulls: a hit grows by 2.5% of its row a second alive, to triple —
- * eighty seconds to full, half a minute round a skate4 (drillField). The rows
- * in weapons.ts are set light against this: a fresh fleet is a nuisance
- * at forty tiles and an old one is a siege.
- */
-const HARPOON_VETERAN = { perSecond: 0.025, max: 2 } as const;
+/* THE HARPOON FLEET NO LONGER AGES, and HARPOON_VETERAN is why there is a
+   hole here. It was `{ perSecond: 0.025, max: 2 }`, one number shared by
+   all five hulls: a hit grew by 2.5% of its row every second the hull had
+   been alive, to triple at eighty seconds — half a minute of that round a
+   skate4, whose drill (drillField) ran the clock two and a half times
+   faster. The rows in weapons.ts were written LIGHT against it, so what a
+   player met was a fleet whose damage depended on when the board got its
+   first shot away rather than on what the wave brought: the same hull was
+   a nuisance or a siege and nothing on screen said which.
+
+   THE ROWS CARRY IT ALL NOW — every harpoon in weapons.ts went up by a
+   third when the ramp came out, a flat buff and deliberately not the whole
+   of what the ramp was worth. UnitStats.veteran and UnitStats.drillField
+   are both still wired end to end (Sim, the status chips, the inspector)
+   and nothing ships with either; the sim's HAS_VET gate reads the stat
+   table, so the cost of keeping them is zero. */
 
 /** px per Mindustry world unit — leg geometry is written in those units */
 const MU = CELL / 8;
@@ -545,19 +557,26 @@ export interface UnitStats {
    */
   spotterField?: { mult: number; reload: number; range: number };
   /**
-   * THE DRILL — the skate4's. Every `reload` seconds the carrier stamps every
-   * body in `range` so that its VETERANCY clock (`veteran` below) runs
-   * `mult` times faster while the stamp lasts. Only a kind that has a
-   * veterancy at all takes anything from it.
+   * THE DRILL — the skate4's, until the Harpoon fleet stopped ageing.
+   * Every `reload` seconds the carrier stamps every body in `range` so
+   * that its VETERANCY clock (`veteran` below) runs `mult` times faster
+   * while the stamp lasts. Only a kind that has a veterancy at all takes
+   * anything from it — so with nothing on the roster ageing, NOTHING
+   * SHIPS WITH THIS. It stays wired for the family that wants it back.
    */
   drillField?: { mult: number; reload: number; range: number };
   /**
-   * VETERANCY — the Harpoon fleet's family trait: THE LONGER IT LIVES THE
-   * HARDER IT HITS. Every weapon the body fires does `1 + perSecond x age`
-   * times its row, up to `1 + max`; age is seconds since it arrived
-   * (Sim.uage). A fleet that fires from beyond the board's reach and
-   * moves at a crawl is a fleet that is old by the time it is in range,
-   * and the answer is reaching out to kill it young.
+   * VETERANCY — THE LONGER IT LIVES THE HARDER IT HITS. Every weapon the
+   * body fires does `1 + perSecond x age` times its row, up to `1 + max`;
+   * age is seconds since it arrived (Sim.uage).
+   *
+   * NOTHING SHIPS WITH IT. It was the Harpoon fleet's family trait and was
+   * taken off all five hulls — a body whose damage depends on how long the
+   * board took to reach it is a body a player cannot read, and the fleet's
+   * rows in weapons.ts carry the whole number now (see the note by
+   * NAVAL_PACE). The mechanism stays because it is a good one for a family
+   * built around it from the start, and it costs nothing while unused: the
+   * sim's HAS_VET gate reads this table and skips the pass entirely.
    */
   veteran?: { perSecond: number; max: number };
   /**
@@ -1489,11 +1508,12 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // walkers' own.
   //
   // THE HARPOON FLEET IS THE SNIPER FAMILY (weapons.ts): every hull fires
-  // a rail from beyond the board's reach, crawls ashore, and carries
-  // `veteran` — every hit multiplied by how long it has been alive, to
-  // triple after two minutes. The skate3 is the spotter (the hulls round
-  // it reach half again as far) and the skate4 is the drill (they age twice
-  // and a half as fast). Kill them young, and kill those two first.
+  // a rail from beyond the board's reach and crawls ashore. What it hits
+  // for is what its row says and nothing else — the `veteran` ramp that
+  // grew a hull's damage with its age is gone, and so is the skate4's
+  // drill that ran the ramp faster (see the note by NAVAL_PACE). The
+  // skate3 is the spotter, and it is the hull to kill: the fleet reaches
+  // half again as far round it.
 
   // skate1: the naval line's T1 — 208 hp, armor 2, a 1.25x1.25-block hitbox,
   // 1.1 units/tick = 8.25 tiles/s, the fastest hull there is. Note it
@@ -1510,7 +1530,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 3.3,
     naval: true,
     immunities: ["wet"],
-    veteran: HARPOON_VETERAN,
     wake: wake({ x: 4 * MU, length: 20, scl: 1.3 * MU }),
   },
   // skate2: T2 — 448 hp, armor 4 (an ironhide2's plating), a 1.625x1.625-block
@@ -1525,7 +1544,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 2.6,
     naval: true,
     immunities: ["wet"],
-    veteran: HARPOON_VETERAN,
     wake: wake({ x: 5.5 * MU, y: -4 * MU, length: 20, scl: 1.9 * MU }),
   },
   // skate3: T3 — 680 hp, armor 7, a 2.5x2.5-block hitbox, 0.85 units/tick
@@ -1544,7 +1562,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 1.8,
     naval: true,
     immunities: ["wet"],
-    veteran: HARPOON_VETERAN,
     spotterField: { mult: 1.5, reload: 2, range: 10 * CELL },
     wake: wake({ x: 7 * MU, y: -9 * MU, length: 22, scl: 1.5 * MU }),
   },
@@ -1554,10 +1571,14 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // the fleet's champion is the toughest of the light lines and not a
   // rival to the walkers'.
   //
-  // THE DRILL (drillField): every 2 s it stamps every hull within ten
-  // tiles so that its veterancy clock runs two and a half times as fast —
-  // a fleet round a skate4 is a fleet at full strength in under a minute.
-  // The T4 is the reason the fleet cannot be waited out
+  // IT CARRIES NO AURA. It was the DRILL (drillField) — every 2 s it
+  // stamped every hull within ten tiles so that its veterancy clock ran
+  // two and a half times as fast — and with the veterancy gone there was
+  // no clock left to turn. What it is now is the fleet's heaviest rail on
+  // the fleet's toughest hull, and the spotter beside it is the only aura
+  // the family fields. A T4 with nothing but its gun is a hole worth
+  // filling one day; wakeField, the bow wave this hull used to carry, is
+  // still wired and would be the honest thing to put back
   skate4: {
     hp: 6880,
     speed: 5.475 * CELL * NAVAL_PACE,
@@ -1568,8 +1589,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 1.3,
     naval: true,
     immunities: ["wet"],
-    veteran: HARPOON_VETERAN,
-    drillField: { mult: 2.5, reload: 2, range: 10 * CELL },
     wake: wake({ x: 18 * MU, y: -21 * MU, length: 50, scl: 3 * MU }),
   },
   // skate5: the fleet's T5 — 16000 hp, armor 16, and a 7.25x7.25-block
@@ -1587,7 +1606,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 0.9,
     naval: true,
     immunities: ["wet"],
-    veteran: HARPOON_VETERAN,
     wake: wake({ x: 23 * MU, y: -32 * MU, length: 70, scl: 3.5 * MU }),
   },
   // livewire1: the Wraith fleet's T1 — 160 hp, armor 2, a 1.375x1.375-block
@@ -2183,15 +2201,14 @@ export const FAMILIES = [
     kinds: ["stoop1", "stoop2", "stoop3", "stoop4", "stoop5"] },
   // THE SNIPERS: the whales — skate1, skate2, skate3, skate4, skate5 — and every
   // gun on them is a HARPOON RAIL from beyond the board's reach (forty to
-  // eighty tiles). They crawl ashore (NAVAL_PACE, NAVAL_LAND_SPEED) and
-  // GROW THE LONGER THEY LIVE (veteran): every hit multiplied by the
-  // hull's age, to triple. The skate3 is the spotter (the fleet reaches
-  // half again as far round it), the skate4 the drill (it ages faster round
-  // it), and the skate5's rail goes through everything on its line.
+  // eighty tiles). They crawl ashore (NAVAL_PACE, NAVAL_LAND_SPEED), the
+  // skate3 is the spotter (the fleet reaches half again as far round it),
+  // and the skate5's rail goes through everything on its line. What a hull
+  // hits for is its row in weapons.ts, fixed: the fleet used to grow the
+  // longer it lived and does not any more.
   //
-  // WHAT IT POSES: it is shooting you long before you can shoot it, and
-  // it is getting stronger. The answer is the long guns, and killing
-  // them young — the spotter and the drill first.
+  // WHAT IT POSES: it is shooting you long before you can shoot it. The
+  // answer is the long guns — reach, and the spotter first.
   { key: "naval", name: FAMILY_NAMES.naval.name, layer: "water", icon: "skate1",
     kinds: ["skate1", "skate2", "skate3", "skate4", "skate5"] },
   // THE WRAITHS: the sea slugs — livewire1, livewire2, livewire3, livewire4, livewire5

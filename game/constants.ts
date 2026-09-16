@@ -2027,8 +2027,9 @@ export type MoveLayer = (typeof MOVE_LAYERS)[number];
  * WHAT A HULL LOSES ASHORE: half its speed, applied to the drive and to
  * nothing else. The Harpoon fleet is the sniper family (weapons.ts) and
  * the crawl up the beach is the point of it — a hull that is slow to
- * arrive has been shooting the whole way in, and is old when it arrives
- * (levels.ts veteran).
+ * arrive has been shooting the whole way in. (It used to arrive OLD as
+ * well, and old meant hitting three times as hard; that ramp is gone —
+ * see the note by levels.ts NAVAL_PACE.)
  *
  * It is deliberately NOT a pathfinding input. The naval field is a plain
  * shortest-path solve over "rock, and nothing else" (navalWalkMask), so a
