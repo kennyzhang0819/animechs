@@ -75,7 +75,6 @@ export const spec = {
   holes: 6,
   lumps: 12,
   ruins: 2,
-  coreWaterReach: 50,
 };
 
 run(spec);

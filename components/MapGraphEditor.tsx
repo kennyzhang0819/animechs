@@ -50,7 +50,7 @@ interface GenResult {
   fails: string[];
   log: string[];
   png: string | null;
-  blocked: string | null;
+  hills: string | null;
 }
 
 const TOOLS: { id: Tool; label: string; hint: string }[] = [
@@ -139,6 +139,8 @@ export default function MapGraphEditor({ openId }: { openId?: string }) {
   const [res, setRes] = useState<GenResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string>("");
+  // a note that is bad news reads as bad news
+  const [noteBad, setNoteBad] = useState(false);
   const [ids, setIds] = useState<string[]>([]);
   const [darkHills, setDarkHills] = useState(true);
   const [showGraph, setShowGraph] = useState(true);
@@ -179,6 +181,7 @@ export default function MapGraphEditor({ openId }: { openId?: string }) {
   const generate = useCallback(async () => {
     setBusy(true);
     setNote("");
+    setNoteBad(false);
     try {
       const r = await fetch("/api/mapgen", {
         method: "POST",
@@ -188,6 +191,7 @@ export default function MapGraphEditor({ openId }: { openId?: string }) {
       const j = (await r.json()) as GenResult & { error?: string };
       if (j.error) {
         setNote(j.error);
+        setNoteBad(true);
         return;
       }
       setRes(j);
@@ -197,41 +201,56 @@ export default function MapGraphEditor({ openId }: { openId?: string }) {
   }, [spec]);
 
   /**
-   * PUBLISH — write public/maps/<id>.json for an id that is not a map
-   * yet. Save already rewrites the document of one that IS, so this is
-   * only the first time: a graph that has never been a map has nothing to
-   * update, and nothing should be created behind an author's back.
+   * SAVE — the spec always, and the map too when this id already is one.
+   *
+   * THE MAP CAN BE REFUSED WHILE THE SPEC IS WRITTEN. A document that
+   * does not pass the checks is not written, and that used to be silent:
+   * the note said "wrote ..." and the map a player loads stayed on the
+   * old terrain. So the refusal and the check that caused it are said out
+   * loud, and `alsoMap` is the only difference between Save and Publish.
    */
-  const publishMap = useCallback(async () => {
-    setBusy(true);
-    try {
-      const r = await fetch("/api/mapgen", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "save", spec, alsoMap: true }),
-      });
-      const j = (await r.json()) as { wrote?: string[]; error?: string };
-      setNote(j.error ?? `wrote ${j.wrote?.join(", ")}`);
-    } finally {
-      setBusy(false);
-    }
-  }, [spec]);
-
-  const save = useCallback(async () => {
-    setBusy(true);
-    try {
-      const r = await fetch("/api/mapgen", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "save", spec }),
-      });
-      const j = (await r.json()) as { wrote?: string[]; error?: string };
-      setNote(j.error ?? `wrote ${j.wrote?.join(" and ")}`);
-      if (j.wrote && !ids.includes(spec.id)) setIds([...ids, spec.id].sort());
-    } finally {
-      setBusy(false);
-    }
-  }, [spec, ids]);
+  const write = useCallback(
+    async (alsoMap: boolean) => {
+      setBusy(true);
+      try {
+        const r = await fetch("/api/mapgen", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "save", spec, ...(alsoMap ? { alsoMap } : {}) }),
+        });
+        const j = (await r.json()) as {
+          wrote?: string[];
+          error?: string;
+          mapError?: string;
+          mapFails?: string[];
+        };
+        if (j.error) {
+          setNote(j.error);
+          setNoteBad(true);
+          return;
+        }
+        const wrote = j.wrote ?? [];
+        const map = wrote.some((f) => f.startsWith("public/maps/"));
+        if (j.mapError) {
+          setNote(
+            `spec saved, MAP NOT UPDATED — ${j.mapError}${
+              j.mapFails?.length ? `: ${j.mapFails.join("; ")}` : ""
+            }`,
+          );
+          setNoteBad(true);
+        } else {
+          setNote(map ? `wrote ${wrote.join(", ")} — the map is updated` : `wrote ${wrote.join(" and ")} — this id is not a map yet, use Publish map`);
+          setNoteBad(!map);
+        }
+        if (wrote.length && !ids.includes(spec.id)) setIds([...ids, spec.id].sort());
+      } finally {
+        setBusy(false);
+      }
+    },
+    [spec, ids],
+  );
+  const save = useCallback(() => write(false), [write]);
+  const publishMap = useCallback(() => write(true), [write]);
 
   const load = useCallback(async (id: string) => {
     const r = await fetch("/api/mapgen", {
@@ -245,7 +264,11 @@ export default function MapGraphEditor({ openId }: { openId?: string }) {
       setSel(null);
       setRes(null);
       setNote(`loaded ${id}`);
-    } else setNote(j.error ?? "could not load");
+      setNoteBad(false);
+    } else {
+      setNote(j.error ?? "could not load");
+      setNoteBad(true);
+    }
   }, []);
 
   // OPENED ONTO ONE MAP. The door on a map's card in the admin list
@@ -274,10 +297,12 @@ export default function MapGraphEditor({ openId }: { openId?: string }) {
     const img = new Image();
     img.onload = () => {
       ctx.drawImage(img, 0, 0, PREVIEW, PREVIEW);
-      if (darkHills && res.blocked) {
-        // THE HILLS, PUSHED DOWN. The mask is the generator's own
-        // `blocked`, so nothing here has to know what a wall looks like
-        const mask = decode(res.blocked);
+      if (darkHills && res.hills) {
+        // THE HILLS, PUSHED DOWN — the ROCK only. Deep water is blocked
+        // as well, and dimming that too turned every lake and channel
+        // into another dark patch, so the mask the route sends is the
+        // blocked cells with the water taken back out.
+        const mask = decode(res.hills);
         const frame = ctx.getImageData(0, 0, PREVIEW, PREVIEW);
         const px = frame.data;
         for (let i = 0; i < mask.length && i < PREVIEW * PREVIEW; i++) {
@@ -584,9 +609,10 @@ export default function MapGraphEditor({ openId }: { openId?: string }) {
           <button
             onClick={() => void save()}
             disabled={busy}
-            className="rounded bg-[#1C1C22] px-3 py-1.5 text-[12px] text-[#A8A8B4] hover:bg-[#25252D] disabled:opacity-50"
+            title="write the graph, the .mjs spec, and the map itself when this id already is one"
+            className="rounded bg-[#E0A64B]/20 px-3 py-1.5 text-[12px] text-[#E8C88A] hover:bg-[#E0A64B]/30 disabled:opacity-50"
           >
-            Save spec
+            Save
           </button>
           <button
             onClick={() => void publishMap()}
@@ -605,7 +631,9 @@ export default function MapGraphEditor({ openId }: { openId?: string }) {
             graph
           </label>
         </div>
-        {note && <p className="mt-1 text-[11px] text-[#E0A64B]">{note}</p>}
+        {note && (
+          <p className={`mt-1 text-[11px] ${noteBad ? "text-[#FF8080]" : "text-[#7BE58A]"}`}>{note}</p>
+        )}
       </div>
 
       <div className="w-[320px] shrink-0 space-y-3 overflow-y-auto pr-1 text-[12px]">
@@ -824,7 +852,6 @@ export default function MapGraphEditor({ openId }: { openId?: string }) {
           <Num label="holes" value={spec.holes} onChange={(v) => setSpec({ ...spec, holes: v })} />
           <Num label="lumps" value={spec.lumps} onChange={(v) => setSpec({ ...spec, lumps: v })} />
           <Num label="ruins" value={spec.ruins} onChange={(v) => setSpec({ ...spec, ruins: v })} />
-          <Num label="core water reach" value={spec.coreWaterReach ?? 80} onChange={(v) => setSpec({ ...spec, coreWaterReach: v })} />
         </div>
 
         {res && (

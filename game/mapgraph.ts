@@ -140,7 +140,6 @@ export interface GraphSpec {
   holes: number;
   lumps: number;
   ruins: number;
-  coreWaterReach?: number;
 }
 
 /** the authored board every spec is written on — mindustry.mjs scales it */
@@ -170,7 +169,6 @@ export function blankSpec(id = "untitled"): GraphSpec {
     holes: 4,
     lumps: 12,
     ruins: 2,
-    coreWaterReach: 80,
   };
 }
 
@@ -220,7 +218,6 @@ export function graphSpecShape(g: GraphSpec): Record<string, unknown> {
   if (g.flats) out.flats = g.flats;
   if (g.forest) out.forest = g.forest;
   if (g.funnel) out.funnel = g.funnel;
-  if (g.coreWaterReach != null) out.coreWaterReach = g.coreWaterReach;
   return out;
 }
 
@@ -341,7 +338,6 @@ export function specSource(s: GraphSpec, names: Record<number, string>): string 
   const funnel = s.funnel
     ? `  funnel: { x: ${num(s.funnel.x)}, y: ${num(s.funnel.y)}, r: ${num(s.funnel.r)} },\n`
     : "";
-  const reach = s.coreWaterReach != null ? ` coreWaterReach: ${num(s.coreWaterReach)},` : "";
 
   const imports = ["run", ...[...used].sort()];
   const wrapped: string[] = [];
@@ -403,7 +399,7 @@ ${rooms}
 ${roads}
   ` : ""}],
   chokes: [${chokes}],
-${funnel}${forest}  holes: ${s.holes}, lumps: ${s.lumps}, ruins: ${s.ruins},${reach}
+${funnel}${forest}  holes: ${s.holes}, lumps: ${s.lumps}, ruins: ${s.ruins},
 };
 
 run(spec);

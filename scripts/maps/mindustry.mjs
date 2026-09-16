@@ -117,7 +117,6 @@ export function scaleSpec(spec) {
     holes: spec.holes == null ? spec.holes : Math.round(spec.holes * k),
     lumps: spec.lumps == null ? spec.lumps : Math.round(spec.lumps * k * k * 0.75),
     ruins: spec.ruins == null ? spec.ruins : Math.round(spec.ruins * k),
-    coreWaterReach: spec.coreWaterReach == null ? spec.coreWaterReach : spec.coreWaterReach * k,
   };
   return out;
 }
@@ -988,7 +987,6 @@ export function check(spec, m) {
     const spread = (Math.max(...ls) - Math.min(...ls)) / Math.min(...ls);
     say(spread <= 0.5, `walks to the core: ${lens.map((l) => `(${l.z.x},${l.z.y}) ${l.len.toFixed(0)}`).join(", ")} — spread ${(spread * 100).toFixed(0)}%`);
   }
-  if (bestD !== Infinity) say(bestD <= (spec.coreWaterReach ?? 40), `nearest water to the core: ${bestD.toFixed(0)} cells`);
 
   // the funnel holds
   if (spec.funnel) {

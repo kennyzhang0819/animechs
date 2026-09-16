@@ -2909,12 +2909,16 @@ export class Renderer {
         const r = rs[i];
         const x = (r.x + RELAY_SIZE / 2) * CELL, y = (r.y + RELAY_SIZE / 2) * CELL;
         if (x < vx0 - rpx || x > vx1 + rpx || y < vy0 - rpx || y > vy1 + rpx) continue;
-        // DARK UNTIL IT IS BOUGHT, and full colour after. The unlit one is
-        // drawn at a third rather than greyed, so it still reads as the
-        // same building and a player learns the silhouette before they can
-        // afford one
+        // DIMMED UNTIL IT IS BOUGHT, and full colour after. It is dimmed
+        // rather than greyed so it still reads as the same building, and a
+        // player learns the silhouette long before they can afford one.
+        //
+        // HALF AND NOT A THIRD: a relay stands on a hill and a hill is the
+        // darkest ground in the game, so a third put the unlit ones under
+        // the rock they sit on. Half is plainly "off" beside a lit one and
+        // still finds the eye on black basalt.
         const lit = sim.relayOn[i] !== 0;
-        const k = lit ? 1 : 0.34;
+        const k = lit ? 1 : 0.5;
         this.push(dyn, x, y, rpx, rpx, 0, UV_RELAY, k, k, k, 1);
       }
     }

@@ -87,7 +87,7 @@ export const spec = {
     { rooms: [4, 5], width: [6, 9] },
   ],
   chokes: [{ x: 128, y: 222, w: 10, reach: 8 }],
-  holes: 4, lumps: 12, ruins: 2, coreWaterReach: 90,
+  holes: 4, lumps: 12, ruins: 2,
 };
 
 run(spec);

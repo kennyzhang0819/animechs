@@ -41,25 +41,31 @@ export const spec = {
     ],
   },
   rooms: [
-    { x: 60, y: 216, r: 8 }, // 0
+    { x: 37, y: 224, r: 30 }, // 0
     { x: 128, y: 226, r: 8 }, // 1
-    { x: 204, y: 214, r: 8 }, // 2
-    { x: 214, y: 150, r: 8 }, // 3
-    { x: 140, y: 140, r: 8 }, // 4
-    { x: 56, y: 128, r: 8 }, // 5
-    { x: 52, y: 60, r: 8 }, // 6
-    { x: 130, y: 42, r: 8 }, // 7
-    { x: 208, y: 50, r: 10 }, // 8
+    { x: 212, y: 200, r: 20 }, // 2
+    { x: 198, y: 139, r: 8 }, // 3
+    { x: 121, y: 144, r: 16 }, // 4
+    { x: 61, y: 117, r: 8 }, // 5
+    { x: 64, y: 53, r: 20 }, // 6
+    { x: 122, y: 28, r: 8 }, // 7
+    { x: 193, y: 32, r: 10 }, // 8
     { x: 168, y: 18, r: 15 }, // 9 ground entry
-    { x: 240, y: 120, r: 15 }, // 10 ground entry
-    { x: 30, y: 222, r: 9, wobble: 0.2 }, // 11 the core's own ground
+    { x: 161, y: 123, r: 15, water: true }, // 10 ground entry
+    { x: 243, y: 16, r: 30 }, // 11
+    { x: 180, y: 95, r: 22, water: true }, // 12
+    { x: 10, y: 45, r: 20 }, // 13
+    { x: 244, y: 123, r: 22 }, // 14
+    { x: 178, y: 247, r: 22, water: true }, // 15
+    { x: 164, y: 223, r: 6, water: true }, // 16
+    { x: 142, y: 86, r: 20, water: true }, // 17
+    { x: 78, y: 184, r: 12, water: true }, // 18
+    { x: 30, y: 222, r: 9, wobble: 0.2 }, // 19 the core's own ground
   ],
   core: { x: 30, y: 222, r: 9 },
   spawns: [],
   routes: [],
   links: [
-    { rooms: [9, 11], width: [5, 7] },
-    { rooms: [10, 11], width: [5, 7] },
     { rooms: [0, 1], width: [14, 18] },
     { rooms: [1, 2], width: [14, 18] },
     { rooms: [2, 3], width: [14, 18] },
@@ -68,11 +74,16 @@ export const spec = {
     { rooms: [5, 6], width: [14, 18] },
     { rooms: [6, 7], width: [14, 18] },
     { rooms: [7, 8], width: [14, 18] },
-    { rooms: [1, 4], width: [7, 9] },
+    { rooms: [8, 11], width: [8, 12] },
+    { rooms: [10, 12], width: [8, 12], layer: "water" },
+    { rooms: [13, 6], width: [8, 12] },
+    { rooms: [14, 3], width: [8, 12] },
+    { rooms: [17, 12], width: [8, 12], layer: "water" },
+    { rooms: [10, 18], width: [17, 21], layer: "water" },
   ],
-  chokes: [{ x: 44, y: 220, w: 10, reach: 8 }],
+  chokes: [],
   funnel: { x: 44, y: 220, r: 8 },
-  holes: 2, lumps: 6, ruins: 1,
+  holes: 2, lumps: 15, ruins: 1,
 };
 
 run(spec);

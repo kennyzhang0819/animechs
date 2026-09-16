@@ -259,7 +259,13 @@ export async function POST(req: Request): Promise<NextResponse> {
     // that did nothing a player can see, so an edit to a map that exists
     // updates that map rather than making a second thing to reconcile.
     const doc = await buildDocument(gen, spec);
-    if ("error" in doc) return NextResponse.json({ ok: true, wrote, mapError: doc.error });
+    // A REFUSED MAP IS REPORTED, not swallowed. The spec still writes —
+    // an author must be able to save work in progress — but a save that
+    // left the map on the old terrain and said nothing is a save that
+    // looked like it worked and did not, so the reason comes back with
+    // the failing check lines.
+    if ("error" in doc)
+      return NextResponse.json({ ok: true, wrote, mapError: doc.error, mapFails: doc.fails ?? [] });
     const mapFile = path.join(process.cwd(), "public", "maps", `${spec.id}.json`);
     let exists = true;
     try {
@@ -293,14 +299,23 @@ export async function POST(req: Request): Promise<NextResponse> {
   console.log = (...args: unknown[]) => void log.push(args.map(String).join(" "));
   let fails: string[] = [];
   let png: Uint8Array | null = null;
-  let blocked: Uint8Array | null = null;
+  let hills: Uint8Array | null = null;
   let threw: string | null = null;
   try {
     const scaled = gen.scaleSpec(toSpec(spec));
     const m = gen.build(scaled);
     fails = gen.check(scaled, m);
     png = gen.preview(scaled, m, 1);
-    blocked = m.blocked;
+    // THE HILLS ARE NOT THE BLOCKED CELLS. Deep water is blocked too —
+    // nothing walks it and nothing builds on it — so darkening `blocked`
+    // darkened the sea along with the rock and a lake became
+    // indistinguishable from a hill. What an author wants dimmed is the
+    // rock, so the mask says rock: blocked, minus the water.
+    const deep = gen.WALL_DEEP as number;
+    const wall = m.wall;
+    hills = new Uint8Array(m.blocked.length);
+    for (let i = 0; i < hills.length; i++)
+      hills[i] = m.blocked[i] && wall[i] !== deep ? 1 : 0;
   } catch (err) {
     threw = err instanceof Error ? err.message : String(err);
   } finally {
@@ -314,8 +329,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     log,
     size: gen.SIZE,
     png: png ? Buffer.from(png).toString("base64") : null,
-    // the wall mask, so the editor can darken the hills without a second
+    // the rock mask, so the editor can darken the hills without a second
     // copy of the generator's tone tables living in the browser
-    blocked: blocked ? Buffer.from(blocked).toString("base64") : null,
+    hills: hills ? Buffer.from(hills).toString("base64") : null,
   });
 }

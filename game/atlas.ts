@@ -17,7 +17,7 @@ import { FOUNDRY_BASE_URLS, FOUNDRY_CORE_URL, FOUNDRY_HEAD_URLS, foundryHeadUrl 
 import { TOWER_ICONS } from "./towerIcons";
 // the Foundry's palette, for the one block whose art is drawn here rather
 // than loaded from a file (relayBlock)
-import { BORE, GUN, POWER, STEEL, type Mat } from "./turretArt";
+import { BORE, MAST, POWER, STEEL, type Mat } from "./turretArt";
 import type { TowerKind } from "./types";
 import {
   toCanvas,
@@ -2485,6 +2485,39 @@ function liquidTurret(
  * the board you can find without reading it, which is exactly what you
  * want of the building every other building's power runs through.
  */
+/**
+ * THE RELAY'S BLOCK, drawn rather than vendored — there is no Mindustry
+ * block behind it to port.
+ *
+ * IT IS AUTHORED FOR FORTY PIXELS, which is the only size that matters: a
+ * 2x2 building on a 20px tile is 40px on screen at 1x, and this cell is 128,
+ * so every feature is cut down by better than three to one before anybody
+ * sees it. The first cut of this ignored that and drew four concentric rings
+ * — octagon, diamond, diamond, square — each about four pixels wide once
+ * scaled. It collapsed into a grey square with a dot in it, which is a fair
+ * description of nothing.
+ *
+ * SO THE DESIGN IS A SILHOUETTE AND ONE FEATURE:
+ *
+ *   A DIAMOND, corner to corner. Not one of the nineteen turrets is a
+ *   diamond and neither is the core — they are all square plates — so the
+ *   shape alone says "this is not a gun" from across the board, at any zoom,
+ *   before a single interior detail resolves.
+ *
+ *   A BRIGHT STEEL RIM inside it. This is what makes the thing readable on
+ *   DARK ground: a relay stands on a hill, and a dark plate on dark rock is
+ *   invisible. The rim is wide enough (14 units, better than four pixels on
+ *   screen) to survive the downscale.
+ *
+ *   AN AMBER CORE, 36 units — eleven pixels on the board. The single loudest
+ *   thing on the building, in the player's own colour, because "this is
+ *   ground you can own" is the whole of what a relay says.
+ *
+ * Everything else the Foundry asks for still holds (turretArt.ts): no outline
+ * of its own, flat colours butted together, every material a PAIR with its
+ * dark half on the left of the sprite and its light half on the right, and
+ * 45-degree cuts only — which a diamond is made of.
+ */
 function relayBlock(): HTMLCanvasElement {
   const S = 128;
   const cv = document.createElement("canvas");
@@ -2509,17 +2542,6 @@ function relayBlock(): HTMLCanvasElement {
       c.restore();
     }
   };
-  const octagon = (a: number, b: number, ch: number): void => {
-    c.moveTo(a + ch, a);
-    c.lineTo(b - ch, a);
-    c.lineTo(b, a + ch);
-    c.lineTo(b, b - ch);
-    c.lineTo(b - ch, b);
-    c.lineTo(a + ch, b);
-    c.lineTo(a, b - ch);
-    c.lineTo(a, a + ch);
-    c.closePath();
-  };
   const diamond = (r: number): void => {
     c.moveTo(S / 2, S / 2 - r);
     c.lineTo(S / 2 + r, S / 2);
@@ -2527,13 +2549,12 @@ function relayBlock(): HTMLCanvasElement {
     c.lineTo(S / 2 - r, S / 2);
     c.closePath();
   };
-  // the plate, inside the stock margin so the base course shows around it
-  halves(() => octagon(12, 116, 20), GUN);
-  halves(() => diamond(40), STEEL);
-  halves(() => diamond(26), BORE);
-  // the lamp, 24px across the midline — the shade cuts it in two, so it is
-  // authored at three times the minimum rather than at the minimum
-  halves(() => c.rect(52, 52, 24, 24), POWER);
+  halves(() => diamond(62), MAST);
+  halves(() => diamond(44), STEEL);
+  halves(() => diamond(30), BORE);
+  // the lamp, 36 across the midline — the shade cuts it in two, so it is
+  // authored at better than twice the minimum rather than at the minimum
+  halves(() => c.rect(46, 46, 36, 36), POWER);
   return cv;
 }
 

@@ -201,7 +201,6 @@ A spec is forty-odd numbers. Confluence's, as a guide:
 | `funnel` | `{ x, y, r }` — the one mouth every ground route crosses |
 | `holes`, `lumps`, `ruins` | how many of each |
 | `forest` | `{ kind, on: [floors], threshold, depth }` |
-| `coreWaterReach` | how near the core the hulls' goal must be |
 
 Widths are in cells and are the brush's diameter; the smoothing passes
 shave about one, so a route's `width[0]` of 8 is a corridor of 7, which
@@ -273,10 +272,10 @@ document was saved at; **height falls out of `floor.length / w`**.
 is rock, and every layer walks at the core (`Sim.coreGoal`), presses
 against it and shoots — the naval line included, over a mask that is the
 walkers' rock with the deep water opened up (`navalWalkMask`). It used to
-sail to the water nearest the core and fire from the shore, which is what
-`coreWaterReach` in a generator spec is still keeping honest: a core in
-gun reach of the sea is a core a naval wave can hurt without leaving the
-water it is quick in.
+sail to the water nearest the core and fire from the shore, and a
+`coreWaterReach` check made every map put the sea within gun range to
+suit it. A hull walks ashore now, so nothing makes that demand of a map:
+put the water where the map wants it.
 
 **THE SPAWN LAYER IS ONE LAYER.** There is no such thing as a ground door
 or an air door any more: a map paints spawn tiles, and each movement layer

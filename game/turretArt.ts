@@ -71,6 +71,13 @@ export const IRON: Mat = ["#5a5f6e", "#8b90a0"];
  * board of seventeen gunmetal heads at a glance.
  */
 export const POWER: Mat = ["#f6a53a", "#ffd37f"];
+/**
+ * THE RELAY'S OWN PLATING, darker and bluer than a turret's gunmetal, so a
+ * mast is not mistaken for a gun at a glance. It is NOT the core's slate
+ * either (SLATE/IRON above are the core's and nowhere else) — the board has
+ * three kinds of building on it now and each one is a different metal.
+ */
+export const MAST: Mat = ["#2f3442", "#48505f"];
 
 /** what a turret throws, and the colour it wears for it */
 export type AmmoGroup = "bullet" | "shell" | "flame" | "beam" | "water" | "field" | "missile";

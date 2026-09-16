@@ -72,8 +72,16 @@ ground until you are happy with it, then paint.
    it; deleting a road leaves the rooms alone.
 3. **Generate** — the real generator builds, checks and draws it.
 4. Read the check lines under the picture. Adjust. Generate again.
-5. **Save spec** writes `scripts/maps/graphs/<id>.json` (the graph, which
-   is what the editor reloads) and `scripts/maps/<id>.mjs` (the map).
+5. **Save** writes `scripts/maps/graphs/<id>.json` (the graph, which is
+   what the editor reloads), `scripts/maps/<id>.mjs` (the spec), and
+   `public/maps/<id>.json` (the map the game loads) when this id already
+   is a map. **Publish map** is the first time only: it writes that third
+   file for an id that is not a map yet.
+
+   **A failing map is not written and the note says so.** The spec still
+   saves — work in progress has to be savable — but the document a player
+   loads stays on the last terrain that passed, and the note turns red
+   and names the check. A green note means the map moved.
 
 A map is not playable until its id is listed in `OFFICIAL_MAP_IDS`
 (`game/maps.ts`) and a world claims it. Saving alone ships nothing.

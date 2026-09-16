@@ -97,7 +97,7 @@ export const spec = {
   ],
   chokes: [{ x: 210, y: 128, w: 9, reach: 8 }, { x: 158, y: 128, w: 10, reach: 7 }, { x: 184, y: 97, w: 7, reach: 6 }, { x: 119, y: 210, w: 7, reach: 6 }, { x: 112, y: 48, w: 7, reach: 6 }, { x: 55, y: 181, w: 7, reach: 6 }, { x: 51, y: 68, w: 7, reach: 6 }],
   funnel: { x: 210, y: 128, r: 8 },
-  holes: 5, lumps: 16, ruins: 3, coreWaterReach: 80,
+  holes: 5, lumps: 16, ruins: 3,
 };
 
 run(spec);
