@@ -2,12 +2,12 @@
 
 This is the direction the enemy art settled on after the animal trial
 (behind `ANIMAL_ART` in `game/animalFlag.ts`), written down so the next
-family is drawn to the same rules without re-running the trial. All eight
+family is drawn to the same rules without re-running the trial. All nine
 families are on the turrets' grammar now (section 1b): the Ironhide rhino
 in `game/ironhideArt.ts`, the Starhart stag, Stoop bat, Dartback poison frog,
 Skate manta and Livewire narwhal in `game/familyArt.ts`, the Tusker
 elephant in `game/tuskerArt.ts`, the Grapnel starfish in
-`game/grapnelArt.ts`, on the turret
+`game/grapnelArt.ts`, the Kettle vulture in `game/kettleArt.ts`, on the turret
 engine in `game/turretArt.ts`, with what they share in
 `game/animalArt.ts` and the packing in `game/atlas.ts`.
 
@@ -299,6 +299,7 @@ footprint gets.
 | Livewire, the narwhal | `game/familyArt.ts` | body and two flippers | 44, 56, 80, 176, 232 |
 | Tusker, the elephant | `game/tuskerArt.ts` | mech to T3, four legs from T4 | 56, 72, 96, 136, 176 |
 | Grapnel, the starfish | `game/grapnelArt.ts` | mech at every tier, and the leg cell is the rowing arms | 36, 52, 72, 116, 148 |
+| Kettle, the vulture | `game/kettleArt.ts` | body and two wings, one chord out to the wrist and slotted into fingers | 40, 56, 88, 168, 216 |
 | Sovereign, the sea eagle (the BOSS, one body) | `game/kingArt.ts` | body and two wings | 512 |
 
 **The boss is not a family, and it is the one body allowed to be a

@@ -1,10 +1,15 @@
 /**
- * THREE CANDIDATES FOR THE SECOND AIR FAMILY, drawn and nothing else.
- * Nothing here is wired into the game: no kind ids, no cells in atlas.ts,
- * no stats in levels.ts. It is the sheet step 1 of docs/unit-art.md
- * section 3 asks for — draw the T5 first, and if it does not read as the
- * animal in silhouette, stop there — for three animals at once, so the
- * choice is made off drawings rather than off a paragraph.
+ * THREE CANDIDATES FOR THE SECOND AIR FAMILY, and the two that did not
+ * get built. It is the sheet step 1 of docs/unit-art.md section 3 asks
+ * for — draw the T5 first, and if it does not read as the animal in
+ * silhouette, stop there — for three animals at once, so the choice was
+ * made off drawings rather than off a paragraph.
+ *
+ * THE KETTLE WON AND HAS LEFT THIS FILE: it is a family now
+ * (game/kettleArt.ts, levels.ts `kettle1`..`kettle5`), imported back here
+ * so the sheets keep showing all three side by side. The Skein and the
+ * Gyre below are still drawings and nothing else — no kind ids, no cells
+ * in atlas.ts, no stats in levels.ts.
  *
  *   npm run gen:air      → docs/air-concepts/*.png
  *
@@ -59,24 +64,9 @@
  */
 import type { StoopArt, StoopGeom } from "./animalArt";
 import { BORE, GUN, STEEL, bars, rev, type Mat, type Pen } from "./turretArt";
-import { BONE, HORN, scaler } from "./ironhideArt";
+import { scaler } from "./ironhideArt";
 import { flyer, flyerGeom, withCells, type Base, type FlyerTier, type Wing } from "./familyArt";
-
-/** the reach a wing gets on a tier: out from its root to a unit inside
- *  the grid's edge, which is the Stoop's own formula — the quad is the
- *  box, so a wingtip stops AT the box and never over it */
-/**
- * A BEAK IS DARK KERATIN. Three passes of these drawings put the bill in
- * HORN or in BONE and every one of them came out a CORK: a pale block on
- * the end of a narrow front, on a body wider than both, is a bottle's
- * whole silhouette, and the eye finds it before it finds the animal. So
- * the bills here are the dark end of the same stuff the rhino's horn is,
- * and BONE shows only as a nail a few px long on the tiers big enough to
- * carry one.
- */
-export const BEAK: Mat = ["#3b342e", "#6e6154"];
-
-const reachOf = (n: number, rootX: number): number => { const { q } = scaler(n); return n / 2 - q(1) - rootX; };
+import { BEAK, KETTLE_TIERS, kettle, reachOf } from "./kettleArt";
 
 /**
  * A TAPERED, SWEPT WING, in four panels out the span. Each panel's chord
@@ -205,112 +195,14 @@ export function skein(T: FlyerTier): StoopArt {
   return flyer(T, L, body, wing, FROST);
 }
 
-// ── KETTLE: the vulture ─────────────────────────────────────────────────
+// ── KETTLE: the vulture — SHIPPED, and drawn in game/kettleArt.ts ───────
 //
-// A vulture from above is a PLANK: wings held straight out at one chord
-// from shoulder to wrist and slotted into square fingers past it, a pale
-// ruff of down at the shoulders and a small bare head on a thin neck in
-// front of that. It is the broadest, bluntest of the three — the goose
-// tapers to a point and the albatross to a needle — so no two of them
-// read as each other at field zoom, which is the only test a family's
-// silhouette has to pass.
-//
-// THE CROP IS THE GIMMICK AND IT IS DRAWN. A kettle takes the meat off
-// every body that dies under it, and the sac under its ruff is where
-// that goes: two units wide on the runt, most of the breast on the apex.
-// The tiers are one animal after four more courses, which is the one
-// family where "five tiers are one animal growing up" is literally the
-// mechanic rather than a drawing rule.
-export const CARR: Mat = ["#3a3229", "#726150"];
-export const RUFF: Mat = ["#8d8577", "#ddd6c2"];
-export const NAKED: Mat = ["#5e514a", "#a89184"];
-export const CROP: Mat = ["#7a3420", "#c06a3e"];
-const CARR_R = rev(CARR);
-
-/** hitboxes UR x 1.25 / 1.75 / 2.75 / 5.25 / 6.75 — heavier than the
- *  Skein at every rung and still inside the Stoop's 7.25, because the
- *  thing that grows at the table should not start at the ceiling */
-const KETTLE_BASE: readonly Base[] = [
-  { t: 1, n: 40, fold: 0.22, sweep: 0.12, rate: 3.2 },
-  { t: 2, n: 56, fold: 0.21, sweep: 0.11, rate: 2.8 },
-  { t: 3, n: 88, fold: 0.2, sweep: 0.1, rate: 2.2 },
-  { t: 4, n: 168, fold: 0.18, sweep: 0.09, rate: 1.6 },
-  { t: 5, n: 216, fold: 0.16, sweep: 0.08, rate: 1.2 },
-];
-const kettleHalf = (T: Base): number => scaler(T.n).w(7);
-const kettleWing = (T: Base): Wing => {
-  const { n } = T; const { q, w } = scaler(n); const rootX = w(5);
-  return { rootX, rootY: q(14), y0: q(11), y1: q(20), reach: reachOf(n, rootX) };
-};
-export const KETTLE_TIERS: readonly FlyerTier[] = KETTLE_BASE.map((T) => withCells(T, kettleWing(T), 2 * kettleHalf(T) + 2));
-export function kettleGeom(T: FlyerTier): StoopGeom { return flyerGeom(T, kettleWing(T)); }
-export function kettle(T: FlyerTier): StoopArt {
-  const { n, t } = T; const { q, w } = scaler(n); const cx = n / 2; const U = w(2);
-  const B = kettleHalf(T), L = kettleWing(T);
-  // what the crop has eaten: half its width and how far down the breast
-  // it has swollen, both a tier's worth bigger every rung
-  const cropHalf = w(t >= 5 ? 4 : t >= 4 ? 4 : t >= 3 ? 3 : t >= 2 ? 2 : 2);
-  const cropTo = q(t >= 5 ? 24 : t >= 4 ? 22 : t >= 3 ? 20 : t >= 2 ? 19 : 18);
-  const body = (P: Pen): void => {
-    // the bare head on a thin neck, and the hooked bill in front of it:
-    // a vulture's head is the SMALLEST thing on it, which is half of why
-    // the bird reads as all shoulders
-    P.box(cx - U, 0, cx + U, q(5), BEAK);
-    if (t >= 5) P.box(cx - U, 0, cx + U, w(2), BONE);
-    P.octa(cx - w(3), q(3), cx + w(3), q(8), w(2), NAKED);
-    P.box(cx - U, q(7), cx + U, q(13), NAKED);
-    // the ruff: a pale collar at the shoulders. A horizontal band on a
-    // symmetrical body is a face — this one is allowed because the animal
-    // really has one there, and it is the vulture's own tell
-    P.octa(cx - w(5), q(10), cx + w(5), q(15), w(3), RUFF);
-    // the body: a broad chamfered plate with the hip fold reversed, and a
-    // SQUARE tail off the back of it the way a vulture's is
-    P.octa(cx - B, q(13), cx + B, q(27), w(5), CARR);
-    P.box(cx - B + U, q(24), cx + B - U, q(24) + w(3), CARR_R);
-    P.box(cx - w(5), q(26), cx + w(5), n - q(1), CARR);
-    // THE CROP: the accent, and the only part of this drawing that is a
-    // different size at every tier. It hangs under the ruff and swells
-    // down the breast — an empty runt against a gorged apex is the same
-    // body with this one shape four sizes apart
-    P.octa(cx - cropHalf, q(14), cx + cropHalf, cropTo, U, CROP);
-    // the machine: gunmetal straps down the flanks from T2 — down the
-    // body, so they never cut it across, and well clear of the crop
-    if (t >= 2) P.box(cx - B + U, q(16), cx - B + 2 * U, q(26), GUN);
-    // a gunmetal cap over the crown from T4
-    if (t >= 4) P.box(cx - w(3) + U, q(4), cx + w(3) - U, q(4) + w(3), GUN);
-    // the apex: a steel rail along the ruff and two vents down the tail
-    if (t >= 5) {
-      P.box(cx - w(5) + U, q(10), cx + w(5) - U, q(10) + U, STEEL);
-      bars(P, cx - w(3), cx + w(3), q(27), 2, U, U, BORE);
-    }
-  };
-  const wing = (O: Pen): void => {
-    const R = scaler(L.reach);
-    // the plank: ONE chord out to the wrist, blunt, no taper at all
-    O.box(0, L.y0, R.q(20), L.y1, CARR);
-    // the fingers: slotted primaries past the wrist with DAYLIGHT between
-    // them, one more of them every tier from T3. Four bars a unit apart
-    // is the thing that says vulture from across a board, and the reason
-    // they arrive late is arithmetic: a slot needs four px of finger and
-    // four of sky, and the runt's hand has room for neither
-    const fingers = t >= 5 ? 4 : t >= 4 ? 3 : t >= 3 ? 2 : 0;
-    const gap = Math.max(4, Math.round((L.y1 - L.y0) * 0.12));
-    if (fingers === 0) O.box(R.q(18), L.y0, L.reach, L.y1, CARR);
-    else {
-      const h = (L.y1 - L.y0 - (fingers - 1) * gap) / fingers;
-      for (let k = 0; k < fingers; k++) {
-        const y = L.y0 + Math.round(k * (h + gap));
-        // each finger a little shorter than the one behind it
-        O.box(R.q(18), y, L.reach - k * R.q(2), y + Math.round(h), CARR);
-      }
-    }
-    // a gunmetal shoulder strap out along the arm from T2, and the crop's
-    // own rust at the wing root on the apex
-    if (t >= 2) O.box(R.q(4), L.y0 + U, R.q(4) + R.w(4), L.y1 - U, GUN);
-    if (t >= 5) O.box(R.q(10), L.y0 + U, R.q(10) + R.w(5), L.y1 - U, CROP);
-  };
-  return flyer(T, L, body, wing, CROP);
-}
+// THE ONE THAT WAS PICKED. It is a real family now (levels.ts
+// `kettle1`..`kettle5`), so its drawing moved out of this file into
+// game/kettleArt.ts and is imported back for the sheets below — one
+// source of truth, and a concept sheet that keeps telling the truth about
+// what shipped. It went in WITHOUT the carrion mechanic below: the art
+// first, the ability when the design is ready for it.
 
 // ── GYRE: the albatross ─────────────────────────────────────────────────
 //
@@ -431,11 +323,11 @@ export function shadowOf(a: { n: number; px: (string | null)[] }, ink = "#16171e
 /** every candidate, for the render script */
 export const SKY_CONCEPTS = [
   { key: "skein", animal: "the goose", tiers: SKEIN_TIERS, art: skein },
-  { key: "kettle", animal: "the vulture", tiers: KETTLE_TIERS, art: kettle },
+  { key: "kettle", animal: "the vulture (SHIPPED — game/kettleArt.ts)", tiers: KETTLE_TIERS, art: kettle },
   { key: "gyre", animal: "the albatross", tiers: GYRE_TIERS, art: gyre },
 ] as const;
 
 /** unused-export guard: the geometry a rig would need is derived here the
  *  same way the shipped flyers derive theirs, so a candidate that wins
  *  moves into familyArt.ts whole rather than being re-measured */
-export const SKY_GEOM = { skein: skeinGeom, kettle: kettleGeom, gyre: gyreGeom };
+export const SKY_GEOM = { skein: skeinGeom, gyre: gyreGeom };

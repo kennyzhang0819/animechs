@@ -181,6 +181,25 @@ export const PAL = {
   hook: pal(0xe59a55),
   /** ...and its shade, the star's back sprite under the front one */
   hookDark: pal(0xa35a2a),
+  /**
+   * THE NINTH FAMILY'S: carrion rust, for the Kettles (levels.ts, the
+   * vulture) — the crop at the breast, the pods under the wings, and
+   * every round they fire.
+   *
+   * IT IS THE ONE PAIR ON THIS TABLE THAT BREAKS THE RULE OVER IT, and
+   * knowingly. What is actually free on the wheel for a ninth line is the
+   * cold end — a frost or a near-black — and this is a red-brown that
+   * sits between the ground mechs' rose and the Grapnels' copper, nearer
+   * the copper than any other two here are to each other. It stayed
+   * because it is what a full crop looks like and the drawing is the
+   * thing that was picked (game/kettleArt.ts). What keeps it survivable
+   * is the LAYER: a Grapnel crawls and a Kettle flies, so the two are
+   * never side by side on the same ground. If the field says otherwise
+   * the fix is this pair and the CROP material beside it, and nothing
+   * else moves.
+   */
+  carrion: pal(0xc06a3e),
+  carrionDark: pal(0x7a3420),
   tuskDark: pal(0x8a7a5e),
 } as const;
 

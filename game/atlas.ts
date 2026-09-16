@@ -49,6 +49,7 @@ import {
 import { IRON_TIERS, ironLegged, ironMech, type IronTier } from "./ironhideArt";
 import { TUSK_TIERS, tuskLegged, tuskMech } from "./tuskerArt";
 import { GRAPNEL_TIERS, grapnelMech } from "./grapnelArt";
+import { KETTLE_TIERS, kettle, kettleGeom } from "./kettleArt";
 import { KING_TIER, king, kingGeom } from "./kingArt";
 
 /**
@@ -1089,6 +1090,26 @@ export const SF4_CELLS = sfMechCells(4, GRAPNEL_TIERS[3].n, 128);
 export const SF5_CELLS = sfMechCells(5, GRAPNEL_TIERS[4].n, 256);
 
 /**
+ * THE KETTLES' CELLS, and the third family to ask the packer for room of
+ * its own rather than draw over a Mindustry tree (the Tuskers were the
+ * first, the Grapnels the second). There is no upstream `kettle3` and no
+ * sprite file for one, so with ANIMAL_ART off these cells are never
+ * painted and the family sits on the shelf (levels.ts SHELVED_FAMILIES).
+ *
+ * Three cells a tier, like every other body on the wing rig: the composed
+ * sprite, the body column and one wing. The composed sprite goes in the
+ * smallest 64-multiple cell that holds its hitbox in native px (40, 56,
+ * 88, 168, 216 — kettleArt.ts), so the world px per native px is the same
+ * 0.625 the rest of the sheet has; the body and wing cells are derived
+ * from the tier (FlyerTier bw/nw) the way partCells does it below, which
+ * is why they are declared down there with the Stoop's and not here.
+ */
+const KETTLE_FULL_CELLS: readonly UVRect[] = KETTLE_TIERS.map((T, i) =>
+  sprite(`kettle${i + 1}`, [64, 64, 128, 256, 256][i], T.n),
+);
+const KETTLE_KINDS: readonly UnitKind[] = ["kettle1", "kettle2", "kettle3", "kettle4", "kettle5"];
+
+/**
  * WHAT THE BOSS DRAWS AT: one and a half world px per native px against
  * everything else's one. It is the boss's own multiplier and always has
  * been — it was the disrupt's — and the boss is the only kind on the sheet
@@ -1210,6 +1231,14 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   grapnel3: { uv: SF3_CELLS.body, sprite: UNIT_SPRITE * 2 },
   grapnel4: { uv: SF4_CELLS.body, sprite: UNIT_SPRITE * 2 },
   grapnel5: { uv: SF5_CELLS.body, sprite: UNIT_SPRITE * 4 },
+  // the vultures, on cells of their own (see THE KETTLES' CELLS): a 40px
+  // runt and a 56px brute in 64s, an 88 in a 128, then 168 and 216 in
+  // 256s — the same world px per native px as everything above it
+  kettle1: { uv: KETTLE_FULL_CELLS[0], sprite: UNIT_SPRITE },
+  kettle2: { uv: KETTLE_FULL_CELLS[1], sprite: UNIT_SPRITE },
+  kettle3: { uv: KETTLE_FULL_CELLS[2], sprite: UNIT_SPRITE * 2 },
+  kettle4: { uv: KETTLE_FULL_CELLS[3], sprite: UNIT_SPRITE * 4 },
+  kettle5: { uv: KETTLE_FULL_CELLS[4], sprite: UNIT_SPRITE * 4 },
 };
 
 // Mindustry world units → px (CELL / 8, see constants.ts)
@@ -1709,6 +1738,7 @@ const partCells = (name: string, T: FlyerTier) =>
 export const UV_STOOP_CELLS: readonly (readonly [UVRect, UVRect])[] = STOOP_TIERS.map((T) => partCells("stoop", T));
 export const UV_MANTA_CELLS: readonly (readonly [UVRect, UVRect])[] = MANTA_TIERS.map((T) => partCells("manta", T));
 export const UV_NARWHAL_CELLS: readonly (readonly [UVRect, UVRect])[] = NARWHAL_TIERS.map((T) => partCells("narwhal", T));
+export const UV_KETTLE_CELLS: readonly (readonly [UVRect, UVRect])[] = KETTLE_TIERS.map((T) => partCells("kettle", T));
 
 /**
  * A flyer drawn in parts: a body quad and one wing quad mirrored to both
@@ -1924,6 +1954,12 @@ if (ANIMAL_ART) {
   wingParts(STOOP_KINDS, STOOP_TIERS, UV_STOOP_CELLS, stoopGeom, true);
   wingParts(MANTA_KINDS, MANTA_TIERS, UV_MANTA_CELLS, mantaGeom, false);
   wingParts(NARWHAL_KINDS, NARWHAL_TIERS, UV_NARWHAL_CELLS, narwhalGeom, false);
+  // ---- the Kettles ----
+  // the vulture on the same rig, on cells of its own. NO JETS: a kettle
+  // is a bird and the thing keeping it up is the beat, the same call the
+  // Sovereign makes below — and there is nothing to delete either way,
+  // since a kind with no upstream hull was never in UNIT_ENGINES
+  wingParts(KETTLE_KINDS, KETTLE_TIERS, UV_KETTLE_CELLS, kettleGeom, false);
   // ---- the Sovereign ----
   // the boss on the same rig, on cells of its own and at the boss's own
   // scale. Its ENGINES GO: the disrupt's two mirrored pairs of jets were
@@ -3002,6 +3038,10 @@ function packAnimalArt(
   packWinged(STOOP_KINDS, STOOP_TIERS, [UV_STOOP1, UV_STOOP2, UV_STOOP3, UV_STOOP4, UV_STOOP5], UV_STOOP_CELLS, stoop);
   packWinged(MANTA_KINDS, MANTA_TIERS, [UV_SKATE1, UV_SKATE2, UV_SKATE3, UV_SKATE4, UV_SKATE5], UV_MANTA_CELLS, manta);
   packWinged(NARWHAL_KINDS, NARWHAL_TIERS, [UV_LIVEWIRE1, UV_LIVEWIRE2, UV_LIVEWIRE3, UV_LIVEWIRE4, UV_LIVEWIRE5], UV_NARWHAL_CELLS, narwhal);
+  // the vultures, into cells nobody else owns (see THE KETTLES' CELLS):
+  // the same three drawings as any other wing-rig body, with nothing
+  // under them to clear
+  packWinged(KETTLE_KINDS, KETTLE_TIERS, KETTLE_FULL_CELLS, UV_KETTLE_CELLS, kettle);
   // ---- the Sovereign ----
   // the boss, into cells nobody else owns (see THE SOVEREIGN'S CELLS): the
   // same three drawings as any other wing-rig body, and the stock hull's

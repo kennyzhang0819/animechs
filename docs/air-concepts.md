@@ -1,5 +1,16 @@
 # A second air family: three candidates, drawn
 
+> **The Kettle shipped — the art, and only the art.** It is a family now:
+> `kettle1`..`kettle5` in `game/levels.ts`, drawn in `game/kettleArt.ts`,
+> packed into cells of its own in `game/atlas.ts`. It went on WITHOUT the
+> carrion mechanic described below — it has no ability of any kind, just a
+> body, a pair of wing pods and the promise every candidate here was built
+> around: it does not dive, it crosses the board over the guns, and it
+> arrives at the core. The carrion gimmick is still the design this
+> drawing was picked for and is still unbuilt; the crop on its breast is
+> the room left for it. The Skein and the Gyre are still drawings and
+> nothing else.
+
 The Stoop is the only thing in the sky and it is a **bomber**: it picks a
 structure inside its seek reach, leaves the route, dives it and goes off
 on contact (`payload`, `game/levels.ts`; the dive is in `Sim` beside the
@@ -20,9 +31,11 @@ one question the whole design —
 — because "it flies, so it ignores the maze" is not a gimmick, it is what
 `flying: true` already does, and a family whose only idea is that would be
 a Stoop that forgot to explode. Three animals below, three answers, one
-sheet each. Nothing here is wired into the game: the drawings are
-`game/skyConceptArt.ts`, rendered by `npm run gen:air`, and there are no
-kind ids, no cells in `atlas.ts` and no stats in `levels.ts` behind them.
+sheet each. When this was written none of them was wired into the game;
+the Kettle is now (see the note at the top), and the other two are still
+only drawings in `game/skyConceptArt.ts` — no kind ids, no cells in
+`atlas.ts`, no stats in `levels.ts`. `npm run gen:air` renders every sheet
+on this page, the shipped one included.
 
 All three obey the brief and the house rules the same way:
 
@@ -102,7 +115,7 @@ and not in any one body.
 
 ---
 
-## 2. Kettle — the vulture. *Your kills feed it.*
+## 2. Kettle — the vulture. *Your kills feed it.* **(SHIPPED, without the gimmick)**
 
 ![the five tiers](air-concepts/kettle.png)
 
@@ -132,7 +145,12 @@ kettle wave feeds on its own dead too, so the numbers scale with the wave
 rather than with the player's DPS alone, and the cap is a flat multiple
 of the body's own health.
 
-**What it would take.** A `carrion?: { share, range, max }` on
+**What shipped, and what did not.** The animal, the five tiers, the rig,
+the cells, the stats and a plain pair of wing pods — and none of the
+mechanic below. A kettle today is the first flyer in the game that does
+not blow itself up, and that is the whole of it.
+
+**What the gimmick would still take.** A `carrion?: { share, range, max }` on
 `UnitStats` and a hook where a unit already dies: find the kettles in
 range, add `share` of the dead body's max hp, clamp at `max`. The growth
 shows as a draw scale on the quad and the crop cell brightening.
@@ -223,6 +241,10 @@ room for exactly that.
 ---
 
 ## The recommendation
+
+*(This section is what the sheet argued before anything was built. The
+Kettle was picked instead, on the strength of the drawing — see the note
+at the top. The reasoning below is left as it was written.)*
 
 **Ship the Skein.** It is the only one of the three whose answer to "why
 does it survive the crossing" is a *clock the board cannot shorten*, which

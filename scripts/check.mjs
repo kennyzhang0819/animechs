@@ -309,7 +309,7 @@ report("art", artMissing, `${artWanted.length} drawings`);
 // gets caught, every time — it is the tier whose ornament is cut last.
 const cellFamilies = (() => {
   const IA = R("ironhideArt.js"), FAM = R("familyArt.js"), TA = R("tuskerArt.js"), SA = R("grapnelArt.js");
-  const KA = R("kingArt.js");
+  const KA = R("kingArt.js"), KE = R("kettleArt.js");
   // a ground family's tier is a mech tier or a legged one; the Grapnels
   // ride the mech rig at every tier with no stride at all, so the rig is
   // named per family rather than read off the stride
@@ -323,6 +323,7 @@ const cellFamilies = (() => {
     ["stoop", FAM.STOOP_TIERS, FAM.stoop],
     ["skate", FAM.MANTA_TIERS, FAM.manta],
     ["livewire", FAM.NARWHAL_TIERS, FAM.narwhal],
+    ["kettle", KE.KETTLE_TIERS, KE.kettle],
     // the boss is not a family and has exactly one tier, but its cell is
     // packed and refused the same way every other body's is
     ["king", [KA.KING_TIER], () => KA.king()],
