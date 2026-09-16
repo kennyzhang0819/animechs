@@ -284,9 +284,10 @@ stale tab or a cached bundle looks exactly like a fix not working.
   [docs/mission-design.md](docs/mission-design.md)
 - `game/wormArt.ts` — **the Borer**, and the first thing on the sheet that
   is not an animal: a boring machine drawn as a train — a steel cutter
-  head, seven gunmetal cars on a hot seam, a tail with two stacks. One
-  Borer is NINE BODIES in a line, each shootable on its own, so the sheet
-  carries three drawings and the car is packed once and drawn seven times
+  head, eighteen gunmetal cars on a hot seam, a tail with two stacks. One
+  Borer is TWENTY BODIES in a line, each shootable on its own, so the
+  sheet carries three drawings and the car is packed once and drawn
+  eighteen times
 - `game/maps.ts` — map documents: terrain layers, spawn circles, the
   core's cell. **Every campaign map is 512x512 — twice Mindustry's Ground
   Zero — and is generated, never drawn**: `scripts/maps/<id>.mjs` is a few

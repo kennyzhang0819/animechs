@@ -300,7 +300,7 @@ footprint gets.
 | Tusker, the elephant | `game/tuskerArt.ts` | mech to T3, four legs from T4 | 56, 72, 96, 136, 176 |
 | Grapnel, the starfish | `game/grapnelArt.ts` | mech at every tier, and the leg cell is the rowing arms | 36, 52, 72, 116, 148 |
 | Sovereign, the sea eagle (the BOSS, one body) | `game/kingArt.ts` | body and two wings | 512 |
-| Borer, the crosser (the MISSION's, three pieces) | `game/wormArt.ts` | none — one flat quad a piece | 96, 96, 96 |
+| Borer, the crosser (the MISSION's, three pieces) | `game/wormArt.ts` | none — one flat quad a piece, shown at 1.5x | 96, 96, 96 |
 
 **The Borer is not an animal, and it is the one body on the sheet that is
 allowed not to be.** Everything in section 1 is a rule about drawing a

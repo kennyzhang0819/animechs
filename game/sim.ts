@@ -29,7 +29,7 @@ import {
   HN,
   HROWS,
   CORE_HP,
-  MAX_RELAYS,
+  MAX_BEACONS,
   INF,
   MOVE_LAYERS,
   NAVAL_LAND_SPEED,
@@ -138,7 +138,9 @@ import {
   waveGroups,
   WAVE_GAP_OPENING,
   WAVE_RELEASE_SECONDS,
+  wormRamp,
   WORM_CHAIN,
+  WORM_LENGTH,
   WORM_SPACING,
   type LegSpec,
   type SegmentSpec,
@@ -851,6 +853,22 @@ const KIND_WET_IMMUNE = Uint8Array.from(UNIT_KINDS, (k) =>
   UNIT_STATS[k].immunities?.includes("wet") ? 1 : 0,
 );
 /**
+ * UnitStats.unslowable as one flag per kind: NO SLOW MULTIPLIER EVER
+ * SCALES THIS BODY'S DRIVE.
+ *
+ * It is deliberately NOT an entry in the table above, because it is not a
+ * status immunity. An immune body never takes the status at all — never
+ * tints, never douses a fire it is carrying, never hands the electric
+ * ammunition the soaked bonus. This one takes everything the soak does
+ * and refuses only the seconds, which is the same split the Speedy
+ * mutation already draws (applyWet). The two readers are the drive in
+ * updateUnits and the advance in updateCrosser, and every slow this game
+ * grows later has to come through one of them.
+ */
+const KIND_NO_SLOW = Uint8Array.from(UNIT_KINDS, (k) =>
+  UNIT_STATS[k].unslowable ? 1 : 0,
+);
+/**
  * UnitType.drag per kind — the fraction of an external shove a unit sheds
  * per tick. It bleeds the pull channel, which a repeater round's knockback
  * feeds (see impulse()).
@@ -1420,7 +1438,7 @@ export class Sim {
    */
   readonly occupied = shared.u8(NCELLS);
   /**
-   * THE POWER GRID: 1 on every cell the core or a connected relay lights.
+   * THE POWER GRID: 1 on every cell the core or a connected beacon lights.
    *
    * NOTHING IS BUILT ANYWHERE ELSE (board.ts poweredClear) and nothing
    * standing anywhere else fires (fireTowers). It is the one grid in this
@@ -1436,7 +1454,7 @@ export class Sim {
    * ground on the far side of the board, because the grid is a TREE rooted
    * at the core rather than a union of discs — so there is no incremental
    * edit that is correct, and the whole thing is repainted on the few
-   * events that can move it: a relay built, a relay lost, a new board.
+   * events that can move it: a beacon built, a beacon lost, a new board.
    */
   readonly powered = shared.u8(NCELLS);
   /**
@@ -2291,10 +2309,10 @@ export class Sim {
         this.occupied[y * COLS + x] = 1;
       }
     // ...and the ground it lights, which on a fresh board is the whole of
-    // the grid: no relay has been bought yet, so the core's own disc IS
-    // where this run may build. A NEW BOARD IS A NEW MAP, so the relays
+    // the grid: no beacon has been bought yet, so the core's own disc IS
+    // where this run may build. A NEW BOARD IS A NEW MAP, so the beacons
     // this run has switched on go with the old one
-    this.relayOn.fill(0);
+    this.beaconOn.fill(0);
     this.rebuildPower();
     this.buildPads();
     // a new map is a new set of mouths, and a new pad list for the hulls
@@ -4307,14 +4325,20 @@ export class Sim {
     }
     // the pattern, on its own beat
     if (this.crossLaunched < m.pattern.length) {
-      for (const r of m.pattern[this.crossLaunched]) this.launchCrosser(r);
+      // BOTH ROADS OF ONE LAUNCH GET THE SAME RAMP (levels.ts wormRamp):
+      // the index is the launch's, not the worm's, so the pair sent in
+      // "both" are twins. A player who found one of them softer than the
+      // other would be reading a die roll, not a schedule
+      for (const r of m.pattern[this.crossLaunched]) this.launchCrosser(r, this.crossLaunched);
       this.crossLaunched++;
       this.crossT = m.every;
       return;
     }
     // ...and then the spare, owed to any run that has let one through
     if (this.crossLeaked > 0) {
-      for (const r of m.spare) this.launchCrosser(r);
+      // ...and the spare is one rung PAST the pattern's last (wormRamp),
+      // which falls out of the index rather than being a number of its own
+      for (const r of m.spare) this.launchCrosser(r, this.crossLaunched);
       this.crossT = -1;
       return;
     }
@@ -4327,6 +4351,13 @@ export class Sim {
    * ONE BORER ONTO ONE ROAD: the whole chain laid nose to tail at the
    * road's entry, head furthest along (levels.ts WORM_CHAIN).
    *
+   * THE HEAD IS LAID A WHOLE TRAIN-LENGTH PAST THE ENTRY, which is the
+   * one thing here a road author has to know: the run-up leg (missions.ts)
+   * must be longer than levels.ts WORM_LENGTH, or the head appears in
+   * open ground with the map already behind it instead of crawling in off
+   * the rim. The chain got twenty pieces long and both of Coldline's
+   * roads grew their first leg to match.
+   *
    * WAVE ZERO, and that is the load-bearing line. A crosser is not part
    * of any wave — it was not staged by loadStep, it pays no XP, and a
    * wave must not be held open waiting for a train to die three minutes
@@ -4335,20 +4366,29 @@ export class Sim {
    * What it IS worth is scrap, like every other kill, because that is a
    * fact about a body dying rather than about a wave.
    */
-  private launchCrosser(roadIdx: number): void {
+  private launchCrosser(roadIdx: number, launch: number): void {
     const road = this.roads[roadIdx];
     if (!road) return;
     const id = this.crossers.length;
     const worm = { road: roadIdx, alive: 0, leaked: false };
     this.crossers.push(worm);
-    const lead = (WORM_CHAIN.length - 1) * WORM_SPACING;
+    const ramp = wormRamp(launch);
     for (let k = 0; k < WORM_CHAIN.length; k++) {
-      const s = lead - k * WORM_SPACING;
+      const s = WORM_LENGTH - k * WORM_SPACING;
       roadAt(road, s, this.roadTmp);
       if (!this.spawnUnit(WORM_CHAIN[k], { x: this.roadTmp.x, y: this.roadTmp.y, exact: true }, 0)) break;
       const i = this.n - 1;
       this.ucross[i] = id;
       this.ucrossS[i] = s;
+      // THIS LAUNCH'S POOL, on both bars at once. It goes on AFTER the
+      // spawn rather than through a spawnUnit argument because it is not a
+      // fact about the kind and not a rung of the level curve — it is this
+      // train's number, and the ONLY place a Borer's health differs from
+      // the roster's. uhpmax moves with uhp so the bar over it still reads
+      // full, and every ledger that divides by it (the drop is not one —
+      // see wormRamp) keeps its meaning
+      this.uhp[i] *= ramp;
+      this.uhpmax[i] *= ramp;
       // the heading is the road's, from the first frame: a piece that
       // spawned facing +x and swung round over the next second would
       // enter the map sideways
@@ -4397,10 +4437,14 @@ export class Sim {
    * heading is the road's own tangent.
    *
    * WHAT STILL REACHES IT is everything that is done TO a body rather than
-   * by it: the wet slow and the haste stamp both scale the advance, so a
-   * liquid turret out on the road really does buy the board seconds — and
-   * that is the one thing on the map that changes how long a Borer is
-   * under fire.
+   * by it — the haste stamp scales the advance, damage lands, statuses
+   * land — WITH ONE EXCEPTION, and it is the one that used to be the
+   * headline here: a Borer is `unslowable` (levels.ts), so the wet slow no
+   * longer buys the board seconds. A douser on the line still soaks it,
+   * still puts a fire on it out, still hands the electric ammunition the
+   * soaked bonus; it simply cannot move the arrival. That is the mission's
+   * promise being kept — the road is drawn from wave one and so is the
+   * clock — and it means the only way to stop a train is to kill it.
    *
    * Returns true when the piece has reached the exit, which is a LEAK: the
    * caller lifts it off the board (see updateUnits).
@@ -4415,7 +4459,9 @@ export class Sim {
     // from, and a train that stood still for half a second on the rim
     // would be standing still in the one place nothing can reach it
     const haste = HAS_HASTE_AURA && this.uhasteT[i] > 0 ? this.uhasteMul[i] : 1;
-    const spd = this.uspd[i] * (this.uwet[i] > 0 ? this.uwetSlow[i] : 1) * haste;
+    const slow =
+      this.uwet[i] > 0 && !KIND_NO_SLOW[this.ukind[i]] ? this.uwetSlow[i] : 1;
+    const spd = this.uspd[i] * slow * haste;
     const s = this.ucrossS[i] + spd * dt;
     this.ucrossS[i] = s;
     if (s >= road.length) return true;
@@ -6306,10 +6352,10 @@ export class Sim {
     return this.powered;
   }
 
-  /** ...and which of the map's relays are switched on, for the drawing
+  /** ...and which of the map's beacons are switched on, for the drawing
    *  side to light and price them (the array itself, held by reference) */
-  relayOnMask(): Uint8Array {
-    return this.relayOn;
+  beaconOnMask(): Uint8Array {
+    return this.beaconOn;
   }
 
   /**
@@ -6373,65 +6419,65 @@ export class Sim {
   }
 
   /**
-   * WHICH OF THE MAP'S RELAYS HAVE BEEN SWITCHED ON, one byte each, indexed
-   * into terrain.relays.
+   * WHICH OF THE MAP'S BEACONS HAVE BEEN SWITCHED ON, one byte each, indexed
+   * into terrain.beacons.
    *
    * SHARED, because the drawing side has to know which of them to light and
-   * which to price, every frame, and this is one byte per relay against a
+   * which to price, every frame, and this is one byte per beacon against a
    * message. WHERE they are does not cross at all: both threads build their
    * own terrain from the same map document, so both already have the list.
    *
-   * IT ONLY EVER GOES UP. A relay stands on rock, cannot be targeted and
-   * cannot be destroyed (see MapRelay in terrain.ts) — so buying one is a
+   * IT ONLY EVER GOES UP. A beacon stands on rock, cannot be targeted and
+   * cannot be destroyed (see MapBeacon in terrain.ts) — so buying one is a
    * permanent widening of the board and nothing in the game turns one back
    * off. That is what lets the power mask only ever grow, which is in turn
    * what lets a placed turret never lose its ground.
    */
-  readonly relayOn = shared.u8(MAX_RELAYS);
+  readonly beaconOn = shared.u8(MAX_BEACONS);
 
   /**
-   * SWITCH ONE ON — the whole of the relay mechanic, and it is a purchase
+   * SWITCH ONE ON — the whole of the beacon mechanic, and it is a purchase
    * and not a placement: there is no footprint to test, no ground to claim
    * and nothing to roll. The circle around it becomes buildable, for the
    * rest of the run.
    *
    * IT TAKES NO MONEY, exactly as placeTower takes none. The scrap is gone
-   * before this is called (Game.buyRelay pays the world and tells the host,
+   * before this is called (Game.buyBeacon pays the world and tells the host,
    * which is the one money path every purchase in this game goes down) —
    * charging again here would charge a run twice for one press.
    *
    * Returns whether anything changed, so a stale press can be ignored: an
-   * index off the end, or a relay that is already on.
+   * index off the end, or a beacon that is already on.
    */
-  setRelayOn(i: number): boolean {
-    if (!this.terrain.relays[i] || this.relayOn[i]) return false;
-    this.relayOn[i] = 1;
+  setBeaconOn(i: number): boolean {
+    if (!this.terrain.beacons[i] || this.beaconOn[i]) return false;
+    this.beaconOn[i] = 1;
     this.rebuildPower();
     return true;
   }
 
   /**
    * EVERYTHING LIGHTING GROUND RIGHT NOW: the core, which lights for free
-   * and always, then every relay that has been bought.
+   * and always, then every beacon that has been bought.
    *
-   * A FLAT UNION AND NOT A TREE. An earlier cut of this had relays daisy-
+   * A FLAT UNION AND NOT A TREE. An earlier cut of this had beacons daisy-
    * chaining out from the core, each needing the one behind it — which is a
-   * real mechanic, and the wrong one for relays that cannot be destroyed:
+   * real mechanic, and the wrong one for beacons that cannot be destroyed:
    * with nothing able to cut a chain, the chain was only ever a second way
    * of saying what the prices already say. The price IS the gate now, and
-   * an author who wants a far relay to require a near one prices it that
+   * an author who wants a far beacon to require a near one prices it that
    * way.
    */
   powerDiscs(): { x: number; y: number; r: number }[] {
-    return powerDiscsOf(this.terrain, this.relayOn, this.core.x, this.core.y);
+    return powerDiscsOf(this.terrain, this.beaconOn, this.core.x, this.core.y);
   }
 
   /**
-   * REPAINT THE POWER GRID: the core's disc, plus one per bought relay.
+   * REPAINT THE POWER GRID: the core's disc, plus one per bought beacon.
    *
    * SPAN FILL rather than a per-cell distance test — at ninety cells the
    * core's disc alone is better than twenty-five thousand cells, and each
-   * row is solved with one square root. It runs when a relay is bought and
+   * row is solved with one square root. It runs when a beacon is bought and
    * when a board is loaded, never in a step and never in a frame.
    */
   private rebuildPower(): void {
@@ -8693,12 +8739,14 @@ export class Sim {
       // soaked body under a dartback3 is slowed and hurried at once, and the
       // product is the honest answer to both.
       const haste = HAS_HASTE_AURA && this.uhasteT[i] > 0 ? this.uhasteMul[i] : 1;
+      // ...unless the kind refuses every slow there is (KIND_NO_SLOW). The
+      // soak is still on the body and still doing everything else a soak
+      // does; this one branch is where it would have cost seconds
+      const slow = uwet[i] > 0 && !KIND_NO_SLOW[ukind[i]] ? uwetSlow[i] : 1;
       const spd =
         uspawn[i] > SPAWN_INVINCIBLE - SPAWN_UNMOVING
           ? 0
-          : uwet[i] > 0
-            ? uspd[i] * uwetSlow[i] * land * haste
-            : uspd[i] * land * haste;
+          : uspd[i] * slow * land * haste;
       uvx[i] += (flowTmp.x * spd - uvx[i]) * steer;
       uvy[i] += (flowTmp.y * spd - uvy[i]) * steer;
 

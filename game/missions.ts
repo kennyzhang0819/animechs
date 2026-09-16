@@ -17,11 +17,23 @@
  * are turned into world px here, once, on the first ask.
  *
  * A ROAD RUNS OFF BOTH EDGES. The first and last points sit outside the
- * open ground on purpose: a worm is a hundred-odd px of train, and one
+ * open ground on purpose: a worm is a KILOMETRE of train (levels.ts
+ * WORM_LENGTH — twenty pieces, seventy-four tiles nose to tail), and one
  * that materialised whole in the middle of a room would read as a spawn
  * rather than as something that came from somewhere. It crawls in through
  * the rim rock and it crawls out through it — see Sim.updateCrosser,
  * which is why a crosser does not collide with walls at all.
+ *
+ * THE FIRST LEG IS THE RUN-UP AND IT IS SIZED OFF THE TRAIN. Sim.launch-
+ * Crosser lays the head a whole WORM_LENGTH past the entry point, so the
+ * run-up has to be LONGER THAN THE TRAIN or the head is put down in open
+ * ground with half the map already behind it. Both of Coldline's are
+ * about a hundred cells, which is the seventy-four of train plus the
+ * distance from the rim to the first corner, and both are drawn COLLINEAR
+ * with the leg that follows so the train does not kink as it enters.
+ * Lengthen the chain and these two numbers have to grow with it — there
+ * is no check that can catch it, because a head placed in the open is a
+ * legal position, just a bad one.
  */
 import { CELL, COLS, ROWS } from "./constants";
 
@@ -55,11 +67,32 @@ export interface Road {
  * COLDLINE is the intercept map (levels.ts world 11, scripts/maps/
  * coldline.mjs): two roads west to east with the core on its own ground
  * between them, far enough from each that one battery cannot cover both.
- * They are the map's own corridors — the spec's rooms 14-5-6-7-8-15 and
- * 17-1-2-3-4-16 — walked cell by cell over the generated document and
- * then straightened into the fewest points that stay in the open, so a
- * worm keeps to the middle of the ground the generator carved instead of
- * cutting the corners off it.
+ *
+ * THEY ARE FIT TO THE TERRAIN, NOT DRAWN OVER IT. Each line is the
+ * shortest route from rim to rim that never comes within six cells of
+ * rock (five on the north line, which is tighter), pulled taut and then
+ * cut down to the fewest corners that hold that margin — so a Borer keeps
+ * to the middle of the ground the generator carved and the player can
+ * read where it is going a long way ahead. That margin is what makes the
+ * line WALKABLE-LOOKING rather than merely legal: the train is seventy
+ * tiles of body and six cells of daylight either side is what stops it
+ * appearing to grind along a cliff.
+ *
+ * THEY USED TO WANDER. The south line was eleven corners with a 77-degree
+ * hairpin in it, because it was traced by hand over a document that had
+ * rock in places this one no longer does. Refitting the same two rooms
+ * against the current terrain cut the south line's total turning from 422
+ * degrees to 153 and the north's from 226 to 111, with no corner sharper
+ * than 37. A road that bends less is a road a player can commit a battery
+ * to before the train reaches it, which is the decision the map is about.
+ *
+ * WHAT THE SOUTH LINE GIVES UP for that: it crosses the open plain at its
+ * closest about 77 cells from the core, which is INSIDE the core's own
+ * lit ground (constants.ts CORE_POWER_R is 90). So one stretch of it can
+ * be covered by guns bought on free power, where the rest of both roads
+ * still costs a beacon. That is a deliberate trade and not an oversight —
+ * the alternative was keeping the road outside the disc, which put five
+ * more corners back into it.
  *
  * SOUTH FIRST, and the order is the mission's: the pattern in levels.ts
  * names roads by index, and "bottom, top, both, bottom, both" is the
@@ -70,17 +103,20 @@ export const ROAD_SPECS: Record<string, readonly RoadSpec[]> = {
   coldline: [
     {
       name: "the south line",
+      // 14,100 px rim to rim. The first leg is the run-up (see above);
+      // the last runs off the east rim below the corner
       cells: [
-        [-4, 492], [28, 488], [69, 483], [171, 360], [239, 337], [297, 366],
-        [396, 340], [426, 355], [442, 351], [454, 375], [453, 400], [499, 443],
-        [516, 449],
+        [-75, 502], [31, 488], [68, 483], [91, 460], [162, 367], [211, 338],
+        [291, 319], [396, 348], [427, 381], [493, 434], [518, 455],
       ],
     },
     {
       name: "the north line",
+      // 12,000 px rim to rim, and the straighter of the two: one shallow
+      // dogleg round the rock at 110 and then most of the map in a line
       cells: [
-        [-4, 124], [20, 124], [97, 124], [140, 154], [240, 107], [390, 130],
-        [419, 116], [499, 133], [516, 129],
+        [-76, 120], [20, 124], [96, 127], [112, 134], [188, 130], [242, 110],
+        [373, 123], [440, 122], [499, 133], [518, 136],
       ],
     },
   ],

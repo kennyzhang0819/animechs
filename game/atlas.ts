@@ -16,7 +16,7 @@ import { FOUNDRY_ART } from "./turretFlag";
 import { FOUNDRY_BASE_URLS, FOUNDRY_CORE_URL, FOUNDRY_HEAD_URLS, foundryHeadUrl } from "./foundryArt";
 import { TOWER_ICONS } from "./towerIcons";
 // the Foundry's palette, for the one block whose art is drawn here rather
-// than loaded from a file (relayBlock)
+// than loaded from a file (beaconBlock)
 import { BORE, MAST, POWER, STEEL, type Mat } from "./turretArt";
 import type { TowerKind } from "./types";
 import {
@@ -690,14 +690,23 @@ export const UV_SHIELD_TOWER = flat("shield-tower", 96);
 export const UV_RESTORER = flat("restorer", 128);
 export const UV_FIXER = flat("fixer", 64);
 /**
- * THE RELAY, a 2x2 block like the projector and, like it, one that never
- * turns — a mast has no front. Its art is the only structure art in the
- * game with no source file behind it at all: it is DRAWN here, at pack
- * time (relayBlock), because there is no Mindustry block it is a port of
- * and a hand-authored PNG for four flat shapes would be a file to keep in
- * step with a palette that already lives in turretArt.ts.
+ * THE BEACON'S MAST — a HEAD, not a whole block, and 96px because it is a
+ * 3x3 head like the cleaver's and the shield tower's. It never turns: a
+ * mast has no front, so it is flat rather than a `top`.
+ *
+ * WHAT IS NOT IN THIS CELL IS THE PLATE. A beacon is drawn exactly the way
+ * a player's turret is drawn (renderer.ts): UV_TOWER_BASE3 first, this
+ * over it. That is the whole reason the sprite stopped covering its own
+ * cell — a head fills the middle and lets its plate show at the rim, and
+ * the plate is what makes a beacon read as square and as OURS.
+ *
+ * Its art is still the only structure art in the game with no source file
+ * behind it at all: it is DRAWN here, at pack time (beaconBlock), because
+ * there is no Mindustry block it is a port of and a hand-authored PNG for
+ * four flat shapes would be a file to keep in step with a palette that
+ * already lives in turretArt.ts.
  */
-export const UV_RELAY = flat("relay", 128);
+export const UV_BEACON = flat("beacon", 96);
 /**
  * Tether's beam, the two regions Drawf.laser stretches between the
  * turret and its target. The line is packed ROTATED — its 4x48 source runs
@@ -1151,12 +1160,14 @@ export const UNIT_CELL: Partial<Record<UnitKind, CellArt>> = {};
  * pieces ask the packer for room of their own rather than going over
  * anything (see THE TUSKERS' CELLS above).
  *
- * ALL THREE ARE ONE SIZE. A worm is nine bodies in a line (levels.ts
+ * ALL THREE ARE ONE SIZE. A worm is twenty bodies in a line (levels.ts
  * WORM_CHAIN) drawn on one 96 grid — three tiles — in the smallest
- * 64-multiple cell that holds it, so the head, the seven cars and the
- * tail keep the sheet's 0.625 world px per native px and the whole train
- * rides one quad size. The head fills its grid and the cars are drawn
- * narrower inside it, which is the 60x50 and 56x44 the hitboxes say.
+ * 64-multiple cell that holds it, so the head, the eighteen cars and the
+ * tail share one packing and the whole train rides one quad size. The
+ * head fills its grid and the cars are drawn narrower inside it, which is
+ * the 90x69 and 84x66 the hitboxes say once the quad's 1.5 is on (see
+ * UNIT_ART below — this is the one body on the sheet drawn above its
+ * native scale apart from the boss).
  *
  * NO TEAM CELL AND NO SILHOUETTE. A Borer is a machine rather than an
  * animal (game/wormArt.ts): it wears the crimson as paint laid in the
@@ -1238,10 +1249,16 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   grapnel3: { uv: SF3_CELLS.body, sprite: UNIT_SPRITE * 2 },
   grapnel4: { uv: SF4_CELLS.body, sprite: UNIT_SPRITE * 2 },
   grapnel5: { uv: SF5_CELLS.body, sprite: UNIT_SPRITE * 4 },
-  // the crosser's three pieces, a 96px drawing in a 128 cell apiece
-  wormhead: { uv: WORM_CELLS.head, sprite: UNIT_SPRITE * 2 },
-  wormcar: { uv: WORM_CELLS.car, sprite: UNIT_SPRITE * 2 },
-  wormtail: { uv: WORM_CELLS.tail, sprite: UNIT_SPRITE * 2 },
+  // the crosser's three pieces, a 96px drawing in a 128 cell apiece —
+  // and the SECOND thing on the sheet that breaks the px-per-px rule, at
+  // the boss's own 1.5. A 128 cell would be UNIT_SPRITE * 2; it is * 3,
+  // so the 96px drawing lands on 90 world px of body instead of 60 and
+  // the hitboxes in levels.ts are the same 1.5 times what they were. The
+  // art is unchanged and simply drawn larger, which is what a train
+  // crossing five hundred tiles of map has to be to read as one
+  wormhead: { uv: WORM_CELLS.head, sprite: UNIT_SPRITE * 3 },
+  wormcar: { uv: WORM_CELLS.car, sprite: UNIT_SPRITE * 3 },
+  wormtail: { uv: WORM_CELLS.tail, sprite: UNIT_SPRITE * 3 },
 };
 
 // Mindustry world units → px (CELL / 8, see constants.ts)
@@ -2502,60 +2519,53 @@ function liquidTurret(
  * middle of the sprite.
  */
 /**
- * THE RELAY'S BLOCK, drawn rather than vendored.
- *
- * It follows the Foundry's rules for a head (docs/turret-factions.md and
- * the header of turretArt.ts) because it stands on the same plate as one:
- * no outline of its own, flat colours butted together, every material a
- * PAIR whose dark half is on the left of the sprite and light half on the
- * right, boxes and 45-degree cuts only, and nothing narrower than four
- * native pixels — eight here, since this is a 64px block drawn at 2x.
- *
- * FOUR PARTS AND NO DRESSING: a gunmetal plate, a steel diamond, a dark
- * bore, and the lamp. The diamond is the whole silhouette decision — not
- * one of the seventeen heads is a diamond, so a mast is the one thing on
- * the board you can find without reading it, which is exactly what you
- * want of the building every other building's power runs through.
- */
-/**
- * THE RELAY'S BLOCK, drawn rather than vendored — there is no Mindustry
+ * THE BEACON'S MAST, drawn rather than vendored — there is no Mindustry
  * block behind it to port.
  *
- * IT IS AUTHORED FOR FORTY PIXELS, which is the only size that matters: a
- * 2x2 building on a 20px tile is 40px on screen at 1x, and this cell is 128,
- * so every feature is cut down by better than three to one before anybody
- * sees it. The first cut of this ignored that and drew four concentric rings
- * — octagon, diamond, diamond, square — each about four pixels wide once
- * scaled. It collapsed into a grey square with a dot in it, which is a fair
- * description of nothing.
+ * IT IS A HEAD ON A TURRET'S PLATE and is authored as one. The renderer
+ * lays UV_TOWER_BASE3 down first and stamps this on top, which is the
+ * same two quads every gun on the board is made of. So this canvas draws
+ * the MAST ONLY, sized to sit inside the plate with its rim showing all
+ * round — exactly as far in as a turret's head sits inside its own.
+ *
+ * It follows the Foundry's rules for a head (docs/turret-factions.md and
+ * the header of turretArt.ts) because it now literally is one: no outline
+ * of its own, flat colours butted together, every material a PAIR whose
+ * dark half is on the left of the sprite and light half on the right, and
+ * 45-degree cuts only — which a diamond is made of.
+ *
+ * IT IS AUTHORED FOR SIXTY PIXELS, which is the only size that matters: a
+ * 3x3 building on a 20px tile is 60px on screen at 1x, and this cell is
+ * 96, so every feature is cut down before anybody sees it. An earlier cut
+ * of this ignored that and drew four concentric rings each about four
+ * pixels wide once scaled. It collapsed into a grey square with a dot in
+ * it, which is a fair description of nothing.
  *
  * SO THE DESIGN IS A SILHOUETTE AND ONE FEATURE:
  *
- *   A DIAMOND, corner to corner. Not one of the nineteen turrets is a
- *   diamond and neither is the core — they are all square plates — so the
- *   shape alone says "this is not a gun" from across the board, at any zoom,
- *   before a single interior detail resolves.
+ *   A DIAMOND, corner to corner. Not one of the nineteen turret heads is a
+ *   diamond — they are all snouts and drums — so the shape alone says
+ *   "this is not a gun" from across the board, at any zoom, before a single
+ *   interior detail resolves. The plate underneath says "this is a
+ *   building of yours"; the diamond says which one.
  *
  *   A BRIGHT STEEL RIM inside it. This is what makes the thing readable on
- *   DARK ground: a relay stands on a hill, and a dark plate on dark rock is
- *   invisible. The rim is wide enough (14 units, better than four pixels on
- *   screen) to survive the downscale.
+ *   DARK ground: a beacon stands on a hill, and dark plating on dark rock
+ *   is invisible. The rim is 11 units — seven pixels on screen — which
+ *   survives the downscale.
  *
- *   AN AMBER CORE, 36 units — eleven pixels on the board. The single loudest
- *   thing on the building, in the player's own colour, because "this is
- *   ground you can own" is the whole of what a relay says.
- *
- * Everything else the Foundry asks for still holds (turretArt.ts): no outline
- * of its own, flat colours butted together, every material a PAIR with its
- * dark half on the left of the sprite and its light half on the right, and
- * 45-degree cuts only — which a diamond is made of.
+ *   AN AMBER CORE, 22 units, better than thirteen pixels on the board. The
+ *   single loudest thing on the building, in the player's own colour,
+ *   because "this is ground you can own" is the whole of what a beacon
+ *   says. It is also the lamp the vision ring is meant to be coming from
+ *   (constants.ts BEACON_VISION_R), so it wants to look lit.
  */
-function relayBlock(): HTMLCanvasElement {
-  const S = 128;
+function beaconBlock(): HTMLCanvasElement {
+  const S = 96;
   const cv = document.createElement("canvas");
   cv.width = cv.height = S;
   const c = cv.getContext("2d");
-  if (!c) throw new Error("2d context unavailable for the relay block");
+  if (!c) throw new Error("2d context unavailable for the beacon block");
   c.imageSmoothingEnabled = false;
   // THE SHADE IS THE WHOLE OF THE LIGHTING and it is applied per PART, not
   // per drawing: each shape is filled twice, clipped to one half of the
@@ -2581,12 +2591,15 @@ function relayBlock(): HTMLCanvasElement {
     c.lineTo(S / 2 - r, S / 2);
     c.closePath();
   };
-  halves(() => diamond(62), MAST);
-  halves(() => diamond(44), STEEL);
-  halves(() => diamond(30), BORE);
-  // the lamp, 36 across the midline — the shade cuts it in two, so it is
-  // authored at better than twice the minimum rather than at the minimum
-  halves(() => c.rect(46, 46, 36, 36), POWER);
+  // 38 of 96 leaves nine units of plate outside the mast's widest point,
+  // which is the margin a turret head leaves on the same plate — enough
+  // for the base's rim and its outline to read all the way round
+  halves(() => diamond(38), MAST);
+  halves(() => diamond(27), STEEL);
+  halves(() => diamond(18), BORE);
+  // the lamp, 22 across the midline — the shade cuts it in two, so each
+  // half is still well past the minimum feature width
+  halves(() => c.rect(37, 37, 22, 22), POWER);
   return cv;
 }
 
@@ -3523,10 +3536,10 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   draw(UV_SHIELD_TOWER, outlinedBlock(img.shieldTower));
   draw(UV_RESTORER, antialiased(mendBlock(img.restorer, img.restorerTop)));
   draw(UV_FIXER, antialiased(mendBlock(img.fixer, img.fixerTop)));
-  // ...and the mast, generated rather than loaded (relayBlock), through the
+  // ...and the mast, generated rather than loaded (beaconBlock), through the
   // same outline and antialias pass every other block goes through so it
   // sits on the board as one of them
-  draw(UV_RELAY, outlinedBlock(relayBlock()));
+  draw(UV_BEACON, outlinedBlock(beaconBlock()));
 
   // the base building at native 160px: the block, then the team overlay
   // tinted sharded-yellow the way Mindustry composites team regions

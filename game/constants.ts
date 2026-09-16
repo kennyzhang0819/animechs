@@ -1802,36 +1802,74 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
  * behind to stack a second line — everything a run does before it has any
  * business thinking about the rest of the map.
  *
- * A RELAY'S IS SMALLER THAN THAT AND BIGGER THAN ANY GUN. Sixty cells is
+ * A BEACON'S IS SMALLER THAN THAT AND BIGGER THAN ANY GUN. Sixty cells is
  * a shade under a railhead's reach (500 MU, ~62 cells), which is the
- * comparison that matters: one relay opens enough ground to stand the
+ * comparison that matters: one beacon opens enough ground to stand the
  * longest gun in the game and give it somewhere to shoot from.
  *
  * BOTH ARE MEASURED FROM THE CENTRE, and a cell is lit when its own centre
  * falls inside the disc — see Sim.rebuildPower.
  */
 export const CORE_POWER_R = 90 * CELL;
-export const RELAY_POWER_R = 60 * CELL;
+export const BEACON_POWER_R = 60 * CELL;
 
 /**
- * A RELAY'S FOOTPRINT, in cells. It stands on ROCK (see MapRelay in
+ * A BEACON'S FOOTPRINT, in cells. It stands on ROCK (see MapBeacon in
  * maps.ts) and claims no ground the swarm could ever want, so this is a
  * drawing measurement and nothing else — there is no placement to test and
  * nothing to occupy.
+ *
+ * THREE, LIKE A THREE-BY-THREE TURRET, because it is drawn like one: the
+ * same plate under it (renderer.ts, UV_TOWER_BASE3) with its mast standing
+ * on top. A two-cell block had no plate and read as a loose diamond
+ * scratched onto the rock; on a plate it reads as a BUILDING, which is
+ * what it is, and the square is what a player recognises from every turret
+ * they have ever placed.
+ *
+ * It is also an odd number, which is what makes the block sit ON a cell
+ * rather than on the seam between two: the centre lands at (x + 1.5) cells
+ * and a click aimed at the middle of it is aimed at the middle of a tile.
  */
-export const RELAY_SIZE = 2;
+export const BEACON_SIZE = 3;
 
 /**
- * THE MOST RELAYS ONE MAP MAY CARRY.
+ * HOW FAR A BEACON SEES, in pixels — the two radii of the pool of light it
+ * keeps around itself on the hill.
  *
- * It is a cap because which relays are BOUGHT has to live on memory both
- * threads hold (Sim.relayOn), and a shared array has to be sized before
+ * WHY IT NEEDS ONE AT ALL. A beacon stands on rock, and the inside of a
+ * hill is the darkest ground in the game (Renderer.drawDarkness, DARK_MAX):
+ * a building put there is drawn, then buried under the same black the rock
+ * around it wears. The result was a silhouette you could only find by
+ * knowing where to look. A lamp on a mast lights the ground it stands on —
+ * so it does, and the darkness lifts inside this disc.
+ *
+ * IT IS A RING AND NOT A HOLE, which is the whole of why there are two
+ * numbers. Punching the darkness flat to zero inside one radius cuts a
+ * circle out of the hill with a hard rim, and a hard rim on a soft
+ * gradient reads as a rendering fault. Full light out to the inner radius,
+ * then the hill's own darkness fading back in over the gap to the outer
+ * one, reads as light falling off — which is what it is.
+ *
+ * IT IS NOT THE POWER DISC and is much smaller than it (BEACON_POWER_R, 60
+ * cells). This is what the beacon can SEE; that is what it lets you BUILD
+ * on, and a player who could not tell the two apart would read a lit hill
+ * as buildable rock. Nothing about this ring is bought — it is on from the
+ * first frame of the map, for beacons the run will never afford.
+ */
+export const BEACON_VISION_R = 7 * CELL;
+export const BEACON_VISION_FADE_R = 13 * CELL;
+
+/**
+ * THE MOST BEACONS ONE MAP MAY CARRY.
+ *
+ * It is a cap because which beacons are BOUGHT has to live on memory both
+ * threads hold (Sim.beaconOn), and a shared array has to be sized before
  * the map that fills it is read. Sixty-four is far past what any map
  * should want — the official nine are authored at a dozen or so — and it
  * costs 64 bytes, so the ceiling is set where nobody will ever meet it
  * rather than where the current maps happen to sit.
  */
-export const MAX_RELAYS = 64;
+export const MAX_BEACONS = 64;
 
 /**
  * A SECOND AMMO NEEDS A SECOND BARREL TO LEAVE BY — checked at import.

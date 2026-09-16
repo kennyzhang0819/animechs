@@ -34,12 +34,13 @@ import {
   HCOLS,
   HROWS,
   NCELLS,
-  RELAY_POWER_R,
-  RELAY_SIZE,
+  BEACON_POWER_R,
+  BEACON_SIZE,
   ROWS,
   structStats,
 } from "./constants";
 import { HB_A, HB_B, HB_OVAL, HB_RMAX } from "./hitbox";
+import { KIND_IS_CROSSER } from "./levels";
 import type { TowerKind } from "./types";
 
 /** how many buildings a ruler drag will lay down at most */
@@ -65,14 +66,14 @@ export interface BoardGrids {
   /** the Hydrophobic rule's mask, or null where the rule is not in force */
   readonly waterlogged: Uint8Array | null;
   /**
-   * THE POWER GRID: 1 on every cell the base or a bought relay lights, and
+   * THE POWER GRID: 1 on every cell the base or a bought beacon lights, and
    * nothing may be built anywhere else.
    *
    * It is a MASK and not a list of circles for the same reason `occupied`
    * is a mask and not a list of buildings: the drawing side reads it every
    * frame — once per cell under the cursor for the ghost, and the whole of
    * it for the overlay — and a cell test has to be one array read, not a
-   * walk of every relay on the board.
+   * walk of every beacon on the board.
    *
    * ALWAYS AN ARRAY, never absent. Where the rule is off (the sandbox, the
    * two editors) it is all ones and every cell passes — see the note in
@@ -123,7 +124,20 @@ function hitR(b: BoardBodies, i: number, dx: number, dy: number, d2: number): nu
   return 1 / Math.sqrt(lx * lx + ly * ly);
 }
 
-/** is there nothing standing under this footprint? */
+/**
+ * Is there nothing standing under this footprint?
+ *
+ * A CROSSER IS NOT "STANDING" AND NEVER COUNTS. A Borer is kinematic: its
+ * position is read off an authored road and it walks through rock, walls
+ * and buildings alike (Sim.updateCrosser), so nothing can be in its way
+ * and it is in nothing's way either. Letting it block a placement would
+ * be the one direction the obstruction CAN go — a player dropping a
+ * turret onto the line, being refused because seventy tiles of train
+ * happen to be passing over the spot, and having to wait for it — which
+ * is exactly backwards on the map whose whole point is buying guns out on
+ * that line. It is tested by KIND, not by the sim's `ucross`, because
+ * this file is on the drawing side of the seam and reads arrays only.
+ */
 export function bodiesClear(b: BoardBodies, gx: number, gy: number, sz: number): boolean {
   const x0 = gx * CELL, y0 = gy * CELL;
   const x1 = x0 + CELL * sz, y1 = y0 + CELL * sz;
@@ -137,7 +151,7 @@ export function bodiesClear(b: BoardBodies, gx: number, gy: number, sz: number):
       const c = hy * HCOLS + hx, e = b.bStart[c + 1];
       for (let k = b.bStart[c]; k < e; k++) {
         const i = b.bUnits[k];
-        if (i >= b.n) continue;
+        if (i >= b.n || KIND_IS_CROSSER[b.ukind[i]]) continue;
         const dx = b.upx[i] - clamp(b.upx[i], x0, x1);
         const dy = b.upy[i] - clamp(b.upy[i], y0, y1);
         const d2 = dx * dx + dy * dy;
@@ -167,10 +181,10 @@ export function groundClear(g: BoardGrids, gx: number, gy: number, sz: number): 
 }
 
 /**
- * ONE CIRCLE OF BUILDABLE GROUND: the core's, or a relay that has been
+ * ONE CIRCLE OF BUILDABLE GROUND: the core's, or a beacon that has been
  * switched on. `r` is per-disc rather than looked up off a kind, because
- * the core and a relay light different distances (constants.ts
- * CORE_POWER_R, RELAY_POWER_R) and nothing below should have to know which
+ * the core and a beacon light different distances (constants.ts
+ * CORE_POWER_R, BEACON_POWER_R) and nothing below should have to know which
  * of the two it is holding.
  */
 export interface PowerDisc {
@@ -181,37 +195,37 @@ export interface PowerDisc {
 
 /**
  * EVERY CIRCLE LIGHTING GROUND RIGHT NOW — the core first, then one per
- * relay the run has bought.
+ * beacon the run has bought.
  *
  * IT IS HERE, IN board.ts, FOR THE REASON THE WHOLE FILE IS HERE: the sim
  * paints its mask from this and the DRAWING side reads it to ring the
- * relays on screen. Two copies of "where does the light reach" would be
+ * beacons on screen. Two copies of "where does the light reach" would be
  * two pictures of one board, and the one a player is aiming at would be
  * the wrong one.
  *
- * `relayOn` is indexed the same as `terrain.relays` and is the ONLY thing
- * about relays that crosses between threads — where they are and what they
+ * `beaconOn` is indexed the same as `terrain.beacons` and is the ONLY thing
+ * about beacons that crosses between threads — where they are and what they
  * cost is in the map document, which both sides read for themselves.
  */
 export function powerDiscsOf(
-  terrain: { readonly relays: readonly { readonly x: number; readonly y: number }[] },
-  relayOn: Uint8Array,
+  terrain: { readonly beacons: readonly { readonly x: number; readonly y: number }[] },
+  beaconOn: Uint8Array,
   coreX: number,
   coreY: number,
 ): PowerDisc[] {
   const out: PowerDisc[] = [{ x: coreX, y: coreY, r: CORE_POWER_R }];
-  const rs = terrain.relays;
+  const rs = terrain.beacons;
   for (let i = 0; i < rs.length; i++) {
-    if (!relayOn[i]) continue;
-    out.push({ ...relayCentre(rs[i]), r: RELAY_POWER_R });
+    if (!beaconOn[i]) continue;
+    out.push({ ...beaconCentre(rs[i]), r: BEACON_POWER_R });
   }
   return out;
 }
 
-/** a relay's centre in world px, from the top-left cell the map wrote */
-export const relayCentre = (r: { readonly x: number; readonly y: number }): { x: number; y: number } => ({
-  x: (r.x + RELAY_SIZE / 2) * CELL,
-  y: (r.y + RELAY_SIZE / 2) * CELL,
+/** a beacon's centre in world px, from the top-left cell the map wrote */
+export const beaconCentre = (r: { readonly x: number; readonly y: number }): { x: number; y: number } => ({
+  x: (r.x + BEACON_SIZE / 2) * CELL,
+  y: (r.y + BEACON_SIZE / 2) * CELL,
 });
 
 /**
@@ -250,7 +264,7 @@ export function paintPower(into: Uint8Array, discs: readonly PowerDisc[]): void 
  * rule the picture on screen does not describe, and the picture is the
  * only way a player knows where the line is.
  *
- * This is the test a RELAY passes too, and that is the whole chain: a mast
+ * This is the test a BEACON passes too, and that is the whole chain: a mast
  * may only stand on ground something already lights, so the lit region
  * grows outward from the core one mast at a time and can never leap.
  */

@@ -47,7 +47,7 @@ const COMMANDS = new Set<string>([
   "skipToWave",
   "placeFormation",
   "placeTower",
-  "setRelayOn",
+  "setBeaconOn",
   "placeMany",
   "placeLine",
   "placeRuler",
@@ -165,7 +165,7 @@ async function init(spec: LevelSpec, field: MessagePort | null, phys: MessagePor
     occupied: s.occupied,
     waterlogged: s.waterloggedMask(),
     powered: s.poweredMask(),
-    relayOn: s.relayOnMask(),
+    beaconOn: s.beaconOnMask(),
     airRoutes: s.airRoutes(),
   });
   last = performance.now();

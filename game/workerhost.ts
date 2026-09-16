@@ -69,7 +69,7 @@ export type FromWorker =
       occupied: Uint8Array;
       waterlogged: Uint8Array | null;
       powered: Uint8Array;
-      relayOn: Uint8Array;
+      beaconOn: Uint8Array;
       airRoutes: { pts: number[] }[];
     }
   | { t: "frame"; snapshot: Snapshot; report: WorldReport }
@@ -117,7 +117,7 @@ export class WorkerHost implements SimHost {
       occupied: ready.occupied,
       waterlogged: ready.waterlogged,
       powered: ready.powered,
-      relayOn: ready.relayOn,
+      beaconOn: ready.beaconOn,
       airRoutes: ready.airRoutes,
     });
     worker.onmessage = (e: MessageEvent<FromWorker>) => {
@@ -221,8 +221,8 @@ export class WorkerHost implements SimHost {
   placeTower(gx: number, gy: number, kind: TowerKind): void {
     this.cmd("placeTower", gx, gy, kind);
   }
-  setRelayOn(i: number): void {
-    this.cmd("setRelayOn", i);
+  setBeaconOn(i: number): void {
+    this.cmd("setBeaconOn", i);
   }
   placeMany(towers: readonly Placement[]): void {
     this.cmd("placeMany", towers);

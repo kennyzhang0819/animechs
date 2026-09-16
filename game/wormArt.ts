@@ -12,13 +12,19 @@
  * Gunmetal cars on a hot seam, a steel cutter at the front and two stacks
  * at the back, and no eyes, no legs and nothing organic anywhere on it.
  *
- * THREE DRAWINGS, NOT NINE. A worm on the field is nine BODIES in a line
- * (levels.ts WORM_CHAIN, Sim.launchCrosser) rather than one body with a
- * chain drawn behind it, because every segment has to be shootable on its
- * own — the mission is "kill the whole train before it crosses", and a
- * train with one hurtbox at the nose is a mission about hitting a nose.
- * So the sheet carries a head, a car and a tail, and the car is packed
- * once and drawn seven times.
+ * THREE DRAWINGS, NOT TWENTY. A worm on the field is twenty BODIES in a
+ * line (levels.ts WORM_CHAIN, Sim.launchCrosser) rather than one body
+ * with a chain drawn behind it, because every segment has to be shootable
+ * on its own — the mission is "kill the whole train before it crosses",
+ * and a train with one hurtbox at the nose is a mission about hitting a
+ * nose. So the sheet carries a head, a car and a tail, and the car is
+ * packed once and drawn eighteen times.
+ *
+ * THE DRAWINGS ARE DRAWN AT 96 AND SHOWN AT 144. The quad grew by half
+ * (atlas.ts UNIT_ART) without the art changing, which makes the Borer the
+ * second body on the sheet to break the px-per-px rule after the boss.
+ * Nothing below moves: the grid here is still the hitbox at 32 native px
+ * a tile, and levels.ts carries the 1.5 once, on the box.
  *
  * The grammar is the families': a material is a PAIR, dark on the left
  * half of the sprite and light on the right, the shade applied after the

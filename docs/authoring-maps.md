@@ -298,37 +298,55 @@ and the atlas reaches for a canvas at load. Keep the names identical and
 grep both when a family moves. `scripts/maps/seal.mjs` still brings an
 older or imported document up to the sealed-rim rule in place.
 
-## Relays: where a run may build
+## Beacons: where a run may build
 
-**A run may only build where its base and its bought relays light the
+**A run may only build where its base and its bought beacons light the
 ground.** The base lights a circle 90 cells across the radius
 (`CORE_POWER_R`), free and from wave one; everything past that edge is
-bought, one relay at a time, at the price written on it.
+bought, one beacon at a time, at the price written on it.
 
-A relay is **map furniture, not a building** (`MapRelay`, `game/terrain.ts`).
-It stands on a 2x2 of rock, on a hill, where nothing can reach it: no health,
+A beacon is **map furniture, not a building** (`MapBeacon`, `game/terrain.ts`).
+It stands on a 3x3 of rock, on a hill, where nothing can reach it: no health,
 never targeted, never destroyed, never placed by a player. What it has is a
-circle it opens (`RELAY_POWER_R`, 60 cells) and a price. Buying one is
+circle it opens (`BEACON_POWER_R`, 60 cells) and a price. Buying one is
 permanent — the ground stays open for the rest of the run, and nothing
-refunds or reverses it, which is what lets a far relay be priced brutally.
+refunds or reverses it, which is what lets a far beacon be priced brutally.
+
+It is **drawn like one of the player's turrets** (`BEACON_SIZE`): the same
+3x3 plate a three-cell gun stands on, with a diamond mast on top instead of
+a snout. It also **lights the rock around itself** (`BEACON_VISION_R`), which
+is the only reason a building on the darkest ground in the game can be found
+at all — that ring is not bought and is on from the first frame.
+
+**In a match a beacon says nothing until it is clicked.** No price is stamped
+on the field and no circle is drawn; a click picks the beacon up, and the
+panel at the bottom of the screen carries what it costs, what it reaches and
+the button that buys it, with the dashed ring on the field showing the ground
+that purchase would add. The editor is the opposite and stays so — see below.
 
 **This is where a map's mission is written.** Deciding which circle of
 ground a run can afford to open, and when, is most of what makes one map
-play differently from another. Move a relay forty cells and you have
+play differently from another. Move a beacon forty cells and you have
 rewritten the mission; halve its price and you have rewritten it again.
 
 ### Authoring them
 
-The **Relay** brush is in the editor's Zones section. A click stamps one on
+The **Beacon** brush is in the editor's Zones section. A click stamps one on
 rock and a click on a standing one takes it off; the ghost shows the circle
-it would open, and every relay on the map is drawn with its own circle and
-price whatever brush is in hand — two relays whose circles almost coincide
-are one relay and a wasted price.
+it would open, and every beacon on the map is drawn with its own circle and
+price whatever brush is in hand — two beacons whose circles almost coincide
+are one beacon and a wasted price. **That is an authoring view and not the
+game's**: a player sees one circle at a time and only when they ask, because
+they are picking a beacon; an author is comparing all of them at once, which
+is the whole job.
+
+A stamp centres its 3x3 on the cursor and **lands only where all nine cells
+are rock**, so a beacon never hangs half off a hill.
 
 ### The three price bands
 
-**A relay is priced like a turret is priced** — in one of the game's three
-bands (`RELAY_TIER_PRICE`, `game/maps.ts`), by how far from the base it sits:
+**A beacon is priced like a turret is priced** — in one of the game's three
+bands (`BEACON_TIER_PRICE`, `game/maps.ts`), by how far from the base it sits:
 
 | band | range from base | price | what it is |
 | --- | --- | --- | --- |
@@ -338,9 +356,9 @@ bands (`RELAY_TIER_PRICE`, `game/maps.ts`), by how far from the base it sits:
 
 The cuts are **absolute distances, not a split of whatever one map carries** —
 "far" has to mean the same thing on every board. They come off the radii: the
-base lights 90 cells and a relay adds 60, so 200 is about the first ring a run
+base lights 90 cells and a beacon adds 60, so 200 is about the first ring a run
 can reach from home and 330 the second. A compact map simply has no band-3
-relay, which is the truth about a compact map.
+beacon, which is the truth about a compact map.
 
 **Every map carries the same ladder: 4 band-1, 5 band-2, 4 band-3.** Opening
 a whole board costs **232,000 scrap on every map** — 4x3,000 + 5x12,000 +
@@ -358,36 +376,36 @@ short, because a board one rung light would have a different progression from
 every other board — and it says so loudly if terrain ever makes that
 impossible.
 
-A stamped relay lands in the band its distance puts it in. **That is still a
+A stamped beacon lands in the band its distance puts it in. **That is still a
 draft** — the price that ships is the one in the document, and it is the one
 field in a map document meant to be argued with. A mission is written by
 making one particular circle of ground cheap or brutal.
 
 ### The generator overwrites them
 
-`scripts/maps/*.mjs` does not emit relays, and re-running a spec writes the
+`scripts/maps/*.mjs` does not emit beacons, and re-running a spec writes the
 whole document — so a regenerated map comes back with none, and any
 hand-tuned prices on it are gone. The seeding pass puts a playable draft
 back:
 
 ```
-node --experimental-transform-types --import ./scripts/ts-hooks.mjs scripts/seed-relays.mjs
+node --experimental-transform-types --import ./scripts/ts-hooks.mjs scripts/seed-beacons.mjs
 ```
 
-It scatters relays on bare 2x2 rock outside the base's light and prices them
+It scatters beacons on bare 3x3 rock outside the base's light and prices them
 off the same curve the editor stamps with. It **leaves any map that already
-carries relays alone** — hand placement is the point of the feature — so
+carries beacons alone** — hand placement is the point of the feature — so
 pass `--force` (or a list of map ids) to redo one.
 
 The scatter is **deliberately irregular inside each band**. An earlier cut
 walked candidates nearest-first against a fixed spacing, which pinned three or
-four relays at identical range from the base on every board. It now works one
+four beacons at identical range from the base on every board. It now works one
 band at a time, shuffling candidates and varying the spacing each pick demands
 across a wide band, so a ring comes out as clumps and gaps rather than a
 circle of dots. The randomness is seeded off the map id, so re-running
 reproduces the same draft and a diff means something.
 
-The ladder never starts inside the base's own light: a relay there would cost
+The ladder never starts inside the base's own light: a beacon there would cost
 3,000 and open a sliver of nothing, so the nearest rung is at least 15 cells
 past the 90 the base already covers.
 
@@ -395,6 +413,6 @@ past the 90 the base already covers.
 Changing `perBand` changes what opening that board costs, which is a
 progression decision rather than a map one — think twice.
 
-Relays a map is meant to keep across a regen belong in its spec, not in the
+Beacons a map is meant to keep across a regen belong in its spec, not in the
 seeder. Until a spec emits them, treat a regen of a tuned map as a change
-that costs its relay layer.
+that costs its beacon layer.

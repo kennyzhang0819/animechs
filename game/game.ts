@@ -17,8 +17,8 @@ import {
   clamp,
   COLS,
   H,
-  RELAY_POWER_R,
-  RELAY_SIZE,
+  BEACON_POWER_R,
+  BEACON_SIZE,
   ROWS,
   structStats,
   targetingLine,
@@ -28,10 +28,11 @@ import {
 } from "./constants";
 // the lit circles, the SAME list the sim paints its mask from — see the
 // header of board.ts for why there is only one of it
-import { powerDiscsOf, relayCentre, type PowerDisc } from "./board";
+import { powerDiscsOf, beaconCentre, type PowerDisc } from "./board";
 import { loadBalanceDoc } from "./balance";
 import {
   loadLevelDocs,
+  UNIT_ID,
   UNIT_KINDS,
   type LevelSpec,
   type Mission,
@@ -133,6 +134,33 @@ export type ModDraw =
   | { kind: "mod"; ids: readonly ModId[] }
   | { kind: "relic"; ids: readonly RelicId[] }
   | null;
+
+/**
+ * THE PICKED BEACON, as the panel at the bottom of the screen prints it
+ * (components/Beacon.tsx).
+ *
+ * It is what a click on a beacon ASKED FOR: what the thing costs, how far
+ * it reaches, whether the purse covers it, and whether it is worth buying
+ * at all. Everything here is derived on the poll from the map document and
+ * the run's own purse — nothing about a beacon is per-frame state.
+ */
+export interface BeaconPanel {
+  /** which one, indexed into terrain.beacons — what the buy button hands back */
+  i: number;
+  /** is it already switched on? then there is no price and no button */
+  bought: boolean;
+  /** what it costs, or 0 where building is free (the sandbox, the editors) */
+  price: number;
+  /** the bank cannot cover it yet — the price goes red and the button greys */
+  poor: boolean;
+  /** how far it lights, in TILES, which is the unit every range in this
+   *  game is read in (BEACON_POWER_R / CELL) */
+  radius: number;
+  /** would buying it open any ground the run does not already own? A
+   *  beacon swallowed by the base's own light is a price for nothing, and
+   *  the ring on the field draws nothing to say so (Game.beaconGains) */
+  gains: boolean;
+}
 
 export interface UiState {
   levelId: string;
@@ -284,6 +312,18 @@ export interface UiState {
    * among them.
    */
   inspect: InspectPanel | null;
+  /**
+   * THE PICKED BEACON, for the same panel — null when none is.
+   *
+   * IT IS ITS OWN FIELD AND NOT AN `inspect`, because a beacon is not a
+   * thing on the field: it has no pool, no statuses and no attributes, and
+   * everything the panel prints for one (a price, a reach, whether the
+   * purse covers it) is a thing `inspect` has no room for. Two shapes for
+   * two kinds of answer, and the bottom of the screen shows whichever one
+   * the last click produced — never both, because a click that makes one
+   * clears the other (Game.selectBeacon).
+   */
+  beacon: BeaconPanel | null;
   /** structures placed this run, only going up — the card layer watches it
    *  to know the card in hand has landed (see Game.built) */
   built: number;
@@ -540,6 +580,18 @@ const MM_SCALE = 1;
 const MM_UNIT_PX = 3.75;
 const MM_STRUCT_PX = 4.5;
 /**
+ * ...AND THE CROSSER'S HEAD, which is not a body on this map, it is the
+ * OBJECTIVE. On the intercept mission the one question a glance at the
+ * corner has to answer is "where is the train and how far has it got"
+ * (docs/mission-design.md), and a Borer's twenty pieces at MM_UNIT_PX
+ * are twenty red specks in a row indistinguishable from a wave walking
+ * in a line. So the HEAD alone gets a mark of its own: a diamond, half
+ * again a structure's size so it is the biggest thing on the canvas, in
+ * its own colour and on top of everything — the nose of the train, which
+ * is the end a player is trying to get in front of.
+ */
+const MM_CROSS_PX = 7;
+/**
  * THE MINIMAP'S MARKS, PACKED A PIXEL AT A TIME instead of a byte.
  *
  * ImageData is bytes in R,G,B,A order, and a Uint32 view over the same
@@ -560,6 +612,19 @@ const mmColor = (r: number, g: number, b: number): number =>
 /** the swarm's red and everything of ours in white — see drawMinimap */
 const MM_RED = mmColor(0xf2, 0x55, 0x55);
 const MM_WHITE = mmColor(0xff, 0xff, 0xff);
+/**
+ * THE CROSSER HEAD'S AMBER, and the black it is outlined in. Amber
+ * because the corner map speaks two colours and both are taken — red is
+ * "theirs" and white is "ours", and the train is neither: it is the thing
+ * the mission is ABOUT, and it is the board's selection amber for exactly
+ * that reason. The outline is what makes it survive the ground it lands
+ * on: a bare amber diamond on Coldline's pale snow is a smudge, and on a
+ * hill it is invisible.
+ */
+const MM_CROSS = mmColor(0xff, 0xc2, 0x4a);
+const MM_CROSS_EDGE = mmColor(0x00, 0x00, 0x00);
+/** the one kind that wears it (drawMinimap), looked up once rather than per body */
+const WORM_HEAD_ID = UNIT_ID.wormhead;
 /**
  * HOW DARK A HILL IS ON THE MINIMAP, as a factor on the rock's true tone.
  *
@@ -905,6 +970,16 @@ export class Game {
    *  bodies or buildings, whichever it landed on (gatherLike) */
   private selAdd = false;
   private selLike = false;
+  /**
+   * THE PICKED BEACON, indexed into terrain.beacons, or -1 for none.
+   *
+   * IT LIVES HERE AND NOT IN THE SIM, unlike every other selection on this
+   * board. A beacon is not a Structure: the sim holds one byte per beacon
+   * (Sim.beaconOn) and nothing else about them — where they are is the map
+   * document, which both threads read for themselves. Picking one changes
+   * nothing the sim steps, so nothing about it needs to cross.
+   */
+  private selBeacon = -1;
   /** the last left press, for the double click the pointer events cannot count */
   private lastClickAt = 0;
   private lastClickX = 0;
@@ -1127,16 +1202,29 @@ export class Game {
         this.ruler = e.shiftKey;
         if (!this.ruler) this.buildTo(p, false);
       } else {
-        // A RELAY UNDER THE CURSOR IS THE PRESS, and nothing else is. It is
-        // tested before the marquee because a relay sits on rock where
-        // there is nothing to select anyway, and because buying ground is
-        // the one press on an empty cursor that spends money — it must not
-        // be something a player discovers by dragging over it
-        const relay = this.relayAt(p);
-        if (relay >= 0 && !this.world.relayOn[relay]) {
-          this.buyRelay(relay);
+        // A BEACON UNDER THE CURSOR IS THE PRESS, and nothing else is. It is
+        // tested before the marquee because a beacon sits on rock where
+        // there is nothing to select anyway.
+        //
+        // IT PICKS ONE UP; IT DOES NOT BUY ONE. This press used to spend
+        // four or five figures on the spot, which made a beacon the one
+        // thing on the board you could buy by clicking on it — and the
+        // only warning was a price stamped on the field. Now it selects,
+        // exactly as a click on a turret does, and the panel at the bottom
+        // of the screen carries the price and the button (selectBeacon).
+        //
+        // IT CLEARS THE FIELD'S SELECTION as it goes: one panel, one
+        // answer. `host.click` on the rock the beacon stands on finds
+        // nothing to select and drops whatever was.
+        const beacon = this.beaconAt(p);
+        if (beacon >= 0) {
+          this.selectBeacon(beacon);
+          this.host.click(p.x, p.y, false, false);
           return;
         }
+        // ...and a press anywhere else puts the picked beacon down, for the
+        // same reason: what happens next is about the field
+        this.selBeacon = -1;
         // normal cursor: a press starts a marquee and decides nothing.
         // What it meant is settled on release (onMouseUp)
         this.selecting = true;
@@ -1157,6 +1245,9 @@ export class Game {
     } else if (e.button === 2) {
       e.preventDefault();
       this.building = false;
+      // ...and it puts a picked beacon down, which is the gesture a player
+      // already reaches for to clear whatever the cursor is carrying
+      this.selBeacon = -1;
       // right-click still escapes build mode first — you reach for it to
       // put the ghost away, and that press must never also demolish
       // something. IT DOES NOT SPEND THE CARD: a bought card goes back to
@@ -2157,6 +2248,7 @@ export class Game {
       modDeal: this.modDeal(),
       relicDeal: this.relicDeal(),
       inspect: w.report.inspect,
+      beacon: this.beaconPanel(),
       built: w.placed,
       // off the live stats (World.statsFor), never the static table: the
       // whole point of deriving the line is that an upgrade moves it
@@ -2228,7 +2320,7 @@ export class Game {
       () => this.view.shieldTowers,
       () => this.tech?.unlocked ?? null,
       w.airRoutes,
-      w.relayOn,
+      w.beaconOn,
     );
     this.publish();
   }
@@ -2525,68 +2617,148 @@ export class Game {
   /**
    * EVERY LIT CIRCLE, as the drawing side sees it — the same list the sim
    * paints its mask from (board.ts powerDiscsOf), built here off the
-   * terrain and the shared relayOn bytes rather than asked for across a
+   * terrain and the shared beaconOn bytes rather than asked for across a
    * thread. Both sides read the same map document, so both already know
-   * where the relays are; the only thing that ever crosses is which of
+   * where the beacons are; the only thing that ever crosses is which of
    * them are switched on.
    */
   private powerDiscs(): PowerDisc[] {
     const t = this.world.terrain;
     const b = t.base;
-    return powerDiscsOf(t, this.world.relayOn, (b.x + b.size / 2) * CELL, (b.y + b.size / 2) * CELL);
+    return powerDiscsOf(t, this.world.beaconOn, (b.x + b.size / 2) * CELL, (b.y + b.size / 2) * CELL);
   }
 
   /**
-   * WHAT ONE RELAY COSTS ON THIS BOARD: the price the map author wrote on
+   * WHAT ONE BEACON COSTS ON THIS BOARD: the price the map author wrote on
    * it, or nothing at all where building is free (the sandbox, the two
    * editors), which is the same rule every other price on the board plays
    * by (Game.rollPrice).
    */
-  private relayPrice(i: number): number {
-    const r = this.world.terrain.relays[i];
+  private beaconPrice(i: number): number {
+    const r = this.world.terrain.beacons[i];
     if (!r || !this.dealing) return 0;
     return Math.max(0, Math.round(r.price));
   }
 
   /**
-   * THE RELAY UNDER A WORLD POINT, or -1. Its own footprint plus half a
-   * cell of slack on every side, because a relay stands on a HILL — the
+   * THE BEACON UNDER A WORLD POINT, or -1. Its own footprint plus half a
+   * cell of slack on every side, because a beacon stands on a HILL — the
    * cursor is over rock either way, nothing else on that ground can be
    * clicked, and a target a player has to be precise about is a target
    * they will miss mid-wave.
    */
-  private relayAt(p: { x: number; y: number }): number {
-    const rs = this.world.terrain.relays;
-    const reach = (RELAY_SIZE * CELL) / 2 + CELL / 2;
+  private beaconAt(p: { x: number; y: number }): number {
+    const rs = this.world.terrain.beacons;
+    const reach = (BEACON_SIZE * CELL) / 2 + CELL / 2;
     for (let i = 0; i < rs.length; i++) {
-      const c = relayCentre(rs[i]);
+      const c = beaconCentre(rs[i]);
       if (Math.abs(p.x - c.x) <= reach && Math.abs(p.y - c.y) <= reach) return i;
     }
     return -1;
   }
 
   /**
-   * SWITCH A RELAY ON — the one purchase in this game that buys GROUND.
+   * SWITCH A BEACON ON — the one purchase in this game that buys GROUND.
    *
    * It is the turret button's money path and not a new one: the world is
    * charged here so the HUD's purse moves this frame, and the host is told
    * so the sim's does too (see Game.buyTurretCard). The sim itself takes
-   * nothing — by the time setRelayOn runs, the scrap is already gone.
+   * nothing — by the time setBeaconOn runs, the scrap is already gone.
    *
-   * NOTHING IS REFUNDED AND NOTHING IS UNDONE. A relay cannot be destroyed
+   * NOTHING IS REFUNDED AND NOTHING IS UNDONE. A beacon cannot be destroyed
    * and cannot be sold: the ground it opens is open for the rest of the
    * run, which is the whole reason the price on a far one is allowed to be
    * brutal. Returns whether the bank could cover it.
    */
-  buyRelay(i: number): boolean {
+  buyBeacon(i: number): boolean {
     if (this.world.lost || this.won() || this.menuOpen) return false;
-    const rs = this.world.terrain.relays;
-    if (i < 0 || i >= rs.length || this.world.relayOn[i]) return false;
-    const price = this.relayPrice(i);
+    const rs = this.world.terrain.beacons;
+    if (i < 0 || i >= rs.length || this.world.beaconOn[i]) return false;
+    const price = this.beaconPrice(i);
     if (!this.world.spend(price)) return false;
     this.host.spend(price);
-    this.host.setRelayOn(i);
+    this.host.setBeaconOn(i);
     return true;
+  }
+
+  /**
+   * PICK A BEACON, or put the one that is picked down (-1).
+   *
+   * A CLICK NO LONGER BUYS. It used to: the press on a beacon spent the
+   * money there and then, which is the one press in this game that could
+   * empty a purse by accident, on a building whose price was never shown
+   * anywhere except as a number stamped on the field. Now a click is a
+   * QUESTION — what is this, what does it cost, what would it open — and
+   * the answer arrives in the panel at the bottom of the screen with the
+   * button that spends the money on it (components/Beacon.tsx). Every
+   * other purchase on this board is a button; this one is too now.
+   *
+   * IT TAKES THE SELECTION WITH IT, both ways. A beacon and a turret are
+   * two answers to "what did I click" and there is one panel to print
+   * either in, so picking a beacon drops whatever was selected on the
+   * field — `host.click` on the rock the beacon stands on, which selects
+   * nothing and clears what was there — and picking anything on the field
+   * drops the beacon (see onMouseDown).
+   */
+  selectBeacon(i: number): void {
+    this.selBeacon = this.world.terrain.beacons[i] ? i : -1;
+  }
+
+  /** which beacon is picked, or -1 — what the panel and the mark read */
+  get pickedBeacon(): number {
+    return this.selBeacon;
+  }
+
+  /**
+   * THE PICKED BEACON AS THE PANEL PRINTS IT, or null when none is — the
+   * price, the reach, and the two things a player is actually deciding
+   * between: can I afford it, and would it give me anything.
+   *
+   * `gains` IS THE ONE THAT IS NOT OBVIOUS. A beacon whose whole circle
+   * falls inside ground the run has already opened is worth nothing, and
+   * its ring on the field correctly draws nothing at all — which looks
+   * exactly like a bug unless somebody says so in words. So the panel is
+   * told, and says it.
+   */
+  private beaconPanel(): BeaconPanel | null {
+    const i = this.selBeacon;
+    const r = this.world.terrain.beacons[i];
+    if (!r) return null;
+    const on = this.world.beaconOn[i] !== 0;
+    const price = this.beaconPrice(i);
+    return {
+      i,
+      bought: on,
+      price,
+      poor: !on && price > 0 && (this.world.scrap ?? 0) < price,
+      radius: Math.round(BEACON_POWER_R / CELL),
+      gains: on || this.beaconGains(i),
+    };
+  }
+
+  /**
+   * WOULD BUYING THIS BEACON OPEN ANY GROUND AT ALL? Sampled rather than
+   * solved: the ring of its own disc against the discs already lit, at a
+   * point every few degrees, and true the moment one of those points is
+   * outside all of them.
+   *
+   * A CIRCLE IS COVERED BY A SET OF CIRCLES ONLY IF ITS RIM IS — a disc has
+   * no island in the middle that a union of other discs can miss while
+   * swallowing its whole edge — so the rim is the only thing worth
+   * testing, and sixty-four points round it is finer than the dashes the
+   * ring is drawn with. It runs on a click and not per frame.
+   */
+  private beaconGains(i: number): boolean {
+    const r = this.world.terrain.beacons[i];
+    if (!r) return false;
+    const p = beaconCentre(r);
+    const discs = this.powerDiscs();
+    for (let k = 0; k < 64; k++) {
+      const a = (k / 64) * Math.PI * 2;
+      const x = p.x + Math.cos(a) * BEACON_POWER_R, y = p.y + Math.sin(a) * BEACON_POWER_R;
+      if (!discs.some((d) => Math.hypot(x - d.x, y - d.y) <= d.r)) return true;
+    }
+    return false;
   }
 
   /**
@@ -2596,7 +2768,7 @@ export class Game {
    *
    * WHY THE COMPOSITE AND NOT JUST STROKING THE CIRCLES. Stroking each
    * circle draws the parts of it that are INSIDE another circle too, so
-   * two relays whose ground overlaps read as two rings crossing rather
+   * two beacons whose ground overlaps read as two rings crossing rather
    * than as the one piece of ground they actually make. What a player
    * needs is the border of the region, so the border is what is drawn:
    * fill the union solid, then punch the union inset by the line width
@@ -2646,117 +2818,96 @@ export class Game {
   }
 
   /**
-   * THE RELAYS THEMSELVES — the diamond on the hill, what it costs, and
-   * what it would open.
+   * WHAT THE SELECTED BEACON WOULD OPEN — one dashed ring, and only while
+   * one is picked.
    *
-   * DRAWN ON THE OVERLAY RATHER THAN BY THE RENDERER, which is where every
-   * other thing standing on the board is drawn. A relay is not really a
-   * thing standing on the board: it has no health bar, nothing targets it,
-   * nothing walks into it, and most of what has to be said about one is
-   * TEXT — a price, in screen pixels, legible at any zoom. That is this
-   * canvas's job and not the sprite batch's.
+   * IT USED TO BE EVERY BEACON, ALL THE TIME, and that was the mistake. A
+   * dozen sixty-cell circles with their prices stamped over them is most
+   * of the map covered in offers nobody asked to see, drawn over the wave
+   * a player is actually trying to read. Buying ground is a decision you
+   * make between waves, on purpose, about ONE beacon — so it is asked for
+   * one beacon at a time now: click it and this is the answer.
    *
-   * THREE STATES, AND THE THIRD IS THE ONE THAT MATTERS. A bought relay is
-   * a filled amber diamond and says nothing else. An affordable one is
-   * hollow with its price under it. One the bank cannot cover yet wears
-   * the price in red — which is the number a run spends most of its middle
-   * saving towards, and it should be readable from across the map.
+   * IT SHOWS ONLY THE GROUND IT WOULD ADD. Where the circle laps ground the
+   * run has already opened — the base's own light, or a beacon bought
+   * earlier — buying it changes nothing there, and a ring drawn across that
+   * ground is a line saying so in the one place it is not true. So the ring
+   * is stroked and then the ALREADY-BUILDABLE region is punched out of it
+   * (destination-out): what survives is the arc of new ground and nothing
+   * else. A beacon entirely inside what you already own draws nothing at
+   * all, which is exactly what it is worth — and the panel says so in
+   * words, because a ring that draws nothing cannot.
+   *
+   * A BOUGHT ONE DRAWS NOTHING EITHER: its ground is already in the solid
+   * region outline (drawPowerEdge), so a second ring over the same rim
+   * would be the same line twice.
+   *
+   * It runs first on a freshly cleared canvas, which is what makes the
+   * punch safe: there is nothing under it yet to erase.
    */
-  private drawRelayGain(c: CanvasRenderingContext2D): void {
-    const rs = this.world.terrain.relays;
-    if (rs.length === 0) return;
-    const on = this.world.relayOn;
+  private drawBeaconGain(c: CanvasRenderingContext2D): void {
+    const i = this.selBeacon;
+    const r = this.world.terrain.beacons[i];
+    if (!r || this.world.beaconOn[i]) return;
     const s = this.scale * this.zoom;
-
-    // ONE RING PER RELAY, and each shows ONLY THE GROUND IT WOULD ADD.
-    //
-    // A relay's circle is mostly not an offer. Where it laps ground the run
-    // has already opened — the base's own light, or a relay bought earlier
-    // — buying it changes nothing there, and a ring drawn across that ground
-    // is a line saying so in the one place it is not true. So the rings are
-    // stroked first and then the ALREADY-BUILDABLE region is punched out of
-    // them (destination-out): what survives is the arc of new ground and
-    // nothing else. A relay entirely inside what you already own draws
-    // nothing at all, which is exactly what it is worth.
-    //
-    // STROKED PER RELAY rather than filled as a union, unlike the region
-    // outline below. Two unbought relays are two separate offers and you
-    // buy one at a time, so where their circles cross, both arcs belong on
-    // screen — merging them would draw a shape nobody can buy.
-    //
-    // It runs first on a freshly cleared canvas, which is what makes the
-    // punch safe: there is nothing under it yet to erase.
+    const p = beaconCentre(r);
     c.save();
     c.setLineDash([12 / s, 9 / s]);
     c.strokeStyle = "rgba(255,211,127,0.75)";
     c.lineWidth = 2.5 / s;
-    let any = false;
-    for (let i = 0; i < rs.length; i++) {
-      if (on[i]) continue;
-      const p = relayCentre(rs[i]);
-      c.beginPath();
-      c.arc(p.x, p.y, RELAY_POWER_R, 0, Math.PI * 2);
-      c.stroke();
-      any = true;
-    }
+    c.beginPath();
+    c.arc(p.x, p.y, BEACON_POWER_R, 0, Math.PI * 2);
+    c.stroke();
     c.setLineDash([]);
-    if (any) {
-      c.globalCompositeOperation = "destination-out";
-      c.beginPath();
-      for (const d of this.powerDiscs()) {
-        c.moveTo(d.x + d.r, d.y);
-        c.arc(d.x, d.y, d.r, 0, Math.PI * 2);
-      }
-      c.fill();
+    c.globalCompositeOperation = "destination-out";
+    c.beginPath();
+    for (const d of this.powerDiscs()) {
+      c.moveTo(d.x + d.r, d.y);
+      c.arc(d.x, d.y, d.r, 0, Math.PI * 2);
     }
+    c.fill();
     c.restore();
   }
 
   /**
-   * WHAT EACH UNBOUGHT RELAY COSTS, over the building the renderer drew.
+   * THE BRACKET ROUND THE SELECTED BEACON — four corners on its plate, so
+   * the thing the panel at the bottom of the screen is talking about is
+   * marked on the board.
    *
-   * THE BUILDING ITSELF IS NOT DRAWN HERE. A relay is a real 2x2 block with
-   * real art and it goes through the sprite batch with everything else on
-   * the board (renderer.ts, beside the shield towers) — dark while it is
-   * for sale and lit once it is bought. What this canvas adds is the one
-   * thing the batch cannot: a number, in SCREEN pixels, so a price stays
-   * readable at the zoom a player reads the whole map at.
+   * IT IS CORNERS AND NOT A BOX because a closed rectangle on a 3x3 plate
+   * is a frame drawn over the art it is pointing at; four short brackets
+   * sit outside the silhouette and leave the building itself alone. The
+   * widths and the inset are divided by the camera scale, so the mark is
+   * the same number of SCREEN pixels at every zoom — it is a piece of
+   * interface, not a thing on the ground with a size of its own.
    *
-   * RED WHEN THE BANK CANNOT COVER IT. That is the number a run spends most
-   * of its middle saving towards, and it should be legible from across the
-   * board.
+   * NO PRICE IS DRAWN HERE, and that is deliberate. A number over a
+   * building has to be legible at every zoom, which means it is drawn in
+   * screen pixels over the field whatever else is happening there; the
+   * panel has room for the price, for what the beacon does, and for the
+   * button that buys it, and it is somewhere a player's eye already goes
+   * to read what they clicked.
    */
-  private drawRelayPrices(c: CanvasRenderingContext2D): void {
-    const rs = this.world.terrain.relays;
-    if (rs.length === 0) return;
-    const on = this.world.relayOn;
-    const half = (RELAY_SIZE * CELL) / 2;
-    const labels: { x: number; y: number; text: string; poor: boolean }[] = [];
-    for (let i = 0; i < rs.length; i++) {
-      if (on[i]) continue;
-      const price = this.relayPrice(i);
-      if (price <= 0) continue;
-      const p = relayCentre(rs[i]);
-      labels.push({ x: p.x, y: p.y + half, text: String(price), poor: this.world.scrap < price });
-    }
-    if (labels.length === 0) return;
+  private drawBeaconMark(c: CanvasRenderingContext2D): void {
+    const r = this.world.terrain.beacons[this.selBeacon];
+    if (!r) return;
     const s = this.scale * this.zoom;
+    const p = beaconCentre(r);
+    const h = (BEACON_SIZE * CELL) / 2 + 3 / s;
+    const arm = (BEACON_SIZE * CELL) / 3;
     c.save();
-    c.setTransform(1, 0, 0, 1, 0, 0);
-    c.font = "bold 12px var(--font-display), system-ui, sans-serif";
-    c.textAlign = "center";
-    c.textBaseline = "top";
-    for (const l of labels) {
-      const sx = (l.x - this.tlx) * s;
-      const sy = (l.y - this.tly) * s + 4;
-      // a dark plate under the number rather than a stroke around it: a
-      // stroked glyph at 12px on a busy floor reads as a smudge
-      const w = c.measureText(l.text).width + 10;
-      c.fillStyle = "rgba(10,12,20,0.8)";
-      c.fillRect(sx - w / 2, sy - 1, w, 15);
-      c.fillStyle = l.poor ? "#FF7468" : "#FFD37F";
-      c.fillText(l.text, sx, sy + 1);
-    }
+    c.lineWidth = 2.5 / s;
+    c.lineCap = "square";
+    c.strokeStyle = "rgba(255,211,127,0.95)";
+    c.beginPath();
+    for (const sx of [-1, 1])
+      for (const sy of [-1, 1]) {
+        const x = p.x + sx * h, y = p.y + sy * h;
+        c.moveTo(x - sx * arm, y);
+        c.lineTo(x, y);
+        c.lineTo(x, y - sy * arm);
+      }
+    c.stroke();
     c.restore();
   }
 
@@ -2793,6 +2944,9 @@ export class Game {
    *   minimap keeps the fog's promise), and the map's shield towers
    *   wherever they have once been seen, a building being a thing that
    *   stays put;
+   *   the CROSSER'S HEAD an amber diamond over all of it, on the map
+   *   that carries one: the mission's objective rather than a body, and
+   *   the only mark here that is not a square (MM_CROSS_PX);
    *   the VIEWPORT as a white frame, which a press or a drag on the map
    *   moves (onMmDown).
    *
@@ -2873,10 +3027,28 @@ export class Game {
       const s = Math.max(sz, structSz), off = (s - sz) >> 1;
       box(gx - off, gy - off, s, col);
     };
+    /**
+     * A DIAMOND, |dx| + |dy| <= r, centred on a cell — the one mark on
+     * this canvas that is not a square, which is the whole of why it is
+     * here: at a handful of pixels a side, shape is the only channel left
+     * once red and white are spoken for, and a rotated square is the
+     * shape that survives four of them. Clipped and filled a row at a
+     * time like `box`, for the same reason.
+     */
+    const diamond = (gx: number, gy: number, r: number, col: number): void => {
+      for (let dy = -r; dy <= r; dy++) {
+        const y = gy + dy;
+        if (y < 0 || y >= rows) continue;
+        const half = r - (dy < 0 ? -dy : dy);
+        const x0 = gx - half < 0 ? 0 : gx - half;
+        const x1 = gx + half + 1 > cols ? cols : gx + half + 1;
+        if (x1 > x0) px.fill(col, y * cols + x0, y * cols + x1);
+      }
+    };
     // the swarm red, and everything of ours white, so the map answers
     // "us or them" at a glance
     // instead of asking for three colours to be told apart at a pixel each
-    const { upx, upy, n } = view;
+    const { upx, upy, ukind, n } = view;
     const uoff = (unitSz - 1) >> 1;
     for (let i = 0; i < n; i++) {
       const gx = (upx[i] / CELL) | 0, gy = (upy[i] / CELL) | 0;
@@ -2894,6 +3066,22 @@ export class Game {
       if (t.team === "player") struct(t.gx, t.gy, t.size, MM_WHITE);
       else struct(t.gx, t.gy, t.size, MM_RED);
     struct(T.base.x, T.base.y, T.base.size, MM_WHITE);
+    // ...AND THE NOSE OF EVERY TRAIN ON THE BOARD, last of all and over
+    // the line itself (MM_CROSS_PX). It is drawn from the kind rather
+    // than from a mission flag, so a map with no crossers on it pays one
+    // typed-array read per body for a loop that marks nothing — and the
+    // head of a train that has lost its head is simply not there, which
+    // is the truth about that train. The edge goes down first and the
+    // fill one pixel inside it, so the mark carries its own outline
+    // MM_CROSS_PX is the mark's WIDTH and the diamond takes a radius, so
+    // the half is not a fudge — a diamond of r spans 2r + 1 cells
+    const crossR = Math.max(2, Math.round(MM_CROSS_PX / perCell / 2));
+    for (let i = 0; i < n; i++) {
+      if (ukind[i] !== WORM_HEAD_ID) continue;
+      const gx = (upx[i] / CELL) | 0, gy = (upy[i] / CELL) | 0;
+      diamond(gx, gy, crossR, MM_CROSS_EDGE);
+      diamond(gx, gy, crossR - 1, MM_CROSS);
+    }
     lc.putImageData(img, 0, 0);
 
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -3363,20 +3551,29 @@ export class Game {
     // answer is drawn as the shape it actually is, an edge, and the ground
     // on both sides of it is left alone.
     //
-    // THE GAIN RINGS GO FIRST, because they are drawn by ERASING (see
-    // drawRelayGain) and the only safe moment to erase on this canvas is
-    // while nothing else is on it. The region outline is stroked over them
+    // THE GAIN RING GOES FIRST, because it is drawn by ERASING (see
+    // drawBeaconGain) and the only safe moment to erase on this canvas is
+    // while nothing else is on it. The region outline is stroked over it
     // afterwards, so the edge of what you own stays unbroken even where an
     // offer runs up against it.
-    if (this.buildKind) {
-      this.drawRelayGain(c);
+    //
+    // A PICKED BEACON BRINGS BOTH LINES UP, not just its own: "the ground
+    // this would add" is only a sentence beside the ground you already
+    // have, and the ring is literally cut out of that region. So clicking
+    // a beacon is also how you ask where you may build — which used to
+    // need a turret in hand, and is the question you are asking when you
+    // click one.
+    if (this.buildKind || this.selBeacon >= 0) {
+      this.drawBeaconGain(c);
       this.drawPowerEdge(c);
     }
 
-    // THE PRICES over the relays the sprite batch drew, always — what a
-    // piece of ground costs is a thing to plan around between waves, not
-    // only while a building is in hand
-    this.drawRelayPrices(c);
+    // ...and the bracket round the one that is picked, over the ring it
+    // just drew. NOTHING IS DRAWN OVER THE OTHER BEACONS: their prices used
+    // to be stamped on the field at all times, which was a dozen numbers
+    // over the wave a player was trying to read. A beacon says what it
+    // costs when it is asked (UiState.beacon), and not before.
+    this.drawBeaconMark(c);
 
     // THE TAXED SHORE, while a turret is in hand. Under the routes and the
     // ghost, both of which are decisions being made ON TOP of it

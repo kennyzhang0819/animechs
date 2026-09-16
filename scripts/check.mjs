@@ -223,10 +223,10 @@ const { COLS, ROWS, CELL } = C;
  * on, so a field with a flat patch in it ends the walk instead of looping.
  */
 /**
- * EVERY RELAY ON THIS MAP SWITCHED ON — what a harness does before it
+ * EVERY BEACON ON THIS MAP SWITCHED ON — what a harness does before it
  * builds a board.
  *
- * A run may only build where its base and the relays it has BOUGHT light
+ * A run may only build where its base and the beacons it has BOUGHT light
  * the ground (Sim.rebuildPower), and on a fresh board that is one circle
  * around the base. Every check below that fills a board is asking a
  * question about the SIM — does a round connect, does a step still fit in
@@ -238,10 +238,10 @@ const { COLS, ROWS, CELL } = C;
  *
  * So the harnesses buy the whole map open, for free, and the power rule is
  * tested where it belongs — by the placement test itself, and by the one
- * assertion in the sim check that the grid grows when a relay is bought.
+ * assertion in the sim check that the grid grows when a beacon is bought.
  */
 const openBoard = (s) => {
-  for (let i = 0; i < s.terrain.relays.length; i++) s.setRelayOn(i);
+  for (let i = 0; i < s.terrain.beacons.length; i++) s.setBeaconOn(i);
   return s;
 };
 
@@ -401,9 +401,9 @@ try {
   // machine is — see FIELD_BUDGET_MS in sim.ts
   sim.setFieldBudget(Infinity);
   sim.setTech(TR.techStateFor(15));
-  // EVERY RELAY SWITCHED ON, because this check is about the COMBAT
+  // EVERY BEACON SWITCHED ON, because this check is about the COMBAT
   // pipeline and not about the power grid. A campaign run may only build
-  // inside the circle its base lights plus whatever relays it has bought
+  // inside the circle its base lights plus whatever beacons it has bought
   // (Sim.rebuildPower), so on a fresh board the only legal stretch of the
   // route is the last few cells before the core — and a body takes most of
   // a minute to walk that far, which would make this a test of the clock.
@@ -412,10 +412,10 @@ try {
   const lit0 = sim.powered.reduce((a, b) => a + b, 0);
   openBoard(sim);
   // ...and while we are here, the cheapest possible gate on the grid
-  // itself: a map with relays on it must light more ground with them on
+  // itself: a map with beacons on it must light more ground with them on
   // than without, or something has quietly stopped painting
-  if (sim.terrain.relays.length > 0 && sim.powered.reduce((a, b) => a + b, 0) <= lit0)
-    simProblems.push("switching every relay on lit no new ground");
+  if (sim.terrain.beacons.length > 0 && sim.powered.reduce((a, b) => a + b, 0) <= lit0)
+    simProblems.push("switching every beacon on lit no new ground");
 
   const half = () => { for (let s = 0; s < 30; s++) sim.update(1 / 60); };
   let nan = null;
@@ -456,8 +456,8 @@ try {
   //    was margin on a thirteen-second answer, back when a turret could go
   //    down anywhere and the check put its dozen right beside the drop
   //    zone. It cannot any more: a run may only build where the base and
-  //    its bought relays light the ground (Sim.rebuildPower), and on every
-  //    official map the spawn edge is further out than the last relay — so
+  //    its bought beacons light the ground (Sim.rebuildPower), and on every
+  //    official map the spawn edge is further out than the last beacon — so
   //    the earliest LEGAL stretch of the road is a long way down it, and
   //    what this now waits for is a body to walk there.
   let hitAt = null;

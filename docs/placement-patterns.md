@@ -161,7 +161,7 @@ Tether's is the first pattern with a positive and a negative clause at once.
 | turret | pattern | rule |
 | --- | --- | --- |
 | **cleaver** | **Shield wall** | **+1 pierce and +10% damage** per orthogonally adjacent cleaver (max 2) — and every cleaver in the wall loses **15% range** |
-| **hive** | **Relay** | an autocannon, whirl or other hive adjacent → **+1 missile per volley**, max +2, and a relayed hive targets the *strongest* body in range rather than the closest |
+| **hive** | **Beacon** | an autocannon, whirl or other hive adjacent → **+1 missile per volley**, max +2, and a beaconed hive targets the *strongest* body in range rather than the closest |
 | **whirl** | **Crossfire net** | +8% fire rate per **distinct other turret kind** within 3 cells, max 5 → **+40%** |
 | **deluge** | **Reservoir** | 3+ water cells adjacent to its footprint → **+40% fire rate**; if any of them is deep, **wet duration doubles** |
 

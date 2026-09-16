@@ -743,6 +743,21 @@ export interface UnitStats {
    */
   immunities?: readonly StatusKind[];
   /**
+   * NO SLOW EVER SCALES THIS BODY'S DRIVE. It is not an immunity in the
+   * StatusKind sense — the status still lands, the body still tints, a
+   * soak still douses a fire and still hands the electric ammunition its
+   * bonus — it is the SPEED MULTIPLIER that is refused, and every one of
+   * them: the wet slow the liquid turrets sell and anything that joins it
+   * later. The same shape the Speedy mutation already has (Sim.applyWet),
+   * written as a property of the kind instead of a rule about the run.
+   *
+   * The crosser carries it because the mission is a promise about WHEN
+   * (missions.ts): a Borer's arrival is a clock the player reads off the
+   * road from wave one, and a douser out on the line must not be able to
+   * rewrite it.
+   */
+  unslowable?: boolean;
+  /**
    * A walking unit with real legs rather than a mech's sliding pair. Its
    * presence is what puts a kind on the legged draw path — see LEG_ART in
    * atlas.ts for the matching sprites.
@@ -767,12 +782,20 @@ const wake = (o: Partial<WakeSpec> & Pick<WakeSpec, "x" | "length" | "scl">): Wa
 });
 
 /**
- * HOW FAST A WORM CROSSES, world px/s. Coldline's south line is 13,100 px
- * of walking and its north line 10,900, so at 2.35 tiles a second a Borer
- * is on the board for 4:39 on the long road and 3:53 on the short one —
+ * HOW FAST A WORM CROSSES, world px/s. Coldline's south line is 14,100 px
+ * of walking and its north line 12,000, so at 2.35 tiles a second a Borer
+ * is on the board for 5:00 on the long road and 4:16 on the short one —
  * long enough that a player who sees one enter has time to decide whether
  * to answer it, and short enough that five launches and a spare fit
  * inside a run of about twenty minutes (WORLDS, Coldline).
+ *
+ * BOTH ROADS COUNT THEIR RUN-UP. A road's first leg is the off-board one
+ * the train crawls in along (missions.ts), and it is now most of a
+ * kilometre because the train itself is: the head is laid at the chain's
+ * whole length past the entry (Sim.launchCrosser), so the run-up has to
+ * be longer than the train or the head would appear in open ground with
+ * forty cells of map behind it. The numbers above are the full arc
+ * length, run-up included, which is the launch-to-last-piece-gone clock.
  */
 const WORM_SPEED = 2.35 * CELL;
 
@@ -2065,7 +2088,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     starburst: { chance: 0.3, cooldown: 2.4, merge: 10 },
   },
 
-  // ---- THE CROSSER: ONE WORM, IN NINE PIECES ----
+  // ---- THE CROSSER: ONE WORM, IN TWENTY PIECES ----
   //
   // The train that walks Coldline's two roads (missions.ts) while nothing
   // else on the field knows it is there. It is on the WALKERS' layer and
@@ -2076,10 +2099,10 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // it loses nothing this minute — which is exactly what makes paying for
   // guns out on a road that defends nothing a decision.
   //
-  // WHY THREE KINDS AND NOT ONE. A worm is nine bodies in a line
+  // WHY THREE KINDS AND NOT ONE. A worm is twenty bodies in a line
   // (WORM_CHAIN), each with its own pool, because the mission asks the
   // player to kill the WHOLE train: a single body with a chain drawn
-  // behind it would have one hurtbox at its nose, and a twenty-tile
+  // behind it would have one hurtbox at its nose, and a seventy-tile
   // silhouette whose back half cannot be shot is a lie about where to put
   // a gun. The head leads and is the toughest; the cars are the body; the
   // tail is the piece that says the train has ended.
@@ -2089,53 +2112,78 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // tier-three heads (cleavers) beside the south line takes a whole Borer
   // apart in fourteen seconds as it passes, and six do not finish one —
   // the tail walks off the far edge. So the mission's price is somewhere
-  // around eight guns and the relay that reaches them, twice, and the
+  // around eight guns and the beacon that reaches them, twice, and the
   // cliff between "nearly" and "enough" is deliberately sharp: a road
   // half covered is a road not covered.
   //
-  // Move the three numbers together — the head is worth two cars and the
-  // tail one — and the mission gets harder or easier without anything
-  // else in the file changing.
+  // THE POOL IS THE DIAL AND THE COUNT IS NOT. Going from nine pieces to
+  // twenty is a change to how the train READS — a longer body crossing
+  // more of the road at once, more pieces to finish — and it must not be
+  // a silent tripling of the mission's difficulty, so the per-piece pools
+  // came DOWN to hold the 45,000 the measurement above was taken against:
+  // twenty-one car-equivalents (the head is worth two, the tail one) at
+  // 2,150 apiece. Move the three numbers together and the mission gets
+  // harder or easier without anything else in the file changing.
   wormhead: {
-    hp: 9000,
+    hp: 4300,
     speed: WORM_SPEED,
     armor: 12,
-    radius: UR * 2.75,
+    // HALF AGAIN THE NATIVE SCALE, like the boss and for the same reason:
+    // this is the body the whole map is about hitting, and at one-to-one
+    // it was a three-tile machine on a five-hundred-tile road. The sheet
+    // did not change — the quad did (atlas.ts UNIT_ART) — so every number
+    // below is the drawing's own extent times 1.5.
+    radius: UR * 4.125,
     // the drawing's own extent: 96 native px of hull by the cutter drum's
-    // 72, at the sheet's 0.625 world px per native px (game/wormArt.ts).
-    // The quad is the box on this body like every other one
-    hitbox: { long: 60, wide: 46 },
+    // 72, at the sheet's 0.625 world px per native px (game/wormArt.ts),
+    // and then the 1.5. The quad is the box on this body like every other
+    hitbox: { long: 90, wide: 69 },
     tier: 4,
     // it turns as fast as the road does: the heading is the road's
     // tangent, written straight onto the body (Sim.updateCrosser), so
     // nothing here is ever asked to catch up with a corner
     rotateSpeed: 30,
+    // ...and NOTHING SLOWS IT. See UnitStats.unslowable: a douser on the
+    // line can still soak a Borer, and the soak is still worth what
+    // electric ammunition pays for it — it simply buys no seconds
+    unslowable: true,
   },
   wormcar: {
-    hp: 4500,
+    hp: 2150,
     speed: WORM_SPEED,
     armor: 12,
-    radius: UR * 2.5,
-    hitbox: { long: 56, wide: 44 },
+    radius: UR * 3.75,
+    hitbox: { long: 84, wide: 66 },
     tier: 4,
     rotateSpeed: 30,
+    unslowable: true,
   },
   wormtail: {
-    hp: 4500,
+    hp: 2150,
     speed: WORM_SPEED,
     armor: 12,
-    radius: UR * 2.5,
-    hitbox: { long: 56, wide: 44 },
+    radius: UR * 3.75,
+    hitbox: { long: 84, wide: 66 },
     tier: 4,
     rotateSpeed: 30,
+    unslowable: true,
   },
 };
 
 /**
- * THE TRAIN, nose to tail: what one worm is made of, in order. Nine
- * pieces — a head, seven cars and a tail — laid on the road WORM_SPACING
- * apart, which is a little under a car's own length so the couplings
- * overlap and the thing reads as one body rather than nine.
+ * THE TRAIN, nose to tail: what one worm is made of, in order. Twenty
+ * pieces — a head, eighteen cars and a tail — laid on the road
+ * WORM_SPACING apart, which is a little under a car's own length so the
+ * couplings overlap and the thing reads as one body rather than twenty.
+ *
+ * IT IS SEVENTY-FOUR TILES OF TRAIN, nose to tail (19 gaps of 78 px),
+ * which is an eighth of Coldline's south road in one body. Two things
+ * downstream are sized off that and will bite if the count moves again:
+ * the ROAD'S RUN-UP has to be longer than the chain (missions.ts — the
+ * head is laid a whole chain-length past the entry, so a short run-up
+ * puts the head in open ground), and the on-board clock stops being the
+ * road's length the moment the tail is still off the map when the head
+ * is halfway across it.
  *
  * A worm is DESTROYED when every piece of it is down and LEAKED when any
  * piece of it reaches the far edge (Sim.updateCrosser). Blowing the head
@@ -2143,10 +2191,62 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
  * mission that ended at the nose would be a mission about one turret.
  */
 export const WORM_CHAIN: readonly UnitKind[] = [
-  "wormhead", "wormcar", "wormcar", "wormcar", "wormcar", "wormcar", "wormcar", "wormcar", "wormtail",
+  "wormhead",
+  "wormcar", "wormcar", "wormcar", "wormcar", "wormcar", "wormcar",
+  "wormcar", "wormcar", "wormcar", "wormcar", "wormcar", "wormcar",
+  "wormcar", "wormcar", "wormcar", "wormcar", "wormcar", "wormcar",
+  "wormtail",
 ];
-/** the gap between one piece's centre and the next, world px */
-export const WORM_SPACING = 52;
+/** the gap between one piece's centre and the next, world px — scaled with
+ *  the bodies (see wormhead's radius), so the couplings keep their overlap */
+export const WORM_SPACING = 78;
+/** nose to tail, world px: what the road's run-up has to clear */
+export const WORM_LENGTH = (WORM_CHAIN.length - 1) * WORM_SPACING;
+
+/**
+ * EVERY TRAIN IS TOUGHER THAN THE ONE BEFORE IT — what launch `n` (0 for
+ * the first) multiplies every piece's health pool by.
+ *
+ * WHY IT IS A RAMP AND NOT A FLAT POOL. The launches are three and a
+ * third minutes apart and the run gets RICHER between them: by the fifth
+ * the board has had thirteen more minutes of scrap than it had at the
+ * first, and a Borer worth exactly as much as the one it already killed
+ * is a Borer the player has already solved. The mission asks its question
+ * once and then asks it again harder — buy more road, or watch this one
+ * walk — which is the only way five repetitions of one event stay a
+ * decision instead of a chore.
+ *
+ * IT IS CENTRED, NOT STACKED ON TOP. 0.7 at the first launch and 1.3 at
+ * the fifth, which is the SAME TOTAL health across the pattern's seven
+ * worms as a flat 1.0 would be (the weighted mean over
+ * bottom/top/both/bottom/both is 1.04). So this changes the SHAPE of the
+ * mission and not its price: the opening Borer is one a fresh board can
+ * actually finish, and the last is nearly twice it. Raise the step and
+ * the tail gets heavier; raise the base and the whole mission does.
+ *
+ * THE SPARE KEEPS CLIMBING. It is launched at index `pattern.length`, so
+ * the replacement for a train that got through is the heaviest thing the
+ * mission sends — which is what a second chance earned by a mistake ought
+ * to feel like. And the DROP does not ramp with it: scrap comes off the
+ * kind's authored health like every other body's (unitDrop), the same way
+ * the level curve leaves drops alone however high the rung climbs.
+ */
+export const WORM_RAMP_BASE = 0.7;
+export const WORM_RAMP_STEP = 0.15;
+export const wormRamp = (launch: number): number =>
+  WORM_RAMP_BASE + WORM_RAMP_STEP * Math.max(0, launch);
+
+/**
+ * IS THIS KIND A PIECE OF A TRAIN — one flag per kind id, for the readers
+ * that have to know without holding a Sim. The sim itself has `ucross`,
+ * which is the better answer and says WHICH worm; this is for the build
+ * test (board.ts bodiesClear, where a footprint is allowed to land on a
+ * Borer because the Borer walks through it) and the corner map's icon
+ * (game.ts drawMinimap), neither of which is inside the sim.
+ */
+export const KIND_IS_CROSSER = Uint8Array.from(UNIT_KINDS, (k) =>
+  WORM_CHAIN.includes(k) ? 1 : 0,
+);
 
 /**
  * Mindustry's unit trees: each line is one factory's upgrade path, in tier
@@ -3451,7 +3551,7 @@ export const WORLDS: LevelSpec[] = [
     //
     // WHAT IT COSTS. Neither road passes within a hundred cells of the
     // core, so every gun that shoots a Borer is a gun bought outside the
-    // ground the core lights, on a relay paid for out of the same purse
+    // ground the core lights, on a beacon paid for out of the same purse
     // the defence comes out of (the map carries nine at 3,000 to 12,000).
     // Nothing built on a road defends the base, and the sale returns
     // nothing, so the whole difficulty of this map is that one decision
@@ -3464,14 +3564,23 @@ export const WORLDS: LevelSpec[] = [
     // seven. Two through and it is over: there is no second spare and
     // the arithmetic says so before the player has to work it out.
     //
+    // ...AND EACH LAUNCH IS HEAVIER THAN THE LAST (wormRamp): the fifth
+    // Borer carries nearly twice the first one's health and the spare
+    // more again, on a board that has had thirteen more minutes of scrap
+    // to spend. The five launches are the same total health they would be
+    // flat, so this is the mission's SHAPE and not its price — a battery
+    // that answered the first train is not the battery that answers the
+    // fifth, which is what keeps the third repetition from being the
+    // second one again.
+    //
     // THE CLOCK. First launch at 2:30, one every 3:20 after it, the last
     // of the pattern at 15:50 and the spare at 19:10; a Borer is on the
-    // board for 3:53 to 4:39 (WORM_SPEED). So a board that kills a train
+    // board for 4:16 to 5:00 (WORM_SPEED). So a board that kills a train
     // where it meets it is done about sixteen minutes in, one that grinds
-    // each one down near the far end about twenty, and a run that spent
-    // its allowance and earned the spare about twenty-three. The wave
-    // script underneath all of that is the campaign's own and is tuned
-    // separately.
+    // each one down near the far end about twenty-one, and a run that
+    // spent its allowance and earned the spare about twenty-four. The
+    // wave script underneath all of that is the campaign's own and is
+    // tuned separately.
     mission: {
       kind: "intercept",
       kills: 7,

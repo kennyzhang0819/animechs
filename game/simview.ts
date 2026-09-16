@@ -313,16 +313,16 @@ export interface BoardView {
    *  when there is a mask to shade from */
   readonly hydrophobicOn: boolean;
   /**
-   * WHICH OF THE MAP'S RELAYS ARE SWITCHED ON, indexed into
-   * `terrain.relays` (Sim.relayOn). One byte each, held by reference like
-   * every other grid here — WHERE the relays are is in the terrain, which
+   * WHICH OF THE MAP'S BEACONS ARE SWITCHED ON, indexed into
+   * `terrain.beacons` (Sim.beaconOn). One byte each, held by reference like
+   * every other grid here — WHERE the beacons are is in the terrain, which
    * both sides build for themselves, so this is the only part of them that
    * has to cross.
    *
    * The renderer reads it to tint the buildings and the overlay reads it to
    * price them.
    */
-  readonly relayOn: Uint8Array;
+  readonly beaconOn: Uint8Array;
 }
 
 /**

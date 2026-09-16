@@ -48,11 +48,11 @@ export interface WorldSource {
   readonly isGoal: Uint8Array;
   readonly occupied: Uint8Array;
   readonly waterlogged: Uint8Array | null;
-  /** the cells the base and the bought relays light (Sim.powered) */
+  /** the cells the base and the bought beacons light (Sim.powered) */
   readonly powered: Uint8Array;
-  /** which of the map's relays this run has switched on, indexed into
-   *  terrain.relays (Sim.relayOn) */
-  readonly relayOn: Uint8Array;
+  /** which of the map's beacons this run has switched on, indexed into
+   *  terrain.beacons (Sim.beaconOn) */
+  readonly beaconOn: Uint8Array;
   readonly airRoutes: readonly { pts: readonly number[] }[];
 }
 
@@ -75,7 +75,7 @@ export class World {
   readonly bodies: BoardBodies;
   readonly waterlogged: Uint8Array | null;
   readonly powered: Uint8Array;
-  readonly relayOn: Uint8Array;
+  readonly beaconOn: Uint8Array;
   readonly airRoutes: readonly { pts: readonly number[] }[];
   private readonly isGoal: Uint8Array;
   private readonly occupied: Uint8Array;
@@ -105,7 +105,7 @@ export class World {
     this.occupied = src.occupied;
     this.waterlogged = src.waterlogged;
     this.powered = src.powered;
-    this.relayOn = src.relayOn;
+    this.beaconOn = src.beaconOn;
     this.airRoutes = src.airRoutes;
     const h = src.header, f = src.flat;
     this.bodies = {

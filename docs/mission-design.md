@@ -9,7 +9,7 @@ mission is a per-map objective, and the map is built around it.
 
 The run has ONE VERB: spend scrap to place a structure. Nothing is
 produced, nothing is commanded, nothing is hidden — a player sees the
-whole board from wave 1 and can put a turret anywhere their relay zones
+whole board from wave 1 and can put a turret anywhere their beacon zones
 reach. So a mission cannot ask for scouting, micro or an army. It can
 only ask the player to **spend somewhere other than the base**, and the
 whole of its difficulty is the cost of doing that.
@@ -30,7 +30,7 @@ Three consequences, and every archetype below is shaped by them:
 ## What is built
 
 **One of the eight.** Coldline plays *intercept the crosser*: seven
-Borers — nine-car boring machines — cross the map on two fixed roads
+Borers — twenty-car boring machines — cross the map on two fixed roads
 while the wave script runs at the core underneath, and a run that lets
 two of them reach the far side is over whether or not the base is still
 standing.
@@ -75,12 +75,27 @@ thinned.
 
 What Coldline does with it, and what the shape turned out to need:
 
-- **A crosser is a CHAIN, not a body.** The Borer is nine separately
-  shootable pieces laid nose to tail, and it counts as destroyed only
-  when every one of them is down. One hurtbox on a twenty-tile
-  silhouette is a mission about hitting a nose; nine is a mission about
-  how much of a road you have under fire, which is the thing the
-  archetype is actually asking the player to pay for.
+- **A crosser is a CHAIN, not a body.** The Borer is twenty separately
+  shootable pieces laid nose to tail — seventy tiles of train — and it
+  counts as destroyed only when every one of them is down. One hurtbox
+  on that silhouette is a mission about hitting a nose; twenty is a
+  mission about how much of a road you have under fire, which is the
+  thing the archetype is actually asking the player to pay for.
+- **NOTHING SLOWS IT AND NOTHING BLOCKS IT.** A Borer is `unslowable`
+  (`UnitStats`): a douser on the line still soaks it, still douses a fire
+  on it and still hands the electric ammunition its bonus, but it buys no
+  seconds. And it obstructs nothing either — a footprint may be dropped
+  on a train that is passing over the spot (`board.ts bodiesClear`),
+  because the train walks through buildings and would otherwise be
+  refusing the player ground on the one map about buying ground. The
+  arrival is a clock the road advertises from wave one; the only answer
+  to it is killing the thing.
+- **EVERY LAUNCH IS HEAVIER THAN THE LAST** (`wormRamp`) — 0.7 of the
+  pool at the first and 1.3 at the fifth, with the spare past that. The
+  five launches add up to the same total health a flat pool would, so
+  this is the mission's shape rather than its price: a board gets richer
+  between launches, and a train worth what the last one was worth is a
+  train the player has already solved.
 - **It walks an AUTHORED line and it walks it kinematically.** Not the
   flow field, not the crowd shove, not wall collision — a position read
   off a polyline at an arc length. Everything else on the board ends up
@@ -158,7 +173,7 @@ map has to supply:
 - **Somewhere the objective is, that is not on the way to anything.** A
   gun placed there defends nothing, which is what makes buying it a
   decision.
-- **A relay zone that reaches it, at a price.** The node's cost is the
+- **A beacon zone that reaches it, at a price.** The node's cost is the
   mission's entry fee and the clearest number to tune.
 - **A reason the objective cannot be answered by one turret.** It fights
   back, it moves, it is only open for a moment, or it takes a damage type

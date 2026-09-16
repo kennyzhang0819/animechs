@@ -86,9 +86,9 @@ export interface SimHost {
   /** one held card, laid down whole (Sim.placeFormation) */
   placeFormation(cells: readonly Cell[], kind: TowerKind): void;
   placeTower(gx: number, gy: number, kind: TowerKind): void;
-  /** one of the map's relays switched on for good (Sim.setRelayOn) — the
+  /** one of the map's beacons switched on for good (Sim.setBeaconOn) — the
    *  scrap is already gone, exactly as it is for a placement */
-  setRelayOn(i: number): void;
+  setBeaconOn(i: number): void;
   /** a saved layout, stood back up (Sim.placeMany) */
   placeMany(towers: readonly Placement[]): void;
   placeLine(x0: number, y0: number, x1: number, y1: number, kind: TowerKind): void;
@@ -153,7 +153,7 @@ export class LocalHost implements SimHost {
       occupied: sim.occupied,
       waterlogged: sim.waterloggedMask(),
       powered: sim.poweredMask(),
-      relayOn: sim.relayOnMask(),
+      beaconOn: sim.beaconOnMask(),
       airRoutes: sim.airRoutes(),
     });
     this.sync();
@@ -183,8 +183,8 @@ export class LocalHost implements SimHost {
   placeFormation(cells: readonly Cell[], kind: TowerKind): void {
     this.sim.placeFormation(cells, kind);
   }
-  setRelayOn(i: number): void {
-    this.sim.setRelayOn(i);
+  setBeaconOn(i: number): void {
+    this.sim.setBeaconOn(i);
   }
 
   placeTower(gx: number, gy: number, kind: TowerKind): void {
