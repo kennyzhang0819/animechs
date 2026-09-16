@@ -19,6 +19,7 @@ import {
   H,
   BEACON_POWER_R,
   BEACON_SIZE,
+  beaconPriceAt,
   ROWS,
   structStats,
   targetingLine,
@@ -150,8 +151,18 @@ export interface BeaconPanel {
   i: number;
   /** is it already switched on? then there is no price and no button */
   bought: boolean;
-  /** what it costs, or 0 where building is free (the sandbox, the editors) */
+  /** what it costs — the rung of the map's ladder this run has reached, the
+   *  same for every beacon on the board (Game.beaconPrice), or 0 where
+   *  building is free (the sandbox, the editors) */
   price: number;
+  /** ...and what the NEXT one will cost once this is paid for. Buying any
+   *  beacon moves every other one up, and the panel says so before the
+   *  money is spent rather than after */
+  next: number;
+  /** how many of this map's beacons the run has switched on, out of how
+   *  many it carries — the rung, and how many rungs are left */
+  taken: number;
+  total: number;
   /** the bank cannot cover it yet — the price goes red and the button greys */
   poor: boolean;
   /** how far it lights, in TILES, which is the unit every range in this
@@ -2829,15 +2840,39 @@ export class Game {
   }
 
   /**
-   * WHAT ONE BEACON COSTS ON THIS BOARD: the price the map author wrote on
-   * it, or nothing at all where building is free (the sandbox, the two
-   * editors), which is the same rule every other price on the board plays
-   * by (Game.rollPrice).
+   * WHAT THE NEXT BEACON COSTS ON THIS BOARD — and it is the same number
+   * for every beacon on it.
+   *
+   * ONE RISING PRICE, NOT A PRICE PER HILL. The map carries a ladder
+   * (maps.ts MapData.beaconPrices, constants.ts BEACON_LADDER) and the run
+   * is offered the rung it has reached: with none bought, every beacon on
+   * the board costs rung 1; buy any one of them and every other moves to
+   * rung 2. So the question a player answers is how much ground to open,
+   * not which hill happens to be marked down — and the far edge of a map
+   * is reachable early by a run willing to spend its whole middle game on
+   * one acre.
+   *
+   * HOW MANY ARE BOUGHT IS THE SHARED BYTES (Sim.beaconOn) and not a
+   * counter of its own: it is the one thing about beacons that crosses
+   * between threads, both sides already read it, and a second count could
+   * disagree with it.
+   *
+   * Zero where building is free (the sandbox, the two editors), which is
+   * the same rule every other price on the board plays by (Game.rollPrice).
    */
   private beaconPrice(i: number): number {
     const r = this.world.terrain.beacons[i];
     if (!r || !this.dealing) return 0;
-    return Math.max(0, Math.round(r.price));
+    return beaconPriceAt(this.world.terrain.beaconPrices, this.beaconsBought());
+  }
+
+  /** how many of this map's beacons the run has switched on — the rung of
+   *  the ladder it is standing on (beaconPrice) */
+  private beaconsBought(): number {
+    const on = this.world.beaconOn;
+    let n = 0;
+    for (let i = 0; i < this.world.terrain.beacons.length; i++) if (on[i]) n++;
+    return n;
   }
 
   /**
@@ -2926,6 +2961,7 @@ export class Game {
     if (!r) return null;
     const on = this.world.beaconOn[i] !== 0;
     const price = this.beaconPrice(i);
+    const bought = this.beaconsBought();
     return {
       i,
       bought: on,
@@ -2933,6 +2969,14 @@ export class Game {
       poor: !on && price > 0 && (this.world.scrap ?? 0) < price,
       radius: Math.round(BEACON_POWER_R / CELL),
       gains: on || this.beaconGains(i),
+      // WHAT THE ONE AFTER IT COSTS, so the ladder is visible before it is
+      // climbed rather than after: a player who cannot see that the next
+      // beacon is half again as dear has no way to plan the purchase they
+      // are being asked to plan (beaconPrice). Zero where building is free
+      next: this.dealing ? beaconPriceAt(this.world.terrain.beaconPrices, bought + 1) : 0,
+      /** how many the run has already switched on — the rung it stands on */
+      taken: bought,
+      total: this.world.terrain.beacons.length,
     };
   }
 

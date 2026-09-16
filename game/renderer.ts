@@ -869,12 +869,18 @@ export interface TerrainLayers {
   props: boolean;
   spawn: boolean;
   base: boolean;
+  /** the beacons (terrain.ts MapBeacon) — their blocks, the circles they
+   *  open, and the ring of vision each burns in the darkness. Hidden, they
+   *  are also out of reach: the editor's brush will not stamp one and the
+   *  eraser will not take one off (MapEditor.paintCell) */
+  beacon: boolean;
 }
 export const ALL_LAYERS: TerrainLayers = {
   wall: true,
   props: true,
   spawn: true,
   base: true,
+  beacon: true,
 };
 /**
  * What a MATCH draws. The spawn pads are an authoring layer: they are how
@@ -888,6 +894,7 @@ export const GAME_LAYERS: TerrainLayers = {
   props: true,
   spawn: false,
   base: true,
+  beacon: true,
 };
 
 // flyer drop shadow: painter's offset + premultiplied black tint
@@ -2060,7 +2067,7 @@ export class Renderer {
     // the pass that runs once per map, rather than in the frame: where the
     // beacons are is in the map document, the same on both threads, and a
     // beacon the run never affords still lights its own rock.
-    if (layers.wall && T.beacons.length > 0) {
+    if (layers.beacon && T.beacons.length > 0) {
       const inner = BEACON_VISION_R / CELL;
       const outer = BEACON_VISION_FADE_R / CELL;
       const span = Math.max(1e-6, outer - inner);

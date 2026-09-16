@@ -1,9 +1,10 @@
 /**
  * SEED EVERY OFFICIAL MAP WITH A DRAFT SET OF BEACONS.
  *
- * WHAT THIS IS FOR, AND WHAT IT IS NOT. Where a beacon stands and what it
- * costs is where a map's mission is written (see MapBeacon in
- * game/terrain.ts), and no script can write a mission. This exists so that
+ * WHAT THIS IS FOR, AND WHAT IT IS NOT. Where a beacon stands — and how
+ * many of them a board carries, which is what opening it costs — is where
+ * a map's mission is written (see MapBeacon in game/terrain.ts), and no
+ * script can write a mission. This exists so that
  * a freshly generated map is PLAYABLE rather than locked inside the circle
  * its base lights — a first draft to open in the editor and argue with,
  * using the Beacon brush in the Zones section.
@@ -35,7 +36,7 @@
  */
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { defaultBeaconPrice, BEACON_TIER_FROM, beaconTier } from "../game/maps.ts";
+import { BEACON_LADDER, beaconPriceAt } from "../game/constants.ts";
 import { WALL_PINE } from "../game/terrain.ts";
 
 const MAPS_DIR = "public/maps";
@@ -43,19 +44,29 @@ const MAPS_DIR = "public/maps";
 const BEACON_SIZE = 3;
 /** constants.ts CORE_POWER_R, in cells: the ground the base lights for free */
 const CORE_R = 90;
-/** the two ranges that cut the three price bands (maps.ts) */
-const TIER_FROM = BEACON_TIER_FROM;
+/**
+ * THE TWO RANGES THAT CUT THE THREE RINGS this draft scatters into — near,
+ * middle, far, in cells from the base.
+ *
+ * THEY ARE NOT PRICES. A beacon costs whichever rung of the map's ladder
+ * the run has reached (constants.ts BEACON_LADDER) and nothing about where
+ * it stands changes that. The rings are here so that a draft reaches the
+ * whole board instead of clustering wherever the rock happens to be
+ * thickest: the numbers come off the radii, since the base lights 90 cells
+ * and a beacon adds 60.
+ */
+const RING_FROM = [200, 330];
 
 /**
- * HOW MANY BEACONS IN EACH BAND, AND IT IS THE SAME ON EVERY MAP.
+ * HOW MANY BEACONS IN EACH RING, AND IT IS THE SAME ON EVERY MAP.
  *
- * The band prices are fixed across the whole game (maps.ts
- * BEACON_TIER_PRICE), so the cost of opening a board has to be fixed too —
- * 4x3,000 + 5x12,000 + 4x40,000 is 232,000 scrap on Crater and 232,000 on
- * Greenwood, which is what lets the campaign's progression be designed
- * against one number instead of nine.
+ * THE COUNT IS THE COST NOW. Every beacon is priced off the map's ladder
+ * in the order they are BOUGHT (constants.ts BEACON_LADDER), so how many a
+ * board carries is exactly how many rungs a run can climb — thirteen
+ * beacons on Crater and thirteen on Greenwood is what lets the campaign's
+ * progression be designed against one number instead of nine.
  *
- * What differs between maps is WHERE the ladder runs, not what it costs.
+ * What differs between maps is WHERE they stand, not what they cost.
  */
 const PER_BAND = [4, 5, 4];
 
@@ -79,9 +90,10 @@ const FROM_BASE = CORE_R + 15;
  * gives it — a map meant to be fought in one corner wants few and dear, a
  * sprawling one wants many and cheap.
  *
- *   perBand how many beacons in each of the three price bands, as a triple.
- *           Changing this changes what opening the board COSTS, so it is a
- *           progression decision and not a map one — think twice.
+ *   perBand how many beacons in each of the three rings, as a triple.
+ *           Changing this changes how many rungs of the ladder a run can
+ *           climb, and so what opening the board COSTS: a progression
+ *           decision and not a map one — think twice.
  *   spacing the middle of the random band each pick demands of its
  *           neighbours, in cells
  */
@@ -150,63 +162,67 @@ for (const id of ids) {
   const want = over.perBand ?? PER_BAND;
   const spacing = over.spacing ?? 78;
 
-  // ONE BAND AT A TIME, AND EVERY BAND FILLED.
+  // ONE RING AT A TIME, AND EVERY RING FILLED.
   //
-  // THE LADDER IS THE SAME SHAPE ON EVERY MAP because the band prices are a
-  // fixed part of the game's progression (maps.ts BEACON_TIER_PRICE) — the
-  // cost of opening a board is a number the campaign is designed around, and
-  // it cannot be a number that depends on which board. So the draft takes a
-  // FIXED COUNT from each band rather than a total spread over whatever the
-  // terrain offered.
+  // THE LADDER IS THE SAME SHAPE ON EVERY MAP because the price of the nth
+  // beacon is a fixed part of the game's progression (constants.ts
+  // BEACON_LADDER) — the cost of opening a board is a number the campaign
+  // is designed around, and it cannot be a number that depends on which
+  // board. So the draft takes a FIXED COUNT from each ring rather than a
+  // total spread over whatever the terrain offered.
   //
   // The earlier pass shuffled the whole map together and stopped at a cap,
-  // which starved the outer band on any compact map: Crater came out with
-  // nine beacons and NOT ONE in band 3, so that board's progression had two
-  // rungs where every other board had three. Every official map has legal
-  // rock in all three bands — Crater has 865 sites out to 360 cells — so a
-  // band coming up empty was the picker's doing, never the terrain's.
+  // which starved the outer ring on any compact map: Crater came out with
+  // nine beacons and NOT ONE in ring 3, so that board could not be opened
+  // to its own edges at all. Every official map has legal rock in all
+  // three rings — Crater has 865 sites out to 360 cells — so a ring coming
+  // up empty was the picker's doing, never the terrain's.
   //
-  // WHAT STAYS IRREGULAR is where inside a band they land: candidates are
+  // WHAT STAYS IRREGULAR is where inside a ring they land: candidates are
   // shuffled and the spacing each pick demands is drawn from a wide random
-  // band, so the ring is clumps and gaps rather than a circle of dots.
+  // band, so a ring is clumps and gaps rather than a circle of dots.
   const taken = [];
-  for (let band = 0; band < 3; band++) {
-    const lo = band === 0 ? FROM_BASE : TIER_FROM[band - 1];
-    const hi = band === 2 ? Infinity : TIER_FROM[band];
+  for (let ring = 0; ring < 3; ring++) {
+    const lo = ring === 0 ? FROM_BASE : RING_FROM[ring - 1];
+    const hi = ring === 2 ? Infinity : RING_FROM[ring];
     const pool = cand.filter((c) => c.d > lo && c.d <= hi);
     for (let i = pool.length - 1; i > 0; i--) {
       const j = (rnd() * (i + 1)) | 0;
       [pool[i], pool[j]] = [pool[j], pool[i]];
     }
-    // RELAX RATHER THAN GIVE UP. A tight band on a tight map — Crater's
-    // band 3 is a thin crescent of rock — may not hold the full count at
-    // the spacing the wide bands use, and a band short of its quota is the
+    // RELAX RATHER THAN GIVE UP. A tight ring on a tight map — Crater's
+    // ring 3 is a thin crescent of rock — may not hold the full count at
+    // the spacing the wide rings use, and a ring short of its quota is the
     // one outcome this must not produce. So it tries again at three
     // quarters, then a half, then takes what it can reach.
     const before = taken.length;
     for (const relax of [1, 0.75, 0.5, 0]) {
       for (const c of pool) {
-        if (taken.length - before >= want[band]) break;
+        if (taken.length - before >= want[ring]) break;
         if (taken.includes(c)) continue;
         const gap = spacing * relax * (SPACING_LOW + rnd() * (SPACING_HIGH - SPACING_LOW));
         if (gap > 0 && taken.some((t) => Math.hypot(t.cx - c.cx, t.cy - c.cy) < gap)) continue;
         taken.push(c);
       }
-      if (taken.length - before >= want[band]) break;
+      if (taken.length - before >= want[ring]) break;
     }
-    if (taken.length - before < want[band])
-      short.push(`band ${band + 1}: ${taken.length - before} of ${want[band]}`);
+    if (taken.length - before < want[ring])
+      short.push(`ring ${ring + 1}: ${taken.length - before} of ${want[ring]}`);
   }
   // nearest first in the document, so the file reads as the ladder it is
   taken.sort((a, b) => a.d - b.d);
-  doc.beacons = taken.map((t) => ({ x: t.x, y: t.y, price: defaultBeaconPrice(t.d) }));
+  // NO PRICE IS WRITTEN ON THEM: the document prices beacons in one place,
+  // its ladder, and a map that carries none plays on the shared default
+  doc.beacons = taken.map((t) => ({ x: t.x, y: t.y }));
   writeFileSync(path, `${JSON.stringify(doc)}\n`);
   touched++;
-  const bands = [0, 0, 0];
-  for (const t of taken) bands[beaconTier(t.d) - 1]++;
-  const sum = doc.beacons.reduce((a, r) => a + r.price, 0);
+  const ladder = doc.beaconPrices?.length ? doc.beaconPrices : BEACON_LADDER;
+  const rings = [0, 0, 0];
+  for (const t of taken) rings[t.d <= RING_FROM[0] ? 0 : t.d <= RING_FROM[1] ? 1 : 2]++;
+  let sum = 0;
+  for (let i = 0; i < taken.length; i++) sum += beaconPriceAt(ladder, i);
   console.log(
-    `${id}: band 1/2/3 = ${bands.join("/")}, ` +
+    `${id}: ring 1/2/3 = ${rings.join("/")}, ` +
       `${sum.toLocaleString("en-US")} scrap to open the whole map, ` +
       `ranges ${taken.map((t) => Math.round(t.d)).join(", ")}`,
   );

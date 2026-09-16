@@ -7466,9 +7466,12 @@ export class Sim {
    * chaining out from the core, each needing the one behind it — which is a
    * real mechanic, and the wrong one for beacons that cannot be destroyed:
    * with nothing able to cut a chain, the chain was only ever a second way
-   * of saying what the prices already say. The price IS the gate now, and
-   * an author who wants a far beacon to require a near one prices it that
-   * way.
+   * of saying what the price already says. The price IS the gate, and it is
+   * a rising one: every beacon on a board costs the same rung of the map's
+   * ladder and buying any of them puts the rest up (game/constants.ts
+   * BEACON_LADDER). Reaching a far hill early is a run spending its whole
+   * middle game on that hill, which is the gate an author is setting when
+   * they decide how many rungs a board has.
    */
   powerDiscs(): { x: number; y: number; r: number }[] {
     return powerDiscsOf(this.terrain, this.beaconOn, this.core.x, this.core.y);

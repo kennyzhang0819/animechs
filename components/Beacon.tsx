@@ -96,7 +96,7 @@ export function Beacon({
   scrap: number | null;
   onBuy: (i: number) => void;
 }) {
-  const { bought, price, poor, radius, gains } = beacon;
+  const { bought, price, next, taken, total, poor, radius, gains } = beacon;
   const free = scrap === null || price <= 0;
   // WHAT THIS ONE IS FOR, in one line, and it is not the same line for
   // every state. A bought beacon is history; an unbought one whose whole
@@ -108,6 +108,19 @@ export function Beacon({
     : gains
       ? "Buying it opens the ground inside its reach to your turrets, for the rest of the run."
       : "Every acre it reaches is already yours. Buying it would open nothing.";
+  // THE LADDER, IN THE ONE LINE THAT MATTERS: every beacon on this map is
+  // offered at this price, and paying it puts the rest up to the next rung
+  // (Game.beaconPrice). Without this the panel is a price tag on a hill,
+  // and a player learns the rule by watching four figures appear on a
+  // beacon they did not touch — which reads as a bug and teaches nothing.
+  // A board whose last rung has been reached says the price is flat rather
+  // than promising a rise that will not come.
+  const ladder =
+    bought || free
+      ? null
+      : next > price
+        ? `Every beacon on this map costs ${price.toLocaleString()}. Buy one and the rest go to ${next.toLocaleString()}.`
+        : `Every beacon on this map costs ${price.toLocaleString()}, and this is as dear as they get.`;
   return (
     <div
       className="ms-pane pointer-events-auto flex max-w-[calc(100vw-30rem)] items-center gap-3 px-3 py-2"
@@ -138,8 +151,23 @@ export function Beacon({
           <span className="text-[#A1A1AA]">
             Reaches <span className="tabular-nums text-[#EDEDEF]">{radius}</span> tiles
           </span>
+          {/* HOW MANY OF THIS BOARD ARE ALREADY LIT — the rung the run is
+              standing on, which is the only reason the price is what it
+              is (Game.beaconPrice) */}
+          {total > 0 && (
+            <>
+              <span className="text-[#4A4A55]">|</span>
+              <span className="text-[#A1A1AA]">
+                <span className="tabular-nums text-[#EDEDEF]">{taken}</span> of{" "}
+                <span className="tabular-nums text-[#EDEDEF]">{total}</span> powered
+              </span>
+            </>
+          )}
         </div>
         <p className="max-w-[30rem] text-[12px] leading-snug text-[#A1A1AA]">{note}</p>
+        {ladder && (
+          <p className="max-w-[30rem] text-[12px] leading-snug text-[#71717C]">{ladder}</p>
+        )}
       </div>
       {/* THE PURCHASE, and nothing else in this corner of the panel. It
           carries the price on its own face rather than beside it: the

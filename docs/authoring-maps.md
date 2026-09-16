@@ -303,14 +303,14 @@ older or imported document up to the sealed-rim rule in place.
 **A run may only build where its base and its bought beacons light the
 ground.** The base lights a circle 90 cells across the radius
 (`CORE_POWER_R`), free and from wave one; everything past that edge is
-bought, one beacon at a time, at the price written on it.
+bought, one beacon at a time, off the map's price ladder.
 
 A beacon is **map furniture, not a building** (`MapBeacon`, `game/terrain.ts`).
 It stands on a 3x3 of rock, on a hill, where nothing can reach it: no health,
 never targeted, never destroyed, never placed by a player. What it has is a
-circle it opens (`BEACON_POWER_R`, 60 cells) and a price. Buying one is
-permanent — the ground stays open for the rest of the run, and nothing
-refunds or reverses it, which is what lets a far beacon be priced brutally.
+circle it opens (`BEACON_POWER_R`, 60 cells). Buying one is permanent — the
+ground stays open for the rest of the run, and nothing refunds or reverses
+it, which is what lets the last rung of a ladder be brutal.
 
 It is **drawn like one of the player's turrets** (`BEACON_SIZE`): the same
 3x3 plate a three-cell gun stands on, with a diamond mast on top instead of
@@ -320,98 +320,116 @@ at all — that ring is not bought and is on from the first frame.
 
 **In a match a beacon says nothing until it is clicked.** No price is stamped
 on the field and no circle is drawn; a click picks the beacon up, and the
-panel at the bottom of the screen carries what it costs, what it reaches and
-the button that buys it, with the dashed ring on the field showing the ground
-that purchase would add. The editor is the opposite and stays so — see below.
+panel at the bottom of the screen carries what it costs, what the next one
+will cost, what it reaches and the button that buys it, with the dashed ring
+on the field showing the ground that purchase would add. The editor is the
+opposite and stays so — see below.
 
 **This is where a map's mission is written.** Deciding which circle of
 ground a run can afford to open, and when, is most of what makes one map
 play differently from another. Move a beacon forty cells and you have
-rewritten the mission; halve its price and you have rewritten it again.
+rewritten the mission; how many a board carries, and what its ladder asks
+for them, rewrites it again.
 
 ### Authoring them
 
 The **Beacon** brush is in the editor's Zones section. A click stamps one on
-rock and a click on a standing one takes it off; the ghost shows the circle
-it would open, and every beacon on the map is drawn with its own circle and
-price whatever brush is in hand — two beacons whose circles almost coincide
-are one beacon and a wasted price. **That is an authoring view and not the
-game's**: a player sees one circle at a time and only when they ask, because
-they are picking a beacon; an author is comparing all of them at once, which
-is the whole job.
+rock and a click on a standing one takes it off — and so does the **eraser**,
+which takes the whole 3x3 whichever of its cells the stroke touches. Every
+beacon on the map is drawn with the circle it opens whatever brush is in
+hand: two beacons whose circles almost coincide are one beacon and a wasted
+rung. **That is an authoring view and not the game's**: a player sees one
+circle at a time and only when they ask, because they are picking a beacon;
+an author is comparing all of them at once, which is the whole job.
 
 A stamp centres its 3x3 on the cursor and **lands only where all nine cells
 are rock**, so a beacon never hangs half off a hill.
 
-### The three price bands
+Beacons are a **layer** (`TerrainLayers.beacon`), listed with the others in
+the Tools panel. Hide it to paint the rock a beacon stands on without
+disturbing it: a hidden layer is out of reach of every tool, the brush and
+the eraser included.
 
-**A beacon is priced like a turret is priced** — in one of the game's three
-bands (`BEACON_TIER_PRICE`, `game/maps.ts`), by how far from the base it sits:
+### The price ladder
 
-| band | range from base | price | what it is |
-| --- | --- | --- | --- |
-| 1 | up to 200 cells | **3,000** | three turret rolls; a stage-one purchase a run makes two or three of without agonising |
-| 2 | 200–330 cells | **12,000** | twelve rolls; the stage-two buy that trades a board of guns for a piece of map |
-| 3 | beyond 330 cells | **40,000** | forty rolls; more than a railhead, and a stage-three commitment made once, on purpose |
+**Every beacon on a map costs the same, and the price rises as they are
+bought.** The map carries a ladder — what the first beacon a run switches on
+costs, then the second, and so on (`MapData.beaconPrices`, default
+`BEACON_LADDER` in `game/constants.ts`) — and nothing about where a beacon
+stands changes its price:
 
-The cuts are **absolute distances, not a split of whatever one map carries** —
-"far" has to mean the same thing on every board. They come off the radii: the
-base lights 90 cells and a beacon adds 60, so 200 is about the first ring a run
-can reach from home and 330 the second. A compact map simply has no band-3
-beacon, which is the truth about a compact map.
+| rung | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| scrap | 3,000 | 5,000 | 8,000 | 12,000 | 18,000 | 26,000 | 36,000 | 50,000 | 68,000 | 90,000 |
 
-**Every map carries the same ladder: 4 band-1, 5 band-2, 4 band-3.** Opening
-a whole board costs **232,000 scrap on every map** — 4x3,000 + 5x12,000 +
-4x40,000 — against the ~1.32M a full fifty-wave hold earns, so about 18%.
-That is the point of fixing it: the band prices are used across the campaign's
-whole progression, so the cost of opening a board has to be one number the
-campaign can be designed against, not nine numbers that depend on which board
-is loaded.
+Cumulatively that is 8,000 for two, 46,000 for five and 316,000 for ten,
+against the ~1.32M a full fifty-wave hold earns. **A whole map is meant to be
+unaffordable**: the ground a run opens should be a shape it chose, not a box
+it ticked. Past the last rung the last price repeats, so a board carrying
+more beacons than the ladder has rungs has a ceiling rather than a bug.
 
-What differs between maps is **where** the ladder runs, never what it costs.
-Confluence's rungs sit at 120/163/173/183 then 249/250/250/281/313 then
-337/374/393/430; Crater's are tighter and Greenwood's reach past 570. The
-seeder fills each band separately and relaxes its spacing rather than come up
-short, because a board one rung light would have a different progression from
-every other board — and it says so loudly if terrain ever makes that
-impossible.
+**It replaced a price stamped on each beacon**, by distance, in three bands.
+That made the decision "which of these is the bargain" — a run swept the
+cheap ring first because it was cheap, and the far edge was a wall of
+forty-thousands nobody crossed until late whatever the mission wanted. One
+rising price asks the question the game is about: how much ground is this run
+going to open. Where that acre is, is the player's business, and the far edge
+of a board is reachable early by a run willing to spend its middle game on
+one acre.
 
-A stamped beacon lands in the band its distance puts it in. **That is still a
-draft** — the price that ships is the one in the document, and it is the one
-field in a map document meant to be argued with. A mission is written by
-making one particular circle of ground cheap or brutal.
+Documents written before the ladder still carry a `price` on each beacon.
+Nothing reads it, and a map saved from the editor drops it.
+
+### Editing the ladder
+
+The editor's **Beacon prices** panel is the whole of what a beacon costs on
+that map. Each row is a rung, in the order they are **bought** rather than
+placed; the arrows reorder them, `✕` removes one, `+ Rung` adds another and
+`Default` puts the game's own ladder back. A rung past the map's beacon count
+is dimmed, because nothing can reach it.
+
+The footer is the number an author is actually tuning: how many beacons the
+board carries and what taking all of them costs. Read that sum rather than
+the rungs — a rising price looks affordable one rung at a time.
+
+Fewer beacons is a dearer board, since the count is how many rungs a run can
+climb. That makes **how many a map carries a progression decision**, not just
+a layout one.
 
 ### The generator overwrites them
 
 `scripts/maps/*.mjs` does not emit beacons, and re-running a spec writes the
-whole document — so a regenerated map comes back with none, and any
-hand-tuned prices on it are gone. The seeding pass puts a playable draft
-back:
+whole document — so a regenerated map comes back with none. The seeding pass
+puts a playable draft back:
 
 ```
 node --experimental-transform-types --import ./scripts/ts-hooks.mjs scripts/seed-beacons.mjs
 ```
 
-It scatters beacons on bare 3x3 rock outside the base's light and prices them
-off the same curve the editor stamps with. It **leaves any map that already
-carries beacons alone** — hand placement is the point of the feature — so
-pass `--force` (or a list of map ids) to redo one.
+It scatters beacons on bare 3x3 rock outside the base's light and writes no
+prices at all — a document with no ladder plays on the shared default. It
+**leaves any map that already carries beacons alone** — hand placement is the
+point of the feature — so pass `--force` (or a list of map ids) to redo one.
 
-The scatter is **deliberately irregular inside each band**. An earlier cut
-walked candidates nearest-first against a fixed spacing, which pinned three or
-four beacons at identical range from the base on every board. It now works one
-band at a time, shuffling candidates and varying the spacing each pick demands
-across a wide band, so a ring comes out as clumps and gaps rather than a
-circle of dots. The randomness is seeded off the map id, so re-running
-reproduces the same draft and a diff means something.
+The scatter goes into **three rings** by distance from the base (up to 200
+cells, 200–330, beyond 330), four/five/four, so a draft reaches the whole
+board instead of clustering where the rock is thickest. The rings are not
+prices. Inside a ring it is **deliberately irregular**: an earlier cut walked
+candidates nearest-first against a fixed spacing, which pinned three or four
+beacons at identical range from the base on every board. It now shuffles
+candidates and varies the spacing each pick demands across a wide band, so a
+ring comes out as clumps and gaps rather than a circle of dots. The
+randomness is seeded off the map id, so re-running reproduces the same draft
+and a diff means something.
 
-The ladder never starts inside the base's own light: a beacon there would cost
-3,000 and open a sliver of nothing, so the nearest rung is at least 15 cells
-past the 90 the base already covers.
+The scatter never starts inside the base's own light: a beacon there would
+charge rung 1 and open a sliver of nothing, so the nearest one is at least 15
+cells past the 90 the base already covers.
 
 `PER_MAP` at the top of the script takes `perBand` and `spacing` overrides.
-Changing `perBand` changes what opening that board costs, which is a
-progression decision rather than a map one — think twice.
+Changing `perBand` changes how many rungs a run can climb on that board, and
+so what opening it costs — a progression decision rather than a map one;
+think twice.
 
 Beacons a map is meant to keep across a regen belong in its spec, not in the
 seeder. Until a spec emits them, treat a regen of a tuned map as a change

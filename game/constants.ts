@@ -1891,6 +1891,55 @@ export const BEACON_VISION_FADE_R = 13 * CELL;
 export const MAX_BEACONS = 64;
 
 /**
+ * WHAT A BEACON COSTS — ONE RISING PRICE FOR THE WHOLE BOARD.
+ *
+ * THE RULE. Every beacon on a map is offered at the same price, and that
+ * price is a rung of this ladder: the FIRST one a run switches on costs
+ * rung 1, whichever hill it stands on, and buying it moves every other
+ * beacon on the board up to rung 2. Nothing is priced by where it is.
+ *
+ * WHY IT IS NOT PRICED BY DISTANCE ANY MORE. It used to be: three bands
+ * cut by how far from the base a beacon sat, stamped onto each one when
+ * the map was authored. That made the decision "which of these is the
+ * bargain" — a run swept the cheap ring first because it was cheap, and
+ * the far edge was a wall of forty-thousands nobody crossed until late no
+ * matter what the mission wanted. One rising price asks the question the
+ * game is actually about: HOW MUCH GROUND is this run going to open, and
+ * is the next acre worth more than the guns it would buy. Where that acre
+ * is, is the player's business.
+ *
+ * THE NUMBERS, read against what a run earns. A fifty-wave clear takes
+ * about 1.32 million scrap (ladder.ts stageAudit) and the unit of mid-run
+ * spending is the thousand-scrap turret roll. So the first beacon is three
+ * rolls — a stage-one purchase nobody agonises over — and by the fifth the
+ * board is asking eighteen, which is more than any single gun in the game.
+ * Cumulatively: two beacons cost 8k, five cost 46k, all ten cost 316k,
+ * about a quarter of everything a full clear earns. A WHOLE MAP IS MEANT
+ * TO BE UNAFFORDABLE: the ground a run opens should be a shape it chose,
+ * not a box it ticked.
+ *
+ * TEN RUNGS, AND THE LAST ONE REPEATS. A map carrying more beacons than
+ * the ladder has rungs offers the eleventh at the tenth's price — the
+ * curve has already made its point by then, and an author who wants
+ * something else writes their own ladder into the document
+ * (maps.ts MapData.beaconPrices, edited in the map editor).
+ */
+export const BEACON_LADDER: readonly number[] = [
+  3000, 5000, 8000, 12000, 18000, 26000, 36000, 50000, 68000, 90000,
+];
+
+/**
+ * WHAT THE NEXT BEACON COSTS on a board that has already bought `bought`
+ * of them, off that board's ladder. Past the last rung the last price
+ * repeats; an empty ladder is free ground.
+ */
+export const beaconPriceAt = (ladder: readonly number[], bought: number): number => {
+  if (ladder.length === 0) return 0;
+  const rung = Math.min(Math.max(bought | 0, 0), ladder.length - 1);
+  return Math.max(0, Math.round(ladder[rung]));
+};
+
+/**
  * A SECOND AMMO NEEDS A SECOND BARREL TO LEAVE BY — checked at import.
  *
  * Sim.fireShot picks the alt off the same counter that steps the mount
