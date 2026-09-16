@@ -14,12 +14,16 @@
  * WHAT IT MEASURES is the draw — Renderer.render, the HUD overlay, the
  * corner minimap and the handover from the sim (Game.frame's drawMs), per
  * frame, raw — on the shipping path: a real Game, the sim on its worker,
- * the frame paced by the browser's own rAF. Chromium runs headless on a
- * software GPU (SwiftShader, the same switches desktop/test/smoke.mjs
- * uses), which makes the FRAME slow and the DRAW honest: drawMs is the
- * main thread's JavaScript and never the GPU's time, so it reads the same
- * on this box as on a laptop, while the frame gap here is SwiftShader's
- * and is printed for information only.
+ * the frame paced by the browser's own rAF. Chromium runs headless on the
+ * machine's GPU when it has one, and on SwiftShader (the software GPU,
+ * the same switches desktop/test/smoke.mjs uses) when it does not or
+ * `--software` says so. A software frame is SECONDS long — it is drawing
+ * the whole terrain batch on the CPU — which makes the FRAME useless and
+ * the DRAW still honest: drawMs is the main thread's JavaScript and never
+ * the GPU's time, so it reads the same on a box with no GPU as on a
+ * laptop. On a software GPU the sample is cut (SOFT_FRAMES) so the run
+ * fits, the frame column is printed for information only, and `software`
+ * rides the JSON so the reader knows.
  *
  * THE SCENES (scripts/bench/bench.js) are the standard the game is held
  * to — ten thousand of everything, at every zoom:
@@ -77,6 +81,15 @@ const WARM = Number(opt("--warm", 30));
 const N = Number(opt("--n", 10000));
 const UPGRADES = Number(opt("--upgrades", 100));
 const WORLD = opt("--world", "");
+/** --software: SwiftShader from the start, rather than the GPU first */
+const SOFTWARE = flag("--software");
+/** --viewport WxH: the canvas, in CSS px at a device pixel ratio of 1 */
+const [VW, VH] = opt("--viewport", "1920x1080").split("x").map(Number);
+/** a frame slower than this is a software GPU's, and the sample is cut to
+ *  fit (SOFT_FRAMES, SOFT_WARM): the draw is the draw either way */
+const SOFT_GAP_MS = 100;
+const SOFT_FRAMES = 24;
+const SOFT_WARM = 6;
 
 /**
  * THE DRAW'S BUDGET, in ms a frame, median over the window. A frame is
@@ -211,16 +224,44 @@ const findChromium = () => {
   return undefined;
 };
 
-let browser;
-try {
-  browser = await chromium.launch({
-    headless: !HEADED,
-    executablePath: findChromium(),
-    // a box with no GPU and no user namespace: software GL, no sandbox
-    args: ["--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],
-  });
-} catch (e) {
-  console.error(`no Chromium to run the bench in: ${e.message}\nrun \`npx playwright install chromium\`, or point BENCH_CHROMIUM at one`);
+/** a browser, on the GPU or on SwiftShader; null when there is none to launch */
+const launch = async (software) => {
+  try {
+    return await chromium.launch({
+      headless: !HEADED,
+      executablePath: findChromium(),
+      // --no-sandbox for a box with no user namespace; the rest is the
+      // software GPU (desktop/test/smoke.mjs), or the hardware one unblocked
+      args: [
+        "--no-sandbox", "--ignore-gpu-blocklist",
+        ...(software ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : ["--enable-gpu-rasterization"]),
+      ],
+    });
+  } catch (e) {
+    console.error(`no Chromium to run the bench in: ${e.message}\nrun \`npx playwright install chromium\`, or point BENCH_CHROMIUM at one`);
+    return null;
+  }
+};
+/** does this browser give the page WebGL2? — the GPU path may not, headless */
+const hasWebgl2 = async (b) => {
+  const page = await b.newPage();
+  try {
+    return await page.evaluate(() => !!document.createElement("canvas").getContext("webgl2"));
+  } catch {
+    return false;
+  } finally {
+    await page.close();
+  }
+};
+let software = SOFTWARE;
+let browser = await launch(software);
+if (browser && !software && !(await hasWebgl2(browser))) {
+  await browser.close();
+  say("no WebGL2 on the GPU path; falling back to SwiftShader");
+  software = true;
+  browser = await launch(true);
+}
+if (!browser) {
   server.close();
   process.exit(2);
 }
@@ -231,7 +272,7 @@ const rows = [];
 let failed = false;
 
 try {
-  const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  const ctx = await browser.newContext({ viewport: { width: VW, height: VH }, deviceScaleFactor: 1 });
   const page = await ctx.newPage();
   page.setDefaultTimeout(15 * 60 * 1000);
   page.on("pageerror", (e) => say(`  page error: ${e.message}`));
@@ -243,6 +284,19 @@ try {
   await page.goto(`${origin}/?${params}`);
   await page.waitForFunction(() => window.__bench?.ready === true);
   const scenes = SCENES.length ? SCENES : await page.evaluate(() => window.__bench.scenes);
+  // HOW LONG IS A FRAME HERE? Read off the empty page before any board is
+  // up: a software GPU takes seconds to draw the terrain alone, and a
+  // sample sized for sixty a second would run for hours. The draw is the
+  // draw at any frame length; only the number of frames is cut
+  let frames = FRAMES, warm = WARM;
+  const probe = await page.evaluate(() => window.__bench.probe(4));
+  const gap = median(probe.gap);
+  if (gap > SOFT_GAP_MS) {
+    software = true;
+    frames = Math.min(frames, SOFT_FRAMES);
+    warm = Math.min(warm, SOFT_WARM);
+    say(`a frame here is ${(gap / 1000).toFixed(1)}s (software GPU): ${frames} frames a cell after ${warm} warm, not ${FRAMES} after ${WARM}`);
+  }
 
   say(`${"scene".padEnd(9)} ${"zoom".padStart(6)}  ${"draw med/p95".padStart(14)}  ${"frame".padStart(7)}  ${"bodies".padStart(6)} ${"turrets".padStart(7)} ${"shots".padStart(6)} ${"fx".padStart(5)}`);
   for (const scene of scenes) {
@@ -251,7 +305,7 @@ try {
     const { min, max } = await page.evaluate(() => window.__bench.zoomRange());
     const ladder = Array.from({ length: Math.max(2, ZOOMS) }, (_, i) => min * (max / min) ** (i / (Math.max(2, ZOOMS) - 1)));
     for (const z of ladder) {
-      const s = await page.evaluate(({ z, f, w }) => window.__bench.measure(z, f, w), { z, f: FRAMES, w: WARM });
+      const s = await page.evaluate(({ z, f, w }) => window.__bench.measure(z, f, w), { z, f: frames, w: warm });
       const row = {
         scene, zoom: s.zoom, drawMed: median(s.draw), drawP95: p95(s.draw), gapMed: median(s.gap), simMed: median(s.sim),
         bodies: s.bodies, towers: s.towers, shots: s.shots, fx: s.fx, simStep: s.simStep,
@@ -283,5 +337,8 @@ say(
     (worst ? ` — worst ${worst.scene} at zoom ${worst.zoom.toFixed(2)}, ${worst.drawMed.toFixed(1)}ms (p95 ${worst.drawP95.toFixed(1)})` : "") +
     `\n(frame column is SwiftShader's, not a GPU's — read the draw)`,
 );
-if (JSON_OUT) process.stdout.write(JSON.stringify({ goalMs: DRAW_GOAL_MS, world: WORLD, n: N, frames: FRAMES, rows }) + "\n");
+if (JSON_OUT)
+  process.stdout.write(
+    JSON.stringify({ goalMs: DRAW_GOAL_MS, world: WORLD, n: N, viewport: [VW, VH], software, rows }) + "\n",
+  );
 process.exit(rows.some((r) => r.error) ? 2 : failed && !JSON_OUT ? 1 : 0);

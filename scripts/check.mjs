@@ -1009,8 +1009,9 @@ if (FULL) {
   // too, for the scenario tests that read the board after the clock.
   const ISO_WARM = 60;
   const ISO_SAMPLE = 120;
-  /** a reach no cell on the board is outside of, and a pool no shot empties */
-  const EVERYWHERE = 1e9;
+  /** a reach no cell on the board is outside of (the map's diagonal — the
+   *  sim clamps a longer one to it, setBench), and a pool no shot empties */
+  const EVERYWHERE = Math.hypot(COLS * CELL, ROWS * CELL);
   const IMMORTAL = 1e12;
   const isolated = ({ world, build, seed = 61, budget = SIM_BUDGET_MS }) => {
     reseed(seed);
@@ -1067,6 +1068,9 @@ if (FULL) {
   };
   const kindOk = (k) => !KINDS || KINDS.has(k);
   const ms1 = (x) => (Number.isFinite(x) ? x.toFixed(1) : "?");
+  /** a line per case as it lands, on stderr — the report is the verdict,
+   *  this is the clock still ticking through a ten-minute run */
+  const tick = (clock, what) => process.stderr.write(`  ${clock.padEnd(10)} ${what}\n`);
 
   // TURRETS: every fielded kind, ten thousand of it alone, every one of
   // them in reach of one body that cannot die. The board is the whole
@@ -1089,6 +1093,7 @@ if (FULL) {
           },
         });
         line.push(`${kind} ${ms1(r.step)}${r.info.built < N * 0.9 ? ` (${r.info.built} fit)` : ""}`);
+        tick("turrets", `${kind}: ${r.info.built} stood, ${ms1(r.step)}ms a step (p95 ${ms1(r.p95)}) — ${r.why}`);
         if (r.info.made === 0) problems.push(`${kind}: the dummy could not land — nothing was shot at`);
         if (r.info.built < N * 0.1) problems.push(`${kind}: the ground took only ${r.info.built} of ${N}`);
         if (r.sim.n === 0) problems.push(`${kind}: the dummy died — its pool was meant to be bottomless`);
@@ -1119,6 +1124,7 @@ if (FULL) {
           },
         });
         line.push(`${name} ${ms1(r.step)}${r.info.made < r.info.want * 0.9 ? ` (${r.info.made} fit)` : ""}`);
+        tick("enemies", `${name}: ${r.info.made} stood, ${ms1(r.step)}ms a step (p95 ${ms1(r.p95)}) — ${r.why}`);
         if (r.info.made < r.info.want * 0.1) problems.push(`${name}: the field took only ${r.info.made} of ${r.info.want}`);
         if (r.sim.lost()) problems.push(`${name}: the core fell — its pool was meant to be bottomless`);
         if (r.slow) { problems.push(`${name}: ${r.slow}`); for (const l of r.table) problems.push(`    ${l}`); }
@@ -1179,6 +1185,7 @@ if (FULL) {
     } catch (e) {
       problems.push(e.stack?.split("\n").slice(0, 3).join(" / ") ?? e.message);
     }
+    tick("swarmfirst", detail);
     report("swarmfirst", problems, detail);
   }
 
@@ -1199,6 +1206,7 @@ if (FULL) {
     for (const k of Object.keys(UP.TURRET_UPGRADES))
       upgrades[k] = UP.TURRET_UPGRADES[k].map((u) => (on.has(u.id) ? 1 : 0));
     const r = siege({ world: biggest, seed: 73, tech: { ...tech, upgrades } });
+    tick("upgrades", r.detail);
     report("upgrades", r.problems, `${on.size} random upgrade nodes on — ${r.detail}`);
   }
 

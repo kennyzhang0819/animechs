@@ -3043,9 +3043,14 @@ export class Sim {
   private benchUnitRange: number | null = null;
 
   setBench(opts: { towerRange?: number | null; unitRange?: number | null; coreHp?: number | null }): void {
-    if (opts.unitRange !== undefined) this.benchUnitRange = opts.unitRange;
-    if (opts.towerRange !== undefined && opts.towerRange !== this.benchTowerRange) {
-      this.benchTowerRange = opts.towerRange;
+    // a reach past the map's diagonal is the same reach and a longer walk
+    // (the aim searches ring out to it), so that is the most it can be
+    const bound = (r: number | null | undefined): number | null | undefined =>
+      r == null ? r : Math.min(r, Math.hypot(W, H));
+    if (opts.unitRange !== undefined) this.benchUnitRange = bound(opts.unitRange) ?? null;
+    const towerRange = bound(opts.towerRange);
+    if (towerRange !== undefined && towerRange !== this.benchTowerRange) {
+      this.benchTowerRange = towerRange;
       // the standing board re-composed under the new reach — the walk a
       // relic bought mid-wave takes (refreshSpecs)
       for (const t of this.towers) this.resolveTower(t);
@@ -4896,7 +4901,9 @@ export class Sim {
       // it before it can open up on what is behind. A FLYER is looking down
       // and sees its whole radius (canSee) — that, and not the ability to
       // cross a mountain, is what the air layer is worth.
-      const sighted = this.ufly[i] === 0;
+      // ...unless the bench has set its reach (setBench): a bench reach is
+      // "always has a target", and a hill in the way would make it a lie
+      const sighted = this.ufly[i] === 0 && this.benchUnitRange === null;
       // THE SPOTTER'S STAMP (levels.ts spotterField): every reach this body
       // has is this much longer while it lasts — the longest gun's, for
       // the pick, and each weapon's own below

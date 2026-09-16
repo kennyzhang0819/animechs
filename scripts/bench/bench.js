@@ -43,7 +43,8 @@ const UPGRADES = Number(q.get("upgrades") ?? 100);
 const BUYS = 150;
 /** a pool no shot on the board can empty */
 const IMMORTAL = 1e12;
-/** a reach no cell on the board is outside of */
+/** a reach no cell on the board is outside of — the sim clamps it to the
+ *  map's diagonal (setBench), so any big number is that */
 const EVERYWHERE = 1e9;
 
 const log = (s) => {
@@ -96,8 +97,17 @@ const openBoard = (g) => {
   for (let i = 0; i < h.world.terrain.relays.length; i++) h.setRelayOn(i);
 };
 
-/** `frames` frames pass — the worker steps meanwhile, the board settles */
-const settle = (g, frames) => g.sampleFrames(frames);
+/**
+ * `ms` of wall time pass and then one frame lands — the sim on its worker
+ * has stepped that long meanwhile (simclock.ts), so the board it built is
+ * standing and shooting before anything is read. By the clock and not by
+ * frames, because a frame on a software GPU is seconds long and the sim
+ * does not wait for it
+ */
+const settle = async (g, ms) => {
+  await new Promise((r) => setTimeout(r, ms));
+  await g.sampleFrames(1);
+};
 
 /** the T1-5 roster, evenly — `n` bodies, kinds dealt round-robin, one
  *  spawnMany a kind rather than one a body (each is a message to the worker) */
@@ -129,7 +139,7 @@ const SCENES = {
     h.setTech(techStateFor(60));
     openBoard(g);
     h.scatterTowers(FIELDED_KINDS, N);
-    await settle(g, 30);
+    await settle(g, 500);
   },
   /** the swarm alone: N bodies of every tier, every one of them reaching the
    *  core from wherever it stands, the core never falling */
@@ -138,7 +148,7 @@ const SCENES = {
     const h = g.benchHost();
     h.setBench({ unitRange: EVERYWHERE, coreHp: IMMORTAL });
     spawnMixed(h, N, { scatter: true, hp: IMMORTAL });
-    await settle(g, 60);
+    await settle(g, 1000);
   },
   /** both, at war: most of a late board and the whole swarm, every gun on
    *  both sides in reach of something — the swarm cannot die (so the field
@@ -151,7 +161,7 @@ const SCENES = {
     h.scatterTowers(FIELDED_KINDS, Math.round(N * 0.8));
     h.setBench({ towerRange: EVERYWHERE, unitRange: EVERYWHERE, coreHp: IMMORTAL });
     spawnMixed(h, N, { scatter: true, hp: IMMORTAL });
-    await settle(g, 60);
+    await settle(g, 1000);
   },
   /** the same war under a hundred random upgrade nodes and a run's worth of modules */
   upgrades: async () => {
@@ -168,7 +178,7 @@ const SCENES = {
     h.scatterTowers(FIELDED_KINDS, Math.round(N * 0.8));
     h.setBench({ towerRange: EVERYWHERE, unitRange: EVERYWHERE, coreHp: IMMORTAL });
     spawnMixed(h, N, { scatter: true, hp: IMMORTAL });
-    await settle(g, 60);
+    await settle(g, 1000);
   },
   /** the game's own late waves on a built board, ranges as shipped —
    *  the picture a player actually looks at, rather than a worst case */
@@ -180,18 +190,41 @@ const SCENES = {
     h.scatterTowers(FIELDED_KINDS, Math.round(N * 0.6));
     h.setBench({ coreHp: IMMORTAL });
     h.skipToWave(Math.max(1, late().script.length - 4));
-    await settle(g, 180);
+    await settle(g, 3000);
   },
+};
+
+/** what each scene must have stood before its frames mean anything */
+const SCENE_WANTS = {
+  turrets: { towers: true },
+  enemies: { bodies: true },
+  battle: { bodies: true, towers: true },
+  upgrades: { bodies: true, towers: true },
+  waves: { bodies: true, towers: true },
 };
 
 window.__bench = {
   ready: true,
   scenes: Object.keys(SCENES),
+  /** `n` frames of an empty world, to learn how long a frame is here */
+  async probe(n) {
+    const g = await fresh(still());
+    return g.sampleFrames(n);
+  },
   async scene(name) {
     reseed(11);
     log(`scene: ${name}`);
     await SCENES[name]();
-    return this.census();
+    const c = this.census();
+    log(`${name}: ${JSON.stringify(c)}`);
+    // A SCENE THAT DID NOT STAND IS NOT A NUMBER. A board the worker never
+    // built (a command that threw on its thread, a sim that never ran)
+    // would otherwise read as a fast, empty frame — and pass
+    const want = SCENE_WANTS[name];
+    if (want.bodies && c.bodies === 0) throw new Error(`${name}: no body stood — the sim never took the spawn`);
+    if (want.towers && c.towers === 0) throw new Error(`${name}: no turret stood — the sim never took the board`);
+    if (c.simStep < 0) throw new Error(`${name}: the sim reported no clock — it is not stepping`);
+    return c;
   },
   async measure(zoom, frames, warm) {
     game.setCamera(zoom);
