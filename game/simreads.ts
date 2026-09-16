@@ -197,6 +197,25 @@ export class World {
   get crossLive(): number {
     return this.header[HDR.CROSS_LIVE];
   }
+  /** THE ESCORT MISSION'S LEDGER (levels.ts EscortMission) — carts
+   *  delivered and lost, how far the one on the road has got, how many
+   *  halts it still has to make, and whether it is standing at one. Zero
+   *  on every other mission */
+  get convoyDone(): number {
+    return this.header[HDR.CONVOY_DONE];
+  }
+  get convoyLost(): number {
+    return this.header[HDR.CONVOY_LOST];
+  }
+  get convoyAt(): number {
+    return this.header[HDR.CONVOY_AT];
+  }
+  get convoyHalts(): number {
+    return this.header[HDR.CONVOY_HALTS];
+  }
+  get convoyHalted(): boolean {
+    return this.header[HDR.CONVOY_HALTED] !== 0;
+  }
   /** how far through its objective the run is, 0 to 1 (Sim.missionProgress)
    *  — whichever mission the map carries */
   get missionProgress(): number {

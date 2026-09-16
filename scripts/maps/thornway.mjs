@@ -9,12 +9,22 @@
  * from is scripts/maps/graphs/thornway.json — edit there and re-emit, or
  * edit the numbers here and the two drift apart.
  *
- * IT PAINTS NO SPAWN TILES. A graph says where the ground is and nothing
- * about where the swarm enters it, so the document this writes carries no
- * drop zones and the tiles are painted onto it in the map editor
- * afterwards. RE-RUNNING THIS FILE OVERWRITES THE DOCUMENT and takes them
- * with it. The pipeline and every rule are in mindustry.mjs; this file is
- * the numbers.
+ * IT PAINTS NO SPAWN TILES AND NO BEACONS, and the document on disk now
+ * has both. A graph says where the ground is and nothing about where the
+ * swarm enters it or what a player may buy, so those were added
+ * afterwards: two discs of open ground far from the base and from each
+ * other (one at 40,100 and one at 462,300, r46, ten thousand tiles
+ * between them), and thirteen beacons from scripts/seed-beacons.mjs.
+ * RE-RUNNING THIS FILE OVERWRITES THE DOCUMENT AND TAKES BOTH WITH IT,
+ * which on this board means the escort mission loses the ground it is
+ * played on — every cell of its road but the first tenth is outside the
+ * circle the core lights. The pipeline and every rule are in
+ * mindustry.mjs; this file is the numbers.
+ *
+ * THE ROAD IS NOT IN HERE EITHER. Where the convoy walks is
+ * game/missions.ts, in cells on this map's own grid, and it was fitted to
+ * the document this spec generates — so a change to the numbers below is
+ * a change the road has to be re-fitted to.
  */
 import {
   run, FLOOR_DIRT, FLOOR_GRASS, FLOOR_MOSS, WALL_DIRT, WALL_SPORE,

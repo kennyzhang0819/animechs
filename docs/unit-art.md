@@ -302,6 +302,19 @@ footprint gets.
 | Kettle, the vulture | `game/kettleArt.ts` | body and two wings, one chord out to the wrist and slotted into fingers | 40, 56, 88, 168, 216 |
 | Sovereign, the sea eagle (the BOSS, one body) | `game/kingArt.ts` | body and two wings | 512 |
 | Borer, the crosser (the MISSION's, three pieces) | `game/wormArt.ts` | none — one flat quad a piece, shown at 1.5x | 96, 96, 96 |
+| Hauler, the convoy (the MISSION's, and the PLAYER's) | `game/convoyArt.ts` | none — one flat quad | 192 |
+
+**The Hauler is not the swarm's**, and it is the only body on the sheet
+that is not. It is the escort mission's cart (`docs/mission-design.md`) —
+a tracked flatbed with three crates of cargo on it, crossing Thornway at
+walking pace while the player pays to keep it alive — and the one thing
+it does that nothing else here does is wear the PLAYER'S amber
+(`turretArt.ts` POWER): the hue the core, the beacons' lamps and every
+price on the HUD are drawn in, and the one hue nothing in the swarm has.
+The amber is the CARGO, because the cargo is what the mission is about
+and it is the part a player should find first. Everything else about the
+grammar holds — the material pairs, the reversed fold, the four-pixel
+floor, no eyes and no round pair, the quad is the box.
 
 **The Borer is not an animal, and it is the one body on the sheet that is
 allowed not to be.** Everything in section 1 is a rule about drawing a

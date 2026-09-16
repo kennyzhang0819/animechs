@@ -63,7 +63,8 @@ Three consequences, and every archetype below is shaped by them:
 
 ## What is built
 
-**Two of the eight, counting the plain one.** Confluence plays *hold the
+**Three of the eight, counting the plain one — and the last two are the
+PAIR.** Confluence plays *hold the
 line* — fifty waves broken with the core standing, the assignment the
 whole campaign is tuned against. Coldline plays *intercept the crosser*:
 seven Borers — twenty-car boring machines — cross the map on two fixed
@@ -82,9 +83,26 @@ to be:
 | the Borer | `game/levels.ts` (`WORM_CHAIN`, the three kinds) and `game/wormArt.ts` (the drawing) |
 | what happens | `Sim.runCrossers`, `launchCrosser`, `updateCrosser`, `leakCrosser`, and the two lines in `won()` and `lost()` |
 | whether the script loops under it | `Sim.tideTurns` — every mission but a hold that has staged its count |
-| what the player sees | the objective pane in `components/Animechs.tsx` and the road overlay in `Game.drawCrosserRoads` |
+| what the player sees | the objective pane in `components/Animechs.tsx`, the road overlay in `Game.drawMissionRoads`, and the arrival ping on the corner map |
 
-The other six archetypes have a MAP each and no rule yet (`WORLDS`, the
+**Thornway plays *escort the crosser*, which is Coldline in a mirror**:
+one Hauler of the player's own, rolling out of the core at 1:30 and
+crossing twelve hundred cells of double S at 1.6 tiles a second to the
+post in the far corner, stopping four times on the way to mend. Losing it
+loses the run. It cost almost no new mechanism and taught the most about
+the first one — everything the intercept needed in order to be a mission
+(an authored line, a clock read off run time, a body that is not the
+swarm, a bar that is the objective) the escort needed too, and the only
+thing it added was a body the SWARM shoots rather than one the board does.
+
+| | |
+|---|---|
+| `EscortMission` | `game/levels.ts` — the type, and Thornway's authored numbers: how many carts, how many may be lost, when the first rolls, which road, where it halts and what it mends |
+| the cart | `game/levels.ts` (`CONVOY_HP` and the numbers beside it) and `game/convoyArt.ts` (the drawing) |
+| what happens | `Sim.runConvoys`, `launchConvoy`, `updateConvoys`, `damageConvoy`, and the branches in `nearestStructure`, `structureAt`, `inReach` and `damageTower` |
+| what keeps the swarm off it | `Sim.aimIsConvoy` — the cart is a target and never a destination |
+
+The other five archetypes have a MAP each and no rule yet (`WORLDS`, the
 mission sketches). **Those boards are SHELVED and not in the game**
 (`PLAYABLE_WORLD_IDS` in `game/levels.ts`): terrain that is drawn with no
 reason to be played, carrying a placeholder hold. `npm run check` holds
@@ -158,12 +176,57 @@ What Coldline does with it, and what the shape turned out to need:
   that moment rather than twenty minutes later. The loss screen had to
   learn to say which of the two things went wrong.
 
-### 3. Escort the crosser
+### 3. Escort the crosser — BUILT, on Thornway
 
 The same shape, friendly: it crosses, and it must survive.
 
 Variants: a merchant caravan that pays scrap · refugees · a slow ally
 that clears an objective on arrival · a supply run of your own.
+
+What Thornway does with it, and what the mirror turned out to need:
+
+- **The cart is a STRUCTURE, not a unit.** "The swarm shoots it exactly
+  the way it shoots a turret" is the whole specification of how the two
+  sides meet, and a TURRET is what that sentence is about — so every gun
+  on the swarm's side already knows what to do with it, and there is no
+  second targeting path to keep in step with the first. What it is not is
+  a member of the tower list: nothing counts it, sells it or selects it,
+  it claims no ground and it blocks no route.
+- **Nothing SEEKS it, and that line is the mission.** No body routes to
+  it, dives at it or charges it. A cart that pulled the swarm off its
+  route would be a second core — the player would defend one thing
+  instead of two and the base would go quiet, which is a different and
+  much worse map. So the pressure on the cart is a fact about WHERE THE
+  ROAD CROSSES THE SWARM'S ROUTE: a fact about the terrain, which is the
+  thing the player is buying guns against.
+- **A moving objective needs PLATING, not health.** The first cut had a
+  building's pool and a building's armour and died inside four minutes to
+  the crowd walking past it, because the road leaves the core and its
+  opening stretch runs through the traffic walking at the base. Forty
+  plating puts every light body on the ten-percent floor and leaves
+  calibre and rot as the real threats, which is the difference between a
+  mission about how many bodies the map happens to route past the road
+  and a mission about what the player brought.
+- **The halts are the mercy AND the trap.** It stops four times, mends a
+  third of its pool at each, and is the easiest target on the board while
+  it does. Every halt is therefore a position that had to be bought
+  before the cart got there — the archetype's own sentence about
+  opportunity cost, said in the only grammar this game has.
+- **The road's requirement is the opposite one.** A Borer's line is
+  straightened until it barely bends, because a seventy-tile train kinks
+  at a corner and because a battery has to be committed to it a long way
+  ahead. A cart is one body that turns on the spot, so its road is left
+  as the terrain drew it: 646 degrees of turning, and every bend a place
+  the swarm crosses the line while the cart is still on it.
+- **Three grid reads had to learn about it, and none of them failed
+  loudly.** The cart is not in the occupancy grid, because it moves — and
+  three separate things use that grid as their "is this still standing"
+  test: the target search's bounding box (which is the box the player's
+  BUILDINGS stand in, and a cart fifty tiles up the road is outside it),
+  the weapon's reach check before it pulls a trigger, and the shot's
+  arrival test in flight. With any one of them unpatched the swarm picked
+  the objective, held the objective, and never scratched it. **A moving
+  structure fails every test written for a stationary one**, quietly.
 
 ### 4. Hold remote ground
 

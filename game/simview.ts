@@ -244,6 +244,27 @@ export interface CoreView {
   readonly selected: boolean;
 }
 
+/**
+ * THE ESCORT'S HAULER as the drawing side has it (levels.ts
+ * EscortMission, Sim.liveConvoy). It is a structure in the sim — the
+ * swarm shoots it exactly the way it shoots a turret — but it is not in
+ * `towers` and never will be: it moves, holds no ground, and is nobody's
+ * to place or sell. So the picture gets its own six numbers.
+ */
+export interface ConvoyView {
+  /** is there a cart on the road at all? false on every map but Thornway,
+   *  and on Thornway before the first departure and after the last */
+  readonly live: boolean;
+  readonly x: number;
+  readonly y: number;
+  /** the heading it is pointed on, radians — the road's own tangent */
+  readonly rot: number;
+  readonly hp: number;
+  readonly hpMax: number;
+  /** is it standing at a halt, mending? (EscortMission.halts) */
+  readonly halted: boolean;
+}
+
 /** one of the player's shots in flight */
 export interface ProjectileView {
   readonly x: number;
@@ -285,6 +306,14 @@ export interface StructuresView {
   readonly towers: readonly TowerView[];
   readonly shieldTowers: readonly ShieldTowerView[];
   readonly core: CoreView;
+  /**
+   * THE ESCORT'S CART (levels.ts EscortMission), which is a structure and
+   * is deliberately not in `towers` — it moves, claims no ground and is
+   * nobody's to place or sell, so the one thing it shares with that list
+   * is being drawn. `live` is false on every map that does not field one,
+   * which is every map but Thornway.
+   */
+  readonly convoy: ConvoyView;
 }
 
 /** ...and everything in the air between them */

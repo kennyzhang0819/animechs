@@ -51,6 +51,8 @@ import {
   UV_TOWER_BASE4,
   UV_BEACON,
   UV_SHIELD_TOWER,
+  UV_CONVOY,
+  CONVOY_QUAD,
   UV_DISC_BIG,
   UV_TORCH,
   UV_COIL,
@@ -2974,6 +2976,32 @@ export class Renderer {
       const t3 = (s.hp * 3) / s.hpMax;
       const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
       this.push(dyn, s.x, s.y, spx, spx, 0, UV_SHIELD_TOWER, tint[0], tint[1], tint[2], 1);
+    }
+    // THE ESCORT'S HAULER (simview.ts ConvoyView, game/convoyArt.ts), over
+    // the buildings and under the bodies: it is a vehicle crossing ground
+    // rather than a thing standing on it, and a runt walking past should
+    // be drawn in front of the cart the way it is drawn in front of a
+    // turret.
+    //
+    // IT TURNS, WHICH NOTHING ELSE ON THIS PASS DOES. A shield tower, a
+    // beacon and a turret base are all square things bolted to the
+    // ground; the cart is on a road and faces the way the road goes, so
+    // it is pushed on its own heading exactly as a body is.
+    //
+    // ...AND IT GREYS WITH ITS HEALTH off the same HP_TINT every body on
+    // the board reads, so the one bar a player is watching at the top of
+    // the screen has a second copy of itself under their cursor
+    {
+      const cv = sim.convoy;
+      if (
+        cv.live &&
+        cv.x >= vx0 - CONVOY_QUAD && cv.x <= vx1 + CONVOY_QUAD &&
+        cv.y >= vy0 - CONVOY_QUAD && cv.y <= vy1 + CONVOY_QUAD
+      ) {
+        const t3 = (cv.hp * 3) / Math.max(1, cv.hpMax);
+        const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
+        this.push(dyn, cv.x, cv.y, CONVOY_QUAD, CONVOY_QUAD, cv.rot, UV_CONVOY, tint[0], tint[1], tint[2], 1);
+      }
     }
     // THE BEACONS, beside the shield towers because they are the same kind of
     // thing: a block that stands where the map put it, never turns, and is

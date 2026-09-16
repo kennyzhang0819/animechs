@@ -2324,6 +2324,76 @@ export const WORM_SPACING = 78;
 export const WORM_LENGTH = (WORM_CHAIN.length - 1) * WORM_SPACING;
 
 /**
+ * THE CONVOY — the escort mission's cart, and the one body on the board
+ * that belongs to the PLAYER (EscortMission, Sim.launchConvoy).
+ *
+ * IT IS A STRUCTURE AND NOT A UNIT, and that is not an implementation
+ * detail, it is the design. "The swarm shoots it exactly the way it
+ * shoots a turret" is the whole specification of how the two sides meet:
+ * a body walking at the core fires at what its guns can see on the way,
+ * and a TURRET is what that sentence is about. Making the cart a
+ * structure means every gun on the swarm's side already knows what to do
+ * with it — the reach, the sight ray, the rot, the Tusker's rend, the
+ * bomber's dive — with no second targeting path to keep in step with the
+ * first. What it is NOT is a member of `Sim.towers`: nothing counts it,
+ * sells it or selects it, it claims no ground and it blocks no route.
+ */
+export const CONVOY_NAME = "Hauler";
+/**
+ * THE POOL IS THE MISSION, and it is a BOSS'S POOL rather than a
+ * building's. There is one cart on Thornway, it is under fire for
+ * fifteen minutes, and it has to arrive — so the number to read it
+ * against is the Sovereign's 180,000 to 720,000, not a turret's few
+ * thousand. The first cut was 40,000 and a measured run lost it inside
+ * four minutes at the FIRST halt: the road leaves the core, so its
+ * opening stretch runs straight through the traffic walking at the base,
+ * and a pool that size is spent before the mission has started.
+ *
+ * Read it against what a halt puts back: CONVOY_MEND a second for
+ * CONVOY_HALT seconds is 90,000, a third of the pool. So a leg that cost
+ * the cart a third of itself is paid for by the halt at the end of it,
+ * and a leg that cost half is a debt carried to the next one.
+ */
+export const CONVOY_HP = 250000;
+/** the cart's plating, shaved flat off every hit like a turret's
+ *  (TowerStats.armor) — enough that the runts chewing at it as they walk
+ *  past are a nuisance and the heavies are the threat */
+export const CONVOY_ARMOR = 40;
+/** its footprint in cells — what the swarm's guns aim at and what the
+ *  sight ray clips to. A big square on purpose: the objective should be
+ *  the most legible thing on the board */
+export const CONVOY_SIZE = 6;
+/**
+ * WHICH TURRET'S STATS THE CART'S ARE A COPY OF, with its name, footprint
+ * and plating written over them (Sim.launchConvoy).
+ *
+ * A structure has a `spec`, and most of a spec is a GUN — range, reload,
+ * ammunition, what it will shoot at. A cart has none of that, and the
+ * fields are never read on it because reading them is what the turret
+ * loop does and the turret loop walks a list this is not in. So rather
+ * than invent thirty numbers that mean nothing, it takes the smallest
+ * turret's and says so here: everything about this that is turret-shaped
+ * is the default, and the three numbers that are the cart's own are the
+ * three above.
+ */
+export const CONVOY_BASE_KIND = "tacker" as const;
+/**
+ * HOW FAST IT ROLLS, world px/s: 1.6 tiles a second, under half the pace
+ * of the slowest thing the swarm fields. Thornway's road is 23,750 px, so
+ * the driving alone is twelve and a half minutes and the halts put it
+ * over fifteen.
+ *
+ * SLOW IS THE POINT. The mission is "hold a position that moves", and a
+ * position that moves quickly is not one: the cart has to be somewhere
+ * long enough for the swarm to arrive at it, or the escort is a parade.
+ */
+export const CONVOY_SPEED = 1.6 * CELL;
+/** seconds it stands at each halt (EscortMission.halts), and the health it
+ *  mends a second while it stands there */
+export const CONVOY_HALT = 45;
+export const CONVOY_MEND = 2000;
+
+/**
  * EVERY TRAIN IS TOUGHER THAN THE ONE BEFORE IT — what launch `n` (0 for
  * the first) multiplies the whole chain's health pool by.
  *
@@ -3298,7 +3368,8 @@ export function waveGroups(
 export type Mission =
   | HoldMission
   | { kind: "survive"; minutes: number }
-  | InterceptMission;
+  | InterceptMission
+  | EscortMission;
 
 /**
  * HOLD THE LINE for a stated number of waves.
@@ -3402,6 +3473,67 @@ export interface InterceptMission {
   spare: readonly number[];
 }
 
+/**
+ * ESCORT THE CROSSER (docs/mission-design.md, archetype 3): the same shape
+ * as the intercept, turned round. Something of the PLAYER'S crosses the
+ * map on a road of its own (missions.ts), and the run is what keeps it
+ * alive.
+ *
+ * IT IS THE MIRROR AND NOT A VARIANT. An intercept asks the board to put
+ * a gun where a thing will be for thirty seconds; an escort asks it to
+ * put a gun where a thing will be for thirty seconds AND TO STILL BE
+ * THERE when the swarm arrives, because the cart is the thing the swarm
+ * happens to be walking past. That is the same money spent on the same
+ * ground and a completely different feeling, and the reason is the
+ * direction the clock runs: a Borer the board fails to kill is a number
+ * on a panel, and a convoy the board fails to hold is gone.
+ *
+ * THE CONVOY IS NOT A GOAL, and that line is the whole of what keeps this
+ * mission from turning into a second core. Nothing routes to it, nothing
+ * charges it, nothing changes course for it (Sim.updateUnits): the swarm
+ * walks at the base exactly as it always does and shoots the cart the way
+ * it shoots a turret it finds in reach on the way. So the pressure on the
+ * cart is a fact about WHERE THE ROAD CROSSES THE SWARM'S ROUTE, which is
+ * a fact about the map, which is what the player is buying guns against.
+ *
+ * THE HALTS ARE THE MERCY AND THE TRAP. A convoy stops at each of
+ * `halts` for `haltSeconds` and mends `mend` a second while it waits, so
+ * a leg that went badly is not the end of the run — and a cart standing
+ * still for most of a minute is the easiest target on the board. Every
+ * halt is therefore a position the player has to have paid for in
+ * advance, which is the archetype's own sentence about opportunity cost
+ * said in the only grammar this game has.
+ */
+export interface EscortMission {
+  kind: "escort";
+  /** how many convoys must reach the far post for the mission to be met */
+  deliver: number;
+  /** how many may be destroyed on the way before the run is lost. Zero is
+   *  a real answer and is what Thornway plays: there is one cart */
+  losses: number;
+  /** seconds from the run's start to the first convoy rolling out */
+  first: number;
+  /** seconds between one convoy setting off and the next */
+  every: number;
+  /** which road each convoy takes, by index into the map's roads
+   *  (missions.ts ROAD_SPECS) — one entry a convoy, in order */
+  pattern: readonly number[];
+  /**
+   * WHERE IT WAITS, as fractions of the road from 0 to 1, in order.
+   *
+   * Fractions and not cells, because a halt is a point ON THE JOURNEY —
+   * "a fifth of the way" — and a road edited by a corner should carry its
+   * halts with it rather than leaving four cell coordinates pointing at
+   * ground the line no longer passes. Thornway's four are chosen to land
+   * in the clearings the terrain already has.
+   */
+  halts: readonly number[];
+  /** how long it stands at each, seconds */
+  haltSeconds: number;
+  /** health a halted convoy mends per second; it never passes its max */
+  mend: number;
+}
+
 /** the mission as the deploy panel and the HUD say it: a headline and a clause */
 export function missionText(spec: LevelSpec): { title: string; detail: string } {
   const m = spec.mission;
@@ -3409,6 +3541,17 @@ export function missionText(spec: LevelSpec): { title: string; detail: string } 
     return {
       title: `Survive ${m.minutes} minutes`,
       detail: "The waves never stop coming. Outlast them, with the core standing.",
+    };
+  if (m.kind === "escort")
+    return {
+      title:
+        m.deliver === 1
+          ? `Deliver the ${CONVOY_NAME.toLowerCase()}`
+          : `Deliver ${m.deliver} ${CONVOY_NAME.toLowerCase()}s`,
+      detail:
+        "It rolls out of your base and crosses the whole map at walking pace. " +
+        "Nothing comes looking for it and everything shoots it where it stands. " +
+        `${m.losses === 0 ? "There is one, and it has to arrive." : `${m.losses} may be lost.`} The core must stand.`,
     };
   if (m.kind === "intercept")
     return {
@@ -3442,14 +3585,29 @@ export function missionText(spec: LevelSpec): { title: string; detail: string } 
 export function missionProgress(
   mission: Mission,
   target: number,
-  state: { wavesCleared: number; time: number; crossKilled: number },
+  state: {
+    wavesCleared: number;
+    time: number;
+    crossKilled: number;
+    convoyDone: number;
+    convoyAt: number;
+  },
 ): number {
   const frac =
     mission.kind === "survive"
       ? state.time / Math.max(1, mission.minutes * 60)
       : mission.kind === "intercept"
         ? state.crossKilled / Math.max(1, mission.kills)
-        : state.wavesCleared / Math.max(1, target);
+        : // THE ESCORT'S BAR IS THE JOURNEY, not the delivery count. A
+          // count of one is a bar with two positions in it — empty and
+          // full — which over fifteen minutes of driving says nothing at
+          // all, and "how far has it got" is the only question a player
+          // watching a convoy is asking. So every cart already delivered
+          // carries its whole share and the one on the road carries how
+          // far along it is (Sim.convoyAt)
+          mission.kind === "escort"
+          ? (state.convoyDone + state.convoyAt) / Math.max(1, mission.deliver)
+          : state.wavesCleared / Math.max(1, target);
   return Math.max(0, Math.min(1, frac));
 }
 
@@ -3457,11 +3615,13 @@ export function missionProgress(
 export function missionCount(
   mission: Mission,
   target: number,
-  state: { wavesCleared: number; crossKilled: number },
+  state: { wavesCleared: number; crossKilled: number; convoyDone: number },
 ): { done: number; of: number; noun: string } {
   if (mission.kind === "survive") return { done: 0, of: 0, noun: "" };
   if (mission.kind === "intercept")
     return { done: Math.min(mission.kills, state.crossKilled), of: mission.kills, noun: "destroyed" };
+  if (mission.kind === "escort")
+    return { done: Math.min(mission.deliver, state.convoyDone), of: mission.deliver, noun: "delivered" };
   return { done: Math.min(target, state.wavesCleared), of: target, noun: "waves held" };
 }
 
@@ -3934,8 +4094,50 @@ export const WORLDS: LevelSpec[] = [
     id: "12",
     name: "Thornway",
     map: "thornway",
-    // ESCORT THE CROSSER — one road, an S from the bottom, and a single shortcut
-    mission: { kind: "hold" },
+    // ESCORT THE CROSSER — one road, a double S from the core in the
+    // bottom-left corner to the post in the top-right, and the second
+    // mission in the game (docs/mission-design.md).
+    //
+    // IT IS COLDLINE INSIDE OUT. There the road is the swarm's and the
+    // board pays to reach it; here the road is YOURS and the board pays
+    // to stay on it. The money goes to the same place either way — a
+    // beacon and a battery a long way from anything that defends the base
+    // — and the difference is what happens when you get it wrong: a Borer
+    // you failed to kill is a number on a panel, and a hauler you failed
+    // to hold is gone.
+    //
+    // WHAT IT COSTS. The road is twelve hundred cells long and the core
+    // lights ninety, so all but the first tenth of it is ground bought
+    // with beacons (the map carries thirteen, 232,000 scrap to open it
+    // all). And the cart is only ever in ONE place, which is the thing
+    // that makes this mission different to defend than a base: a battery
+    // built for the third halt is dead weight for the first fourteen
+    // minutes and the only thing that matters for the ninety seconds the
+    // cart is standing in it.
+    //
+    // THE CLOCK. It rolls out at 1:30 and drives at 1.6 tiles a second
+    // (CONVOY_SPEED), so the driving is twelve and a half minutes; four
+    // halts of forty-five seconds put the arrival a little past
+    // seventeen. The halts are at 22, 40, 60 and 76 per cent, each chosen
+    // to land in a clearing the terrain already has — a stopped cart is
+    // the easiest target on the board, and standing it in a corridor
+    // would be asking the player to defend a place they cannot build in.
+    //
+    // ONE CART AND NO SPARE. `losses: 0` is the honest reading of an
+    // escort: the thing either arrives or it does not, and a second
+    // hauler sent after the first was destroyed would be the mission
+    // saying the first one did not matter.
+    mission: {
+      kind: "escort",
+      deliver: 1,
+      losses: 0,
+      first: 90,
+      every: 300,
+      pattern: [0],
+      halts: [0.22, 0.4, 0.6, 0.76],
+      haltSeconds: CONVOY_HALT,
+      mend: CONVOY_MEND,
+    },
     waveGap: WAVE_GAP_DEFAULT,
     script: [],
   },
@@ -4020,14 +4222,15 @@ export function worldById(id: string): LevelSpec | null {
  *
  * IT IS A LIST OF WHAT IS IN RATHER THAN OF WHAT IS OUT, and it was the
  * other way round until the shelf got longer than the game. Seventeen
- * boards are drawn and two are FINISHED — Confluence, which is the first
- * board and the one the campaign is tuned against, and Coldline, which is
- * the one mission that is built (docs/mission-design.md). Everything else
+ * boards are drawn and three are FINISHED — Confluence, which is the
+ * first board and the one the campaign is tuned against, and the two
+ * boards that carry a built mission, Coldline's intercept and Thornway's
+ * escort (docs/mission-design.md). Everything else
  * is terrain with a hold mission on it and no reason yet to be played, so
  * naming the fifteen would be writing the catalog down twice and
  * forgetting one of them the next time a board lands.
  */
-export const PLAYABLE_WORLD_IDS: readonly string[] = ["1", "11"];
+export const PLAYABLE_WORLD_IDS: readonly string[] = ["1", "11", "12"];
 
 /** is this world off the menu? — everything the list above does not name */
 export const worldHidden = (id: string): boolean => !PLAYABLE_WORLD_IDS.includes(id);

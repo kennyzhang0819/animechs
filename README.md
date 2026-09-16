@@ -277,15 +277,24 @@ stale tab or a cached bundle looks exactly like a fix not working.
   desktop shell (through the bridge `desktop/src/preload.ts` puts on
   `window`), and the display controls the Video tab of Settings drives
   over the same bridge
-- `game/missions.ts` — **where a crosser walks**: the hard-coded roads the
-  *intercept* mission sends its Borers down, one list per map id, in
-  cells. A road is AUTHORED rather than pathfound and is on screen from
+- `game/missions.ts` — **where a mission's body walks**: the hard-coded
+  roads the two ROAD MISSIONS are drawn on — Coldline's two lines, which
+  the swarm's Borers cross, and Thornway's one, which the player's Hauler
+  is escorted up. One list per map id, in cells. A road is AUTHORED rather than pathfound and is on screen from
   wave one, because the whole of that archetype is a question about
   whether a player will pay to put guns somewhere that defends nothing —
   and a question nobody can plan the answer to is not that question. The
   mission's own numbers (how many, which road, how far apart, how many may
   get past) are in `WORLDS`; see
   [docs/mission-design.md](docs/mission-design.md)
+- `game/convoyArt.ts` — **the Hauler**, the escort mission's cart and the
+  only body on the board that is the PLAYER'S: a tracked flatbed with
+  three crates of cargo on it, drawn in the player's own amber (the hue
+  the core, the beacons' lamps and every price on the HUD wear, and the
+  one hue nothing in the swarm has). Six tiles square, half again the
+  widest turret — an objective that has to be found from across a map
+  while the swarm is on screen cannot be the size of the things shooting
+  it
 - `game/wormArt.ts` — **the Borer**, and the first thing on the sheet that
   is not an animal: a boring machine drawn as a train — a steel cutter
   head, eighteen gunmetal cars on a hot seam, a tail with two stacks. One
@@ -1150,6 +1159,30 @@ the design is drawn from):
   at the core underneath. It is the first mission that can be **failed
   with the core standing**, and the first that can be **met with the
   script still sending**.
+- **escort** — get `deliver` convoys to the far post, which is
+  **Thornway**: ONE Hauler, rolling out of the core at 1:30 and crossing
+  the whole map at 1.6 tiles a second down a double S twelve hundred cells
+  long. It is the intercept in a mirror — the same roads
+  (`game/missions.ts`), the same money spent on the same far-flung ground
+  — and the opposite feeling, because a Borer you fail to kill is a number
+  on a panel and a hauler you fail to hold is gone.
+
+  **The cart is a STRUCTURE**, so the swarm treats it exactly the way it
+  treats a turret: it shoots what its guns find in reach while it walks at
+  the base. **Nothing seeks it.** No body routes to it, dives at it or
+  charges it (`Sim.aimIsConvoy`) — it is a target and never a
+  destination, or the objective would become a second core and the base
+  would go quiet. It wears **40 plating**, which puts the runts and brutes
+  walking past on the ten-percent floor and makes calibre and rot the
+  things that actually threaten it.
+
+  **It stops four times** (`EscortMission.halts`, at 22/40/60/76% of the
+  road, each in a clearing the terrain already has), stands for 45
+  seconds and mends 2,000 a second while it waits. That is the mercy and
+  the trap in one: a bad leg is paid back by the halt at the end of it,
+  and a cart standing still for three quarters of a minute is the easiest
+  target on the board. Every halt is a position that had to be bought
+  before the cart got there.
 
 **Every progress bar on the screen reads the mission** — one number
 (`missionProgress` in `game/levels.ts`, published by the sim and drawn by
@@ -1164,10 +1197,13 @@ strips them from any wave whatever the document says, and the level editor
 does not offer their rows — a mission puts them down and nothing else can.
 Each wears a **health bar** at the top of the screen while it is on the field
 (`Sim.objectiveBars`), stacked downward when there are several; a Borer gets
-one bar over its whole twenty-piece pool.
+one bar over its whole twenty-piece pool. **The Hauler wears one too**, in
+the player's amber rather than the swarm's red — it is the same kind of
+thing, the body a map is about, and the colour is the whole of what says
+which way the mission runs.
 
-**Only two boards are in the game** (`PLAYABLE_WORLD_IDS`): Confluence and
-Coldline. The other fifteen are drawn terrain on the shelf, and
+**Only three boards are in the game** (`PLAYABLE_WORLD_IDS`): Confluence,
+Coldline and Thornway. The other fourteen are drawn terrain on the shelf, and
 `npm run check` holds them to constructing without throwing and to nothing
 else — the playable ones it also holds to having a core, a door for the
 swarm, and a mission the sim can actually meet.

@@ -1,16 +1,25 @@
 /**
- * WHERE A CROSSER WALKS — the hard-coded roads the "intercept the
- * crosser" mission sends its worms down (docs/mission-design.md).
+ * WHERE A MISSION'S BODY WALKS — the hard-coded roads the two ROAD
+ * MISSIONS are drawn on (docs/mission-design.md).
  *
- * A ROAD IS AUTHORED, NOT PATHFOUND, and that is the whole point of the
- * archetype. Everything else on the field reads the flow field and ends
+ * TWO MISSIONS SHARE THIS FILE and they are opposites. INTERCEPT sends
+ * the swarm's Borers across Coldline and asks the board to stop them;
+ * ESCORT sends the player's own convoy up Thornway and asks the board to
+ * get it through. One road machine, because the thing a road IS — a line
+ * somebody drew, an arc length along it, a heading at that point — is the
+ * same question either way, and a second copy of it would be a second
+ * place for a corner to be wrong.
+ *
+ * A ROAD IS AUTHORED, NOT PATHFOUND, and that is the whole point of both
+ * archetypes. Everything else on the field reads the flow field and ends
  * up at the core, which means the player never has to ask WHERE a body
- * will be — only when. A crosser ignores the core and the field both: it
- * enters at one edge, walks a line somebody drew, and leaves at the
- * other. The line is fixed, visible from wave one (the overlay in
- * game.ts draws it), and the same every run, because the mission is a
- * question about whether you will PAY to put guns somewhere useless, and
- * a question you cannot plan the answer to is not that question.
+ * will be — only when. A road body ignores the core and the field both:
+ * it starts where the road starts, walks a line somebody drew, and
+ * finishes where it finishes. The line is fixed, visible from wave one
+ * (the overlay in game.ts draws it), and the same every run, because both
+ * missions are a question about whether you will PAY to put guns
+ * somewhere that defends nothing, and a question you cannot plan the
+ * answer to is not that question.
  *
  * THE POINTS ARE IN CELLS, at the map's own 512 grid, because that is the
  * grid a map is authored and read on (scripts/maps, the map editor). They
@@ -120,6 +129,51 @@ export const ROAD_SPECS: Record<string, readonly RoadSpec[]> = {
       ],
     },
   ],
+  /**
+   * THORNWAY is the escort map (levels.ts world 12, scripts/maps/
+   * thornway.mjs), and it carries ONE road because the mission is one
+   * journey. The core stands in the bottom-left corner and the far post
+   * is the clearing in the top-right, and between them the map's own
+   * corridors make a long double S: out east along the bottom, up the
+   * right-hand side, back west across the middle, up the left-hand side,
+   * and east again along the top. Twelve hundred cells of it, which is
+   * two and a half times the width of the board.
+   *
+   * IT IS THE OPPOSITE ROAD FROM COLDLINE'S IN EVERY WAY THAT MATTERS.
+   * A Borer's line is straightened until it barely bends, because a
+   * seventy-tile train kinks at a corner and because the player has to
+   * be able to commit a battery to it a long way ahead. A convoy is ONE
+   * CART: it turns on the spot, and what the road is for is to take it
+   * as far from the core as the map allows and keep it there. So this one
+   * is left as the terrain drew it — 646 degrees of turning and a hairpin
+   * at the top of the eastern climb, every one of them a place the swarm
+   * crosses the line while the cart is still on it.
+   *
+   * THE CART DOES NOT COLLIDE (Sim.updateConvoy), so the margin here is
+   * about the PICTURE and not about fitting: the line never comes within
+   * three cells of rock, which on a five-tile cart is half a cell of
+   * daylight at the tightest corner and a comfortable lane everywhere
+   * else.
+   *
+   * NO RUN-UP AND NO RUN-OFF, which is the other difference. A Borer is
+   * laid down off the rim because it comes from somewhere; a convoy rolls
+   * out of the core's own ground and stops at the post, and both ends are
+   * places on the board the player can stand a gun next to.
+   */
+  thornway: [
+    {
+      name: "the long way round",
+      // 23,750 px, core to post. The halts (levels.ts EscortMission) are
+      // fractions of it, chosen to land in the clearings at 22, 40, 60
+      // and 76 per cent
+      cells: [
+        [74, 448], [136, 418], [167, 414], [233, 422], [254, 433], [349, 393],
+        [396, 377], [421, 338], [372, 304], [279, 287], [244, 284], [154, 215],
+        [122, 144], [156, 99], [226, 76], [255, 72], [279, 47], [330, 50],
+        [369, 41], [391, 46], [428, 64], [463, 55], [486, 32],
+      ],
+    },
+  ],
 };
 
 /** built roads per map, made once and kept — the arithmetic is the same
@@ -189,12 +243,12 @@ export function roadAt(road: Road, s: number, out: { x: number; y: number; dx: n
 }
 
 /**
- * Does this road stay on the board? The entry and the exit are meant to
- * hang off the rim (see the note at the top), and everything between them
- * is meant not to — a corner outside the world would put a worm somewhere
- * no turret can reach and no overlay can draw. The sim checks it once at
- * load and says so rather than playing a mission with a road running off
- * into nothing.
+ * Does this road stay on the board? A crosser's entry and exit are meant
+ * to hang off the rim (see the note at the top) and everything between
+ * them is meant not to — a corner outside the world would put a body
+ * somewhere no turret can reach and no overlay can draw. The sim checks it
+ * once at load and says so rather than playing a mission with a road
+ * running off into nothing.
  */
 export function roadProblems(road: Road): string[] {
   const out: string[] = [];

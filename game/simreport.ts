@@ -85,8 +85,23 @@ export const HDR = {
   LOOP_CYCLE: 23,
   /** the authored script's own wave count, which the tide never moves */
   SCRIPT_WAVES: 24,
+  /**
+   * THE ESCORT MISSION'S LEDGER (levels.ts EscortMission), beside the
+   * intercept's and for the same reason: carts delivered, carts lost, how
+   * far the one on the road has got (0 to 1), how many halts it has still
+   * to make, and whether it is standing at one right now.
+   *
+   * The cart's own health does not need a slot — it wears an objective
+   * bar (Sim.objectiveBars) like a Borer or the Sovereign does, and that
+   * rides the report.
+   */
+  CONVOY_DONE: 25,
+  CONVOY_LOST: 26,
+  CONVOY_AT: 27,
+  CONVOY_HALTS: 28,
+  CONVOY_HALTED: 29,
 } as const;
-export const HEADER_LEN = 26;
+export const HEADER_LEN = 32;
 
 /** the sim's scalars, into its own header — after every step, and on reset */
 export function writeHeader(sim: Sim): void {
@@ -116,6 +131,14 @@ export function writeHeader(sim: Sim): void {
   h[HDR.MISSION_PROGRESS] = sim.missionProgress();
   h[HDR.LOOP_CYCLE] = sim.loopCycle;
   h[HDR.SCRIPT_WAVES] = sim.scriptWaves;
+  h[HDR.CONVOY_DONE] = sim.convoyDone;
+  h[HDR.CONVOY_LOST] = sim.convoyLost;
+  {
+    const cv = sim.liveConvoy();
+    h[HDR.CONVOY_AT] = cv ? cv.at : 0;
+    h[HDR.CONVOY_HALTS] = cv ? cv.halts : 0;
+    h[HDR.CONVOY_HALTED] = cv && cv.halted ? 1 : 0;
+  }
 }
 
 // ---------- the phase clock's reading ----------

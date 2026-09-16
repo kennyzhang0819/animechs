@@ -50,6 +50,7 @@ import { SHIELD_TOWER_SIZE } from "./mutation";
 import { structStatusMask } from "./status";
 import type { Structure } from "./types";
 import type {
+  ConvoyView,
   CoreView,
   SimView,
   ProjectileView,
@@ -105,6 +106,15 @@ const PROJ_F = 10;
 const SHOT_F = 7;
 /** ...and the core, which there is exactly one of */
 const CORE_F = 8;
+/**
+ * ...AND THE CART, of which there is also exactly one (levels.ts
+ * EscortMission): is there one at all, where it is, what it has left, and
+ * whether it is standing at a halt. A fixed slab like the core's rather
+ * than a list, because the escort mission fields one hauler and the day it
+ * fields two is the day this becomes a list — and until then a list would
+ * be a count to read and a loop to write for one item.
+ */
+const CONVOY_F = 7;
 
 /**
  * grow a float buffer to hold at least `need`, keeping it a power of two.
@@ -167,6 +177,8 @@ export interface Snapshot {
   shotN: number;
   shots: Float32Array;
   core: Float32Array;
+  /** the escort's hauler, CONVOY_F wide: [live, x, y, rot, hp, hpMax, halted] */
+  convoy: Float32Array;
   /** one per unit slot: is this body holding a target (see SimView.utgt) */
   aiming: Uint8Array;
   aimingN: number;
@@ -200,6 +212,7 @@ export const emptySnapshot = (): Snapshot => ({
   shotN: 0,
   shots: shared.f32(0),
   core: shared.f32(CORE_F),
+  convoy: shared.f32(CONVOY_F),
   aiming: shared.u8(0),
   aimingN: 0,
   selectedN: 0,
@@ -227,6 +240,8 @@ export interface Packable extends ShotsView {
   isSelectedStruct(s: unknown): boolean;
   readonly inspectedTower: unknown;
   inspectMark(): { x: number; y: number; top: number } | null;
+  /** the escort's hauler, or null on every map that does not field one */
+  liveConvoy(): { struct: { x: number; y: number; hp: number; hpMax: number }; rot: number; halted: boolean } | null;
 }
 
 /** a turret as the SIM has one: the view's fields, minus the two flags that
@@ -317,6 +332,19 @@ export function packSnapshot(w: Packable, out: Snapshot, withPts = false): Snaps
   C[5] = c.hp;
   C[6] = c.hpMax;
   C[7] = w.isSelectedStruct(c) ? 1 : 0;
+
+  // ---- the cart ----
+  const cv = w.liveConvoy();
+  const V = out.convoy;
+  V[0] = cv ? 1 : 0;
+  if (cv) {
+    V[1] = cv.struct.x;
+    V[2] = cv.struct.y;
+    V[3] = cv.rot;
+    V[4] = cv.struct.hp;
+    V[5] = cv.struct.hpMax;
+    V[6] = cv.halted ? 1 : 0;
+  }
 
   // ---- ours in the air ----
   const pn = w.projs.length;
@@ -537,6 +565,16 @@ class ShotMirror implements ShotView {
   }
 }
 
+class ConvoyMirror implements ConvoyView {
+  live = false; x = 0; y = 0; rot = 0; hp = 0; hpMax = 0; halted = false;
+  read(V: Float32Array): void {
+    this.live = V[0] !== 0;
+    this.x = V[1]; this.y = V[2]; this.rot = V[3];
+    this.hp = V[4]; this.hpMax = V[5];
+    this.halted = V[6] !== 0;
+  }
+}
+
 class CoreMirror implements CoreView {
   x = 0; y = 0; gx = 0; gy = 0; size = 1; hp = 0; hpMax = 0; selected = false;
   read(C: Float32Array): void {
@@ -563,12 +601,14 @@ export class SnapshotView implements StructuresView, ShotsView {
   private readonly projPool: ProjMirror[] = [];
   private readonly shotPool: ShotMirror[] = [];
   private readonly coreMirror = new CoreMirror();
+  private readonly convoyMirror = new ConvoyMirror();
 
   towers: readonly TowerView[] = [];
   shieldTowers: readonly ShieldTowerView[] = [];
   projs: readonly ProjectileView[] = [];
   shots: readonly ShotView[] = [];
   readonly core: CoreView;
+  readonly convoy: ConvoyView;
   time = 0;
   selectedN = 0;
   inspectMark: { x: number; y: number; top: number } | null = null;
@@ -583,6 +623,7 @@ export class SnapshotView implements StructuresView, ShotsView {
    */
   constructor(readonly bulletFor: ShotsView["bulletFor"]) {
     this.core = this.coreMirror;
+    this.convoy = this.convoyMirror;
   }
 
   read(s: Snapshot): void {
@@ -604,6 +645,7 @@ export class SnapshotView implements StructuresView, ShotsView {
     this.shots = this.shotPool.slice(0, s.shotN);
 
     this.coreMirror.read(s.core);
+    this.convoyMirror.read(s.convoy);
     this.aiming = s.aiming;
 
     this.selectedN = s.selectedN;
@@ -877,6 +919,9 @@ export class DrawView implements SimView {
   }
   get core(): CoreView {
     return this.snap.core;
+  }
+  get convoy(): ConvoyView {
+    return this.snap.convoy;
   }
   get projs(): readonly ProjectileView[] {
     return this.snap.projs;

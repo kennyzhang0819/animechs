@@ -9,7 +9,7 @@ import {
   refreshMap,
   SPAWN_STYLE,
 } from "./maps";
-import { roadsFor } from "./missions";
+import { roadAt, roadsFor } from "./missions";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { towerBaseIcon, towerGhostIcon } from "./towerIcons";
 import {
@@ -220,6 +220,21 @@ export interface UiState {
   crossKilled: number;
   crossLeaked: number;
   crossLive: number;
+  /**
+   * THE ESCORT MISSION'S LEDGER (levels.ts EscortMission): carts
+   * delivered and lost, how far the one on the road has got (0 to 1), how
+   * many halts it has still to make, and whether it is standing at one.
+   * All zero on every other mission.
+   */
+  convoyDone: number;
+  convoyLost: number;
+  convoyAt: number;
+  convoyHalts: number;
+  convoyHalted: boolean;
+  /** the cart's own pool, for the panel's second bar — 0/0 when there is
+   *  no cart on the road */
+  convoyHp: number;
+  convoyHpMax: number;
   /**
    * HOW FAR THROUGH ITS OBJECTIVE THE RUN IS, 0 to 1 — what every progress
    * bar on the screen draws (Sim.missionProgress, levels.ts
@@ -676,6 +691,26 @@ const MM_WHITE = mmColor(0xff, 0xff, 0xff);
  * hill it is invisible.
  */
 const MM_CROSS = mmColor(0xff, 0xc2, 0x4a);
+/**
+ * ...AND THE HAULER'S, which is the player's own amber — the hue the core,
+ * the beacons and every price on the HUD are drawn in (turretArt.ts
+ * POWER). A Borer and a hauler are the same MARK, a diamond on the corner
+ * map, because they are the same kind of thing: the body a mission is
+ * about. They are different COLOURS because one of them is coming to do
+ * something to you and the other is yours to lose.
+ */
+const MM_CONVOY = mmColor(0xff, 0xd3, 0x7f);
+/** the hauler's key in the ping ledger (Game.mmPing). There is one cart,
+ *  so it needs one key, and it is lifted clear of every unit id */
+const MM_CONVOY_PING_ID = -1;
+/** the escort road's colour on the board overlay — the player's amber
+ *  (turretArt.ts POWER), against the swarm's red a Borer's line wears */
+const ROAD_MINE = "#ffd37f";
+/** how wide a halt's ring is drawn, world px — a little over the cart's
+ *  own six tiles, so the cart sits INSIDE the mark when it arrives */
+const HALT_RING_R = 80;
+/** scratch for the road sampler on the draw side — one call site */
+const ROAD_AT = { x: 0, y: 0, dx: 0, dy: 0 };
 const MM_CROSS_EDGE = mmColor(0x00, 0x00, 0x00);
 /** the one kind that wears it (drawMinimap), looked up once rather than per body */
 const WORM_HEAD_ID = UNIT_ID.wormhead;
@@ -2299,6 +2334,13 @@ export class Game {
       crossKilled: w.crossKilled,
       crossLeaked: w.crossLeaked,
       crossLive: w.crossLive,
+      convoyDone: w.convoyDone,
+      convoyLost: w.convoyLost,
+      convoyAt: w.convoyAt,
+      convoyHalts: w.convoyHalts,
+      convoyHalted: w.convoyHalted,
+      convoyHp: this.view.convoy.live ? this.view.convoy.hp : 0,
+      convoyHpMax: this.view.convoy.live ? this.view.convoy.hpMax : 0,
       kills: w.kills,
       menuOpen: this.menuOpen,
       scrap: w.charging ? Math.floor(w.scrap) : null,
@@ -3219,6 +3261,41 @@ export class Game {
       diamond(gx, gy, crossR, MM_CROSS_EDGE);
       diamond(gx, gy, crossR - 1, MM_CROSS);
     }
+    // ...AND THE HAULER, on the same mark and the same alert (simview.ts
+    // ConvoyView). It is the other road mission's body and the player's
+    // own, so it is drawn in the player's amber rather than the swarm's —
+    // and it is drawn BIGGER, because on Thornway it is the single thing
+    // the whole map is about and there is only ever one of it.
+    //
+    // ITS PING FIRES ONCE, at the departure, and the icon is what the
+    // player reads for the fifteen minutes after. A cart that pinged at
+    // every halt would be an alert that means "this is where it always
+    // stops", which is the definition of furniture.
+    if (view.convoy.live) {
+      const cv = view.convoy;
+      const gx = (cv.x / CELL) | 0, gy = (cv.y / CELL) | 0;
+      if (gx >= 0 && gy >= 0 && gx < cols && gy < rows) {
+        const cr = crossR + 1;
+        this.mmPingSeen.add(MM_CONVOY_PING_ID);
+        let since = this.mmPing.get(MM_CONVOY_PING_ID);
+        if (since === undefined) {
+          since = now;
+          this.mmPing.set(MM_CONVOY_PING_ID, now);
+        }
+        const age = now - since;
+        if (age >= 0 && age < MM_PING_SECONDS) {
+          const beat = MM_PING_SECONDS / MM_PING_PULSES;
+          const left = 1 - ((age % beat) / beat);
+          const ringR = Math.round(cr * (1 + (MM_PING_SCALE - 1) * left * left));
+          const rx = ringR + 1 > cols - 1 - ringR ? gx : clamp(gx, ringR + 1, cols - 2 - ringR);
+          const ry = ringR + 1 > rows - 1 - ringR ? gy : clamp(gy, ringR + 1, rows - 2 - ringR);
+          diamondRing(rx, ry, ringR + 1, 2, MM_CROSS_EDGE);
+          diamondRing(rx, ry, ringR, 2, MM_CONVOY);
+        }
+        diamond(gx, gy, cr, MM_CROSS_EDGE);
+        diamond(gx, gy, cr - 1, MM_CONVOY);
+      }
+    }
     // the trains that are no longer on the field let go of their clocks,
     // so a run does not carry an entry per Borer it has ever launched
     if (this.mmPing.size > this.mmPingSeen.size)
@@ -3633,11 +3710,19 @@ export class Game {
    * — nothing about the line is a question for the sim, because nothing
    * about it ever changes during a run.
    */
-  private drawCrosserRoads(c: CanvasRenderingContext2D): void {
+  private drawMissionRoads(c: CanvasRenderingContext2D): void {
     const level = this.world.level;
-    if (level.mission.kind !== "intercept") return;
+    const m = level.mission;
+    if (m.kind !== "intercept" && m.kind !== "escort") return;
     const roads = roadsFor(level.map);
     if (roads.length === 0) return;
+    // WHOSE ROAD IS IT? A Borer's line is the swarm's and wears the
+    // swarm's red; a hauler's is the player's own route and wears the
+    // player's amber (the core's hue, the beacons', every price on the
+    // HUD). It is the same line drawn the same way, and the colour is the
+    // whole of what says which way the mission runs.
+    const col = m.kind === "escort" ? ROAD_MINE : SPAWN_STYLE.css;
+    const halts = m.kind === "escort" ? m.halts : null;
     c.save();
     // CLIPPED TO THE BOARD, like everything the renderer draws
     // (Renderer.scissorWorld). A road's first and last legs run off the
@@ -3649,7 +3734,7 @@ export class Game {
     c.beginPath();
     c.rect(0, 0, W, H);
     c.clip();
-    c.strokeStyle = SPAWN_STYLE.css;
+    c.strokeStyle = col;
     c.globalAlpha = 0.28;
     c.lineWidth = 3;
     c.setLineDash([26, 18]);
@@ -3661,10 +3746,29 @@ export class Game {
       c.stroke();
     }
     c.setLineDash([]);
+    // THE HALTS, where the escort's cart will stand and mend (levels.ts
+    // EscortMission.halts). They are the four places on this map a
+    // battery is worth building, and the player has to be able to see
+    // them BEFORE the cart is anywhere near one — a halt discovered when
+    // the hauler stops in it is a halt there is no longer time to defend.
+    // Drawn as a ring on the ground rather than a mark over it, for the
+    // reason the buildable region is an edge and not a wash: there is no
+    // fog in this game and an overlay must not invent one.
+    if (halts) {
+      c.lineWidth = 4;
+      c.globalAlpha = 0.45;
+      for (const road of roads)
+        for (const h of halts) {
+          roadAt(road, h * road.length, ROAD_AT);
+          c.beginPath();
+          c.arc(ROAD_AT.x, ROAD_AT.y, HALT_RING_R, 0, Math.PI * 2);
+          c.stroke();
+        }
+    }
     // the arrowhead, on the last leg of each line and a good deal more
     // solid than the line: the road is background and the direction is
     // the one thing on it a player actually has to read
-    c.fillStyle = SPAWN_STYLE.css;
+    c.fillStyle = col;
     c.globalAlpha = 0.6;
     for (const road of roads) {
       const p = road.pts;
@@ -3751,7 +3855,7 @@ export class Game {
     // something walked down it, which is a different and much worse
     // mission. So it is drawn thin and dark under everything — a line on
     // the ground, not a marker over it.
-    this.drawCrosserRoads(c);
+    this.drawMissionRoads(c);
 
     // ROUTES, under everything else so a selection ring still reads on top
     if (this.showRoutes) {

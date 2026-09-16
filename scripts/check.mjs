@@ -491,6 +491,17 @@ for (const w of L.WORLDS) {
       say(`the pattern sends ${sent} crossers and the mission asks for ${m.kills}`);
     if (m.leaks > 0 && m.spare.length === 0)
       say(`${m.leaks} leaks allowed and no spare launch to make them back`);
+  } else if (m.kind === "escort") {
+    // the same shape of arithmetic pointed the other way: enough carts to
+    // meet the count, and a halt has to be a fraction of a road (Sim.reset
+    // has already thrown if the pattern names a road the map lacks)
+    if (!(m.deliver > 0)) say(`an escort mission asking for ${m.deliver} deliveries`);
+    if (m.pattern.length < m.deliver)
+      say(`the pattern sends ${m.pattern.length} convoys and the mission asks for ${m.deliver}`);
+    if (m.pattern.length - m.losses < m.deliver)
+      say(`${m.losses} losses allowed out of ${m.pattern.length} sent, which cannot reach ${m.deliver}`);
+    for (const h of m.halts)
+      if (!(h > 0 && h < 1)) say(`a halt at ${h} is not a fraction of the road`);
   } else {
     say(`mission kind "${m.kind}" has no objective the sim knows how to meet`);
   }

@@ -50,6 +50,7 @@ import {
 import { IRON_TIERS, ironLegged, ironMech, type IronTier } from "./ironhideArt";
 import { TUSK_TIERS, tuskLegged, tuskMech } from "./tuskerArt";
 import { WORM_N, wormCar, wormHead, wormTail } from "./wormArt";
+import { CONVOY_N, hauler } from "./convoyArt";
 import { GRAPNEL_TIERS, grapnelMech } from "./grapnelArt";
 import { KETTLE_TIERS, kettle, kettleGeom } from "./kettleArt";
 import { KING_TIER, king, kingGeom } from "./kingArt";
@@ -1254,6 +1255,25 @@ export const UNIT_CELL: Partial<Record<UnitKind, CellArt>> = {};
  * three go down the renderer's plain-quad path — one cell, one quad, the
  * heading the sim turned it to.
  */
+/**
+ * THE HAULER'S CELL (game/convoyArt.ts) — the escort mission's cart, on
+ * the sheet for the reason the Borer's pieces are: nothing upstream is
+ * called a hauler, so it asks the packer for room of its own rather than
+ * going over anything.
+ *
+ * A 192px drawing in a 256 cell, which is the smallest 64-multiple that
+ * holds it, so the world px per native px is the sheet's own 0.625 and
+ * the art lands at exactly CONVOY_SIZE tiles — the box the swarm's guns
+ * are aiming at. NO TEAM CELL: the cart is the PLAYER'S, and a team cell
+ * is the tinted accent overlay a body of the swarm's wears. What it wears
+ * instead is the player's amber, painted into the drawing itself.
+ */
+export const UV_CONVOY = sprite("convoy", 256, CONVOY_N);
+/** the world quad the cell is stretched onto: the cell's own 256 native px
+ *  at the sheet's 0.625, so the 192px drawing inside it lands on exactly
+ *  the CONVOY_SIZE tiles the hitbox says */
+export const CONVOY_QUAD = 160;
+
 const WORM_CELLS = {
   head: sprite("wormhead", 128, WORM_N),
   car: sprite("wormcar", 128, WORM_N),
@@ -3024,6 +3044,10 @@ function packWormArt(c: CanvasRenderingContext2D): void {
   pack(WORM_CELLS.head, wormHead());
   pack(WORM_CELLS.car, wormCar());
   pack(WORM_CELLS.tail, wormTail());
+  // ...and the escort's cart, beside the crosser's train because they are
+  // the same kind of thing on the sheet: a mission's own body, packed
+  // whichever way the animal switch is thrown
+  pack(UV_CONVOY, hauler());
 }
 
 /**

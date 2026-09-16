@@ -142,6 +142,12 @@ import {
   WAVE_GAP_OPENING,
   WAVE_RELEASE_SECONDS,
   wormRamp,
+  CONVOY_ARMOR,
+  CONVOY_BASE_KIND,
+  CONVOY_HP,
+  CONVOY_NAME,
+  CONVOY_SIZE,
+  CONVOY_SPEED,
   WORM_CHAIN,
   WORM_NAME,
   WORM_LENGTH,
@@ -786,6 +792,10 @@ const BOSS_KINDS = KIND_BOSS.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
  * lifted clear of anything it can reach.
  */
 const BAR_CROSSER_ID = 1e9;
+/** ...and where the CARTS' keys start, clear of both (levels.ts
+ *  EscortMission). No map fields a Borer and a hauler at once today; the
+ *  id space costs nothing and the day one does, the bars still hold still */
+const BAR_CONVOY_ID = 2e9;
 /** which FLD_SLICE a world x falls in, clamped onto the board */
 const sliceOf = (x: number): number => {
   const b = (x / FLD_SLICE) | 0;
@@ -1426,6 +1436,50 @@ export class Sim {
   /** is the field being swept by a jump rather than fought? — removeUnit
    *  reads it so a skipped train counts as neither killed nor leaked */
   private crossSweeping = false;
+
+  /**
+   * THE CONVOYS — the ESCORT mission's carts (levels.ts EscortMission),
+   * the mirror of the crossers above and the other half of what
+   * missions.ts's roads are for.
+   *
+   * A CART IS A STRUCTURE, and `struct` below is a real `Tower` object
+   * with `team: "player"` on it — see the note on CONVOY_HP. It is
+   * deliberately NOT in `towers`, never claims a cell in `cellTower` and
+   * is never in the building index, so nothing that walks the board's
+   * buildings can see it: it is not counted, not sold, not selected, and
+   * it blocks no route. The ONE place it is offered is the swarm's target
+   * search (nearestStructure), which is the whole of what "the swarm
+   * shoots it like a turret" means.
+   *
+   * `s` is how far along its road it has driven, in world px, exactly as
+   * a crosser's `ucrossS` is. `halt` is which of the mission's halts it
+   * is waiting at (-1 while it is rolling) and `holdT` the seconds it has
+   * left to wait there.
+   */
+  private convoys: {
+    struct: Tower;
+    road: number;
+    s: number;
+    /** the heading it is pointed on, radians: the road's own tangent, kept
+     *  here rather than on the structure because a building has no facing */
+    rot: number;
+    halt: number;
+    holdT: number;
+    /** it reached the post: off the board, on the ledger */
+    home: boolean;
+    /** it was destroyed on the road */
+    dead: boolean;
+  }[] = [];
+  /** convoys delivered, and convoys lost — the escort's whole ledger */
+  convoyDone = 0;
+  convoyLost = 0;
+  /** carts rolled out so far, counting into EscortMission.pattern */
+  private convoyOut = 0;
+  /** true once there is nothing left to send (runConvoys) */
+  private convoyEnd = false;
+  /** the furthest any cart has got along its road, 0 to 1 — what the bar
+   *  and the end screen read once there is nothing on the road (convoyAt) */
+  private convoyBest = 0;
 
   /**
    * THE WAVE EVERY BODY BELONGS TO, 1-based: the number loadStep staged
@@ -2367,13 +2421,33 @@ export class Sim {
     this.crossLaunched = 0;
     this.crossDone = mission.kind !== "intercept";
     this.crossSweeping = false;
-    this.roads = mission.kind === "intercept" ? roadsFor(this.level.map) : [];
-    if (mission.kind === "intercept") {
-      const named = new Set(mission.pattern.flat().concat(mission.spare));
+    // ...and so does an ESCORT, off the same roads (runConvoys). Both
+    // missions are drawn on missions.ts lines, so the geometry is fetched
+    // once here for whichever of the two is being played
+    this.convoys.length = 0;
+    this.convoyDone = 0;
+    this.convoyLost = 0;
+    this.convoyOut = 0;
+    this.convoyEnd = mission.kind !== "escort";
+    this.convoyBest = 0;
+    const onRoads = mission.kind === "intercept" || mission.kind === "escort";
+    this.roads = onRoads ? roadsFor(this.level.map) : [];
+    if (onRoads) {
+      // every road index the schedule names has to exist, and every road
+      // the map carries has to stay on the board. Said once, at load,
+      // rather than discovered as a NaN four minutes into a run
+      const named =
+        mission.kind === "intercept"
+          ? new Set(mission.pattern.flat().concat(mission.spare))
+          : new Set(mission.pattern);
       const bad: string[] = [];
       for (const r of named)
         if (!this.roads[r]) bad.push(`the pattern names road ${r} and the map has ${this.roads.length}`);
       for (const road of this.roads) bad.push(...roadProblems(road));
+      // ...and a halt is a fraction of a road, so it has to be one
+      if (mission.kind === "escort")
+        for (const h of mission.halts)
+          if (!(h > 0 && h < 1)) bad.push(`a halt at ${h} is not a fraction of the road`);
       if (bad.length > 0)
         throw new Error(`${this.level.name}: ${bad.join("; ")}`);
     }
@@ -2979,6 +3053,17 @@ export class Sim {
       // over. Saying it here rather than letting it play out is the whole
       // difference between a mission and a formality.
       const m = this.level.mission;
+      // ...and an ESCORT is the same arithmetic pointed the other way:
+      // the allowance is how many carts may be lost, and one more than
+      // that and the delivery count can never be reached. On Thornway the
+      // allowance is ZERO, so this is simply "the hauler was destroyed" —
+      // which is the honest end of an escort and wants saying at the
+      // moment it happens rather than fifteen minutes later
+      if (m.kind === "escort")
+        return (
+          this.convoyLost > m.losses ||
+          (this.convoyEnd && this.liveConvoy() === null && this.convoyDone < m.deliver)
+        );
       if (m.kind !== "intercept") return false;
       if (this.crossLeaked > m.leaks) return true;
       // ...and the same fact arrived at from the other side: nothing left
@@ -3039,6 +3124,8 @@ export class Sim {
       wavesCleared: this.wavesCleared(),
       time: this.time,
       crossKilled: this.crossKilled,
+      convoyDone: this.convoyDone,
+      convoyAt: this.convoyAt(),
     });
   }
 
@@ -3071,6 +3158,8 @@ export class Sim {
     // swarm is what can lose the run, and the crossers are what wins it
     const m = this.level.mission;
     if (m.kind === "intercept") return this.crossKilled >= m.kills;
+    // ...and an escort the moment the last cart is at the post
+    if (m.kind === "escort") return this.convoyDone >= m.deliver;
     if (m.kind === "survive") return this.time >= this.deadline;
     const target = this.holdTarget();
     return target > 0 && this.wavesCleared() >= target;
@@ -3531,6 +3620,21 @@ export class Sim {
         max: w.hpMax,
       });
     }
+    // ...AND THE CART, which wears the same bar as the things trying to
+    // kill it. It is the player's, and that is exactly why it belongs
+    // here: an objective bar is "the thing this map is about, and how it
+    // is doing", and on Thornway that thing is a hauler rather than a
+    // Borer. The HUD paints it in the player's own colour off the name
+    for (let id = 0; id < this.convoys.length; id++) {
+      const c = this.convoys[id];
+      if (c.dead || c.home) continue;
+      out.push({
+        id: BAR_CONVOY_ID + id,
+        name: CONVOY_NAME,
+        hp: Math.max(0, c.struct.hp),
+        max: c.struct.hpMax,
+      });
+    }
     return out;
   }
 
@@ -3615,6 +3719,34 @@ export class Sim {
 
   private addTower(gx: number, gy: number, kind: TowerKind, sz: number, mods: number): void {
     this.placed++;
+    const tower = this.newTower(gx, gy, kind, sz, mods);
+    this.towers.push(tower);
+    // the attributes it just rolled become its stats and its pool, and it
+    // opens at FULL health on the new ceiling rather than the table's
+    this.resolveTower(tower);
+    tower.hp = tower.hpMax;
+    this.claimGround(tower, true);
+    // a count-dependent rung (tacker power) reads the board, so the board
+    // changing is what moves it — owed, and paid once at the batch's or
+    // the step's end (oweCount)
+    this.oweCount(kind);
+  }
+
+  /**
+   * ONE STRUCTURE RECORD, filled in — every field a Tower has, at the
+   * value a freshly placed one carries. It is SPLIT OUT of addTower
+   * because a second thing in this file needs a Tower that is not a
+   * building: the escort mission's cart (launchConvoy, levels.ts
+   * CONVOY_HP), which is a structure the swarm shoots and is in no list,
+   * claims no ground and is never resolved.
+   *
+   * THE SPLIT IS WHAT MAKES THAT SAFE. The cart used to be a hand-written
+   * literal cast to Tower, which meant the day somebody added a field
+   * here the cart would be missing it and nothing would say so — a cast
+   * is a promise the compiler stops checking. Built through this, the
+   * cart is a real one with four numbers written over it.
+   */
+  private newTower(gx: number, gy: number, kind: TowerKind, sz: number, mods: number): Tower {
     // EVERY STRUCTURE IS PLACED FINISHED — full pool, gun live, this tick.
     // It used to go up as a 1 hp shell on a timer (see Tower in types.ts)
     const x = (gx + sz / 2) * CELL, y = (gy + sz / 2) * CELL;
@@ -3687,16 +3819,7 @@ export class Sim {
       flashY: 0,
       flashRot: 0,
     };
-    this.towers.push(tower);
-    // the attributes it just rolled become its stats and its pool, and it
-    // opens at FULL health on the new ceiling rather than the table's
-    this.resolveTower(tower);
-    tower.hp = tower.hpMax;
-    this.claimGround(tower, true);
-    // a count-dependent rung (tacker power) reads the board, so the board
-    // changing is what moves it — owed, and paid once at the batch's or
-    // the step's end (oweCount)
-    this.oweCount(kind);
+    return tower;
   }
 
 
@@ -3704,6 +3827,29 @@ export class Sim {
   /** the structure standing on a world point, if it is `team`'s */
   private structureAt(px: number, py: number, team: Team = "player"): Structure | null {
     if (px < 0 || py < 0 || px >= W || py >= H) return null;
+    // THE CART FIRST, because it is not on the grid this reads (levels.ts
+    // CONVOY_HP) and this is the function every arriving round comes
+    // through — sweepShot walks a step by calling it, and a shell that
+    // runs out of life asks it what it landed on. Without this a round
+    // aimed at the hauler flew straight through it: the swarm picked the
+    // objective, fired at the objective, and only its SPLASH ever landed,
+    // because splash goes through structuresWithin and that one walks
+    // cells rather than reading them.
+    //
+    // A SQUARE, like every other footprint on the board, and the cart's
+    // own `size` is the square — the art turns with the road but the box
+    // does not, which is the same simplification `canSee` and the target
+    // search already make about it.
+    if (this.convoys.length > 0 && team === "player")
+      for (const c of this.convoys) {
+        if (c.dead || c.home || c.struct.hp <= 0) continue;
+        const half = (c.struct.size * CELL) / 2;
+        if (
+          px >= c.struct.x - half && px <= c.struct.x + half &&
+          py >= c.struct.y - half && py <= c.struct.y + half
+        )
+          return c.struct;
+      }
     const t = this.cellTower[((py / CELL) | 0) * COLS + ((px / CELL) | 0)];
     // the team test costs nothing in a run without Conquest, where every
     // building on the board is the player's and `enemyTowers` is 0
@@ -4102,6 +4248,9 @@ export class Sim {
     // on the map, not a wave — and, like the waves, an appointment kept by
     // the clock rather than by whatever the board is doing
     this.runCrossers();
+    // ...and the escort's, which is the same clock read the other way:
+    // one departure per cart, on absolute moments (runConvoys)
+    this.runConvoys();
     // a structure went up on, or came down off, open ground: shove anything
     // standing in its cells clear now, and re-solve the routes when the
     // board settles (solveDirtyFields)
@@ -4119,6 +4268,10 @@ export class Sim {
     this.updatePhysics();
     this.mark("physics");
     this.updateUnits(dt);
+    // ...and the escort's cart, on the same beat and for the same reason
+    // the crossers ride updateUnits: it is a body on a road, and the rot
+    // burning on it has to tick whether or not it is rolling
+    this.updateConvoys(dt);
     this.mark("units");
     this.updateAbilities(dt);
     this.mark("abilities");
@@ -4889,6 +5042,298 @@ export class Sim {
     this.removeUnit(i);
   }
 
+  // ---------- the convoys ----------
+
+  /**
+   * THE ESCORT'S CLOCK (levels.ts EscortMission), and it is the crossers'
+   * clock in a mirror: cart `k` rolls out at `first + k * every` seconds
+   * of run time and at no other moment.
+   *
+   * ABSOLUTE MOMENTS FOR THE SAME REASON runCrossers uses them — a
+   * countdown has to be ticked to be moved, so a sandbox jump
+   * (skipToTime) would leave the mission sitting wherever the clock had
+   * been. Read off `time`, every departure the jump passed over is simply
+   * due at once.
+   */
+  private runConvoys(): void {
+    const m = this.level.mission;
+    if (m.kind !== "escort" || this.convoyEnd) return;
+    while (
+      this.convoyOut < m.pattern.length &&
+      this.time >= m.first + this.convoyOut * m.every
+    ) {
+      this.launchConvoy(m.pattern[this.convoyOut]);
+      this.convoyOut++;
+    }
+    if (this.convoyOut >= m.pattern.length) this.convoyEnd = true;
+  }
+
+  /**
+   * ONE CART ONTO ITS ROAD, standing at the road's first point — which on
+   * Thornway is the ground just outside the core's own footprint, so it
+   * rolls out of the base rather than appearing on it.
+   *
+   * THE STRUCTURE IS BUILT HERE AND NOWHERE ELSE (levels.ts CONVOY_HP for
+   * why it is a structure at all). Its `spec` is a copy of a real turret's
+   * with the cart's own name, footprint and plating written over it: the
+   * fields under that are a gun's — range, reload, ammunition — and NOT
+   * ONE OF THEM IS EVER READ, because reading them is what `fireTowers`
+   * does and `fireTowers` walks `towers`, which this is not in. Spreading
+   * a real one rather than inventing thirty numbers is the honest way to
+   * say "everything about this that is a turret is the default".
+   */
+  private launchConvoy(roadIdx: number): void {
+    const road = this.roads[roadIdx];
+    if (!road) return;
+    roadAt(road, 0, this.roadTmp);
+    const hp = CONVOY_HP;
+    const struct = this.newTower(
+      // THE CELLS IT STANDS ON ARE A LIE AND HAVE TO BE. `gx`/`gy` are
+      // read by everything that asks where a building's footprint is, and
+      // this one has no footprint: it claims no ground, nothing writes it
+      // into cellTower, and updateConvoy keeps these in step with the
+      // cart's centre only so a reader doing the usual arithmetic gets
+      // the usual answer rather than a NaN.
+      Math.round(this.roadTmp.x / CELL - CONVOY_SIZE / 2),
+      Math.round(this.roadTmp.y / CELL - CONVOY_SIZE / 2),
+      CONVOY_BASE_KIND,
+      CONVOY_SIZE,
+      0,
+    );
+    // ...and then the four numbers that are the CART'S rather than a
+    // turret's. Its spec is a copy of the base kind's with its own name,
+    // footprint and plating written over it: the fields under those are a
+    // GUN's — range, reload, ammunition — and not one of them is ever
+    // read, because reading them is what the turret loop does and the
+    // turret loop walks `towers`, which this is not in.
+    struct.x = this.roadTmp.x;
+    struct.y = this.roadTmp.y;
+    struct.hp = hp;
+    struct.hpMax = hp;
+    // ...AND NO STAND-UP. Undying Legion (relics.ts) grants every turret
+    // one revive and `newTower` hands it out; damageConvoy never asks, so
+    // this is only saying out loud what the code already does — a relic
+    // bought to keep the LINE standing does not also make the mission
+    // unloseable, and a hauler that got back up would make "it has to
+    // arrive" mean something else on one run in fourteen.
+    struct.revives = 0;
+    struct.revivesMax = 0;
+    struct.spec = {
+      ...structStats(CONVOY_BASE_KIND),
+      name: CONVOY_NAME,
+      size: CONVOY_SIZE,
+      armor: CONVOY_ARMOR,
+      health: hp,
+    };
+    this.convoys.push({
+      struct,
+      road: roadIdx,
+      s: 0,
+      rot: Math.atan2(this.roadTmp.dy, this.roadTmp.dx),
+      halt: -1,
+      holdT: 0,
+      home: false,
+      dead: false,
+    });
+  }
+
+  /**
+   * IS THE THING THIS BODY IS SHOOTING AT THE CART? — the one question
+   * that makes an escort an escort rather than a second core.
+   *
+   * NOTHING SEEKS THE CONVOY. The swarm walks at the base and shoots what
+   * its guns find on the way, which is exactly how it treats a turret and
+   * exactly what the mission wants. What it must never do is CHANGE
+   * COURSE for the cart: a bomber that dives at it and a Tusker that
+   * charges it are both bodies leaving their route, and a route left is
+   * pressure taken off the core and put onto the objective. That turns
+   * the hauler into a magnet the whole field drifts toward, which is a
+   * different mission and a much worse one — the player would be
+   * defending one thing instead of two, and the base would go quiet.
+   *
+   * So the cart is a TARGET and never a DESTINATION. It is shot by
+   * whatever happens to have it in reach, and nothing walks a step it
+   * would not have walked anyway.
+   */
+  private aimIsConvoy(a: Aim | null): boolean {
+    if (a === null || this.convoys.length === 0) return false;
+    for (const c of this.convoys) if (c.struct === a.s) return true;
+    return false;
+  }
+
+  /**
+   * IS THIS STRUCTURE A CART? — the standing-in for the occupancy grid on
+   * the one body that is not in it.
+   *
+   * Three places ask, and all three are asking the same question in the
+   * grid's words: `inReach` before a weapon fires, the homing star before
+   * it keeps steering, and the ledger in damageTower. A cart is standing
+   * for as long as it is on the road with health in it, which is what
+   * `convoyOf` answers.
+   */
+  private isConvoy(t: Structure): boolean {
+    return this.convoys.length > 0 && this.convoyOf(t) !== null;
+  }
+
+  /** the cart this structure IS, or null — one linear walk of a list that
+   *  is one long, guarded by the caller on `convoys.length` */
+  private convoyOf(t: Structure): (typeof this.convoys)[number] | null {
+    for (const c of this.convoys) if (c.struct === t) return c;
+    return null;
+  }
+
+  /**
+   * ONE TICK OF EVERY CART: the statuses it can carry, then the drive.
+   *
+   * IT IS KINEMATIC LIKE A CROSSER (updateCrosser) and for the same
+   * reason: the mission is a promise about a line on the map, and a cart
+   * that could be shoved, wedged or routed would be a mission about
+   * physics. What is different is that it STOPS — at each of the
+   * mission's halts it stands for `haltSeconds` and mends `mend` a
+   * second, which is the only healing on the player's side of this board
+   * and the reason a bad leg is not the end of the run.
+   *
+   * THE TWO STATUSES A CART CAN CARRY are the rot and the fire, and they
+   * are ticked here rather than in fireTowers because fireTowers is the
+   * GUN loop — it walks `towers`, works a reload and looks for something
+   * to shoot, and a cart has none of those. Everything else that pass
+   * does is turret-only by nature: a cart has no gun to short out, no
+   * ammunition to jam, and no plating that mends itself.
+   */
+  private updateConvoys(dt: number): void {
+    if (this.convoys.length === 0) return;
+    const m = this.level.mission;
+    if (m.kind !== "escort") return;
+    for (const c of this.convoys) {
+      if (c.dead || c.home) continue;
+      const t = c.struct;
+      // THE ROT (Tower.poison), on the same arithmetic fireTowers runs:
+      // the stack bleeds back toward the heaviest single source and the
+      // damage is raw, past plating, because a status plating could shave
+      // would be a second copy of what the ground mechs already do
+      if (t.poisonT > 0) {
+        t.poisonT -= dt;
+        if (t.poisonT <= 0) {
+          t.poisonT = 0;
+          t.poison = 0;
+          t.poisonUnit = 0;
+        } else {
+          if (t.poison > t.poisonUnit)
+            t.poison = t.poisonUnit + (t.poison - t.poisonUnit) * Math.exp(-POISON_DECAY * dt);
+          this.damageConvoy(c, t.poison * dt);
+        }
+      }
+      // ...and the fire, which refreshes rather than stacks (burnTower)
+      if (t.burnT > 0) {
+        t.burnT -= dt;
+        if (t.burnT <= 0) {
+          t.burnT = 0;
+          t.burnDps = 0;
+        } else this.damageConvoy(c, t.burnDps * dt);
+      }
+      if (c.dead) continue;
+      const road = this.roads[c.road];
+      if (c.holdT > 0) {
+        // STANDING AT A HALT: it mends, and it is the easiest target on
+        // the board while it does. The clock runs whatever is happening
+        // to it — a cart pinned down does not get to wait longer
+        c.holdT -= dt;
+        if (t.hp < t.hpMax) t.hp = Math.min(t.hpMax, t.hp + m.mend * dt);
+        if (c.holdT <= 0) c.holdT = 0;
+        continue;
+      }
+      c.s += CONVOY_SPEED * dt;
+      // ...HAS IT REACHED THE NEXT HALT? Asked before the arrival, so a
+      // halt authored at 0.99 still happens
+      const next = c.halt + 1;
+      if (next < m.halts.length && c.s >= m.halts[next] * road.length) {
+        c.halt = next;
+        c.s = m.halts[next] * road.length;
+        c.holdT = m.haltSeconds;
+      } else if (c.s >= road.length) {
+        // THE POST. The cart is off the board and on the ledger, and the
+        // structure goes with it so nothing can shoot a delivery
+        c.s = road.length;
+        c.home = true;
+        this.convoyBest = 1;
+        this.convoyDone++;
+        this.pushFx(t.x, t.y, 0.6, FxKind.Breach);
+        continue;
+      }
+      if (road.length > 0) this.convoyBest = Math.max(this.convoyBest, c.s / road.length);
+      roadAt(road, c.s, this.roadTmp);
+      t.x = this.roadTmp.x;
+      t.y = this.roadTmp.y;
+      c.rot = Math.atan2(this.roadTmp.dy, this.roadTmp.dx);
+      t.gx = Math.round(t.x / CELL - CONVOY_SIZE / 2);
+      t.gy = Math.round(t.y / CELL - CONVOY_SIZE / 2);
+    }
+  }
+
+  /**
+   * A HIT ON THE CART. The one place a convoy's health moves, and the
+   * reason damageTower branches at all: everything under that branch —
+   * the revives, the payout, the virus, the conquest, the removal from
+   * `towers` — is about a BUILDING, and this is a vehicle with a mission
+   * riding on it.
+   *
+   * `raw` has already been through plating where the caller meant it to
+   * (damageTower shaves it; the rot and the fire above do not, which is
+   * the same exemption a turret's statuses have).
+   */
+  private damageConvoy(c: (typeof this.convoys)[number], raw: number): void {
+    const t = c.struct;
+    if (c.dead || c.home || t.hp <= 0) return;
+    t.hp -= raw;
+    if (t.hp > 0) return;
+    t.hp = 0;
+    c.dead = true;
+    this.convoyLost++;
+    this.pushFx(t.x, t.y, 0.8, FxKind.Breach);
+    this.pushFx(t.x, t.y, 0.6, FxKind.Death);
+  }
+
+  /**
+   * HOW FAR THE CART ON THE ROAD HAS GOT, 0 to 1 — what the objective bar
+   * is filled from between deliveries (levels.ts missionProgress).
+   *
+   * A HALT COUNTS AS THE GROUND IT STANDS ON and not as progress of its
+   * own: the bar moves while the cart moves and holds while it waits,
+   * which is the truth about the journey and is also the clearest thing a
+   * player can be told about why nothing is happening.
+   */
+  convoyAt(): number {
+    for (const c of this.convoys) {
+      if (c.dead || c.home) continue;
+      const road = this.roads[c.road];
+      if (road && road.length > 0) return Math.max(0, Math.min(1, c.s / road.length));
+    }
+    // ...AND HOW FAR THE LAST ONE GOT, when there is none on the road.
+    // A run that lost its cart at the third halt is a run that got sixty
+    // per cent of the way there, and the end screen has nothing else to
+    // say about it — reading zero off an empty list would tell a player
+    // who nearly made it that they never started.
+    return this.convoyBest;
+  }
+
+  /** the cart on the road, for the HUD and the renderer — null when there
+   *  is none (before the first departure, between two, or after a loss) */
+  liveConvoy(): { struct: Tower; rot: number; halted: boolean; halts: number; at: number } | null {
+    const m = this.level.mission;
+    if (m.kind !== "escort") return null;
+    for (const c of this.convoys) {
+      if (c.dead || c.home) continue;
+      return {
+        struct: c.struct,
+        rot: c.rot,
+        halted: c.holdT > 0,
+        halts: m.halts.length - 1 - c.halt,
+        at: this.convoyAt(),
+      };
+    }
+    return null;
+  }
+
   // ---------- the swarm's weapons ----------
 
   /**
@@ -5073,17 +5518,39 @@ export class Sim {
     sighted: boolean,
     team: Team = "player",
   ): Structure | null {
+    // THE CART IS OFFERED HERE AND ONLY HERE (levels.ts CONVOY_HP), and it
+    // has to be offered BEFORE the box. It is not in the building index
+    // and claims no cell, because it moves — so `structBox`, which is the
+    // rectangle the player's BUILDINGS stand in, does not contain it, and
+    // a cart fifty tiles up the road from the nearest turret is outside
+    // that box by a mile. Under the early-out this loop simply never ran
+    // and the swarm walked past the objective all run without firing a
+    // shot at it. A list of one behind a length test, so every other map
+    // pays one compare.
+    let best: Structure | null = null;
+    let bd = Infinity;
+    if (this.convoys.length > 0 && team === "player")
+      for (const c of this.convoys) {
+        if (c.dead || c.home) continue;
+        const t = c.struct;
+        if (t.hp <= 0) continue;
+        const half = (t.size * CELL) / 2;
+        const dx = t.x - x, dy = t.y - y;
+        const d = Math.sqrt(dx * dx + dy * dy) - half;
+        if (d <= reach && d < bd && (!sighted || this.canSee(t, x, y))) {
+          bd = d;
+          best = t;
+        }
+      }
     const box = this.structBox();
-    if (box.n === 0) return null;
+    if (box.n === 0) return best;
     if (x + reach < box.x0 || x - reach > box.x1 || y + reach < box.y0 || y - reach > box.y1)
-      return null;
+      return best;
     const blocks = this.structBlocks;
     const grid = this.cellTower;
     const bx = clamp((x / AIM_BLOCK_PX) | 0, 0, AIM_BCOLS - 1);
     const by = clamp((y / AIM_BLOCK_PX) | 0, 0, AIM_BROWS - 1);
     const maxR = Math.ceil(reach / AIM_BLOCK_PX) + 1;
-    let best: Structure | null = null;
-    let bd = Infinity;
     const consider = (bi: number): void => {
       const list = blocks[bi];
       if (!list) return;
@@ -5192,6 +5659,16 @@ export class Sim {
     out.length = 0;
     const seen = this.seenStructs;
     seen.clear();
+    // ...and the cart, for the same reason nearestStructure has to name
+    // it: a blast that reached every building in its circle and not the
+    // one standing in the middle of it would be a hole a player can see
+    if (this.convoys.length > 0 && team === "player")
+      for (const c of this.convoys) {
+        if (c.dead || c.home || c.struct.hp <= 0) continue;
+        const t = c.struct;
+        const half = (t.size * CELL) / 2;
+        if (Math.sqrt((t.x - x) ** 2 + (t.y - y) ** 2) - half <= r) out.push(t);
+      }
     const R = Math.ceil(r / CELL) + 1;
     const cx = (x / CELL) | 0, cy = (y / CELL) | 0;
     // a square of cells, and every one of them a candidate looked at. The
@@ -5457,7 +5934,14 @@ export class Sim {
 
   /** is the structure still standing — and within this reach of the point? */
   private inReach(t: Structure, x: number, y: number, reach: number): boolean {
-    if (this.cellTower[t.gy * COLS + t.gx] !== t) return false;
+    // IS IT STILL STANDING? The grid read is what makes a held target
+    // drop the moment the building under it comes down — and it is the
+    // one test on this path that a CART cannot pass, because a cart is
+    // never on the grid (levels.ts CONVOY_HP). Without the guard the
+    // swarm PICKED the hauler, HELD the hauler, and never fired a shot at
+    // it: every weapon asks this before it pulls a trigger, and the
+    // answer was always no.
+    if (!this.isConvoy(t) && this.cellTower[t.gy * COLS + t.gx] !== t) return false;
     const half = (this.sizeOf(t) * CELL) / 2;
     const dx = t.x - x, dy = t.y - y;
     return Math.sqrt(dx * dx + dy * dy) - half <= reach;
@@ -6349,7 +6833,11 @@ export class Sim {
       // steering and flies out the heading it is on.
       if (sh.homing > 0) {
         const sp = Math.sqrt(sh.vx * sh.vx + sh.vy * sh.vy);
-        if (sh.seek && this.cellTower[sh.seek.gy * COLS + sh.seek.gx] !== sh.seek) {
+        // ...and a star steering at the CART keeps steering: the grid test
+        // below is "is this building still standing", and a hauler is
+        // never on the grid, so without the guard every star thrown at one
+        // would drop its quarry on the tick after it was thrown
+        if (sh.seek && !this.isConvoy(sh.seek) && this.cellTower[sh.seek.gy * COLS + sh.seek.gx] !== sh.seek) {
           sh.seek = this.nearestStructure(sh.x, sh.y, sh.life * sp, true);
           if (!sh.seek) sh.homing = 0;
         }
@@ -7099,7 +7587,14 @@ export class Sim {
    *  not the player's to sell: see enemyTowerAt */
   towerAt(px: number, py: number): Tower | null {
     const t = this.structureAt(px, py);
-    return t && !isCore(t) ? t : null;
+    // ...AND THE CART IS NOT ONE, however much of a Tower it is in the
+    // type system (levels.ts CONVOY_HP). This is what a tap picks and what
+    // a right-click SELLS, and a hauler the player could sell is a mission
+    // the player can end by clicking on it. It holds no ground to give
+    // back and is in none of the lists a sale walks, so the sale would
+    // also be quietly corrupt — but the reason it is refused is the first
+    // one.
+    return t && !isCore(t) && !this.isConvoy(t) ? t : null;
   }
 
 
@@ -9060,7 +9555,7 @@ export class Sim {
         // A BOMBER DIVES (levels.ts payload): with a structure picked
         // inside its seek reach (updateUnitWeapons) it flies straight at
         // that instead of the core, and goes off on contact
-        const dive = KIND_PAYLOAD[ukind[i]] ? this.utgt[i] : null;
+        const dive = KIND_PAYLOAD[ukind[i]] && !this.aimIsConvoy(this.utgt[i]) ? this.utgt[i] : null;
         if (dive) {
           const tx = dive.x - upx[i], ty = dive.y - upy[i];
           const tl = Math.sqrt(tx * tx + ty * ty) || 1;
@@ -9088,7 +9583,10 @@ export class Sim {
         // target it can SEE (updateUnitWeapons casts the ray every tick),
         // so there is no rock on the line. A crowd on the line is sorted
         // out by the same shove that sorts out every other body's.
-        const rush = HAS_CHARGE && KIND_CHARGE[ukind[i]] > 0 ? this.utgt[i] : null;
+        const rush =
+          HAS_CHARGE && KIND_CHARGE[ukind[i]] > 0 && !this.aimIsConvoy(this.utgt[i])
+            ? this.utgt[i]
+            : null;
         if (rush && this.canWalkTo(upx[i], upy[i], rush.x, rush.y, mf)) {
           const tx = rush.x - upx[i], ty = rush.y - upy[i];
           const tl = Math.sqrt(tx * tx + ty * ty) || 1;
@@ -9755,6 +10253,19 @@ export class Sim {
     // so there is nothing for plating to shave. It is also the whole reason
     // the Venom spitters and the Ground mechs are different problems.
     if (!pierceArmor && !isCore(t)) dmg = Sim.applyArmor(dmg, t.spec.armor);
+    // THE CART TAKES ITS HIT SOMEWHERE ELSE (damageConvoy). Everything
+    // below this line answers the death of a BUILDING — a revive, a
+    // payout, the virus moving on, a conquest, the ground being handed
+    // back — and a convoy is a vehicle with a mission riding on it. The
+    // guard is on the list being non-empty, so every other board pays one
+    // compare per structure hit.
+    if (this.convoys.length > 0) {
+      const c = this.convoyOf(t);
+      if (c) {
+        this.damageConvoy(c, dmg);
+        return;
+      }
+    }
     t.hp -= dmg;
     if (t.hp > 0) return;
     t.hp = 0;
@@ -10246,7 +10757,11 @@ export class Sim {
    * grid lookup and nothing more.
    */
   myStructAt(px: number, py: number, pad = 0): Structure | null {
-    const exact = this.structureAt(px, py);
+    // the cart is not pickable either, for towerAt's reason: the selection
+    // and the inspector are about BUILDINGS, and a hauler inspected would
+    // print the stats of the turret its spec is a copy of
+    const hit = this.structureAt(px, py);
+    const exact = hit && this.isConvoy(hit) ? null : hit;
     if (exact || pad <= 0) return exact;
     let best: Structure | null = null, bd = Infinity;
     const near = (t: Structure): void => {

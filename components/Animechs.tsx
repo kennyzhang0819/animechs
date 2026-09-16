@@ -637,52 +637,108 @@ function ObjectivePane({ hud }: { hud: UiState }): React.ReactElement | null {
   const count = missionCount(m, missionTarget(m, hud.scriptWaves), hud);
   const frac = Math.max(0, Math.min(1, hud.missionProgress));
   const headline =
-    m.kind === "survive" ? `${clock(hud.timeLeft)} left` : `${count.done} / ${count.of}`;
+    m.kind === "survive" ? clock(hud.timeLeft) : `${count.done} / ${count.of}`;
+  const under = m.kind === "survive" ? "left on the clock" : count.noun;
   return (
-    <div className="ms-pane px-3 py-2">
-      <div className="flex items-baseline gap-2">
-        <span className="font-display text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+    <div className="ms-pane px-4 py-3">
+      <div className="flex items-center gap-4">
+        {/* THE NUMBER, AT THE SIZE THE THING DESERVES. It is the answer to
+            the only question that decides whether a run is going well, and
+            it used to be set at fifteen pixels beside a caption at
+            thirteen — the size of a label, on a board where the scrap in
+            the opposite corner is twenty and the clock under the minimap
+            is twenty. A player checking their objective was reading the
+            smallest text on the screen. */}
+        <span className="font-display text-[40px] font-bold leading-none tabular-nums text-[#EDEDEF] [text-shadow:0_2px_4px_rgba(0,0,0,0.7)]">
           {headline}
         </span>
-        <span className="text-[13px] uppercase tracking-widest text-[#A6A6AF]">
-          {m.kind === "survive" ? "on the clock" : count.noun}
-        </span>
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="font-display text-[15px] font-bold uppercase leading-none tracking-widest text-[#A6A6AF]">
+            {under}
+          </span>
+          {/* THE TIDE, once it has turned: x2, x4, x8 — every body's
+              health, and nothing else (ladder.ts LEVELS_PER_DOUBLING) */}
+          {hud.loopCycle > 0 && (
+            <span
+              className="font-display text-[15px] font-bold uppercase leading-none tracking-widest text-[#FFD37F]"
+              title="The script has run out and is going again, heavier"
+            >
+              Tide x{2 ** hud.loopCycle}
+            </span>
+          )}
+        </div>
+        {/* THE INTERCEPT'S ALLOWANCE, as pips. Both halves of that mission
+            are state — the kills are the progress and the leaks are what
+            is left of the margin — and a player who can see one without
+            the other cannot tell whether the run is going well. Pips
+            rather than a fraction: "0/1" is a number to work out and two
+            lamps is a thing to look at. */}
         {m.kind === "intercept" && (
-          <span className="ml-auto flex items-center gap-1.5">
-            <span className="text-[13px] uppercase tracking-widest text-[#71717C]">past you</span>
-            {/* one pip per leak the run is allowed, plus the one that ends
-                it — a lit pip is a leak already spent */}
+          <span className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="font-display text-[13px] uppercase tracking-widest text-[#71717C]">
+              past you
+            </span>
             {Array.from({ length: m.leaks + 1 }, (_, i) => (
               <span
                 key={i}
-                className={`inline-block h-2.5 w-2.5 rounded-full ${
+                className={`inline-block h-4 w-4 rounded-full ${
                   i < Math.min(m.leaks + 1, hud.crossLeaked) ? "bg-[#e55454]" : "bg-[#3a3a42]"
                 }`}
               />
             ))}
           </span>
         )}
-        {/* THE TIDE, once it has turned: x2, x4, x8 — every body's health,
-            and nothing else (ladder.ts LEVELS_PER_DOUBLING) */}
-        {hud.loopCycle > 0 && (
-          <span
-            className={`${m.kind === "intercept" ? "" : "ml-auto "}font-display text-[13px] font-bold uppercase tracking-widest text-[#FFD37F]`}
-            title="The script has run out and is going again, heavier"
-          >
-            Tide x{2 ** hud.loopCycle}
+        {/* THE ESCORT'S HALTS LEFT, which is the same kind of fact as the
+            intercept's allowance and the one number a player planning
+            where to spend next actually wants: how many more times the
+            cart is going to stand still, and therefore how many more
+            positions are worth paying for (levels.ts EscortMission.halts) */}
+        {m.kind === "escort" && hud.convoyHpMax > 0 && (
+          <span className="ml-auto flex shrink-0 flex-col items-end gap-0.5">
+            <span className="font-display text-[22px] font-bold leading-none tabular-nums text-[#FFD37F]">
+              {hud.convoyHalts}
+            </span>
+            <span className="font-display text-[13px] uppercase leading-none tracking-widest text-[#71717C]">
+              {hud.convoyHalts === 1 ? "halt to go" : "halts to go"}
+            </span>
           </span>
         )}
       </div>
-      <div className="ms-bar mt-1.5 w-full">
+      {/* THE JOURNEY, or the waves, or the clock — one bar off one number
+          (levels.ts missionProgress), at double the height it was. A bar
+          is the shape a player reads without looking away from the board,
+          and the thin one read as a divider between two lines of text */}
+      <div className="ms-bar mt-2 h-[26px] w-full">
         <div
           className="transition-[width] duration-300 ease-linear"
           style={{ width: `${100 * frac}%`, background: "#7BE58A" }}
         />
       </div>
       {m.kind === "intercept" && hud.crossLive > 0 && (
-        <div className="mt-0.5 text-[13px] text-[#A6A6AF]">
+        <div className="mt-1.5 font-display text-[15px] uppercase tracking-widest text-[#A6A6AF]">
           {hud.crossLive === 1 ? "One is crossing now" : `${hud.crossLive} are crossing now`}
         </div>
+      )}
+      {/* THE CART'S OWN POOL, under the journey and in the player's amber.
+          TWO BARS, because an escort is two facts and they move
+          independently: how far it has got, and whether it is going to
+          get any further. One bar carrying both would be a bar that falls
+          when the thing it measures has not gone backwards. */}
+      {m.kind === "escort" && hud.convoyHpMax > 0 && (
+        <>
+          <div className="ms-bar mt-1.5 h-[18px] w-full">
+            <div
+              className="transition-[width] duration-150 ease-linear"
+              style={{
+                width: `${Math.max(0, Math.min(100, (100 * hud.convoyHp) / hud.convoyHpMax))}%`,
+                background: "#FFD37F",
+              }}
+            />
+          </div>
+          <div className="mt-1.5 font-display text-[15px] uppercase tracking-widest text-[#A6A6AF]">
+            {hud.convoyHalted ? "Holding — mending" : "On the road"}
+          </div>
+        </>
       )}
     </div>
   );
@@ -3756,9 +3812,16 @@ export default function Animechs() {
               <div className="font-display text-xl font-bold uppercase tracking-widest text-[#e55454]">
                 {hud.coreHp <= 0
                   ? "Core destroyed"
-                  : hud.mission.kind === "intercept" && hud.crossLeaked <= hud.mission.leaks
-                    ? "Nothing left to stop"
-                    : "They got through"}
+                  : hud.mission.kind === "escort"
+                    ? // AN ESCORT FAILS IN ONE WAY and it wants saying in
+                      // the cart's own words: the thing you were keeping
+                      // alive is not alive. "They got through" would be
+                      // describing the swarm's success at a mission that
+                      // was never about stopping them.
+                      "The hauler is gone"
+                    : hud.mission.kind === "intercept" && hud.crossLeaked <= hud.mission.leaks
+                      ? "Nothing left to stop"
+                      : "They got through"}
               </div>
               <div className="mt-4 space-y-1 text-base text-[#EDEDEF]">
                 {/* HOW CLOSE IT CAME, and close to WHAT — the mission's own
@@ -3773,6 +3836,13 @@ export default function Animechs() {
                   <div className="mb-1 text-[14px] uppercase tracking-widest text-[#71717C]">
                     {hud.mission.kind === "intercept"
                       ? `${hud.crossKilled} of ${hud.mission.kills} destroyed, ${hud.crossLeaked} past you`
+                      : hud.mission.kind === "escort"
+                        ? // HOW FAR IT GOT, which for an escort is the
+                          // whole story of the run: the delivery count is
+                          // a zero on this screen by definition, and the
+                          // distance is the thing the player will want to
+                          // beat next time
+                          `${Math.round(100 * hud.convoyAt)}% of the way there`
                       : hud.mission.kind === "survive"
                         ? `${clock(hud.timeLeft)} still on the clock`
                         : `${
@@ -3861,7 +3931,9 @@ export default function Animechs() {
                   ? "Survived"
                   : hud.mission.kind === "intercept"
                     ? "Line cut"
-                    : "Line held"}
+                    : hud.mission.kind === "escort"
+                      ? "Delivered"
+                      : "Line held"}
               </div>
               <div className="mt-1 text-[14px] uppercase tracking-widest text-[#71717C]">
                 <span style={{ color: rungColor(hud.tier) }}>{rungLabel(hud.tier)}</span> ·{" "}
@@ -3872,6 +3944,12 @@ export default function Animechs() {
                   <div>
                     <span className="font-bold text-[#EDEDEF]">{hud.crossKilled}</span> destroyed,{" "}
                     <span className="font-bold text-[#EDEDEF]">{hud.crossLeaked}</span> past you
+                  </div>
+                )}
+                {hud.mission.kind === "escort" && (
+                  <div>
+                    <span className="font-bold text-[#EDEDEF]">{hud.convoyDone}</span> delivered,{" "}
+                    <span className="font-bold text-[#EDEDEF]">{hud.convoyLost}</span> lost
                   </div>
                 )}
                 <div>
