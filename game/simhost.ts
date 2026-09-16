@@ -79,8 +79,9 @@ export interface SimHost {
   /** bring `world` up to date with the sim: the header, the snapshot, the report */
   sync(): void;
   reset(): void;
-  /** the sandbox's jump: wave `n` on the field this instant (Sim.skipToWave) */
-  skipToWave(n: number): void;
+  /** the sandbox's jump: the run forward to `seconds` of run time, waves,
+   *  mission schedule and all (Sim.skipToTime) */
+  skipToTime(seconds: number): void;
 
   // ---- building ----
   /** one held card, laid down whole (Sim.placeFormation) */
@@ -177,8 +178,8 @@ export class LocalHost implements SimHost {
     this.sim.reset();
     this.sync();
   }
-  skipToWave(n: number): void {
-    this.sim.skipToWave(n);
+  skipToTime(seconds: number): void {
+    this.sim.skipToTime(seconds);
   }
   placeFormation(cells: readonly Cell[], kind: TowerKind): void {
     this.sim.placeFormation(cells, kind);

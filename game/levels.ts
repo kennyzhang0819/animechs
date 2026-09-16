@@ -2399,19 +2399,64 @@ export const UNIT_TREES = [
   { key: "grapnel", name: FAMILY_NAMES.grapnel.name, kinds: ["grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5"] },
   // the ninth row: the second air line, on the flyers' layer
   { key: "kettle", name: FAMILY_NAMES.kettle.name, kinds: ["kettle1", "kettle2", "kettle3", "kettle4", "kettle5"] },
-  // not an upgrade path: the boss row holds the kinds that arrive as an
-  // event rather than a stream, so its slots do not read as tiers
-  { key: "boss", name: BOSS_NAME, kinds: ["boss"] },
-  // ...and the tenth: the mission's crosser, whose three pieces are not
-  // tiers either. It is in the editor's rows because every kind must be
-  // (see the check under this table) and NOT in FAMILIES, which is what
-  // keeps it out of every ROLL — no deploy can deal it and no wave can be
-  // re-cast into it, and the only thing that puts a Borer on a road is
-  // the mission it belongs to (Sim.launchCrosser). An author who types a
-  // count into this row anyway gets what they asked for: an unarmed body
-  // walking at the core off a drop zone, on no road and in nobody's train
-  { key: "worm", name: WORM_NAME, kinds: ["wormhead", "wormcar", "wormtail"] },
-] as const satisfies readonly { key: string; name: string; kinds: readonly UnitKind[] }[];
+  // THE LAST TWO ROWS ARE OBJECTIVES AND NOT WAVE UNITS (OBJECTIVE_KINDS
+  // below). They are in this table because every kind must be in exactly
+  // one tree (see the check under it) and because the codex, the hitbox
+  // viewer and the balance page all read the table to know a body exists
+  // — but a WAVE cannot send them and the editor does not offer them
+  // (WAVE_TREES). Neither is an upgrade path either, so their slots do
+  // not read as tiers.
+  { key: "boss", name: BOSS_NAME, kinds: ["boss"], objective: true },
+  { key: "worm", name: WORM_NAME, kinds: ["wormhead", "wormcar", "wormtail"], objective: true },
+] as const satisfies readonly {
+  key: string;
+  name: string;
+  kinds: readonly UnitKind[];
+  objective?: boolean;
+}[];
+
+/**
+ * THE BODIES A MISSION PUTS ON THE BOARD, AND NOTHING ELSE CAN.
+ *
+ * The Sovereign and the Borer are both EVENTS rather than volume — one
+ * body that the run has to go and deal with — and that is the shape an
+ * objective has (docs/mission-design.md). They used to be two different
+ * cases: a Borer was already unrollable and unsendable-by-design, and the
+ * boss was simply typed into wave 50 of the campaign document. The boss
+ * being the last wave's finale was the old game, where clearing fifty
+ * waves WAS the assignment and the script needed a curtain. The script
+ * does not end any more (Sim.loadStep, the tide), so a boss on wave 50 is
+ * a boss on a lap counter — it would come round again every cycle, at
+ * double health, as ordinary traffic. That is the opposite of an event.
+ *
+ * SO THE GATE IS HERE AND THE STRIPPING IS IN `waveGroups`, which every
+ * reader of a wave goes through — the sim, the editor, the audit, the
+ * playtest. A document that still names one (an old save, a hand-edited
+ * file, a paste) simply stops sending it, with nothing to migrate and no
+ * second list to keep in step.
+ *
+ * THE BODIES ARE NOT RETIRED. Every line of them is live: stats, art,
+ * atlas cells, weapons, the health bar. What is gone is the one place
+ * that spawned them for no reason. A mission puts them down — the
+ * intercept already does (Sim.launchCrosser) and the archetypes that want
+ * a Sovereign are drawn and waiting (docs/mission-design.md, "venture and
+ * destroy").
+ */
+export const OBJECTIVE_KINDS: readonly UnitKind[] = UNIT_TREES.filter(
+  (t) => "objective" in t && t.objective,
+).flatMap((t) => t.kinds as readonly UnitKind[]);
+
+const OBJECTIVE = new Set<UnitKind>(OBJECTIVE_KINDS);
+
+/** is this a body only a mission may field? — see OBJECTIVE_KINDS */
+export const isObjectiveKind = (kind: UnitKind): boolean => OBJECTIVE.has(kind);
+
+/** the same as a mask over UNIT_KINDS, for waveGroups' inner loop */
+const OBJECTIVE_AT: readonly boolean[] = UNIT_KINDS.map((k) => OBJECTIVE.has(k));
+
+/** the trees a WAVE is authored out of — the table, less the objectives.
+ *  This is what the level editor lays out as rows */
+export const WAVE_TREES = UNIT_TREES.filter((t) => !("objective" in t && t.objective));
 
 /**
  * Every unit kind sits in exactly one tree. Adding a kind to UNIT_KINDS
@@ -3198,6 +3243,14 @@ export function transformScript(
  * Normalize a wave into groups of counts indexed like UNIT_KINDS. Groups
  * with nothing in them are dropped.
  *
+ * AN OBJECTIVE BODY IS STRIPPED HERE (OBJECTIVE_KINDS) — the Sovereign and
+ * the Borer's three pieces come off a wave on the way out of this
+ * function, whatever the document says. This is the ONE gate, and it is
+ * here because every reader of a wave comes through it: the sim's staging,
+ * the editor, the ladder audit, the playtest, the family deal. A document
+ * that still names one just stops sending it, so there is nothing to
+ * migrate and no second list to keep in step with this one.
+ *
  * THE REGION IS PARSED AND DISCARDED. Documents written before movement
  * layers carry the group form — `[{ region: 1, stoop1: 50 }, ...]` — and
  * still have to load, so the shape is still read; but nothing routes by the
@@ -3212,30 +3265,92 @@ export function waveGroups(
   const specs: readonly (WaveUnits | RegionWave)[] = Array.isArray(wave) ? wave : [wave];
   const groups: { counts: number[] }[] = [];
   for (const spec of specs) {
-    const counts = UNIT_KINDS.map((k) => Math.max(0, spec[k] ?? 0));
+    const counts = UNIT_KINDS.map((k, i) =>
+      OBJECTIVE_AT[i] ? 0 : Math.max(0, spec[k] ?? 0),
+    );
     if (counts.some((c) => c > 0)) groups.push({ counts });
   }
   return groups;
 }
 
 /**
- * A MAP'S MISSION. Two shapes so far:
+ * A MAP'S MISSION — WHAT THE RUN IS FOR (docs/mission-design.md).
  *
- *   hold     — clear every wave the script sends. The classic assignment.
- *   survive  — last `minutes` on the clock. The script plays through and,
- *              if the clock is still running when it ends, its LAST wave
- *              is sent again and again, each repeat a level tougher
- *              (Sim.loadStep) — a tide that does not stop until time does.
+ * THE WAVES ARE NOT THE OBJECTIVE ANY MORE. The script is an ENGINE: a
+ * composition of bodies that arrives on a clock, and when it has nothing
+ * left to send it goes round again, heavier, forever (Sim.loadStep — the
+ * tide, LEVELS_PER_DOUBLING in ladder.ts). So a map cannot be finished by
+ * outlasting its script, and every map has to say what finishing it means.
+ * Three shapes so far:
  *
- * Either way THE CORE IS THE STAKE: the swarm walks at it and shoots it
- * (CORE_HP in constants.ts), and the run is lost the moment it falls.
+ *   hold      — keep the line for `waves` waves, every body they sent down.
+ *               The classic assignment, and now a NUMBER rather than "until
+ *               the document runs out": a hold that asks for more waves
+ *               than the script holds gets them off the tide.
+ *   survive   — last `minutes` on the clock.
+ *   intercept — destroy `kills` crossers before they leave (below).
+ *
+ * Whichever it is THE CORE IS THE STAKE: the swarm walks at it and shoots
+ * it (CORE_HP in constants.ts), and the run is lost the moment it falls.
  * Nothing leaks and nothing is counted in lives — a body that reaches the
  * core is a body at the core, chewing on it.
  */
 export type Mission =
-  | { kind: "hold" }
+  | HoldMission
   | { kind: "survive"; minutes: number }
   | InterceptMission;
+
+/**
+ * HOLD THE LINE for a stated number of waves.
+ *
+ * A wave counts the moment every body it sent is DOWN (Sim.wavesCleared),
+ * so the last wave's walk-and-die is part of the assignment and a run is
+ * not over while something it let through is still chewing.
+ *
+ * `waves` UNSET MEANS THE SCRIPT'S OWN LENGTH, which is what every hold in
+ * WORLDS plays: the campaign document is authored as a full assignment and
+ * a second number beside it in this file would be a number to keep in step
+ * with a document somebody else edits (applyLevelDoc). Authoring one is
+ * how a map asks for a SHORTER hold — or for a longer one than the script
+ * can supply, which is the case that turns the tide.
+ */
+export interface HoldMission {
+  kind: "hold";
+  /** how many waves must be cleared; unset is the script's own count */
+  waves?: number;
+}
+
+/** how many NON-EMPTY waves a script holds — the number a hold defaults to,
+ *  and the one the tide is measured against (Sim.scriptWaves) */
+export function scriptWaveCount(script: readonly LevelStep[]): number {
+  let n = 0;
+  for (const step of script) {
+    let bodies = 0;
+    for (const g of waveGroups(step.wave)) for (const c of g.counts) bodies += c;
+    if (bodies > 0) n++;
+  }
+  return n;
+}
+
+/**
+ * HOW MANY WAVES THIS MISSION ASKS FOR, 0 on every mission that is not
+ * counted in waves — the hold's target, resolved against the script's own
+ * length where the mission names no number of its own.
+ *
+ * `scriptWaves` is passed in rather than read off a spec because the two
+ * callers have it in different hands: the sim froze it at stage time
+ * (Sim.scriptWaves, which the tide must never move) and the HUD has it off
+ * the header. One function, so a hold cannot be measured against one
+ * number on the board and another in the panel.
+ */
+export const missionTarget = (mission: Mission, scriptWaves: number): number =>
+  mission.kind === "hold"
+    ? Math.max(0, Math.floor(mission.waves ?? scriptWaves))
+    : 0;
+
+/** the same, for a spec in hand — what the deploy panel prints */
+export const holdWaves = (spec: LevelSpec): number =>
+  missionTarget(spec.mission, scriptWaveCount(spec.script));
 
 /**
  * INTERCEPT THE CROSSER (docs/mission-design.md, archetype 2): a fixed
@@ -3290,11 +3405,10 @@ export interface InterceptMission {
 /** the mission as the deploy panel and the HUD say it: a headline and a clause */
 export function missionText(spec: LevelSpec): { title: string; detail: string } {
   const m = spec.mission;
-  const waves = spec.script.length;
   if (m.kind === "survive")
     return {
       title: `Survive ${m.minutes} minutes`,
-      detail: "The waves do not stop until the clock does. The core must stand.",
+      detail: "The waves never stop coming. Outlast them, with the core standing.",
     };
   if (m.kind === "intercept")
     return {
@@ -3304,7 +3418,51 @@ export function missionText(spec: LevelSpec): { title: string; detail: string } 
         `${m.leaks === 1 ? "One may reach the far side" : `${m.leaks} may reach the far side`}; ` +
         `the next one that does ends the run. The core must stand.`,
     };
-  return { title: `Hold the line — ${waves} waves`, detail: "Clear every wave. The core must stand." };
+  return {
+    title: `Hold the line — ${holdWaves(spec)} waves`,
+    detail: "Break that many waves, with the core standing. What comes after them does not stop.",
+  };
+}
+
+/**
+ * THE MISSION'S PROGRESS, 0 to 1 — the one number every bar on the screen
+ * is drawn from (Sim.missionProgress, UiState.missionProgress).
+ *
+ * IT IS THE OBJECTIVE'S OWN FRACTION AND NEVER THE SCRIPT'S. The wave
+ * count used to stand in for this everywhere, which was honest only while
+ * clearing the script WAS the assignment; under a tide that never runs out
+ * a bar drawn off waves would fill to the brim and then quietly reset. So
+ * each mission answers for itself: waves cleared of the hold's target,
+ * seconds of the survive's clock, crossers down of the intercept's count.
+ *
+ * `state` is deliberately the smallest thing that can answer — the HUD has
+ * these four numbers and so does the sim, so the definition lives here
+ * once instead of on both sides of the worker seam.
+ */
+export function missionProgress(
+  mission: Mission,
+  target: number,
+  state: { wavesCleared: number; time: number; crossKilled: number },
+): number {
+  const frac =
+    mission.kind === "survive"
+      ? state.time / Math.max(1, mission.minutes * 60)
+      : mission.kind === "intercept"
+        ? state.crossKilled / Math.max(1, mission.kills)
+        : state.wavesCleared / Math.max(1, target);
+  return Math.max(0, Math.min(1, frac));
+}
+
+/** what the bar's caption says: the objective counted in its own units */
+export function missionCount(
+  mission: Mission,
+  target: number,
+  state: { wavesCleared: number; crossKilled: number },
+): { done: number; of: number; noun: string } {
+  if (mission.kind === "survive") return { done: 0, of: 0, noun: "" };
+  if (mission.kind === "intercept")
+    return { done: Math.min(mission.kills, state.crossKilled), of: mission.kills, noun: "destroyed" };
+  return { done: Math.min(target, state.wavesCleared), of: target, noun: "waves held" };
 }
 
 export interface LevelSpec {
@@ -3401,9 +3559,17 @@ export interface LevelSpec {
  *
  * FOR A BIG WAVE THIS NUMBER IS AN ASPIRATION, and that is by design. A
  * failed spawn keeps its credit and goes as soon as a footprint frees up
- * (see Sim.runScript), so congestion DELAYS a wave and never swallows one.
- * The constant sets the pace where the map can keep up and gets out of the
- * way where it cannot.
+ * (see Sim.runScript), so congestion STRETCHES a wave and never swallows
+ * one. The constant sets the pace where the map can keep up and gets out
+ * of the way where it cannot.
+ *
+ * WHAT A STRETCHED WAVE NO LONGER DOES IS DELAY THE NEXT ONE. The waves
+ * are on a clock (Sim.waveStartTime): wave n lands at its moment whatever
+ * the doors are doing, and a wave that has outrun its drop zones simply
+ * keeps releasing while the one behind it starts. So this number decides
+ * how HARD a wave arrives, the level's gap decides how OFTEN, and neither
+ * of them is a function of the board any more — which is what makes the
+ * run the same length on a five-door map and a two-door one.
  *
  * Measured on Confluence, which has five drop zones: every wave up to
  * about 230/s comes out in the full 3.5s, and wave 20 asks 716/s, gets 253/s
@@ -3437,13 +3603,21 @@ export interface LevelDoc {
  * (public/levels/campaign.json) sets the gap; this is what a missing
  * document or a missing field plays.
  *
- * NINETEEN IS A RUN LENGTH, not a feel. The cadence a run actually keeps
- * is this gap plus WAVE_RELEASE_SECONDS, so the script's own clock is
- * WAVE_GAP_OPENING + 49 x (gap + release) + release: at fifteen that was
- * 913s, a shade over fifteen minutes, and with the last wave's walk and
- * die on the end a mission came in around sixteen. A mission is meant to
- * be A TWENTY-MINUTE SITTING; nineteen puts the script at 1,109s and the
- * clear on the end of it at about twenty.
+ * NINETEEN IS A RUN LENGTH, not a feel. The cadence a run keeps is this
+ * gap plus WAVE_RELEASE_SECONDS, and it is now the schedule ITSELF rather
+ * than an average — wave n lands at WAVE_GAP_OPENING + (n-1) x cadence and
+ * nothing about the board can move it (Sim.waveStartTime). So the script's
+ * own clock is exactly WAVE_GAP_OPENING + 49 x 22.5 = 1,105s: at fifteen
+ * that was 913s, a shade over fifteen minutes, and with the last wave's
+ * walk and die on the end a mission came in around sixteen. A mission is
+ * meant to be A TWENTY-MINUTE SITTING; nineteen puts the script at about
+ * eighteen and a half minutes and the clear on the end of it at twenty.
+ *
+ * THAT ARITHMETIC USED TO BE A LOWER BOUND. Waves were loaded one at a
+ * time and the next one waited for the last to finish spawning, so a map
+ * whose drop zones could not pass wave forty in 3.5 seconds ran LONGER
+ * than the number above — by minutes, on a tight board at a high rung, and
+ * with nothing on screen saying so.
  *
  * IT IS ALSO THE DIFFICULTY DIAL NOBODY CALLS ONE. The gap is what decides
  * how much of a wave the board gets to itself before the next one lands,
@@ -3471,10 +3645,13 @@ const docs = new Map<string, LevelDoc>();
 
 /**
  * THE ONE SCRIPT. Every map plays the same fifty waves — the document
- * under this id in public/levels — and what makes one map different
- * from the next is its ground, its doors and the family roll the deploy
- * makes (rollFamilies). A world id passed to levelDocOf is accepted and
- * ignored, so an editor opened on any world edits the campaign.
+ * under this id in public/levels — and then plays the last eleven of them
+ * again, and again, heavier each time (Sim.loadStep). What makes one map
+ * different from the next is its ground, its doors, the family roll the
+ * deploy makes (rollFamilies) and, above all, its MISSION: the script is
+ * pressure, and the mission is what the run is for. A world id passed to
+ * levelDocOf is accepted and ignored, so an editor opened on any world
+ * edits the campaign.
  */
 export const CAMPAIGN_DOC_ID = "campaign";
 
@@ -3505,9 +3682,10 @@ export function levelDocOf(_worldId?: string): LevelDoc {
  * every number the audit prints about a map is true at every rung.
  *
  * Kills are the run's income: every dead body pays scrap off its own
- * health pool into the run (economy.ts). The save is paid by the WAVE: every wave cleared
- * banks its share of MISSION_XP, win or lose, and the rung multiplies it
- * (tierXpBonus in ladder.ts).
+ * health pool into the run (economy.ts). The save is paid for the MISSION:
+ * meeting it banks the whole of MISSION_XP and a defeat banks a share for
+ * the waves the board broke on the way down, with the rung multiplying
+ * either (tierXpBonus in ladder.ts).
  *
  * Armour is flat, max(dmg - armor, 0.1 * dmg), so an ironhide3 (armour 9)
  * against a tacker (damage 9) hits the 10% floor and costs a tacker line ten
@@ -3554,11 +3732,25 @@ export const WORLDS: LevelSpec[] = [
     // EVERY RUNG PLAYS THIS WHOLE LIST. There is one run per map and ten
     // difficulties to play it at, and a rung only scales the counts
     // (COUNT_SCALE in ladder.ts) — no wave is ever cut. THE SCRIPT IS
-    // FIFTY WAVES, nineteen seconds apart, each stronger than the last: a
-    // few dozen runts on wave 1, the first heavies by wave 10, waves in
-    // the thousands by the end, and the boss as the boss that closes
-    // it. The waves overlap — the gap is shorter than a wave takes to
-    // walk the lane — so the field is a tide, not a series of fights.
+    // FIFTY WAVES, 22.5 seconds apart on a clock nothing about the board
+    // can move (Sim.waveStartTime), each stronger than the last: a few
+    // dozen runts on wave 1, the first heavies by wave 10, waves in the
+    // thousands by the end. The waves overlap — the gap is shorter than a
+    // wave takes to walk the lane — so the field is a tide, not a series
+    // of fights, and a wave the doors cannot pass in one go simply keeps
+    // releasing while the next one lands.
+    //
+    // AND NO WAVE CLOSES IT. The boss used to: one Sovereign typed into
+    // wave 50, the curtain on a run that was finished by clearing fifty
+    // waves. Nothing is finished that way now, so it is an OBJECTIVE
+    // instead (OBJECTIVE_KINDS) and a wave cannot send one at all.
+    //
+    // FIFTY IS THE DOCUMENT'S LENGTH AND NOT THE RUN'S. The script does
+    // not end: past the fiftieth wave the last eleven go again, one
+    // doubling of enemy health a cycle, forever (Sim.loadStep — the tide,
+    // LEVELS_PER_DOUBLING in ladder.ts). So THE LAST ELEVEN WAVES ARE THE
+    // ONES THAT GET PLAYED FOREVER — author that stretch as something that
+    // stands repeating, because the endgame of every long run is it.
     //
     //   line       T1        T2       T3         T4         T5
     //   ironhide1     ironhide1    ironhide2     ironhide3   ironhide4    ironhide5

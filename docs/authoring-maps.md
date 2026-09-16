@@ -362,7 +362,7 @@ beacon, which is the truth about a compact map.
 
 **Every map carries the same ladder: 4 band-1, 5 band-2, 4 band-3.** Opening
 a whole board costs **232,000 scrap on every map** — 4x3,000 + 5x12,000 +
-4x40,000 — against the ~1.32M a full fifty-wave clear earns, so about 18%.
+4x40,000 — against the ~1.32M a full fifty-wave hold earns, so about 18%.
 That is the point of fixing it: the band prices are used across the campaign's
 whole progression, so the cost of opening a board has to be one number the
 campaign can be designed against, not nine numbers that depend on which board

@@ -47,7 +47,7 @@ const HELP: readonly string[] = [
   "                     candidates it walked and what one of them cost. Paste it whole —",
   "                     the times alone cannot say WHY a pass is dear, and the rest can",
   "fps [on|off]         the frame counter (sim · draw · bodies · thread in dev builds)",
-  "wave N               skip to wave N on the field this instant",
+  "time M[:SS]          jump the run to that time — waves, mission and tide",
   "effects [on|off]     ambient effects (dressing; weapons always show)",
   "routes               toggle the flow-field overlay",
   "local [on|off]       step the sim on the page thread instead of its worker — NEXT level",
@@ -57,6 +57,28 @@ const HELP: readonly string[] = [
 
 const onOff = (arg: string | undefined, cur: boolean): boolean =>
   arg === undefined ? !cur : arg === "on" || arg === "1" || arg === "true";
+
+/**
+ * A RUN TIME AS TYPED: "12" is twelve minutes, "12:30" is twelve and a
+ * half, "0:45" is forty-five seconds. Null when it is not a time at all.
+ *
+ * MINUTES LEAD because a run is a twenty-minute sitting and a wave lands
+ * every twenty-odd seconds — "jump to 14" is the question somebody
+ * actually has, and "jump to 840" is that question done as arithmetic.
+ */
+export function parseClock(text: string): number | null {
+  const t = text.trim();
+  if (t === "") return null;
+  const m = /^(\d+)(?::([0-5]?\d))?$/.exec(t);
+  if (!m) return null;
+  return Number(m[1]) * 60 + (m[2] ? Number(m[2]) : 0);
+}
+
+/** ...and back, as m:ss — what a parsed jump is echoed as */
+export function clockText(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
 
 export default function GameConsole({ host }: { host: ConsoleHost }) {
   const [open, setOpen] = useState(false);
@@ -164,14 +186,17 @@ export default function GameConsole({ host }: { host: ConsoleHost }) {
         say(`fps counter ${on ? "on" : "off"}`);
         break;
       }
-      case "wave": {
+      // THE JUMP IS A TIME, not a wave number (Sim.skipToTime): the run
+      // syncs everything to one clock, so `time 12:30` moves the waves, the
+      // mission's own schedule and the tide together. Minutes, or m:ss.
+      case "time": {
         const gm = need();
         if (!gm) break;
-        const n = Number(arg);
-        if (!Number.isFinite(n) || n < 1) say("wave N — a wave number", "err");
+        const secs = parseClock(arg);
+        if (secs === null) say("time M or M:SS — where to jump the run to", "err");
         else {
-          gm.skipToWave(n);
-          say(`wave ${n}`);
+          gm.skipToTime(secs);
+          say(`time ${clockText(secs)}`);
         }
         break;
       }

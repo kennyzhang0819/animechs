@@ -44,7 +44,7 @@ import type { FromWorker, ToWorker } from "./workerhost";
 /** the commands the host may send, by name — SimHost's, and nothing else */
 const COMMANDS = new Set<string>([
   "reset",
-  "skipToWave",
+  "skipToTime",
   "placeFormation",
   "placeTower",
   "setBeaconOn",

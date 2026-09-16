@@ -565,8 +565,9 @@ export const isWorldUnlocked = (p: Progress, worldId: string): boolean =>
 // ---------- settling a run ----------
 
 export interface RunReward {
-  /** XP the run banked: the waves it cleared, times every bonus below.
-   *  ALWAYS ZERO on a custom run — see `custom` */
+  /** XP the run banked: the whole pot on a win, and otherwise the waves it
+   *  broke, times every bonus below. ALWAYS ZERO on a custom run — see
+   *  `custom` */
   xp: number;
   /**
    * Was this a CUSTOM run? Then it paid nothing and recorded nothing, and
@@ -575,9 +576,11 @@ export interface RunReward {
    * because a custom run is still a run worth reading the end of.
    */
   custom: boolean;
-  /** how many of the mission's waves the run cleared — every one on a win */
+  /** how many waves the run broke — counted to `totalWaves` on a win, which
+   *  is what makes the pot whole there whatever the mission actually was */
   wavesCleared: number;
-  /** how many waves the mission held */
+  /** how many waves the run SENT, the tide's repeats included (Sim.totalWaves)
+   *  — not the document's fifty */
   totalWaves: number;
   /** the multiplier the run carried, which is the difficulty's and
    *  nothing else's — kept beside tierBonus, equal to it, because every
@@ -600,13 +603,17 @@ export interface RunReward {
 /**
  * Settle a FINISHED run into the save.
  *
- * Waves are the objectives, so a defeat still banks the share of the
- * mission's pot for every wave the board cleared on the way down
- * (missionXp), times the rung's XP bonus and — on a map the game picked —
- * the random-map bonus. A win is every objective met: it pays the whole
- * pot whatever the last wave's bodies were doing when the mission ended,
- * and records the level as beaten on that world (clearedByMap). Kills
- * pay nothing here; they paid scrap into the run as it went.
+ * A WIN IS THE MISSION MET (levels.ts Mission, Sim.won) — the waves held,
+ * the clock outlasted, the crossers cut down — and it pays the WHOLE pot
+ * whatever the board was doing at the time, times the rung's XP bonus, and
+ * records the level as beaten on that world (clearedByMap).
+ *
+ * A DEFEAT IS PAID FOR THE WAVES IT BROKE on the way down (missionXp),
+ * whichever mission it was and however far off the objective it ended.
+ * That is the one thing every mission has in common — a script that never
+ * runs out is always sending something to break — and it is what makes a
+ * failed push progress rather than a wasted hour. Kills pay nothing here;
+ * they paid scrap into the run as it went.
  *
  * NOTHING ACCRUES WHILE THE APP IS SHUT. There is no offline income and
  * no idle tick: every point of XP was paid for by a run somebody watched.

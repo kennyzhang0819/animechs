@@ -342,9 +342,16 @@ export const pricePerTile = (kind: TowerKind): number =>
   scrapPriceOf(kind) / TOWERS[kind].size ** 2;
 
 /**
- * THE MISSION POT: what a full clear at Nemesis is worth, dealt out one
- * wave at a time as the waves are cleared (waveXpShare). The rungs below
- * pay a share of it and the rungs above a bonus (ladder.ts tierXpBonus).
+ * THE MISSION POT: what a CLEAR at Nemesis is worth — the mission met,
+ * whichever mission the map carries (levels.ts Mission, Sim.won). The
+ * rungs below pay a share of it and the rungs above a bonus (ladder.ts
+ * tierXpBonus).
+ *
+ * A DEFEAT IS PAID OUT OF THE SAME POT, one wave at a time as the waves
+ * are broken (waveXpShare, missionXp). That is the consolation ledger and
+ * not the objective: the waves stopped being what a map is finished by
+ * (docs/mission-design.md), and a run that met its mission at wave twelve
+ * banks the whole pot with thirty-eight waves still on the board.
  */
 export const MISSION_XP = 100_000;
 
@@ -364,7 +371,9 @@ export function waveXpShare(wave: number, waves: number): number {
 export const waveXp = (wave: number, waves: number): number =>
   Math.round(MISSION_XP * waveXpShare(wave, waves));
 
-/** the XP `cleared` waves of `waves` bank — the whole pot for a full clear */
+/** the XP `cleared` waves of `waves` bank — the whole pot once every wave
+ *  the run SENT has been broken (a tide run's `waves` is bigger than the
+ *  document's, see Sim.totalWaves) */
 export function missionXp(cleared: number, waves: number): number {
   const n = Math.max(0, Math.floor(waves));
   const c = Math.min(n, Math.max(0, Math.floor(cleared)));

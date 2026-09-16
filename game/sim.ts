@@ -131,6 +131,9 @@ import {
 } from "./hitbox";
 import {
   WORLDS,
+  missionProgress,
+  missionTarget,
+  unitName,
   UNIT_ID,
   UNIT_KINDS as UNIT_KINDS_IMPORT,
   UNIT_STATS,
@@ -140,6 +143,7 @@ import {
   WAVE_RELEASE_SECONDS,
   wormRamp,
   WORM_CHAIN,
+  WORM_NAME,
   WORM_LENGTH,
   WORM_SPACING,
   type LegSpec,
@@ -151,20 +155,41 @@ import {
 
 /** module-local for the same getter reason as the constants block above */
 const UNIT_KINDS = UNIT_KINDS_IMPORT;
-import { unitHpOnRung } from "./ladder";
+import { LEVELS_PER_DOUBLING, unitHpOnRung } from "./ladder";
 
 /**
- * THE TIDE: what a survive mission sends once its script is spent. The
- * last SURVIVE_CYCLE_WAVES waves go again as a cycle, and every cycle
- * adds SURVIVE_LOOP_LEVELS to the enemy level every body spawns at —
- * three levels is HP_PER_LEVEL^3, about +19% health a cycle, so a clock
- * that outlives its script by a few minutes climbs a handful of steps
- * rather than a cliff. Four waves rather than one so the tide keeps the
- * script's rhythm (a lull, a spike) instead of sending its finale on a
- * loop.
+ * THE TIDE — WHAT MAKES THE SCRIPT INFINITE, and the reason no map is
+ * finished by outlasting its waves any more (levels.ts Mission).
+ *
+ * A script is a finite document: fifty waves, and then nothing. That was
+ * the whole game while clearing it WAS the assignment. It is not any more
+ * — a mission is an objective beside the waves (docs/mission-design.md) —
+ * so the script had to stop being able to run out underneath one. When the
+ * cursor reaches the end and the mission is still open, THE LAST
+ * TIDE_CYCLE_WAVES GO AGAIN, at TIDE_LEVELS more enemy level than the
+ * cycle before: waves 40 to 50 of a fifty-wave script, then 40 to 50 at
+ * double health, then at quadruple, then at eight times, with no ceiling.
+ *
+ * ELEVEN WAVES, NOT ONE. The tail of a script is its shape — a lull, a
+ * spike, a boss — and a finale sent on a loop is a metronome. Replaying
+ * the last stretch keeps the rhythm the author wrote, so the climb reads
+ * as the same fight getting heavier rather than as a different game.
+ *
+ * ONE DOUBLING A CYCLE (LEVELS_PER_DOUBLING) because the step has to be
+ * felt. Three levels — about +19% — was the old survive-only ramp, and a
+ * board that had beaten a wave outright beat it nineteen percent heavier
+ * too; the climb only became a climb after half a dozen cycles nobody sat
+ * through. Doubling means the SECOND cycle is already a different question
+ * and the fourth is a wall, which is what an endless mode owes a player
+ * who is there to find their ceiling.
+ *
+ * A LEVEL IS HEALTH AND NOTHING ELSE (ladder.ts unitHpAtLevel) — same
+ * speed, same armour, same drop, same silhouette. The swarm that comes
+ * back is the swarm that was just beaten, and the only thing that has
+ * changed is how long it takes to kill.
  */
-const SURVIVE_LOOP_LEVELS = 3;
-const SURVIVE_CYCLE_WAVES = 4;
+const TIDE_LEVELS = LEVELS_PER_DOUBLING;
+const TIDE_CYCLE_WAVES = 11;
 import {
   ARMORED_ARMOR,
   ARMORED_MAX_TIER,
@@ -752,6 +777,15 @@ UNIT_KINDS.forEach((k, i) => {
 });
 const KIND_BOSS: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].boss);
 const BOSS_KINDS = KIND_BOSS.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
+/**
+ * WHERE A CROSSER'S HEALTH-BAR KEY STARTS (Sim.objectiveBars). The stack is
+ * keyed by one id space shared between bosses (their spawn id) and trains
+ * (their launch index), and React needs those to never collide — a boss and
+ * a Borer sharing a key would have the two bars swap places the frame one of
+ * them died. A spawn id is a counter off the same run, so the trains are
+ * lifted clear of anything it can reach.
+ */
+const BAR_CROSSER_ID = 1e9;
 /** which FLD_SLICE a world x falls in, clamped onto the board */
 const sliceOf = (x: number): number => {
   const b = (x / FLD_SLICE) | 0;
@@ -1378,15 +1412,27 @@ export class Sim {
   crossLeaked = 0;
   /** launches made, counting into the pattern and then the spare */
   private crossLaunched = 0;
-  /** seconds until the next launch; -1 once there is nothing left to send */
-  private crossT = -1;
+  /**
+   * IS THE MISSION'S SECOND CLOCK DISARMED? — true once there is nothing
+   * left to launch, ever (runCrossers).
+   *
+   * It is a flag rather than a countdown because the schedule is absolute
+   * now: when a launch is due is arithmetic on `time` and the pattern, so
+   * the only thing the sim has to REMEMBER is whether the pattern and its
+   * spare are spent. That is also what lets a jump work — there is no timer
+   * left to be out of step with the clock (skipToTime).
+   */
+  private crossDone = false;
+  /** is the field being swept by a jump rather than fought? — removeUnit
+   *  reads it so a skipped train counts as neither killed nor leaked */
+  private crossSweeping = false;
 
   /**
    * THE WAVE EVERY BODY BELONGS TO, 1-based: the number loadStep staged
-   * it under, and a brood member's is its parent's. It is what makes a
-   * wave an OBJECTIVE (MISSION_XP in economy.ts): a wave is cleared when
-   * every body carrying its number is off the field, and that is the
-   * moment its share of the mission's XP is banked — see wavesCleared.
+   * it under, and a brood member's is its parent's. A wave is cleared when
+   * every body carrying its number is off the field — see wavesCleared,
+   * which is what a HOLD is measured in (won) and what a LOSS is paid for
+   * (MISSION_XP in economy.ts).
    */
   private readonly uwave = new Uint16Array(MAX_UNITS);
   /** bodies each wave has put on the field so far, by wave number (index
@@ -1614,18 +1660,23 @@ export class Sim {
   core!: Core;
   /**
    * THE MISSION'S CLOCK, in seconds of run time: a survive mission is won
-   * the moment `time` reaches it. 0 on a hold mission, which has no clock
-   * — it is won when the script is spent (see won).
+   * the moment `time` reaches it. 0 on every mission that is not kept to a
+   * clock, which is what missionProgress branches on.
    */
   deadline = 0;
   /**
-   * HOW MANY LEVELS THE TIDE HAS RISEN. A survive mission whose script
-   * runs out before its clock sends its LAST wave again, and every repeat
-   * adds SURVIVE_LOOP_LEVELS to the enemy level every body spawns at
-   * (loadStep) — so the waves keep coming and keep getting heavier until
-   * the clock, not the script, ends the run.
+   * HOW MANY LEVELS THE TIDE HAS RISEN, and HOW MANY CYCLES DEEP IT IS
+   * (see TIDE_LEVELS at the top of the file). A script that runs out
+   * under an open mission sends its tail again, TIDE_LEVELS heavier every
+   * time round, so `loopLevel` is TIDE_LEVELS x `loopCycle` and the health
+   * multiplier the HUD prints is 2^loopCycle.
+   *
+   * THEY ARE THE WHOLE OF THE INFINITE CLIMB. Nothing else about a cycle
+   * differs from the one before it: same waves, same counts, same families
+   * — a level is health and only health (ladder.ts).
    */
   loopLevel = 0;
+  loopCycle = 0;
   /**
    * THE RUN'S MONEY (economy.ts). Opens at SCRAP_START, every kill drops
    * its tier's scrap, every wave staged pays its bonus, every turret
@@ -1789,13 +1840,28 @@ export class Sim {
   // the level script's cursor, plus the live state of the step it points at:
   // a wave counts down per kind, a wait counts down in seconds
   private stepIdx = 0;
-  // how many waves the script holds, and how many have been STAGED by
-  // loadStep — the HUD's "Wave 2 / 5". Staging runs one waveGap ahead of the
-  // wave entering, so currentWave() backs this off by one while that gap is
-  // still running: a wave stays current through the wait that follows it
+  /**
+   * HOW MANY WAVES THERE ARE TO SEND, and how many have been STAGED by
+   * loadStep. Staging runs one waveGap ahead of the wave entering, so
+   * currentWave() backs this off by one while that gap is still running: a
+   * wave stays current through the wait that follows it.
+   *
+   * `totalWaves` GROWS. Every turn of the tide adds its cycle's waves to it
+   * (loadStep), because it is what the sandbox's jump is bounded by and
+   * what the XP shares are dealt over — both of which are questions about
+   * what this RUN will send, not about what the document holds. The
+   * document's own count is `scriptWaves`, and it never moves.
+   */
   totalWaves = 0;
   private wavesStarted = 0;
-  /** index of the script's last non-empty wave — what a survive mission repeats */
+  /**
+   * HOW MANY NON-EMPTY WAVES THE AUTHORED SCRIPT HOLDS — fifty on the
+   * shipped campaign, fixed for the run however many times the tide turns.
+   * It is what a hold mission with no `waves` of its own is measured
+   * against (levels.ts holdWaves) and what the tide's cycle is cut from.
+   */
+  scriptWaves = 0;
+  /** index of the script's last non-empty wave — the end the tide walks back from */
   private lastWaveIdx = -1;
   /**
    * SUFFIX SUMS OVER THE SCRIPT: `scriptLeft[i]` is how many bodies every
@@ -1815,19 +1881,41 @@ export class Sim {
    * the read past the end needs no branch of its own.
    */
   private scriptLeft: number[] = [0];
-  // the wave being drained, flattened to (region, kind) entries — every
-  // entry runs out at the same moment (see nextWaveEntry), each spawning
-  // only on its own region's pads (region 0 = any pad)
-  private waveEntries: { kind: number; left: number; total: number }[] = [];
   /**
-   * Enemies per second for the wave currently loaded — its OWN size over
-   * WAVE_RELEASE_SECONDS, cached at load. Cached rather than recomputed from
-   * `left` because a rate derived from what REMAINS would decay as the wave
-   * drains, stretching its tail out for as long again.
+   * THE WAVES CURRENTLY WALKING ONTO THE FIELD — more than one at a time,
+   * and that is the whole of what "everything syncs to time" means here.
+   *
+   * THERE USED TO BE EXACTLY ONE. The script held a single loaded wave, a
+   * countdown to it and one drain credit, and the next wave was loaded when
+   * the last had finished spawning. Which made the CLOCK A CONSEQUENCE OF
+   * THE BOARD: a wave whose drop zones were packed released slowly, and
+   * every wave behind it — and with it the tide, the stages, the whole run
+   * — arrived late. Two players on the same script at the same difficulty
+   * could be four minutes apart at wave forty, and nothing on screen said
+   * why.
+   *
+   * NOW THE CLOCK IS THE SCRIPT (waveStartTime). Wave n lands at its
+   * moment whatever the board is doing, so a wave that cannot get through
+   * the doors simply keeps releasing WHILE the next one starts. Nothing is
+   * lost — a failed spawn holds its credit (runScript) — and nothing is
+   * delayed: congestion now costs a thicker field rather than a longer
+   * run.
+   *
+   * OLDEST FIRST when they drain, so a backlogged wave clears the doors
+   * ahead of a fresh one and the field cannot invert the order it was
+   * authored in.
+   *
+   * `rate` is the wave's OWN size over WAVE_RELEASE_SECONDS, fixed when it
+   * is staged rather than recomputed from what remains — a rate derived
+   * from the remainder would decay as the wave drains and stretch its tail
+   * out for as long again. `acc` is its drain credit.
    */
-  private waveRate = 0;
-  private waitLeft = 0;
-  private spawnAcc = 0;
+  private live: {
+    wave: number;
+    entries: { kind: number; left: number; total: number }[];
+    rate: number;
+    acc: number;
+  }[] = [];
 
   /** seconds of simulated time since the level was reset (Time.time) */
   time = 0;
@@ -2277,7 +2365,8 @@ export class Sim {
     this.crossKilled = 0;
     this.crossLeaked = 0;
     this.crossLaunched = 0;
-    this.crossT = mission.kind === "intercept" ? mission.first : -1;
+    this.crossDone = mission.kind !== "intercept";
+    this.crossSweeping = false;
     this.roads = mission.kind === "intercept" ? roadsFor(this.level.map) : [];
     if (mission.kind === "intercept") {
       const named = new Set(mission.pattern.flat().concat(mission.spare));
@@ -2289,6 +2378,7 @@ export class Sim {
         throw new Error(`${this.level.name}: ${bad.join("; ")}`);
     }
     this.loopLevel = 0;
+    this.loopCycle = 0;
     this.projs.length = 0;
     // drop the fx pool: the count is the pool, but the bolt-path refs must
     // actually go or the last run's arrays sit unreachable-but-held
@@ -2898,35 +2988,92 @@ export class Sim {
       // the day a mission is authored with two leaks allowed and one spare
       // this is what stops the run hanging on a count it can no longer
       // reach instead of ending on it
-      return this.crossT < 0 && this.crossersLive() === 0 && this.crossKilled < m.kills;
+      return this.crossDone && this.crossersLive() === 0 && this.crossKilled < m.kills;
     }
     return true;
   }
 
   /**
-   * IS THE MISSION MET? A hold is won when the field is clear and the
-   * script has nothing left to send; a survive when the clock has run out.
-   * Never while the base is dead — a clock that ran out on a lost base is
-   * a loss.
+   * HOW MANY WAVES THIS HOLD ASKS FOR, 0 on every other mission — the
+   * mission's own number where it has one, and otherwise the authored
+   * script's length (levels.ts holdWaves).
    *
-   * `remaining()` is the whole of the hold test and is counted off the
-   * world, so this is true exactly when there is no body on the field, no
-   * corpse waiting to stand up, and no wave the cursor has yet to reach.
-   * `totalWaves > 0` is the one thing it cannot see: a script with no
-   * waves in it is a level with nothing to hold against, and an empty
-   * field on wave zero is not a victory.
+   * It is answered against `scriptWaves` and NOT against `totalWaves`,
+   * which the tide grows: a hold measured against a number that goes up
+   * every time the script loops is a hold that can never be finished.
+   */
+  holdTarget(): number {
+    return missionTarget(this.level.mission, this.scriptWaves);
+  }
+
+  /**
+   * DOES THE SCRIPT GO ROUND AGAIN when the cursor reaches its end? — the
+   * one question loadStep asks before it turns the tide.
+   *
+   * THE RULE IS "CAN MORE WAVES STILL DECIDE THIS MISSION". A survive's
+   * clock is still running, so they can: the tide is the only thing
+   * keeping the board honest until it stops. An intercept is decided by
+   * crossers and the waves are the pressure underneath them, so they must
+   * not run dry while the run is still going. A HOLD IS THE ONE THAT CAN
+   * SAY NO: its objective is counted in waves, and once every wave it
+   * asked for has been staged there is nothing a further one can add — the
+   * run is decided by whether what is already walking gets put down. Ask
+   * a hold for MORE waves than the document holds and it turns the tide
+   * like anything else, which is how a hold map plays the infinite climb.
+   */
+  private tideTurns(): boolean {
+    const m = this.level.mission;
+    if (m.kind === "hold") return this.wavesStarted < this.holdTarget();
+    if (m.kind === "survive") return this.time < this.deadline;
+    return true;
+  }
+
+  /**
+   * HOW FAR THROUGH ITS OBJECTIVE THIS RUN IS, 0 to 1 — what every
+   * progress bar on the screen is drawn from (levels.ts missionProgress,
+   * which is where the per-mission arithmetic lives so the HUD and the sim
+   * cannot disagree about it).
+   */
+  missionProgress(): number {
+    return missionProgress(this.level.mission, this.holdTarget(), {
+      wavesCleared: this.wavesCleared(),
+      time: this.time,
+      crossKilled: this.crossKilled,
+    });
+  }
+
+  /**
+   * IS THE MISSION MET? Each kind answers for itself, and NONE of them
+   * answers "the script ran out" any more — the script does not run out
+   * (see TIDE_LEVELS). A hold is won when it has cleared the waves it was
+   * asked for, a survive when the clock has run out, an intercept when the
+   * count is reached. Never while the base is dead — a clock that ran out
+   * on a lost base is a loss.
+   *
+   * A HOLD'S TEST IS `wavesCleared`, which is counted off the world and
+   * holds a wave open for anything it sent that is still walking OR lying
+   * on the floor waiting to stand up (the corpse un-books itself in
+   * killUnit). So "forty waves held" means forty waves with nothing left
+   * of them, which is the same fact `remaining() <= 0` used to state for
+   * the whole script — said per wave, so a target shorter or longer than
+   * the document can be stated at all.
+   *
+   * The target being above zero is the one thing the count cannot see: a
+   * script with no waves in it is a level with nothing to hold against,
+   * and an empty field on wave zero is not a victory.
    */
   won(): boolean {
     if (this.lost()) return false;
     // AN INTERCEPT IS MET BY ITS COUNT AND BY NOTHING ELSE (levels.ts
-    // InterceptMission): the waves are still coming, the script may have
-    // half of itself left to send, and the mission is over the moment the
+    // InterceptMission): the waves are still coming, the tide may have
+    // turned twice underneath it, and the mission is over the moment the
     // seventh Borer is down. The two clocks are separate on purpose — the
     // swarm is what can lose the run, and the crossers are what wins it
     const m = this.level.mission;
     if (m.kind === "intercept") return this.crossKilled >= m.kills;
-    if (this.deadline > 0) return this.time >= this.deadline;
-    return this.totalWaves > 0 && this.remaining() <= 0;
+    if (m.kind === "survive") return this.time >= this.deadline;
+    const target = this.holdTarget();
+    return target > 0 && this.wavesCleared() >= target;
   }
 
 
@@ -3276,6 +3423,13 @@ export class Sim {
    * what is standing on the field right now, plus what the script has not
    * sent yet. Nothing is subtracted, so nothing can fail to be subtracted.
    *
+   * IT IS A READOUT AND NOT A WIN CONDITION. It used to be the whole of
+   * the hold test — "no body, no corpse, no wave left" was what winning a
+   * map meant — and that reading is gone with the fifty-wave objective:
+   * the script goes round again (see TIDE_LEVELS), so on most missions
+   * this number never reaches zero at all. What a mission is met by is
+   * `won()`, per kind. This is what the HUD prints.
+   *
    * THIS USED TO BE `totalEnemies - kills - devoured - exploded`, and that
    * shape is why a run could not be won after a wave skip: the skip walks
    * the cursor past waves whose bodies were already in `totalEnemies` and
@@ -3293,7 +3447,7 @@ export class Sim {
    *  - every row on the field, weighted by `ustack` — a folded body
    *    (mergeSqueezed) is several bodies riding in one row, and the wave
    *    that sent them is not finished until the row that holds them dies.
-   *  - the loaded wave's unsent remainder, straight off waveEntries.
+   *  - every wave still walking on, its unsent remainder off `live`.
    *  - every wave the cursor has not reached (scriptLeft).
    *  - THE CORPSES, stacks and all. Reconstruction (updateCorpses) stands
    *    them back up, so a field that looks clear with a corpse on it has
@@ -3304,12 +3458,13 @@ export class Sim {
   remaining(): number {
     let left = 0;
     for (let i = 0; i < this.n; i++) left += this.ustack[i];
-    for (const e of this.waveEntries) left += e.left;
+    for (const lw of this.live) for (const e of lw.entries) left += e.left;
     for (const c of this.corpses) left += c.stack;
-    // the cursor sits ON the loaded wave, whose remainder is in waveEntries
-    // above — so the unreached script starts at the step AFTER it. Clamped
-    // because a spent script leaves stepIdx at the script's own length
-    left += this.scriptLeft[Math.min(this.stepIdx + 1, this.scriptLeft.length - 1)];
+    // the cursor is left PAST every wave it has staged (stageOne) and those
+    // waves' remainders are in `live` above, so the unreached script starts
+    // at the step the cursor is on. Clamped because a spent script leaves
+    // stepIdx at the script's own length
+    left += this.scriptLeft[Math.min(this.stepIdx, this.scriptLeft.length - 1)];
     return left;
   }
 
@@ -3319,77 +3474,113 @@ export class Sim {
   }
 
   /**
-   * Every boss on the field, one row per unit, for the HUD's bar stack.
-   * The census early-exits the scan the way collectForceFields does, so a
-   * bossless wave pays nothing. Rows are keyed and ordered by spawn id —
-   * unit indices reshuffle under swap-remove, and a bar that traded places
-   * with its neighbour whenever something died would read as a glitch.
+   * EVERY OBJECTIVE BODY ON THE FIELD, one row a thing, for the HUD's bar
+   * stack — a Sovereign and a Borer alike (levels.ts OBJECTIVE_KINDS).
+   *
+   * THE BAR IS WHAT MAKES A BODY AN EVENT. Everything else on the board is
+   * volume: it is read as a crowd, it is priced by the wave, and a bar
+   * over each would be noise. An objective is one thing the run has to go
+   * and deal with, and the only honest readout of "how is that going" is
+   * its health — which nothing else on screen says, because a Borer is
+   * twenty hurtboxes wearing one pool and a Sovereign is off at the far
+   * end of the map behind its own escort.
+   *
+   * A BORER IS ONE ROW AND NOT TWENTY. The train is twenty separately
+   * shootable pieces and ONE health pool (`crossers`), so the bar is the
+   * pool: a player shooting the ninth car watches the same bar move as one
+   * shooting the nose, which is the fact the mission is actually about.
+   *
+   * ROWS ARE KEYED AND ORDERED so the stack never reshuffles: a boss by
+   * its spawn id (unit indices swap under swap-remove, and a bar that
+   * traded places with its neighbour whenever something died would read as
+   * a glitch), a crosser by its launch order, and the crossers after the
+   * bosses. The HUD stacks them downward in this order.
+   *
+   * The boss scan early-exits off the census the way collectForceFields
+   * does, so a board with no boss on it pays nothing.
    */
-  bossBars(): { id: number; kind: number; hp: number; max: number }[] {
+  objectiveBars(): { id: number; name: string; hp: number; max: number }[] {
+    const out: { id: number; name: string; hp: number; max: number }[] = [];
     let left = 0;
     for (const k of BOSS_KINDS) left += this.aliveByKind[k];
-    if (left === 0) return [];
-    const out: { id: number; kind: number; hp: number; max: number }[] = [];
-    for (let i = 0; i < this.n && out.length < left; i++) {
-      const k = this.ukind[i];
-      if (!KIND_BOSS[k]) continue;
+    if (left > 0) {
+      const bosses: { id: number; name: string; hp: number; max: number }[] = [];
+      for (let i = 0; i < this.n && bosses.length < left; i++) {
+        const k = this.ukind[i];
+        if (!KIND_BOSS[k]) continue;
+        bosses.push({
+          id: this.uid[i],
+          name: unitName(UNIT_KINDS[k]),
+          hp: Math.max(0, this.uhp[i]),
+          max: this.uhpmax[i],
+        });
+      }
+      bosses.sort((a, b) => a.id - b.id);
+      out.push(...bosses);
+    }
+    // ...and the trains, in launch order. A worm that has leaked is off
+    // the board and out of the count (updateCrosser) even while its last
+    // pieces walk off the rim, so `alive` is the whole test
+    for (let id = 0; id < this.crossers.length; id++) {
+      const w = this.crossers[id];
+      if (w.alive <= 0) continue;
       out.push({
-        id: this.uid[i],
-        kind: k,
-        hp: Math.max(0, this.uhp[i]),
-        max: this.uhpmax[i],
+        id: BAR_CROSSER_ID + id,
+        name: WORM_NAME,
+        hp: Math.max(0, w.hp),
+        max: w.hpMax,
       });
     }
-    out.sort((a, b) => a.id - b.id);
     return out;
   }
 
   /**
-   * 1-based number of the wave ON THE FIELD — the one the player is fighting.
+   * 1-BASED NUMBER OF THE WAVE ON THE FIELD — the one the player is
+   * fighting, and now simply the last one the clock called.
    *
-   * `wavesStarted` counts a wave from the moment loadStep STAGES it, which is
-   * one waveGap before its first unit enters, so reporting it raw credits the
-   * next wave the instant the current one finishes spawning and leaves the HUD
-   * naming a wave that has not arrived. A staged wave still inside its gap
-   * therefore does not count yet.
+   * IT USED TO NEED ARITHMETIC. Staging ran a whole waveGap ahead of a
+   * wave entering, so `wavesStarted` had to be backed off by one for the
+   * length of that gap or the HUD named a wave that had not arrived, with
+   * a special case for the opening where there was no earlier wave to be
+   * current. Staging IS entering now (stageOne runs when waveStartTime
+   * says so), so the number is the number.
    *
-   * The floor keeps a level that opens with a wait reading "Wave 1" while it
-   * counts down to that first wave.
+   * The floor keeps a run reading "wave 1" through the opening gap, before
+   * anything has been staged at all.
    */
   currentWave(): number {
-    // ...except in the OPENING gap, where there is no earlier wave to still
-    // be current: the run has not played one, and backing off there reported
-    // "wave 0", floored to 1
-    const opening = this.wavesStarted <= 1;
-    const back = this.waitLeft > 0 && !opening ? 1 : 0;
-    return Math.max(1, this.wavesStarted - back);
+    return Math.max(1, this.wavesStarted);
   }
 
   /**
-   * THE WAVE THE CLOCK SAYS IT IS. The first wave enters at once, and
-   * every one after it waveGap + WAVE_RELEASE_SECONDS later; on a map
-   * whose drop zones cannot pass a big wave that fast the script falls
-   * behind its own schedule (Sim.runScript queues what will not fit). The
-   * larger of the two is taken, so a run that is AHEAD of schedule reads
-   * ahead.
+   * THE WAVE THE CLOCK SAYS IT IS — which is the same wave the field says
+   * it is, now that the script cannot fall behind its own schedule
+   * (runScript). Kept as its own name because the playtest and the stage
+   * tables ask the question that way, and because the difference between
+   * the two mattered for years.
    */
   stageWave(): number {
-    const cadence = Math.max(1, this.level.waveGap + WAVE_RELEASE_SECONDS);
-    const byClock = Math.floor(this.time / cadence) + 1;
-    return Math.max(this.currentWave(), byClock);
+    return Math.max(1, this.wavesDueAt(this.time));
   }
 
-  /** seconds until the next wave starts entering, or 0 when one is already
-   * draining (or the script has run out) */
+  /** seconds until the next wave starts entering — off the schedule, so it
+   *  is a real countdown and not a guess about when the doors will clear */
   nextWaveIn(): number {
-    return this.waitLeft > 0 ? this.waitLeft : 0;
+    return Math.max(0, this.waveStartTime(this.wavesStarted + 1) - this.time);
   }
 
   /**
-   * HOW MANY WAVES ARE CLEARED — the objectives met, and what the run's
-   * XP is paid for (missionXp in economy.ts). A wave is cleared when it
-   * has finished entering and every body it put on the field, brood
-   * included, is down: killed, devoured or blown up. Counted over every
+   * HOW MANY WAVES ARE CLEARED. A wave is cleared when it has finished
+   * entering and every body it put on the field, brood included, is down:
+   * killed, devoured or blown up.
+   *
+   * IT IS NO LONGER THE OBJECTIVE, and it is still two things. A HOLD
+   * mission is counted in it (won, holdTarget) — that is the one mission
+   * whose assignment is stated in waves. And on EVERY mission it is what a
+   * DEFEAT is paid for (missionXp in economy.ts): a run that goes down
+   * short of its objective still banks the waves it broke on the way, so
+   * a failed push is progress. A win pays the whole pot and never reads
+   * this. Counted over every
    * wave staged rather than as a prefix, because waves overlap on a long
    * field — a wave 8 whose last ironhide3 is still walking must not hold
    * wave 9's payout back once wave 9 is dead to the last ironhide1.
@@ -3906,10 +4097,11 @@ export class Sim {
       }
     }
     this.runScript(dt);
-    // ...and the mission's own clock, where it has one (levels.ts
+    // ...and the mission's own schedule, where it has one (levels.ts
     // InterceptMission): the crossers are an appointment somewhere else
-    // on the map, not a wave
-    this.runCrossers(dt);
+    // on the map, not a wave — and, like the waves, an appointment kept by
+    // the clock rather than by whatever the board is doing
+    this.runCrossers();
     // a structure went up on, or came down off, open ground: shove anything
     // standing in its cells clear now, and re-solve the routes when the
     // board settles (solveDirtyFields)
@@ -4082,63 +4274,115 @@ export class Sim {
     this.scriptLeft = new Array<number>(script.length + 1).fill(0);
     for (let i = script.length - 1; i >= 0; i--)
       this.scriptLeft[i] = this.scriptLeft[i + 1] + per[i];
+    // the document's own count, frozen before the tide is allowed to move
+    // totalWaves (see scriptWaves) — a hold with no number of its own is
+    // measured against this one
+    this.scriptWaves = this.totalWaves;
     this.stepIdx = 0;
-    this.waitLeft = 0;
-    this.spawnAcc = 0;
+    this.live.length = 0;
     this.wavesStarted = 0;
     this.waveSpawned.length = 0;
     this.waveDown.length = 0;
     this.waveEntered.length = 0;
-    this.loadStep();
+    // NOTHING IS STAGED HERE. The first wave lands when its moment comes
+    // like every wave after it (waveStartTime, stageDue) — a run opens on
+    // an empty board and the opening gap is the breather it builds its
+    // first line in.
+  }
+
+  // ---------- the wave clock ----------
+
+  /**
+   * HOW OFTEN A WAVE LANDS, in seconds — the level's gap plus the time a
+   * wave takes to walk on. It is the run's whole pacing, and it is a fact
+   * about the SCRIPT and never about the board.
+   */
+  private get waveCadence(): number {
+    return Math.max(1, this.level.waveGap + WAVE_RELEASE_SECONDS);
   }
 
   /**
-   * Point the live state at script[stepIdx], skipping empty waves. Leaves
-   * everything zeroed once the script runs out, which is what ends the level.
+   * WHEN WAVE `n` (1-based) STARTS ENTERING, in seconds of run time. This
+   * is the schedule, and everything else about the waves is derived from
+   * it — which wave is current, how long until the next, where a skip
+   * lands, when the tide turns.
    *
-   * Pacing is no longer written into the script: the level carries one
-   * `waveGap` and the sim puts it BEFORE every wave, the opening one
-   * included: the first wave is the breather a run builds its first line
-   * in. A step therefore always describes enemies and never time.
-   *
-   * The opening gap is the one exception — WAVE_GAP_OPENING, a few seconds
-   * rather than the full gap, so a run does not open on an empty map.
+   * The opening is the one irregular gap: WAVE_GAP_OPENING rather than the
+   * full one, so a run does not open on an empty map for twenty seconds.
+   * (Capped by the level's own gap, so a level authored with a short gap
+   * does not get a LONGER opening than its cadence.)
    */
-  private loadStep(): void {
-    this.waveEntries.length = 0;
-    this.waveRate = 0;
-    this.waitLeft = 0;
+  waveStartTime(n: number): number {
+    const open = Math.min(WAVE_GAP_OPENING, Math.max(0, this.level.waveGap));
+    return open + (Math.max(1, n) - 1) * this.waveCadence;
+  }
+
+  /** how many waves the clock has called by run time `t` — the wave number
+   *  a skip to `t` lands on (skipToTime) */
+  wavesDueAt(t: number): number {
+    const open = this.waveStartTime(1);
+    if (t < open) return 0;
+    return Math.floor((t - open) / this.waveCadence) + 1;
+  }
+
+  /**
+   * STAGE EVERY WAVE THE CLOCK HAS CALLED — run once a step, off `time`
+   * and nothing else (waveStartTime).
+   *
+   * The loop is a `while` rather than an `if` because one step is allowed
+   * to owe several waves: a skip lands mid-schedule, and a step that took
+   * longer than a cadence would otherwise quietly drop one.
+   */
+  private stageDue(): void {
+    while (this.time >= this.waveStartTime(this.wavesStarted + 1) && this.stageOne());
+  }
+
+  /**
+   * PUT THE NEXT WAVE OF THE SCRIPT ON THE FIELD, or turn the tide and take
+   * one off that. False when there was nothing left to send, which on a
+   * hold that has staged its whole count is the script genuinely ending.
+   *
+   * An empty step is not a wave: it is walked past without costing a wave
+   * number, so the schedule and the document agree about which wave is
+   * which however many blank rows an author leaves in.
+   *
+   * THE CURSOR IS LEFT PAST THE WAVE IT STAGED, which is the one thing that
+   * changed about `stepIdx` when the waves went on the clock — it used to
+   * SIT ON the loaded wave, because there was only ever one loaded.
+   * remaining() reads it accordingly.
+   *
+   * Recursion after the tide turns is one level deep by construction:
+   * lastWaveIdx names a wave that is not empty, and the cursor is put at or
+   * before it.
+   */
+  private stageOne(): boolean {
     const script = this.level.script;
-    for (; this.stepIdx < script.length; this.stepIdx++) {
+    while (this.stepIdx < script.length) {
       const step = script[this.stepIdx];
+      this.stepIdx++;
+      const entries: { kind: number; left: number; total: number }[] = [];
       for (const g of waveGroups(step.wave))
         for (let kind = 0; kind < g.counts.length; kind++)
           if (g.counts[kind] > 0)
-            this.waveEntries.push({ kind, left: g.counts[kind], total: g.counts[kind] });
-      if (this.waveEntries.length > 0) {
-        let total = 0;
-        for (const e of this.waveEntries) total += e.total;
-        this.waveRate = waveSpawnRate(total);
-        this.wavesStarted++;
-        // ...and staging it pays NOTHING. It used to pay a bonus here, at
-        // the top of the gap; every scrap comes off the swarm now
-        // (economy.ts). Hold the gap, then let this wave drain — waitLeft
-        // gates runScript
-        this.waitLeft =
-          this.wavesStarted === 1
-            ? Math.min(WAVE_GAP_OPENING, Math.max(0, this.level.waveGap))
-            : Math.max(0, this.level.waveGap);
-        return;
-      }
+            entries.push({ kind, left: g.counts[kind], total: g.counts[kind] });
+      if (entries.length === 0) continue;
+      let total = 0;
+      for (const e of entries) total += e.total;
+      this.wavesStarted++;
+      // ...and staging it pays NOTHING. It used to pay a bonus here; every
+      // scrap comes off the swarm now (economy.ts)
+      this.live.push({ wave: this.wavesStarted, entries, rate: waveSpawnRate(total), acc: 0 });
+      return true;
     }
-    // THE SCRIPT IS SPENT. On a hold that is the end of the level; on a
-    // survive with time still on the clock it is the tide turning: the
-    // last few waves go again as a cycle, a few enemy levels heavier, and
-    // count toward the run like any other wave. Recursion is one level
-    // deep by construction — lastWaveIdx names a wave that is not empty,
-    // and the cursor is put at or before it
-    if (this.deadline > 0 && this.time < this.deadline && this.lastWaveIdx >= 0) {
-      const from = Math.max(0, this.lastWaveIdx - (SURVIVE_CYCLE_WAVES - 1));
+    // THE SCRIPT IS SPENT, AND THE TIDE TURNS (see TIDE_LEVELS at the top
+    // of the file): the last TIDE_CYCLE_WAVES go again, one doubling of
+    // health heavier, and count toward the run like any other wave. The
+    // only mission that stops here is a hold that has already staged every
+    // wave it asked for (tideTurns) — for everything else the waves are
+    // pressure under an objective, and pressure that ran out would hand the
+    // rest of the run to an empty board.
+    if (this.tideTurns() && this.lastWaveIdx >= 0) {
+      const from = Math.max(0, this.lastWaveIdx - (TIDE_CYCLE_WAVES - 1));
       for (let i = from; i <= this.lastWaveIdx; i++) {
         const step = script[i];
         if (!("wave" in step)) continue;
@@ -4148,111 +4392,146 @@ export class Sim {
         this.totalEnemies += n;
         this.totalWaves++;
       }
-      this.loopLevel += SURVIVE_LOOP_LEVELS;
+      this.loopCycle++;
+      this.loopLevel += TIDE_LEVELS;
       this.stepIdx = from;
-      this.loadStep();
+      return this.stageOne();
     }
-  }
-
-  /** move to the next step, resetting the drain credit so waves start clean */
-  private nextStep(): void {
-    // the wave just drained is through the door: from here it is cleared
-    // the moment its last body drops (wavesCleared)
-    this.waveEntered[this.wavesStarted] = true;
-    this.stepIdx++;
-    this.spawnAcc = 0;
-    this.loadStep();
+    return false;
   }
 
   /**
-   * PUT WAVE `target` ON THE FIELD RIGHT NOW — the sandbox's jump, and the
-   * only thing in the sim that moves the script other than the script
+   * SKIP THE RUN FORWARD TO `target` SECONDS — the sandbox's jump, and the
+   * only thing in the sim that moves the clock other than the clock
    * running. Nothing in a campaign run reaches it: the control is on the
    * sandbox strip and nowhere else.
    *
-   * It only ever goes FORWARD, and never past the last wave the script
-   * holds. Walking backwards would mean un-spawning bodies that are
+   * IT IS A TIME AND NOT A WAVE NUMBER, because the run IS a time now.
+   * Every schedule in the game hangs off this one clock — which wave is due
+   * (waveStartTime), when the next Borer launches (runCrossers), a
+   * survive's deadline, the tide's cycles — so moving the clock moves all
+   * of them at once and in step. A jump that moved a wave cursor left the
+   * mission wherever it was, which is exactly what the old "skip to wave"
+   * did on an intercept map: wave forty on the panel, and the Borers still
+   * four minutes out.
+   *
+   * FORWARD ONLY. Walking backwards would mean un-spawning bodies that are
    * already dead and un-paying the scrap they dropped, and there is no
    * ledger here that can be run in reverse.
    *
-   * WHAT A SKIPPED WAVE IS WORTH: nothing. The run did not fight it, so it
-   * is not cleared, pays no XP (wavesCleared) and drops no scrap — a jump
-   * to wave forty is a jump to wave forty's FIGHT, not to the board and
-   * the purse a run that played forty waves would have. The sandbox builds
-   * for free anyway (setRich), which is the whole reason the purse does
-   * not have to be faked here.
-   *
-   * AND NOTHING HERE HAS TO TELL THE WIN CONDITION WHAT IT DID. It used
-   * to have to and did not, which is what made a jumped run unwinnable:
-   * the skipped waves stayed owed in a body ledger nobody paid back. See
-   * remaining() — it counts the field and the unsent script, so moving the
-   * cursor IS the accounting.
+   * WHAT SKIPPED TIME IS WORTH: nothing. The run did not fight it, so its
+   * waves are not cleared, pay no XP (wavesCleared) and drop no scrap — a
+   * jump to minute fifteen is a jump to minute fifteen's FIGHT, not to the
+   * board and the purse a run that played fifteen minutes would have. The
+   * sandbox builds for free anyway (setRich), which is the whole reason the
+   * purse does not have to be faked here.
    */
-  skipToWave(target: number): void {
-    const want = Math.min(Math.max(1, Math.floor(target)), this.totalWaves);
-    const from = this.wavesStarted;
-    if (!Number.isFinite(want) || want <= from) return;
+  skipToTime(target: number): void {
+    const want = Math.max(0, target);
+    if (!Number.isFinite(want) || want <= this.time) return;
+    const m = this.level.mission;
 
     // THE FIELD IS CLEARED FIRST. Every body still walking belongs to a
-    // wave the jump is about to leave behind, and fighting wave three's
-    // walkers under a panel that reads wave forty is not the board that
+    // moment the jump is about to leave behind, and fighting wave three's
+    // walkers under a panel that reads minute fifteen is not the board that
     // was asked for. removeUnit is the same door a kill leaves by, minus
-    // the drop, the death puff and the ledger: a swarm nobody fought
-    // scores nothing on the way out.
+    // the drop, the death puff and the ledger: a swarm nobody fought scores
+    // nothing on the way out.
     //
     // WHOSE WAVES THEY WERE IS WORTH KNOWING, though, and is read here
     // while the rows still exist. removeUnit books each body as DOWN, and
     // down is most of what "cleared" means (wavesCleared) — so a wave
-    // already through the door with three stragglers left would be paid
-    // for the instant the jump swept them off, which is the opposite of
-    // what happened to it. A wave with a body still walking is unfinished
-    // by definition; the jump abandons it, and abandoned is not cleared.
+    // already through the door with three stragglers left would be paid for
+    // the instant the jump swept them off, which is the opposite of what
+    // happened to it. A wave with a body still walking is unfinished by
+    // definition; the jump abandons it, and abandoned is not cleared.
     const abandoned = new Set<number>();
+    this.crossSweeping = true;
     for (let i = this.n - 1; i >= 0; i--) {
       abandoned.add(this.uwave[i]);
       this.removeUnit(i);
     }
+    this.crossSweeping = false;
     // ...and the corpses go with them, or Reconstruction stands a skipped
     // wave back up in the middle of the one jumped to (updateCorpses). A
     // corpse is a body its wave is still owed (killUnit un-books it), so
     // its wave is unfinished for exactly the same reason.
     for (const c of this.corpses) abandoned.add(c.wave);
     this.corpses.length = 0;
+    // ...and every wave still walking on, thrown away unspent
+    for (const lw of this.live) abandoned.add(lw.wave);
+    this.live.length = 0;
+    // A BORER SWEPT OFF BY A JUMP IS NEITHER KILLED NOR LEAKED. removeUnit
+    // has already taken its pieces off the board above; this is what stops
+    // the empty trains being counted as still crossing (crossersLive), and
+    // therefore what lets the mission's own schedule re-arm at the new time
+    for (const w of this.crossers) w.alive = 0;
+    // ...and the launches the jump passed over are SPENT, all but the last.
+    //
+    // runCrossers reads the schedule off `time` (that is the whole point of
+    // it), so a jump to minute nine would otherwise find four launches
+    // overdue and send all four at once — from the same entry, two of them
+    // down the same road, exactly superimposed. What minute nine actually
+    // looks like is the launch minute nine called and the ones before it
+    // long gone, so that is what a jump leaves: the cursor one short, and
+    // runCrossers brings the current launch in a tick later.
+    //
+    // The passed launches are not made back, and are not meant to be —
+    // skipped time is worth nothing here for the same reason a skipped
+    // wave is not cleared. A jumped intercept cannot be met, which is true
+    // of a jumped hold too.
+    if (m.kind === "intercept") {
+      const due = Math.floor((want - m.first) / Math.max(1e-6, m.every)) + 1;
+      this.crossLaunched = Math.min(m.pattern.length, Math.max(this.crossLaunched, due - 1));
+    }
 
-    // WALK THE CURSOR RATHER THAN LEAPING IT. A script STEP is only a wave
-    // once loadStep has looked at it — empty ones are skipped and do not
-    // count (stageScript) — so the arithmetic only comes out right if each
-    // one is staged in turn. Nothing spawns on the way: loadStep fills
-    // waveEntries and nextStep throws them away unspent.
-    while (this.wavesStarted < want && this.stepIdx < this.level.script.length) this.nextStep();
+    // WALK THE CURSOR RATHER THAN LEAPING IT, and stop ONE SHORT. A script
+    // step is only a wave once it has been looked at — empty ones are
+    // skipped and do not count (stageScript) — so the arithmetic only comes
+    // out right if each one is staged in turn; and the tide has to be given
+    // the chance to turn on the way, which is what makes a jump past the
+    // script's end land in the climb instead of on an empty board.
+    //
+    // Nothing spawns on the way: each staged wave is popped straight back
+    // off `live` unspent. The LAST one due is deliberately left for stageDue
+    // to bring in a moment later, so the jump lands on a wave arriving
+    // rather than on a board that has just been swept.
+    const due = this.wavesDueAt(want);
+    while (this.wavesStarted < due - 1 && this.stageOne()) {
+      const lw = this.live.pop();
+      if (lw) abandoned.add(lw.wave);
+    }
 
-    // ...and then un-say what nextStep said about them. It marks every
-    // wave it leaves as having finished ENTERING, which for one that never
-    // spawned a body reads as cleared — nothing down, nothing to put down
-    // — and would pay out its share of the mission's XP.
-    for (let w = from; w < this.wavesStarted; w++) abandoned.add(w);
+    // ...and then un-say what staging said about those waves. A wave that
+    // never spawned a body reads as cleared — nothing down, nothing to put
+    // down — and would pay out its share of the mission's XP.
     for (const w of abandoned) this.waveEntered[w] = false;
 
-    // THE WAVE LANDED ON ENTERS AT ONCE. loadStep hands every wave its gap
-    // and the jump is a jump past waiting, so holding the last gap would
-    // drop the player back into exactly the wait they skipped.
-    this.waitLeft = 0;
-    this.spawnAcc = 0;
+    // THE CLOCK ITSELF, last: everything above is about what the jump
+    // leaves behind, and this line IS the jump. Every other schedule in the
+    // run reads `time` and therefore moves with it.
+    this.time = want;
   }
 
   /**
-   * Which entry to send next out of the current wave: whichever is furthest
+   * Which entry to send next out of ONE live wave: whichever is furthest
    * from finishing, by fraction of its own total. That intermingles a mixed
    * wave from its first unit and lands every entry's last unit together,
    * instead of emptying one pile before starting the next. Entries in
    * `skip` (their layer's doors were too crowded this frame) don't compete.
+   *
+   * It is asked PER WAVE rather than over the whole field, because several
+   * waves can be releasing at once now (`live`) and each one is entitled to
+   * arrive looking like the wave it was authored as — a shared pick would
+   * blend two waves' mixtures into one soup.
    */
   private nextWaveEntry(
+    entries: readonly { kind: number; left: number; total: number }[],
     skip: ReadonlySet<unknown>,
   ): { kind: number; left: number; total: number } | null {
     let best = null;
     let bestFrac = 0;
-    for (const e of this.waveEntries) {
+    for (const e of entries) {
       if (e.left <= 0 || skip.has(e)) continue;
       const frac = e.left / e.total;
       if (frac > bestFrac) {
@@ -4264,52 +4543,66 @@ export class Sim {
   }
 
   /**
-   * Run the level script: hold through the level's wave gap, otherwise drain
-   * the current wave at ITS OWN rate — the wave's size over the fixed
-   * WAVE_RELEASE_SECONDS, so every wave takes the same time to walk on.
+   * Run the level script: stage whatever the CLOCK owes (stageDue), then
+   * drain every wave already walking on, each at ITS OWN rate — the wave's
+   * size over the fixed WAVE_RELEASE_SECONDS, so every wave takes the same
+   * time to walk on whatever its size.
    *
-   * A failed spawn (the drop zone is too crowded) leaves the unit in the wave
-   * and keeps its drain credit for a later frame, so a packed field delays a
-   * wave rather than swallowing it. That is what makes the rate safe to scale
-   * with size: a wave big enough to outrun the pads simply queues behind
-   * them, and the field fills as fast as there is room for it.
+   * THE TWO HALVES ARE INDEPENDENT NOW, and that is the point. Staging is a
+   * question about `time`; draining is a question about the doors. A wave
+   * that cannot get through its drop zones keeps releasing while the next
+   * one lands on schedule behind it, so congestion costs a THICKER FIELD
+   * and never a longer run.
+   *
+   * A failed spawn (the drop zone is too crowded) leaves the unit in its
+   * wave and keeps its drain credit for a later frame, so a packed field
+   * slows a wave rather than swallowing one. That is what makes the rate
+   * safe to scale with size: a wave big enough to outrun the pads simply
+   * queues behind them, and the field fills as fast as there is room.
+   *
+   * OLDEST WAVE FIRST, so a backlog clears the doors ahead of a fresh wave
+   * and the field cannot serve the script out of order.
    */
   private runScript(dt: number): void {
-    if (this.waitLeft > 0) {
-      this.waitLeft -= dt;
-      // the gap belongs to the wave already loaded, so running it out just
-      // releases that wave — there is no next step to advance to
-      if (this.waitLeft > 0) return;
-      this.waitLeft = 0;
-    }
-
-    let left = 0;
-    for (const e of this.waveEntries) left += e.left;
-    if (left === 0) return;
-
-    const rate = this.waveRate;
-    // the credit is capped at a second's worth of release — but never
-    // under ONE body: a wave smaller than WAVE_RELEASE_SECONDS bodies has
-    // a rate under 1/s, and a cap at that rate would never let the credit
-    // reach the whole unit the loop below spends (a squad of three at
-    // Incursion sat in the door forever)
-    this.spawnAcc = Math.min(this.spawnAcc + rate * dt, Math.max(1, rate));
-    // one region's crowded pads must not stall the other regions' share of
-    // the wave — a failed entry sits out the rest of this frame while the
-    // remaining entries keep draining
-    const blocked = new Set<unknown>();
-    while (left > 0 && this.spawnAcc >= 1) {
-      const e = this.nextWaveEntry(blocked);
-      if (!e) break;
-      if (!this.spawnUnit(UNIT_KINDS[e.kind])) {
-        blocked.add(e);
-        continue;
+    this.stageDue();
+    if (this.live.length === 0) return;
+    let done = 0;
+    for (const lw of this.live) {
+      let left = 0;
+      for (const e of lw.entries) left += e.left;
+      if (left > 0) {
+        // the credit is capped at a second's worth of release — but never
+        // under ONE body: a wave smaller than WAVE_RELEASE_SECONDS bodies
+        // has a rate under 1/s, and a cap at that rate would never let the
+        // credit reach the whole unit the loop below spends (a squad of
+        // three at Incursion sat in the door forever)
+        lw.acc = Math.min(lw.acc + lw.rate * dt, Math.max(1, lw.rate));
+        // one layer's crowded pads must not stall the rest of the wave — a
+        // failed entry sits out the rest of this frame while the remaining
+        // entries keep draining
+        const blocked = new Set<unknown>();
+        while (left > 0 && lw.acc >= 1) {
+          const e = this.nextWaveEntry(lw.entries, blocked);
+          if (!e) break;
+          if (!this.spawnUnit(UNIT_KINDS[e.kind], undefined, lw.wave)) {
+            blocked.add(e);
+            continue;
+          }
+          e.left--;
+          lw.acc--;
+          left--;
+        }
       }
-      e.left--;
-      this.spawnAcc--;
-      left--;
+      // THROUGH THE DOOR: from here the wave is cleared the moment its last
+      // body drops (wavesCleared). A wave leaves `live` only when every body
+      // it was authored with is actually on the field, which is what stops
+      // a congested wave being paid for early
+      if (left === 0) {
+        this.waveEntered[lw.wave] = true;
+        done++;
+      }
     }
-    if (left === 0) this.nextStep();
+    if (done > 0) this.live = this.live.filter((lw) => !this.waveEntered[lw.wave]);
   }
 
   // ---------- the crossers ----------
@@ -4338,42 +4631,51 @@ export class Sim {
    * waits, asking every tick, and sends the spare the instant a leak is
    * on the books.
    */
-  private runCrossers(dt: number): void {
+  private runCrossers(): void {
     const m = this.level.mission;
-    if (m.kind !== "intercept" || this.crossT < 0) return;
-    if (this.crossT > 0) {
-      this.crossT -= dt;
-      if (this.crossT > 0) return;
-      // PARKED AT EXACTLY ZERO, and the clamp is load-bearing: -1 is this
-      // clock's "nothing left to send" and the guard above reads it as a
-      // sign, so a countdown allowed to overshoot by the last frame's
-      // eight milliseconds would disarm the mission by arithmetic. It cost
-      // a spare launch that was owed and a run that ended six kills out of
-      // seven with nothing on the board
-      this.crossT = 0;
-    }
-    // the pattern, on its own beat
-    if (this.crossLaunched < m.pattern.length) {
+    if (m.kind !== "intercept" || this.crossDone) return;
+    // THE PATTERN, ON ABSOLUTE MOMENTS. Launch k is due at `first + k *
+    // every` seconds of run time and at no other moment — not "one `every`
+    // after the last one went", which is what it used to be.
+    //
+    // THE LOOP IS WHAT MAKES A SKIP WORK. A countdown has to be ticked to
+    // be moved, so the sandbox's jump (skipToTime) left the mission sitting
+    // wherever the clock had been: minute fifteen on the panel, and the
+    // Borers still four minutes out. Read off `time`, every launch the jump
+    // passed over is simply due at once — and the mission arrives where the
+    // player asked to be.
+    while (this.crossLaunched < m.pattern.length &&
+           this.time >= m.first + this.crossLaunched * m.every) {
       // BOTH ROADS OF ONE LAUNCH GET THE SAME RAMP (levels.ts wormRamp):
       // the index is the launch's, not the worm's, so the pair sent in
       // "both" are twins. A player who found one of them softer than the
       // other would be reading a die roll, not a schedule
       for (const r of m.pattern[this.crossLaunched]) this.launchCrosser(r, this.crossLaunched);
       this.crossLaunched++;
-      this.crossT = m.every;
-      return;
     }
-    // ...and then the spare, owed to any run that has let one through
+    if (this.crossLaunched < m.pattern.length) return;
+    // ...and then the spare, owed to any run that has let one through.
+    //
+    // THE SPARE HAS NO MOMENT, and that is the one thing here that is not
+    // on the clock. It cannot be "one `every` after the pattern, if a leak
+    // has happened by then": the last launch of the pattern is still
+    // walking at that point, and a Borer takes longer to cross than the gap
+    // between launches — so the leak that earns the spare routinely lands
+    // AFTER the moment a timed spare would have been decided. A run that
+    // let its last one through would then be six kills out of seven with
+    // nothing left to send and no way to lose either, which is a run that
+    // never ends. So this waits, asking every tick, and sends the spare the
+    // instant a leak is on the books.
     if (this.crossLeaked > 0) {
       // ...and the spare is one rung PAST the pattern's last (wormRamp),
       // which falls out of the index rather than being a number of its own
       for (const r of m.spare) this.launchCrosser(r, this.crossLaunched);
-      this.crossT = -1;
+      this.crossDone = true;
       return;
     }
     // nothing owed, and nothing still walking that could come to owe it:
     // the pattern was the whole mission and the board took all of it
-    if (this.crossersLive() === 0) this.crossT = -1;
+    if (this.crossersLive() === 0) this.crossDone = true;
   }
 
   /**
@@ -8230,7 +8532,12 @@ export class Sim {
     const cross = this.ucross[i];
     if (cross >= 0) {
       const worm = this.crossers[cross];
-      if (worm && --worm.alive <= 0 && !worm.leaked) this.crossKilled++;
+      // ...unless the board is being SWEPT rather than fought (skipToTime).
+      // A jump takes every body off the field through this door, and a
+      // train the run never shot at must not be booked as one it destroyed
+      // — it would hand the sandbox free mission progress and, on a jump
+      // past the last launch, decide the mission outright
+      if (worm && --worm.alive <= 0 && !worm.leaked && !this.crossSweeping) this.crossKilled++;
     }
     const n = --this.n;
     // the projectile pass holds its force-field carriers by index, and a

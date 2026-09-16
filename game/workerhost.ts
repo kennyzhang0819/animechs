@@ -212,8 +212,8 @@ export class WorkerHost implements SimHost {
   reset(): void {
     this.cmd("reset");
   }
-  skipToWave(n: number): void {
-    this.cmd("skipToWave", n);
+  skipToTime(seconds: number): void {
+    this.cmd("skipToTime", seconds);
   }
   placeFormation(cells: readonly Cell[], kind: TowerKind): void {
     this.cmd("placeFormation", cells, kind);

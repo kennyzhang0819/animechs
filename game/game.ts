@@ -171,8 +171,14 @@ export interface UiState {
   remaining: number;
   /** how many of each kind are on the field right now, like UNIT_KINDS */
   byKind: number[];
-  /** every boss on the field, one thin HUD bar each, keyed by spawn id */
-  bosses: { id: number; kind: UnitKind; hp: number; max: number }[];
+  /**
+   * EVERY OBJECTIVE BODY ON THE FIELD, one thin HUD bar each, stacked in
+   * this order (Sim.objectiveBars): the Sovereigns first, keyed by spawn
+   * id, then the Borer trains in launch order. A train is ONE bar over its
+   * whole twenty-piece pool, which is why a row carries a name rather than
+   * a unit kind.
+   */
+  objectives: { id: number; name: string; hp: number; max: number }[];
   /** seconds until the next wave, or 0 while one is already coming in */
   nextWaveIn: number;
   /** seconds of simulated time since the run started (Sim.time) */
@@ -214,6 +220,24 @@ export interface UiState {
   crossKilled: number;
   crossLeaked: number;
   crossLive: number;
+  /**
+   * HOW FAR THROUGH ITS OBJECTIVE THE RUN IS, 0 to 1 — what every progress
+   * bar on the screen draws (Sim.missionProgress, levels.ts
+   * missionProgress). It is the MISSION's fraction and never the script's:
+   * waves cleared of a hold's target, seconds of a survive's clock,
+   * crossers down of an intercept's count.
+   */
+  missionProgress: number;
+  /**
+   * HOW MANY TIMES THE TIDE HAS TURNED (Sim.loopCycle) — 0 while the
+   * script is on its first pass, and every step above that is a DOUBLING
+   * of every body's health. The HUD only says it once it is above zero,
+   * because a badge reading "x1" on the first forty minutes of every run
+   * is a badge nobody reads by the time it means something.
+   */
+  loopCycle: number;
+  /** the authored script's own wave count; the tide grows totalWaves, never this */
+  scriptWaves: number;
   kills: number;
   /** the esc game menu is up: sim held, resume or abandon from the overlay */
   menuOpen: boolean;
@@ -2114,17 +2138,18 @@ export class Game {
   }
 
   /**
-   * THE SANDBOX'S JUMP (Sim.skipToWave): put wave `n` on the field now,
-   * clearing whatever the skipped waves left walking. Forward only, and
-   * never past the script's last wave; a number outside that does nothing
-   * rather than erroring, because the control it comes from is a field a
-   * player types into.
+   * THE SANDBOX'S JUMP (Sim.skipToTime): put the run at `seconds` of run
+   * time now, clearing whatever the skipped waves left walking and moving
+   * every schedule with it — the wave clock, the mission's own, the tide.
+   * Forward only; a number behind the run does nothing rather than
+   * erroring, because the control it comes from is a field a player types
+   * into.
    *
-   * Like every other command it answers nothing — the wave the run is on
+   * Like every other command it answers nothing — where the run ended up
    * arrives with the next `ui()` poll, same as it always has.
    */
-  skipToWave(n: number): void {
-    this.host.skipToWave(n);
+  skipToTime(seconds: number): void {
+    this.host.skipToTime(seconds);
   }
 
 
@@ -2244,7 +2269,7 @@ export class Game {
       enemyLevel: w.level.enemyLevel ?? 0,
       remaining: w.remaining,
       byKind: w.aliveByKindList(),
-      bosses: w.report.bosses.map((b) => ({ ...b, kind: UNIT_KINDS[b.kind] })),
+      objectives: w.report.objectives,
       nextWaveIn: w.nextWaveIn,
       elapsed: w.time,
       currentWave: w.currentWave,
@@ -2268,6 +2293,9 @@ export class Game {
       won: this.won(),
       mission: w.level.mission,
       timeLeft: Math.max(0, w.deadline - w.time),
+      missionProgress: w.missionProgress,
+      loopCycle: w.loopCycle,
+      scriptWaves: w.scriptWaves,
       crossKilled: w.crossKilled,
       crossLeaked: w.crossLeaked,
       crossLive: w.crossLive,

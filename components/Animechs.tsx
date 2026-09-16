@@ -13,7 +13,7 @@ import {
 import { ADMIN_ENABLED } from "@/game/env";
 import { profileLines } from "@/game/simreport";
 import { usePathname, useRouter } from "next/navigation";
-import GameConsole from "./Console";
+import GameConsole, { parseClock } from "./Console";
 import {
   BOOT_STEP_LABEL,
   BOOT_STEPS,
@@ -36,6 +36,8 @@ import {
   familyByKey,
   familyFlies,
   loadLevelDocs,
+  missionCount,
+  missionTarget,
   missionText,
   rollFamilies,
   transformScript,
@@ -599,48 +601,85 @@ const TOP_RULELESS_TIER = Math.max(
 );
 
 /**
- * THE INTERCEPT MISSION'S OBJECTIVE PANEL (levels.ts InterceptMission) —
- * three numbers and a sentence, top-left under the shelf.
+ * THE OBJECTIVE PANEL — WHAT THIS RUN IS FOR, top-left under the shelf,
+ * and on EVERY mission now (levels.ts Mission).
  *
- * IT COUNTS UP AND IT COUNTS DOWN AT THE SAME TIME, because both halves
- * are the state: the kills are the progress and the leaks are the
+ * IT USED TO BE THE INTERCEPT'S ALONE, because a hold and a survive asked
+ * for the thing the player was already doing and a panel saying "clear
+ * every wave" over a board clearing every wave was furniture. That stopped
+ * being true when the waves stopped being the objective: the script goes
+ * round forever now (Sim.loadStep), so "how much of this is left" is a
+ * question about the MISSION and there is nowhere else on the screen that
+ * answers it.
+ *
+ * ONE BAR, FILLED FROM ONE NUMBER (`hud.missionProgress`), whichever
+ * mission is being played — waves held, seconds survived, crossers down.
+ * The bar is the shape a player reads at a glance and the line above it is
+ * the number they read when they want the number; both come off the same
+ * fraction, so they cannot drift.
+ *
+ * THE INTERCEPT KEEPS ITS TWO EXTRA LINES, because both halves of that
+ * mission are state: the kills are the progress and the leaks are the
  * allowance, and a player who can see one without the other cannot tell
  * whether the run is going well. The allowance is drawn as pips rather
- * than a fraction for the same reason the wave progress is a bar — "0/1"
- * is a number to work out and two pips is a thing to look at.
+ * than a fraction — "0/1" is a number to work out and two pips is a thing
+ * to look at — and the live count only shows while something is on the
+ * board, because that is the only moment it means anything.
  *
- * THE LIVE COUNT IS THE THIRD LINE and only shows while something is on
- * the board, because that is the only moment it means anything: "two on
- * the line" is a sentence about a decision to make in the next minute,
- * and a nought sitting there the rest of the time is just noise.
+ * AND THE TIDE RIDES ON THE END OF IT. Past the script's last wave the
+ * swarm doubles in health every cycle and nothing else about it changes
+ * (Sim.loopCycle), so a player watching the same bodies take twice as long
+ * to drop has to be told why — otherwise the first honest thought is that
+ * their guns broke.
  */
 function ObjectivePane({ hud }: { hud: UiState }): React.ReactElement | null {
   const m = hud.mission;
-  if (m.kind !== "intercept") return null;
-  const done = Math.min(m.kills, hud.crossKilled);
-  const spent = Math.min(m.leaks + 1, hud.crossLeaked);
+  const count = missionCount(m, missionTarget(m, hud.scriptWaves), hud);
+  const frac = Math.max(0, Math.min(1, hud.missionProgress));
+  const headline =
+    m.kind === "survive" ? `${clock(hud.timeLeft)} left` : `${count.done} / ${count.of}`;
   return (
     <div className="ms-pane px-3 py-2">
       <div className="flex items-baseline gap-2">
         <span className="font-display text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
-          {done} / {m.kills}
+          {headline}
         </span>
-        <span className="text-[13px] uppercase tracking-widest text-[#A6A6AF]">destroyed</span>
-        <span className="ml-auto flex items-center gap-1.5">
-          <span className="text-[13px] uppercase tracking-widest text-[#71717C]">past you</span>
-          {/* one pip per leak the run is allowed, plus the one that ends
-              it — a lit pip is a leak already spent */}
-          {Array.from({ length: m.leaks + 1 }, (_, i) => (
-            <span
-              key={i}
-              className={`inline-block h-2.5 w-2.5 rounded-full ${
-                i < spent ? "bg-[#e55454]" : "bg-[#3a3a42]"
-              }`}
-            />
-          ))}
+        <span className="text-[13px] uppercase tracking-widest text-[#A6A6AF]">
+          {m.kind === "survive" ? "on the clock" : count.noun}
         </span>
+        {m.kind === "intercept" && (
+          <span className="ml-auto flex items-center gap-1.5">
+            <span className="text-[13px] uppercase tracking-widest text-[#71717C]">past you</span>
+            {/* one pip per leak the run is allowed, plus the one that ends
+                it — a lit pip is a leak already spent */}
+            {Array.from({ length: m.leaks + 1 }, (_, i) => (
+              <span
+                key={i}
+                className={`inline-block h-2.5 w-2.5 rounded-full ${
+                  i < Math.min(m.leaks + 1, hud.crossLeaked) ? "bg-[#e55454]" : "bg-[#3a3a42]"
+                }`}
+              />
+            ))}
+          </span>
+        )}
+        {/* THE TIDE, once it has turned: x2, x4, x8 — every body's health,
+            and nothing else (ladder.ts LEVELS_PER_DOUBLING) */}
+        {hud.loopCycle > 0 && (
+          <span
+            className={`${m.kind === "intercept" ? "" : "ml-auto "}font-display text-[13px] font-bold uppercase tracking-widest text-[#FFD37F]`}
+            title="The script has run out and is going again, heavier"
+          >
+            Tide x{2 ** hud.loopCycle}
+          </span>
+        )}
       </div>
-      {hud.crossLive > 0 && (
+      <div className="ms-bar mt-1.5 w-full">
+        <div
+          className="transition-[width] duration-300 ease-linear"
+          style={{ width: `${100 * frac}%`, background: "#7BE58A" }}
+        />
+      </div>
+      {m.kind === "intercept" && hud.crossLive > 0 && (
         <div className="mt-0.5 text-[13px] text-[#A6A6AF]">
           {hud.crossLive === 1 ? "One is crossing now" : `${hud.crossLive} are crossing now`}
         </div>
@@ -1844,23 +1883,32 @@ export default function Animechs() {
   // It used to widen a pace strip as well; there is no pace to widen any
   // more — see the jump's own note for why the multipliers went.
   const [admin, setAdmin] = useState(false);
-  /** what is typed into the sandbox's wave field, as typed — a string so
+  /** what is typed into the sandbox's time field, as typed — a string so
    *  the field can be EMPTY, which "0" is not: a number state would put a
-   *  zero in the box the moment it was cleared and make it unclearable */
+   *  zero in the box the moment it was cleared and make it unclearable.
+   *  It is also a TIME rather than a number ("12:30"), so a string is what
+   *  it is anyway */
   const [skipField, setSkipField] = useState("");
   /**
-   * THE WAVE THAT FIELD IS ASKING FOR, or null when what is typed is not a
-   * wave this run can jump to. Both limits are the sim's own
-   * (Sim.skipToWave): FORWARD ONLY, because no ledger here runs backwards,
-   * and no further than the script's last wave. Derived rather than
+   * THE MOMENT THAT FIELD IS ASKING FOR, in seconds of run time, or null
+   * when what is typed is not somewhere this run can jump to.
+   *
+   * IT IS A TIME NOW AND NOT A WAVE NUMBER, because the run is a time: the
+   * waves land on a schedule, the mission's own clock runs off the same
+   * one, and the tide is counted in it (Sim.skipToTime). A jump that named
+   * a wave moved the waves and left everything else where it was.
+   *
+   * The one limit is the sim's own: FORWARD ONLY, because no ledger here
+   * runs backwards. There is no upper one any more — the script does not
+   * end, so any time in front of the run is a real place to go, and asking
+   * for minute ninety is asking for the tide. Derived rather than
    * validated on change, so the Skip button and the sim never disagree
-   * about whether a number is a jump.
+   * about whether what is typed is a jump.
    */
   const skipTarget = ((): number | null => {
-    if (!hud || skipField.trim() === "") return null;
-    const n = Math.floor(Number(skipField));
-    if (!Number.isFinite(n)) return null;
-    return n > hud.currentWave && n <= hud.totalWaves ? n : null;
+    if (!hud) return null;
+    const secs = parseClock(skipField);
+    return secs !== null && secs > hud.elapsed ? secs : null;
   })();
   // the campaign save (bank, cleared levels, tech nodes) — localStorage,
   // so it loads in an effect; null only for the first client frame
@@ -2322,8 +2370,9 @@ export default function Animechs() {
         granted.current = true;
         // level.id names the world the run was on; runRandom says whether
         // the game picked it, which is what the map bonus is paid for
-        // the waves cleared are the objectives met, and the objectives are
-        // what the mission pays for (missionXp) — a win is every one
+        // a WIN pays the whole pot, whichever mission it was; a LOSS is
+        // paid off the waves it broke on the way down (missionXp), which
+        // is what makes a failed push progress rather than a wasted hour
         // ...and runMode decides whether any of it is BANKED: a custom
         // run settles into a results panel and nothing else
         const reward = grantRunReward(
@@ -3315,20 +3364,27 @@ export default function Animechs() {
             Paused
           </div>
         )}
-        {/* one thin bar per boss on the field, stacked top-centre and keyed
-            by spawn id so a bar never trades places with its neighbour.
-            pointer-events-none: it is a readout, never a control */}
-        {hud && hud.bosses.length > 0 && (
+        {/* ONE THIN BAR PER OBJECTIVE BODY ON THE FIELD — a Sovereign or a
+            Borer train (Sim.objectiveBars) — stacked top-centre, newest
+            DOWNWARD, and keyed by an id that never repeats so a bar cannot
+            trade places with its neighbour when one of them dies.
+
+            A TRAIN GETS ONE BAR, not twenty: the Borer is twenty hurtboxes
+            over one health pool, and a stack of twenty near-identical bars
+            would say nothing a single one does not.
+
+            pointer-events-none: it is a readout, never a control. */}
+        {hud && hud.objectives.length > 0 && (
           <div className="ui-zoom pointer-events-none absolute left-1/2 top-[0.75rem] z-10 flex w-[min(40vw,22rem)] -translate-x-1/2 flex-col gap-1.5">
-            {hud.bosses.map((b) => (
+            {hud.objectives.map((b) => (
               <div key={b.id}>
                 <div className="mb-0.5 text-center text-[12px] font-bold uppercase tracking-widest text-[#F25555] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
-                  {unitName(b.kind)}
+                  {b.name}
                 </div>
                 <div className="ms-bar w-full">
                   <div
                     className="bg-[#e55454] transition-[width] duration-150 ease-linear"
-                    style={{ width: `${Math.max(0, Math.min(100, (100 * b.hp) / b.max))}%` }}
+                    style={{ width: `${Math.max(0, Math.min(100, (100 * b.hp) / Math.max(1, b.max)))}%` }}
                   />
                 </div>
               </div>
@@ -3353,17 +3409,14 @@ export default function Animechs() {
                 is a RULE in force for the rest of the run, so it heads the
                 corner that holds what is true of the run for good. */}
             <RelicShelf relics={hud.shelfRelics} mods={hud.shelfMods} />
-            {/* THE OBJECTIVE LINES, on the missions that have an objective
-                BESIDE the waves. A hold and a survive get none: what those
-                two ask is the thing the player is already doing, and a
-                panel saying "clear every wave" over a board clearing every
-                wave is furniture. An intercept is the other case — the
-                count it is kept to is the only place the run's real state
-                is written down, and nothing else on the screen would ever
-                say it. */}
-            {hud.mission.kind === "intercept" && !hud.lost && !hud.won && (
-              <ObjectivePane hud={hud} />
-            )}
+            {/* THE OBJECTIVE, on every mission. It used to be the
+                intercept's alone — a hold and a survive asked for the thing
+                the player was already doing — and that reasoning went with
+                the fifty-wave objective: the script is an engine that never
+                runs out now (Sim.loadStep), so how far through the
+                assignment a run is has exactly one place it is written
+                down, and this is it. */}
+            {!hud.lost && !hud.won && <ObjectivePane hud={hud} />}
             {admin && !hud.lost && !hud.won && !hud.menuOpen && (
               /* THE SANDBOX'S ONE CONTROL: the wave jump.
                  THE PACE STRIP IS GONE, and with it every multiplier. A
@@ -3377,77 +3430,76 @@ export default function Animechs() {
                  The pause button went with the strip: space does it, and
                  so does the gear (the menu holds the sim the moment it
                  opens) — it was a third way to do a thing with two.
-                 WHAT THE MULTIPLIERS WERE FOR was reaching wave forty to
-                 look at wave forty, and running the first thirty-nine at
-                 speed is a slow, approximate way of doing that: the fight
-                 still has to be survived, and a sim stepped several times
-                 a frame is not the sim a real run plays. This asks for the
-                 wave directly.
+                 WHAT THE MULTIPLIERS WERE FOR was reaching minute
+                 fourteen to look at minute fourteen, and running the first
+                 thirteen at speed is a slow, approximate way of doing
+                 that: the fight still has to be survived, and a sim
+                 stepped several times a frame is not the sim a real run
+                 plays. This asks for the moment directly.
+                 AND IT ASKS FOR A TIME, not a wave number. The run syncs
+                 everything to one clock (Sim.skipToTime) — the waves land
+                 on a schedule, the mission's own launches read the same
+                 clock, the tide is counted in it — so a jump to 14:00 puts
+                 every one of them where it would have been. The old jump
+                 named a wave, which moved the waves and left an
+                 intercept's Borers sitting four minutes out.
+                 IT NEVER GOES AWAY EITHER. The old one hid on the last
+                 wave, where there was nothing in front of the run; there
+                 is always something in front of the run now.
                  A FORM rather than a button beside a field, so ENTER out
                  of the box does the thing the box is for — and the button
                  says where it is going rather than "Go", because the
                  number is typed above the field's own placeholder and the
-                 two must not be read as one sentence.
-                 AND IT IS GONE ON THE LAST WAVE, where there is nothing in
-                 front of the run to jump to. A survive mission brings it
-                 back by itself: its script loops and totalWaves grows
-                 (Sim.loadStep), so the last wave stops being the last
-                 one. */
-              hud.currentWave < hud.totalWaves && (
+                 two must not be read as one sentence. */
               <form
-                aria-label="skip to wave"
+                aria-label="skip to time"
                 onSubmit={(e) => {
                   e.preventDefault();
                   const g = gameRef.current;
-                  if (!g || !skipTarget) return;
-                  g.skipToWave(skipTarget);
-                  // the field empties behind the jump: what it held is on
-                  // the wave panel now, and a target already reached is a
-                  // press that would do nothing the second time
+                  if (!g || skipTarget === null) return;
+                  g.skipToTime(skipTarget);
+                  // the field empties behind the jump: where it went is on
+                  // the clock now, and a moment already reached is a press
+                  // that would do nothing the second time
                   setSkipField("");
                   setHud(g.ui());
                 }}
                 className="ms-seg self-start"
               >
                 <span className="flex items-center px-2 text-[15px] uppercase tracking-widest text-[#71717C]">
-                  Wave
+                  Time
                 </span>
                 <input
-                  type="number"
-                  min={hud.currentWave + 1}
-                  max={hud.totalWaves}
-                  step={1}
+                  type="text"
                   inputMode="numeric"
-                  aria-label="wave to skip to"
-                  /* the next wave up, so the box says what a jump is
-                     measured from without putting a value in it */
-                  placeholder={String(hud.currentWave + 1)}
+                  aria-label="run time to skip to"
+                  /* the next whole minute, so the box says what a jump is
+                     measured in without putting a value in it */
+                  placeholder={`${Math.floor(hud.elapsed / 60) + 1}:00`}
                   value={skipField}
                   onChange={(e) => setSkipField(e.target.value)}
                   /* the run is listening on `window` for arrows, letters
                      and space (Game.onKeyDown, the build grid): every one
                      of those belongs to the caret while it is in here */
                   onKeyDown={(e) => e.stopPropagation()}
-                  className="w-[4.5rem] border-0 bg-[#0B0B0D] px-2 py-1.5 text-right text-[15px] font-bold text-[#EDEDEF] placeholder:font-normal placeholder:text-[#4a4a52] focus:outline-none focus:ring-1 focus:ring-inset focus:ring-[#FFD37F] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="w-[4.5rem] border-0 bg-[#0B0B0D] px-2 py-1.5 text-right text-[15px] font-bold text-[#EDEDEF] placeholder:font-normal placeholder:text-[#4a4a52] focus:outline-none focus:ring-1 focus:ring-inset focus:ring-[#FFD37F]"
                 />
                 <button
                   type="submit"
-                  /* FORWARD ONLY, and never past the last wave the script
-                     holds — the same two limits Sim.skipToWave enforces,
+                  /* FORWARD ONLY — the one limit Sim.skipToTime enforces,
                      said here as a button that will not press rather than
                      as a press that quietly does nothing */
                   disabled={skipTarget === null}
                   title={
                     skipTarget === null
-                      ? `A wave between ${hud.currentWave + 1} and ${hud.totalWaves}`
-                      : `Skip to wave ${skipTarget} — the waves passed are not cleared`
+                      ? `A time in front of ${clock(hud.elapsed)} — minutes, or M:SS`
+                      : `Skip to ${clock(skipTarget)} — what is passed over is not cleared`
                   }
                   className="ms-btn px-3 py-1.5 text-[15px] disabled:cursor-default disabled:opacity-40"
                 >
                   Skip
                 </button>
               </form>
-              )
             )}
           </div>
         )}
@@ -3694,47 +3746,62 @@ export default function Animechs() {
                   (Sim.lost), so this headline stopped being a constant the
                   day it shipped: a run that let one Borer too many across
                   and is told its core was destroyed is being lied to about
-                  the thing it has to do differently next time. */}
+                  the thing it has to do differently next time.
+                  AND THERE ARE TWO WAYS TO FAIL ONE, not one. Leaking past
+                  the allowance is the usual one. The other is arriving at
+                  the end of the schedule short of the count with nothing
+                  left to send — which Sim.lost calls out separately, and
+                  which "they got through" would describe wrongly for a run
+                  that let nothing through at all. */}
               <div className="font-display text-xl font-bold uppercase tracking-widest text-[#e55454]">
-                {hud.coreHp > 0 ? "They got through" : "Core destroyed"}
+                {hud.coreHp <= 0
+                  ? "Core destroyed"
+                  : hud.mission.kind === "intercept" && hud.crossLeaked <= hud.mission.leaks
+                    ? "Nothing left to stop"
+                    : "They got through"}
               </div>
               <div className="mt-4 space-y-1 text-base text-[#EDEDEF]">
-                {hud.mission.kind === "intercept" ? (
-                  <div>
-                    <span className="font-bold text-[#EDEDEF]">{hud.crossKilled}</span> of{" "}
-                    {hud.mission.kills} destroyed,{" "}
-                    <span className="font-bold text-[#EDEDEF]">{hud.crossLeaked}</span> past you
+                {/* HOW CLOSE IT CAME, and close to WHAT — the mission's own
+                    objective, never the script's position in it. The bar
+                    used to be drawn off the wave number, which was honest
+                    only while clearing the script was the assignment; a
+                    wave count under a script that loops forever
+                    (Sim.loadStep) is a bar that fills up and starts again.
+                    It is one number now (`missionProgress`) and the line
+                    over it says what the number is counting. */}
+                <div>
+                  <div className="mb-1 text-[14px] uppercase tracking-widest text-[#71717C]">
+                    {hud.mission.kind === "intercept"
+                      ? `${hud.crossKilled} of ${hud.mission.kills} destroyed, ${hud.crossLeaked} past you`
+                      : hud.mission.kind === "survive"
+                        ? `${clock(hud.timeLeft)} still on the clock`
+                        : `${
+                            missionCount(
+                              hud.mission,
+                              missionTarget(hud.mission, hud.scriptWaves),
+                              hud,
+                            ).done
+                          } of ${missionTarget(hud.mission, hud.scriptWaves)} waves held`}
                   </div>
-                ) : hud.mission.kind === "survive" ? (
-                  <div>
-                    Survived{" "}
-                    <span className="font-bold text-[#EDEDEF]">{clock(hud.timeLeft)}</span> left
-                    on the clock
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-[#3a1f1f]">
+                    <div
+                      className="h-full rounded-full bg-[#e55454]"
+                      style={{ width: `${Math.min(100, 100 * hud.missionProgress)}%` }}
+                    />
                   </div>
-                ) : (
-                  /* NO WAVE NUMBERS ANYWHERE ON THIS SCREEN — a player is
-                     not supposed to be able to count how many waves a
-                     mission holds, so progress is a bar, not a fraction */
-                  <div>
-                    <div className="mb-1 text-[14px] uppercase tracking-widest text-[#71717C]">
-                      Progress
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-[#3a1f1f]">
-                      <div
-                        className="h-full rounded-full bg-[#e55454]"
-                        style={{
-                          width: `${Math.min(
-                            100,
-                            (100 * hud.currentWave) / Math.max(1, hud.totalWaves),
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
+                </div>
                 <div>
                   Kills <span className="font-bold text-[#EDEDEF]">{hud.kills}</span>
                 </div>
+                {/* ...and how heavy the swarm had got by the end. Only once
+                    the tide has actually turned: on a run that never
+                    outlived its script there is nothing to say */}
+                {hud.loopCycle > 0 && (
+                  <div>
+                    Tide{" "}
+                    <span className="font-bold text-[#FFD37F]">x{2 ** hud.loopCycle}</span> health
+                  </div>
+                )}
                 {/* A CUSTOM RUN SAYS SO INSTEAD OF PRINTING A ZERO. The
                     run was played under rules its player chose, so it
                     banks nothing (progress.ts) — and a results panel that
@@ -3748,9 +3815,9 @@ export default function Animechs() {
                   result &&
                   result.xp > 0 && (
                     <div className="space-y-1 pt-1">
-                      {/* the waves are the objectives, so a loss still pays
-                          for every wave the board cleared on the way down —
-                          which is what makes a failed push into progress */}
+                      {/* a loss still pays for every wave the board broke
+                          on the way down, whatever the mission was — which
+                          is what makes a failed push into progress */}
                       <div>Earned (×{result.xpBonus.toFixed(2)})</div>
                       <XpAmount amount={result.xp} className="justify-center" />
                       <LevelUpLine result={result} />
@@ -3810,6 +3877,16 @@ export default function Animechs() {
                 <div>
                   Kills <span className="font-bold text-[#EDEDEF]">{hud.kills}</span>
                 </div>
+                {/* A CLEAR THAT OUTLIVED THE SCRIPT SAYS SO. The tide is
+                    the only thing that separates two clears of the same
+                    mission at the same difficulty, so it is the one line
+                    worth keeping on a win screen (Sim.loopCycle) */}
+                {hud.loopCycle > 0 && (
+                  <div>
+                    Held to{" "}
+                    <span className="font-bold text-[#FFD37F]">tide x{2 ** hud.loopCycle}</span>
+                  </div>
+                )}
                 {/* ...and the same on a win: a custom clear is not a
                     clear, it is not recorded on the map, and it pays
                     nothing (progress.ts grantRunReward) */}

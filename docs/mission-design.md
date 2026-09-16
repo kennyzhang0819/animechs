@@ -1,9 +1,41 @@
 # Mission design
 
-What a map asks a run to DO, beyond surviving its fifty waves.
+What a map asks a run to DO. **It is the whole of what winning means** —
+there is no longer anything else a run can finish.
 
 `authoring-maps.md` is the terrain; this is what the terrain is for. A
 mission is a per-map objective, and the map is built around it.
+
+## The waves stopped being the objective
+
+The game used to be won by outlasting a document: fifty authored waves,
+and a run that cleared the fiftieth had cleared the map. That is retired.
+**The script is an engine now** — when it reaches its last wave and the
+mission is still open it replays its last eleven, one doubling of enemy
+health heavier every cycle, forever (`Sim.loadStep`, the tide;
+`docs/authoring-waves.md`). A script cannot run out underneath a run, so
+nothing can be finished by waiting.
+
+Three consequences for everything below:
+
+- **Every map owes an objective.** A board with no mission the sim can
+  meet is a board that can only ever be lost, and `npm run check` fails
+  a playable world that has one (`scripts/check.mjs`, the `worlds` gate).
+- **"Hold the line" is a NUMBER, not a document.** The classic assignment
+  survives as `hold { waves }` — break that many waves with the core
+  standing — and unset it means the script's own length, which is what
+  Confluence plays. Ask for more than the document holds and a hold plays
+  the infinite climb like anything else.
+- **Every progress bar reads the mission** (`missionProgress` in
+  `game/levels.ts`, one number the sim publishes and every panel draws).
+  A bar drawn off the wave number would fill to the brim and start again.
+- **The objective bodies belong to missions, not waves.** The Sovereign
+  and the Borer are `OBJECTIVE_KINDS` (`game/levels.ts`): one thing the
+  run has to go and deal with, which is the shape an objective has. A wave
+  cannot send one — `waveGroups` strips them — and each wears a **health
+  bar** at the top of the screen while it is on the field
+  (`Sim.objectiveBars`), stacked downward when there are several. A Borer
+  gets ONE bar over its whole twenty-piece pool.
 
 ## What a mission has to work with
 
@@ -25,30 +57,39 @@ Three consequences, and every archetype below is shaped by them:
   A mission whose twist is that the player did not know is not a mission.
 - **A MISSION MUST COMPETE WITH THE WAVE CLOCK.** "Kill it eventually"
   is not an objective. The objective needs a deadline, a window, or a
-  cost that climbs while it is ignored.
+  cost that climbs while it is ignored — and the clock it is competing
+  with does not stop, because the swarm gets heavier for as long as the
+  run lasts (the tide).
 
 ## What is built
 
-**One of the eight.** Coldline plays *intercept the crosser*: seven
-Borers — twenty-car boring machines — cross the map on two fixed roads
-while the wave script runs at the core underneath, and a run that lets
-two of them reach the far side is over whether or not the base is still
-standing.
+**Two of the eight, counting the plain one.** Confluence plays *hold the
+line* — fifty waves broken with the core standing, the assignment the
+whole campaign is tuned against. Coldline plays *intercept the crosser*:
+seven Borers — twenty-car boring machines — cross the map on two fixed
+roads while the wave script runs at the core underneath, and a run that
+lets two of them reach the far side is over whether or not the base is
+still standing.
 
 Where it lives, since a mission is spread across the file the way one has
 to be:
 
 | | |
 |---|---|
-| `Mission` / `InterceptMission` | `game/levels.ts` — the type, and Coldline's authored numbers: how many, on which road, how far apart, how many may get past |
+| `Mission` / `InterceptMission` | `game/levels.ts` — the union, and Coldline's authored numbers: how many, on which road, how far apart, how many may get past |
+| the objective's fraction | `missionProgress` / `missionCount` in `game/levels.ts` — one definition, read by the sim and the HUD alike |
 | the roads | `game/missions.ts` — the hard-coded lines, in cells, per map id |
 | the Borer | `game/levels.ts` (`WORM_CHAIN`, the three kinds) and `game/wormArt.ts` (the drawing) |
 | what happens | `Sim.runCrossers`, `launchCrosser`, `updateCrosser`, `leakCrosser`, and the two lines in `won()` and `lost()` |
+| whether the script loops under it | `Sim.tideTurns` — every mission but a hold that has staged its count |
 | what the player sees | the objective pane in `components/Animechs.tsx` and the road overlay in `Game.drawCrosserRoads` |
 
-The other seven archetypes have a MAP each and no rule yet
-(`WORLDS`, the mission sketches) — the terrain is drawn and the boards
-are playable as plain holds.
+The other six archetypes have a MAP each and no rule yet (`WORLDS`, the
+mission sketches). **Those boards are SHELVED and not in the game**
+(`PLAYABLE_WORLD_IDS` in `game/levels.ts`): terrain that is drawn with no
+reason to be played, carrying a placeholder hold. `npm run check` holds
+them to constructing without throwing and to nothing else — a shelved
+board is allowed to be unfinished, which is what shelving it says.
 
 ## The eight archetypes
 

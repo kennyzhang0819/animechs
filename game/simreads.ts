@@ -57,7 +57,7 @@ export interface WorldSource {
 }
 
 const emptyReport = (): WorldReport => ({
-  bosses: [],
+  objectives: [],
   counts: Object.fromEntries(TOWER_KINDS.map((k) => [k, 0])) as Record<TowerKind, number>,
   mods: [],
   relics: [],
@@ -196,6 +196,20 @@ export class World {
   }
   get crossLive(): number {
     return this.header[HDR.CROSS_LIVE];
+  }
+  /** how far through its objective the run is, 0 to 1 (Sim.missionProgress)
+   *  — whichever mission the map carries */
+  get missionProgress(): number {
+    return this.header[HDR.MISSION_PROGRESS];
+  }
+  /** how many times the tide has turned (Sim.loopCycle): the swarm's health
+   *  is 2^this, and 0 means the script is still on its first pass */
+  get loopCycle(): number {
+    return this.header[HDR.LOOP_CYCLE];
+  }
+  /** the authored script's wave count, which the tide never moves */
+  get scriptWaves(): number {
+    return this.header[HDR.SCRIPT_WAVES];
   }
   /** is building charged? (Sim.charging) */
   get charging(): boolean {

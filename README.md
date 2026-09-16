@@ -1,7 +1,7 @@
 # Animechs
 
-A tower-defense swarm game in Mindustry's clothes: fifty waves of up to
-twenty thousand bodies, flow-field pathfinding for the whole horde, WebGL2
+A tower-defense swarm game in Mindustry's clothes: an endless script of up
+to twenty thousand bodies, flow-field pathfinding for the whole horde, WebGL2
 instanced rendering, and seventeen turrets (1×1 up to 4×4) that block
 movement and reroute the swarm in real time — while the swarm shoots back
 at them with Mindustry's own weapons.
@@ -179,9 +179,13 @@ stale tab or a cached bundle looks exactly like a fix not working.
   repeater, furnace and railhead), `MAX_UNITS` (22,000) and the core's
   pool (`CORE_HP`, on a dial of its own). A placement is INSTANT — there
   is no construction shell any more
-- `game/levels.ts` — unit stats and wave-script plumbing; the authored
-  script itself (50 waves, a 15-second gap — `WAVE_GAP_DEFAULT`) lives in
-  `public/levels/campaign.json`, loaded by `loadLevelDocs()`. Six unit
+- `game/levels.ts` — unit stats, the `Mission` union (what a map is FOR —
+  see *Missions* below) and wave-script plumbing; the authored script
+  itself (50 waves, a 19-second gap — `WAVE_GAP_DEFAULT`) lives in
+  `public/levels/campaign.json`, loaded by `loadLevelDocs()`. The fifty are
+  the document's length and not the run's: past them the **tide** replays
+  the last eleven, one doubling of enemy health a cycle, forever
+  (`Sim.loadStep`). Six unit
   families, each one idea at five sizes: ground mechs, venom spitters,
   Starhart stags, Stoop bats and the two **naval** lines (the Skate
   mantas, the Livewire narwhals), which travel on the amphibious water layer. The **family roll**
@@ -521,7 +525,8 @@ own budget is printed beside the total as an advisory.
 
 **There is one run in the game and ten difficulties to play it at.** Every
 rung sends the whole authored script — all fifty waves, wave 1 to wave 50,
-the same fifty every time, **and every body at the same health bar one**.
+the same fifty every time, **and every body at the same health bar one**
+until the tide turns (see *Missions and the tide*).
 What a rung changes is **how many** come and **what rules** they come
 under. The four named difficulties — **Incursion, Onslaught, Scourge,
 Nemesis** — send every wave at a quarter, a half, three quarters and the
@@ -558,15 +563,20 @@ authored at level 0. Difficulty is rules, not hit points.
 
 ### The clock
 
-**A wave lands every fifteen seconds** (`waveGap`, `WAVE_GAP_DEFAULT`),
-from the first second of the run, each stronger than the last: a few
-dozen Ironhide runts on wave 1, the first elites by wave 10, waves in the
-thousands by the forties, and the Sovereign as the boss that closes the
-script. The gap is shorter than a wave takes to walk the lane, so the
-waves overlap and the field is a tide rather than a series of fights —
-which is the whole reason the sim is built for 10,000 to 15,000 bodies at
-once (`MAX_UNITS`, 22,000). The gap is the document's
-(`public/levels/campaign.json`) and the level editor edits it.
+**A wave lands every 22.5 seconds** — `waveGap` (19, `WAVE_GAP_DEFAULT`)
+plus `WAVE_RELEASE_SECONDS` (3.5) — **on a schedule the board cannot
+move** (`Sim.waveStartTime`). Each is stronger than the last: a few dozen
+Ironhide runts on wave 1, the first elites by wave 10, waves in the
+thousands by the forties, and then the tide takes over and the last eleven
+go round again at double health, forever. The gap is shorter than a wave
+takes to walk the lane, so the waves overlap and the field is a tide rather
+than a series of fights — which is the whole reason the sim is built for
+10,000 to 15,000 bodies at once (`MAX_UNITS`, 22,000). The gap is the
+document's (`public/levels/campaign.json`) and the level editor edits it.
+
+**The Sovereign no longer closes the script.** It was wave 50's curtain, and
+a script that loops has no curtain to be; it is an objective now, waiting on
+the missions that field it (see *Missions and the tide*).
 
 ### Two currencies that never touch
 
@@ -590,11 +600,12 @@ difficulty-scaled pool, or a full clear would pay differently on each one.
 Scrap income is therefore a fact about the script, which is what lets the
 roll fee be authored against it (the stage table below).
 
-**XP is the save's progress, and it is paid for objectives, not kills.**
+**XP is the save's progress, and it is paid for the mission, not kills.**
 Every mission is worth the same fixed pot — `MISSION_XP`, 100,000 for a
-full clear **at Nemesis** (the rungs below pay a share of it, the rungs
-above a bonus) — and the pot is dealt out **one wave at a time as the
-waves are cleared**. A wave is cleared when every body it sent is down
+**clear at Nemesis** (the rungs below pay a share of it, the rungs above a
+bonus). **A win pays the whole pot**, whichever mission it was and however
+the last wave ended. A LOSS is paid off the waves it broke on the way
+down, one at a time: a wave is cleared when every body it sent is down
 (`Sim.wavesCleared`), and it banks its share that moment. The shares ramp
 linearly from wave 1 to the last (`WAVE_XP_RAMP`: the last wave pays three
 times the first) and sum to exactly the pot, so wave 1 is worth 1% and
@@ -1107,10 +1118,73 @@ support pair is off the field while the deal is being built, implemented
 and priced and dealt to nobody. Putting them back is deleting a name from
 that list.
 
+### Missions and the tide
+
+**A map is won by its MISSION, never by outlasting its waves.** That used
+to be the whole game — fifty authored waves, and a run that cleared the
+fiftieth had cleared the map — and it is retired. The script is an
+**engine** now: when the cursor reaches the last wave and the mission is
+still open, the last eleven waves go again, and **every cycle doubles the
+health of every body** (`Sim.loadStep`; `TIDE_LEVELS` is
+`LEVELS_PER_DOUBLING` in `game/ladder.ts`, twelve enemy levels at
+`HP_PER_LEVEL` 1.06). x2, x4, x8, with no ceiling — the HUD prints which
+cycle it is on. A level moves **health and nothing else**: same speed,
+same armour, same drop, same silhouette, so the swarm that comes back is
+the one the player just beat and the only question is whether their guns
+still cut it. Scrap is paid off the body's AUTHORED pool, so **income is
+flat across the climb** and the tide is where a board stops being able to
+buy its way out.
+
+Three missions are wired (`Mission` in `game/levels.ts`,
+[docs/mission-design.md](docs/mission-design.md) for the eight archetypes
+the design is drawn from):
+
+- **hold** — break `waves` waves with the core standing; a wave counts
+  when every body it sent is down. Unset, the target is the script's own
+  length, which is what **Confluence** plays. Ask for more waves than the
+  document holds and a hold plays the tide like anything else.
+- **survive** — last `minutes` on the clock, against a swarm that keeps
+  doubling.
+- **intercept** — destroy `kills` crossers before they leave, which is
+  **Coldline**: seven Borers on two authored roads while the script runs
+  at the core underneath. It is the first mission that can be **failed
+  with the core standing**, and the first that can be **met with the
+  script still sending**.
+
+**Every progress bar on the screen reads the mission** — one number
+(`missionProgress` in `game/levels.ts`, published by the sim and drawn by
+the objective panel and both end screens). A bar drawn off the wave count
+would fill to the brim and quietly start over.
+
+**The objective bodies are the Sovereign and the Borer** (`OBJECTIVE_KINDS`
+in `game/levels.ts`), and **a wave cannot send either**. The boss used to be
+wave 50's curtain; a script that loops forever has no curtain to be, and a
+boss on a lap counter is ordinary traffic at double health. `waveGroups`
+strips them from any wave whatever the document says, and the level editor
+does not offer their rows — a mission puts them down and nothing else can.
+Each wears a **health bar** at the top of the screen while it is on the field
+(`Sim.objectiveBars`), stacked downward when there are several; a Borer gets
+one bar over its whole twenty-piece pool.
+
+**Only two boards are in the game** (`PLAYABLE_WORLD_IDS`): Confluence and
+Coldline. The other fifteen are drawn terrain on the shelf, and
+`npm run check` holds them to constructing without throwing and to nothing
+else — the playable ones it also holds to having a core, a door for the
+swarm, and a mission the sim can actually meet.
+
 ### One script, a deal that turns every wave
 
-**Every map plays the same fifty waves** — `public/levels/campaign.json`,
-edited in the admin level editor from any world's card. The script is
+**Every map plays the same fifty waves, and then plays them again** —
+`public/levels/campaign.json`, edited in the admin level editor from any
+world's card. **The waves land on a clock**: wave n enters at
+`WAVE_GAP_OPENING + (n-1) x (waveGap + WAVE_RELEASE_SECONDS)` seconds — 22.5s
+apart as shipped — and nothing about the board can move it
+(`Sim.waveStartTime`). A wave whose drop zones cannot pass it in 3.5 seconds
+keeps releasing while the next one lands (`Sim.live`, oldest first), so
+**congestion costs a thicker field and never a longer run**. Everything else
+in the run reads the same clock: a survive's deadline, an intercept's
+launches, the tide's cycles, and the sandbox's jump (`Sim.skipToTime`, or
+`time 14:00` in the console). The script is
 authored in three unit families (ground, ground support, air), and those
 are its three **slots** — but a slot is a ROLE ("the line", "the support
 behind it"), not a promise about which family plays it. When a run
@@ -1558,7 +1632,7 @@ Every deploy above Nemesis is played under **mutators** — rules that
 change what happens to a wave after it lands. **Nobody picks them in
 regular mode.** The **difficulty decides the budget and the count**, and
 that many rules are rolled to fit it when you deploy. It is the StarCraft II model, and the
-mode it exists for is endgame resource farming: the same fifty waves, a
+mode it exists for is endgame resource farming: the same script, a
 different set of rules every time. The catalog (`game/mutation.ts`):
 Hungry Mechs, Speedy, Reconstruction, Conquest, Mech Virus, Overshields,
 Armored Swarms, Hydrophobic, Leadership, Mitosis, Amphibious, Shield

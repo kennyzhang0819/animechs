@@ -29,7 +29,9 @@
  *   art      every Foundry head the code names has a drawing behind it,
  *            which is the trap a turret rename walks into
  *   docs     every level and map document on disk parses and applies
- *   worlds   all nine worlds construct: terrain, script, core
+ *   worlds   the PLAYABLE boards are finishable — core, spawn tiles and a
+ *            mission the sim can meet — and the shelved ones at least
+ *            construct (PLAYABLE_WORLD_IDS in game/levels.ts)
  *   sim      thirty sim-seconds of world 1 with turrets on the spawn —
  *            bodies spawn, walk, get shot and die, and nothing goes NaN
  *
@@ -46,9 +48,9 @@
  *   scale    the same siege at three, six, nine and twelve thousand
  *            turrets, so the cost of the board is read as a CURVE and not
  *            a point (held to SIEGE_LENIENT_MS for now — see there)
- *   maps     the siege on every world, because a choke is a different
- *            fight from an open field and the board that lags is the one
- *            the player happens to be on
+ *   maps     the siege on every PLAYABLE world, because a choke is a
+ *            different fight from an open field and the board that lags is
+ *            the one the player happens to be on
  *
  * WHAT IT DELIBERATELY DOES NOT DO IS PLAY THE GAME. It never reports a
  * wave reached or a core percentage, because those are numbers somebody
@@ -410,19 +412,96 @@ for (const id of M.OFFICIAL_MAP_IDS) {
 }
 report("docs", docProblems, `${docCount} documents`);
 
-// ---------- worlds: every one of them boots ----------
+// ---------- worlds: every PLAYABLE one boots, and can be finished ----------
 
+/**
+ * ONLY THE BOARDS THAT ARE IN THE GAME (levels.ts PLAYABLE_WORLD_IDS).
+ *
+ * It used to be all seventeen, which was the wrong bar in both directions.
+ * Fifteen of them are SHELVED — terrain that is drawn and has no reason to
+ * be played yet — and holding unfinished work to the standard finished
+ * work is held to means one of two things happens: either the shelf gets
+ * hacked up to pass a gate nobody is playing it against, or the gate gets
+ * loosened until it stops catching anything on the two boards that ARE
+ * shipped. Neither is a check. A shelved board is allowed to be broken;
+ * that is what shelving it says.
+ *
+ * WHAT THE PLAYABLE ONES ARE HELD TO is everything a run needs to reach
+ * its own end:
+ *
+ *   a core        — the stake. No core, no run to lose.
+ *   spawn tiles   — a door for the swarm. Sim.reset throws with none at
+ *                   all; this also catches the subtler case of tiles that
+ *                   exist and reach nothing, which spawns nobody and reads
+ *                   as a stalled scheduler.
+ *   an objective  — a mission the sim can actually MEET (levels.ts
+ *                   Mission). The waves are not the objective any more
+ *                   (see the tide, Sim.loadStep): a script that runs
+ *                   forever means a map whose mission is unreachable is a
+ *                   map that can only ever be lost, and nothing else in
+ *                   the game would say so.
+ *
+ * The shelf is still CONSTRUCTED, because a board that throws on load is a
+ * crash whatever it is for — it just is not asked to be finishable.
+ */
 const worldProblems = [];
+const shelfProblems = [];
 for (const w of L.WORLDS) {
+  const playable = !L.worldHidden(w.id);
+  const into = playable ? worldProblems : shelfProblems;
+  const say = (msg) => into.push(`${w.id} ${w.name}: ${msg}`);
+  let sim;
   try {
-    const s = new Sim(LA.specForTier(w, 0));
-    if (!s.core) worldProblems.push(`${w.id} ${w.name}: no core`);
-    else if (!(s.core.hp > 0)) worldProblems.push(`${w.id} ${w.name}: core at ${s.core.hp}`);
+    sim = new Sim(LA.specForTier(w, 0));
   } catch (e) {
-    worldProblems.push(`${w.id} ${w.name}: ${e.message}`);
+    say(e.message);
+    continue;
+  }
+  if (!sim.core) say("no core");
+  else if (!(sim.core.hp > 0)) say(`core at ${sim.core.hp}`);
+  if (!playable) continue;
+
+  // the doors: painted tiles, and tiles that actually reach the core
+  let painted = 0;
+  for (const c of sim.terrain.spawn) painted += c;
+  if (painted === 0) say("no spawn tiles painted — the swarm has no door");
+  const reach =
+    sim.field.spawnPts.length + sim.navalField.spawnPts.length + sim.airRoutes().length;
+  if (painted > 0 && reach === 0)
+    say(`${painted} spawn tiles and not one of them reaches an exit`);
+
+  // ...and the objective. Every mission answers "what would winning be",
+  // and a mission whose answer is zero is a map with no way out
+  const m = w.mission;
+  if (m.kind === "hold") {
+    const target = L.missionTarget(m, sim.scriptWaves);
+    if (!(target > 0))
+      say("a hold mission with no waves to hold — the script is empty and it names no count");
+    else if (m.waves == null && target !== sim.scriptWaves)
+      say(`hold target ${target} does not match the script's ${sim.scriptWaves} waves`);
+  } else if (m.kind === "survive") {
+    if (!(m.minutes > 0)) say(`a survive mission of ${m.minutes} minutes`);
+  } else if (m.kind === "intercept") {
+    // the roads are the mission's geometry and live with the terrain
+    // (game/missions.ts) — Sim.reset has already thrown if the pattern
+    // names one the map does not carry, so what is left is the arithmetic
+    if (!(m.kills > 0)) say(`an intercept mission asking for ${m.kills} kills`);
+    const sent = m.pattern.reduce((n, launch) => n + launch.length, 0);
+    if (sent < m.kills)
+      say(`the pattern sends ${sent} crossers and the mission asks for ${m.kills}`);
+    if (m.leaks > 0 && m.spare.length === 0)
+      say(`${m.leaks} leaks allowed and no spare launch to make them back`);
+  } else {
+    say(`mission kind "${m.kind}" has no objective the sim knows how to meet`);
   }
 }
-report("worlds", worldProblems, `${L.WORLDS.length} construct`);
+report(
+  "worlds",
+  worldProblems.concat(shelfProblems),
+  `${L.VISIBLE_WORLDS.length} playable, finishable · ${
+    L.WORLDS.length - L.VISIBLE_WORLDS.length
+  } shelved, construct only`,
+);
 
 // ---------- sim: does the loop still run ----------
 
@@ -441,7 +520,7 @@ const simProblems = [];
 let simDetail = "";
 try {
   reseed(7);
-  const sim = new Sim(LA.specForTier(L.WORLDS[0], 0));
+  const sim = new Sim(LA.specForTier(L.VISIBLE_WORLDS[0], 0));
   // the field solves whole, so a re-route cannot depend on how loaded the
   // machine is — see FIELD_BUDGET_MS in sim.ts
   sim.setFieldBudget(Infinity);
@@ -620,7 +699,7 @@ if (wants("frames")) try {
   reseed(29);
   // the top of the ladder: tierCountScale plateaus at Nemesis, so this is
   // simply the most the script is ever asked to send
-  const spec = LA.specForTier(L.WORLDS[0], LA.RUNG_COUNT - 1);
+  const spec = LA.specForTier(L.VISIBLE_WORLDS[0], LA.RUNG_COUNT - 1);
   const want = LA.waveGuide(spec)
     .filter((r) => r.wave >= LOAD_WAVES[0] && r.wave <= LOAD_WAVES[1])
     .reduce((a, r) => a + r.units, 0);
@@ -874,18 +953,56 @@ function siege({
     };
     scatter(Math.min(pre, full));
 
-    // the swarm: every kind on the roster, and a boss through the door as
-    // soon as a door will take one — the pads are crowded, so the boss is
-    // asked for first every step until it lands
+    // THE SWARM: every kind on the roster, drawn at random — except for
+    // the first body of every step, which is spent TOPPING UP COVERAGE.
+    //
+    // WHAT THE CLOCK IS FOR is the widest hitboxes and the heaviest
+    // per-body work, so the assertions below require a boss and every T5
+    // kind to have been standing while it ran. A uniform draw over a
+    // fifty-kind roster only manages that by luck: the check failed on
+    // "no boss was alive during the sample" and "only 3 T5 kinds reached
+    // the field" whenever the dice or the pad crowding moved, which is a
+    // gate that cries wolf rather than one that catches anything.
+    //
+    // So slot zero asks for whatever is MISSING FROM THE BOARD RIGHT NOW —
+    // a boss when none is standing, otherwise the first T5 with nothing of
+    // its kind alive — read off the sim's own census rather than off a
+    // tally of what has been asked for. Topping up only what is absent is
+    // what keeps the load honest: it puts one body in, not a stream.
+    //
+    // IT MATTERS MORE SINCE THE BOSS LEFT THE WAVE SCRIPT (levels.ts
+    // OBJECTIVE_KINDS). Nothing in a campaign run fields one until a
+    // mission does, so this is the only place the Sovereign is ever timed.
     const pool = L.UNIT_KINDS.filter((k) => k !== "boss");
+    const T5 = pool.filter((k) => L.UNIT_STATS[k].tier === 5);
+    const gone = (kind) => sim.aliveByKind[L.UNIT_ID[kind]] === 0;
     let fed = 0, bosses = 0;
-    const feed = (wantBosses) => {
+    // THE DOOR WILL NOT ALWAYS TAKE A BOSS, and on a tight board it never
+    // will. A spawn needs a clear spot at the body's OUTER radius, and the
+    // Sovereign's is the widest on the roster — so on Coldline, whose 875
+    // spawn tiles are carrying twelve thousand bodies by the time the clock
+    // starts, the ask failed every step of the window and the check said
+    // the widest air hitbox went untimed. Which was TRUE and was not a bug:
+    // there genuinely was no room, and the scenario wanted one anyway.
+    // So it is placed EXACTLY at the map's first air mouth when the door
+    // refuses — the same path a Borer's train uses to be laid nose to tail
+    // (Sim.launchCrosser) — because this check is about what a step COSTS
+    // with that silhouette on the board, not about whether a pad was free.
+    const mouth = sim.airRoutes()[0]?.pts;
+    const putBoss = () =>
+      sim.spawnUnit("boss") ||
+      (mouth ? sim.spawnUnit("boss", { x: mouth[0], y: mouth[1], exact: true }) : false);
+    const feed = (keepBoss) => {
       for (let j = 0; j < SIEGE_RATE; j++) {
-        const k = bosses < wantBosses && j === 0 ? "boss" : pool[(Math.random() * pool.length) | 0];
-        if (sim.spawnUnit(k)) { fed++; if (k === "boss") bosses++; }
+        if (j === 0 && keepBoss && gone("boss")) {
+          if (putBoss()) { fed++; bosses++; }
+          continue;
+        }
+        const k = (j === 0 ? T5.find(gone) : null) ?? pool[(Math.random() * pool.length) | 0];
+        if (sim.spawnUnit(k)) fed++;
       }
     };
-    for (let f = 0; f < SIEGE_MARCH * 60; f++) { feed(1); sim.update(1 / 60); }
+    for (let f = 0; f < SIEGE_MARCH * 60; f++) { feed(true); sim.update(1 / 60); }
 
     // the rest of the board, all at once, with the fight on
     scatter(full);
@@ -902,7 +1019,7 @@ function siege({
     for (let n = 0; n < SIEGE_SAMPLES; n++) {
       const ms = [];
       for (let f = 0; f < SIEGE_SAMPLE * 60; f++) {
-        feed(2);
+        feed(true);
         const a = performance.now();
         sim.update(1 / 60);
         ms.push(performance.now() - a);
@@ -963,7 +1080,12 @@ function siege({
 }
 
 if (FULL) {
-  const worlds = L.WORLDS.map((w) => ({ w, cells: legalCells(w) })).sort((a, b) => b.cells - a.cells);
+  // THE CLOCKS ARE POINTED AT THE BOARDS PEOPLE PLAY (VISIBLE_WORLDS, and
+  // see the worlds check above). A shelved map's frame time is a number
+  // about terrain nobody is standing on: timing it costs the same minutes
+  // as timing a real one and a red line from it is a red line nobody can
+  // act on, because the fix is finishing the board rather than the sim.
+  const worlds = L.VISIBLE_WORLDS.map((w) => ({ w, cells: legalCells(w) })).sort((a, b) => b.cells - a.cells);
   const biggest = worlds[0].w;
   // the gate: the world with the most ground, at the size a late run stands
   if (wants("siege")) {
@@ -983,8 +1105,9 @@ if (FULL) {
   }
   if (wants("scale")) report("scale", scaleProblems, `${curve.join(" · ")} a step (held to ${SIEGE_LENIENT_MS}ms until projectiles is fixed)`);
 
-  // every world: a choke is a different fight from an open field. A small
-  // map takes fewer buildings, so the target is what its ground will hold
+  // every playable world: a choke is a different fight from an open field.
+  // A small map takes fewer buildings, so the target is what its ground
+  // will hold
   const mapProblems = [];
   const perWorld = [];
   if (wants("maps")) for (const { w, cells } of worlds) {

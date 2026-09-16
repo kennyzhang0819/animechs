@@ -5,7 +5,7 @@ import { useConfirm } from "./ConfirmDialog";
 import {
   UNIT_KINDS,
   UNIT_STATS,
-  UNIT_TREES,
+  WAVE_TREES,
   levelDocOf,
   missionText,
   saveLevel,
@@ -748,7 +748,12 @@ function StepCard({
           ground/air/dartback1 mix is readable at a glance instead of being a
           bag of chips. */}
       <div className="mt-1.5 space-y-1">
-        {UNIT_TREES.map((tree) => (
+        {/* WAVE_TREES, not UNIT_TREES: the Sovereign and the Borer are
+            MISSION objectives and a wave cannot send them whatever is typed
+            (levels.ts OBJECTIVE_KINDS strips them in waveGroups), so
+            offering their slots here would be offering a number that goes
+            nowhere. */}
+        {WAVE_TREES.map((tree) => (
           <div key={tree.name} className="flex items-center gap-1.5">
             <span className="w-16 shrink-0 text-[14px] font-bold uppercase tracking-widest text-[#71717C]">
               {tree.name}

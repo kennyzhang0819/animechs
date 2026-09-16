@@ -30,8 +30,8 @@ import { MUT_COUNT_MAX, MUT_FIRST_TIER, mutationBudget, mutationPicks } from "./
 /**
  * THE LADDER — ONE CLIMB PER WORLD, TEN RUNGS, FOUR NAMES, ONE SCRIPT.
  *
- * EVERY RUNG PLAYS THE WHOLE AUTHORED SCRIPT — all eight waves, wave 1 to
- * wave 8, the same eight every time, and EVERY BODY AT THE SAME HEALTH BAR
+ * EVERY RUNG PLAYS THE WHOLE AUTHORED SCRIPT — all fifty waves, wave 1 to
+ * wave 50, the same fifty every time, and EVERY BODY AT THE SAME HEALTH BAR
  * ONE. What changes is HOW MANY come and WHAT RULES they come under:
  *
  *   Incursion     a quarter of every wave's count       no rules
@@ -54,14 +54,18 @@ import { MUT_COUNT_MAX, MUT_FIRST_TIER, mutationBudget, mutationPicks } from "./
  * table it reads). It is the size ramp, not a health curve: the same
  * quarter, half, three quarters, whole.
  *
- * THE HEALTH CURVE IS STILL HERE AND NOT USED. A rung used to be an enemy
- * LEVEL as well — every body's health times HP_PER_LEVEL ^ level, up to
- * x8 at the top — and that column is authored to zero on every rung now.
- * The mechanism stays (unitHpAtLevel, LevelSpec.enemyLevel, the balance
- * dashboard's dial), because a map or a mutator may want it one day; the
- * ladder simply does not turn it. Difficulty is count and then rules, not
- * hit points, which is what makes the top rung a different fight rather
- * than the same fight eight times over.
+ * THE HEALTH CURVE IS NOT THE LADDER'S — IT IS THE TIDE'S. A rung used to
+ * be an enemy LEVEL as well, and that column is authored to zero on every
+ * rung now: difficulty is count and then rules, which is what makes the
+ * top rung a different fight rather than the same fight eight times over.
+ *
+ * What turns the curve instead is the SCRIPT RUNNING OUT. Past the last
+ * authored wave the tail goes again, LEVELS_PER_DOUBLING heavier each
+ * cycle, forever (Sim.loadStep) — so the two axes are cleanly split: a
+ * rung says how big the swarm is and what rules it plays under, and the
+ * tide says how long the run has been going. (The mechanism is shared —
+ * unitHpAtLevel, LevelSpec.enemyLevel, the balance dashboard's dial — and
+ * a map or a mutator may still want it.)
  *
  * WHAT A RUNG PAYS. Scrap is fixed per kill and never scales (economy.ts):
  * a rung's run banks the same scrap as any other, because scrap is what
@@ -82,10 +86,27 @@ import { MUT_COUNT_MAX, MUT_FIRST_TIER, mutationBudget, mutationPicks } from "./
  * Mindustry's own per-level health curve. 1.06^12 = 2.01, so twelve levels
  * is exactly double health, and NOTHING else scales: armour, speed, hitbox
  * and drop all stay at their base values forever. Every rung is authored
- * at level 0 (see the note at the top of the file); the curve is kept for
- * the dial and for anything that wants it later.
+ * at level 0 (see the note at the top of the file); the curve is what the
+ * TIDE turns (Sim.loadStep) once a script has been spent, and the dial the
+ * balance dashboard bends.
  */
 export const HP_PER_LEVEL = 1.06;
+
+/**
+ * HOW MANY ENEMY LEVELS ARE ONE DOUBLING OF HEALTH — twelve, and derived
+ * rather than typed so a change to HP_PER_LEVEL carries.
+ *
+ * THIS IS THE STEP OF THE INFINITE CLIMB. A script is finite; the run on
+ * top of it is not (docs/authoring-waves.md). When the last wave has been
+ * sent and the mission is still open, the tail of the script goes again
+ * with this many levels added — x2 health, then x4, then x8, one doubling
+ * a cycle, forever. Levels are the right knob for it because a level moves
+ * HEALTH AND NOTHING ELSE: the swarm that comes back is the swarm the
+ * player just beat, walking at the same speed in the same shape, and the
+ * only question it asks is whether the guns bought so far still cut it.
+ * Counts would change the picture; speed would change the puzzle.
+ */
+export const LEVELS_PER_DOUBLING = Math.round(Math.log(2) / Math.log(HP_PER_LEVEL));
 
 /**
  * HOW MUCH MORE XP EACH RUNG PAYS THAN THE ONE BELOW, linear: rung n
