@@ -15,7 +15,6 @@ import {
 } from "./constants";
 import {
   contentRows,
-  defaultBeaconPrice,
   SPAWN_STYLE,
   PALETTE,
   terrainFromMap,
@@ -56,6 +55,10 @@ interface Snapshot {
   pines: Prop[];
   decor: Prop[];
   beacons: MapBeacon[];
+  /** the map's beacon price ladder (maps.ts MapData.beaconPrices) — it is
+   *  edited in a panel rather than painted, and an author who types a rung
+   *  by mistake wants the same Ctrl+Z every brush stroke has */
+  beaconPrices: number[];
   base: { x: number; y: number; size: number };
 }
 
@@ -271,6 +274,7 @@ export class MapEditor {
     this.terrain.pines = s.pines;
     this.terrain.decor = s.decor;
     this.terrain.beacons = s.beacons;
+    this.terrain.beaconPrices = s.beaconPrices;
     this.terrain.base = s.base;
     this.dirty = true;
     this.renderer.rebuildTerrain(this, this.layers);
@@ -296,6 +300,7 @@ export class MapEditor {
       pines: this.terrain.pines.map((p) => ({ ...p })),
       decor: this.terrain.decor.map((p) => ({ ...p })),
       beacons: this.terrain.beacons.map((r) => ({ ...r })),
+      beaconPrices: [...this.terrain.beaconPrices],
       base: { ...this.terrain.base },
     });
     if (this.undoStack.length > UNDO_CAP) this.undoStack.shift();
@@ -393,6 +398,14 @@ export class MapEditor {
       // layer shields them from the eraser exactly as hiding the hills
       // shields the rock
       if (L.spawn) T.spawn[i] = 0;
+      // ...AND THE BEACONS, for the same reason and by the same rule. A
+      // beacon used to be removable only by clicking it with the Beacon
+      // brush in hand, which is a gesture nobody guesses: the eraser is
+      // the tool that takes things off a map, and a beacon is a thing on
+      // the map. Its whole footprint goes when the stroke touches any cell
+      // of it — erasing two thirds of a three-cell block would leave a
+      // beacon standing that the author was plainly rubbing out
+      if (L.beacon) this.removeBeaconAt(gx, gy);
     }
     this.dirty = true;
   }
@@ -459,25 +472,21 @@ export class MapEditor {
    * rather than raising rock to oblige: the author asked for a beacon, not
    * for terrain.
    *
-   * THE PRICE IS A GUESS (maps.ts defaultBeaconPrice) off how far out it
-   * lands, and tuning it is a JSON edit. That is deliberate: a price is
-   * where a mission is written, and a number that can be nudged with a
-   * brush is a number that gets nudged by accident.
+   * IT CARRIES NO PRICE. What a beacon costs is the map's ladder and not
+   * this beacon's business (maps.ts MapData.beaconPrices): every one on
+   * the board is offered at the same rung, and buying any of them moves
+   * the rest up. Placing one changes what the LAST rung of a full sweep
+   * costs, which is why the price panel counts the beacons beside it.
    */
   private toggleBeacon(gx: number, gy: number): void {
+    // a hidden beacon layer is out of reach, exactly like the others
+    if (!this.layers.beacon) return;
     const T = this.terrain;
     const half = (BEACON_SIZE / 2) | 0;
     const x0 = clamp(gx - half, 0, COLS - BEACON_SIZE);
     const y0 = clamp(gy - half, 0, ROWS - BEACON_SIZE);
     // a click anywhere on a standing beacon takes it off
-    const hit = T.beacons.findIndex(
-      (r) => gx >= r.x && gx < r.x + BEACON_SIZE && gy >= r.y && gy < r.y + BEACON_SIZE,
-    );
-    if (hit >= 0) {
-      T.beacons.splice(hit, 1);
-      this.dirty = true;
-      return;
-    }
+    if (this.removeBeaconAt(gx, gy)) return;
     if (T.beacons.length >= MAX_BEACONS) return;
     // every cell of the footprint has to be rock, and none of it a tree:
     // a pine is a prop the swarm can clear out from under it
@@ -486,9 +495,61 @@ export class MapEditor {
         const i = y * COLS + x;
         if (!T.blocked[i] || T.wall[i] === WALL_PINE) return;
       }
-    const bx = T.base.x + T.base.size / 2, by = T.base.y + T.base.size / 2;
-    const d = Math.hypot(x0 + BEACON_SIZE / 2 - bx, y0 + BEACON_SIZE / 2 - by);
-    T.beacons.push({ x: x0, y: y0, price: defaultBeaconPrice(d) });
+    T.beacons.push({ x: x0, y: y0 });
+    this.dirty = true;
+  }
+
+  /**
+   * TAKE THE BEACON STANDING ON THIS CELL OFF, if one is — the whole
+   * three-cell block, whichever of its cells was hit. Says whether it
+   * removed one, which is what lets the Beacon brush use it as the first
+   * half of its toggle and the eraser use it on its own.
+   */
+  private removeBeaconAt(gx: number, gy: number): boolean {
+    const rs = this.terrain.beacons;
+    const hit = rs.findIndex(
+      (r) => gx >= r.x && gx < r.x + BEACON_SIZE && gy >= r.y && gy < r.y + BEACON_SIZE,
+    );
+    if (hit < 0) return false;
+    rs.splice(hit, 1);
+    this.dirty = true;
+    return true;
+  }
+
+  /** this map's beacon price ladder, rung by rung (maps.ts
+   *  MapData.beaconPrices) — what the panel prints */
+  beaconLadder(): readonly number[] {
+    return this.terrain.beaconPrices;
+  }
+
+  /** how many beacons are standing — how many rungs of the ladder this
+   *  board can actually reach (the last rung repeats past the end) */
+  beaconCount(): number {
+    return this.terrain.beacons.length;
+  }
+
+  /**
+   * WRITE THE LADDER. Undoable like a stroke, because typing a rung is an
+   * edit to the map and Ctrl+Z is what an author reaches for after any
+   * edit they did not mean. Rungs are whole scrap and never negative; an
+   * empty ladder would make every beacon on the board free, so the panel's
+   * last rung cannot be removed (see MapEditorView).
+   *
+   * ONE SNAPSHOT PER BURST OF TYPING, not one per keystroke. A number
+   * field fires on every character, so snapshotting each call would fill
+   * the whole forty-deep stack with "3", "30", "300" and throw away every
+   * brush stroke behind them. A second's pause is a new edit, which is the
+   * granularity a text field has taught everyone to expect.
+   */
+  private ladderEditAt = -Infinity;
+
+  setBeaconLadder(rungs: readonly number[]): void {
+    const now = performance.now();
+    if (now - this.ladderEditAt > 1000) this.snapshot();
+    this.ladderEditAt = now;
+    this.terrain.beaconPrices = rungs
+      .slice(0, MAX_BEACONS)
+      .map((v) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0));
     this.dirty = true;
   }
 
@@ -804,16 +865,24 @@ export class MapEditor {
     const s = this.scale * this.zoom;
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
 
-    // THE BEACONS THIS MAP CARRIES, always — they are a layer of the
-    // document and an author has to be able to see the shape they make
-    // without holding the brush that draws them. Each with the circle of
-    // ground it opens, because a beacon is that circle: two of them whose
-    // discs overlap completely are one beacon and a wasted price.
+    // THE BEACONS THIS MAP CARRIES, whatever brush is in hand — they are a
+    // layer of the document and an author has to be able to see the shape
+    // they make without holding the brush that draws them. Each with the
+    // circle of ground it opens, because a beacon is that circle: two of
+    // them whose discs overlap completely are one beacon and a wasted
+    // price. Hiding the layer hides them, and puts them out of reach of
+    // every tool (renderer.ts TerrainLayers.beacon).
+    //
+    // NO PRICE IS DRAWN ON THEM ANY MORE. Each one used to wear its own
+    // four-figure number here, and that number no longer exists: a beacon
+    // costs whichever rung of the map's ladder the run has reached
+    // (constants.ts BEACON_LADDER), so a price painted on one hill would
+    // be a lie about every other. The ladder is read in its own panel.
     //
     // On the OVERLAY rather than in the terrain batch (Renderer.
-    // rebuildTerrain) because beacons are not tiles — they are a list with
-    // numbers on it, and the price has to be drawn as text.
-    if (this.terrain.beacons.length > 0) {
+    // rebuildTerrain) because beacons are not tiles — they are a list of
+    // blocks with a circle each.
+    if (this.layers.beacon && this.terrain.beacons.length > 0) {
       const side = BEACON_SIZE * CELL;
       c.setLineDash([12 / s, 10 / s]);
       c.strokeStyle = "rgba(255,211,127,0.35)";
@@ -831,26 +900,6 @@ export class MapEditor {
         c.fillRect(r.x * CELL, r.y * CELL, side, side);
         c.strokeRect(r.x * CELL, r.y * CELL, side, side);
       }
-      // the prices in SCREEN px, for the same reason the game draws them
-      // there: a number that shrank with the camera is a number an author
-      // cannot read at the zoom they lay a map out at
-      c.save();
-      c.setTransform(1, 0, 0, 1, 0, 0);
-      c.font = "bold 11px system-ui, sans-serif";
-      c.textAlign = "center";
-      c.textBaseline = "top";
-      for (const r of this.terrain.beacons) {
-        const sx = ((r.x + BEACON_SIZE / 2) * CELL - this.tlx) * s;
-        const sy = ((r.y + BEACON_SIZE) * CELL - this.tly) * s + 3;
-        const text = `${r.price}`;
-        const w = c.measureText(text).width + 8;
-        c.fillStyle = "rgba(10,12,20,0.8)";
-        c.fillRect(sx - w / 2, sy, w, 14);
-        c.fillStyle = "#FFD37F";
-        c.fillText(text, sx, sy + 1);
-      }
-      c.restore();
-      c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
     }
 
     // NOTHING MARKS THE SPAWN LAYER HERE ANY MORE. It used to be a ring per

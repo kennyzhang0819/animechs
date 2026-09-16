@@ -1,4 +1,4 @@
-import { BASE, CELL, clamp, COLS, NCELLS, ROWS } from "./constants";
+import { BASE, BEACON_LADDER, CELL, clamp, COLS, NCELLS, ROWS } from "./constants";
 import { DECOR_TILES, WATER_FLOOR_GROUPS } from "./atlas";
 
 export interface Prop {
@@ -147,9 +147,8 @@ export function airWalkMask(t: Terrain): Uint8Array {
  * WHAT A BEACON IS. It stands on a hill, on rock, where nothing can reach
  * it: it has no health, it is never targeted, it cannot be destroyed and
  * it is never placed. What it has is a CIRCLE OF GROUND it opens for
- * building (constants.ts BEACON_POWER_R) and a PRICE to switch on. The
- * core lights the home ground for free and every cell past that edge is
- * bought, one beacon at a time, at the price the author wrote on it.
+ * building (constants.ts BEACON_POWER_R). The core lights the home ground
+ * for free and every cell past that edge is bought, one beacon at a time.
  *
  * THAT IS WHY IT IS AUTHORED AND NOT GENERATED. Where the beacons are is
  * where the map's decisions are — a mission is written by deciding which
@@ -157,19 +156,24 @@ export function airWalkMask(t: Terrain): Uint8Array {
  * cannot make that decision. Moving one beacon forty cells is a mission
  * edit.
  *
- * THE PRICE IS AUTHORED TOO, per beacon, rather than derived from how far
- * out it sits. A curve would be consistent and would also be the same
- * curve on every map, which is exactly what a map wanting to be different
- * from the others cannot have. The seeding pass writes a distance-derived
- * price as a STARTING POINT (scripts/seed-beacons.mjs) and every number it
- * writes is meant to be argued with.
+ * THE PRICE IS NOT ON IT. A beacon costs whatever the map's LADDER says
+ * the next one costs (maps.ts MapData.beaconPrices, Terrain.beaconPrices):
+ * every beacon on the board wears the same price, and buying any of them
+ * moves every other one up a rung. A number stamped per beacon meant the
+ * cheap ones were bought in whatever order the map happened to lay them
+ * out; one rising price means the DECISION is how many acres to open, not
+ * which bargain to find.
  */
 export interface MapBeacon {
   /** top-left cell of its BEACON_SIZE footprint */
   x: number;
   y: number;
-  /** what switching it on costs, in scrap */
-  price: number;
+  // A BEACON IS A PLACE AND NOTHING ELSE. It used to carry a `price` of
+  // its own; every official document has been stripped of it and the
+  // field is gone from the type, so there is one place a price can be
+  // written and it is the map's ladder. A stray `price` in a hand-edited
+  // or exported document is simply ignored — terrainFromMap reads the two
+  // coordinates and builds the beacon from those.
 }
 
 export interface Terrain {
@@ -194,9 +198,18 @@ export interface Terrain {
   decor: Prop[]; // non-blocking props: boulders, shrubs
   valleyY: Float32Array; // carved main-valley centerline per column
   /** the beacons standing on this map's hills, as authored (maps.ts
-   *  MapBeacon) — where the buildable ground can be extended to, and what
-   *  each extension costs */
+   *  MapBeacon) — where the buildable ground can be extended to */
   beacons: MapBeacon[];
+  /**
+   * WHAT THE NEXT BEACON COSTS, AND THE ONE AFTER THAT: this map's price
+   * ladder, one rung per purchase (maps.ts BEACON_LADDER).
+   *
+   * Every beacon on the board is offered at `beaconPrices[bought]`, so the
+   * first one a run switches on costs rung 1 wherever it stands and the
+   * next costs rung 2. Past the last rung the last price repeats — a
+   * ladder shorter than the map's beacon count is a ceiling, not a bug.
+   */
+  beaconPrices: number[];
   /** this map's base: top-left cell + edge length, in cells */
   base: { x: number; y: number; size: number };
   /** how many columns of the grid this map actually uses — the horizontal
@@ -501,8 +514,10 @@ export function generateTerrain(seed: number): Terrain {
     blocked, floor, wall, spawn, pines, decor, valleyY,
     // the generated fallback board carries NONE: beacons are authored, and
     // a board nobody authored has nothing to say about where a run may
-    // spread to. It plays inside the circle its base lights
+    // spread to. It plays inside the circle its base lights — and with no
+    // beacons to buy, the ladder over them is the shared default
     beacons: [],
+    beaconPrices: [...BEACON_LADDER],
     base: { ...BASE }, rows: ROWS, cols: COLS,
   };
 }

@@ -1,4 +1,4 @@
-import { BASE, COLS, MAX_BEACONS, NCELLS, ROWS } from "./constants";
+import { BASE, BEACON_LADDER, COLS, MAX_BEACONS, NCELLS, ROWS } from "./constants";
 
 /**
  * The grid width every map was authored at before the board grew. Documents
@@ -101,16 +101,26 @@ export interface MapData {
    * playable if very small board.
    *
    * A LIST AND NOT A LAYER, unlike the spawn tiles: there are a dozen of
-   * these on a map, each with a price on it, and a cell-per-entry grid
-   * cannot carry a price at all.
+   * these on a map, they are placed one at a time on a footprint three
+   * cells across, and a cell-per-entry grid cannot say which cells are one
+   * beacon.
    */
   beacons?: MapBeacon[];
-  /** THE SAME FIELD UNDER ITS OLD NAME. A beacon was called a relay until
-   *  it grew a plate and a panel, and documents written before the rename
-   *  are on disk — the editor's own backups, and any map an author exported
-   *  — so the reader still takes `relays`. Nothing writes it: mapFromTerrain
-   *  emits `beacons` only. */
-  relays?: MapBeacon[];
+  /**
+   * WHAT THE FIRST BEACON COSTS, THEN THE SECOND, AND SO ON — this map's
+   * price ladder (constants.ts BEACON_LADDER), edited in the map editor's
+   * Beacon prices panel.
+   *
+   * IT IS THE MAP'S AND NOT THE BEACON'S. Every beacon on the board is
+   * offered at the same price and buying any one of them moves the rest up
+   * a rung, so a run's decision is how much ground to open rather than
+   * which hill happens to be marked down.
+   *
+   * Absent means the shared default, which is what every document written
+   * before the ladder carries. Shorter than the map's beacon count means
+   * the last rung repeats — a ceiling, deliberately reachable.
+   */
+  beaconPrices?: number[];
   /** where this map's base sits (top-left cell). Absent = the default BASE
    * position, which is what every pre-per-base document means */
   base?: { x: number; y: number };
@@ -428,10 +438,12 @@ export const PALETTE: readonly PaletteSet[] = [
   { id: "base", label: "Base", kind: "base", variants: [0], noRandom: true,
     icons: ["/mindustry/sprites/blocks/storage/core-nucleus.png"] },
   // the beacons: where a run may BUY its way out of the circle the base
-  // lights. A click stamps one on rock and a click on one takes it off;
-  // the price it lands with is a starting guess off its distance from the
-  // base (defaultBeaconPrice), and tuning it is a JSON edit, because a
-  // price is a mission decision and not a brush setting
+  // lights. A click stamps one on rock, a click on one takes it off, and
+  // so does the eraser — they are a layer of their own now (renderer.ts
+  // TerrainLayers.beacon), which is what lets them be hidden while the
+  // rock under them is painted. What one COSTS is not on the brush and not
+  // on the beacon: it is the map's ladder (MapData.beaconPrices), edited
+  // in the Beacon prices panel
   { id: "beacon", label: "Beacon", kind: "beacon", variants: [0], noRandom: true,
     icons: ["/mindustry/sprites/blocks/power/power-node-large.png"] },
   // the swarm's buildings — the player's roster, on the swarm's side —
@@ -661,7 +673,11 @@ export function mapFromTerrain(
     spawnTiles: spawnTileList(t.spawn, n),
     pines: t.pines.map((p) => ({ ...p })),
     decor: t.decor.map((p) => ({ ...p })),
-    beacons: t.beacons.map((r) => ({ ...r })),
+    // the beacons carry NO price: what one costs is the map's ladder, and
+    // a number left on each of them would be a second answer to the same
+    // question (terrain.ts MapBeacon)
+    beacons: t.beacons.map((r) => ({ x: r.x, y: r.y })),
+    beaconPrices: [...t.beaconPrices],
     valleyY: Array.from(t.valleyY).map((v) => Math.round(v * 100) / 100),
   };
 }
@@ -686,70 +702,24 @@ function lift(src: readonly number[], pad: number, srcW: number): Uint8Array {
 }
 
 /**
- * THE THREE PRICE BANDS, AND THE TWO RANGES THAT CUT THEM.
+ * THIS MAP'S PRICE LADDER, cleaned up on the way in — the list of what the
+ * first beacon costs, then the second, and so on (constants.ts
+ * BEACON_LADDER for the rule and the default numbers).
  *
- * A BEACON IS PRICED LIKE A TURRET IS PRICED. This game has three bands and
- * everything a run buys sits in one of them (economy.ts TOWER_TIER, and the
- * three STAGES of a fifty-wave run that roughly pay for them) — so ground is
- * bought the same way. A beacon near home is a band-1 purchase, the next ring
- * out is band 2, the far edge is band 3. It used to be a continuous curve,
- * which gave every beacon on the map its own arbitrary four-figure number and
- * nothing for a player to hold in their head; three prices is a ladder
- * somebody can actually plan against.
- *
- * THE CUTS ARE ABSOLUTE DISTANCES, not a split of whatever this map happens
- * to carry. "Far" has to mean the same thing on every board, or a compact
- * map's outer ring would cost what a sprawling one's does for a third of the
- * reach. The numbers come off the radii: the base lights 90 cells and a beacon
- * adds 60, so 200 is about the first ring a run can reach from home and 330
- * is about the second. A tight map simply has no band-3 beacon, which is the
- * truth about a tight map.
+ * A document may carry no ladder at all, which is what every map written
+ * before the ladder existed carries, and it plays on the shared default.
+ * One that carries garbage — a string, a negative, a hole — is not worth
+ * crashing a run over: each rung is read as a whole number of scrap or
+ * dropped, and a ladder left with nothing in it falls back to the default
+ * rather than making a board's beacons free by accident.
  */
-export const BEACON_TIER_FROM: readonly [number, number] = [200, 330];
-
-/**
- * WHAT EACH BAND COSTS, read against what a run actually earns.
- *
- * A fifty-wave clear takes about 1.32 million scrap, split roughly 215k /
- * 410k / 700k across the three stages (ladder.ts stageAudit), and the unit of
- * mid-run spending is the thousand-scrap turret roll. So:
- *
- *   BAND 1, three thousand — three turret rolls. A stage-one purchase: a run
- *   opens two or three of these while it is still finding its feet, and
- *   never has to agonise over one.
- *
- *   BAND 2, twelve thousand — twelve rolls, and a real decision. This is the
- *   stage-two buy, the one that trades a board's worth of guns for a piece
- *   of map, and a run should not be able to take all of them.
- *
- *   BAND 3, forty thousand — forty rolls. A stage-three commitment and the
- *   most expensive single thing in the game by some way (a railhead is
- *   twelve). Opening the far edge of a board should be the sort of thing a
- *   run does once, on purpose, because the mission asked for it.
- *
- * A WHOLE MAP IS MEANT TO BE UNAFFORDABLE. Taking every beacon on the biggest
- * board runs to about a quarter of everything a full clear earns, which is
- * the point: the ground a run opens is a shape it chose, not a box it ticked.
- */
-export const BEACON_TIER_PRICE: readonly [number, number, number] = [3000, 12000, 40000];
-
-/** which band a beacon this far from the base sits in — 1, 2 or 3 */
-export const beaconTier = (cellsFromBase: number): 1 | 2 | 3 =>
-  cellsFromBase <= BEACON_TIER_FROM[0] ? 1 : cellsFromBase <= BEACON_TIER_FROM[1] ? 2 : 3;
-
-/**
- * WHAT A BEACON SHOULD COST, given how far from the base it sits — the number
- * the editor stamps one with and the number the seeding pass writes
- * (scripts/seed-beacons.mjs).
- *
- * IT IS STILL A DRAFT. The price that ships is the one in the document
- * (MapBeacon.price), and an author is expected to argue with it: a mission is
- * written by making one particular circle of ground cheap or brutal, and a
- * band cannot make that decision. What the bands buy is a sane starting
- * point that reads the same on every map.
- */
-export const defaultBeaconPrice = (cellsFromBase: number): number =>
-  BEACON_TIER_PRICE[beaconTier(cellsFromBase) - 1];
+export function beaconLadderOf(raw: readonly unknown[] | undefined): number[] {
+  const rungs = (raw ?? [])
+    .map((v) => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.round(v)) : -1))
+    .filter((v) => v >= 0)
+    .slice(0, MAX_BEACONS);
+  return rungs.length > 0 ? rungs : [...BEACON_LADDER];
+}
 
 export function terrainFromMap(m: MapData): Terrain {
   // pad short documents with rock (blocked 1) wearing the dark carbon wall
@@ -780,7 +750,13 @@ export function terrainFromMap(m: MapData): Terrain {
     // be a document whose last forty could never be bought. Dropping them
     // here, where the document is read, is the one place that stays true
     // for both threads — each builds its own terrain from the same file
-    beacons: (m.beacons ?? m.relays ?? []).slice(0, MAX_BEACONS).map((r) => ({ ...r })),
+    // ...and nothing but WHERE each one stands: a document's own `price`
+    // per beacon, and the `relays` this field was called two renames ago,
+    // are both gone from every map on disk and from the type. A stray one
+    // in a hand-edited document is dropped here rather than half-read
+    beacons: (m.beacons ?? []).slice(0, MAX_BEACONS).map((r) => ({ x: r.x, y: r.y })),
+    // ...and the one price they all share, rung by rung (beaconLadderOf)
+    beaconPrices: beaconLadderOf(m.beaconPrices),
     base,
     rows: Math.max(1, Math.min(ROWS, Math.floor(m.floor.length / sw))),
     cols: Math.max(1, Math.min(COLS, sw)),

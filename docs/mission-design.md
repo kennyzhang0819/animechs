@@ -293,8 +293,10 @@ map has to supply:
 - **Somewhere the objective is, that is not on the way to anything.** A
   gun placed there defends nothing, which is what makes buying it a
   decision.
-- **A beacon zone that reaches it, at a price.** The node's cost is the
-  mission's entry fee and the clearest number to tune.
+- **A beacon that reaches it.** Its price is the map's ladder rung, not its
+  own (docs/authoring-maps.md), so the entry fee is how DEEP into the ladder
+  a run has to go to stand a gun there — how many beacons it must already
+  have bought, and what the next rung asks.
 - **A reason the objective cannot be answered by one turret.** It fights
   back, it moves, it is only open for a moment, or it takes a damage type
   the player has to have drafted.

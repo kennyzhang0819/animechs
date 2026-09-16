@@ -5,7 +5,9 @@ import { ADMIN_ENABLED } from "@/game/env";
 import { useConfirm } from "./ConfirmDialog";
 import { MapEditor, PATH_WIDTHS, type BrushShape } from "@/game/editor";
 import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
+import { BEACON_LADDER, beaconPriceAt } from "@/game/constants";
 import {
+  beaconLadderOf,
   LEGACY_COLS,
   PALETTE,
   paletteSections,
@@ -15,11 +17,23 @@ import {
   type PaletteSet,
 } from "@/game/maps";
 
+/** what taking every beacon on a board costs, rung by rung — the sum an
+ *  author is really tuning (game/constants.ts beaconPriceAt) */
+function sweepCost(ladder: readonly number[], beacons: number): number {
+  let sum = 0;
+  for (let i = 0; i < beacons; i++) sum += beaconPriceAt(ladder, i);
+  return sum;
+}
+
 const LAYER_ROWS: ReadonlyArray<[keyof TerrainLayers, string]> = [
   ["wall", "Hills"],
   ["props", "Props"],
   ["spawn", "Spawn tiles"],
   ["base", "Base"],
+  // the beacons are a layer like any other now: hide them to paint the rock
+  // they stand on, and while they are hidden neither the brush nor the
+  // eraser can touch one (game/editor.ts)
+  ["beacon", "Beacons"],
 ];
 
 const POS_KEY = "animechs.editor.panels.v1";
@@ -221,6 +235,23 @@ export default function MapEditorView({
     setDirty(ed.dirty);
   };
   const [layers, setLayers] = useState<TerrainLayers>({ ...ALL_LAYERS });
+  /**
+   * THIS MAP'S BEACON PRICE LADDER — what the first beacon a run buys
+   * costs, then the second, and so on (game/constants.ts BEACON_LADDER).
+   * Seeded from the document, mirrored here so the fields can be typed in,
+   * and pushed straight back into the editor on every change.
+   */
+  const [ladder, setLadderState] = useState<number[]>(() => beaconLadderOf(map.beaconPrices));
+  /** how many beacons are standing — polled, because the brush places them
+   *  on the canvas and nothing here would otherwise hear about it */
+  const [beacons, setBeacons] = useState(() => (map.beacons ?? []).length);
+  const setLadder = (next: number[]): void => {
+    setLadderState(next);
+    const ed = editorRef.current;
+    if (!ed) return;
+    ed.setBeaconLadder(next);
+    setDirty(ed.dirty);
+  };
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   // why the last save was refused — null when the last attempt succeeded
@@ -250,6 +281,16 @@ export default function MapEditorView({
       const ed = editorRef.current;
       if (!ed) return;
       setDirty(ed.dirty);
+      setBeacons(ed.beaconCount());
+      // ...AND THE LADDER BACK OUT, because the editor can change it
+      // without this panel: Ctrl+Z restores the rungs a snapshot was taken
+      // with, and fields still showing the undone numbers would be lying
+      // about the document. They only ever differ after an undo — every
+      // edit here is pushed in synchronously
+      const have = ed.beaconLadder();
+      setLadderState((cur) =>
+        cur.length === have.length && cur.every((v, i) => v === have[i]) ? cur : [...have],
+      );
     }, 250);
     return () => {
       alive = false;
@@ -275,7 +316,8 @@ export default function MapEditorView({
       ed.layers.wall !== layers.wall ||
       ed.layers.props !== layers.props ||
       ed.layers.spawn !== layers.spawn ||
-      ed.layers.base !== layers.base
+      ed.layers.base !== layers.base ||
+      ed.layers.beacon !== layers.beacon
     ) {
       ed.layers = { ...layers };
       // exits live in the per-frame overlay rather than the static batches,
@@ -573,6 +615,136 @@ export default function MapEditorView({
                 ? "Paint where the swarm comes in · never on a hill · erase lifts them"
                 : "LMB paint · RMB pan · wheel zoom · ⌘Z undo"}
           </div>
+          </div>
+        </Panel>
+
+        {/* BEACON PRICES — the map's ladder, which is the whole of what a
+            beacon costs.
+
+            WHY IT IS A PANEL AND NOT A NUMBER ON EACH BEACON. Every beacon
+            on a board is offered at the same price and buying any one of
+            them moves the rest up a rung (game/constants.ts BEACON_LADDER),
+            so there is exactly one price list per map and this is it. The
+            old editor stamped a four-figure number on each hill, which
+            made the author's job "price twelve buildings" when the
+            decision they actually own is "what does opening this map cost,
+            acre by acre".
+
+            THE ROWS ARE THE ORDER OF PURCHASE, not of placement: rung 1 is
+            whichever beacon the run buys first. The arrows reorder the
+            ladder — pulling a dear rung earlier front-loads the cost of a
+            board — and a rung past the map's beacon count is dimmed,
+            because nothing can ever reach it. */}
+        <Panel
+          id="beacon-prices"
+          title="Beacon prices"
+          className={`absolute bottom-4 right-4 w-[15rem] p-2 ${panel}`}
+          bodyClassName="max-h-[46vh] overflow-y-auto"
+        >
+          <div className="flex flex-col gap-1">
+            <div className="text-[13px] leading-tight text-[#71717C]">
+              Every beacon costs the same. Buying one raises the rest to the next rung.
+            </div>
+            {ladder.map((rung, i) => {
+              const reachable = i < beacons;
+              return (
+                <div key={i} className="flex items-center gap-1">
+                  <span
+                    className={`w-6 shrink-0 text-right text-[13px] tabular-nums ${
+                      reachable ? "text-[#A6A6AF]" : "text-[#4A4A55]"
+                    }`}
+                  >
+                    {i + 1}.
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={500}
+                    value={rung}
+                    aria-label={`beacon ${i + 1} price`}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      if (!Number.isFinite(v)) return;
+                      const next = [...ladder];
+                      next[i] = Math.max(0, Math.round(v));
+                      setLadder(next);
+                    }}
+                    className={`h-6 w-full min-w-0 rounded border border-[#2E2E36] bg-[#0B0B0D] px-1 text-right text-sm tabular-nums focus:border-[#FFD37F] focus:outline-none ${
+                      reachable ? "text-[#EDEDEF]" : "text-[#71717C]"
+                    }`}
+                  />
+                  {/* ORDER: move this rung up or down the ladder */}
+                  {([-1, 1] as const).map((d) => (
+                    <button
+                      key={d}
+                      aria-label={`move rung ${i + 1} ${d < 0 ? "earlier" : "later"}`}
+                      disabled={i + d < 0 || i + d >= ladder.length}
+                      onClick={() => {
+                        const next = [...ladder];
+                        [next[i], next[i + d]] = [next[i + d], next[i]];
+                        setLadder(next);
+                      }}
+                      className="h-6 w-5 shrink-0 rounded border border-[#2E2E36] text-[11px] text-[#A6A6AF] hover:border-[#FFD37F] hover:text-[#EDEDEF] disabled:border-[#1E1E24] disabled:text-[#3A3A44]"
+                    >
+                      {d < 0 ? "▲" : "▼"}
+                    </button>
+                  ))}
+                  {/* ...and take it off. THE LAST RUNG CANNOT GO: a ladder
+                      with nothing on it prices every beacon at zero, which
+                      is a board given away rather than one authored */}
+                  <button
+                    aria-label={`remove rung ${i + 1}`}
+                    disabled={ladder.length <= 1}
+                    onClick={() => setLadder(ladder.filter((_, k) => k !== i))}
+                    className="h-6 w-5 shrink-0 rounded border border-[#2E2E36] text-[11px] text-[#A6A6AF] hover:border-[#F08A8A] hover:text-[#F08A8A] disabled:border-[#1E1E24] disabled:text-[#3A3A44]"
+                  >
+                    ✕
+                  </button>
+                </div>
+              );
+            })}
+            <div className="flex items-center gap-1 pt-0.5">
+              <button
+                onClick={() => {
+                  // a new rung starts where the ladder was heading: the
+                  // last price again, which an author then argues with
+                  const last = ladder[ladder.length - 1] ?? 3000;
+                  setLadder([...ladder, last]);
+                }}
+                className="h-6 flex-1 rounded border border-[#2E2E36] text-[13px] text-[#A6A6AF] hover:border-[#FFD37F] hover:text-[#EDEDEF]"
+              >
+                + Rung
+              </button>
+              <button
+                onClick={() => setLadder([...BEACON_LADDER])}
+                title="Back to the game's default ladder"
+                className="h-6 rounded border border-[#2E2E36] px-2 text-[13px] text-[#71717C] hover:border-[#FFD37F] hover:text-[#EDEDEF]"
+              >
+                Default
+              </button>
+            </div>
+            {/* WHAT THIS LADDER ACTUALLY ASKS OF A RUN — the two numbers an
+                author is tuning against: how many beacons this board
+                carries, and what taking all of them costs. A sum is the
+                only honest read of a rising price; rung by rung it always
+                looks affordable */}
+            <div className="border-t border-[#2E2E36] pt-1 text-[13px] leading-tight text-[#71717C]">
+              <span className="tabular-nums text-[#A6A6AF]">{beacons}</span> beacon
+              {beacons === 1 ? "" : "s"} on this map ·{" "}
+              <span className="tabular-nums text-[#A6A6AF]">
+                {sweepCost(ladder, beacons).toLocaleString()}
+              </span>{" "}
+              scrap to open all of them
+              {beacons > ladder.length && (
+                <>
+                  {" "}
+                  · past rung {ladder.length} every beacon pays{" "}
+                  <span className="tabular-nums">
+                    {(ladder[ladder.length - 1] ?? 0).toLocaleString()}
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         </Panel>
 
