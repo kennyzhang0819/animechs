@@ -754,6 +754,33 @@ const venomOrb = (size: number, o: { trail?: boolean } = {}): ShotLook => ({
  * a flash at the muzzle does not; the reload, damage and range are the
  * same numbers they were.
  */
+/**
+ * THE KETTLES' WING PODS — the one weapon the vultures carry, and the one
+ * kind of row this family has. A mirrored PAIR on every tier, mounted
+ * where the gunmetal strap runs out along each arm (game/kettleArt.ts),
+ * firing the same instant round the copper guns above do in the family's
+ * own rust.
+ *
+ * IT IS A PLAIN GUN ON PURPOSE. The Kettles went on the board with no
+ * ability of any kind (levels.ts, the Kettles' stat block) — no aura, no
+ * charge, no field — so what a tier buys here is what a tier buys on the
+ * ground mechs: CALIBRE and REACH, and nothing that needs explaining.
+ * A body that arrives at the core has to be able to do something to it,
+ * and this is the smallest thing that is true of.
+ */
+const pods = (name: string, reload: number, damage: number, reach: number): UnitWeapon => ({
+  name,
+  reload: t(reload),
+  mounts: 2,
+  damage,
+  range: u(reach),
+  speed: 0,
+  fx: "gun",
+  shoot: FxKind.ShootSmall,
+  smoke: FxKind.SmokeSmall,
+  shootColor: PAL.carrion,
+});
+
 const copper = (name: string, reload: number, mounts: number, damage = 9): UnitWeapon => ({
   name,
   reload: t(reload),
@@ -1143,35 +1170,51 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // (the first cut, at forty tiles, was a walkover for the headless bot).
   //
   // WHAT IT POSES: it opens fire long before anything can answer, from a
-  // hull that crawls ashore (levels.ts NAVAL_PACE, NAVAL_LAND_SPEED) and
-  // GROWS THE LONGER IT LIVES (levels.ts veteran: every hit here is
-  // multiplied by the hull's age, to triple). The rows below are LIGHT —
-  // a fresh skate1's harpoon is a twentieth of the old copper pair — because a
-  // fleet that has been alive eighty seconds hits three times as hard and
-  // is still out of reach. The answer is a gun that reaches out
-  // (barrage, repeater, railhead) and kills them YOUNG, and the spotter
-  // (skate3) and the drill (skate4) are the hulls to kill first.
+  // hull that crawls ashore (levels.ts NAVAL_PACE, NAVAL_LAND_SPEED). The
+  // answer is a gun that reaches out — barrage, repeater, railhead — and
+  // the spotter (skate3) is the hull to kill first.
+  //
+  // THE ROWS BELOW USED TO BE LIGHT, and they are not any more. The fleet
+  // carried a VETERANCY (levels.ts veteran): every hit multiplied by how
+  // long the hull had been alive, to triple at eighty seconds, and the
+  // rows were written against the old end of that ramp. So the same
+  // skate1 was a rounding error or a real gun depending on when the board
+  // got its first shot away, which is not a thing a player can read off
+  // the field. The ramp is gone and every row here went up BY A THIRD to
+  // pay for it. A third is deliberately NOT what the ramp was worth — a
+  // hull that lived eighty seconds was on x3 — and THE CROSSOVER IS
+  // THIRTEEN SECONDS: 1 + 0.025 x 13.3 = 1.33, so a hull the board kills
+  // inside about thirteen seconds of its arrival now hits HARDER than it
+  // used to, and every second past that it hits less. The trade is an old
+  // fleet's ceiling for a young fleet's floor, which is the trade a family
+  // that sells REACH should be making. Measured end to end, 120s of
+  // naval-only wave on an undefended core — the case the old ramp liked
+  // best, hulls reaching the x3 cap — went from 14,996 damage to 7,278;
+  // against a board that actually shoots back the two are far closer.
   skate1: [
-    { name: "skate1-harpoon", reload: t(90), mounts: 1, damage: 10, range: u(400), speed: 0, fx: "rail", railColor: PAL.harpoon },
+    { name: "skate1-harpoon", reload: t(90), mounts: 1, damage: 13, range: u(400), speed: 0, fx: "rail", railColor: PAL.harpoon },
   ],
   skate2: [
-    { name: "skate2-harpoon", reload: t(75), mounts: 2, damage: 18, range: u(440), speed: 0, fx: "rail", railColor: PAL.harpoon },
+    { name: "skate2-harpoon", reload: t(75), mounts: 2, damage: 24, range: u(440), speed: 0, fx: "rail", railColor: PAL.harpoon },
   ],
   // THE SPOTTER (levels.ts spotterField) — its own harpoon is the
   // middling one; what it does is make every hull round it reach half
   // again as far
   skate3: [
-    { name: "skate3-harpoon", reload: t(75), mounts: 1, damage: 45, range: u(480), speed: 0, fx: "rail", railColor: PAL.harpoon },
+    { name: "skate3-harpoon", reload: t(75), mounts: 1, damage: 60, range: u(480), speed: 0, fx: "rail", railColor: PAL.harpoon },
   ],
-  // THE DRILL (levels.ts drillField): the hulls round it age twice as fast
+  // THE HEAVIEST OF THE FOUR SMALL RAILS, and the fleet's only other
+  // two-mount gun. It was the DRILL (levels.ts drillField) — the hulls
+  // round it aged two and a half times as fast — and that went out with
+  // the veterancy it ran
   skate4: [
-    { name: "skate4-harpoon", reload: t(60), mounts: 2, damage: 80, range: u(560), speed: 0, fx: "rail", railColor: PAL.harpoon },
+    { name: "skate4-harpoon", reload: t(60), mounts: 2, damage: 107, range: u(560), speed: 0, fx: "rail", railColor: PAL.harpoon },
   ],
   // skate5-cannon, as upstream has it: RailBulletType, and it goes THROUGH
   // — every structure on its eighty-tile line takes the hit
   // (UnitWeapon.pierce). upstream damage 1250, length 500
   skate5: [
-    { name: "skate5-cannon", reload: t(120), mounts: 1, damage: 450, range: u(720), speed: 0, fx: "rail", pierce: true, railColor: PAL.harpoon },
+    { name: "skate5-cannon", reload: t(120), mounts: 1, damage: 600, range: u(720), speed: 0, fx: "rail", pierce: true, railColor: PAL.harpoon },
   ],
 
   // ---- THE WRAITH FLEET -----------------------------------------------
@@ -1341,6 +1384,32 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   grapnel3: [],
   grapnel4: [],
   grapnel5: [],
+  // ---- the Kettles, the vulture -------------------------------------
+  //
+  // THE ONLY THING THIS FAMILY DOES. A kettle does not dive and does not
+  // go off (levels.ts): it crosses the board, holds at the core's edge
+  // and fires these, so the reach has to clear the hover — a flyer parks
+  // about a tile and a half off the core's own edge — at every tier, and
+  // the runt's twenty-eight units is already well past it.
+  //
+  // The ladder is the ground mechs' (see the ironhide1 row): one weapon
+  // class, five tiers, and what a tier buys is calibre and reach. Eighteen
+  // a round to a hundred and ten, on a pair of mounts, at a rate that
+  // barely moves — the apex is not firing faster, it is hitting harder
+  // from further out.
+  kettle1: [pods("kettle1-pod", 45, 18, 28)],
+  kettle2: [pods("kettle2-pod", 42, 30, 32)],
+  kettle3: [pods("kettle3-pod", 40, 48, 38)],
+  kettle4: [pods("kettle4-pod", 38, 76, 46)],
+  kettle5: [pods("kettle5-pod", 36, 110, 54)],
+  // THE CROSSER CARRIES NOTHING, and that is the archetype rather than a
+  // gap in the table (levels.ts, the worm block): a Borer walks its road
+  // and never looks at the base or at anything the player built beside
+  // it. What it costs a run is the guns bought to reach it, never the
+  // guns it takes down.
+  wormhead: [],
+  wormcar: [],
+  wormtail: [],
 };
 
 /**

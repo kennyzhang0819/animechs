@@ -6,7 +6,7 @@ import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // import must never become a value one or the two files form a cycle
 import type { MutationId } from "./mutation";
 
-export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5"] as const;
+export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -53,6 +53,16 @@ export const UNIT_ID: Record<UnitKind, number> = {
   grapnel3: 38,
   grapnel4: 39,
   grapnel5: 40,
+  kettle1: 41,
+  kettle2: 42,
+  kettle3: 43,
+  kettle4: 44,
+  kettle5: 45,
+  // the crosser's three pieces (see WORM_CHAIN) — no family, no tier
+  // ladder, and never rolled into a wave
+  wormhead: 46,
+  wormcar: 47,
+  wormtail: 48,
 };
 
 /**
@@ -91,6 +101,11 @@ export const FAMILY_NAMES = {
   // the eighth family, and the second with no upstream hull under it: the
   // starfish (game/grapnelArt.ts), named for the thing on its back
   grapnel: { name: "Grapnels", body: "Grapnel" },
+  // the ninth line, the third with no upstream hull under it, and the
+  // SECOND thing in the sky: the vulture (game/kettleArt.ts), named for
+  // what a flock of them wheeling is called — a flight word like the
+  // bat's Stoop, and not a proper noun
+  kettle: { name: "Kettles", body: "Kettle" },
 } as const satisfies Record<string, { name: string; body: string }>;
 
 /**
@@ -107,25 +122,41 @@ export const FAMILY_NAMES = {
 export const BOSS_NAME = ANIMAL_ART ? "Sovereign" : "Boss";
 
 /**
+ * WHAT THE CROSSER IS CALLED, beside the boss's name for the same reason:
+ * it is in no family either, and a name written in two files is a name
+ * that can disagree with itself.
+ *
+ * "Borer" and not "worm": the id says worm because that is the shape of
+ * the thing in the sim's arrays — a chain of bodies on a line — and the
+ * PLAYER is looking at a machine with a cutter head on the front
+ * (game/wormArt.ts). Nothing alive crosses Coldline.
+ */
+export const WORM_NAME = "Borer";
+
+/**
  * THE NAVAL TANKS RUN SLOWER THAN MINDUSTRY'S HULLS. A skate1's stock 1.1
  * units a tick is 8.25 tiles a second — more than twice an ironhide1 — and on
  * a water route a third the length of Confluence's march that is a body a
  * wave-1 board sees for five seconds. Every naval speed below carries
- * this factor. IT IS THE SNIPER FAMILY NOW (weapons.ts, the Harpoon
- * fleet): it fires from beyond the board's reach and GROWS THE LONGER IT
- * LIVES (veteran), so the crawl is the point — a hull that took two
- * minutes to reach the guns has been shooting them for two minutes and
- * hits three times as hard when it gets there. Change it here, not per
- * hull — and note the number is the STAT: half again afloat, half ashore
- * (constants.ts NAVAL_WATER_SPEED / NAVAL_LAND_SPEED).
+ * this factor. IT IS THE SNIPER FAMILY (weapons.ts, the Harpoon fleet):
+ * it fires from beyond the board's reach, so the crawl is the point — a
+ * hull that takes two minutes to reach the guns has been shooting them
+ * for two minutes, and every second of that is a second the board spent
+ * being hit by something it could not answer. THE CRAWL USED TO BUY A
+ * SECOND THING as well: the fleet carried a veterancy that multiplied
+ * every hit by how long the hull had been alive, and a slow arrival was
+ * a strong one. That is gone (see the rows in weapons.ts), and the pace
+ * stands on reach alone. Change it here, not per hull — and note the
+ * number is the STAT: half again afloat, half ashore (constants.ts
+ * NAVAL_WATER_SPEED / NAVAL_LAND_SPEED).
  */
 const NAVAL_PACE = 0.45;
 
 /**
  * ...AND THE WRAITH FLEET RUNS AT TWICE THAT. The crawl is the SNIPER
- * family's premise, not this one's: a wraith carries no rail and no
- * veterancy, it BLINKS forward out of a hit and the top three go dark on
- * a cycle (blink, cloak), and every one of those reads as speed. At the
+ * family's premise, not this one's: a wraith carries no rail, it BLINKS
+ * forward out of a hit and the top three go dark on a cycle (blink,
+ * cloak), and every one of those reads as speed. At the
  * Harpoon fleet's pace the fleet that is supposed to be impossible to
  * hold a target on arrived slowly enough to be shot at leisure between
  * the hops, which made the whole family a worse Harpoon fleet.
@@ -144,14 +175,22 @@ const WRAITH_PACE = NAVAL_PACE * 2;
  */
 const WRAITH_LAND_SPEED = 0.8;
 
-/**
- * THE HARPOON FLEET'S VETERANCY (UnitStats.veteran), one number for all
- * five hulls: a hit grows by 2.5% of its row a second alive, to triple —
- * eighty seconds to full, half a minute round a skate4 (drillField). The rows
- * in weapons.ts are set light against this: a fresh fleet is a nuisance
- * at forty tiles and an old one is a siege.
- */
-const HARPOON_VETERAN = { perSecond: 0.025, max: 2 } as const;
+/* THE HARPOON FLEET NO LONGER AGES, and HARPOON_VETERAN is why there is a
+   hole here. It was `{ perSecond: 0.025, max: 2 }`, one number shared by
+   all five hulls: a hit grew by 2.5% of its row every second the hull had
+   been alive, to triple at eighty seconds — half a minute of that round a
+   skate4, whose drill (drillField) ran the clock two and a half times
+   faster. The rows in weapons.ts were written LIGHT against it, so what a
+   player met was a fleet whose damage depended on when the board got its
+   first shot away rather than on what the wave brought: the same hull was
+   a nuisance or a siege and nothing on screen said which.
+
+   THE ROWS CARRY IT ALL NOW — every harpoon in weapons.ts went up by a
+   third when the ramp came out, a flat buff and deliberately not the whole
+   of what the ramp was worth. UnitStats.veteran and UnitStats.drillField
+   are both still wired end to end (Sim, the status chips, the inspector)
+   and nothing ships with either; the sim's HAS_VET gate reads the stat
+   table, so the cost of keeping them is zero. */
 
 /** px per Mindustry world unit — leg geometry is written in those units */
 const MU = CELL / 8;
@@ -545,19 +584,26 @@ export interface UnitStats {
    */
   spotterField?: { mult: number; reload: number; range: number };
   /**
-   * THE DRILL — the skate4's. Every `reload` seconds the carrier stamps every
-   * body in `range` so that its VETERANCY clock (`veteran` below) runs
-   * `mult` times faster while the stamp lasts. Only a kind that has a
-   * veterancy at all takes anything from it.
+   * THE DRILL — the skate4's, until the Harpoon fleet stopped ageing.
+   * Every `reload` seconds the carrier stamps every body in `range` so
+   * that its VETERANCY clock (`veteran` below) runs `mult` times faster
+   * while the stamp lasts. Only a kind that has a veterancy at all takes
+   * anything from it — so with nothing on the roster ageing, NOTHING
+   * SHIPS WITH THIS. It stays wired for the family that wants it back.
    */
   drillField?: { mult: number; reload: number; range: number };
   /**
-   * VETERANCY — the Harpoon fleet's family trait: THE LONGER IT LIVES THE
-   * HARDER IT HITS. Every weapon the body fires does `1 + perSecond x age`
-   * times its row, up to `1 + max`; age is seconds since it arrived
-   * (Sim.uage). A fleet that fires from beyond the board's reach and
-   * moves at a crawl is a fleet that is old by the time it is in range,
-   * and the answer is reaching out to kill it young.
+   * VETERANCY — THE LONGER IT LIVES THE HARDER IT HITS. Every weapon the
+   * body fires does `1 + perSecond x age` times its row, up to `1 + max`;
+   * age is seconds since it arrived (Sim.uage).
+   *
+   * NOTHING SHIPS WITH IT. It was the Harpoon fleet's family trait and was
+   * taken off all five hulls — a body whose damage depends on how long the
+   * board took to reach it is a body a player cannot read, and the fleet's
+   * rows in weapons.ts carry the whole number now (see the note by
+   * NAVAL_PACE). The mechanism stays because it is a good one for a family
+   * built around it from the start, and it costs nothing while unused: the
+   * sim's HAS_VET gate reads this table and skips the pass entirely.
    */
   veteran?: { perSecond: number; max: number };
   /**
@@ -707,6 +753,21 @@ export interface UnitStats {
    */
   immunities?: readonly StatusKind[];
   /**
+   * NO SLOW EVER SCALES THIS BODY'S DRIVE. It is not an immunity in the
+   * StatusKind sense — the status still lands, the body still tints, a
+   * soak still douses a fire and still hands the electric ammunition its
+   * bonus — it is the SPEED MULTIPLIER that is refused, and every one of
+   * them: the wet slow the liquid turrets sell and anything that joins it
+   * later. The same shape the Speedy mutation already has (Sim.applyWet),
+   * written as a property of the kind instead of a rule about the run.
+   *
+   * The crosser carries it because the mission is a promise about WHEN
+   * (missions.ts): a Borer's arrival is a clock the player reads off the
+   * road from wave one, and a douser out on the line must not be able to
+   * rewrite it.
+   */
+  unslowable?: boolean;
+  /**
    * A walking unit with real legs rather than a mech's sliding pair. Its
    * presence is what puts a kind on the legged draw path — see LEG_ART in
    * atlas.ts for the matching sprites.
@@ -729,6 +790,24 @@ const wake = (o: Partial<WakeSpec> & Pick<WakeSpec, "x" | "length" | "scl">): Wa
   y: -3 * MU,
   ...o,
 });
+
+/**
+ * HOW FAST A WORM CROSSES, world px/s. Coldline's south line is 14,100 px
+ * of walking and its north line 12,000, so at 2.35 tiles a second a Borer
+ * is on the board for 5:00 on the long road and 4:16 on the short one —
+ * long enough that a player who sees one enter has time to decide whether
+ * to answer it, and short enough that five launches and a spare fit
+ * inside a run of about twenty minutes (WORLDS, Coldline).
+ *
+ * BOTH ROADS COUNT THEIR RUN-UP. A road's first leg is the off-board one
+ * the train crawls in along (missions.ts), and it is now most of a
+ * kilometre because the train itself is: the head is laid at the chain's
+ * whole length past the entry (Sim.launchCrosser), so the run-up has to
+ * be longer than the train or the head would appear in open ground with
+ * forty cells of map behind it. The numbers above are the full arc
+ * length, run-up included, which is the launch-to-last-piece-gone clock.
+ */
+const WORM_SPEED = 2.35 * CELL;
 
 /** per-kind combat stats (official Mindustry numbers) */
 export const UNIT_STATS: Record<UnitKind, UnitStats> = {
@@ -1489,11 +1568,12 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // walkers' own.
   //
   // THE HARPOON FLEET IS THE SNIPER FAMILY (weapons.ts): every hull fires
-  // a rail from beyond the board's reach, crawls ashore, and carries
-  // `veteran` — every hit multiplied by how long it has been alive, to
-  // triple after two minutes. The skate3 is the spotter (the hulls round
-  // it reach half again as far) and the skate4 is the drill (they age twice
-  // and a half as fast). Kill them young, and kill those two first.
+  // a rail from beyond the board's reach and crawls ashore. What it hits
+  // for is what its row says and nothing else — the `veteran` ramp that
+  // grew a hull's damage with its age is gone, and so is the skate4's
+  // drill that ran the ramp faster (see the note by NAVAL_PACE). The
+  // skate3 is the spotter, and it is the hull to kill: the fleet reaches
+  // half again as far round it.
 
   // skate1: the naval line's T1 — 208 hp, armor 2, a 1.25x1.25-block hitbox,
   // 1.1 units/tick = 8.25 tiles/s, the fastest hull there is. Note it
@@ -1510,7 +1590,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 3.3,
     naval: true,
     immunities: ["wet"],
-    veteran: HARPOON_VETERAN,
     wake: wake({ x: 4 * MU, length: 20, scl: 1.3 * MU }),
   },
   // skate2: T2 — 448 hp, armor 4 (an ironhide2's plating), a 1.625x1.625-block
@@ -1525,7 +1604,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 2.6,
     naval: true,
     immunities: ["wet"],
-    veteran: HARPOON_VETERAN,
     wake: wake({ x: 5.5 * MU, y: -4 * MU, length: 20, scl: 1.9 * MU }),
   },
   // skate3: T3 — 680 hp, armor 7, a 2.5x2.5-block hitbox, 0.85 units/tick
@@ -1544,7 +1622,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 1.8,
     naval: true,
     immunities: ["wet"],
-    veteran: HARPOON_VETERAN,
     spotterField: { mult: 1.5, reload: 2, range: 10 * CELL },
     wake: wake({ x: 7 * MU, y: -9 * MU, length: 22, scl: 1.5 * MU }),
   },
@@ -1554,10 +1631,14 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // the fleet's champion is the toughest of the light lines and not a
   // rival to the walkers'.
   //
-  // THE DRILL (drillField): every 2 s it stamps every hull within ten
-  // tiles so that its veterancy clock runs two and a half times as fast —
-  // a fleet round a skate4 is a fleet at full strength in under a minute.
-  // The T4 is the reason the fleet cannot be waited out
+  // IT CARRIES NO AURA. It was the DRILL (drillField) — every 2 s it
+  // stamped every hull within ten tiles so that its veterancy clock ran
+  // two and a half times as fast — and with the veterancy gone there was
+  // no clock left to turn. What it is now is the fleet's heaviest rail on
+  // the fleet's toughest hull, and the spotter beside it is the only aura
+  // the family fields. A T4 with nothing but its gun is a hole worth
+  // filling one day; wakeField, the bow wave this hull used to carry, is
+  // still wired and would be the honest thing to put back
   skate4: {
     hp: 6880,
     speed: 5.475 * CELL * NAVAL_PACE,
@@ -1568,8 +1649,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 1.3,
     naval: true,
     immunities: ["wet"],
-    veteran: HARPOON_VETERAN,
-    drillField: { mult: 2.5, reload: 2, range: 10 * CELL },
     wake: wake({ x: 18 * MU, y: -21 * MU, length: 50, scl: 3 * MU }),
   },
   // skate5: the fleet's T5 — 16000 hp, armor 16, and a 7.25x7.25-block
@@ -1587,7 +1666,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 0.9,
     naval: true,
     immunities: ["wet"],
-    veteran: HARPOON_VETERAN,
     wake: wake({ x: 23 * MU, y: -32 * MU, length: 70, scl: 3.5 * MU }),
   },
   // livewire1: the Wraith fleet's T1 — 160 hp, armor 2, a 1.375x1.375-block
@@ -2019,7 +2097,353 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 1.8,
     starburst: { chance: 0.3, cooldown: 2.4, merge: 10 },
   },
+
+  // ── THE KETTLES, the vulture (game/kettleArt.ts) ──────────────────────
+  //
+  // THE SECOND THING IN THE SKY, AND THE FIRST THAT ARRIVES. The Skyfall
+  // bombers are five bodies that ARE bombs: each picks a structure inside
+  // its seek reach, leaves the route, dives it and goes off on contact
+  // (`payload`), and goes off the same way wherever it is shot down. That
+  // makes the whole family answerable ANYWHERE — a stoop killed over the
+  // outer wall has spent itself on the outer wall, and the line behind it
+  // is never tested.
+  //
+  // A KETTLE CARRIES NO CHARGE. It does not dive, it does not pick a
+  // building, it does not go off when it dies. It flies the air field
+  // straight at the core over every gun on the board, holds at the core's
+  // edge and works on it with the pods under its wings (weapons.ts) until
+  // one of them is gone. The whole of what the board has to do is stop it
+  // ON THE WAY, which is the one thing the sky has never asked for here.
+  //
+  // AND IT HAS NOTHING ELSE. No aura, no field, no charge, no veterancy,
+  // no blink, no cloak, no death burst — deliberately, and this stat block
+  // is as short as it is for that reason. The family was picked off a
+  // concept sheet (docs/air-concepts.md) for a gimmick it does NOT yet
+  // carry: the carrion mechanic, where every body that dies under a kettle
+  // feeds it. The drawing has the crop for it and the sim has nothing, so
+  // what is on the board today is a plain flyer with a gun, which is a
+  // thing this roster did not have and is worth fielding on its own.
+  //
+  // THE PACE IS A SOARER'S: 5.5 tiles/s down to 3.5, a hair under the
+  // Stoop's 8-to-4 at the light end and level with it at the heavy. The
+  // bomber is racing the guns to a drop and this one is not racing
+  // anything — it has to cross the whole board either way, so what it
+  // trades its speed for is the health to still be flying at the end of
+  // the crossing.
+  //
+  // THE HEALTH IS THE MIDDLE OF THE ROSTER, above the bombers at every
+  // rung and under the walls. A stoop5 is 14,000 on the softest plate in
+  // the game because it only has to reach one building; a kettle5 has to
+  // reach the core and then STAY there, so it is 15,000 behind armour 16
+  // — still nowhere near the tusker5's 25,000 and 104, because a body
+  // that ignores the maze must never also be the body that ignores the
+  // guns.
+  //
+  // THESE ARE A FIRST CUT. The shape is argued above; the numbers want a
+  // pass on the balance page and a playtest before anyone calls them
+  // settled (README, the note on who owns balance).
+  //
+  // rotateSpeed falls hard up the tree, as it does on the bombers: a
+  // heavy flyer that snaps onto a new heading reads as weightless, and
+  // the apex at 1.3 visibly swings round.
+  //
+  // The boxes are the drawings' own, which on this grammar is the same
+  // statement twice: UR x 1.25 / 1.75 / 2.75 / 5.25 / 6.75 is the 40, 56,
+  // 88, 168 and 216 px grids kettleArt.ts draws on at 32 px a tile. The
+  // apex is wide — under the stoop5's 7.25 and over everything else — and
+  // that is the one thing a player is meant to see coming.
+  kettle1: {
+    hp: 220,
+    speed: 5.5 * CELL,
+    armor: 2,
+    radius: UR * 1.25,
+    tier: 1,
+    drag: 0.03,
+    rotateSpeed: 3.5,
+    flying: true,
+  },
+  kettle2: {
+    hp: 760,
+    speed: 5 * CELL,
+    armor: 4,
+    radius: UR * 1.75,
+    tier: 2,
+    drag: 0.03,
+    rotateSpeed: 3,
+    flying: true,
+  },
+  kettle3: {
+    hp: 1900,
+    speed: 4.5 * CELL,
+    armor: 7,
+    radius: UR * 2.75,
+    tier: 3,
+    drag: 0.035,
+    rotateSpeed: 2.4,
+    flying: true,
+  },
+  kettle4: {
+    hp: 7200,
+    speed: 4 * CELL,
+    armor: 13,
+    radius: UR * 5.25,
+    tier: 4,
+    drag: 0.04,
+    rotateSpeed: 1.8,
+    flying: true,
+  },
+  kettle5: {
+    hp: 15000,
+    speed: 3.5 * CELL,
+    armor: 16,
+    radius: UR * 6.75,
+    tier: 5,
+    drag: 0.04,
+    rotateSpeed: 1.3,
+    flying: true,
+  },
+
+  // ---- THE CROSSER: ONE WORM, IN TWENTY PIECES ----
+  //
+  // The train that walks Coldline's two roads (missions.ts) while nothing
+  // else on the field knows it is there. It is on the WALKERS' layer and
+  // it is UNARMED, and both of those are the archetype rather than an
+  // oversight: "something moves across the map ignoring the base, and
+  // must die before it leaves" (docs/mission-design.md). It never turns
+  // toward the core, it never shoots a turret, and a board that ignores
+  // it loses nothing this minute — which is exactly what makes paying for
+  // guns out on a road that defends nothing a decision.
+  //
+  // WHY THREE KINDS AND NOT ONE. A worm is twenty bodies in a line
+  // (WORM_CHAIN), each with its own pool, because the mission asks the
+  // player to kill the WHOLE train: a single body with a chain drawn
+  // behind it would have one hurtbox at its nose, and a seventy-tile
+  // silhouette whose back half cannot be shot is a lie about where to put
+  // a gun. The head leads and is the toughest; the cars are the body; the
+  // tail is the piece that says the train has ended.
+  //
+  // THE POOL IS THE DIAL, and it is 126,000 for a whole worm at the first
+  // launch: twenty-one car-equivalents (the head is worth two, the tail
+  // one) at 6,000 apiece. It is a SHARED pool — every piece reports it and
+  // a hit on any car comes off it (Sim.drainCrosser) — so these three
+  // numbers are a way of writing one number down with the head's share
+  // of it visible, and nothing reads them per piece any more.
+  //
+  // IT WAS 45,000 AND IT WAS FAR TOO LITTLE. Two things had quietly
+  // undercut the measurement it was set from: the roads were refit
+  // straighter and shorter, and the train stopped taking the wet slow, so
+  // the seconds a board gets a Borer under fire fell twice over while the
+  // pool stayed where it was. A first train that a starting board rolls
+  // over is not an opening question, it is a cutscene.
+  //
+  // WHAT IT COSTS NOW, scaled from the one measurement there is rather
+  // than re-guessed: eight tier-three heads beside the south line were
+  // worth about 3,200 damage a second against a Borer, so the opening
+  // train is forty seconds of that battery and the last of the pattern is
+  // a shade over two minutes — against a crossing of four and three
+  // quarter minutes, most of which is spent out of any one battery's
+  // reach. The mission's price is now several batteries and the beacons
+  // to reach them, which is the decision the map is for.
+  wormhead: {
+    hp: 12000,
+    speed: WORM_SPEED,
+    armor: 12,
+    // HALF AGAIN THE NATIVE SCALE, like the boss and for the same reason:
+    // this is the body the whole map is about hitting, and at one-to-one
+    // it was a three-tile machine on a five-hundred-tile road. The sheet
+    // did not change — the quad did (atlas.ts UNIT_ART) — so every number
+    // below is the drawing's own extent times 1.5.
+    radius: UR * 4.125,
+    // the drawing's own extent: 96 native px of hull by the cutter drum's
+    // 72, at the sheet's 0.625 world px per native px (game/wormArt.ts),
+    // and then the 1.5. The quad is the box on this body like every other
+    hitbox: { long: 90, wide: 69 },
+    tier: 4,
+    // it turns as fast as the road does: the heading is the road's
+    // tangent, written straight onto the body (Sim.updateCrosser), so
+    // nothing here is ever asked to catch up with a corner
+    rotateSpeed: 30,
+    // ...and NOTHING SLOWS IT. See UnitStats.unslowable: a douser on the
+    // line can still soak a Borer, and the soak is still worth what
+    // electric ammunition pays for it — it simply buys no seconds
+    unslowable: true,
+  },
+  wormcar: {
+    hp: 6000,
+    speed: WORM_SPEED,
+    armor: 12,
+    radius: UR * 3.75,
+    hitbox: { long: 84, wide: 66 },
+    tier: 4,
+    rotateSpeed: 30,
+    unslowable: true,
+  },
+  wormtail: {
+    hp: 6000,
+    speed: WORM_SPEED,
+    armor: 12,
+    radius: UR * 3.75,
+    hitbox: { long: 84, wide: 66 },
+    tier: 4,
+    rotateSpeed: 30,
+    unslowable: true,
+  },
 };
+
+/**
+ * THE TRAIN, nose to tail: what one worm is made of, in order. Twenty
+ * pieces — a head, eighteen cars and a tail — laid on the road
+ * WORM_SPACING apart, which is a little under a car's own length so the
+ * couplings overlap and the thing reads as one body rather than twenty.
+ *
+ * IT IS SEVENTY-FOUR TILES OF TRAIN, nose to tail (19 gaps of 78 px),
+ * which is an eighth of Coldline's south road in one body. Two things
+ * downstream are sized off that and will bite if the count moves again:
+ * the ROAD'S RUN-UP has to be longer than the chain (missions.ts — the
+ * head is laid a whole chain-length past the entry, so a short run-up
+ * puts the head in open ground), and the on-board clock stops being the
+ * road's length the moment the tail is still off the map when the head
+ * is halfway across it.
+ *
+ * A worm is DESTROYED when every piece of it is down and LEAKED when any
+ * piece of it reaches the far edge (Sim.updateCrosser). Blowing the head
+ * off does not stop the rest: a train with no driver still rolls, and a
+ * mission that ended at the nose would be a mission about one turret.
+ */
+export const WORM_CHAIN: readonly UnitKind[] = [
+  "wormhead",
+  "wormcar", "wormcar", "wormcar", "wormcar", "wormcar", "wormcar",
+  "wormcar", "wormcar", "wormcar", "wormcar", "wormcar", "wormcar",
+  "wormcar", "wormcar", "wormcar", "wormcar", "wormcar", "wormcar",
+  "wormtail",
+];
+/** the gap between one piece's centre and the next, world px — scaled with
+ *  the bodies (see wormhead's radius), so the couplings keep their overlap */
+export const WORM_SPACING = 78;
+/** nose to tail, world px: what the road's run-up has to clear */
+export const WORM_LENGTH = (WORM_CHAIN.length - 1) * WORM_SPACING;
+
+/**
+ * THE CONVOY — the escort mission's cart, and the one body on the board
+ * that belongs to the PLAYER (EscortMission, Sim.launchConvoy).
+ *
+ * IT IS A STRUCTURE AND NOT A UNIT, and that is not an implementation
+ * detail, it is the design. "The swarm shoots it exactly the way it
+ * shoots a turret" is the whole specification of how the two sides meet:
+ * a body walking at the core fires at what its guns can see on the way,
+ * and a TURRET is what that sentence is about. Making the cart a
+ * structure means every gun on the swarm's side already knows what to do
+ * with it — the reach, the sight ray, the rot, the Tusker's rend, the
+ * bomber's dive — with no second targeting path to keep in step with the
+ * first. What it is NOT is a member of `Sim.towers`: nothing counts it,
+ * sells it or selects it, it claims no ground and it blocks no route.
+ */
+export const CONVOY_NAME = "Hauler";
+/**
+ * THE POOL IS THE MISSION, and it is a BOSS'S POOL rather than a
+ * building's. There is one cart on Thornway, it is under fire for
+ * fifteen minutes, and it has to arrive — so the number to read it
+ * against is the Sovereign's 180,000 to 720,000, not a turret's few
+ * thousand. The first cut was 40,000 and a measured run lost it inside
+ * four minutes at the FIRST halt: the road leaves the core, so its
+ * opening stretch runs straight through the traffic walking at the base,
+ * and a pool that size is spent before the mission has started.
+ *
+ * Read it against what a halt puts back: CONVOY_MEND a second for
+ * CONVOY_HALT seconds is 90,000, a third of the pool. So a leg that cost
+ * the cart a third of itself is paid for by the halt at the end of it,
+ * and a leg that cost half is a debt carried to the next one.
+ */
+export const CONVOY_HP = 250000;
+/** the cart's plating, shaved flat off every hit like a turret's
+ *  (TowerStats.armor) — enough that the runts chewing at it as they walk
+ *  past are a nuisance and the heavies are the threat */
+export const CONVOY_ARMOR = 40;
+/** its footprint in cells — what the swarm's guns aim at and what the
+ *  sight ray clips to. A big square on purpose: the objective should be
+ *  the most legible thing on the board */
+export const CONVOY_SIZE = 6;
+/**
+ * WHICH TURRET'S STATS THE CART'S ARE A COPY OF, with its name, footprint
+ * and plating written over them (Sim.launchConvoy).
+ *
+ * A structure has a `spec`, and most of a spec is a GUN — range, reload,
+ * ammunition, what it will shoot at. A cart has none of that, and the
+ * fields are never read on it because reading them is what the turret
+ * loop does and the turret loop walks a list this is not in. So rather
+ * than invent thirty numbers that mean nothing, it takes the smallest
+ * turret's and says so here: everything about this that is turret-shaped
+ * is the default, and the three numbers that are the cart's own are the
+ * three above.
+ */
+export const CONVOY_BASE_KIND = "tacker" as const;
+/**
+ * HOW FAST IT ROLLS, world px/s: 1.6 tiles a second, under half the pace
+ * of the slowest thing the swarm fields. Thornway's road is 23,750 px, so
+ * the driving alone is twelve and a half minutes and the halts put it
+ * over fifteen.
+ *
+ * SLOW IS THE POINT. The mission is "hold a position that moves", and a
+ * position that moves quickly is not one: the cart has to be somewhere
+ * long enough for the swarm to arrive at it, or the escort is a parade.
+ */
+export const CONVOY_SPEED = 1.6 * CELL;
+/** seconds it stands at each halt (EscortMission.halts), and the health it
+ *  mends a second while it stands there */
+export const CONVOY_HALT = 45;
+export const CONVOY_MEND = 2000;
+
+/**
+ * EVERY TRAIN IS TOUGHER THAN THE ONE BEFORE IT — what launch `n` (0 for
+ * the first) multiplies the whole chain's health pool by.
+ *
+ * WHY IT IS A RAMP AND NOT A FLAT POOL. The launches are three and a
+ * third minutes apart and the run gets RICHER between them: by the fifth
+ * the board has had thirteen more minutes of scrap than it had at the
+ * first, and a Borer worth exactly as much as the one it already killed
+ * is a Borer the player has already solved. The mission asks its question
+ * once and then asks it again harder — buy more road, or watch this one
+ * walk — which is the only way five repetitions of one event stay a
+ * decision instead of a chore.
+ *
+ * IT IS GEOMETRIC, AND IT USED TO BE A CENTRED LINE. 0.7 stepping to 1.3
+ * was built to hold the mission's total where a flat pool would have put
+ * it, which made it a rule about SHAPE — and the shape was not the
+ * problem. Across the whole pattern it was worth 1.86x from first to
+ * last, so the fifth train met a board with thirteen extra minutes of
+ * scrap in it and was under twice the first one. The player out-scaled it
+ * and the back half of the mission got easier as it went.
+ *
+ * Compounding a third a launch is what a curve has to do to stay ahead of
+ * a board that is itself compounding: x1.00, x1.35, x1.82, x2.46, x3.32,
+ * and x4.48 for the spare. From 6,000 a car at the first launch that is
+ * just under 20,000 at the fifth, and the pattern's seven worms are 1.9M
+ * of health against the 330k they used to be. This is the mission being
+ * MUCH harder, on purpose, and the growth rate is the one number to move
+ * if the back half overshoots.
+ *
+ * THE SPARE KEEPS CLIMBING. It is launched at index `pattern.length`, so
+ * the replacement for a train that got through is the heaviest thing the
+ * mission sends — which is what a second chance earned by a mistake ought
+ * to feel like. And the DROP does not ramp with it: scrap comes off the
+ * kind's authored health like every other body's (unitDrop), the same way
+ * the level curve leaves drops alone however high the rung climbs.
+ */
+export const WORM_RAMP_GROWTH = 1.35;
+export const wormRamp = (launch: number): number =>
+  WORM_RAMP_GROWTH ** Math.max(0, launch);
+
+/**
+ * IS THIS KIND A PIECE OF A TRAIN — one flag per kind id, for the readers
+ * that have to know without holding a Sim. The sim itself has `ucross`,
+ * which is the better answer and says WHICH worm; this is for the build
+ * test (board.ts bodiesClear, where a footprint is allowed to land on a
+ * Borer because the Borer walks through it) and the corner map's icon
+ * (game.ts drawMinimap), neither of which is inside the sim.
+ */
+export const KIND_IS_CROSSER = Uint8Array.from(UNIT_KINDS, (k) =>
+  WORM_CHAIN.includes(k) ? 1 : 0,
+);
 
 /**
  * Mindustry's unit trees: each line is one factory's upgrade path, in tier
@@ -2043,10 +2467,66 @@ export const UNIT_TREES = [
   { key: "tusker", name: FAMILY_NAMES.tusker.name, kinds: ["tusker1", "tusker2", "tusker3", "tusker4", "tusker5"] },
   // the eighth row: the crawlers, on the walkers' layer
   { key: "grapnel", name: FAMILY_NAMES.grapnel.name, kinds: ["grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5"] },
-  // not an upgrade path: the boss row holds the kinds that arrive as an
-  // event rather than a stream, so its slots do not read as tiers
-  { key: "boss", name: BOSS_NAME, kinds: ["boss"] },
-] as const satisfies readonly { key: string; name: string; kinds: readonly UnitKind[] }[];
+  // the ninth row: the second air line, on the flyers' layer
+  { key: "kettle", name: FAMILY_NAMES.kettle.name, kinds: ["kettle1", "kettle2", "kettle3", "kettle4", "kettle5"] },
+  // THE LAST TWO ROWS ARE OBJECTIVES AND NOT WAVE UNITS (OBJECTIVE_KINDS
+  // below). They are in this table because every kind must be in exactly
+  // one tree (see the check under it) and because the codex, the hitbox
+  // viewer and the balance page all read the table to know a body exists
+  // — but a WAVE cannot send them and the editor does not offer them
+  // (WAVE_TREES). Neither is an upgrade path either, so their slots do
+  // not read as tiers.
+  { key: "boss", name: BOSS_NAME, kinds: ["boss"], objective: true },
+  { key: "worm", name: WORM_NAME, kinds: ["wormhead", "wormcar", "wormtail"], objective: true },
+] as const satisfies readonly {
+  key: string;
+  name: string;
+  kinds: readonly UnitKind[];
+  objective?: boolean;
+}[];
+
+/**
+ * THE BODIES A MISSION PUTS ON THE BOARD, AND NOTHING ELSE CAN.
+ *
+ * The Sovereign and the Borer are both EVENTS rather than volume — one
+ * body that the run has to go and deal with — and that is the shape an
+ * objective has (docs/mission-design.md). They used to be two different
+ * cases: a Borer was already unrollable and unsendable-by-design, and the
+ * boss was simply typed into wave 50 of the campaign document. The boss
+ * being the last wave's finale was the old game, where clearing fifty
+ * waves WAS the assignment and the script needed a curtain. The script
+ * does not end any more (Sim.loadStep, the tide), so a boss on wave 50 is
+ * a boss on a lap counter — it would come round again every cycle, at
+ * double health, as ordinary traffic. That is the opposite of an event.
+ *
+ * SO THE GATE IS HERE AND THE STRIPPING IS IN `waveGroups`, which every
+ * reader of a wave goes through — the sim, the editor, the audit, the
+ * playtest. A document that still names one (an old save, a hand-edited
+ * file, a paste) simply stops sending it, with nothing to migrate and no
+ * second list to keep in step.
+ *
+ * THE BODIES ARE NOT RETIRED. Every line of them is live: stats, art,
+ * atlas cells, weapons, the health bar. What is gone is the one place
+ * that spawned them for no reason. A mission puts them down — the
+ * intercept already does (Sim.launchCrosser) and the archetypes that want
+ * a Sovereign are drawn and waiting (docs/mission-design.md, "venture and
+ * destroy").
+ */
+export const OBJECTIVE_KINDS: readonly UnitKind[] = UNIT_TREES.filter(
+  (t) => "objective" in t && t.objective,
+).flatMap((t) => t.kinds as readonly UnitKind[]);
+
+const OBJECTIVE = new Set<UnitKind>(OBJECTIVE_KINDS);
+
+/** is this a body only a mission may field? — see OBJECTIVE_KINDS */
+export const isObjectiveKind = (kind: UnitKind): boolean => OBJECTIVE.has(kind);
+
+/** the same as a mask over UNIT_KINDS, for waveGroups' inner loop */
+const OBJECTIVE_AT: readonly boolean[] = UNIT_KINDS.map((k) => OBJECTIVE.has(k));
+
+/** the trees a WAVE is authored out of — the table, less the objectives.
+ *  This is what the level editor lays out as rows */
+export const WAVE_TREES = UNIT_TREES.filter((t) => !("objective" in t && t.objective));
 
 /**
  * Every unit kind sits in exactly one tree. Adding a kind to UNIT_KINDS
@@ -2183,15 +2663,14 @@ export const FAMILIES = [
     kinds: ["stoop1", "stoop2", "stoop3", "stoop4", "stoop5"] },
   // THE SNIPERS: the whales — skate1, skate2, skate3, skate4, skate5 — and every
   // gun on them is a HARPOON RAIL from beyond the board's reach (forty to
-  // eighty tiles). They crawl ashore (NAVAL_PACE, NAVAL_LAND_SPEED) and
-  // GROW THE LONGER THEY LIVE (veteran): every hit multiplied by the
-  // hull's age, to triple. The skate3 is the spotter (the fleet reaches
-  // half again as far round it), the skate4 the drill (it ages faster round
-  // it), and the skate5's rail goes through everything on its line.
+  // eighty tiles). They crawl ashore (NAVAL_PACE, NAVAL_LAND_SPEED), the
+  // skate3 is the spotter (the fleet reaches half again as far round it),
+  // and the skate5's rail goes through everything on its line. What a hull
+  // hits for is its row in weapons.ts, fixed: the fleet used to grow the
+  // longer it lived and does not any more.
   //
-  // WHAT IT POSES: it is shooting you long before you can shoot it, and
-  // it is getting stronger. The answer is the long guns, and killing
-  // them young — the spotter and the drill first.
+  // WHAT IT POSES: it is shooting you long before you can shoot it. The
+  // answer is the long guns — reach, and the spotter first.
   { key: "naval", name: FAMILY_NAMES.naval.name, layer: "water", icon: "skate1",
     kinds: ["skate1", "skate2", "skate3", "skate4", "skate5"] },
   // THE WRAITHS: the sea slugs — livewire1, livewire2, livewire3, livewire4, livewire5
@@ -2266,6 +2745,20 @@ export const FAMILIES = [
   // spacing, so one death burst cannot take a patch.
   { key: "grapnel", name: FAMILY_NAMES.grapnel.name, layer: "ground", icon: "grapnel1",
     kinds: ["grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5"] },
+  // THE KETTLES: the vultures — kettle1 to kettle5 — the second thing in
+  // the sky and the first that does not blow itself up. A bomber spends
+  // itself on the first structure it reaches, so the Skyfall line is
+  // answered by killing it ANYWHERE; a kettle carries no charge, ignores
+  // every gun it passes over, flies the straight line to the core and
+  // parks on it, firing. Wing pods at every tier and nothing else: no
+  // aura, no field, no charge, no death burst (UNIT_STATS below).
+  //
+  // WHAT IT POSES: the whole crossing is the fight, and nothing about the
+  // board's SHAPE takes part in it. The answer is reach that points up,
+  // far enough out that a flight is dead before the core is in its range
+  // — an AA line hugging the core is an AA line being shot at.
+  { key: "kettle", name: FAMILY_NAMES.kettle.name, layer: "air", icon: "kettle1",
+    kinds: ["kettle1", "kettle2", "kettle3", "kettle4", "kettle5"] },
 ] as const satisfies readonly {
   key: string;
   name: string;
@@ -2295,6 +2788,7 @@ export const FAMILY_ACCENT: Readonly<Record<FamilyKey, RGB>> = {
   navalSupport: PAL.wraith,
   tusker: PAL.tusk,
   grapnel: PAL.hook,
+  kettle: PAL.carrion,
 };
 
 /**
@@ -2319,7 +2813,7 @@ export const FAMILY_ACCENT: Readonly<Record<FamilyKey, RGB>> = {
  * empty sprites. They sit on the shelf instead, which keeps the promise
  * exact: off, the game is the six lines it shipped with.
  */
-export const SHELVED_FAMILIES: readonly FamilyKey[] = ANIMAL_ART ? [] : ["tusker", "grapnel"];
+export const SHELVED_FAMILIES: readonly FamilyKey[] = ANIMAL_ART ? [] : ["tusker", "grapnel", "kettle"];
 
 /** the families in play: the table, less the shelf */
 export const ACTIVE_FAMILIES: readonly FamilyKey[] = FAMILIES.map((f) => f.key).filter(
@@ -2357,11 +2851,12 @@ export const FAMILIES_PER_RUN = 4;
  * already hands over the difficulty and the mutators; the swarm's cast is
  * the same kind of dial.
  *
- * TEN IS HEADROOM, not a promise. The roster fields seven families today
+ * TEN IS HEADROOM, not a promise. The roster fields nine families today
  * (ACTIVE_FAMILIES) and a hand cannot name one that does not exist, so
- * the picker fills at seven and this number does nothing until an eighth
+ * the picker fills at nine and this number does nothing until a tenth
  * family ships. It is here so that the day one does, the only thing that
- * has to change is the table.
+ * has to change is the table — which is exactly what happened when the
+ * Grapnels and then the Kettles went on.
  *
  * THE FLOOR IS ONE, and one is a real answer: a hand of a single family
  * plays every wave of the campaign in that family (transformScript), which
@@ -2483,12 +2978,20 @@ export const UNIT_NAMES: Record<UnitKind, string> = (() => {
     // have no upstream anything to fall back to (they are shelved off the
     // switch, SHELVED_FAMILIES), so they are named off the table either
     // way rather than reading as `Tusker3` in the level editor.
-    if (!ANIMAL_ART && f.key !== "tusker" && f.key !== "grapnel") continue;
+    if (!ANIMAL_ART && f.key !== "tusker" && f.key !== "grapnel" && f.key !== "kettle") continue;
     f.kinds.forEach((k, i) => {
       out[k] = `${FAMILY_NAMES[f.key].body} (${UNIT_RANKS[i]})`;
     });
   }
   out.boss = BOSS_NAME;
+  // THE CROSSER'S THREE PIECES, named here for the reason the boss is: no
+  // family, so no `Body (rank)` to build them out of. They are named for
+  // what they ARE on the board — a player who shoots the third car has to
+  // be told it was a car, or the health bar that did not finish the job
+  // says nothing about why
+  out.wormhead = `${WORM_NAME} (head)`;
+  out.wormcar = `${WORM_NAME} (car)`;
+  out.wormtail = `${WORM_NAME} (tail)`;
   return out;
 })();
 
@@ -2810,6 +3313,14 @@ export function transformScript(
  * Normalize a wave into groups of counts indexed like UNIT_KINDS. Groups
  * with nothing in them are dropped.
  *
+ * AN OBJECTIVE BODY IS STRIPPED HERE (OBJECTIVE_KINDS) — the Sovereign and
+ * the Borer's three pieces come off a wave on the way out of this
+ * function, whatever the document says. This is the ONE gate, and it is
+ * here because every reader of a wave comes through it: the sim's staging,
+ * the editor, the ladder audit, the playtest, the family deal. A document
+ * that still names one just stops sending it, so there is nothing to
+ * migrate and no second list to keep in step with this one.
+ *
  * THE REGION IS PARSED AND DISCARDED. Documents written before movement
  * layers carry the group form — `[{ region: 1, stoop1: 50 }, ...]` — and
  * still have to load, so the shape is still read; but nothing routes by the
@@ -2824,40 +3335,294 @@ export function waveGroups(
   const specs: readonly (WaveUnits | RegionWave)[] = Array.isArray(wave) ? wave : [wave];
   const groups: { counts: number[] }[] = [];
   for (const spec of specs) {
-    const counts = UNIT_KINDS.map((k) => Math.max(0, spec[k] ?? 0));
+    const counts = UNIT_KINDS.map((k, i) =>
+      OBJECTIVE_AT[i] ? 0 : Math.max(0, spec[k] ?? 0),
+    );
     if (counts.some((c) => c > 0)) groups.push({ counts });
   }
   return groups;
 }
 
 /**
- * A MAP'S MISSION. Two shapes so far:
+ * A MAP'S MISSION — WHAT THE RUN IS FOR (docs/mission-design.md).
  *
- *   hold     — clear every wave the script sends. The classic assignment.
- *   survive  — last `minutes` on the clock. The script plays through and,
- *              if the clock is still running when it ends, its LAST wave
- *              is sent again and again, each repeat a level tougher
- *              (Sim.loadStep) — a tide that does not stop until time does.
+ * THE WAVES ARE NOT THE OBJECTIVE ANY MORE. The script is an ENGINE: a
+ * composition of bodies that arrives on a clock, and when it has nothing
+ * left to send it goes round again, heavier, forever (Sim.loadStep — the
+ * tide, LEVELS_PER_DOUBLING in ladder.ts). So a map cannot be finished by
+ * outlasting its script, and every map has to say what finishing it means.
+ * Three shapes so far:
  *
- * Either way THE CORE IS THE STAKE: the swarm walks at it and shoots it
- * (CORE_HP in constants.ts), and the run is lost the moment it falls.
+ *   hold      — keep the line for `waves` waves, every body they sent down.
+ *               The classic assignment, and now a NUMBER rather than "until
+ *               the document runs out": a hold that asks for more waves
+ *               than the script holds gets them off the tide.
+ *   survive   — last `minutes` on the clock.
+ *   intercept — destroy `kills` crossers before they leave (below).
+ *
+ * Whichever it is THE CORE IS THE STAKE: the swarm walks at it and shoots
+ * it (CORE_HP in constants.ts), and the run is lost the moment it falls.
  * Nothing leaks and nothing is counted in lives — a body that reaches the
  * core is a body at the core, chewing on it.
  */
 export type Mission =
-  | { kind: "hold" }
-  | { kind: "survive"; minutes: number };
+  | HoldMission
+  | { kind: "survive"; minutes: number }
+  | InterceptMission
+  | EscortMission;
+
+/**
+ * HOLD THE LINE for a stated number of waves.
+ *
+ * A wave counts the moment every body it sent is DOWN (Sim.wavesCleared),
+ * so the last wave's walk-and-die is part of the assignment and a run is
+ * not over while something it let through is still chewing.
+ *
+ * `waves` UNSET MEANS THE SCRIPT'S OWN LENGTH, which is what every hold in
+ * WORLDS plays: the campaign document is authored as a full assignment and
+ * a second number beside it in this file would be a number to keep in step
+ * with a document somebody else edits (applyLevelDoc). Authoring one is
+ * how a map asks for a SHORTER hold — or for a longer one than the script
+ * can supply, which is the case that turns the tide.
+ */
+export interface HoldMission {
+  kind: "hold";
+  /** how many waves must be cleared; unset is the script's own count */
+  waves?: number;
+}
+
+/** how many NON-EMPTY waves a script holds — the number a hold defaults to,
+ *  and the one the tide is measured against (Sim.scriptWaves) */
+export function scriptWaveCount(script: readonly LevelStep[]): number {
+  let n = 0;
+  for (const step of script) {
+    let bodies = 0;
+    for (const g of waveGroups(step.wave)) for (const c of g.counts) bodies += c;
+    if (bodies > 0) n++;
+  }
+  return n;
+}
+
+/**
+ * HOW MANY WAVES THIS MISSION ASKS FOR, 0 on every mission that is not
+ * counted in waves — the hold's target, resolved against the script's own
+ * length where the mission names no number of its own.
+ *
+ * `scriptWaves` is passed in rather than read off a spec because the two
+ * callers have it in different hands: the sim froze it at stage time
+ * (Sim.scriptWaves, which the tide must never move) and the HUD has it off
+ * the header. One function, so a hold cannot be measured against one
+ * number on the board and another in the panel.
+ */
+export const missionTarget = (mission: Mission, scriptWaves: number): number =>
+  mission.kind === "hold"
+    ? Math.max(0, Math.floor(mission.waves ?? scriptWaves))
+    : 0;
+
+/** the same, for a spec in hand — what the deploy panel prints */
+export const holdWaves = (spec: LevelSpec): number =>
+  missionTarget(spec.mission, scriptWaveCount(spec.script));
+
+/**
+ * INTERCEPT THE CROSSER (docs/mission-design.md, archetype 2): a fixed
+ * number of things cross the map on roads of their own (missions.ts), and
+ * the run is what stops them.
+ *
+ * IT IS THE FIRST MISSION THAT CAN BE FAILED WITHOUT LOSING THE CORE, and
+ * the first that can be MET while the script still has waves to send —
+ * the swarm and the crossers are two clocks, and the base still has to be
+ * standing at the end of both. A hold's objective is the waves; this
+ * one's is beside them.
+ *
+ * THE SCHEDULE IS AUTHORED HERE AND NOWHERE ELSE. The sim reads these
+ * numbers and does what they say (Sim.runCrossers), so the whole shape of
+ * the mission — how many come, on which road, how far apart, and how much
+ * may get past — is one block a designer can read in one go.
+ */
+export interface InterceptMission {
+  kind: "intercept";
+  /** how many crossers must be destroyed for the mission to be met */
+  kills: number;
+  /** how many may reach the far side before the run is lost. One more
+   *  than this gets through and the mission cannot be met, so it is over */
+  leaks: number;
+  /** seconds from the run's start to the first launch */
+  first: number;
+  /** seconds between one launch and the next */
+  every: number;
+  /**
+   * WHICH ROADS EACH LAUNCH USES, by index into the map's roads
+   * (missions.ts ROAD_SPECS). One entry a launch; a launch that names two
+   * roads sends one crosser down each at the same moment, which is the
+   * whole of what "both" means and the only way this mission asks the
+   * player to have paid for two positions rather than one.
+   */
+  pattern: readonly (readonly number[])[];
+  /**
+   * THE SPARE LAUNCH, sent one `every` after the last of the pattern and
+   * ONLY if something has already got through.
+   *
+   * It is what makes `leaks` a real allowance rather than a lie. The
+   * pattern sends exactly `kills` crossers, so a run that lets one past
+   * could not reach the count however well it played afterwards, and the
+   * mission would be over at the moment of the leak while pretending it
+   * was not. The spare is the second chance the allowance promises —
+   * and it is not sent at all to a run that never needed it, so a clean
+   * run ends when the pattern does.
+   */
+  spare: readonly number[];
+}
+
+/**
+ * ESCORT THE CROSSER (docs/mission-design.md, archetype 3): the same shape
+ * as the intercept, turned round. Something of the PLAYER'S crosses the
+ * map on a road of its own (missions.ts), and the run is what keeps it
+ * alive.
+ *
+ * IT IS THE MIRROR AND NOT A VARIANT. An intercept asks the board to put
+ * a gun where a thing will be for thirty seconds; an escort asks it to
+ * put a gun where a thing will be for thirty seconds AND TO STILL BE
+ * THERE when the swarm arrives, because the cart is the thing the swarm
+ * happens to be walking past. That is the same money spent on the same
+ * ground and a completely different feeling, and the reason is the
+ * direction the clock runs: a Borer the board fails to kill is a number
+ * on a panel, and a convoy the board fails to hold is gone.
+ *
+ * THE CONVOY IS NOT A GOAL, and that line is the whole of what keeps this
+ * mission from turning into a second core. Nothing routes to it, nothing
+ * charges it, nothing changes course for it (Sim.updateUnits): the swarm
+ * walks at the base exactly as it always does and shoots the cart the way
+ * it shoots a turret it finds in reach on the way. So the pressure on the
+ * cart is a fact about WHERE THE ROAD CROSSES THE SWARM'S ROUTE, which is
+ * a fact about the map, which is what the player is buying guns against.
+ *
+ * THE HALTS ARE THE MERCY AND THE TRAP. A convoy stops at each of
+ * `halts` for `haltSeconds` and mends `mend` a second while it waits, so
+ * a leg that went badly is not the end of the run — and a cart standing
+ * still for most of a minute is the easiest target on the board. Every
+ * halt is therefore a position the player has to have paid for in
+ * advance, which is the archetype's own sentence about opportunity cost
+ * said in the only grammar this game has.
+ */
+export interface EscortMission {
+  kind: "escort";
+  /** how many convoys must reach the far post for the mission to be met */
+  deliver: number;
+  /** how many may be destroyed on the way before the run is lost. Zero is
+   *  a real answer and is what Thornway plays: there is one cart */
+  losses: number;
+  /** seconds from the run's start to the first convoy rolling out */
+  first: number;
+  /** seconds between one convoy setting off and the next */
+  every: number;
+  /** which road each convoy takes, by index into the map's roads
+   *  (missions.ts ROAD_SPECS) — one entry a convoy, in order */
+  pattern: readonly number[];
+  /**
+   * WHERE IT WAITS, as fractions of the road from 0 to 1, in order.
+   *
+   * Fractions and not cells, because a halt is a point ON THE JOURNEY —
+   * "a fifth of the way" — and a road edited by a corner should carry its
+   * halts with it rather than leaving four cell coordinates pointing at
+   * ground the line no longer passes. Thornway's four are chosen to land
+   * in the clearings the terrain already has.
+   */
+  halts: readonly number[];
+  /** how long it stands at each, seconds */
+  haltSeconds: number;
+  /** health a halted convoy mends per second; it never passes its max */
+  mend: number;
+}
 
 /** the mission as the deploy panel and the HUD say it: a headline and a clause */
 export function missionText(spec: LevelSpec): { title: string; detail: string } {
   const m = spec.mission;
-  const waves = spec.script.length;
   if (m.kind === "survive")
     return {
       title: `Survive ${m.minutes} minutes`,
-      detail: "The waves do not stop until the clock does. The core must stand.",
+      detail: "The waves never stop coming. Outlast them, with the core standing.",
     };
-  return { title: `Hold the line — ${waves} waves`, detail: "Clear every wave. The core must stand." };
+  if (m.kind === "escort")
+    return {
+      title:
+        m.deliver === 1
+          ? `Deliver the ${CONVOY_NAME.toLowerCase()}`
+          : `Deliver ${m.deliver} ${CONVOY_NAME.toLowerCase()}s`,
+      detail:
+        "It rolls out of your base and crosses the whole map at walking pace. " +
+        "Nothing comes looking for it and everything shoots it where it stands. " +
+        `${m.losses === 0 ? "There is one, and it has to arrive." : `${m.losses} may be lost.`} The core must stand.`,
+    };
+  if (m.kind === "intercept")
+    return {
+      title: `Destroy ${m.kills} ${WORM_NAME.toLowerCase()}s`,
+      detail:
+        `They cross the map and never come near you. ` +
+        `${m.leaks === 1 ? "One may reach the far side" : `${m.leaks} may reach the far side`}; ` +
+        `the next one that does ends the run. The core must stand.`,
+    };
+  return {
+    title: `Hold the line — ${holdWaves(spec)} waves`,
+    detail: "Break that many waves, with the core standing. What comes after them does not stop.",
+  };
+}
+
+/**
+ * THE MISSION'S PROGRESS, 0 to 1 — the one number every bar on the screen
+ * is drawn from (Sim.missionProgress, UiState.missionProgress).
+ *
+ * IT IS THE OBJECTIVE'S OWN FRACTION AND NEVER THE SCRIPT'S. The wave
+ * count used to stand in for this everywhere, which was honest only while
+ * clearing the script WAS the assignment; under a tide that never runs out
+ * a bar drawn off waves would fill to the brim and then quietly reset. So
+ * each mission answers for itself: waves cleared of the hold's target,
+ * seconds of the survive's clock, crossers down of the intercept's count.
+ *
+ * `state` is deliberately the smallest thing that can answer — the HUD has
+ * these four numbers and so does the sim, so the definition lives here
+ * once instead of on both sides of the worker seam.
+ */
+export function missionProgress(
+  mission: Mission,
+  target: number,
+  state: {
+    wavesCleared: number;
+    time: number;
+    crossKilled: number;
+    convoyDone: number;
+    convoyAt: number;
+  },
+): number {
+  const frac =
+    mission.kind === "survive"
+      ? state.time / Math.max(1, mission.minutes * 60)
+      : mission.kind === "intercept"
+        ? state.crossKilled / Math.max(1, mission.kills)
+        : // THE ESCORT'S BAR IS THE JOURNEY, not the delivery count. A
+          // count of one is a bar with two positions in it — empty and
+          // full — which over fifteen minutes of driving says nothing at
+          // all, and "how far has it got" is the only question a player
+          // watching a convoy is asking. So every cart already delivered
+          // carries its whole share and the one on the road carries how
+          // far along it is (Sim.convoyAt)
+          mission.kind === "escort"
+          ? (state.convoyDone + state.convoyAt) / Math.max(1, mission.deliver)
+          : state.wavesCleared / Math.max(1, target);
+  return Math.max(0, Math.min(1, frac));
+}
+
+/** what the bar's caption says: the objective counted in its own units */
+export function missionCount(
+  mission: Mission,
+  target: number,
+  state: { wavesCleared: number; crossKilled: number; convoyDone: number },
+): { done: number; of: number; noun: string } {
+  if (mission.kind === "survive") return { done: 0, of: 0, noun: "" };
+  if (mission.kind === "intercept")
+    return { done: Math.min(mission.kills, state.crossKilled), of: mission.kills, noun: "destroyed" };
+  if (mission.kind === "escort")
+    return { done: Math.min(mission.deliver, state.convoyDone), of: mission.deliver, noun: "delivered" };
+  return { done: Math.min(target, state.wavesCleared), of: target, noun: "waves held" };
 }
 
 export interface LevelSpec {
@@ -2881,7 +3646,7 @@ export interface LevelSpec {
    * seconds held between waves. The clock starts when the previous wave
    * has finished ENTERING the field — the last unit spawning, not the last
    * unit dying — so a level whose waves outlive the gap will have several
-   * on the field at once. Fifteen seconds as authored (WAVE_GAP_DEFAULT):
+   * on the field at once. Nineteen seconds as authored (WAVE_GAP_DEFAULT):
    * the run is a tide, and the waves overlap.
    */
   waveGap: number;
@@ -2954,9 +3719,17 @@ export interface LevelSpec {
  *
  * FOR A BIG WAVE THIS NUMBER IS AN ASPIRATION, and that is by design. A
  * failed spawn keeps its credit and goes as soon as a footprint frees up
- * (see Sim.runScript), so congestion DELAYS a wave and never swallows one.
- * The constant sets the pace where the map can keep up and gets out of the
- * way where it cannot.
+ * (see Sim.runScript), so congestion STRETCHES a wave and never swallows
+ * one. The constant sets the pace where the map can keep up and gets out
+ * of the way where it cannot.
+ *
+ * WHAT A STRETCHED WAVE NO LONGER DOES IS DELAY THE NEXT ONE. The waves
+ * are on a clock (Sim.waveStartTime): wave n lands at its moment whatever
+ * the doors are doing, and a wave that has outrun its drop zones simply
+ * keeps releasing while the one behind it starts. So this number decides
+ * how HARD a wave arrives, the level's gap decides how OFTEN, and neither
+ * of them is a function of the board any more — which is what makes the
+ * run the same length on a five-door map and a two-door one.
  *
  * Measured on Confluence, which has five drop zones: every wave up to
  * about 230/s comes out in the full 3.5s, and wave 20 asks 716/s, gets 253/s
@@ -2985,12 +3758,35 @@ export interface LevelDoc {
 
 
 /**
- * THE RUN'S CLOCK, as authored: a wave every fifteen seconds, fifty of
+ * THE RUN'S CLOCK, as authored: a wave every nineteen seconds, fifty of
  * them, each stronger than the last. The document
  * (public/levels/campaign.json) sets the gap; this is what a missing
  * document or a missing field plays.
+ *
+ * NINETEEN IS A RUN LENGTH, not a feel. The cadence a run keeps is this
+ * gap plus WAVE_RELEASE_SECONDS, and it is now the schedule ITSELF rather
+ * than an average — wave n lands at WAVE_GAP_OPENING + (n-1) x cadence and
+ * nothing about the board can move it (Sim.waveStartTime). So the script's
+ * own clock is exactly WAVE_GAP_OPENING + 49 x 22.5 = 1,105s: at fifteen
+ * that was 913s, a shade over fifteen minutes, and with the last wave's
+ * walk and die on the end a mission came in around sixteen. A mission is
+ * meant to be A TWENTY-MINUTE SITTING; nineteen puts the script at about
+ * eighteen and a half minutes and the clear on the end of it at twenty.
+ *
+ * THAT ARITHMETIC USED TO BE A LOWER BOUND. Waves were loaded one at a
+ * time and the next one waited for the last to finish spawning, so a map
+ * whose drop zones could not pass wave forty in 3.5 seconds ran LONGER
+ * than the number above — by minutes, on a tight board at a high rung, and
+ * with nothing on screen saying so.
+ *
+ * IT IS ALSO THE DIFFICULTY DIAL NOBODY CALLS ONE. The gap is what decides
+ * how much of a wave the board gets to itself before the next one lands,
+ * so lengthening it hands every wave a quarter more uncontested fire and
+ * thins the overlap the tide is made of. That softening is priced in here
+ * on purpose — the alternative levers (a longer release, or more waves)
+ * buy the same minutes and the counts are authored against this one.
  */
-export const WAVE_GAP_DEFAULT = 15;
+export const WAVE_GAP_DEFAULT = 19;
 
 /**
  * The OPENING gap only, in seconds. Every later wave waits WAVE_GAP_DEFAULT
@@ -3009,10 +3805,13 @@ const docs = new Map<string, LevelDoc>();
 
 /**
  * THE ONE SCRIPT. Every map plays the same fifty waves — the document
- * under this id in public/levels — and what makes one map different
- * from the next is its ground, its doors and the family roll the deploy
- * makes (rollFamilies). A world id passed to levelDocOf is accepted and
- * ignored, so an editor opened on any world edits the campaign.
+ * under this id in public/levels — and then plays the last eleven of them
+ * again, and again, heavier each time (Sim.loadStep). What makes one map
+ * different from the next is its ground, its doors, the family roll the
+ * deploy makes (rollFamilies) and, above all, its MISSION: the script is
+ * pressure, and the mission is what the run is for. A world id passed to
+ * levelDocOf is accepted and ignored, so an editor opened on any world
+ * edits the campaign.
  */
 export const CAMPAIGN_DOC_ID = "campaign";
 
@@ -3043,9 +3842,10 @@ export function levelDocOf(_worldId?: string): LevelDoc {
  * every number the audit prints about a map is true at every rung.
  *
  * Kills are the run's income: every dead body pays scrap off its own
- * health pool into the run (economy.ts). The save is paid by the WAVE: every wave cleared
- * banks its share of MISSION_XP, win or lose, and the rung multiplies it
- * (tierXpBonus in ladder.ts).
+ * health pool into the run (economy.ts). The save is paid for the MISSION:
+ * meeting it banks the whole of MISSION_XP and a defeat banks a share for
+ * the waves the board broke on the way down, with the rung multiplying
+ * either (tierXpBonus in ladder.ts).
  *
  * Armour is flat, max(dmg - armor, 0.1 * dmg), so an ironhide3 (armour 9)
  * against a tacker (damage 9) hits the 10% floor and costs a tacker line ten
@@ -3071,7 +3871,7 @@ export const WORLDS: LevelSpec[] = [
     // in three families (ground, ground support, air) and those are its
     // three SLOTS — ROLES, not families: "the line", "the support behind
     // it", "the third thing". A deploy rolls FAMILIES_PER_RUN of the
-    // seven families and the deal re-lets the roles EVERY WAVE
+    // nine families and the deal re-lets the roles EVERY WAVE
     // (transformScript), so the counts travel to every map and the bodies
     // are whatever the die said.
     //
@@ -3092,11 +3892,25 @@ export const WORLDS: LevelSpec[] = [
     // EVERY RUNG PLAYS THIS WHOLE LIST. There is one run per map and ten
     // difficulties to play it at, and a rung only scales the counts
     // (COUNT_SCALE in ladder.ts) — no wave is ever cut. THE SCRIPT IS
-    // FIFTY WAVES, fifteen seconds apart, each stronger than the last: a
-    // few dozen runts on wave 1, the first heavies by wave 10, waves in
-    // the thousands by the end, and the boss as the boss that closes
-    // it. The waves overlap — the gap is shorter than a wave takes to
-    // walk the lane — so the field is a tide, not a series of fights.
+    // FIFTY WAVES, 22.5 seconds apart on a clock nothing about the board
+    // can move (Sim.waveStartTime), each stronger than the last: a few
+    // dozen runts on wave 1, the first heavies by wave 10, waves in the
+    // thousands by the end. The waves overlap — the gap is shorter than a
+    // wave takes to walk the lane — so the field is a tide, not a series
+    // of fights, and a wave the doors cannot pass in one go simply keeps
+    // releasing while the next one lands.
+    //
+    // AND NO WAVE CLOSES IT. The boss used to: one Sovereign typed into
+    // wave 50, the curtain on a run that was finished by clearing fifty
+    // waves. Nothing is finished that way now, so it is an OBJECTIVE
+    // instead (OBJECTIVE_KINDS) and a wave cannot send one at all.
+    //
+    // FIFTY IS THE DOCUMENT'S LENGTH AND NOT THE RUN'S. The script does
+    // not end: past the fiftieth wave the last eleven go again, one
+    // doubling of enemy health a cycle, forever (Sim.loadStep — the tide,
+    // LEVELS_PER_DOUBLING in ladder.ts). So THE LAST ELEVEN WAVES ARE THE
+    // ONES THAT GET PLAYED FOREVER — author that stretch as something that
+    // stands repeating, because the endgame of every long run is it.
     //
     //   line       T1        T2       T3         T4         T5
     //   ironhide1     ironhide1    ironhide2     ironhide3   ironhide4    ironhide5
@@ -3202,10 +4016,15 @@ export const WORLDS: LevelSpec[] = [
   // ================= THE MISSION SKETCHES =========================
   //
   // One world per archetype (docs/mission-design.md), each on a map the
-  // graph editor drew. They play the campaign's own script like every
-  // other world — the MISSION each is named for is not implemented yet,
-  // so what they are for now is the TERRAIN: eight boards that ask a run
-  // to spend in eight different shapes.
+  // graph editor drew. All eight play the campaign's own wave script like
+  // every other world; what differs is what each ASKS on top of it.
+  //
+  // ONE OF THE EIGHT IS BUILT. Coldline carries INTERCEPT THE CROSSER —
+  // seven Borers on two roads, and a run that lets two past is over (see
+  // its block below, InterceptMission, and game/missions.ts). The other
+  // seven are still sketches and still play `hold`, so for now what they
+  // are is the TERRAIN: boards that ask a run to spend in seven different
+  // shapes, waiting for the rule that spends it.
   //
   // NOTHING PLACES THEM ON THE TRACK, so worldUnlockLevel answers 1 and
   // all eight are open from the start (game/track.ts). That is on purpose
@@ -3223,8 +4042,51 @@ export const WORLDS: LevelSpec[] = [
     id: "11",
     name: "Coldline",
     map: "coldline",
-    // INTERCEPT THE CROSSER — two parallel convoy roads with the core between them
-    mission: { kind: "hold" },
+    // INTERCEPT THE CROSSER — two convoy roads west to east with the core
+    // on its own ground between them, and the first mission in the game
+    // that is not the waves (docs/mission-design.md).
+    //
+    // WHAT IT COSTS. Neither road passes within a hundred cells of the
+    // core, so every gun that shoots a Borer is a gun bought outside the
+    // ground the core lights, on a beacon paid for out of the same purse
+    // the defence comes out of (the map carries nine at 3,000 to 12,000).
+    // Nothing built on a road defends the base, and the sale returns
+    // nothing, so the whole difficulty of this map is that one decision
+    // made five or six times.
+    //
+    // THE PATTERN IS THE DESIGN. South, north, both, south, both — seven
+    // Borers in five launches, which is exactly the seven the mission
+    // asks for, so a run that lets one through has spent its allowance
+    // and the spare (north, one launch later) is the only way back to
+    // seven. Two through and it is over: there is no second spare and
+    // the arithmetic says so before the player has to work it out.
+    //
+    // ...AND EACH LAUNCH IS HEAVIER THAN THE LAST (wormRamp), by a third
+    // again every time: the fifth Borer carries three and a third times
+    // the first one's health and the spare four and a half, on a board
+    // that has had thirteen more minutes of scrap to spend. Compounding
+    // is what it takes to stay ahead of a board that is itself
+    // compounding — a battery that answered the first train is nowhere
+    // near the battery that answers the fifth, which is what keeps the
+    // third repetition from being the second one again.
+    //
+    // THE CLOCK. First launch at 2:30, one every 3:20 after it, the last
+    // of the pattern at 15:50 and the spare at 19:10; a Borer is on the
+    // board for 4:16 to 5:00 (WORM_SPEED). So a board that kills a train
+    // where it meets it is done about sixteen minutes in, one that grinds
+    // each one down near the far end about twenty-one, and a run that
+    // spent its allowance and earned the spare about twenty-four. The
+    // wave script underneath all of that is the campaign's own and is
+    // tuned separately.
+    mission: {
+      kind: "intercept",
+      kills: 7,
+      leaks: 1,
+      first: 150,
+      every: 200,
+      pattern: [[0], [1], [0, 1], [0], [0, 1]],
+      spare: [1],
+    },
     waveGap: WAVE_GAP_DEFAULT,
     script: [],
   },
@@ -3232,8 +4094,50 @@ export const WORLDS: LevelSpec[] = [
     id: "12",
     name: "Thornway",
     map: "thornway",
-    // ESCORT THE CROSSER — one road, an S from the bottom, and a single shortcut
-    mission: { kind: "hold" },
+    // ESCORT THE CROSSER — one road, a double S from the core in the
+    // bottom-left corner to the post in the top-right, and the second
+    // mission in the game (docs/mission-design.md).
+    //
+    // IT IS COLDLINE INSIDE OUT. There the road is the swarm's and the
+    // board pays to reach it; here the road is YOURS and the board pays
+    // to stay on it. The money goes to the same place either way — a
+    // beacon and a battery a long way from anything that defends the base
+    // — and the difference is what happens when you get it wrong: a Borer
+    // you failed to kill is a number on a panel, and a hauler you failed
+    // to hold is gone.
+    //
+    // WHAT IT COSTS. The road is twelve hundred cells long and the core
+    // lights ninety, so all but the first tenth of it is ground bought
+    // with beacons (the map carries thirteen, 232,000 scrap to open it
+    // all). And the cart is only ever in ONE place, which is the thing
+    // that makes this mission different to defend than a base: a battery
+    // built for the third halt is dead weight for the first fourteen
+    // minutes and the only thing that matters for the ninety seconds the
+    // cart is standing in it.
+    //
+    // THE CLOCK. It rolls out at 1:30 and drives at 1.6 tiles a second
+    // (CONVOY_SPEED), so the driving is twelve and a half minutes; four
+    // halts of forty-five seconds put the arrival a little past
+    // seventeen. The halts are at 22, 40, 60 and 76 per cent, each chosen
+    // to land in a clearing the terrain already has — a stopped cart is
+    // the easiest target on the board, and standing it in a corridor
+    // would be asking the player to defend a place they cannot build in.
+    //
+    // ONE CART AND NO SPARE. `losses: 0` is the honest reading of an
+    // escort: the thing either arrives or it does not, and a second
+    // hauler sent after the first was destroyed would be the mission
+    // saying the first one did not matter.
+    mission: {
+      kind: "escort",
+      deliver: 1,
+      losses: 0,
+      first: 90,
+      every: 300,
+      pattern: [0],
+      halts: [0.22, 0.4, 0.6, 0.76],
+      haltSeconds: CONVOY_HALT,
+      mend: CONVOY_MEND,
+    },
     waveGap: WAVE_GAP_DEFAULT,
     script: [],
   },
@@ -3300,6 +4204,44 @@ export const WORLD = WORLDS[0];
 export function worldById(id: string): LevelSpec | null {
   return WORLDS.find((w) => w.id === id) ?? null;
 }
+
+/**
+ * THE WORLDS THAT ARE IN THE GAME TODAY, and the whole of how a board
+ * gets on or off the menu: name it here. A world NOT on this list keeps
+ * everything — its entry, its map, its document, its place in the admin
+ * editor and the save editor — it is simply never OFFERED: not a row in
+ * the map picker, not in Random's hat, not a reward on the progress
+ * screen, and not a pick a stale save may restore. It is the
+ * SHELVED_FAMILIES of the map table, and for the same reason: a board
+ * that is not ready to be met should not be met, and deleting it to say
+ * so loses the work.
+ *
+ * It is not a lock. A lock is the track saying "not yet, come back at
+ * level 8" (worldLock, progress.ts) and it is printed as a promise; this
+ * is the map not being in the game today.
+ *
+ * IT IS A LIST OF WHAT IS IN RATHER THAN OF WHAT IS OUT, and it was the
+ * other way round until the shelf got longer than the game. Seventeen
+ * boards are drawn and three are FINISHED — Confluence, which is the
+ * first board and the one the campaign is tuned against, and the two
+ * boards that carry a built mission, Coldline's intercept and Thornway's
+ * escort (docs/mission-design.md). Everything else
+ * is terrain with a hold mission on it and no reason yet to be played, so
+ * naming the fifteen would be writing the catalog down twice and
+ * forgetting one of them the next time a board lands.
+ */
+export const PLAYABLE_WORLD_IDS: readonly string[] = ["1", "11", "12"];
+
+/** is this world off the menu? — everything the list above does not name */
+export const worldHidden = (id: string): boolean => !PLAYABLE_WORLD_IDS.includes(id);
+
+/**
+ * The worlds a player may be offered — the table, less the hidden ones.
+ * The SAME OBJECTS as WORLDS holds, never copies, because a level
+ * document is overlaid onto its entry IN PLACE (applyLevelDoc below): a
+ * copy here would be a second world that never gets its script.
+ */
+export const VISIBLE_WORLDS: LevelSpec[] = WORLDS.filter((w) => !worldHidden(w.id));
 
 // ---------- level documents ----------
 

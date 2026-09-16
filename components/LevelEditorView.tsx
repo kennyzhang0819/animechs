@@ -5,7 +5,7 @@ import { useConfirm } from "./ConfirmDialog";
 import {
   UNIT_KINDS,
   UNIT_STATS,
-  UNIT_TREES,
+  WAVE_TREES,
   levelDocOf,
   missionText,
   saveLevel,
@@ -399,6 +399,18 @@ export default function LevelEditorView({
                   label="Release time"
                   value={`${Math.ceil(summary.waves * WAVE_RELEASE_SECONDS)}s`}
                 />
+                {/* THE TWO ABOVE, ADDED UP — the sitting the script asks
+                    for. It is the clock a mission is authored against
+                    (WAVE_GAP_DEFAULT is set to land it near twenty
+                    minutes), and reading it off two rows in seconds was
+                    arithmetic nobody did. Sums the same way budget() does
+                    in ladder.ts; the walk-and-die on the end of the last
+                    wave is the board's and not the script's, so it is not
+                    counted here */}
+                <Row
+                  label="Run length"
+                  value={mmss(summary.waves * (waveGap + WAVE_RELEASE_SECONDS))}
+                />
               </dl>
             </section>
           </aside>
@@ -460,6 +472,12 @@ export default function LevelEditorView({
 
 function makeStep(): EditStep {
   return { uid: uid(), counts: { ironhide1: 10 } };
+}
+
+/** seconds as m:ss — a run length is minutes, and nobody reads 1109s */
+function mmss(seconds: number): string {
+  const t = Math.max(0, Math.round(seconds));
+  return `${(t / 60) | 0}:${String(t % 60).padStart(2, "0")}`;
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -730,7 +748,12 @@ function StepCard({
           ground/air/dartback1 mix is readable at a glance instead of being a
           bag of chips. */}
       <div className="mt-1.5 space-y-1">
-        {UNIT_TREES.map((tree) => (
+        {/* WAVE_TREES, not UNIT_TREES: the Sovereign and the Borer are
+            MISSION objectives and a wave cannot send them whatever is typed
+            (levels.ts OBJECTIVE_KINDS strips them in waveGroups), so
+            offering their slots here would be offering a number that goes
+            nowhere. */}
+        {WAVE_TREES.map((tree) => (
           <div key={tree.name} className="flex items-center gap-1.5">
             <span className="w-16 shrink-0 text-[14px] font-bold uppercase tracking-widest text-[#71717C]">
               {tree.name}

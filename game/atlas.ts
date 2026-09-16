@@ -16,13 +16,14 @@ import { FOUNDRY_ART } from "./turretFlag";
 import { FOUNDRY_BASE_URLS, FOUNDRY_CORE_URL, FOUNDRY_HEAD_URLS, foundryHeadUrl } from "./foundryArt";
 import { TOWER_ICONS } from "./towerIcons";
 // the Foundry's palette, for the one block whose art is drawn here rather
-// than loaded from a file (relayBlock)
+// than loaded from a file (beaconBlock)
 import { BORE, MAST, POWER, STEEL, type Mat } from "./turretArt";
 import type { TowerKind } from "./types";
 import {
   toCanvas,
   toCanvasRect,
   column as bodyColumn,
+  type Art,
   type LegParts,
   type MechParts,
   type StoopArt,
@@ -48,7 +49,10 @@ import {
 } from "./familyArt";
 import { IRON_TIERS, ironLegged, ironMech, type IronTier } from "./ironhideArt";
 import { TUSK_TIERS, tuskLegged, tuskMech } from "./tuskerArt";
+import { WORM_N, wormCar, wormHead, wormTail } from "./wormArt";
+import { CONVOY_N, hauler } from "./convoyArt";
 import { GRAPNEL_TIERS, grapnelMech } from "./grapnelArt";
+import { KETTLE_TIERS, kettle, kettleGeom } from "./kettleArt";
 import { KING_TIER, king, kingGeom } from "./kingArt";
 
 /**
@@ -77,16 +81,31 @@ import { KING_TIER, king, kingGeom } from "./kingArt";
  *     wide enough that a mip-3 texel at its edge reads only its own
  *     transparent margin (MIP_MARGIN), sized from the art it declares.
  *
- * The sheet is 2560x4096. A WebGL2 context only has to guarantee
+ * The sheet is 3584x4096. A WebGL2 context only has to guarantee
  * MAX_TEXTURE_SIZE 2048 and every device that runs the game clears 4096,
  * so 4096 is the longest side allowed. If the roster outgrows it, the
- * packer throws at import with the name of the cell that did not fit,
- * and the one thing to change is ATLAS_W: every UV is a fraction of the
- * sheet, so a wider sheet moves nothing anyone can see. It went from 2048
- * to 2560 when each water kind grew from one painted block to three (see
- * FLOOR_CELLS) and the boxer's cell no longer fit.
+ * packer throws with the name of the cell that did not fit and how full
+ * the sheet was when it gave up, and the one thing to change is ATLAS_W:
+ * every UV is a fraction of the sheet, so a wider sheet moves nothing
+ * anyone can see. It went from 2048 to 2560 when each water kind grew
+ * from one painted block to three (see FLOOR_CELLS) and the boxer's cell
+ * no longer fit.
+ *
+ * IT WENT FROM 2560 TO 3584 WHEN THE KETTLES LANDED, and the jump is two
+ * steps rather than one on purpose. The roster's cells are 9.2M px and a
+ * 2560 sheet is 10.5M, so the packer was being asked for 88% PACKING
+ * DENSITY — which MaxRects cannot reach on cells that run from 16px
+ * bullets to a 512px eagle, whatever order they arrive in. It did not
+ * fail because the sheet was full; it failed because what was left was
+ * in the wrong shapes, which is why the last thing packed (a 69x78 team
+ * cell) is the one that threw and why nothing before it noticed.
+ *
+ * 3072 fits today at 73% and leaves four hundred rows spare — one more
+ * family and it is back here. 3584 sits at 63%, which is inside what this
+ * packer actually achieves, and 4096 is still in hand after it. The cost
+ * is VRAM and it is linear: 42MB of texture became 59, 78 with mipmaps.
  */
-const ATLAS_W = 2560;
+const ATLAS_W = 3584;
 const ATLAS_H = 4096;
 const TAU = Math.PI * 2;
 
@@ -180,8 +199,21 @@ function place(name: string, w: number, h: number): Rect {
       bl = l;
     }
   }
-  if (best < 0)
-    throw new Error(`atlas is full: no room for ${name} (${w}x${h} with its gutter) — raise ATLAS_W in game/atlas.ts`);
+  if (best < 0) {
+    // WHAT THE SHEET LOOKED LIKE WHEN IT GAVE UP, because "full" is
+    // almost never the reason. This packer fails on SHAPE long before it
+    // fails on area — see the note on ATLAS_W — and the two are fixed by
+    // the same dial but tell you very different things about how much
+    // room the next family has. An error that only names the cell sends
+    // the reader to count sprites; one that says "63% used, biggest free
+    // rect 40x2100" says it in a line.
+    const big = FREE.reduce((a, f) => (f.w * f.h > a.w * a.h ? f : a), { x: 0, y: 0, w: 0, h: 0 });
+    throw new Error(
+      `atlas is full: no room for ${name} (${w}x${h} with its gutter) — ` +
+        `${atlasFill().cells} cells fill ${atlasFill().pct}% of ${ATLAS_W}x${ATLAS_H}, ` +
+        `biggest free rect ${big.w}x${big.h}. Raise ATLAS_W in game/atlas.ts (ceiling 4096).`,
+    );
+  }
   const r: Rect = { x: FREE[best].x, y: FREE[best].y, w, h };
   const next: Rect[] = [];
   for (const f of FREE) {
@@ -209,6 +241,35 @@ function place(name: string, w: number, h: number): Rect {
   }
   return r;
 }
+
+/**
+ * HOW FULL THE SHEET IS RIGHT NOW — the cells handed out, the px they
+ * cover and that as a percentage of the whole.
+ *
+ * It is exported because the ONE THING that can overflow this sheet is
+ * invisible to `npm run check`: the team cells are cut to art that has to
+ * be drawn first, so they are reserved inside the pack pass, and the pack
+ * pass needs a canvas that Node does not have (see the `atlas` stage in
+ * scripts/check.mjs). What Node CAN run is everything declared at module
+ * scope, which is most of the sheet — so the check reads this after the
+ * import and prints the trend. A gate cannot catch the last cell; a
+ * number that says 85% on the run before is what would have.
+ */
+export function atlasFill(): { cells: number; px: number; pct: number } {
+  let px = 0;
+  for (const cell of CELLS.values()) px += cell.w * cell.h;
+  return { cells: CELLS.size, px, pct: +((100 * px) / (ATLAS_W * ATLAS_H)).toFixed(1) };
+}
+
+/** the biggest rectangle the packer could still hand out — the number that
+ *  actually predicts the next failure, since this one fails on shape */
+export function atlasLargestFree(): { w: number; h: number } {
+  const big = FREE.reduce((a, f) => (f.w * f.h > a.w * a.h ? f : a), { x: 0, y: 0, w: 0, h: 0 });
+  return { w: big.w, h: big.h };
+}
+
+/** the sheet, for anything that has to print it */
+export const ATLAS_SIZE: readonly [number, number] = [ATLAS_W, ATLAS_H];
 
 /**
  * A CELL ON THE SHEET, `w` x `h` sheet px, as the UV rect the renderer
@@ -688,14 +749,23 @@ export const UV_SHIELD_TOWER = flat("shield-tower", 96);
 export const UV_RESTORER = flat("restorer", 128);
 export const UV_FIXER = flat("fixer", 64);
 /**
- * THE RELAY, a 2x2 block like the projector and, like it, one that never
- * turns — a mast has no front. Its art is the only structure art in the
- * game with no source file behind it at all: it is DRAWN here, at pack
- * time (relayBlock), because there is no Mindustry block it is a port of
- * and a hand-authored PNG for four flat shapes would be a file to keep in
- * step with a palette that already lives in turretArt.ts.
+ * THE BEACON'S MAST — a HEAD, not a whole block, and 96px because it is a
+ * 3x3 head like the cleaver's and the shield tower's. It never turns: a
+ * mast has no front, so it is flat rather than a `top`.
+ *
+ * WHAT IS NOT IN THIS CELL IS THE PLATE. A beacon is drawn exactly the way
+ * a player's turret is drawn (renderer.ts): UV_TOWER_BASE3 first, this
+ * over it. That is the whole reason the sprite stopped covering its own
+ * cell — a head fills the middle and lets its plate show at the rim, and
+ * the plate is what makes a beacon read as square and as OURS.
+ *
+ * Its art is still the only structure art in the game with no source file
+ * behind it at all: it is DRAWN here, at pack time (beaconBlock), because
+ * there is no Mindustry block it is a port of and a hand-authored PNG for
+ * four flat shapes would be a file to keep in step with a palette that
+ * already lives in turretArt.ts.
  */
-export const UV_RELAY = flat("relay", 128);
+export const UV_BEACON = flat("beacon", 96);
 /**
  * Tether's beam, the two regions Drawf.laser stretches between the
  * turret and its target. The line is packed ROTATED — its 4x48 source runs
@@ -1089,6 +1159,26 @@ export const SF4_CELLS = sfMechCells(4, GRAPNEL_TIERS[3].n, 128);
 export const SF5_CELLS = sfMechCells(5, GRAPNEL_TIERS[4].n, 256);
 
 /**
+ * THE KETTLES' CELLS, and the third family to ask the packer for room of
+ * its own rather than draw over a Mindustry tree (the Tuskers were the
+ * first, the Grapnels the second). There is no upstream `kettle3` and no
+ * sprite file for one, so with ANIMAL_ART off these cells are never
+ * painted and the family sits on the shelf (levels.ts SHELVED_FAMILIES).
+ *
+ * Three cells a tier, like every other body on the wing rig: the composed
+ * sprite, the body column and one wing. The composed sprite goes in the
+ * smallest 64-multiple cell that holds its hitbox in native px (40, 56,
+ * 88, 168, 216 — kettleArt.ts), so the world px per native px is the same
+ * 0.625 the rest of the sheet has; the body and wing cells are derived
+ * from the tier (FlyerTier bw/nw) the way partCells does it below, which
+ * is why they are declared down there with the Stoop's and not here.
+ */
+const KETTLE_FULL_CELLS: readonly UVRect[] = KETTLE_TIERS.map((T, i) =>
+  sprite(`kettle${i + 1}`, [64, 64, 128, 256, 256][i], T.n),
+);
+const KETTLE_KINDS: readonly UnitKind[] = ["kettle1", "kettle2", "kettle3", "kettle4", "kettle5"];
+
+/**
  * WHAT THE BOSS DRAWS AT: one and a half world px per native px against
  * everything else's one. It is the boss's own multiplier and always has
  * been — it was the disrupt's — and the boss is the only kind on the sheet
@@ -1142,6 +1232,53 @@ export interface CellArt {
 
 /** every body's team cell, by kind — empty until the sheet is packed */
 export const UNIT_CELL: Partial<Record<UnitKind, CellArt>> = {};
+
+/**
+ * THE CROSSER'S CELLS, and they are on the sheet for the same reason the
+ * Tuskers' are: nothing upstream is called a `wormcar`, so the three
+ * pieces ask the packer for room of their own rather than going over
+ * anything (see THE TUSKERS' CELLS above).
+ *
+ * ALL THREE ARE ONE SIZE. A worm is twenty bodies in a line (levels.ts
+ * WORM_CHAIN) drawn on one 96 grid — three tiles — in the smallest
+ * 64-multiple cell that holds it, so the head, the eighteen cars and the
+ * tail share one packing and the whole train rides one quad size. The
+ * head fills its grid and the cars are drawn narrower inside it, which is
+ * the 90x69 and 84x66 the hitboxes say once the quad's 1.5 is on (see
+ * UNIT_ART below — this is the one body on the sheet drawn above its
+ * native scale apart from the boss).
+ *
+ * NO TEAM CELL AND NO SILHOUETTE. A Borer is a machine rather than an
+ * animal (game/wormArt.ts): it wears the crimson as paint laid in the
+ * drawing itself, not as the tinted accent overlay a family's body
+ * carries, and nothing on the roster casts it as a shadow puppet. So the
+ * three go down the renderer's plain-quad path — one cell, one quad, the
+ * heading the sim turned it to.
+ */
+/**
+ * THE HAULER'S CELL (game/convoyArt.ts) — the escort mission's cart, on
+ * the sheet for the reason the Borer's pieces are: nothing upstream is
+ * called a hauler, so it asks the packer for room of its own rather than
+ * going over anything.
+ *
+ * A 192px drawing in a 256 cell, which is the smallest 64-multiple that
+ * holds it, so the world px per native px is the sheet's own 0.625 and
+ * the art lands at exactly CONVOY_SIZE tiles — the box the swarm's guns
+ * are aiming at. NO TEAM CELL: the cart is the PLAYER'S, and a team cell
+ * is the tinted accent overlay a body of the swarm's wears. What it wears
+ * instead is the player's amber, painted into the drawing itself.
+ */
+export const UV_CONVOY = sprite("convoy", 256, CONVOY_N);
+/** the world quad the cell is stretched onto: the cell's own 256 native px
+ *  at the sheet's 0.625, so the 192px drawing inside it lands on exactly
+ *  the CONVOY_SIZE tiles the hitbox says */
+export const CONVOY_QUAD = 160;
+
+const WORM_CELLS = {
+  head: sprite("wormhead", 128, WORM_N),
+  car: sprite("wormcar", 128, WORM_N),
+  tail: sprite("wormtail", 128, WORM_N),
+};
 
 // per-kind unit art: atlas cell + world quad size. Both ride at true
 // Mindustry scale — ironhide1 48px art = 1.5 tiles, ironhide2 64px art = 2 tiles
@@ -1210,6 +1347,24 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   grapnel3: { uv: SF3_CELLS.body, sprite: UNIT_SPRITE * 2 },
   grapnel4: { uv: SF4_CELLS.body, sprite: UNIT_SPRITE * 2 },
   grapnel5: { uv: SF5_CELLS.body, sprite: UNIT_SPRITE * 4 },
+  // the vultures, on cells of their own (see THE KETTLES' CELLS): a 40px
+  // runt and a 56px brute in 64s, an 88 in a 128, then 168 and 216 in
+  // 256s — the same world px per native px as everything above it
+  kettle1: { uv: KETTLE_FULL_CELLS[0], sprite: UNIT_SPRITE },
+  kettle2: { uv: KETTLE_FULL_CELLS[1], sprite: UNIT_SPRITE },
+  kettle3: { uv: KETTLE_FULL_CELLS[2], sprite: UNIT_SPRITE * 2 },
+  kettle4: { uv: KETTLE_FULL_CELLS[3], sprite: UNIT_SPRITE * 4 },
+  kettle5: { uv: KETTLE_FULL_CELLS[4], sprite: UNIT_SPRITE * 4 },
+  // the crosser's three pieces, a 96px drawing in a 128 cell apiece —
+  // and the SECOND thing on the sheet that breaks the px-per-px rule, at
+  // the boss's own 1.5. A 128 cell would be UNIT_SPRITE * 2; it is * 3,
+  // so the 96px drawing lands on 90 world px of body instead of 60 and
+  // the hitboxes in levels.ts are the same 1.5 times what they were. The
+  // art is unchanged and simply drawn larger, which is what a train
+  // crossing five hundred tiles of map has to be to read as one
+  wormhead: { uv: WORM_CELLS.head, sprite: UNIT_SPRITE * 3 },
+  wormcar: { uv: WORM_CELLS.car, sprite: UNIT_SPRITE * 3 },
+  wormtail: { uv: WORM_CELLS.tail, sprite: UNIT_SPRITE * 3 },
 };
 
 // Mindustry world units → px (CELL / 8, see constants.ts)
@@ -1709,6 +1864,7 @@ const partCells = (name: string, T: FlyerTier) =>
 export const UV_STOOP_CELLS: readonly (readonly [UVRect, UVRect])[] = STOOP_TIERS.map((T) => partCells("stoop", T));
 export const UV_MANTA_CELLS: readonly (readonly [UVRect, UVRect])[] = MANTA_TIERS.map((T) => partCells("manta", T));
 export const UV_NARWHAL_CELLS: readonly (readonly [UVRect, UVRect])[] = NARWHAL_TIERS.map((T) => partCells("narwhal", T));
+export const UV_KETTLE_CELLS: readonly (readonly [UVRect, UVRect])[] = KETTLE_TIERS.map((T) => partCells("kettle", T));
 
 /**
  * A flyer drawn in parts: a body quad and one wing quad mirrored to both
@@ -1924,6 +2080,12 @@ if (ANIMAL_ART) {
   wingParts(STOOP_KINDS, STOOP_TIERS, UV_STOOP_CELLS, stoopGeom, true);
   wingParts(MANTA_KINDS, MANTA_TIERS, UV_MANTA_CELLS, mantaGeom, false);
   wingParts(NARWHAL_KINDS, NARWHAL_TIERS, UV_NARWHAL_CELLS, narwhalGeom, false);
+  // ---- the Kettles ----
+  // the vulture on the same rig, on cells of its own. NO JETS: a kettle
+  // is a bird and the thing keeping it up is the beat, the same call the
+  // Sovereign makes below — and there is nothing to delete either way,
+  // since a kind with no upstream hull was never in UNIT_ENGINES
+  wingParts(KETTLE_KINDS, KETTLE_TIERS, UV_KETTLE_CELLS, kettleGeom, false);
   // ---- the Sovereign ----
   // the boss on the same rig, on cells of its own and at the boss's own
   // scale. Its ENGINES GO: the disrupt's two mirrored pairs of jets were
@@ -2470,60 +2632,53 @@ function liquidTurret(
  * middle of the sprite.
  */
 /**
- * THE RELAY'S BLOCK, drawn rather than vendored.
- *
- * It follows the Foundry's rules for a head (docs/turret-factions.md and
- * the header of turretArt.ts) because it stands on the same plate as one:
- * no outline of its own, flat colours butted together, every material a
- * PAIR whose dark half is on the left of the sprite and light half on the
- * right, boxes and 45-degree cuts only, and nothing narrower than four
- * native pixels — eight here, since this is a 64px block drawn at 2x.
- *
- * FOUR PARTS AND NO DRESSING: a gunmetal plate, a steel diamond, a dark
- * bore, and the lamp. The diamond is the whole silhouette decision — not
- * one of the seventeen heads is a diamond, so a mast is the one thing on
- * the board you can find without reading it, which is exactly what you
- * want of the building every other building's power runs through.
- */
-/**
- * THE RELAY'S BLOCK, drawn rather than vendored — there is no Mindustry
+ * THE BEACON'S MAST, drawn rather than vendored — there is no Mindustry
  * block behind it to port.
  *
- * IT IS AUTHORED FOR FORTY PIXELS, which is the only size that matters: a
- * 2x2 building on a 20px tile is 40px on screen at 1x, and this cell is 128,
- * so every feature is cut down by better than three to one before anybody
- * sees it. The first cut of this ignored that and drew four concentric rings
- * — octagon, diamond, diamond, square — each about four pixels wide once
- * scaled. It collapsed into a grey square with a dot in it, which is a fair
- * description of nothing.
+ * IT IS A HEAD ON A TURRET'S PLATE and is authored as one. The renderer
+ * lays UV_TOWER_BASE3 down first and stamps this on top, which is the
+ * same two quads every gun on the board is made of. So this canvas draws
+ * the MAST ONLY, sized to sit inside the plate with its rim showing all
+ * round — exactly as far in as a turret's head sits inside its own.
+ *
+ * It follows the Foundry's rules for a head (docs/turret-factions.md and
+ * the header of turretArt.ts) because it now literally is one: no outline
+ * of its own, flat colours butted together, every material a PAIR whose
+ * dark half is on the left of the sprite and light half on the right, and
+ * 45-degree cuts only — which a diamond is made of.
+ *
+ * IT IS AUTHORED FOR SIXTY PIXELS, which is the only size that matters: a
+ * 3x3 building on a 20px tile is 60px on screen at 1x, and this cell is
+ * 96, so every feature is cut down before anybody sees it. An earlier cut
+ * of this ignored that and drew four concentric rings each about four
+ * pixels wide once scaled. It collapsed into a grey square with a dot in
+ * it, which is a fair description of nothing.
  *
  * SO THE DESIGN IS A SILHOUETTE AND ONE FEATURE:
  *
- *   A DIAMOND, corner to corner. Not one of the nineteen turrets is a
- *   diamond and neither is the core — they are all square plates — so the
- *   shape alone says "this is not a gun" from across the board, at any zoom,
- *   before a single interior detail resolves.
+ *   A DIAMOND, corner to corner. Not one of the nineteen turret heads is a
+ *   diamond — they are all snouts and drums — so the shape alone says
+ *   "this is not a gun" from across the board, at any zoom, before a single
+ *   interior detail resolves. The plate underneath says "this is a
+ *   building of yours"; the diamond says which one.
  *
  *   A BRIGHT STEEL RIM inside it. This is what makes the thing readable on
- *   DARK ground: a relay stands on a hill, and a dark plate on dark rock is
- *   invisible. The rim is wide enough (14 units, better than four pixels on
- *   screen) to survive the downscale.
+ *   DARK ground: a beacon stands on a hill, and dark plating on dark rock
+ *   is invisible. The rim is 11 units — seven pixels on screen — which
+ *   survives the downscale.
  *
- *   AN AMBER CORE, 36 units — eleven pixels on the board. The single loudest
- *   thing on the building, in the player's own colour, because "this is
- *   ground you can own" is the whole of what a relay says.
- *
- * Everything else the Foundry asks for still holds (turretArt.ts): no outline
- * of its own, flat colours butted together, every material a PAIR with its
- * dark half on the left of the sprite and its light half on the right, and
- * 45-degree cuts only — which a diamond is made of.
+ *   AN AMBER CORE, 22 units, better than thirteen pixels on the board. The
+ *   single loudest thing on the building, in the player's own colour,
+ *   because "this is ground you can own" is the whole of what a beacon
+ *   says. It is also the lamp the vision ring is meant to be coming from
+ *   (constants.ts BEACON_VISION_R), so it wants to look lit.
  */
-function relayBlock(): HTMLCanvasElement {
-  const S = 128;
+function beaconBlock(): HTMLCanvasElement {
+  const S = 96;
   const cv = document.createElement("canvas");
   cv.width = cv.height = S;
   const c = cv.getContext("2d");
-  if (!c) throw new Error("2d context unavailable for the relay block");
+  if (!c) throw new Error("2d context unavailable for the beacon block");
   c.imageSmoothingEnabled = false;
   // THE SHADE IS THE WHOLE OF THE LIGHTING and it is applied per PART, not
   // per drawing: each shape is filled twice, clipped to one half of the
@@ -2549,12 +2704,15 @@ function relayBlock(): HTMLCanvasElement {
     c.lineTo(S / 2 - r, S / 2);
     c.closePath();
   };
-  halves(() => diamond(62), MAST);
-  halves(() => diamond(44), STEEL);
-  halves(() => diamond(30), BORE);
-  // the lamp, 36 across the midline — the shade cuts it in two, so it is
-  // authored at better than twice the minimum rather than at the minimum
-  halves(() => c.rect(46, 46, 36, 36), POWER);
+  // 38 of 96 leaves nine units of plate outside the mast's widest point,
+  // which is the margin a turret head leaves on the same plate — enough
+  // for the base's rim and its outline to read all the way round
+  halves(() => diamond(38), MAST);
+  halves(() => diamond(27), STEEL);
+  halves(() => diamond(18), BORE);
+  // the lamp, 22 across the midline — the shade cuts it in two, so each
+  // half is still well past the minimum feature width
+  halves(() => c.rect(37, 37, 22, 22), POWER);
   return cv;
 }
 
@@ -2865,6 +3023,34 @@ function clearCell(c: CanvasRenderingContext2D, uv: UVRect): void {
 }
 
 /**
+ * THE CROSSER INTO THE SHEET (game/wormArt.ts) — three cells nobody else
+ * owns, drawn at native size through the same antialias pass every sprite
+ * file goes through, and turned the same quarter turn so an up-facing
+ * drawing faces +x like the rest of the sheet.
+ *
+ * IT IS NOT BEHIND ANIMAL_ART. That switch is the animal trial: with it
+ * off, every family it covers falls back to a Mindustry sprite that
+ * really is on disk. There is no Mindustry sprite of a boring machine, so
+ * a Borer behind the switch would be a mission with three empty quads in
+ * it. It packs either way, which is also why it has no silhouette and no
+ * team cell to requeue — see THE CROSSER'S CELLS.
+ */
+function packWormArt(c: CanvasRenderingContext2D): void {
+  const pack = (u: UVRect, art: Art): void => {
+    const cv = toCanvas(art);
+    clearCell(c, u);
+    drawCell(c, u, antialiased(cv), [cv.width, cv.height]);
+  };
+  pack(WORM_CELLS.head, wormHead());
+  pack(WORM_CELLS.car, wormCar());
+  pack(WORM_CELLS.tail, wormTail());
+  // ...and the escort's cart, beside the crosser's train because they are
+  // the same kind of thing on the sheet: a mission's own body, packed
+  // whichever way the animal switch is thrown
+  pack(UV_CONVOY, hauler());
+}
+
+/**
  * THE ANIMAL ART INTO THE SHEET, after every stock cell is drawn: each
  * part cleared and redrawn at native size, through the same antialias and
  * silhouette passes as the sprite files, and each body's team cell
@@ -3002,6 +3188,10 @@ function packAnimalArt(
   packWinged(STOOP_KINDS, STOOP_TIERS, [UV_STOOP1, UV_STOOP2, UV_STOOP3, UV_STOOP4, UV_STOOP5], UV_STOOP_CELLS, stoop);
   packWinged(MANTA_KINDS, MANTA_TIERS, [UV_SKATE1, UV_SKATE2, UV_SKATE3, UV_SKATE4, UV_SKATE5], UV_MANTA_CELLS, manta);
   packWinged(NARWHAL_KINDS, NARWHAL_TIERS, [UV_LIVEWIRE1, UV_LIVEWIRE2, UV_LIVEWIRE3, UV_LIVEWIRE4, UV_LIVEWIRE5], UV_NARWHAL_CELLS, narwhal);
+  // the vultures, into cells nobody else owns (see THE KETTLES' CELLS):
+  // the same three drawings as any other wing-rig body, with nothing
+  // under them to clear
+  packWinged(KETTLE_KINDS, KETTLE_TIERS, KETTLE_FULL_CELLS, UV_KETTLE_CELLS, kettle);
   // ---- the Sovereign ----
   // the boss, into cells nobody else owns (see THE SOVEREIGN'S CELLS): the
   // same three drawings as any other wing-rig body, and the stock hull's
@@ -3467,10 +3657,10 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   draw(UV_SHIELD_TOWER, outlinedBlock(img.shieldTower));
   draw(UV_RESTORER, antialiased(mendBlock(img.restorer, img.restorerTop)));
   draw(UV_FIXER, antialiased(mendBlock(img.fixer, img.fixerTop)));
-  // ...and the mast, generated rather than loaded (relayBlock), through the
+  // ...and the mast, generated rather than loaded (beaconBlock), through the
   // same outline and antialias pass every other block goes through so it
   // sits on the board as one of them
-  draw(UV_RELAY, outlinedBlock(relayBlock()));
+  draw(UV_BEACON, outlinedBlock(beaconBlock()));
 
   // the base building at native 160px: the block, then the team overlay
   // tinted sharded-yellow the way Mindustry composites team regions
@@ -3503,6 +3693,10 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
     });
   }
 
+  // ...and the mission's crosser, which is nobody's trial and is packed
+  // whichever way the switch is thrown (see packWormArt)
+  packWormArt(c);
+
   // last, because it is the only thing on the sheet whose cells are cut
   // to art that had to be drawn first: every body's team cell
   packTeamCells();
@@ -3516,7 +3710,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
  *
  * Packing is not cheap — it decodes every sprite, runs the EPX antialias
  * pass over each in JavaScript, outlines the units, and composites the lot
- * into a 2048x4096 canvas — and it depends on nothing but the sprite files,
+ * into a 3584x4096 canvas — and it depends on nothing but the sprite files,
  * so a second call can only produce a byte-identical sheet. It used to run
  * on every Game.create, which meant paying the whole cost again on every
  * level start. Now the first caller pays and everyone after shares.

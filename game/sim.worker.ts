@@ -44,10 +44,10 @@ import type { FromWorker, ToWorker } from "./workerhost";
 /** the commands the host may send, by name — SimHost's, and nothing else */
 const COMMANDS = new Set<string>([
   "reset",
-  "skipToWave",
+  "skipToTime",
   "placeFormation",
   "placeTower",
-  "setRelayOn",
+  "setBeaconOn",
   "placeMany",
   "placeLine",
   "placeRuler",
@@ -169,7 +169,7 @@ async function init(spec: LevelSpec, field: MessagePort | null, phys: MessagePor
     occupied: s.occupied,
     waterlogged: s.waterloggedMask(),
     powered: s.poweredMask(),
-    relayOn: s.relayOnMask(),
+    beaconOn: s.beaconOnMask(),
     airRoutes: s.airRoutes(),
   });
   last = performance.now();

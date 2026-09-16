@@ -251,6 +251,18 @@
         "4967"
       ],
       "port": 4967
+    },
+    {
+      "name": "animechs-5140",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:hot",
+        "--",
+        "-p",
+        "5140"
+      ],
+      "port": 5140
     }
   ]
 }

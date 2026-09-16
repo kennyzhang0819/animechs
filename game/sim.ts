@@ -29,7 +29,7 @@ import {
   HN,
   HROWS,
   CORE_HP,
-  MAX_RELAYS,
+  MAX_BEACONS,
   INF,
   MOVE_LAYERS,
   NAVAL_LAND_SPEED,
@@ -131,6 +131,9 @@ import {
 } from "./hitbox";
 import {
   WORLDS,
+  missionProgress,
+  missionTarget,
+  unitName,
   UNIT_ID,
   UNIT_KINDS as UNIT_KINDS_IMPORT,
   UNIT_STATS,
@@ -138,6 +141,17 @@ import {
   waveGroups,
   WAVE_GAP_OPENING,
   WAVE_RELEASE_SECONDS,
+  wormRamp,
+  CONVOY_ARMOR,
+  CONVOY_BASE_KIND,
+  CONVOY_HP,
+  CONVOY_NAME,
+  CONVOY_SIZE,
+  CONVOY_SPEED,
+  WORM_CHAIN,
+  WORM_NAME,
+  WORM_LENGTH,
+  WORM_SPACING,
   type LegSpec,
   type SegmentSpec,
   type LevelSpec,
@@ -147,20 +161,41 @@ import {
 
 /** module-local for the same getter reason as the constants block above */
 const UNIT_KINDS = UNIT_KINDS_IMPORT;
-import { unitHpOnRung } from "./ladder";
+import { LEVELS_PER_DOUBLING, unitHpOnRung } from "./ladder";
 
 /**
- * THE TIDE: what a survive mission sends once its script is spent. The
- * last SURVIVE_CYCLE_WAVES waves go again as a cycle, and every cycle
- * adds SURVIVE_LOOP_LEVELS to the enemy level every body spawns at —
- * three levels is HP_PER_LEVEL^3, about +19% health a cycle, so a clock
- * that outlives its script by a few minutes climbs a handful of steps
- * rather than a cliff. Four waves rather than one so the tide keeps the
- * script's rhythm (a lull, a spike) instead of sending its finale on a
- * loop.
+ * THE TIDE — WHAT MAKES THE SCRIPT INFINITE, and the reason no map is
+ * finished by outlasting its waves any more (levels.ts Mission).
+ *
+ * A script is a finite document: fifty waves, and then nothing. That was
+ * the whole game while clearing it WAS the assignment. It is not any more
+ * — a mission is an objective beside the waves (docs/mission-design.md) —
+ * so the script had to stop being able to run out underneath one. When the
+ * cursor reaches the end and the mission is still open, THE LAST
+ * TIDE_CYCLE_WAVES GO AGAIN, at TIDE_LEVELS more enemy level than the
+ * cycle before: waves 40 to 50 of a fifty-wave script, then 40 to 50 at
+ * double health, then at quadruple, then at eight times, with no ceiling.
+ *
+ * ELEVEN WAVES, NOT ONE. The tail of a script is its shape — a lull, a
+ * spike, a boss — and a finale sent on a loop is a metronome. Replaying
+ * the last stretch keeps the rhythm the author wrote, so the climb reads
+ * as the same fight getting heavier rather than as a different game.
+ *
+ * ONE DOUBLING A CYCLE (LEVELS_PER_DOUBLING) because the step has to be
+ * felt. Three levels — about +19% — was the old survive-only ramp, and a
+ * board that had beaten a wave outright beat it nineteen percent heavier
+ * too; the climb only became a climb after half a dozen cycles nobody sat
+ * through. Doubling means the SECOND cycle is already a different question
+ * and the fourth is a wall, which is what an endless mode owes a player
+ * who is there to find their ceiling.
+ *
+ * A LEVEL IS HEALTH AND NOTHING ELSE (ladder.ts unitHpAtLevel) — same
+ * speed, same armour, same drop, same silhouette. The swarm that comes
+ * back is the swarm that was just beaten, and the only thing that has
+ * changed is how long it takes to kill.
  */
-const SURVIVE_LOOP_LEVELS = 3;
-const SURVIVE_CYCLE_WAVES = 4;
+const TIDE_LEVELS = LEVELS_PER_DOUBLING;
+const TIDE_CYCLE_WAVES = 11;
 import {
   ARMORED_ARMOR,
   ARMORED_MAX_TIER,
@@ -210,6 +245,7 @@ import {
   VOLATILE_RADIUS,
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
+import { roadAt, roadProblems, roadsFor, type Road } from "./missions";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
 import { countSensitive } from "./upgrades";
 import {
@@ -747,6 +783,19 @@ UNIT_KINDS.forEach((k, i) => {
 });
 const KIND_BOSS: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].boss);
 const BOSS_KINDS = KIND_BOSS.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
+/**
+ * WHERE A CROSSER'S HEALTH-BAR KEY STARTS (Sim.objectiveBars). The stack is
+ * keyed by one id space shared between bosses (their spawn id) and trains
+ * (their launch index), and React needs those to never collide — a boss and
+ * a Borer sharing a key would have the two bars swap places the frame one of
+ * them died. A spawn id is a counter off the same run, so the trains are
+ * lifted clear of anything it can reach.
+ */
+const BAR_CROSSER_ID = 1e9;
+/** ...and where the CARTS' keys start, clear of both (levels.ts
+ *  EscortMission). No map fields a Borer and a hauler at once today; the
+ *  id space costs nothing and the day one does, the bars still hold still */
+const BAR_CONVOY_ID = 2e9;
 /** which FLD_SLICE a world x falls in, clamped onto the board */
 const sliceOf = (x: number): number => {
   const b = (x / FLD_SLICE) | 0;
@@ -848,6 +897,22 @@ const KIND_WET_IMMUNE = Uint8Array.from(UNIT_KINDS, (k) =>
   UNIT_STATS[k].immunities?.includes("wet") ? 1 : 0,
 );
 /**
+ * UnitStats.unslowable as one flag per kind: NO SLOW MULTIPLIER EVER
+ * SCALES THIS BODY'S DRIVE.
+ *
+ * It is deliberately NOT an entry in the table above, because it is not a
+ * status immunity. An immune body never takes the status at all — never
+ * tints, never douses a fire it is carrying, never hands the electric
+ * ammunition the soaked bonus. This one takes everything the soak does
+ * and refuses only the seconds, which is the same split the Speedy
+ * mutation already draws (applyWet). The two readers are the drive in
+ * updateUnits and the advance in updateCrosser, and every slow this game
+ * grows later has to come through one of them.
+ */
+const KIND_NO_SLOW = Uint8Array.from(UNIT_KINDS, (k) =>
+  UNIT_STATS[k].unslowable ? 1 : 0,
+);
+/**
  * UnitType.drag per kind — the fraction of an external shove a unit sheds
  * per tick. It bleeds the pull channel, which a repeater round's knockback
  * feeds (see impulse()).
@@ -866,6 +931,17 @@ const KIND_LAND_SPEED = Float32Array.from(
 /** the gait of every legged kind, indexed like UNIT_KINDS — null for the
  * mechs and flyers, whose animation is one sliding pair of leg sprites */
 const KIND_LEGS = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
+/**
+ * WHAT ONE TICK DID TO A PIECE OF A TRAIN (Sim.updateCrosser). Three
+ * outcomes and not a boolean, because a Borer's piece leaves the board
+ * two different ways and they are opposite in the ledger: a LEAK is the
+ * mission failing and a DEATH is it being met.
+ */
+type CrosserStep = 0 | 1 | 2;
+const CROSS_WALKING: CrosserStep = 0;
+const CROSS_LEAKED: CrosserStep = 1;
+const CROSS_DEAD: CrosserStep = 2;
+
 /** the worm rig of every segmented kind (levels.ts SegmentSpec), null for the rest */
 const KIND_SEGS = UNIT_KINDS.map((k) => UNIT_STATS[k].segments ?? null);
 /** the wake of every naval kind, indexed like UNIT_KINDS — null for
@@ -1295,11 +1371,122 @@ export class Sim {
    */
   readonly uvirus = shared.u8(MAX_UNITS);
   /**
+   * THE CROSSER A BODY BELONGS TO — its index into `crossers` — or -1,
+   * which is everything the script ever sent (levels.ts InterceptMission,
+   * missions.ts).
+   *
+   * A crosser does not read the flow field, is not shoved by the crowd,
+   * and does not collide with rock: it walks a road somebody drew, and
+   * `ucrossS` is how far along that road it has got, in world px. So the
+   * two arrays together are the whole of a Borer's movement — see
+   * updateCrosser, which is the branch updateUnits takes for these bodies
+   * instead of everything else it does.
+   *
+   * THEY ARE NOT SHARED. The renderer draws a Borer off upx/upy/urot like
+   * any other body, because that is all a body IS on the sheet — the
+   * chain it belongs to is a fact about the mission, not about the
+   * picture.
+   */
+  private readonly ucross = new Int16Array(MAX_UNITS);
+  private readonly ucrossS = new Float32Array(MAX_UNITS);
+  /**
+   * THE CROSSERS THIS RUN HAS LAUNCHED, in launch order and never
+   * reordered — `ucross` is an index into this, and an index that moved
+   * would put a car in somebody else's train. A dead crosser keeps its
+   * entry with `alive` at zero.
+   */
+  /**
+   * ONE WORM, ONE HEALTH POOL. `hp`/`hpMax` are the TRAIN'S, not a
+   * piece's: every car on it reports this number and every hit on any car
+   * comes off it (damageUnit, drainCrosser), so a Borer is twenty
+   * hurtboxes on ONE body rather than twenty bodies in a line.
+   *
+   * WHY, when the pieces were separate for a good reason. They still are:
+   * the chain exists so the whole length of the train is shootable, which
+   * is what makes the mission about how much ROAD you have under fire
+   * rather than about hitting a nose. What the separate POOLS added on top
+   * of that was a train that came apart — cars popping off one at a time,
+   * gaps opening in the middle, a head sailing on alone — and that reads
+   * as twenty machines travelling together, which is not what it is. The
+   * hurtboxes stay twenty; the thing they belong to is one.
+   *
+   * `hpMax` is the sum of what the pieces spawned with, so the level
+   * curve and the launch ramp both still land exactly as they did.
+   */
+  private crossers: { road: number; alive: number; leaked: boolean; hp: number; hpMax: number }[] = [];
+  /** the roads this map carries (missions.ts), empty on every other map */
+  private roads: readonly Road[] = [];
+  /** crossers destroyed whole — every piece of them down before the exit */
+  crossKilled = 0;
+  /** crossers that got a piece of themselves to the far side */
+  crossLeaked = 0;
+  /** launches made, counting into the pattern and then the spare */
+  private crossLaunched = 0;
+  /**
+   * IS THE MISSION'S SECOND CLOCK DISARMED? — true once there is nothing
+   * left to launch, ever (runCrossers).
+   *
+   * It is a flag rather than a countdown because the schedule is absolute
+   * now: when a launch is due is arithmetic on `time` and the pattern, so
+   * the only thing the sim has to REMEMBER is whether the pattern and its
+   * spare are spent. That is also what lets a jump work — there is no timer
+   * left to be out of step with the clock (skipToTime).
+   */
+  private crossDone = false;
+  /** is the field being swept by a jump rather than fought? — removeUnit
+   *  reads it so a skipped train counts as neither killed nor leaked */
+  private crossSweeping = false;
+
+  /**
+   * THE CONVOYS — the ESCORT mission's carts (levels.ts EscortMission),
+   * the mirror of the crossers above and the other half of what
+   * missions.ts's roads are for.
+   *
+   * A CART IS A STRUCTURE, and `struct` below is a real `Tower` object
+   * with `team: "player"` on it — see the note on CONVOY_HP. It is
+   * deliberately NOT in `towers`, never claims a cell in `cellTower` and
+   * is never in the building index, so nothing that walks the board's
+   * buildings can see it: it is not counted, not sold, not selected, and
+   * it blocks no route. The ONE place it is offered is the swarm's target
+   * search (nearestStructure), which is the whole of what "the swarm
+   * shoots it like a turret" means.
+   *
+   * `s` is how far along its road it has driven, in world px, exactly as
+   * a crosser's `ucrossS` is. `halt` is which of the mission's halts it
+   * is waiting at (-1 while it is rolling) and `holdT` the seconds it has
+   * left to wait there.
+   */
+  private convoys: {
+    struct: Tower;
+    road: number;
+    s: number;
+    /** the heading it is pointed on, radians: the road's own tangent, kept
+     *  here rather than on the structure because a building has no facing */
+    rot: number;
+    halt: number;
+    holdT: number;
+    /** it reached the post: off the board, on the ledger */
+    home: boolean;
+    /** it was destroyed on the road */
+    dead: boolean;
+  }[] = [];
+  /** convoys delivered, and convoys lost — the escort's whole ledger */
+  convoyDone = 0;
+  convoyLost = 0;
+  /** carts rolled out so far, counting into EscortMission.pattern */
+  private convoyOut = 0;
+  /** true once there is nothing left to send (runConvoys) */
+  private convoyEnd = false;
+  /** the furthest any cart has got along its road, 0 to 1 — what the bar
+   *  and the end screen read once there is nothing on the road (convoyAt) */
+  private convoyBest = 0;
+
+  /**
    * THE WAVE EVERY BODY BELONGS TO, 1-based: the number loadStep staged
-   * it under, and a brood member's is its parent's. It is what makes a
-   * wave an OBJECTIVE (MISSION_XP in economy.ts): a wave is cleared when
-   * every body carrying its number is off the field, and that is the
-   * moment its share of the mission's XP is banked — see wavesCleared.
+   * it under, and a brood member's is its parent's. A wave is cleared when
+   * every body carrying its number is off the field — see wavesCleared,
+   * which is what a HOLD is measured in (won) and what a LOSS is paid for
+   * (MISSION_XP in economy.ts).
    */
   private readonly uwave = new Uint16Array(MAX_UNITS);
   /** bodies each wave has put on the field so far, by wave number (index
@@ -1380,7 +1567,7 @@ export class Sim {
    */
   readonly occupied = shared.u8(NCELLS);
   /**
-   * THE POWER GRID: 1 on every cell the core or a connected relay lights.
+   * THE POWER GRID: 1 on every cell the core or a connected beacon lights.
    *
    * NOTHING IS BUILT ANYWHERE ELSE (board.ts poweredClear) and nothing
    * standing anywhere else fires (fireTowers). It is the one grid in this
@@ -1396,7 +1583,7 @@ export class Sim {
    * ground on the far side of the board, because the grid is a TREE rooted
    * at the core rather than a union of discs — so there is no incremental
    * edit that is correct, and the whole thing is repainted on the few
-   * events that can move it: a relay built, a relay lost, a new board.
+   * events that can move it: a beacon built, a beacon lost, a new board.
    */
   readonly powered = shared.u8(NCELLS);
   /**
@@ -1527,18 +1714,23 @@ export class Sim {
   core!: Core;
   /**
    * THE MISSION'S CLOCK, in seconds of run time: a survive mission is won
-   * the moment `time` reaches it. 0 on a hold mission, which has no clock
-   * — it is won when the script is spent (see won).
+   * the moment `time` reaches it. 0 on every mission that is not kept to a
+   * clock, which is what missionProgress branches on.
    */
   deadline = 0;
   /**
-   * HOW MANY LEVELS THE TIDE HAS RISEN. A survive mission whose script
-   * runs out before its clock sends its LAST wave again, and every repeat
-   * adds SURVIVE_LOOP_LEVELS to the enemy level every body spawns at
-   * (loadStep) — so the waves keep coming and keep getting heavier until
-   * the clock, not the script, ends the run.
+   * HOW MANY LEVELS THE TIDE HAS RISEN, and HOW MANY CYCLES DEEP IT IS
+   * (see TIDE_LEVELS at the top of the file). A script that runs out
+   * under an open mission sends its tail again, TIDE_LEVELS heavier every
+   * time round, so `loopLevel` is TIDE_LEVELS x `loopCycle` and the health
+   * multiplier the HUD prints is 2^loopCycle.
+   *
+   * THEY ARE THE WHOLE OF THE INFINITE CLIMB. Nothing else about a cycle
+   * differs from the one before it: same waves, same counts, same families
+   * — a level is health and only health (ladder.ts).
    */
   loopLevel = 0;
+  loopCycle = 0;
   /**
    * THE RUN'S MONEY (economy.ts). Opens at SCRAP_START, every kill drops
    * its tier's scrap, every wave staged pays its bonus, every turret
@@ -1702,13 +1894,28 @@ export class Sim {
   // the level script's cursor, plus the live state of the step it points at:
   // a wave counts down per kind, a wait counts down in seconds
   private stepIdx = 0;
-  // how many waves the script holds, and how many have been STAGED by
-  // loadStep — the HUD's "Wave 2 / 5". Staging runs one waveGap ahead of the
-  // wave entering, so currentWave() backs this off by one while that gap is
-  // still running: a wave stays current through the wait that follows it
+  /**
+   * HOW MANY WAVES THERE ARE TO SEND, and how many have been STAGED by
+   * loadStep. Staging runs one waveGap ahead of the wave entering, so
+   * currentWave() backs this off by one while that gap is still running: a
+   * wave stays current through the wait that follows it.
+   *
+   * `totalWaves` GROWS. Every turn of the tide adds its cycle's waves to it
+   * (loadStep), because it is what the sandbox's jump is bounded by and
+   * what the XP shares are dealt over — both of which are questions about
+   * what this RUN will send, not about what the document holds. The
+   * document's own count is `scriptWaves`, and it never moves.
+   */
   totalWaves = 0;
   private wavesStarted = 0;
-  /** index of the script's last non-empty wave — what a survive mission repeats */
+  /**
+   * HOW MANY NON-EMPTY WAVES THE AUTHORED SCRIPT HOLDS — fifty on the
+   * shipped campaign, fixed for the run however many times the tide turns.
+   * It is what a hold mission with no `waves` of its own is measured
+   * against (levels.ts holdWaves) and what the tide's cycle is cut from.
+   */
+  scriptWaves = 0;
+  /** index of the script's last non-empty wave — the end the tide walks back from */
   private lastWaveIdx = -1;
   /**
    * SUFFIX SUMS OVER THE SCRIPT: `scriptLeft[i]` is how many bodies every
@@ -1728,19 +1935,41 @@ export class Sim {
    * the read past the end needs no branch of its own.
    */
   private scriptLeft: number[] = [0];
-  // the wave being drained, flattened to (region, kind) entries — every
-  // entry runs out at the same moment (see nextWaveEntry), each spawning
-  // only on its own region's pads (region 0 = any pad)
-  private waveEntries: { kind: number; left: number; total: number }[] = [];
   /**
-   * Enemies per second for the wave currently loaded — its OWN size over
-   * WAVE_RELEASE_SECONDS, cached at load. Cached rather than recomputed from
-   * `left` because a rate derived from what REMAINS would decay as the wave
-   * drains, stretching its tail out for as long again.
+   * THE WAVES CURRENTLY WALKING ONTO THE FIELD — more than one at a time,
+   * and that is the whole of what "everything syncs to time" means here.
+   *
+   * THERE USED TO BE EXACTLY ONE. The script held a single loaded wave, a
+   * countdown to it and one drain credit, and the next wave was loaded when
+   * the last had finished spawning. Which made the CLOCK A CONSEQUENCE OF
+   * THE BOARD: a wave whose drop zones were packed released slowly, and
+   * every wave behind it — and with it the tide, the stages, the whole run
+   * — arrived late. Two players on the same script at the same difficulty
+   * could be four minutes apart at wave forty, and nothing on screen said
+   * why.
+   *
+   * NOW THE CLOCK IS THE SCRIPT (waveStartTime). Wave n lands at its
+   * moment whatever the board is doing, so a wave that cannot get through
+   * the doors simply keeps releasing WHILE the next one starts. Nothing is
+   * lost — a failed spawn holds its credit (runScript) — and nothing is
+   * delayed: congestion now costs a thicker field rather than a longer
+   * run.
+   *
+   * OLDEST FIRST when they drain, so a backlogged wave clears the doors
+   * ahead of a fresh one and the field cannot invert the order it was
+   * authored in.
+   *
+   * `rate` is the wave's OWN size over WAVE_RELEASE_SECONDS, fixed when it
+   * is staged rather than recomputed from what remains — a rate derived
+   * from the remainder would decay as the wave drains and stretch its tail
+   * out for as long again. `acc` is its drain credit.
    */
-  private waveRate = 0;
-  private waitLeft = 0;
-  private spawnAcc = 0;
+  private live: {
+    wave: number;
+    entries: { kind: number; left: number; total: number }[];
+    rate: number;
+    acc: number;
+  }[] = [];
 
   /** seconds of simulated time since the level was reset (Time.time) */
   time = 0;
@@ -2184,7 +2413,49 @@ export class Sim {
     // the mission sets the clock (levels.ts); the core's pool is CORE_HP on every map
     const mission = this.level.mission;
     this.deadline = mission.kind === "survive" ? mission.minutes * 60 : 0;
+    // ...and an INTERCEPT sets a second one, which is the crossers'
+    // (runCrossers). The roads come off the map id rather than off the
+    // mission, so the geometry lives with the terrain it was drawn over
+    // and a mission put on a map with no roads says so instead of
+    // quietly sending nothing
+    this.crossers.length = 0;
+    this.crossKilled = 0;
+    this.crossLeaked = 0;
+    this.crossLaunched = 0;
+    this.crossDone = mission.kind !== "intercept";
+    this.crossSweeping = false;
+    // ...and so does an ESCORT, off the same roads (runConvoys). Both
+    // missions are drawn on missions.ts lines, so the geometry is fetched
+    // once here for whichever of the two is being played
+    this.convoys.length = 0;
+    this.convoyDone = 0;
+    this.convoyLost = 0;
+    this.convoyOut = 0;
+    this.convoyEnd = mission.kind !== "escort";
+    this.convoyBest = 0;
+    const onRoads = mission.kind === "intercept" || mission.kind === "escort";
+    this.roads = onRoads ? roadsFor(this.level.map) : [];
+    if (onRoads) {
+      // every road index the schedule names has to exist, and every road
+      // the map carries has to stay on the board. Said once, at load,
+      // rather than discovered as a NaN four minutes into a run
+      const named =
+        mission.kind === "intercept"
+          ? new Set(mission.pattern.flat().concat(mission.spare))
+          : new Set(mission.pattern);
+      const bad: string[] = [];
+      for (const r of named)
+        if (!this.roads[r]) bad.push(`the pattern names road ${r} and the map has ${this.roads.length}`);
+      for (const road of this.roads) bad.push(...roadProblems(road));
+      // ...and a halt is a fraction of a road, so it has to be one
+      if (mission.kind === "escort")
+        for (const h of mission.halts)
+          if (!(h > 0 && h < 1)) bad.push(`a halt at ${h} is not a fraction of the road`);
+      if (bad.length > 0)
+        throw new Error(`${this.level.name}: ${bad.join("; ")}`);
+    }
     this.loopLevel = 0;
+    this.loopCycle = 0;
     this.projs.length = 0;
     // drop the fx pool: the count is the pool, but the bolt-path refs must
     // actually go or the last run's arrays sit unreachable-but-held
@@ -2234,10 +2505,10 @@ export class Sim {
         this.occupied[y * COLS + x] = 1;
       }
     // ...and the ground it lights, which on a fresh board is the whole of
-    // the grid: no relay has been bought yet, so the core's own disc IS
-    // where this run may build. A NEW BOARD IS A NEW MAP, so the relays
+    // the grid: no beacon has been bought yet, so the core's own disc IS
+    // where this run may build. A NEW BOARD IS A NEW MAP, so the beacons
     // this run has switched on go with the old one
-    this.relayOn.fill(0);
+    this.beaconOn.fill(0);
     this.rebuildPower();
     this.buildPads();
     // a new map is a new set of mouths, and a new pad list for the hulls
@@ -2775,26 +3046,126 @@ export class Sim {
    * The core falling is the only way: the swarm exists to knock it down.
    */
   lost(): boolean {
-    return this.core.hp <= 0;
+    if (this.core.hp > 0) {
+      // ...OR THE MISSION HAS BECOME IMPOSSIBLE, which is the second way
+      // to lose and the only one that is not about the base. An intercept
+      // sends exactly `kills` crossers plus one spare (levels.ts
+      // InterceptMission), so the allowance is real arithmetic: once more
+      // than `leaks` have got across, the count can never be reached
+      // however the rest of the run goes, and a run that cannot be won is
+      // over. Saying it here rather than letting it play out is the whole
+      // difference between a mission and a formality.
+      const m = this.level.mission;
+      // ...and an ESCORT is the same arithmetic pointed the other way:
+      // the allowance is how many carts may be lost, and one more than
+      // that and the delivery count can never be reached. On Thornway the
+      // allowance is ZERO, so this is simply "the hauler was destroyed" —
+      // which is the honest end of an escort and wants saying at the
+      // moment it happens rather than fifteen minutes later
+      if (m.kind === "escort")
+        return (
+          this.convoyLost > m.losses ||
+          (this.convoyEnd && this.liveConvoy() === null && this.convoyDone < m.deliver)
+        );
+      if (m.kind !== "intercept") return false;
+      if (this.crossLeaked > m.leaks) return true;
+      // ...and the same fact arrived at from the other side: nothing left
+      // to send (runCrossers has disarmed), nothing left on the board, and
+      // the count short. Today the allowance and the spare make that the
+      // line above said twice — but the two are separate arithmetic, and
+      // the day a mission is authored with two leaks allowed and one spare
+      // this is what stops the run hanging on a count it can no longer
+      // reach instead of ending on it
+      return this.crossDone && this.crossersLive() === 0 && this.crossKilled < m.kills;
+    }
+    return true;
   }
 
   /**
-   * IS THE MISSION MET? A hold is won when the field is clear and the
-   * script has nothing left to send; a survive when the clock has run out.
-   * Never while the base is dead — a clock that ran out on a lost base is
-   * a loss.
+   * HOW MANY WAVES THIS HOLD ASKS FOR, 0 on every other mission — the
+   * mission's own number where it has one, and otherwise the authored
+   * script's length (levels.ts holdWaves).
    *
-   * `remaining()` is the whole of the hold test and is counted off the
-   * world, so this is true exactly when there is no body on the field, no
-   * corpse waiting to stand up, and no wave the cursor has yet to reach.
-   * `totalWaves > 0` is the one thing it cannot see: a script with no
-   * waves in it is a level with nothing to hold against, and an empty
-   * field on wave zero is not a victory.
+   * It is answered against `scriptWaves` and NOT against `totalWaves`,
+   * which the tide grows: a hold measured against a number that goes up
+   * every time the script loops is a hold that can never be finished.
+   */
+  holdTarget(): number {
+    return missionTarget(this.level.mission, this.scriptWaves);
+  }
+
+  /**
+   * DOES THE SCRIPT GO ROUND AGAIN when the cursor reaches its end? — the
+   * one question loadStep asks before it turns the tide.
+   *
+   * THE RULE IS "CAN MORE WAVES STILL DECIDE THIS MISSION". A survive's
+   * clock is still running, so they can: the tide is the only thing
+   * keeping the board honest until it stops. An intercept is decided by
+   * crossers and the waves are the pressure underneath them, so they must
+   * not run dry while the run is still going. A HOLD IS THE ONE THAT CAN
+   * SAY NO: its objective is counted in waves, and once every wave it
+   * asked for has been staged there is nothing a further one can add — the
+   * run is decided by whether what is already walking gets put down. Ask
+   * a hold for MORE waves than the document holds and it turns the tide
+   * like anything else, which is how a hold map plays the infinite climb.
+   */
+  private tideTurns(): boolean {
+    const m = this.level.mission;
+    if (m.kind === "hold") return this.wavesStarted < this.holdTarget();
+    if (m.kind === "survive") return this.time < this.deadline;
+    return true;
+  }
+
+  /**
+   * HOW FAR THROUGH ITS OBJECTIVE THIS RUN IS, 0 to 1 — what every
+   * progress bar on the screen is drawn from (levels.ts missionProgress,
+   * which is where the per-mission arithmetic lives so the HUD and the sim
+   * cannot disagree about it).
+   */
+  missionProgress(): number {
+    return missionProgress(this.level.mission, this.holdTarget(), {
+      wavesCleared: this.wavesCleared(),
+      time: this.time,
+      crossKilled: this.crossKilled,
+      convoyDone: this.convoyDone,
+      convoyAt: this.convoyAt(),
+    });
+  }
+
+  /**
+   * IS THE MISSION MET? Each kind answers for itself, and NONE of them
+   * answers "the script ran out" any more — the script does not run out
+   * (see TIDE_LEVELS). A hold is won when it has cleared the waves it was
+   * asked for, a survive when the clock has run out, an intercept when the
+   * count is reached. Never while the base is dead — a clock that ran out
+   * on a lost base is a loss.
+   *
+   * A HOLD'S TEST IS `wavesCleared`, which is counted off the world and
+   * holds a wave open for anything it sent that is still walking OR lying
+   * on the floor waiting to stand up (the corpse un-books itself in
+   * killUnit). So "forty waves held" means forty waves with nothing left
+   * of them, which is the same fact `remaining() <= 0` used to state for
+   * the whole script — said per wave, so a target shorter or longer than
+   * the document can be stated at all.
+   *
+   * The target being above zero is the one thing the count cannot see: a
+   * script with no waves in it is a level with nothing to hold against,
+   * and an empty field on wave zero is not a victory.
    */
   won(): boolean {
     if (this.lost()) return false;
-    if (this.deadline > 0) return this.time >= this.deadline;
-    return this.totalWaves > 0 && this.remaining() <= 0;
+    // AN INTERCEPT IS MET BY ITS COUNT AND BY NOTHING ELSE (levels.ts
+    // InterceptMission): the waves are still coming, the tide may have
+    // turned twice underneath it, and the mission is over the moment the
+    // seventh Borer is down. The two clocks are separate on purpose — the
+    // swarm is what can lose the run, and the crossers are what wins it
+    const m = this.level.mission;
+    if (m.kind === "intercept") return this.crossKilled >= m.kills;
+    // ...and an escort the moment the last cart is at the post
+    if (m.kind === "escort") return this.convoyDone >= m.deliver;
+    if (m.kind === "survive") return this.time >= this.deadline;
+    const target = this.holdTarget();
+    return target > 0 && this.wavesCleared() >= target;
   }
 
 
@@ -3240,6 +3611,13 @@ export class Sim {
    * what is standing on the field right now, plus what the script has not
    * sent yet. Nothing is subtracted, so nothing can fail to be subtracted.
    *
+   * IT IS A READOUT AND NOT A WIN CONDITION. It used to be the whole of
+   * the hold test — "no body, no corpse, no wave left" was what winning a
+   * map meant — and that reading is gone with the fifty-wave objective:
+   * the script goes round again (see TIDE_LEVELS), so on most missions
+   * this number never reaches zero at all. What a mission is met by is
+   * `won()`, per kind. This is what the HUD prints.
+   *
    * THIS USED TO BE `totalEnemies - kills - devoured - exploded`, and that
    * shape is why a run could not be won after a wave skip: the skip walks
    * the cursor past waves whose bodies were already in `totalEnemies` and
@@ -3257,7 +3635,7 @@ export class Sim {
    *  - every row on the field, weighted by `ustack` — a folded body
    *    (mergeSqueezed) is several bodies riding in one row, and the wave
    *    that sent them is not finished until the row that holds them dies.
-   *  - the loaded wave's unsent remainder, straight off waveEntries.
+   *  - every wave still walking on, its unsent remainder off `live`.
    *  - every wave the cursor has not reached (scriptLeft).
    *  - THE CORPSES, stacks and all. Reconstruction (updateCorpses) stands
    *    them back up, so a field that looks clear with a corpse on it has
@@ -3268,12 +3646,13 @@ export class Sim {
   remaining(): number {
     let left = 0;
     for (let i = 0; i < this.n; i++) left += this.ustack[i];
-    for (const e of this.waveEntries) left += e.left;
+    for (const lw of this.live) for (const e of lw.entries) left += e.left;
     for (const c of this.corpses) left += c.stack;
-    // the cursor sits ON the loaded wave, whose remainder is in waveEntries
-    // above — so the unreached script starts at the step AFTER it. Clamped
-    // because a spent script leaves stepIdx at the script's own length
-    left += this.scriptLeft[Math.min(this.stepIdx + 1, this.scriptLeft.length - 1)];
+    // the cursor is left PAST every wave it has staged (stageOne) and those
+    // waves' remainders are in `live` above, so the unreached script starts
+    // at the step the cursor is on. Clamped because a spent script leaves
+    // stepIdx at the script's own length
+    left += this.scriptLeft[Math.min(this.stepIdx, this.scriptLeft.length - 1)];
     return left;
   }
 
@@ -3283,77 +3662,128 @@ export class Sim {
   }
 
   /**
-   * Every boss on the field, one row per unit, for the HUD's bar stack.
-   * The census early-exits the scan the way collectForceFields does, so a
-   * bossless wave pays nothing. Rows are keyed and ordered by spawn id —
-   * unit indices reshuffle under swap-remove, and a bar that traded places
-   * with its neighbour whenever something died would read as a glitch.
+   * EVERY OBJECTIVE BODY ON THE FIELD, one row a thing, for the HUD's bar
+   * stack — a Sovereign and a Borer alike (levels.ts OBJECTIVE_KINDS).
+   *
+   * THE BAR IS WHAT MAKES A BODY AN EVENT. Everything else on the board is
+   * volume: it is read as a crowd, it is priced by the wave, and a bar
+   * over each would be noise. An objective is one thing the run has to go
+   * and deal with, and the only honest readout of "how is that going" is
+   * its health — which nothing else on screen says, because a Borer is
+   * twenty hurtboxes wearing one pool and a Sovereign is off at the far
+   * end of the map behind its own escort.
+   *
+   * A BORER IS ONE ROW AND NOT TWENTY. The train is twenty separately
+   * shootable pieces and ONE health pool (`crossers`), so the bar is the
+   * pool: a player shooting the ninth car watches the same bar move as one
+   * shooting the nose, which is the fact the mission is actually about.
+   *
+   * ROWS ARE KEYED AND ORDERED so the stack never reshuffles: a boss by
+   * its spawn id (unit indices swap under swap-remove, and a bar that
+   * traded places with its neighbour whenever something died would read as
+   * a glitch), a crosser by its launch order, and the crossers after the
+   * bosses. The HUD stacks them downward in this order.
+   *
+   * The boss scan early-exits off the census the way collectForceFields
+   * does, so a board with no boss on it pays nothing.
    */
-  bossBars(): { id: number; kind: number; hp: number; max: number }[] {
+  objectiveBars(): { id: number; name: string; hp: number; max: number }[] {
+    const out: { id: number; name: string; hp: number; max: number }[] = [];
     let left = 0;
     for (const k of BOSS_KINDS) left += this.aliveByKind[k];
-    if (left === 0) return [];
-    const out: { id: number; kind: number; hp: number; max: number }[] = [];
-    for (let i = 0; i < this.n && out.length < left; i++) {
-      const k = this.ukind[i];
-      if (!KIND_BOSS[k]) continue;
+    if (left > 0) {
+      const bosses: { id: number; name: string; hp: number; max: number }[] = [];
+      for (let i = 0; i < this.n && bosses.length < left; i++) {
+        const k = this.ukind[i];
+        if (!KIND_BOSS[k]) continue;
+        bosses.push({
+          id: this.uid[i],
+          name: unitName(UNIT_KINDS[k]),
+          hp: Math.max(0, this.uhp[i]),
+          max: this.uhpmax[i],
+        });
+      }
+      bosses.sort((a, b) => a.id - b.id);
+      out.push(...bosses);
+    }
+    // ...and the trains, in launch order. A worm that has leaked is off
+    // the board and out of the count (updateCrosser) even while its last
+    // pieces walk off the rim, so `alive` is the whole test
+    for (let id = 0; id < this.crossers.length; id++) {
+      const w = this.crossers[id];
+      if (w.alive <= 0) continue;
       out.push({
-        id: this.uid[i],
-        kind: k,
-        hp: Math.max(0, this.uhp[i]),
-        max: this.uhpmax[i],
+        id: BAR_CROSSER_ID + id,
+        name: WORM_NAME,
+        hp: Math.max(0, w.hp),
+        max: w.hpMax,
       });
     }
-    out.sort((a, b) => a.id - b.id);
+    // ...AND THE CART, which wears the same bar as the things trying to
+    // kill it. It is the player's, and that is exactly why it belongs
+    // here: an objective bar is "the thing this map is about, and how it
+    // is doing", and on Thornway that thing is a hauler rather than a
+    // Borer. The HUD paints it in the player's own colour off the name
+    for (let id = 0; id < this.convoys.length; id++) {
+      const c = this.convoys[id];
+      if (c.dead || c.home) continue;
+      out.push({
+        id: BAR_CONVOY_ID + id,
+        name: CONVOY_NAME,
+        hp: Math.max(0, c.struct.hp),
+        max: c.struct.hpMax,
+      });
+    }
     return out;
   }
 
   /**
-   * 1-based number of the wave ON THE FIELD — the one the player is fighting.
+   * 1-BASED NUMBER OF THE WAVE ON THE FIELD — the one the player is
+   * fighting, and now simply the last one the clock called.
    *
-   * `wavesStarted` counts a wave from the moment loadStep STAGES it, which is
-   * one waveGap before its first unit enters, so reporting it raw credits the
-   * next wave the instant the current one finishes spawning and leaves the HUD
-   * naming a wave that has not arrived. A staged wave still inside its gap
-   * therefore does not count yet.
+   * IT USED TO NEED ARITHMETIC. Staging ran a whole waveGap ahead of a
+   * wave entering, so `wavesStarted` had to be backed off by one for the
+   * length of that gap or the HUD named a wave that had not arrived, with
+   * a special case for the opening where there was no earlier wave to be
+   * current. Staging IS entering now (stageOne runs when waveStartTime
+   * says so), so the number is the number.
    *
-   * The floor keeps a level that opens with a wait reading "Wave 1" while it
-   * counts down to that first wave.
+   * The floor keeps a run reading "wave 1" through the opening gap, before
+   * anything has been staged at all.
    */
   currentWave(): number {
-    // ...except in the OPENING gap, where there is no earlier wave to still
-    // be current: the run has not played one, and backing off there reported
-    // "wave 0", floored to 1
-    const opening = this.wavesStarted <= 1;
-    const back = this.waitLeft > 0 && !opening ? 1 : 0;
-    return Math.max(1, this.wavesStarted - back);
+    return Math.max(1, this.wavesStarted);
   }
 
   /**
-   * THE WAVE THE CLOCK SAYS IT IS. The first wave enters at once, and
-   * every one after it waveGap + WAVE_RELEASE_SECONDS later; on a map
-   * whose drop zones cannot pass a big wave that fast the script falls
-   * behind its own schedule (Sim.runScript queues what will not fit). The
-   * larger of the two is taken, so a run that is AHEAD of schedule reads
-   * ahead.
+   * THE WAVE THE CLOCK SAYS IT IS — which is the same wave the field says
+   * it is, now that the script cannot fall behind its own schedule
+   * (runScript). Kept as its own name because the playtest and the stage
+   * tables ask the question that way, and because the difference between
+   * the two mattered for years.
    */
   stageWave(): number {
-    const cadence = Math.max(1, this.level.waveGap + WAVE_RELEASE_SECONDS);
-    const byClock = Math.floor(this.time / cadence) + 1;
-    return Math.max(this.currentWave(), byClock);
+    return Math.max(1, this.wavesDueAt(this.time));
   }
 
-  /** seconds until the next wave starts entering, or 0 when one is already
-   * draining (or the script has run out) */
+  /** seconds until the next wave starts entering — off the schedule, so it
+   *  is a real countdown and not a guess about when the doors will clear */
   nextWaveIn(): number {
-    return this.waitLeft > 0 ? this.waitLeft : 0;
+    return Math.max(0, this.waveStartTime(this.wavesStarted + 1) - this.time);
   }
 
   /**
-   * HOW MANY WAVES ARE CLEARED — the objectives met, and what the run's
-   * XP is paid for (missionXp in economy.ts). A wave is cleared when it
-   * has finished entering and every body it put on the field, brood
-   * included, is down: killed, devoured or blown up. Counted over every
+   * HOW MANY WAVES ARE CLEARED. A wave is cleared when it has finished
+   * entering and every body it put on the field, brood included, is down:
+   * killed, devoured or blown up.
+   *
+   * IT IS NO LONGER THE OBJECTIVE, and it is still two things. A HOLD
+   * mission is counted in it (won, holdTarget) — that is the one mission
+   * whose assignment is stated in waves. And on EVERY mission it is what a
+   * DEFEAT is paid for (missionXp in economy.ts): a run that goes down
+   * short of its objective still banks the waves it broke on the way, so
+   * a failed push is progress. A win pays the whole pot and never reads
+   * this. Counted over every
    * wave staged rather than as a prefix, because waves overlap on a long
    * field — a wave 8 whose last ironhide3 is still walking must not hold
    * wave 9's payout back once wave 9 is dead to the last ironhide1.
@@ -3388,6 +3818,34 @@ export class Sim {
 
   private addTower(gx: number, gy: number, kind: TowerKind, sz: number, mods: number): void {
     this.placed++;
+    const tower = this.newTower(gx, gy, kind, sz, mods);
+    this.towers.push(tower);
+    // the attributes it just rolled become its stats and its pool, and it
+    // opens at FULL health on the new ceiling rather than the table's
+    this.resolveTower(tower);
+    tower.hp = tower.hpMax;
+    this.claimGround(tower, true);
+    // a count-dependent rung (tacker power) reads the board, so the board
+    // changing is what moves it — owed, and paid once at the batch's or
+    // the step's end (oweCount)
+    this.oweCount(kind);
+  }
+
+  /**
+   * ONE STRUCTURE RECORD, filled in — every field a Tower has, at the
+   * value a freshly placed one carries. It is SPLIT OUT of addTower
+   * because a second thing in this file needs a Tower that is not a
+   * building: the escort mission's cart (launchConvoy, levels.ts
+   * CONVOY_HP), which is a structure the swarm shoots and is in no list,
+   * claims no ground and is never resolved.
+   *
+   * THE SPLIT IS WHAT MAKES THAT SAFE. The cart used to be a hand-written
+   * literal cast to Tower, which meant the day somebody added a field
+   * here the cart would be missing it and nothing would say so — a cast
+   * is a promise the compiler stops checking. Built through this, the
+   * cart is a real one with four numbers written over it.
+   */
+  private newTower(gx: number, gy: number, kind: TowerKind, sz: number, mods: number): Tower {
     // EVERY STRUCTURE IS PLACED FINISHED — full pool, gun live, this tick.
     // It used to go up as a 1 hp shell on a timer (see Tower in types.ts)
     const x = (gx + sz / 2) * CELL, y = (gy + sz / 2) * CELL;
@@ -3460,16 +3918,7 @@ export class Sim {
       flashY: 0,
       flashRot: 0,
     };
-    this.towers.push(tower);
-    // the attributes it just rolled become its stats and its pool, and it
-    // opens at FULL health on the new ceiling rather than the table's
-    this.resolveTower(tower);
-    tower.hp = tower.hpMax;
-    this.claimGround(tower, true);
-    // a count-dependent rung (tacker power) reads the board, so the board
-    // changing is what moves it — owed, and paid once at the batch's or
-    // the step's end (oweCount)
-    this.oweCount(kind);
+    return tower;
   }
 
 
@@ -3477,6 +3926,29 @@ export class Sim {
   /** the structure standing on a world point, if it is `team`'s */
   private structureAt(px: number, py: number, team: Team = "player"): Structure | null {
     if (px < 0 || py < 0 || px >= W || py >= H) return null;
+    // THE CART FIRST, because it is not on the grid this reads (levels.ts
+    // CONVOY_HP) and this is the function every arriving round comes
+    // through — sweepShot walks a step by calling it, and a shell that
+    // runs out of life asks it what it landed on. Without this a round
+    // aimed at the hauler flew straight through it: the swarm picked the
+    // objective, fired at the objective, and only its SPLASH ever landed,
+    // because splash goes through structuresWithin and that one walks
+    // cells rather than reading them.
+    //
+    // A SQUARE, like every other footprint on the board, and the cart's
+    // own `size` is the square — the art turns with the road but the box
+    // does not, which is the same simplification `canSee` and the target
+    // search already make about it.
+    if (this.convoys.length > 0 && team === "player")
+      for (const c of this.convoys) {
+        if (c.dead || c.home || c.struct.hp <= 0) continue;
+        const half = (c.struct.size * CELL) / 2;
+        if (
+          px >= c.struct.x - half && px <= c.struct.x + half &&
+          py >= c.struct.y - half && py <= c.struct.y + half
+        )
+          return c.struct;
+      }
     const t = this.cellTower[((py / CELL) | 0) * COLS + ((px / CELL) | 0)];
     // the team test costs nothing in a run without Conquest, where every
     // building on the board is the player's and `enemyTowers` is 0
@@ -3870,6 +4342,14 @@ export class Sim {
       }
     }
     this.runScript(dt);
+    // ...and the mission's own schedule, where it has one (levels.ts
+    // InterceptMission): the crossers are an appointment somewhere else
+    // on the map, not a wave — and, like the waves, an appointment kept by
+    // the clock rather than by whatever the board is doing
+    this.runCrossers();
+    // ...and the escort's, which is the same clock read the other way:
+    // one departure per cart, on absolute moments (runConvoys)
+    this.runConvoys();
     // a structure went up on, or came down off, open ground: shove anything
     // standing in its cells clear now, and re-solve the routes when the
     // board settles (solveDirtyFields)
@@ -3887,6 +4367,10 @@ export class Sim {
     this.updatePhysics();
     this.mark("physics");
     this.updateUnits(dt);
+    // ...and the escort's cart, on the same beat and for the same reason
+    // the crossers ride updateUnits: it is a body on a road, and the rot
+    // burning on it has to tick whether or not it is rolling
+    this.updateConvoys(dt);
     this.mark("units");
     this.updateAbilities(dt);
     this.mark("abilities");
@@ -4042,63 +4526,115 @@ export class Sim {
     this.scriptLeft = new Array<number>(script.length + 1).fill(0);
     for (let i = script.length - 1; i >= 0; i--)
       this.scriptLeft[i] = this.scriptLeft[i + 1] + per[i];
+    // the document's own count, frozen before the tide is allowed to move
+    // totalWaves (see scriptWaves) — a hold with no number of its own is
+    // measured against this one
+    this.scriptWaves = this.totalWaves;
     this.stepIdx = 0;
-    this.waitLeft = 0;
-    this.spawnAcc = 0;
+    this.live.length = 0;
     this.wavesStarted = 0;
     this.waveSpawned.length = 0;
     this.waveDown.length = 0;
     this.waveEntered.length = 0;
-    this.loadStep();
+    // NOTHING IS STAGED HERE. The first wave lands when its moment comes
+    // like every wave after it (waveStartTime, stageDue) — a run opens on
+    // an empty board and the opening gap is the breather it builds its
+    // first line in.
+  }
+
+  // ---------- the wave clock ----------
+
+  /**
+   * HOW OFTEN A WAVE LANDS, in seconds — the level's gap plus the time a
+   * wave takes to walk on. It is the run's whole pacing, and it is a fact
+   * about the SCRIPT and never about the board.
+   */
+  private get waveCadence(): number {
+    return Math.max(1, this.level.waveGap + WAVE_RELEASE_SECONDS);
   }
 
   /**
-   * Point the live state at script[stepIdx], skipping empty waves. Leaves
-   * everything zeroed once the script runs out, which is what ends the level.
+   * WHEN WAVE `n` (1-based) STARTS ENTERING, in seconds of run time. This
+   * is the schedule, and everything else about the waves is derived from
+   * it — which wave is current, how long until the next, where a skip
+   * lands, when the tide turns.
    *
-   * Pacing is no longer written into the script: the level carries one
-   * `waveGap` and the sim puts it BEFORE every wave, the opening one
-   * included: the first wave is the breather a run builds its first line
-   * in. A step therefore always describes enemies and never time.
-   *
-   * The opening gap is the one exception — WAVE_GAP_OPENING, a few seconds
-   * rather than the full gap, so a run does not open on an empty map.
+   * The opening is the one irregular gap: WAVE_GAP_OPENING rather than the
+   * full one, so a run does not open on an empty map for twenty seconds.
+   * (Capped by the level's own gap, so a level authored with a short gap
+   * does not get a LONGER opening than its cadence.)
    */
-  private loadStep(): void {
-    this.waveEntries.length = 0;
-    this.waveRate = 0;
-    this.waitLeft = 0;
+  waveStartTime(n: number): number {
+    const open = Math.min(WAVE_GAP_OPENING, Math.max(0, this.level.waveGap));
+    return open + (Math.max(1, n) - 1) * this.waveCadence;
+  }
+
+  /** how many waves the clock has called by run time `t` — the wave number
+   *  a skip to `t` lands on (skipToTime) */
+  wavesDueAt(t: number): number {
+    const open = this.waveStartTime(1);
+    if (t < open) return 0;
+    return Math.floor((t - open) / this.waveCadence) + 1;
+  }
+
+  /**
+   * STAGE EVERY WAVE THE CLOCK HAS CALLED — run once a step, off `time`
+   * and nothing else (waveStartTime).
+   *
+   * The loop is a `while` rather than an `if` because one step is allowed
+   * to owe several waves: a skip lands mid-schedule, and a step that took
+   * longer than a cadence would otherwise quietly drop one.
+   */
+  private stageDue(): void {
+    while (this.time >= this.waveStartTime(this.wavesStarted + 1) && this.stageOne());
+  }
+
+  /**
+   * PUT THE NEXT WAVE OF THE SCRIPT ON THE FIELD, or turn the tide and take
+   * one off that. False when there was nothing left to send, which on a
+   * hold that has staged its whole count is the script genuinely ending.
+   *
+   * An empty step is not a wave: it is walked past without costing a wave
+   * number, so the schedule and the document agree about which wave is
+   * which however many blank rows an author leaves in.
+   *
+   * THE CURSOR IS LEFT PAST THE WAVE IT STAGED, which is the one thing that
+   * changed about `stepIdx` when the waves went on the clock — it used to
+   * SIT ON the loaded wave, because there was only ever one loaded.
+   * remaining() reads it accordingly.
+   *
+   * Recursion after the tide turns is one level deep by construction:
+   * lastWaveIdx names a wave that is not empty, and the cursor is put at or
+   * before it.
+   */
+  private stageOne(): boolean {
     const script = this.level.script;
-    for (; this.stepIdx < script.length; this.stepIdx++) {
+    while (this.stepIdx < script.length) {
       const step = script[this.stepIdx];
+      this.stepIdx++;
+      const entries: { kind: number; left: number; total: number }[] = [];
       for (const g of waveGroups(step.wave))
         for (let kind = 0; kind < g.counts.length; kind++)
           if (g.counts[kind] > 0)
-            this.waveEntries.push({ kind, left: g.counts[kind], total: g.counts[kind] });
-      if (this.waveEntries.length > 0) {
-        let total = 0;
-        for (const e of this.waveEntries) total += e.total;
-        this.waveRate = waveSpawnRate(total);
-        this.wavesStarted++;
-        // ...and staging it pays NOTHING. It used to pay a bonus here, at
-        // the top of the gap; every scrap comes off the swarm now
-        // (economy.ts). Hold the gap, then let this wave drain — waitLeft
-        // gates runScript
-        this.waitLeft =
-          this.wavesStarted === 1
-            ? Math.min(WAVE_GAP_OPENING, Math.max(0, this.level.waveGap))
-            : Math.max(0, this.level.waveGap);
-        return;
-      }
+            entries.push({ kind, left: g.counts[kind], total: g.counts[kind] });
+      if (entries.length === 0) continue;
+      let total = 0;
+      for (const e of entries) total += e.total;
+      this.wavesStarted++;
+      // ...and staging it pays NOTHING. It used to pay a bonus here; every
+      // scrap comes off the swarm now (economy.ts)
+      this.live.push({ wave: this.wavesStarted, entries, rate: waveSpawnRate(total), acc: 0 });
+      return true;
     }
-    // THE SCRIPT IS SPENT. On a hold that is the end of the level; on a
-    // survive with time still on the clock it is the tide turning: the
-    // last few waves go again as a cycle, a few enemy levels heavier, and
-    // count toward the run like any other wave. Recursion is one level
-    // deep by construction — lastWaveIdx names a wave that is not empty,
-    // and the cursor is put at or before it
-    if (this.deadline > 0 && this.time < this.deadline && this.lastWaveIdx >= 0) {
-      const from = Math.max(0, this.lastWaveIdx - (SURVIVE_CYCLE_WAVES - 1));
+    // THE SCRIPT IS SPENT, AND THE TIDE TURNS (see TIDE_LEVELS at the top
+    // of the file): the last TIDE_CYCLE_WAVES go again, one doubling of
+    // health heavier, and count toward the run like any other wave. The
+    // only mission that stops here is a hold that has already staged every
+    // wave it asked for (tideTurns) — for everything else the waves are
+    // pressure under an objective, and pressure that ran out would hand the
+    // rest of the run to an empty board.
+    if (this.tideTurns() && this.lastWaveIdx >= 0) {
+      const from = Math.max(0, this.lastWaveIdx - (TIDE_CYCLE_WAVES - 1));
       for (let i = from; i <= this.lastWaveIdx; i++) {
         const step = script[i];
         if (!("wave" in step)) continue;
@@ -4108,111 +4644,146 @@ export class Sim {
         this.totalEnemies += n;
         this.totalWaves++;
       }
-      this.loopLevel += SURVIVE_LOOP_LEVELS;
+      this.loopCycle++;
+      this.loopLevel += TIDE_LEVELS;
       this.stepIdx = from;
-      this.loadStep();
+      return this.stageOne();
     }
-  }
-
-  /** move to the next step, resetting the drain credit so waves start clean */
-  private nextStep(): void {
-    // the wave just drained is through the door: from here it is cleared
-    // the moment its last body drops (wavesCleared)
-    this.waveEntered[this.wavesStarted] = true;
-    this.stepIdx++;
-    this.spawnAcc = 0;
-    this.loadStep();
+    return false;
   }
 
   /**
-   * PUT WAVE `target` ON THE FIELD RIGHT NOW — the sandbox's jump, and the
-   * only thing in the sim that moves the script other than the script
+   * SKIP THE RUN FORWARD TO `target` SECONDS — the sandbox's jump, and the
+   * only thing in the sim that moves the clock other than the clock
    * running. Nothing in a campaign run reaches it: the control is on the
    * sandbox strip and nowhere else.
    *
-   * It only ever goes FORWARD, and never past the last wave the script
-   * holds. Walking backwards would mean un-spawning bodies that are
+   * IT IS A TIME AND NOT A WAVE NUMBER, because the run IS a time now.
+   * Every schedule in the game hangs off this one clock — which wave is due
+   * (waveStartTime), when the next Borer launches (runCrossers), a
+   * survive's deadline, the tide's cycles — so moving the clock moves all
+   * of them at once and in step. A jump that moved a wave cursor left the
+   * mission wherever it was, which is exactly what the old "skip to wave"
+   * did on an intercept map: wave forty on the panel, and the Borers still
+   * four minutes out.
+   *
+   * FORWARD ONLY. Walking backwards would mean un-spawning bodies that are
    * already dead and un-paying the scrap they dropped, and there is no
    * ledger here that can be run in reverse.
    *
-   * WHAT A SKIPPED WAVE IS WORTH: nothing. The run did not fight it, so it
-   * is not cleared, pays no XP (wavesCleared) and drops no scrap — a jump
-   * to wave forty is a jump to wave forty's FIGHT, not to the board and
-   * the purse a run that played forty waves would have. The sandbox builds
-   * for free anyway (setRich), which is the whole reason the purse does
-   * not have to be faked here.
-   *
-   * AND NOTHING HERE HAS TO TELL THE WIN CONDITION WHAT IT DID. It used
-   * to have to and did not, which is what made a jumped run unwinnable:
-   * the skipped waves stayed owed in a body ledger nobody paid back. See
-   * remaining() — it counts the field and the unsent script, so moving the
-   * cursor IS the accounting.
+   * WHAT SKIPPED TIME IS WORTH: nothing. The run did not fight it, so its
+   * waves are not cleared, pay no XP (wavesCleared) and drop no scrap — a
+   * jump to minute fifteen is a jump to minute fifteen's FIGHT, not to the
+   * board and the purse a run that played fifteen minutes would have. The
+   * sandbox builds for free anyway (setRich), which is the whole reason the
+   * purse does not have to be faked here.
    */
-  skipToWave(target: number): void {
-    const want = Math.min(Math.max(1, Math.floor(target)), this.totalWaves);
-    const from = this.wavesStarted;
-    if (!Number.isFinite(want) || want <= from) return;
+  skipToTime(target: number): void {
+    const want = Math.max(0, target);
+    if (!Number.isFinite(want) || want <= this.time) return;
+    const m = this.level.mission;
 
     // THE FIELD IS CLEARED FIRST. Every body still walking belongs to a
-    // wave the jump is about to leave behind, and fighting wave three's
-    // walkers under a panel that reads wave forty is not the board that
+    // moment the jump is about to leave behind, and fighting wave three's
+    // walkers under a panel that reads minute fifteen is not the board that
     // was asked for. removeUnit is the same door a kill leaves by, minus
-    // the drop, the death puff and the ledger: a swarm nobody fought
-    // scores nothing on the way out.
+    // the drop, the death puff and the ledger: a swarm nobody fought scores
+    // nothing on the way out.
     //
     // WHOSE WAVES THEY WERE IS WORTH KNOWING, though, and is read here
     // while the rows still exist. removeUnit books each body as DOWN, and
     // down is most of what "cleared" means (wavesCleared) — so a wave
-    // already through the door with three stragglers left would be paid
-    // for the instant the jump swept them off, which is the opposite of
-    // what happened to it. A wave with a body still walking is unfinished
-    // by definition; the jump abandons it, and abandoned is not cleared.
+    // already through the door with three stragglers left would be paid for
+    // the instant the jump swept them off, which is the opposite of what
+    // happened to it. A wave with a body still walking is unfinished by
+    // definition; the jump abandons it, and abandoned is not cleared.
     const abandoned = new Set<number>();
+    this.crossSweeping = true;
     for (let i = this.n - 1; i >= 0; i--) {
       abandoned.add(this.uwave[i]);
       this.removeUnit(i);
     }
+    this.crossSweeping = false;
     // ...and the corpses go with them, or Reconstruction stands a skipped
     // wave back up in the middle of the one jumped to (updateCorpses). A
     // corpse is a body its wave is still owed (killUnit un-books it), so
     // its wave is unfinished for exactly the same reason.
     for (const c of this.corpses) abandoned.add(c.wave);
     this.corpses.length = 0;
+    // ...and every wave still walking on, thrown away unspent
+    for (const lw of this.live) abandoned.add(lw.wave);
+    this.live.length = 0;
+    // A BORER SWEPT OFF BY A JUMP IS NEITHER KILLED NOR LEAKED. removeUnit
+    // has already taken its pieces off the board above; this is what stops
+    // the empty trains being counted as still crossing (crossersLive), and
+    // therefore what lets the mission's own schedule re-arm at the new time
+    for (const w of this.crossers) w.alive = 0;
+    // ...and the launches the jump passed over are SPENT, all but the last.
+    //
+    // runCrossers reads the schedule off `time` (that is the whole point of
+    // it), so a jump to minute nine would otherwise find four launches
+    // overdue and send all four at once — from the same entry, two of them
+    // down the same road, exactly superimposed. What minute nine actually
+    // looks like is the launch minute nine called and the ones before it
+    // long gone, so that is what a jump leaves: the cursor one short, and
+    // runCrossers brings the current launch in a tick later.
+    //
+    // The passed launches are not made back, and are not meant to be —
+    // skipped time is worth nothing here for the same reason a skipped
+    // wave is not cleared. A jumped intercept cannot be met, which is true
+    // of a jumped hold too.
+    if (m.kind === "intercept") {
+      const due = Math.floor((want - m.first) / Math.max(1e-6, m.every)) + 1;
+      this.crossLaunched = Math.min(m.pattern.length, Math.max(this.crossLaunched, due - 1));
+    }
 
-    // WALK THE CURSOR RATHER THAN LEAPING IT. A script STEP is only a wave
-    // once loadStep has looked at it — empty ones are skipped and do not
-    // count (stageScript) — so the arithmetic only comes out right if each
-    // one is staged in turn. Nothing spawns on the way: loadStep fills
-    // waveEntries and nextStep throws them away unspent.
-    while (this.wavesStarted < want && this.stepIdx < this.level.script.length) this.nextStep();
+    // WALK THE CURSOR RATHER THAN LEAPING IT, and stop ONE SHORT. A script
+    // step is only a wave once it has been looked at — empty ones are
+    // skipped and do not count (stageScript) — so the arithmetic only comes
+    // out right if each one is staged in turn; and the tide has to be given
+    // the chance to turn on the way, which is what makes a jump past the
+    // script's end land in the climb instead of on an empty board.
+    //
+    // Nothing spawns on the way: each staged wave is popped straight back
+    // off `live` unspent. The LAST one due is deliberately left for stageDue
+    // to bring in a moment later, so the jump lands on a wave arriving
+    // rather than on a board that has just been swept.
+    const due = this.wavesDueAt(want);
+    while (this.wavesStarted < due - 1 && this.stageOne()) {
+      const lw = this.live.pop();
+      if (lw) abandoned.add(lw.wave);
+    }
 
-    // ...and then un-say what nextStep said about them. It marks every
-    // wave it leaves as having finished ENTERING, which for one that never
-    // spawned a body reads as cleared — nothing down, nothing to put down
-    // — and would pay out its share of the mission's XP.
-    for (let w = from; w < this.wavesStarted; w++) abandoned.add(w);
+    // ...and then un-say what staging said about those waves. A wave that
+    // never spawned a body reads as cleared — nothing down, nothing to put
+    // down — and would pay out its share of the mission's XP.
     for (const w of abandoned) this.waveEntered[w] = false;
 
-    // THE WAVE LANDED ON ENTERS AT ONCE. loadStep hands every wave its gap
-    // and the jump is a jump past waiting, so holding the last gap would
-    // drop the player back into exactly the wait they skipped.
-    this.waitLeft = 0;
-    this.spawnAcc = 0;
+    // THE CLOCK ITSELF, last: everything above is about what the jump
+    // leaves behind, and this line IS the jump. Every other schedule in the
+    // run reads `time` and therefore moves with it.
+    this.time = want;
   }
 
   /**
-   * Which entry to send next out of the current wave: whichever is furthest
+   * Which entry to send next out of ONE live wave: whichever is furthest
    * from finishing, by fraction of its own total. That intermingles a mixed
    * wave from its first unit and lands every entry's last unit together,
    * instead of emptying one pile before starting the next. Entries in
    * `skip` (their layer's doors were too crowded this frame) don't compete.
+   *
+   * It is asked PER WAVE rather than over the whole field, because several
+   * waves can be releasing at once now (`live`) and each one is entitled to
+   * arrive looking like the wave it was authored as — a shared pick would
+   * blend two waves' mixtures into one soup.
    */
   private nextWaveEntry(
+    entries: readonly { kind: number; left: number; total: number }[],
     skip: ReadonlySet<unknown>,
   ): { kind: number; left: number; total: number } | null {
     let best = null;
     let bestFrac = 0;
-    for (const e of this.waveEntries) {
+    for (const e of entries) {
       if (e.left <= 0 || skip.has(e)) continue;
       const frac = e.left / e.total;
       if (frac > bestFrac) {
@@ -4224,52 +4795,642 @@ export class Sim {
   }
 
   /**
-   * Run the level script: hold through the level's wave gap, otherwise drain
-   * the current wave at ITS OWN rate — the wave's size over the fixed
-   * WAVE_RELEASE_SECONDS, so every wave takes the same time to walk on.
+   * Run the level script: stage whatever the CLOCK owes (stageDue), then
+   * drain every wave already walking on, each at ITS OWN rate — the wave's
+   * size over the fixed WAVE_RELEASE_SECONDS, so every wave takes the same
+   * time to walk on whatever its size.
    *
-   * A failed spawn (the drop zone is too crowded) leaves the unit in the wave
-   * and keeps its drain credit for a later frame, so a packed field delays a
-   * wave rather than swallowing it. That is what makes the rate safe to scale
-   * with size: a wave big enough to outrun the pads simply queues behind
-   * them, and the field fills as fast as there is room for it.
+   * THE TWO HALVES ARE INDEPENDENT NOW, and that is the point. Staging is a
+   * question about `time`; draining is a question about the doors. A wave
+   * that cannot get through its drop zones keeps releasing while the next
+   * one lands on schedule behind it, so congestion costs a THICKER FIELD
+   * and never a longer run.
+   *
+   * A failed spawn (the drop zone is too crowded) leaves the unit in its
+   * wave and keeps its drain credit for a later frame, so a packed field
+   * slows a wave rather than swallowing one. That is what makes the rate
+   * safe to scale with size: a wave big enough to outrun the pads simply
+   * queues behind them, and the field fills as fast as there is room.
+   *
+   * OLDEST WAVE FIRST, so a backlog clears the doors ahead of a fresh wave
+   * and the field cannot serve the script out of order.
    */
   private runScript(dt: number): void {
-    if (this.waitLeft > 0) {
-      this.waitLeft -= dt;
-      // the gap belongs to the wave already loaded, so running it out just
-      // releases that wave — there is no next step to advance to
-      if (this.waitLeft > 0) return;
-      this.waitLeft = 0;
+    this.stageDue();
+    if (this.live.length === 0) return;
+    let done = 0;
+    for (const lw of this.live) {
+      let left = 0;
+      for (const e of lw.entries) left += e.left;
+      if (left > 0) {
+        // the credit is capped at a second's worth of release — but never
+        // under ONE body: a wave smaller than WAVE_RELEASE_SECONDS bodies
+        // has a rate under 1/s, and a cap at that rate would never let the
+        // credit reach the whole unit the loop below spends (a squad of
+        // three at Incursion sat in the door forever)
+        lw.acc = Math.min(lw.acc + lw.rate * dt, Math.max(1, lw.rate));
+        // one layer's crowded pads must not stall the rest of the wave — a
+        // failed entry sits out the rest of this frame while the remaining
+        // entries keep draining
+        const blocked = new Set<unknown>();
+        while (left > 0 && lw.acc >= 1) {
+          const e = this.nextWaveEntry(lw.entries, blocked);
+          if (!e) break;
+          if (!this.spawnUnit(UNIT_KINDS[e.kind], undefined, lw.wave)) {
+            blocked.add(e);
+            continue;
+          }
+          e.left--;
+          lw.acc--;
+          left--;
+        }
+      }
+      // THROUGH THE DOOR: from here the wave is cleared the moment its last
+      // body drops (wavesCleared). A wave leaves `live` only when every body
+      // it was authored with is actually on the field, which is what stops
+      // a congested wave being paid for early
+      if (left === 0) {
+        this.waveEntered[lw.wave] = true;
+        done++;
+      }
     }
+    if (done > 0) this.live = this.live.filter((lw) => !this.waveEntered[lw.wave]);
+  }
 
-    let left = 0;
-    for (const e of this.waveEntries) left += e.left;
-    if (left === 0) return;
+  // ---------- the crossers ----------
 
-    const rate = this.waveRate;
-    // the credit is capped at a second's worth of release — but never
-    // under ONE body: a wave smaller than WAVE_RELEASE_SECONDS bodies has
-    // a rate under 1/s, and a cap at that rate would never let the credit
-    // reach the whole unit the loop below spends (a squad of three at
-    // Incursion sat in the door forever)
-    this.spawnAcc = Math.min(this.spawnAcc + rate * dt, Math.max(1, rate));
-    // one region's crowded pads must not stall the other regions' share of
-    // the wave — a failed entry sits out the rest of this frame while the
-    // remaining entries keep draining
-    const blocked = new Set<unknown>();
-    while (left > 0 && this.spawnAcc >= 1) {
-      const e = this.nextWaveEntry(blocked);
-      if (!e) break;
-      if (!this.spawnUnit(UNIT_KINDS[e.kind])) {
-        blocked.add(e);
+  /**
+   * THE MISSION'S SECOND CLOCK (levels.ts InterceptMission): one launch
+   * every `every` seconds until the pattern is spent, and then the spare
+   * if the run has earned one.
+   *
+   * IT IS NOT THE WAVE SCRIPT AND IT MUST NOT BE. The waves are a tide
+   * that answers the core; a launch is an appointment somewhere else on
+   * the map, and putting it on the wave cursor would tie it to whatever
+   * the script happens to be doing at the time — a mission whose fifth
+   * Borer arrives late because a big wave is congesting a drop zone.
+   * This one runs off the run's own clock and nothing else.
+   *
+   * THE SPARE DOES NOT HAVE A DEADLINE, and that is the one thing about
+   * this loop that is not obvious. It cannot be "one `every` after the
+   * pattern, if a leak has happened by then": the last launch of the
+   * pattern is still walking at that point, and a Borer takes longer to
+   * cross than the gap between launches — so the leak that earns the
+   * spare routinely lands AFTER the moment a timed spare would have been
+   * decided. A run that let its last one through would then be six kills
+   * out of seven with nothing left to send and no way to lose either,
+   * which is a run that never ends. So once the pattern is spent this
+   * waits, asking every tick, and sends the spare the instant a leak is
+   * on the books.
+   */
+  private runCrossers(): void {
+    const m = this.level.mission;
+    if (m.kind !== "intercept" || this.crossDone) return;
+    // THE PATTERN, ON ABSOLUTE MOMENTS. Launch k is due at `first + k *
+    // every` seconds of run time and at no other moment — not "one `every`
+    // after the last one went", which is what it used to be.
+    //
+    // THE LOOP IS WHAT MAKES A SKIP WORK. A countdown has to be ticked to
+    // be moved, so the sandbox's jump (skipToTime) left the mission sitting
+    // wherever the clock had been: minute fifteen on the panel, and the
+    // Borers still four minutes out. Read off `time`, every launch the jump
+    // passed over is simply due at once — and the mission arrives where the
+    // player asked to be.
+    while (this.crossLaunched < m.pattern.length &&
+           this.time >= m.first + this.crossLaunched * m.every) {
+      // BOTH ROADS OF ONE LAUNCH GET THE SAME RAMP (levels.ts wormRamp):
+      // the index is the launch's, not the worm's, so the pair sent in
+      // "both" are twins. A player who found one of them softer than the
+      // other would be reading a die roll, not a schedule
+      for (const r of m.pattern[this.crossLaunched]) this.launchCrosser(r, this.crossLaunched);
+      this.crossLaunched++;
+    }
+    if (this.crossLaunched < m.pattern.length) return;
+    // ...and then the spare, owed to any run that has let one through.
+    //
+    // THE SPARE HAS NO MOMENT, and that is the one thing here that is not
+    // on the clock. It cannot be "one `every` after the pattern, if a leak
+    // has happened by then": the last launch of the pattern is still
+    // walking at that point, and a Borer takes longer to cross than the gap
+    // between launches — so the leak that earns the spare routinely lands
+    // AFTER the moment a timed spare would have been decided. A run that
+    // let its last one through would then be six kills out of seven with
+    // nothing left to send and no way to lose either, which is a run that
+    // never ends. So this waits, asking every tick, and sends the spare the
+    // instant a leak is on the books.
+    if (this.crossLeaked > 0) {
+      // ...and the spare is one rung PAST the pattern's last (wormRamp),
+      // which falls out of the index rather than being a number of its own
+      for (const r of m.spare) this.launchCrosser(r, this.crossLaunched);
+      this.crossDone = true;
+      return;
+    }
+    // nothing owed, and nothing still walking that could come to owe it:
+    // the pattern was the whole mission and the board took all of it
+    if (this.crossersLive() === 0) this.crossDone = true;
+  }
+
+  /**
+   * ONE BORER ONTO ONE ROAD: the whole chain laid nose to tail at the
+   * road's entry, head furthest along (levels.ts WORM_CHAIN).
+   *
+   * THE HEAD IS LAID A WHOLE TRAIN-LENGTH PAST THE ENTRY, which is the
+   * one thing here a road author has to know: the run-up leg (missions.ts)
+   * must be longer than levels.ts WORM_LENGTH, or the head appears in
+   * open ground with the map already behind it instead of crawling in off
+   * the rim. The chain got twenty pieces long and both of Coldline's
+   * roads grew their first leg to match.
+   *
+   * WAVE ZERO, and that is the load-bearing line. A crosser is not part
+   * of any wave — it was not staged by loadStep, it pays no XP, and a
+   * wave must not be held open waiting for a train to die three minutes
+   * later. `wavesCleared` counts from wave 1, so a body booked under 0 is
+   * invisible to every ledger that pays the save (economy.ts MISSION_XP).
+   * What it IS worth is scrap, like every other kill, because that is a
+   * fact about a body dying rather than about a wave.
+   */
+  private launchCrosser(roadIdx: number, launch: number): void {
+    const road = this.roads[roadIdx];
+    if (!road) return;
+    const id = this.crossers.length;
+    const worm = { road: roadIdx, alive: 0, leaked: false, hp: 0, hpMax: 0 };
+    this.crossers.push(worm);
+    const ramp = wormRamp(launch);
+    const slots: number[] = [];
+    for (let k = 0; k < WORM_CHAIN.length; k++) {
+      const s = WORM_LENGTH - k * WORM_SPACING;
+      roadAt(road, s, this.roadTmp);
+      if (!this.spawnUnit(WORM_CHAIN[k], { x: this.roadTmp.x, y: this.roadTmp.y, exact: true }, 0)) break;
+      const i = this.n - 1;
+      slots.push(i);
+      this.ucross[i] = id;
+      this.ucrossS[i] = s;
+      // the heading is the road's, from the first frame: a piece that
+      // spawned facing +x and swung round over the next second would
+      // enter the map sideways
+      const ang = Math.atan2(this.roadTmp.dy, this.roadTmp.dx);
+      this.urot[i] = ang;
+      this.ubrot[i] = ang;
+      this.uaimx[i] = this.roadTmp.dx;
+      this.uaimy[i] = this.roadTmp.dy;
+      // THE SWARM'S ROLLS ARE NOT THE CROSSER'S. Hungry and Mech Virus are
+      // rules about the crowd walking at the core (mutation.ts); a machine
+      // on a road eats nothing and infects nothing, and a Borer that swelled
+      // a meal at a time would stop matching the hitbox the mission is
+      // asking the player to hit
+      this.uhungry[i] = 0;
+      this.uvirus[i] = 0;
+      worm.alive++;
+    }
+    // THE POOL, ONCE EVERY PIECE IS DOWN: what the twenty spawned with,
+    // added up, times this launch's ramp.
+    //
+    // It is SUMMED FROM THE BODIES rather than computed from the roster,
+    // and that is what keeps two other systems working without knowing
+    // this one exists. The level curve scales a body's health as it
+    // spawns (spawnUnit, baseHpOf), so reading the pieces back means a
+    // Borer on a high rung is exactly as much tougher as every other body
+    // on that rung. The ramp then goes on the total, which is the same
+    // number it used to go on per piece.
+    //
+    // ...and then onto EVERY PIECE, both bars. uhp and uhpmax are the
+    // train's from here on, so every read of the fraction — the bar, the
+    // damage tint, the smoke, the execute line — is a fact about the
+    // WORM, and all twenty cars say the same thing at the same time.
+    for (const i of slots) worm.hpMax += this.uhp[i];
+    worm.hpMax *= ramp;
+    worm.hp = worm.hpMax;
+    for (const i of slots) {
+      this.uhp[i] = worm.hp;
+      this.uhpmax[i] = worm.hpMax;
+    }
+  }
+
+  /**
+   * A HIT ON ANY CAR, TAKEN OFF THE TRAIN. The one place a crosser's
+   * health moves, and the reason damageUnit branches at all.
+   *
+   * IT DOES NOT TOUCH `uhp` AND IT DOES NOT KILL. Both are deliberate.
+   * Mirroring the pool onto twenty slots here would be a scan of the
+   * field on every point of damage a busy board deals, and killing from
+   * inside a damage callback would reorder the unit slots under whichever
+   * loop is spending a blast — which is exactly why every other reaper in
+   * this file collects its dead and reaps after. updateCrosser does both
+   * jobs a tick later, on a pass that is already walking these bodies:
+   * the bars catch up and the train dies whole.
+   */
+  private drainCrosser(id: number, amount: number): void {
+    const worm = this.crossers[id];
+    if (!worm || worm.hp <= 0) return;
+    worm.hp -= amount;
+    // TERMINAL PROTOCOL (relics.ts) reads the pool like every other
+    // execute, which on a shared pool means it takes the whole train. That
+    // is the honest reading of the rule — the body it is knocking over is
+    // the worm — and it is the one relic that can end a Borer early
+    if (this.executeAt > 0 && worm.hp > 0 && worm.hp <= worm.hpMax * this.executeAt)
+      worm.hp = 0;
+  }
+
+  /**
+   * HOW MANY CROSSERS ARE ON THE BOARD — worms, not pieces. A train with
+   * one car left is still one thing to shoot, and a panel counting bodies
+   * would read "14 on the line" for two half-dead worms.
+   */
+  crossersLive(): number {
+    let n = 0;
+    for (const w of this.crossers) if (w.alive > 0) n++;
+    return n;
+  }
+
+  /** scratch for the road sampler — one call site, never nested */
+  private readonly roadTmp = { x: 0, y: 0, dx: 0, dy: 0 };
+
+  /**
+   * ONE TICK OF A BORER'S PIECE, and it is KINEMATIC: the road says where
+   * the body is, not a velocity integrated against a wall.
+   *
+   * NOTHING ELSE IN THE FILE MOVES LIKE THIS, and the reason is that the
+   * mission is a promise about geometry. A crosser that read the flow
+   * field would turn for the core; one that took the crowd shove would be
+   * pushed off its line by the wave it walked through; one that collided
+   * with rock could be wedged in a corner by a knockback and sit there
+   * for the rest of the run, which on a mission whose whole question is
+   * "did it get across" is not a bug that can be shrugged at. So the
+   * position is read off the road at an arc length this advances, and the
+   * heading is the road's own tangent.
+   *
+   * WHAT STILL REACHES IT is everything that is done TO a body rather than
+   * by it — the haste stamp scales the advance, damage lands, statuses
+   * land — WITH ONE EXCEPTION, and it is the one that used to be the
+   * headline here: a Borer is `unslowable` (levels.ts), so the wet slow no
+   * longer buys the board seconds. A douser on the line still soaks it,
+   * still puts a fire on it out, still hands the electric ammunition the
+   * soaked bonus; it simply cannot move the arrival. That is the mission's
+   * promise being kept — the road is drawn from wave one and so is the
+   * clock — and it means the only way to stop a train is to kill it.
+   *
+   * Returns true when the piece has reached the exit, which is a LEAK: the
+   * caller lifts it off the board (see updateUnits).
+   */
+  private updateCrosser(i: number, dt: number): CrosserStep {
+    const worm = this.crossers[this.ucross[i]];
+    const road = this.roads[worm.road];
+    // THE TRAIN'S HEALTH ONTO THIS CAR, every tick. The pool is the truth
+    // (drainCrosser) and these two are the copy every other reader sees —
+    // the bar over the body, the damage tint, the smoke. Copied on the
+    // pass that is already here rather than at the hit, so a board putting
+    // a hundred rounds a second into a Borer pays twenty writes a tick
+    // instead of twenty per round.
+    this.uhp[i] = worm.hp;
+    this.uhpmax[i] = worm.hpMax;
+    // ...AND THE TRAIN DIES WHOLE. The pool emptied, so every piece goes
+    // this tick, together, wherever on the road it happens to be: the
+    // caller reaps them after the loop for the reason it reaps the
+    // leakers there (removeUnit moves slots under a descending walk). A
+    // car that popped on its own would be the thing the shared pool
+    // exists to stop.
+    if (worm.hp <= 0) return CROSS_DEAD;
+    // NO ARRIVAL CLOCK IS READ HERE, because a crosser never has one:
+    // launchCrosser spawns through the brood door, which is the door that
+    // hands out no invincibility and no unmoving half-second (spawnUnit).
+    // A Borer is walking from its first frame — the road is where it came
+    // from, and a train that stood still for half a second on the rim
+    // would be standing still in the one place nothing can reach it
+    const haste = HAS_HASTE_AURA && this.uhasteT[i] > 0 ? this.uhasteMul[i] : 1;
+    const slow =
+      this.uwet[i] > 0 && !KIND_NO_SLOW[this.ukind[i]] ? this.uwetSlow[i] : 1;
+    const spd = this.uspd[i] * slow * haste;
+    const s = this.ucrossS[i] + spd * dt;
+    this.ucrossS[i] = s;
+    if (s >= road.length) return CROSS_LEAKED;
+    roadAt(road, s, this.roadTmp);
+    this.upx[i] = this.roadTmp.x;
+    this.upy[i] = this.roadTmp.y;
+    // the velocity is reported rather than integrated — the weapons pass
+    // and the renderer's walk cycle both read it, and a body whose stated
+    // speed disagreed with the ground going past under it would lead
+    // every turret's aim wrong
+    this.uvx[i] = this.roadTmp.dx * spd;
+    this.uvy[i] = this.roadTmp.dy * spd;
+    const ang = Math.atan2(this.roadTmp.dy, this.roadTmp.dx);
+    this.urot[i] = ang;
+    this.ubrot[i] = ang;
+    this.uaimx[i] = this.uvx[i];
+    this.uaimy[i] = this.uvy[i];
+    this.uwalk[i] += spd * dt;
+    return CROSS_WALKING;
+  }
+
+  /**
+   * A PIECE HAS REACHED THE FAR SIDE. The whole worm is booked as leaked
+   * on the FIRST piece through, never once per piece: a train that got
+   * half of itself across got across, and counting nine leaks for one
+   * would end the run on the first one.
+   *
+   * Everything still behind it keeps walking and can still be shot. It
+   * cannot save the worm — the leak is already booked — but a run does not
+   * get to stop paying attention to a thing on the board because the
+   * ledger has already written it off.
+   */
+  private leakCrosser(i: number): void {
+    const worm = this.crossers[this.ucross[i]];
+    if (worm && !worm.leaked) {
+      worm.leaked = true;
+      this.crossLeaked++;
+    }
+    this.removeUnit(i);
+  }
+
+  // ---------- the convoys ----------
+
+  /**
+   * THE ESCORT'S CLOCK (levels.ts EscortMission), and it is the crossers'
+   * clock in a mirror: cart `k` rolls out at `first + k * every` seconds
+   * of run time and at no other moment.
+   *
+   * ABSOLUTE MOMENTS FOR THE SAME REASON runCrossers uses them — a
+   * countdown has to be ticked to be moved, so a sandbox jump
+   * (skipToTime) would leave the mission sitting wherever the clock had
+   * been. Read off `time`, every departure the jump passed over is simply
+   * due at once.
+   */
+  private runConvoys(): void {
+    const m = this.level.mission;
+    if (m.kind !== "escort" || this.convoyEnd) return;
+    while (
+      this.convoyOut < m.pattern.length &&
+      this.time >= m.first + this.convoyOut * m.every
+    ) {
+      this.launchConvoy(m.pattern[this.convoyOut]);
+      this.convoyOut++;
+    }
+    if (this.convoyOut >= m.pattern.length) this.convoyEnd = true;
+  }
+
+  /**
+   * ONE CART ONTO ITS ROAD, standing at the road's first point — which on
+   * Thornway is the ground just outside the core's own footprint, so it
+   * rolls out of the base rather than appearing on it.
+   *
+   * THE STRUCTURE IS BUILT HERE AND NOWHERE ELSE (levels.ts CONVOY_HP for
+   * why it is a structure at all). Its `spec` is a copy of a real turret's
+   * with the cart's own name, footprint and plating written over it: the
+   * fields under that are a gun's — range, reload, ammunition — and NOT
+   * ONE OF THEM IS EVER READ, because reading them is what `fireTowers`
+   * does and `fireTowers` walks `towers`, which this is not in. Spreading
+   * a real one rather than inventing thirty numbers is the honest way to
+   * say "everything about this that is a turret is the default".
+   */
+  private launchConvoy(roadIdx: number): void {
+    const road = this.roads[roadIdx];
+    if (!road) return;
+    roadAt(road, 0, this.roadTmp);
+    const hp = CONVOY_HP;
+    const struct = this.newTower(
+      // THE CELLS IT STANDS ON ARE A LIE AND HAVE TO BE. `gx`/`gy` are
+      // read by everything that asks where a building's footprint is, and
+      // this one has no footprint: it claims no ground, nothing writes it
+      // into cellTower, and updateConvoy keeps these in step with the
+      // cart's centre only so a reader doing the usual arithmetic gets
+      // the usual answer rather than a NaN.
+      Math.round(this.roadTmp.x / CELL - CONVOY_SIZE / 2),
+      Math.round(this.roadTmp.y / CELL - CONVOY_SIZE / 2),
+      CONVOY_BASE_KIND,
+      CONVOY_SIZE,
+      0,
+    );
+    // ...and then the four numbers that are the CART'S rather than a
+    // turret's. Its spec is a copy of the base kind's with its own name,
+    // footprint and plating written over it: the fields under those are a
+    // GUN's — range, reload, ammunition — and not one of them is ever
+    // read, because reading them is what the turret loop does and the
+    // turret loop walks `towers`, which this is not in.
+    struct.x = this.roadTmp.x;
+    struct.y = this.roadTmp.y;
+    struct.hp = hp;
+    struct.hpMax = hp;
+    // ...AND NO STAND-UP. Undying Legion (relics.ts) grants every turret
+    // one revive and `newTower` hands it out; damageConvoy never asks, so
+    // this is only saying out loud what the code already does — a relic
+    // bought to keep the LINE standing does not also make the mission
+    // unloseable, and a hauler that got back up would make "it has to
+    // arrive" mean something else on one run in fourteen.
+    struct.revives = 0;
+    struct.revivesMax = 0;
+    struct.spec = {
+      ...structStats(CONVOY_BASE_KIND),
+      name: CONVOY_NAME,
+      size: CONVOY_SIZE,
+      armor: CONVOY_ARMOR,
+      health: hp,
+    };
+    this.convoys.push({
+      struct,
+      road: roadIdx,
+      s: 0,
+      rot: Math.atan2(this.roadTmp.dy, this.roadTmp.dx),
+      halt: -1,
+      holdT: 0,
+      home: false,
+      dead: false,
+    });
+  }
+
+  /**
+   * IS THE THING THIS BODY IS SHOOTING AT THE CART? — the one question
+   * that makes an escort an escort rather than a second core.
+   *
+   * NOTHING SEEKS THE CONVOY. The swarm walks at the base and shoots what
+   * its guns find on the way, which is exactly how it treats a turret and
+   * exactly what the mission wants. What it must never do is CHANGE
+   * COURSE for the cart: a bomber that dives at it and a Tusker that
+   * charges it are both bodies leaving their route, and a route left is
+   * pressure taken off the core and put onto the objective. That turns
+   * the hauler into a magnet the whole field drifts toward, which is a
+   * different mission and a much worse one — the player would be
+   * defending one thing instead of two, and the base would go quiet.
+   *
+   * So the cart is a TARGET and never a DESTINATION. It is shot by
+   * whatever happens to have it in reach, and nothing walks a step it
+   * would not have walked anyway.
+   */
+  private aimIsConvoy(a: Aim | null): boolean {
+    if (a === null || this.convoys.length === 0) return false;
+    for (const c of this.convoys) if (c.struct === a.s) return true;
+    return false;
+  }
+
+  /**
+   * IS THIS STRUCTURE A CART? — the standing-in for the occupancy grid on
+   * the one body that is not in it.
+   *
+   * Three places ask, and all three are asking the same question in the
+   * grid's words: `inReach` before a weapon fires, the homing star before
+   * it keeps steering, and the ledger in damageTower. A cart is standing
+   * for as long as it is on the road with health in it, which is what
+   * `convoyOf` answers.
+   */
+  private isConvoy(t: Structure): boolean {
+    return this.convoys.length > 0 && this.convoyOf(t) !== null;
+  }
+
+  /** the cart this structure IS, or null — one linear walk of a list that
+   *  is one long, guarded by the caller on `convoys.length` */
+  private convoyOf(t: Structure): (typeof this.convoys)[number] | null {
+    for (const c of this.convoys) if (c.struct === t) return c;
+    return null;
+  }
+
+  /**
+   * ONE TICK OF EVERY CART: the statuses it can carry, then the drive.
+   *
+   * IT IS KINEMATIC LIKE A CROSSER (updateCrosser) and for the same
+   * reason: the mission is a promise about a line on the map, and a cart
+   * that could be shoved, wedged or routed would be a mission about
+   * physics. What is different is that it STOPS — at each of the
+   * mission's halts it stands for `haltSeconds` and mends `mend` a
+   * second, which is the only healing on the player's side of this board
+   * and the reason a bad leg is not the end of the run.
+   *
+   * THE TWO STATUSES A CART CAN CARRY are the rot and the fire, and they
+   * are ticked here rather than in fireTowers because fireTowers is the
+   * GUN loop — it walks `towers`, works a reload and looks for something
+   * to shoot, and a cart has none of those. Everything else that pass
+   * does is turret-only by nature: a cart has no gun to short out, no
+   * ammunition to jam, and no plating that mends itself.
+   */
+  private updateConvoys(dt: number): void {
+    if (this.convoys.length === 0) return;
+    const m = this.level.mission;
+    if (m.kind !== "escort") return;
+    for (const c of this.convoys) {
+      if (c.dead || c.home) continue;
+      const t = c.struct;
+      // THE ROT (Tower.poison), on the same arithmetic fireTowers runs:
+      // the stack bleeds back toward the heaviest single source and the
+      // damage is raw, past plating, because a status plating could shave
+      // would be a second copy of what the ground mechs already do
+      if (t.poisonT > 0) {
+        t.poisonT -= dt;
+        if (t.poisonT <= 0) {
+          t.poisonT = 0;
+          t.poison = 0;
+          t.poisonUnit = 0;
+        } else {
+          if (t.poison > t.poisonUnit)
+            t.poison = t.poisonUnit + (t.poison - t.poisonUnit) * Math.exp(-POISON_DECAY * dt);
+          this.damageConvoy(c, t.poison * dt);
+        }
+      }
+      // ...and the fire, which refreshes rather than stacks (burnTower)
+      if (t.burnT > 0) {
+        t.burnT -= dt;
+        if (t.burnT <= 0) {
+          t.burnT = 0;
+          t.burnDps = 0;
+        } else this.damageConvoy(c, t.burnDps * dt);
+      }
+      if (c.dead) continue;
+      const road = this.roads[c.road];
+      if (c.holdT > 0) {
+        // STANDING AT A HALT: it mends, and it is the easiest target on
+        // the board while it does. The clock runs whatever is happening
+        // to it — a cart pinned down does not get to wait longer
+        c.holdT -= dt;
+        if (t.hp < t.hpMax) t.hp = Math.min(t.hpMax, t.hp + m.mend * dt);
+        if (c.holdT <= 0) c.holdT = 0;
         continue;
       }
-      e.left--;
-      this.spawnAcc--;
-      left--;
+      c.s += CONVOY_SPEED * dt;
+      // ...HAS IT REACHED THE NEXT HALT? Asked before the arrival, so a
+      // halt authored at 0.99 still happens
+      const next = c.halt + 1;
+      if (next < m.halts.length && c.s >= m.halts[next] * road.length) {
+        c.halt = next;
+        c.s = m.halts[next] * road.length;
+        c.holdT = m.haltSeconds;
+      } else if (c.s >= road.length) {
+        // THE POST. The cart is off the board and on the ledger, and the
+        // structure goes with it so nothing can shoot a delivery
+        c.s = road.length;
+        c.home = true;
+        this.convoyBest = 1;
+        this.convoyDone++;
+        this.pushFx(t.x, t.y, 0.6, FxKind.Breach);
+        continue;
+      }
+      if (road.length > 0) this.convoyBest = Math.max(this.convoyBest, c.s / road.length);
+      roadAt(road, c.s, this.roadTmp);
+      t.x = this.roadTmp.x;
+      t.y = this.roadTmp.y;
+      c.rot = Math.atan2(this.roadTmp.dy, this.roadTmp.dx);
+      t.gx = Math.round(t.x / CELL - CONVOY_SIZE / 2);
+      t.gy = Math.round(t.y / CELL - CONVOY_SIZE / 2);
     }
-    if (left === 0) this.nextStep();
+  }
+
+  /**
+   * A HIT ON THE CART. The one place a convoy's health moves, and the
+   * reason damageTower branches at all: everything under that branch —
+   * the revives, the payout, the virus, the conquest, the removal from
+   * `towers` — is about a BUILDING, and this is a vehicle with a mission
+   * riding on it.
+   *
+   * `raw` has already been through plating where the caller meant it to
+   * (damageTower shaves it; the rot and the fire above do not, which is
+   * the same exemption a turret's statuses have).
+   */
+  private damageConvoy(c: (typeof this.convoys)[number], raw: number): void {
+    const t = c.struct;
+    if (c.dead || c.home || t.hp <= 0) return;
+    t.hp -= raw;
+    if (t.hp > 0) return;
+    t.hp = 0;
+    c.dead = true;
+    this.convoyLost++;
+    this.pushFx(t.x, t.y, 0.8, FxKind.Breach);
+    this.pushFx(t.x, t.y, 0.6, FxKind.Death);
+  }
+
+  /**
+   * HOW FAR THE CART ON THE ROAD HAS GOT, 0 to 1 — what the objective bar
+   * is filled from between deliveries (levels.ts missionProgress).
+   *
+   * A HALT COUNTS AS THE GROUND IT STANDS ON and not as progress of its
+   * own: the bar moves while the cart moves and holds while it waits,
+   * which is the truth about the journey and is also the clearest thing a
+   * player can be told about why nothing is happening.
+   */
+  convoyAt(): number {
+    for (const c of this.convoys) {
+      if (c.dead || c.home) continue;
+      const road = this.roads[c.road];
+      if (road && road.length > 0) return Math.max(0, Math.min(1, c.s / road.length));
+    }
+    // ...AND HOW FAR THE LAST ONE GOT, when there is none on the road.
+    // A run that lost its cart at the third halt is a run that got sixty
+    // per cent of the way there, and the end screen has nothing else to
+    // say about it — reading zero off an empty list would tell a player
+    // who nearly made it that they never started.
+    return this.convoyBest;
+  }
+
+  /** the cart on the road, for the HUD and the renderer — null when there
+   *  is none (before the first departure, between two, or after a loss) */
+  liveConvoy(): { struct: Tower; rot: number; halted: boolean; halts: number; at: number } | null {
+    const m = this.level.mission;
+    if (m.kind !== "escort") return null;
+    for (const c of this.convoys) {
+      if (c.dead || c.home) continue;
+      return {
+        struct: c.struct,
+        rot: c.rot,
+        halted: c.holdT > 0,
+        halts: m.halts.length - 1 - c.halt,
+        at: this.convoyAt(),
+      };
+    }
+    return null;
   }
 
   // ---------- the swarm's weapons ----------
@@ -4456,17 +5617,39 @@ export class Sim {
     sighted: boolean,
     team: Team = "player",
   ): Structure | null {
+    // THE CART IS OFFERED HERE AND ONLY HERE (levels.ts CONVOY_HP), and it
+    // has to be offered BEFORE the box. It is not in the building index
+    // and claims no cell, because it moves — so `structBox`, which is the
+    // rectangle the player's BUILDINGS stand in, does not contain it, and
+    // a cart fifty tiles up the road from the nearest turret is outside
+    // that box by a mile. Under the early-out this loop simply never ran
+    // and the swarm walked past the objective all run without firing a
+    // shot at it. A list of one behind a length test, so every other map
+    // pays one compare.
+    let best: Structure | null = null;
+    let bd = Infinity;
+    if (this.convoys.length > 0 && team === "player")
+      for (const c of this.convoys) {
+        if (c.dead || c.home) continue;
+        const t = c.struct;
+        if (t.hp <= 0) continue;
+        const half = (t.size * CELL) / 2;
+        const dx = t.x - x, dy = t.y - y;
+        const d = Math.sqrt(dx * dx + dy * dy) - half;
+        if (d <= reach && d < bd && (!sighted || this.canSee(t, x, y))) {
+          bd = d;
+          best = t;
+        }
+      }
     const box = this.structBox();
-    if (box.n === 0) return null;
+    if (box.n === 0) return best;
     if (x + reach < box.x0 || x - reach > box.x1 || y + reach < box.y0 || y - reach > box.y1)
-      return null;
+      return best;
     const blocks = this.structBlocks;
     const grid = this.cellTower;
     const bx = clamp((x / AIM_BLOCK_PX) | 0, 0, AIM_BCOLS - 1);
     const by = clamp((y / AIM_BLOCK_PX) | 0, 0, AIM_BROWS - 1);
     const maxR = Math.ceil(reach / AIM_BLOCK_PX) + 1;
-    let best: Structure | null = null;
-    let bd = Infinity;
     const consider = (bi: number): void => {
       const list = blocks[bi];
       if (!list) return;
@@ -4575,6 +5758,16 @@ export class Sim {
     out.length = 0;
     const seen = this.seenStructs;
     seen.clear();
+    // ...and the cart, for the same reason nearestStructure has to name
+    // it: a blast that reached every building in its circle and not the
+    // one standing in the middle of it would be a hole a player can see
+    if (this.convoys.length > 0 && team === "player")
+      for (const c of this.convoys) {
+        if (c.dead || c.home || c.struct.hp <= 0) continue;
+        const t = c.struct;
+        const half = (t.size * CELL) / 2;
+        if (Math.sqrt((t.x - x) ** 2 + (t.y - y) ** 2) - half <= r) out.push(t);
+      }
     const R = Math.ceil(r / CELL) + 1;
     const cx = (x / CELL) | 0, cy = (y / CELL) | 0;
     // a square of cells, and every one of them a candidate looked at. The
@@ -4840,7 +6033,14 @@ export class Sim {
 
   /** is the structure still standing — and within this reach of the point? */
   private inReach(t: Structure, x: number, y: number, reach: number): boolean {
-    if (this.cellTower[t.gy * COLS + t.gx] !== t) return false;
+    // IS IT STILL STANDING? The grid read is what makes a held target
+    // drop the moment the building under it comes down — and it is the
+    // one test on this path that a CART cannot pass, because a cart is
+    // never on the grid (levels.ts CONVOY_HP). Without the guard the
+    // swarm PICKED the hauler, HELD the hauler, and never fired a shot at
+    // it: every weapon asks this before it pulls a trigger, and the
+    // answer was always no.
+    if (!this.isConvoy(t) && this.cellTower[t.gy * COLS + t.gx] !== t) return false;
     const half = (this.sizeOf(t) * CELL) / 2;
     const dx = t.x - x, dy = t.y - y;
     return Math.sqrt(dx * dx + dy * dy) - half <= reach;
@@ -5734,7 +6934,11 @@ export class Sim {
       // steering and flies out the heading it is on.
       if (sh.homing > 0) {
         const sp = Math.sqrt(sh.vx * sh.vx + sh.vy * sh.vy);
-        if (sh.seek && this.cellTower[sh.seek.gy * COLS + sh.seek.gx] !== sh.seek) {
+        // ...and a star steering at the CART keeps steering: the grid test
+        // below is "is this building still standing", and a hauler is
+        // never on the grid, so without the guard every star thrown at one
+        // would drop its quarry on the tick after it was thrown
+        if (sh.seek && !this.isConvoy(sh.seek) && this.cellTower[sh.seek.gy * COLS + sh.seek.gx] !== sh.seek) {
           sh.seek = this.nearestStructure(sh.x, sh.y, sh.life * sp, true);
           if (!sh.seek) sh.homing = 0;
         }
@@ -6072,7 +7276,14 @@ export class Sim {
     if (!this.amphibiousOn) return;
     const { upx, upy, uhp, uhpmax, uspd, uarmor, uwade, uwet01, ufly, unav, ukind } = this;
     for (let i = 0; i < this.n; i++) {
-      if (ufly[i] || unav[i]) continue;
+      // ...and NEITHER IS A CROSSER, which is the third body this rule is
+      // not about. A stack adds SPEED, and a Borer's speed is the mission's
+      // clock (levels.ts WORM_SPEED): a road that happens to ford a lake
+      // would hand the swarm a faster train on Amphibious runs and a
+      // slower one otherwise, for no reason a player could see. It also
+      // swells the sprite off its own hitbox, on the one body the whole
+      // map is about hitting
+      if (ufly[i] || unav[i] || this.ucross[i] >= 0) continue;
       const wet = this.inWater(upx[i], upy[i]);
       // THE CROSSING, not the standing: only a dry -> wet step pays
       if (wet && !uwet01[i] && uwade[i] < AMPHIBIOUS_MAX_STACKS) {
@@ -6116,10 +7327,10 @@ export class Sim {
     return this.powered;
   }
 
-  /** ...and which of the map's relays are switched on, for the drawing
+  /** ...and which of the map's beacons are switched on, for the drawing
    *  side to light and price them (the array itself, held by reference) */
-  relayOnMask(): Uint8Array {
-    return this.relayOn;
+  beaconOnMask(): Uint8Array {
+    return this.beaconOn;
   }
 
   /**
@@ -6183,65 +7394,65 @@ export class Sim {
   }
 
   /**
-   * WHICH OF THE MAP'S RELAYS HAVE BEEN SWITCHED ON, one byte each, indexed
-   * into terrain.relays.
+   * WHICH OF THE MAP'S BEACONS HAVE BEEN SWITCHED ON, one byte each, indexed
+   * into terrain.beacons.
    *
    * SHARED, because the drawing side has to know which of them to light and
-   * which to price, every frame, and this is one byte per relay against a
+   * which to price, every frame, and this is one byte per beacon against a
    * message. WHERE they are does not cross at all: both threads build their
    * own terrain from the same map document, so both already have the list.
    *
-   * IT ONLY EVER GOES UP. A relay stands on rock, cannot be targeted and
-   * cannot be destroyed (see MapRelay in terrain.ts) — so buying one is a
+   * IT ONLY EVER GOES UP. A beacon stands on rock, cannot be targeted and
+   * cannot be destroyed (see MapBeacon in terrain.ts) — so buying one is a
    * permanent widening of the board and nothing in the game turns one back
    * off. That is what lets the power mask only ever grow, which is in turn
    * what lets a placed turret never lose its ground.
    */
-  readonly relayOn = shared.u8(MAX_RELAYS);
+  readonly beaconOn = shared.u8(MAX_BEACONS);
 
   /**
-   * SWITCH ONE ON — the whole of the relay mechanic, and it is a purchase
+   * SWITCH ONE ON — the whole of the beacon mechanic, and it is a purchase
    * and not a placement: there is no footprint to test, no ground to claim
    * and nothing to roll. The circle around it becomes buildable, for the
    * rest of the run.
    *
    * IT TAKES NO MONEY, exactly as placeTower takes none. The scrap is gone
-   * before this is called (Game.buyRelay pays the world and tells the host,
+   * before this is called (Game.buyBeacon pays the world and tells the host,
    * which is the one money path every purchase in this game goes down) —
    * charging again here would charge a run twice for one press.
    *
    * Returns whether anything changed, so a stale press can be ignored: an
-   * index off the end, or a relay that is already on.
+   * index off the end, or a beacon that is already on.
    */
-  setRelayOn(i: number): boolean {
-    if (!this.terrain.relays[i] || this.relayOn[i]) return false;
-    this.relayOn[i] = 1;
+  setBeaconOn(i: number): boolean {
+    if (!this.terrain.beacons[i] || this.beaconOn[i]) return false;
+    this.beaconOn[i] = 1;
     this.rebuildPower();
     return true;
   }
 
   /**
    * EVERYTHING LIGHTING GROUND RIGHT NOW: the core, which lights for free
-   * and always, then every relay that has been bought.
+   * and always, then every beacon that has been bought.
    *
-   * A FLAT UNION AND NOT A TREE. An earlier cut of this had relays daisy-
+   * A FLAT UNION AND NOT A TREE. An earlier cut of this had beacons daisy-
    * chaining out from the core, each needing the one behind it — which is a
-   * real mechanic, and the wrong one for relays that cannot be destroyed:
+   * real mechanic, and the wrong one for beacons that cannot be destroyed:
    * with nothing able to cut a chain, the chain was only ever a second way
    * of saying what the prices already say. The price IS the gate now, and
-   * an author who wants a far relay to require a near one prices it that
+   * an author who wants a far beacon to require a near one prices it that
    * way.
    */
   powerDiscs(): { x: number; y: number; r: number }[] {
-    return powerDiscsOf(this.terrain, this.relayOn, this.core.x, this.core.y);
+    return powerDiscsOf(this.terrain, this.beaconOn, this.core.x, this.core.y);
   }
 
   /**
-   * REPAINT THE POWER GRID: the core's disc, plus one per bought relay.
+   * REPAINT THE POWER GRID: the core's disc, plus one per bought beacon.
    *
    * SPAN FILL rather than a per-cell distance test — at ninety cells the
    * core's disc alone is better than twenty-five thousand cells, and each
-   * row is solved with one square root. It runs when a relay is bought and
+   * row is solved with one square root. It runs when a beacon is bought and
    * when a board is loaded, never in a step and never in a frame.
    */
   private rebuildPower(): void {
@@ -6477,7 +7688,14 @@ export class Sim {
    *  not the player's to sell: see enemyTowerAt */
   towerAt(px: number, py: number): Tower | null {
     const t = this.structureAt(px, py);
-    return t && !isCore(t) ? t : null;
+    // ...AND THE CART IS NOT ONE, however much of a Tower it is in the
+    // type system (levels.ts CONVOY_HP). This is what a tap picks and what
+    // a right-click SELLS, and a hauler the player could sell is a mission
+    // the player can end by clicking on it. It holds no ground to give
+    // back and is in none of the lists a sale walks, so the sale would
+    // also be quietly corrupt — but the reason it is refused is the first
+    // one.
+    return t && !isCore(t) && !this.isConvoy(t) ? t : null;
   }
 
 
@@ -6722,7 +7940,7 @@ export class Sim {
    */
   private spawnUnit(
     kind: UnitKind,
-    brood?: { x: number; y: number },
+    brood?: { x: number; y: number; exact?: boolean },
     wave = this.wavesStarted,
   ): boolean {
     const stats = UNIT_STATS[kind];
@@ -6744,7 +7962,16 @@ export class Sim {
     const tries = brood ? MITOSIS_TRIES : 8;
     for (let a = 0; a < tries; a++) {
       let x: number, y: number;
-      if (brood) {
+      if (brood?.exact) {
+        // EXACTLY HERE, and none of the tests below. It is what the
+        // crossers use (launchCrosser): a Borer's pieces are laid on a
+        // road at fixed intervals, and a spot moved a few px to miss a
+        // rock would put a car through the side of the one in front. A
+        // crosser walks through rock anyway (updateCrosser), so there is
+        // nothing for the wall test to protect it from.
+        x = brood.x;
+        y = brood.y;
+      } else if (brood) {
         // a ring around the body, clamped inside the world — the wall and
         // crowding tests below are the same ones a door spot has to pass,
         // so a brood never lands in rock or aground on a shoreline
@@ -6765,7 +7992,10 @@ export class Sim {
       // tank that is the one with the deep water open, which is what lets
       // it land half in a channel and half on its bank
       const wallField = layer === "water" ? this.navalField : this.field;
-      if ((!fly && wallField.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly, span))
+      if (
+        !brood?.exact &&
+        ((!fly && wallField.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly, span))
+      )
         continue;
       const i = this.n++;
       // LEVEL SCALING: health rides the level curve, and the rung adds a
@@ -6900,6 +8130,10 @@ export class Sim {
       this.ucellT[i] = -1;
       this.utcell[i] = -1;
       this.uinview[i] = 0;
+      // ...and nothing walks a road unless the mission puts it on one
+      // (launchCrosser writes these two straight after the spawn)
+      this.ucross[i] = -1;
+      this.ucrossS[i] = 0;
       this.uid[i] = this.nextId++;
       this.ukind[i] = UNIT_ID[kind];
       this.ufly[i] = fly ? 1 : 0;
@@ -7399,6 +8633,12 @@ export class Sim {
         const j = bUnits[k];
         if (j === i || j >= this.n || uhp[j] <= 0) continue;
         if (uhungry[j] || uspawn[j] > 0 || KIND_BOSS[ukind[j]]) continue;
+        // ...and a CROSSER is not food, for the boss's reason and one of
+        // its own. A Borer is a machine on a road (levels.ts, the worm
+        // block), and a meal takes a body off the board whole — so a
+        // Hungry run would have the swarm destroying the player's own
+        // objective for free, which is a mission met by a die roll
+        if (this.ucross[j] >= 0) continue;
         if (ufly[j] !== fly || unav[j] !== nav) continue;
         const dx = upx[j] - x, dy = upy[j] - y;
         const d2 = dx * dx + dy * dy;
@@ -7465,10 +8705,17 @@ export class Sim {
       if ((usqzT[i] += dt) < MERGE_HOLD) continue;
       // the partner has to still be the body the physics pass saw — alive,
       // the same kind, both arrived, neither a boss, and room in the stack
+      // ...and NEVER A CROSSER. Two of a Borer's cars ride a road four px
+      // closer than their own hitboxes (levels.ts WORM_SPACING), which is
+      // a squeeze by every test here — and a train that folded its own
+      // couplings together would be one car of double size, one piece
+      // short of the count the mission is keeping, and carrying one of
+      // the two arc lengths that used to be two bodies
       if (
         j === i || j >= this.n || uid[j] !== usqzU[i] || ukind[j] !== ukind[i] ||
         uhp[j] <= 0 || uhp[i] <= 0 || uspawn[i] > 0 || uspawn[j] > 0 ||
-        KIND_BOSS[ukind[i]] || ustack[i] + ustack[j] > KIND_MERGE_MAX[ukind[i]]
+        KIND_BOSS[ukind[i]] || this.ucross[i] >= 0 || this.ucross[j] >= 0 ||
+        ustack[i] + ustack[j] > KIND_MERGE_MAX[ukind[i]]
       ) continue;
       uhp[i] += uhp[j];
       uhpmax[i] += uhpmax[j];
@@ -7614,7 +8861,13 @@ export class Sim {
     // is not one yet. A body that has ALREADY risen (urisen) falls
     // straight through, which is what keeps the rule one generation deep
     // however long a wave lasts.
-    if (this.reconstructOn && !this.urisen[i]) {
+    // ...and a CROSSER never stands back up. Reconstruction puts a body
+    // back through spawnUnit (updateCorpses), which knows nothing about
+    // roads: what would get up is a Borer's car walking to the core,
+    // outside the train it belongs to and outside the count the mission
+    // is keeping. The rule is about the swarm, and the swarm is the thing
+    // walking at the base
+    if (this.reconstructOn && !this.urisen[i] && this.ucross[i] < 0) {
       this.pushDeathFx(x, y);
       this.removeUnit(i);
       // ...and the wave is held open behind it. removeUnit has just booked
@@ -7691,6 +8944,9 @@ export class Sim {
     // means the brood only ever lands on slots those lists have already
     // finished with, and a stale index there meets a body with health,
     // which every one of them re-tests for
+    // ...and nothing breaks out of a Borer for the same reason (a brood
+    // walks; `wasBrood` is already 1 on a crosser, since launchCrosser
+    // spawns through the brood door, so this is belt and braces)
     if (this.mitosisOn && !wasBrood) this.splitUnit(x, y, kind, wave);
   }
 
@@ -7862,6 +9118,23 @@ export class Sim {
   private removeUnit(i: number): void {
     this.aliveByKind[this.ukind[i]]--;
     this.waveDown[this.uwave[i]] = (this.waveDown[this.uwave[i]] ?? 0) + 1;
+    // A CROSSER'S LEDGER IS KEPT HERE, at the one door out, and not in
+    // killUnit — a Borer's piece can leave the board killed, devoured
+    // (Hungry), blown apart by a cascade, or walked off the far edge, and
+    // a count kept at the kill would miss three of those four. The worm is
+    // DESTROYED when its last piece goes and it was not already booked as
+    // leaked: a train that got across is not a train the board killed,
+    // however much of it was left smoking on the road behind it.
+    const cross = this.ucross[i];
+    if (cross >= 0) {
+      const worm = this.crossers[cross];
+      // ...unless the board is being SWEPT rather than fought (skipToTime).
+      // A jump takes every body off the field through this door, and a
+      // train the run never shot at must not be booked as one it destroyed
+      // — it would hand the sandbox free mission progress and, on a jump
+      // past the last launch, decide the mission outright
+      if (worm && --worm.alive <= 0 && !worm.leaked && !this.crossSweeping) this.crossKilled++;
+    }
     const n = --this.n;
     // the projectile pass holds its force-field carriers by index, and a
     // shot that kills what it hits reshuffles them mid-pass: the dead
@@ -7950,6 +9223,11 @@ export class Sim {
     this.uled[i] = this.uled[n];
     this.uvirus[i] = this.uvirus[n];
     this.uwave[i] = this.uwave[n];
+    // ...and the road the moved body was walking, with how far along it
+    // had got: a crosser that inherited a stale slot would be a car in
+    // somebody else's train, or a runt teleported onto a road
+    this.ucross[i] = this.ucross[n];
+    this.ucrossS[i] = this.ucrossS[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
     this.ufly[i] = this.ufly[n];
@@ -8330,7 +9608,22 @@ export class Sim {
     // narrow passage, shoving it back out of the entry window forever
     const PR = WALL_R + 4, REP = 55;
 
+    // THE CROSSERS COME OFF THIS PASS ENTIRELY (updateCrosser): they are
+    // kinematic, and a body whose position is read off a road has no use
+    // for a heading, a shove, a wall or a steering force. The ones that
+    // reach the exit are lifted afterwards rather than in the loop —
+    // removeUnit swaps the last row down into the dead one's slot, and a
+    // descending walk that removed in place would step straight over
+    // whatever landed there
+    let leaked: number[] | null = null;
+    let slain: number[] | null = null;
     for (let i = this.n - 1; i >= 0; i--) {
+      if (this.ucross[i] >= 0) {
+        const step = this.updateCrosser(i, dt);
+        if (step === CROSS_LEAKED) (leaked ??= []).push(i);
+        else if (step === CROSS_DEAD) (slain ??= []).push(i);
+        continue;
+      }
       const fly = this.ufly[i] !== 0;
       const nav = this.unav[i] !== 0;
       const mf = nav ? this.navalField : field;
@@ -8363,7 +9656,7 @@ export class Sim {
         // A BOMBER DIVES (levels.ts payload): with a structure picked
         // inside its seek reach (updateUnitWeapons) it flies straight at
         // that instead of the core, and goes off on contact
-        const dive = KIND_PAYLOAD[ukind[i]] ? this.utgt[i] : null;
+        const dive = KIND_PAYLOAD[ukind[i]] && !this.aimIsConvoy(this.utgt[i]) ? this.utgt[i] : null;
         if (dive) {
           const tx = dive.x - upx[i], ty = dive.y - upy[i];
           const tl = Math.sqrt(tx * tx + ty * ty) || 1;
@@ -8391,7 +9684,10 @@ export class Sim {
         // target it can SEE (updateUnitWeapons casts the ray every tick),
         // so there is no rock on the line. A crowd on the line is sorted
         // out by the same shove that sorts out every other body's.
-        const rush = HAS_CHARGE && KIND_CHARGE[ukind[i]] > 0 ? this.utgt[i] : null;
+        const rush =
+          HAS_CHARGE && KIND_CHARGE[ukind[i]] > 0 && !this.aimIsConvoy(this.utgt[i])
+            ? this.utgt[i]
+            : null;
         if (rush && this.canWalkTo(upx[i], upy[i], rush.x, rush.y, mf)) {
           const tx = rush.x - upx[i], ty = rush.y - upy[i];
           const tl = Math.sqrt(tx * tx + ty * ty) || 1;
@@ -8436,12 +9732,14 @@ export class Sim {
       // soaked body under a dartback3 is slowed and hurried at once, and the
       // product is the honest answer to both.
       const haste = HAS_HASTE_AURA && this.uhasteT[i] > 0 ? this.uhasteMul[i] : 1;
+      // ...unless the kind refuses every slow there is (KIND_NO_SLOW). The
+      // soak is still on the body and still doing everything else a soak
+      // does; this one branch is where it would have cost seconds
+      const slow = uwet[i] > 0 && !KIND_NO_SLOW[ukind[i]] ? uwetSlow[i] : 1;
       const spd =
         uspawn[i] > SPAWN_INVINCIBLE - SPAWN_UNMOVING
           ? 0
-          : uwet[i] > 0
-            ? uspd[i] * uwetSlow[i] * land * haste
-            : uspd[i] * land * haste;
+          : uspd[i] * slow * land * haste;
       uvx[i] += (flowTmp.x * spd - uvx[i]) * steer;
       uvy[i] += (flowTmp.y * spd - uvy[i]) * steer;
 
@@ -8702,6 +10000,13 @@ export class Sim {
       if (chain) this.updateSegments(i, chain, len, dt);
       if (nav) this.updateWake(i, dt, water[ci] !== 0);
     }
+    // the exits, highest slot first so each swap-remove only ever moves a
+    // row this list has already finished with
+    // the dead first, then the leakers: a piece can only be one of the two
+    // and both lists were gathered on the same descending walk, so the
+    // order is only about reading the code
+    if (slain) for (const i of slain) this.killUnit(i);
+    if (leaked) for (const i of leaked) this.leakCrosser(i);
   }
 
   /**
@@ -9049,6 +10354,19 @@ export class Sim {
     // so there is nothing for plating to shave. It is also the whole reason
     // the Venom spitters and the Ground mechs are different problems.
     if (!pierceArmor && !isCore(t)) dmg = Sim.applyArmor(dmg, t.spec.armor);
+    // THE CART TAKES ITS HIT SOMEWHERE ELSE (damageConvoy). Everything
+    // below this line answers the death of a BUILDING — a revive, a
+    // payout, the virus moving on, a conquest, the ground being handed
+    // back — and a convoy is a vehicle with a mission riding on it. The
+    // guard is on the list being non-empty, so every other board pays one
+    // compare per structure hit.
+    if (this.convoys.length > 0) {
+      const c = this.convoyOf(t);
+      if (c) {
+        this.damageConvoy(c, dmg);
+        return;
+      }
+    }
     t.hp -= dmg;
     if (t.hp > 0) return;
     t.hp = 0;
@@ -9540,7 +10858,11 @@ export class Sim {
    * grid lookup and nothing more.
    */
   myStructAt(px: number, py: number, pad = 0): Structure | null {
-    const exact = this.structureAt(px, py);
+    // the cart is not pickable either, for towerAt's reason: the selection
+    // and the inspector are about BUILDINGS, and a hauler inspected would
+    // print the stats of the turret its spec is a copy of
+    const hit = this.structureAt(px, py);
+    const exact = hit && this.isConvoy(hit) ? null : hit;
     if (exact || pad <= 0) return exact;
     let best: Structure | null = null, bd = Infinity;
     const near = (t: Structure): void => {
@@ -11328,7 +12650,16 @@ export class Sim {
       this.ushield[i] -= soaked;
       amount -= soaked;
     }
-    if (amount > 0) {
+    // A CROSSER'S HEALTH IS NOT ITS OWN (drainCrosser): the hit comes off
+    // the train's pool, and this body's own bar catches up on the next
+    // tick. Everything above this line still applies to the CAR that was
+    // hit — its plating, the soak on it, the cap over it — because that is
+    // what the shot actually struck; only where the remainder is spent
+    // moves.
+    const cross = this.ucross[i];
+    if (cross >= 0) {
+      if (amount > 0) this.drainCrosser(cross, amount);
+    } else if (amount > 0) {
       this.uhp[i] -= amount;
       // TERMINAL PROTOCOL (relics.ts): a body knocked to the last fraction
       // of its own pool does not get to spend it. Zeroing the health is

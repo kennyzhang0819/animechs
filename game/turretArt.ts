@@ -62,7 +62,7 @@ export const GUN_R: Mat = rev(GUN);
 export const SLATE: Mat = ["#343846", "#4e5464"];
 export const IRON: Mat = ["#5a5f6e", "#8b90a0"];
 /**
- * THE RELAY'S LAMP, and the one accent on this list that is not the colour
+ * THE BEACON'S LAMP, and the one accent on this list that is not the colour
  * of something a turret throws (ACCENT below). A mast throws nothing — what
  * it hands out is the player's own permission to build, so it wears the
  * player's own amber, the colour the core is drawn in and the colour every
@@ -72,7 +72,7 @@ export const IRON: Mat = ["#5a5f6e", "#8b90a0"];
  */
 export const POWER: Mat = ["#f6a53a", "#ffd37f"];
 /**
- * THE RELAY'S OWN PLATING, darker and bluer than a turret's gunmetal, so a
+ * THE BEACON'S OWN PLATING, darker and bluer than a turret's gunmetal, so a
  * mast is not mistaken for a gun at a glance. It is NOT the core's slate
  * either (SLATE/IRON above are the core's and nowhere else) — the board has
  * three kinds of building on it now and each one is a different metal.

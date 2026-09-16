@@ -1,8 +1,15 @@
 # Authoring waves: one script, a deal that turns every wave
 
-Every map plays the same fifty waves. What makes one map's campaign
-different from another's is its ground and its doors, and the **family
-roll** the deploy makes: the script is authored in three unit families
+**The waves are not the objective.** Every map's objective is its
+**mission** (`docs/mission-design.md`) — hold a line for so many waves,
+last a clock out, cut down so many crossers — and the script is the
+PRESSURE UNDERNEATH it: an engine that puts bodies on the field on a
+clock and never runs out. Author it as a difficulty curve, not as a
+finish line.
+
+Every map plays the same fifty waves, and then the same fifty again. What
+makes one map's campaign different from another's is its ground and its
+doors, and the **family roll** the deploy makes: the script is authored in three unit families
 (ground, ground support, air) and those are its three **slots**, but a
 slot is a ROLE — "the line", "the support behind it", "the third thing" —
 and not a promise about which family plays it. Every run rolls
@@ -60,11 +67,12 @@ one answer at a time, and air is fair.
 
 `public/levels/campaign.json` is the script every map plays — a
 `LevelDoc`, `{ id, waveGap, script }`, of raw per-kind counts per wave.
-`waveGap` is the seconds held between waves (15 as authored — the clock
+`waveGap` is the seconds held between waves (19 as authored — the clock
 starts when the previous wave has finished ENTERING, not when it dies, so
 the waves overlap and the field is a tide). Fifty waves, a few dozen bodies
 on wave 1 and thousands by the end, at Mindustry's own unit numbers.
-`index.json` beside it lists the documents. Edit a script in the admin
+`index.json` beside it lists the documents. Fifty is the document's length
+and not the run's — past it the tide takes over (below). Edit a script in the admin
 level editor (**Edit level** on the map's card in `/admin`) or by hand in
 the JSON; the dev save API (`/api/levels`) writes the campaign document and
 refuses everything else.
@@ -74,21 +82,89 @@ the mutator roll and the XP bonus (`RUNGS` in `game/ladder.ts`), never
 which waves come, so every number the editor prints about a script is true
 at every rung up to the count.
 
+## The clock is the script
+
+**Wave n lands at `WAVE_GAP_OPENING + (n-1) x (waveGap + WAVE_RELEASE_SECONDS)`
+seconds of run time, and nothing about the board can move it**
+(`Sim.waveStartTime`). At the shipped 19-second gap that is a wave every
+**22.5s**, so the fifty-wave script is 1,105s of schedule whatever map it is
+played on and whatever difficulty it is played at.
+
+It used to be a lower bound rather than a schedule. One wave was loaded at a
+time and the next waited for the last to finish spawning, so a map whose drop
+zones could not pass wave forty in 3.5 seconds ran LONGER — by minutes, on a
+tight board at a high rung, with nothing on screen saying why. **Several waves
+release at once now** (`Sim.live`): a wave that has outrun its doors keeps
+releasing while the one behind it lands, oldest first. Congestion costs a
+thicker field and never a longer run.
+
+What that means when you author:
+
+- **The gap is the whole of the pacing.** `waveGap` plus
+  `WAVE_RELEASE_SECONDS` is the cadence, exactly, and the run's length is
+  arithmetic on it. Nothing else — not a wave's size, not a map's door
+  count — moves the clock.
+- **A wave's SIZE decides how hard it arrives, never how long it takes.**
+  Author a wave the doors cannot pass in 3.5s and you are authoring an
+  overlap on purpose: two waves on the field together, which is a real and
+  usable difficulty lever. It just no longer buys you extra minutes.
+- **Everything else in the run reads the same clock** — a survive's
+  deadline, an intercept's launches (`Sim.runCrossers`), the tide's cycles,
+  and the sandbox's jump (`Sim.skipToTime`, `time M:SS` in the console).
+
+## The tide: the script is infinite
+
+A script is a finite document and a run is not. **When the cursor reaches
+the last wave and the mission is still open, the last `TIDE_CYCLE_WAVES`
+(eleven — waves 40 to 50 of a fifty-wave script) go again**, and every
+cycle adds `TIDE_LEVELS` to the enemy level every body spawns at
+(`Sim.loadStep`). `TIDE_LEVELS` is `LEVELS_PER_DOUBLING` in
+`game/ladder.ts`, so the climb is **x2 health, then x4, then x8**, with no
+ceiling. The HUD says which cycle it is on once it is past the first.
+
+Three things about it that are load-bearing when you author:
+
+- **A level is health and nothing else** (`unitHpAtLevel`). Same speed,
+  same armour, same drop, same silhouette. The swarm that comes back is
+  the swarm the player just beat, and the only question it asks is
+  whether the guns bought so far still cut it. That is why levels are the
+  knob and counts are not — a count ramp past wave 50 would change the
+  picture on screen and the cost of the frame with it.
+- **Eleven waves, not one.** The tail of a script is its shape — a lull, a
+  spike, a boss — and a finale sent on a loop is a metronome. The cycle
+  keeps the rhythm you wrote, so **the last eleven waves are the ones that
+  get played forever**: author them as a stretch that stands repeating.
+- **The scrap does not double with the health.** A kill pays off the
+  body's AUTHORED pool (`game/economy.ts`), so income is flat across the
+  climb and the tide is where a board stops being able to buy its way
+  out. That is the shape an endless mode wants; it is also why the tide is
+  not a farm.
+
 ## Missions
 
-- **hold** — clear every wave with the core standing. There are no
-  lives: the core carries `CORE_HP` and the run is lost when it falls.
-  Every shipped map is a hold.
-- **survive** — last `minutes` on the clock. The script plays through and,
-  if the clock is still running when it ends, its **last waves are sent
-  again** every gap, each repeat `SURVIVE_LOOP_LEVELS` enemy levels
-  heavier (`Sim.loadStep`). Wired and waiting for a map that wants it.
+The mission is the objective (`docs/mission-design.md` for the design, the
+`Mission` union in `game/levels.ts` for the shapes). What the script owes
+each of them:
+
+- **hold** — break `waves` waves with the core standing; a wave counts
+  when every body it sent is down (`Sim.wavesCleared`). Unset, the target
+  is the script's own length, which is what Confluence plays. **Ask for
+  more waves than the document holds and the hold plays the tide** — that
+  is how a hold map gets the infinite climb.
+- **survive** — last `minutes` on the clock. The tide is what keeps the
+  board honest for however long that is.
+- **intercept** — destroy `kills` crossers before they leave. The waves
+  are pressure at the core underneath a mission happening elsewhere, so
+  they must not run dry while the run is still going.
+
+There are no lives under any of them: the core carries `CORE_HP` and the
+run is lost when it falls.
 
 ## The price bands
 
 There is no tier gate inside a run: whatever the save owns it may place
 from wave 1. The economy is the swarm's — every kill drops its tier's
-scrap and every wave staged pays a bonus (`game/economy.ts`) — so a script
+scrap and nothing else pays anything (`game/economy.ts`) — so a script
 prices its own defence: the three stages (`STAGES`) — waves 1–20, 21–35,
 36–50 — are the stretches the three price bands are authored against,
 and the **Stages** panel on the balance page sums what each stage pays
@@ -107,6 +183,15 @@ Rules of thumb for the counts:
 - **Spend the budget on T3/T4/T5.** One apex weighs as much as sixty
   runts, and the late script is where the phase-tier turrets earn
   their price.
+- **A wave cannot send an objective.** The Sovereign and the Borer's
+  three pieces are `OBJECTIVE_KINDS` (`game/levels.ts`): a mission puts
+  them on the board and nothing else can, so `waveGroups` strips them from
+  a wave whatever the document says and the level editor does not offer
+  their rows. The boss used to be typed into wave 50 as the campaign's
+  curtain; a script that loops forever has no curtain to be, and a boss on
+  a lap counter is ordinary traffic at double health. The bodies are not
+  retired — every line of them is live, and they are waiting on the
+  missions that field them (`docs/mission-design.md`).
 - **A wave's keys are IDS, not names.** A body is called after its family
   and how far up it stands — `Ironhide (runt)` to `Ironhide (apex)`,
   five ranks shared by every family (levels.ts `UNIT_RANKS`) — but the

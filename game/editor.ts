@@ -6,16 +6,16 @@ import {
   COLS,
   BASE_SIZE,
   H,
-  MAX_RELAYS,
-  RELAY_POWER_R,
-  RELAY_SIZE,
+  MAX_BEACONS,
+  BEACON_POWER_R,
+  BEACON_SIZE,
   ROWS,
   TOWERS,
   W,
 } from "./constants";
 import {
   contentRows,
-  defaultRelayPrice,
+  defaultBeaconPrice,
   SPAWN_STYLE,
   PALETTE,
   terrainFromMap,
@@ -26,7 +26,7 @@ import {
 import { ALL_LAYERS, Renderer, type TerrainLayers } from "./renderer";
 import { loadInvertZoom } from "./progress";
 import { canHoldSpawn, isWaterFloor } from "./terrain";
-import { WALL_DEEP, WALL_PINE, type MapRelay, type Prop, type Terrain } from "./terrain";
+import { WALL_DEEP, WALL_PINE, type MapBeacon, type Prop, type Terrain } from "./terrain";
 
 // THE ZOOM FLOOR IS NO LONGER COVER. It used to be 1 — "the world fills
 // the viewport" — which meant the one view an author needs most, the whole
@@ -55,7 +55,7 @@ interface Snapshot {
   spawn: Uint8Array;
   pines: Prop[];
   decor: Prop[];
-  relays: MapRelay[];
+  beacons: MapBeacon[];
   base: { x: number; y: number; size: number };
 }
 
@@ -270,7 +270,7 @@ export class MapEditor {
     this.terrain.spawn.set(s.spawn);
     this.terrain.pines = s.pines;
     this.terrain.decor = s.decor;
-    this.terrain.relays = s.relays;
+    this.terrain.beacons = s.beacons;
     this.terrain.base = s.base;
     this.dirty = true;
     this.renderer.rebuildTerrain(this, this.layers);
@@ -295,7 +295,7 @@ export class MapEditor {
       spawn: this.terrain.spawn.slice(),
       pines: this.terrain.pines.map((p) => ({ ...p })),
       decor: this.terrain.decor.map((p) => ({ ...p })),
-      relays: this.terrain.relays.map((r) => ({ ...r })),
+      beacons: this.terrain.beacons.map((r) => ({ ...r })),
       base: { ...this.terrain.base },
     });
     if (this.undoStack.length > UNDO_CAP) this.undoStack.shift();
@@ -445,50 +445,50 @@ export class MapEditor {
    * the swarm can never reach.
    */
   /**
-   * STAMP A RELAY HERE, or take the one that is already here back off.
+   * STAMP A BEACON HERE, or take the one that is already here back off.
    *
-   * ONE CLICK, BOTH WAYS, because a relay is a point and not a stroke:
+   * ONE CLICK, BOTH WAYS, because a beacon is a point and not a stroke:
    * there is no brush size, no drag and nothing to erase over. Clicking a
-   * relay removes it, which is the only gesture an author needs and the
+   * beacon removes it, which is the only gesture an author needs and the
    * one they will reach for.
    *
-   * IT LANDS ON ROCK AND NOWHERE ELSE. A relay stands on a hill precisely
-   * so that nothing can reach it (terrain.ts MapRelay) — one placed on
-   * open ground would be a relay in the swarm's way, which is a promise
+   * IT LANDS ON ROCK AND NOWHERE ELSE. A beacon stands on a hill precisely
+   * so that nothing can reach it (terrain.ts MapBeacon) — one placed on
+   * open ground would be a beacon in the swarm's way, which is a promise
    * this game does not keep about them. A click on floor does nothing
-   * rather than raising rock to oblige: the author asked for a relay, not
+   * rather than raising rock to oblige: the author asked for a beacon, not
    * for terrain.
    *
-   * THE PRICE IS A GUESS (maps.ts defaultRelayPrice) off how far out it
+   * THE PRICE IS A GUESS (maps.ts defaultBeaconPrice) off how far out it
    * lands, and tuning it is a JSON edit. That is deliberate: a price is
    * where a mission is written, and a number that can be nudged with a
    * brush is a number that gets nudged by accident.
    */
-  private toggleRelay(gx: number, gy: number): void {
+  private toggleBeacon(gx: number, gy: number): void {
     const T = this.terrain;
-    const half = (RELAY_SIZE / 2) | 0;
-    const x0 = clamp(gx - half, 0, COLS - RELAY_SIZE);
-    const y0 = clamp(gy - half, 0, ROWS - RELAY_SIZE);
-    // a click anywhere on a standing relay takes it off
-    const hit = T.relays.findIndex(
-      (r) => gx >= r.x && gx < r.x + RELAY_SIZE && gy >= r.y && gy < r.y + RELAY_SIZE,
+    const half = (BEACON_SIZE / 2) | 0;
+    const x0 = clamp(gx - half, 0, COLS - BEACON_SIZE);
+    const y0 = clamp(gy - half, 0, ROWS - BEACON_SIZE);
+    // a click anywhere on a standing beacon takes it off
+    const hit = T.beacons.findIndex(
+      (r) => gx >= r.x && gx < r.x + BEACON_SIZE && gy >= r.y && gy < r.y + BEACON_SIZE,
     );
     if (hit >= 0) {
-      T.relays.splice(hit, 1);
+      T.beacons.splice(hit, 1);
       this.dirty = true;
       return;
     }
-    if (T.relays.length >= MAX_RELAYS) return;
+    if (T.beacons.length >= MAX_BEACONS) return;
     // every cell of the footprint has to be rock, and none of it a tree:
     // a pine is a prop the swarm can clear out from under it
-    for (let y = y0; y < y0 + RELAY_SIZE; y++)
-      for (let x = x0; x < x0 + RELAY_SIZE; x++) {
+    for (let y = y0; y < y0 + BEACON_SIZE; y++)
+      for (let x = x0; x < x0 + BEACON_SIZE; x++) {
         const i = y * COLS + x;
         if (!T.blocked[i] || T.wall[i] === WALL_PINE) return;
       }
     const bx = T.base.x + T.base.size / 2, by = T.base.y + T.base.size / 2;
-    const d = Math.hypot(x0 + RELAY_SIZE / 2 - bx, y0 + RELAY_SIZE / 2 - by);
-    T.relays.push({ x: x0, y: y0, price: defaultRelayPrice(d) });
+    const d = Math.hypot(x0 + BEACON_SIZE / 2 - bx, y0 + BEACON_SIZE / 2 - by);
+    T.beacons.push({ x: x0, y: y0, price: defaultBeaconPrice(d) });
     this.dirty = true;
   }
 
@@ -521,8 +521,8 @@ export class MapEditor {
       this.placeBase(gx, gy);
       return;
     }
-    if (this.set.kind === "relay") {
-      this.toggleRelay(gx, gy);
+    if (this.set.kind === "beacon") {
+      this.toggleBeacon(gx, gy);
       return;
     }
     if (this.set.kind === "path") {
@@ -804,30 +804,30 @@ export class MapEditor {
     const s = this.scale * this.zoom;
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
 
-    // THE RELAYS THIS MAP CARRIES, always — they are a layer of the
+    // THE BEACONS THIS MAP CARRIES, always — they are a layer of the
     // document and an author has to be able to see the shape they make
     // without holding the brush that draws them. Each with the circle of
-    // ground it opens, because a relay is that circle: two of them whose
-    // discs overlap completely are one relay and a wasted price.
+    // ground it opens, because a beacon is that circle: two of them whose
+    // discs overlap completely are one beacon and a wasted price.
     //
     // On the OVERLAY rather than in the terrain batch (Renderer.
-    // rebuildTerrain) because relays are not tiles — they are a list with
+    // rebuildTerrain) because beacons are not tiles — they are a list with
     // numbers on it, and the price has to be drawn as text.
-    if (this.terrain.relays.length > 0) {
-      const side = RELAY_SIZE * CELL;
+    if (this.terrain.beacons.length > 0) {
+      const side = BEACON_SIZE * CELL;
       c.setLineDash([12 / s, 10 / s]);
       c.strokeStyle = "rgba(255,211,127,0.35)";
       c.lineWidth = 1.5 / s;
-      for (const r of this.terrain.relays) {
+      for (const r of this.terrain.beacons) {
         c.beginPath();
-        c.arc((r.x + RELAY_SIZE / 2) * CELL, (r.y + RELAY_SIZE / 2) * CELL, RELAY_POWER_R, 0, Math.PI * 2);
+        c.arc((r.x + BEACON_SIZE / 2) * CELL, (r.y + BEACON_SIZE / 2) * CELL, BEACON_POWER_R, 0, Math.PI * 2);
         c.stroke();
       }
       c.setLineDash([]);
       c.fillStyle = "rgba(255,211,127,0.85)";
       c.strokeStyle = "rgba(20,14,4,0.9)";
       c.lineWidth = 1.5 / s;
-      for (const r of this.terrain.relays) {
+      for (const r of this.terrain.beacons) {
         c.fillRect(r.x * CELL, r.y * CELL, side, side);
         c.strokeRect(r.x * CELL, r.y * CELL, side, side);
       }
@@ -839,9 +839,9 @@ export class MapEditor {
       c.font = "bold 11px system-ui, sans-serif";
       c.textAlign = "center";
       c.textBaseline = "top";
-      for (const r of this.terrain.relays) {
-        const sx = ((r.x + RELAY_SIZE / 2) * CELL - this.tlx) * s;
-        const sy = ((r.y + RELAY_SIZE) * CELL - this.tly) * s + 3;
+      for (const r of this.terrain.beacons) {
+        const sx = ((r.x + BEACON_SIZE / 2) * CELL - this.tlx) * s;
+        const sy = ((r.y + BEACON_SIZE) * CELL - this.tly) * s + 3;
         const text = `${r.price}`;
         const w = c.measureText(text).width + 8;
         c.fillStyle = "rgba(10,12,20,0.8)";
@@ -873,11 +873,11 @@ export class MapEditor {
       c.strokeRect(x0, y0, side, side);
       return;
     }
-    if (this.set.kind === "relay") {
-      const half = (RELAY_SIZE / 2) | 0;
-      const x0 = clamp(this.hoverGx - half, 0, COLS - RELAY_SIZE) * CELL;
-      const y0 = clamp(this.hoverGy - half, 0, ROWS - RELAY_SIZE) * CELL;
-      const side = RELAY_SIZE * CELL;
+    if (this.set.kind === "beacon") {
+      const half = (BEACON_SIZE / 2) | 0;
+      const x0 = clamp(this.hoverGx - half, 0, COLS - BEACON_SIZE) * CELL;
+      const y0 = clamp(this.hoverGy - half, 0, ROWS - BEACON_SIZE) * CELL;
+      const side = BEACON_SIZE * CELL;
       c.fillStyle = "rgba(255,211,127,0.25)";
       c.fillRect(x0, y0, side, side);
       c.strokeStyle = "rgba(255,211,127,0.9)";
@@ -886,7 +886,7 @@ export class MapEditor {
       // ...and the circle it would open, which is the whole reason to care
       // where it goes
       c.beginPath();
-      c.arc(x0 + side / 2, y0 + side / 2, RELAY_POWER_R, 0, Math.PI * 2);
+      c.arc(x0 + side / 2, y0 + side / 2, BEACON_POWER_R, 0, Math.PI * 2);
       c.setLineDash([12 / s, 10 / s]);
       c.lineWidth = 1.5 / s;
       c.stroke();

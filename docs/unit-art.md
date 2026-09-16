@@ -2,12 +2,12 @@
 
 This is the direction the enemy art settled on after the animal trial
 (behind `ANIMAL_ART` in `game/animalFlag.ts`), written down so the next
-family is drawn to the same rules without re-running the trial. All eight
+family is drawn to the same rules without re-running the trial. All nine
 families are on the turrets' grammar now (section 1b): the Ironhide rhino
 in `game/ironhideArt.ts`, the Starhart stag, Stoop bat, Dartback poison frog,
 Skate manta and Livewire narwhal in `game/familyArt.ts`, the Tusker
 elephant in `game/tuskerArt.ts`, the Grapnel starfish in
-`game/grapnelArt.ts`, on the turret
+`game/grapnelArt.ts`, the Kettle vulture in `game/kettleArt.ts`, on the turret
 engine in `game/turretArt.ts`, with what they share in
 `game/animalArt.ts` and the packing in `game/atlas.ts`.
 
@@ -299,7 +299,33 @@ footprint gets.
 | Livewire, the narwhal | `game/familyArt.ts` | body and two flippers | 44, 56, 80, 176, 232 |
 | Tusker, the elephant | `game/tuskerArt.ts` | mech to T3, four legs from T4 | 56, 72, 96, 136, 176 |
 | Grapnel, the starfish | `game/grapnelArt.ts` | mech at every tier, and the leg cell is the rowing arms | 36, 52, 72, 116, 148 |
+| Kettle, the vulture | `game/kettleArt.ts` | body and two wings, one chord out to the wrist and slotted into fingers | 40, 56, 88, 168, 216 |
 | Sovereign, the sea eagle (the BOSS, one body) | `game/kingArt.ts` | body and two wings | 512 |
+| Borer, the crosser (the MISSION's, three pieces) | `game/wormArt.ts` | none — one flat quad a piece, shown at 1.5x | 96, 96, 96 |
+| Hauler, the convoy (the MISSION's, and the PLAYER's) | `game/convoyArt.ts` | none — one flat quad | 192 |
+
+**The Hauler is not the swarm's**, and it is the only body on the sheet
+that is not. It is the escort mission's cart (`docs/mission-design.md`) —
+a tracked flatbed with three crates of cargo on it, crossing Thornway at
+walking pace while the player pays to keep it alive — and the one thing
+it does that nothing else here does is wear the PLAYER'S amber
+(`turretArt.ts` POWER): the hue the core, the beacons' lamps and every
+price on the HUD are drawn in, and the one hue nothing in the swarm has.
+The amber is the CARGO, because the cargo is what the mission is about
+and it is the part a player should find first. Everything else about the
+grammar holds — the material pairs, the reversed fold, the four-pixel
+floor, no eyes and no round pair, the quad is the box.
+
+**The Borer is not an animal, and it is the one body on the sheet that is
+allowed not to be.** Everything in section 1 is a rule about drawing a
+creature, and the Borer is a machine: the crosser of the *intercept*
+mission (`docs/mission-design.md`), a thing that walks a fixed road across
+the map on rails it laid itself. Nothing else about the grammar bends for
+it — the material pairs, the reversed fold, the four-pixel floor, no eyes
+and no round pair, the quad is the box — and the one rule it does not keep
+is the one that says a family is an animal. It is not a family: it is
+three pieces of one object, drawn on one grid, and its three kinds are in
+no `FAMILIES` row so nothing can ever roll one into a wave.
 
 **The boss is not a family, and it is the one body allowed to be a
 different order of size.** The Sovereign is drawn once, on a 512 grid, and
@@ -384,6 +410,16 @@ kind, behind the same flag.
 art. Turret fire aimed at a silhouette now hits it.
 
 ## 3. Adding a family
+
+A worked example of step 1 that has not been taken any further:
+[docs/air-concepts.md](air-concepts.md) draws three candidate flyers for
+a second air family (`game/skyConceptArt.ts`, `npm run gen:air`) and says
+what each one would cost to build. It is also where four passes' worth of
+what goes wrong with a BIRD on this grid is written down — the short
+version being that the Stoop's wing is nearly twice as deep as it is long,
+which is right for a bat and wrong for everything with feathers, and a
+drawing that fills the box with body and hangs a deep slab off each side
+comes out a bottle with wings every time.
 
 1. Pick the animal and draw the T5 first on the turret engine, facing
    up, left half only, on its hitbox grid. If it does not read as that

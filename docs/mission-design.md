@@ -1,15 +1,47 @@
 # Mission design
 
-What a map asks a run to DO, beyond surviving its fifty waves.
+What a map asks a run to DO. **It is the whole of what winning means** —
+there is no longer anything else a run can finish.
 
 `authoring-maps.md` is the terrain; this is what the terrain is for. A
 mission is a per-map objective, and the map is built around it.
+
+## The waves stopped being the objective
+
+The game used to be won by outlasting a document: fifty authored waves,
+and a run that cleared the fiftieth had cleared the map. That is retired.
+**The script is an engine now** — when it reaches its last wave and the
+mission is still open it replays its last eleven, one doubling of enemy
+health heavier every cycle, forever (`Sim.loadStep`, the tide;
+`docs/authoring-waves.md`). A script cannot run out underneath a run, so
+nothing can be finished by waiting.
+
+Three consequences for everything below:
+
+- **Every map owes an objective.** A board with no mission the sim can
+  meet is a board that can only ever be lost, and `npm run check` fails
+  a playable world that has one (`scripts/check.mjs`, the `worlds` gate).
+- **"Hold the line" is a NUMBER, not a document.** The classic assignment
+  survives as `hold { waves }` — break that many waves with the core
+  standing — and unset it means the script's own length, which is what
+  Confluence plays. Ask for more than the document holds and a hold plays
+  the infinite climb like anything else.
+- **Every progress bar reads the mission** (`missionProgress` in
+  `game/levels.ts`, one number the sim publishes and every panel draws).
+  A bar drawn off the wave number would fill to the brim and start again.
+- **The objective bodies belong to missions, not waves.** The Sovereign
+  and the Borer are `OBJECTIVE_KINDS` (`game/levels.ts`): one thing the
+  run has to go and deal with, which is the shape an objective has. A wave
+  cannot send one — `waveGroups` strips them — and each wears a **health
+  bar** at the top of the screen while it is on the field
+  (`Sim.objectiveBars`), stacked downward when there are several. A Borer
+  gets ONE bar over its whole twenty-piece pool.
 
 ## What a mission has to work with
 
 The run has ONE VERB: spend scrap to place a structure. Nothing is
 produced, nothing is commanded, nothing is hidden — a player sees the
-whole board from wave 1 and can put a turret anywhere their relay zones
+whole board from wave 1 and can put a turret anywhere their beacon zones
 reach. So a mission cannot ask for scouting, micro or an army. It can
 only ask the player to **spend somewhere other than the base**, and the
 whole of its difficulty is the cost of doing that.
@@ -25,7 +57,57 @@ Three consequences, and every archetype below is shaped by them:
   A mission whose twist is that the player did not know is not a mission.
 - **A MISSION MUST COMPETE WITH THE WAVE CLOCK.** "Kill it eventually"
   is not an objective. The objective needs a deadline, a window, or a
-  cost that climbs while it is ignored.
+  cost that climbs while it is ignored — and the clock it is competing
+  with does not stop, because the swarm gets heavier for as long as the
+  run lasts (the tide).
+
+## What is built
+
+**Three of the eight, counting the plain one — and the last two are the
+PAIR.** Confluence plays *hold the
+line* — fifty waves broken with the core standing, the assignment the
+whole campaign is tuned against. Coldline plays *intercept the crosser*:
+seven Borers — twenty-car boring machines — cross the map on two fixed
+roads while the wave script runs at the core underneath, and a run that
+lets two of them reach the far side is over whether or not the base is
+still standing.
+
+Where it lives, since a mission is spread across the file the way one has
+to be:
+
+| | |
+|---|---|
+| `Mission` / `InterceptMission` | `game/levels.ts` — the union, and Coldline's authored numbers: how many, on which road, how far apart, how many may get past |
+| the objective's fraction | `missionProgress` / `missionCount` in `game/levels.ts` — one definition, read by the sim and the HUD alike |
+| the roads | `game/missions.ts` — the hard-coded lines, in cells, per map id |
+| the Borer | `game/levels.ts` (`WORM_CHAIN`, the three kinds) and `game/wormArt.ts` (the drawing) |
+| what happens | `Sim.runCrossers`, `launchCrosser`, `updateCrosser`, `leakCrosser`, and the two lines in `won()` and `lost()` |
+| whether the script loops under it | `Sim.tideTurns` — every mission but a hold that has staged its count |
+| what the player sees | the objective pane in `components/Animechs.tsx`, the road overlay in `Game.drawMissionRoads`, and the arrival ping on the corner map |
+
+**Thornway plays *escort the crosser*, which is Coldline in a mirror**:
+one Hauler of the player's own, rolling out of the core at 1:30 and
+crossing twelve hundred cells of double S at 1.6 tiles a second to the
+post in the far corner, stopping four times on the way to mend. Losing it
+loses the run. It cost almost no new mechanism and taught the most about
+the first one — everything the intercept needed in order to be a mission
+(an authored line, a clock read off run time, a body that is not the
+swarm, a bar that is the objective) the escort needed too, and the only
+thing it added was a body the SWARM shoots rather than one the board does.
+
+| | |
+|---|---|
+| `EscortMission` | `game/levels.ts` — the type, and Thornway's authored numbers: how many carts, how many may be lost, when the first rolls, which road, where it halts and what it mends |
+| the cart | `game/levels.ts` (`CONVOY_HP` and the numbers beside it) and `game/convoyArt.ts` (the drawing) |
+| what happens | `Sim.runConvoys`, `launchConvoy`, `updateConvoys`, `damageConvoy`, and the branches in `nearestStructure`, `structureAt`, `inReach` and `damageTower` |
+| what keeps the swarm off it | `Sim.aimIsConvoy` — the cart is a target and never a destination |
+
+The other five archetypes have a MAP each and no rule yet (`WORLDS`, the
+mission sketches). **Those boards are SHELVED and not in the game**
+(`PLAYABLE_WORLD_IDS` in `game/levels.ts`): terrain that is drawn with no
+reason to be played, carrying a placeholder hold. `npm run check` holds
+them to constructing without throwing and to nothing else — a shelved
+board is allowed to be unfinished, which is what shelving it says.
 
 ## The eight archetypes
 
@@ -41,7 +123,7 @@ shield projectors denying your ground · railguns chipping the base from
 out of range · nests that spawn forever once woken · suppressors that
 darken your zones.
 
-### 2. Intercept the crosser
+### 2. Intercept the crosser — BUILT, on Coldline
 
 Something moves across the map ignoring the base, and must die before it
 leaves.
@@ -50,12 +132,101 @@ Variants: an armoured convoy · a fleeing courier · a roaming beast · a
 builder planting enemy structures as it walks · a herd that must be
 thinned.
 
-### 3. Escort the crosser
+What Coldline does with it, and what the shape turned out to need:
+
+- **A crosser is a CHAIN, not a body.** The Borer is twenty separately
+  shootable pieces laid nose to tail — seventy tiles of train — and it
+  counts as destroyed only when every one of them is down. One hurtbox
+  on that silhouette is a mission about hitting a nose; twenty is a
+  mission about how much of a road you have under fire, which is the
+  thing the archetype is actually asking the player to pay for.
+- **NOTHING SLOWS IT AND NOTHING BLOCKS IT.** A Borer is `unslowable`
+  (`UnitStats`): a douser on the line still soaks it, still douses a fire
+  on it and still hands the electric ammunition its bonus, but it buys no
+  seconds. And it obstructs nothing either — a footprint may be dropped
+  on a train that is passing over the spot (`board.ts bodiesClear`),
+  because the train walks through buildings and would otherwise be
+  refusing the player ground on the one map about buying ground. The
+  arrival is a clock the road advertises from wave one; the only answer
+  to it is killing the thing.
+- **EVERY LAUNCH IS HEAVIER THAN THE LAST** (`wormRamp`) — 0.7 of the
+  pool at the first and 1.3 at the fifth, with the spare past that. The
+  five launches add up to the same total health a flat pool would, so
+  this is the mission's shape rather than its price: a board gets richer
+  between launches, and a train worth what the last one was worth is a
+  train the player has already solved.
+- **It walks an AUTHORED line and it walks it kinematically.** Not the
+  flow field, not the crowd shove, not wall collision — a position read
+  off a polyline at an arc length. Everything else on the board ends up
+  at the core, so the one thing a crosser must never do is drift toward
+  it, and a Borer wedged in a corner by a knockback would make "did it
+  get across" a question about physics.
+- **The roads are on screen from wave one.** Drawn under everything, dark
+  and dashed, with an arrowhead on the last leg. A mission with no fog in
+  it has no discovery in it either (see above), so a road a player found
+  out about by watching something walk down it would be a different and
+  worse mission.
+- **The allowance needs a SPARE.** The pattern sends exactly as many
+  crossers as the mission asks you to kill, so the one leak the rules
+  permit would be a lie without an extra launch to make it back — and the
+  spare is only sent to a run that needed it, so a clean run ends when
+  the pattern does.
+- **It is the first mission that can be failed with the core standing.**
+  Two through and the count can never be reached, so the run is over at
+  that moment rather than twenty minutes later. The loss screen had to
+  learn to say which of the two things went wrong.
+
+### 3. Escort the crosser — BUILT, on Thornway
 
 The same shape, friendly: it crosses, and it must survive.
 
 Variants: a merchant caravan that pays scrap · refugees · a slow ally
 that clears an objective on arrival · a supply run of your own.
+
+What Thornway does with it, and what the mirror turned out to need:
+
+- **The cart is a STRUCTURE, not a unit.** "The swarm shoots it exactly
+  the way it shoots a turret" is the whole specification of how the two
+  sides meet, and a TURRET is what that sentence is about — so every gun
+  on the swarm's side already knows what to do with it, and there is no
+  second targeting path to keep in step with the first. What it is not is
+  a member of the tower list: nothing counts it, sells it or selects it,
+  it claims no ground and it blocks no route.
+- **Nothing SEEKS it, and that line is the mission.** No body routes to
+  it, dives at it or charges it. A cart that pulled the swarm off its
+  route would be a second core — the player would defend one thing
+  instead of two and the base would go quiet, which is a different and
+  much worse map. So the pressure on the cart is a fact about WHERE THE
+  ROAD CROSSES THE SWARM'S ROUTE: a fact about the terrain, which is the
+  thing the player is buying guns against.
+- **A moving objective needs PLATING, not health.** The first cut had a
+  building's pool and a building's armour and died inside four minutes to
+  the crowd walking past it, because the road leaves the core and its
+  opening stretch runs through the traffic walking at the base. Forty
+  plating puts every light body on the ten-percent floor and leaves
+  calibre and rot as the real threats, which is the difference between a
+  mission about how many bodies the map happens to route past the road
+  and a mission about what the player brought.
+- **The halts are the mercy AND the trap.** It stops four times, mends a
+  third of its pool at each, and is the easiest target on the board while
+  it does. Every halt is therefore a position that had to be bought
+  before the cart got there — the archetype's own sentence about
+  opportunity cost, said in the only grammar this game has.
+- **The road's requirement is the opposite one.** A Borer's line is
+  straightened until it barely bends, because a seventy-tile train kinks
+  at a corner and because a battery has to be committed to it a long way
+  ahead. A cart is one body that turns on the spot, so its road is left
+  as the terrain drew it: 646 degrees of turning, and every bend a place
+  the swarm crosses the line while the cart is still on it.
+- **Three grid reads had to learn about it, and none of them failed
+  loudly.** The cart is not in the occupancy grid, because it moves — and
+  three separate things use that grid as their "is this still standing"
+  test: the target search's bounding box (which is the box the player's
+  BUILDINGS stand in, and a cart fifty tiles up the road is outside it),
+  the weapon's reach check before it pulls a trigger, and the shot's
+  arrival test in flight. With any one of them unpatched the swarm picked
+  the objective, held the objective, and never scratched it. **A moving
+  structure fails every test written for a stationary one**, quietly.
 
 ### 4. Hold remote ground
 
@@ -106,7 +277,7 @@ map has to supply:
 - **Somewhere the objective is, that is not on the way to anything.** A
   gun placed there defends nothing, which is what makes buying it a
   decision.
-- **A relay zone that reaches it, at a price.** The node's cost is the
+- **A beacon zone that reaches it, at a price.** The node's cost is the
   mission's entry fee and the clearest number to tune.
 - **A reason the objective cannot be answered by one turret.** It fights
   back, it moves, it is only open for a moment, or it takes a damage type

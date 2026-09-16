@@ -49,8 +49,10 @@ import {
   UV_TOWER_BASE1,
   UV_TOWER_BASE3,
   UV_TOWER_BASE4,
-  UV_RELAY,
+  UV_BEACON,
   UV_SHIELD_TOWER,
+  UV_CONVOY,
+  CONVOY_QUAD,
   UV_DISC_BIG,
   UV_TORCH,
   UV_COIL,
@@ -92,7 +94,9 @@ import {
   MERGE_GROWTH,
   NCELLS,
   PAL as PAL_IMPORT,
-  RELAY_SIZE,
+  BEACON_SIZE,
+  BEACON_VISION_FADE_R,
+  BEACON_VISION_R,
   ROWS as ROWS_IMPORT,
   TEAM_CRUX_RGB,
   TOWERS as TOWERS_IMPORT,
@@ -2035,6 +2039,48 @@ export class Renderer {
         dark.set(next);
       }
     }
+    // ...AND THE BEACONS BURN A HOLE IN IT (constants.ts BEACON_VISION_R).
+    //
+    // A beacon is authored on ROCK, which is the ground this pass has just
+    // finished painting black: the block was drawn and then buried, and a
+    // player looking for the thing they are being asked to pay four
+    // figures for could not see it. So each one lifts the darkness around
+    // itself — a lamp on a mast lighting the hill it stands on, which is
+    // both the obvious reading of the building and the thing that makes it
+    // findable.
+    //
+    // THE FALLOFF IS THE POINT. `dark` is an integer 0..DARK_RADIUS and
+    // the mask below ramps its alpha off that, so a ceiling of
+    // DARK_RADIUS * (d - inner) / (outer - inner) gives the hill back its
+    // own darkness one step at a time across the gap. Clamping flat to
+    // zero inside one radius would cut a hard-edged circle out of a soft
+    // gradient, which reads as a bug rather than as light.
+    //
+    // IT IS NOT BOUGHT AND NEVER CHANGES, which is why it belongs here, in
+    // the pass that runs once per map, rather than in the frame: where the
+    // beacons are is in the map document, the same on both threads, and a
+    // beacon the run never affords still lights its own rock.
+    if (layers.wall && T.beacons.length > 0) {
+      const inner = BEACON_VISION_R / CELL;
+      const outer = BEACON_VISION_FADE_R / CELL;
+      const span = Math.max(1e-6, outer - inner);
+      for (const b of T.beacons) {
+        const bx = b.x + BEACON_SIZE / 2, by = b.y + BEACON_SIZE / 2;
+        const x0 = Math.max(0, Math.floor(bx - outer)), x1 = Math.min(mapCols - 1, Math.ceil(bx + outer));
+        const y0 = Math.max(0, Math.floor(by - outer)), y1 = Math.min(mapRows - 1, Math.ceil(by + outer));
+        for (let y = y0; y <= y1; y++)
+          for (let x = x0; x <= x1; x++) {
+            const i = y * COLS + x;
+            if (dark[i] === 0) continue;
+            // the cell's own CENTRE against the disc, the same test every
+            // other radius in this game is measured with (Sim.rebuildPower)
+            const d = Math.hypot(x + 0.5 - bx, y + 0.5 - by);
+            if (d >= outer) continue;
+            const cap = d <= inner ? 0 : Math.floor((DARK_RADIUS * (d - inner)) / span);
+            if (cap < dark[i]) dark[i] = cap;
+          }
+      }
+    }
     const darkMask = new Uint8Array(n * 4);
     // how black THIS cell is allowed to get: DARK_MAX inland, ramping back
     // to fully opaque over the map's last DARK_RIM cells (see DARK_RIM)
@@ -2272,12 +2318,51 @@ export class Renderer {
     this.draw(this.walls, false);
   }
 
+  /**
+   * NOTHING IS DRAWN OUTSIDE THE MAP — a GL scissor on the world rect,
+   * set once a frame and left on for everything the camera draws.
+   *
+   * THE THING THAT NEEDED IT is the crosser. A Borer is laid on its road
+   * a whole train-length before the entry point (missions.ts, the run-up),
+   * which is a hundred cells of road off the west rim, so for the first
+   * half-minute of a launch most of the train is at negative world x —
+   * and it was being DRAWN there, a line of cars crawling across the black
+   * outside the board toward a map they had not entered yet. It gave away
+   * the arrival before the arrival and it looked like a bug, because it
+   * was one.
+   *
+   * A SCISSOR AND NOT A CULL. Dropping bodies whose centre is off the map
+   * leaves half a car hanging over the edge, and dropping them by their
+   * full extent pops six tiles of train into existence at the rim. The
+   * scissor cuts at the pixel, so a train crawls out of the edge the way
+   * it crawls out of rock.
+   *
+   * IT IS SET AFTER THE CLEAR, which is the one ordering that matters:
+   * glClear obeys the scissor, so a scissor set first would leave last
+   * frame's pixels standing wherever the map does not reach.
+   */
+  private scissorWorld(zoom: number, offX: number, offY: number, kPx: number): void {
+    const gl = this.gl;
+    const cw = this.canvas.width, ch = this.canvas.height;
+    const x0 = Math.round(offX * kPx), x1 = Math.round((W * zoom + offX) * kPx);
+    const y0 = Math.round(offY * kPx), y1 = Math.round((H * zoom + offY) * kPx);
+    // clamped into the canvas, and GL counts y from the BOTTOM
+    const sx = Math.max(0, Math.min(cw, x0));
+    const sw = Math.max(0, Math.min(cw, x1) - sx);
+    const sy = Math.max(0, Math.min(ch, ch - y1));
+    const sh = Math.max(0, Math.min(ch, ch - y0) - sy);
+    gl.scissor(sx, sy, sw, sh);
+    gl.enable(gl.SCISSOR_TEST);
+  }
+
   /** per-frame GL setup shared by the game and terrain-only render paths */
   private begin(zoom: number, offX: number, offY: number, kPx: number): void {
     const gl = this.gl;
     this.view = { zoom, offX, offY, kPx };
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.disable(gl.SCISSOR_TEST); // the clear is the whole canvas (scissorWorld)
     gl.clear(gl.COLOR_BUFFER_BIT);
+    this.scissorWorld(zoom, offX, offY, kPx);
     gl.useProgram(this.prog);
     gl.uniform2f(this.uRes, this.canvas.width / kPx, this.canvas.height / kPx);
     gl.uniform1f(this.uZoom, zoom);
@@ -2892,34 +2977,71 @@ export class Renderer {
       const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
       this.push(dyn, s.x, s.y, spx, spx, 0, UV_SHIELD_TOWER, tint[0], tint[1], tint[2], 1);
     }
-    // THE RELAYS, beside the shield towers because they are the same kind of
+    // THE ESCORT'S HAULER (simview.ts ConvoyView, game/convoyArt.ts), over
+    // the buildings and under the bodies: it is a vehicle crossing ground
+    // rather than a thing standing on it, and a runt walking past should
+    // be drawn in front of the cart the way it is drawn in front of a
+    // turret.
+    //
+    // IT TURNS, WHICH NOTHING ELSE ON THIS PASS DOES. A shield tower, a
+    // beacon and a turret base are all square things bolted to the
+    // ground; the cart is on a road and faces the way the road goes, so
+    // it is pushed on its own heading exactly as a body is.
+    //
+    // ...AND IT GREYS WITH ITS HEALTH off the same HP_TINT every body on
+    // the board reads, so the one bar a player is watching at the top of
+    // the screen has a second copy of itself under their cursor
+    {
+      const cv = sim.convoy;
+      if (
+        cv.live &&
+        cv.x >= vx0 - CONVOY_QUAD && cv.x <= vx1 + CONVOY_QUAD &&
+        cv.y >= vy0 - CONVOY_QUAD && cv.y <= vy1 + CONVOY_QUAD
+      ) {
+        const t3 = (cv.hp * 3) / Math.max(1, cv.hpMax);
+        const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
+        this.push(dyn, cv.x, cv.y, CONVOY_QUAD, CONVOY_QUAD, cv.rot, UV_CONVOY, tint[0], tint[1], tint[2], 1);
+      }
+    }
+    // THE BEACONS, beside the shield towers because they are the same kind of
     // thing: a block that stands where the map put it, never turns, and is
     // nobody's to place or sell. They are drawn here rather than in the
-    // TERRAIN batch (rebuildTerrain) because their tint moves — a relay
+    // TERRAIN batch (rebuildTerrain) because their tint moves — a beacon
     // switched on is lit and one still for sale is dark — and the terrain
     // batch is built once per map.
     //
-    // A relay is on a HILL, so nothing overlaps it and there is no base
-    // plate under it: the block's own art carries its plating (atlas.ts
-    // relayBlock).
+    // TWO QUADS, A PLATE AND A MAST — which is exactly how every turret on
+    // this board is drawn, a few lines up, and that is the point. A beacon
+    // used to be one full-bleed block with its own plating painted into
+    // the art, and it read as a decal somebody had stuck on the rock. On a
+    // real UV_TOWER_BASE3 it reads as a BUILDING OF YOURS standing on a
+    // hill: same plate, same rim, same square silhouette as the guns, with
+    // a head on it that is a diamond instead of a snout.
     {
-      const rpx = RELAY_SIZE * CELL;
-      const rs = sim.terrain.relays;
+      const rpx = BEACON_SIZE * CELL;
+      const rs = sim.terrain.beacons;
       for (let i = 0; i < rs.length; i++) {
         const r = rs[i];
-        const x = (r.x + RELAY_SIZE / 2) * CELL, y = (r.y + RELAY_SIZE / 2) * CELL;
+        const x = (r.x + BEACON_SIZE / 2) * CELL, y = (r.y + BEACON_SIZE / 2) * CELL;
         if (x < vx0 - rpx || x > vx1 + rpx || y < vy0 - rpx || y > vy1 + rpx) continue;
         // DIMMED UNTIL IT IS BOUGHT, and full colour after. It is dimmed
         // rather than greyed so it still reads as the same building, and a
         // player learns the silhouette long before they can afford one.
         //
-        // HALF AND NOT A THIRD: a relay stands on a hill and a hill is the
+        // HALF AND NOT A THIRD: a beacon stands on a hill and a hill is the
         // darkest ground in the game, so a third put the unlit ones under
         // the rock they sit on. Half is plainly "off" beside a lit one and
-        // still finds the eye on black basalt.
-        const lit = sim.relayOn[i] !== 0;
+        // still finds the eye on black basalt. The beacon's own ring of
+        // vision (drawDarkness, BEACON_VISION_R) is what makes even the
+        // half-lit one findable at all.
+        //
+        // THE PLATE TAKES THE SAME TINT as the mast: a bright plate under a
+        // dim head would read as a turret whose barrel is broken, not as a
+        // building waiting to be switched on.
+        const lit = sim.beaconOn[i] !== 0;
         const k = lit ? 1 : 0.5;
-        this.push(dyn, x, y, rpx, rpx, 0, UV_RELAY, k, k, k, 1);
+        this.push(dyn, x, y, rpx, rpx, 0, UV_TOWER_BASE3, k, k, k, 1);
+        this.push(dyn, x, y, rpx, rpx, 0, UV_BEACON, k, k, k, 1);
       }
     }
     // a lock turret's beam sits over the turrets and under the body it is
@@ -3605,7 +3727,13 @@ export class Renderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.shieldFbo);
     gl.viewport(0, 0, w, h);
     gl.clearColor(0, 0, 0, 0);
+    // THE WHOLE BUFFER IS CLEARED, scissor off (begin/scissorWorld): this
+    // one is blitted back over the frame as a texture, so a texel left
+    // stale outside the map rect is a texel the shield shader reads and
+    // paints. The FILLS below stay scissored like everything else
+    gl.disable(gl.SCISSOR_TEST);
     gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.SCISSOR_TEST);
     gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1); // begin() clears with this
     // the fills ride the sprite program under the same camera
     gl.useProgram(this.prog);

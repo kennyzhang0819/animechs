@@ -48,16 +48,16 @@ export interface WorldSource {
   readonly isGoal: Uint8Array;
   readonly occupied: Uint8Array;
   readonly waterlogged: Uint8Array | null;
-  /** the cells the base and the bought relays light (Sim.powered) */
+  /** the cells the base and the bought beacons light (Sim.powered) */
   readonly powered: Uint8Array;
-  /** which of the map's relays this run has switched on, indexed into
-   *  terrain.relays (Sim.relayOn) */
-  readonly relayOn: Uint8Array;
+  /** which of the map's beacons this run has switched on, indexed into
+   *  terrain.beacons (Sim.beaconOn) */
+  readonly beaconOn: Uint8Array;
   readonly airRoutes: readonly { pts: readonly number[] }[];
 }
 
 const emptyReport = (): WorldReport => ({
-  bosses: [],
+  objectives: [],
   counts: Object.fromEntries(TOWER_KINDS.map((k) => [k, 0])) as Record<TowerKind, number>,
   mods: [],
   relics: [],
@@ -75,7 +75,7 @@ export class World {
   readonly bodies: BoardBodies;
   readonly waterlogged: Uint8Array | null;
   readonly powered: Uint8Array;
-  readonly relayOn: Uint8Array;
+  readonly beaconOn: Uint8Array;
   readonly airRoutes: readonly { pts: readonly number[] }[];
   private readonly isGoal: Uint8Array;
   private readonly occupied: Uint8Array;
@@ -105,7 +105,7 @@ export class World {
     this.occupied = src.occupied;
     this.waterlogged = src.waterlogged;
     this.powered = src.powered;
-    this.relayOn = src.relayOn;
+    this.beaconOn = src.beaconOn;
     this.airRoutes = src.airRoutes;
     const h = src.header, f = src.flat;
     this.bodies = {
@@ -185,6 +185,50 @@ export class World {
   }
   get wavesCleared(): number {
     return this.header[HDR.WAVES_CLEARED];
+  }
+  /** THE INTERCEPT MISSION'S LEDGER (levels.ts InterceptMission) — what
+   *  the objective panel counts. Zero on every other mission */
+  get crossKilled(): number {
+    return this.header[HDR.CROSS_KILLED];
+  }
+  get crossLeaked(): number {
+    return this.header[HDR.CROSS_LEAKED];
+  }
+  get crossLive(): number {
+    return this.header[HDR.CROSS_LIVE];
+  }
+  /** THE ESCORT MISSION'S LEDGER (levels.ts EscortMission) — carts
+   *  delivered and lost, how far the one on the road has got, how many
+   *  halts it still has to make, and whether it is standing at one. Zero
+   *  on every other mission */
+  get convoyDone(): number {
+    return this.header[HDR.CONVOY_DONE];
+  }
+  get convoyLost(): number {
+    return this.header[HDR.CONVOY_LOST];
+  }
+  get convoyAt(): number {
+    return this.header[HDR.CONVOY_AT];
+  }
+  get convoyHalts(): number {
+    return this.header[HDR.CONVOY_HALTS];
+  }
+  get convoyHalted(): boolean {
+    return this.header[HDR.CONVOY_HALTED] !== 0;
+  }
+  /** how far through its objective the run is, 0 to 1 (Sim.missionProgress)
+   *  — whichever mission the map carries */
+  get missionProgress(): number {
+    return this.header[HDR.MISSION_PROGRESS];
+  }
+  /** how many times the tide has turned (Sim.loopCycle): the swarm's health
+   *  is 2^this, and 0 means the script is still on its first pass */
+  get loopCycle(): number {
+    return this.header[HDR.LOOP_CYCLE];
+  }
+  /** the authored script's wave count, which the tide never moves */
+  get scriptWaves(): number {
+    return this.header[HDR.SCRIPT_WAVES];
   }
   /** is building charged? (Sim.charging) */
   get charging(): boolean {

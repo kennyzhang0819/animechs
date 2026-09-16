@@ -62,8 +62,46 @@ export const HDR = {
    *  overlay paints a layer off 262,144 cells and must not do it per frame,
    *  so this is what tells it the layer it holds is stale */
   POWER: 18,
+  /**
+   * THE INTERCEPT MISSION'S LEDGER (levels.ts InterceptMission): crossers
+   * destroyed whole, crossers that got across, and how many are on the
+   * board right now. Three slots rather than a row in the report because
+   * the objective panel reads them every frame and a mission a frame
+   * stale is a mission that says "6 of 7" over a won run.
+   */
+  CROSS_KILLED: 19,
+  CROSS_LEAKED: 20,
+  CROSS_LIVE: 21,
+  /**
+   * HOW FAR THROUGH ITS OBJECTIVE THE RUN IS, 0 to 1 (Sim.missionProgress)
+   * — the one number every progress bar is drawn from, whichever mission
+   * is being played. It is a slot rather than a row in the report for the
+   * same reason the crossers' ledger is: a bar a frame stale is a bar
+   * still filling over a finished run.
+   */
+  MISSION_PROGRESS: 22,
+  /** how many times the tide has turned (Sim.loopCycle) — the swarm's
+   *  health is 2^this, and the HUD says so once it is above zero */
+  LOOP_CYCLE: 23,
+  /** the authored script's own wave count, which the tide never moves */
+  SCRIPT_WAVES: 24,
+  /**
+   * THE ESCORT MISSION'S LEDGER (levels.ts EscortMission), beside the
+   * intercept's and for the same reason: carts delivered, carts lost, how
+   * far the one on the road has got (0 to 1), how many halts it has still
+   * to make, and whether it is standing at one right now.
+   *
+   * The cart's own health does not need a slot — it wears an objective
+   * bar (Sim.objectiveBars) like a Borer or the Sovereign does, and that
+   * rides the report.
+   */
+  CONVOY_DONE: 25,
+  CONVOY_LOST: 26,
+  CONVOY_AT: 27,
+  CONVOY_HALTS: 28,
+  CONVOY_HALTED: 29,
 } as const;
-export const HEADER_LEN = 20;
+export const HEADER_LEN = 32;
 
 /** the sim's scalars, into its own header — after every step, and on reset */
 export function writeHeader(sim: Sim): void {
@@ -87,6 +125,20 @@ export function writeHeader(sim: Sim): void {
   h[HDR.INSPECTED_UNIT] = sim.inspectedUnit;
   h[HDR.SPECS] = sim.specsVersion;
   h[HDR.POWER] = sim.powerVersion;
+  h[HDR.CROSS_KILLED] = sim.crossKilled;
+  h[HDR.CROSS_LEAKED] = sim.crossLeaked;
+  h[HDR.CROSS_LIVE] = sim.crossersLive();
+  h[HDR.MISSION_PROGRESS] = sim.missionProgress();
+  h[HDR.LOOP_CYCLE] = sim.loopCycle;
+  h[HDR.SCRIPT_WAVES] = sim.scriptWaves;
+  h[HDR.CONVOY_DONE] = sim.convoyDone;
+  h[HDR.CONVOY_LOST] = sim.convoyLost;
+  {
+    const cv = sim.liveConvoy();
+    h[HDR.CONVOY_AT] = cv ? cv.at : 0;
+    h[HDR.CONVOY_HALTS] = cv ? cv.halts : 0;
+    h[HDR.CONVOY_HALTED] = cv && cv.halted ? 1 : 0;
+  }
 }
 
 // ---------- the phase clock's reading ----------
@@ -404,8 +456,11 @@ export interface InspectPanel {
 }
 
 export interface WorldReport {
-  /** every boss on the field, for the HUD's bar stack (Sim.bossBars) */
-  bosses: { id: number; kind: number; hp: number; max: number }[];
+  /** every OBJECTIVE body on the field — bosses and Borer trains — for the
+   *  HUD's bar stack (Sim.objectiveBars). Named here rather than keyed by
+   *  unit kind, because a train is a pool over twenty pieces and has no one
+   *  kind to be named after */
+  objectives: { id: number; name: string; hp: number; max: number }[];
   /** the player's live turrets per kind (Sim.towerCounts) */
   counts: Record<TowerKind, number>;
   /** the shelf: every mod the run owns with its count, and every relic */
@@ -437,7 +492,7 @@ export interface WorldReport {
  */
 export function reportOf(sim: Sim, specsSeen: number): WorldReport {
   return {
-    bosses: sim.bossBars(),
+    objectives: sim.objectiveBars(),
     counts: sim.towerCounts(),
     mods: sim.ownedMods(),
     relics: sim.ownedRelics(),

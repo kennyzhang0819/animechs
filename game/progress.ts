@@ -1,4 +1,4 @@
-import { cleanFamilies, WORLD, WORLDS, type FamilyKey } from "./levels";
+import { cleanFamilies, VISIBLE_WORLDS, WORLD, WORLDS, type FamilyKey } from "./levels";
 import { cleanMutations, type MutationId } from "./mutation";
 import { tierXpBonus, TOP_TIER } from "./ladder";
 import { ADMIN_ENABLED } from "./env";
@@ -350,10 +350,13 @@ function readDifficulty(p: { difficulty?: unknown }): number | undefined {
     : undefined;
 }
 
-/** the remembered map, if it is still a world; anything else reads Random */
+/** the remembered map, if it is still a world ON THE MENU; anything else
+ *  — a renamed id, or one since hidden (levels.ts HIDDEN_WORLD_IDS) —
+ *  reads Random, so a save cannot restore a pick the picker would not
+ *  offer today */
 function readMapPick(p: { map?: unknown }): string | undefined {
   const m = p.map;
-  return typeof m === "string" && WORLDS.some((w) => w.id === m) ? m : undefined;
+  return typeof m === "string" && VISIBLE_WORLDS.some((w) => w.id === m) ? m : undefined;
 }
 
 /** the remembered mode; anything the game does not recognise reads regular */
@@ -536,7 +539,21 @@ export const bestClearOn = (p: Progress, worldId: string): number =>
  * track opens it at, or null when the map is open. Returns the level
  * rather than a boolean because every caller that cares needs to SAY it.
  */
+/**
+ * EVERY MAP IS PLAYABLE FROM THE FIRST RUN WHILE THE BOARDS ARE BEING
+ * LOOKED AT. The track still PROMISES them where it always did (track.ts
+ * PLACED, and the progress screen reads the same), it simply does not bar
+ * any of them: seventeen boards went in at once and the point of having
+ * them is to sit down on each one, not to grind eight levels first.
+ *
+ * Flip this back to false and the gates are exactly what they were —
+ * nothing else moved. What is off the MENU entirely is a different
+ * question and lives in one list (levels.ts HIDDEN_WORLD_IDS).
+ */
+const EVERY_MAP_OPEN = true;
+
 export const worldLock = (p: Progress, worldId: string): { level: number } | null => {
+  if (EVERY_MAP_OPEN) return null;
   const level = worldUnlockLevel(worldId);
   return effectiveLevel(p) >= level ? null : { level };
 };
@@ -548,8 +565,9 @@ export const isWorldUnlocked = (p: Progress, worldId: string): boolean =>
 // ---------- settling a run ----------
 
 export interface RunReward {
-  /** XP the run banked: the waves it cleared, times every bonus below.
-   *  ALWAYS ZERO on a custom run — see `custom` */
+  /** XP the run banked: the whole pot on a win, and otherwise the waves it
+   *  broke, times every bonus below. ALWAYS ZERO on a custom run — see
+   *  `custom` */
   xp: number;
   /**
    * Was this a CUSTOM run? Then it paid nothing and recorded nothing, and
@@ -558,9 +576,11 @@ export interface RunReward {
    * because a custom run is still a run worth reading the end of.
    */
   custom: boolean;
-  /** how many of the mission's waves the run cleared — every one on a win */
+  /** how many waves the run broke — counted to `totalWaves` on a win, which
+   *  is what makes the pot whole there whatever the mission actually was */
   wavesCleared: number;
-  /** how many waves the mission held */
+  /** how many waves the run SENT, the tide's repeats included (Sim.totalWaves)
+   *  — not the document's fifty */
   totalWaves: number;
   /** the multiplier the run carried, which is the difficulty's and
    *  nothing else's — kept beside tierBonus, equal to it, because every
@@ -583,13 +603,17 @@ export interface RunReward {
 /**
  * Settle a FINISHED run into the save.
  *
- * Waves are the objectives, so a defeat still banks the share of the
- * mission's pot for every wave the board cleared on the way down
- * (missionXp), times the rung's XP bonus and — on a map the game picked —
- * the random-map bonus. A win is every objective met: it pays the whole
- * pot whatever the last wave's bodies were doing when the mission ended,
- * and records the level as beaten on that world (clearedByMap). Kills
- * pay nothing here; they paid scrap into the run as it went.
+ * A WIN IS THE MISSION MET (levels.ts Mission, Sim.won) — the waves held,
+ * the clock outlasted, the crossers cut down — and it pays the WHOLE pot
+ * whatever the board was doing at the time, times the rung's XP bonus, and
+ * records the level as beaten on that world (clearedByMap).
+ *
+ * A DEFEAT IS PAID FOR THE WAVES IT BROKE on the way down (missionXp),
+ * whichever mission it was and however far off the objective it ended.
+ * That is the one thing every mission has in common — a script that never
+ * runs out is always sending something to break — and it is what makes a
+ * failed push progress rather than a wasted hour. Kills pay nothing here;
+ * they paid scrap into the run as it went.
  *
  * NOTHING ACCRUES WHILE THE APP IS SHUT. There is no offline income and
  * no idle tick: every point of XP was paid for by a run somebody watched.

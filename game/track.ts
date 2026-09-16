@@ -1,5 +1,5 @@
 import { targetingLine, TOWER_DESC, TOWERS } from "./constants";
-import { WORLDS } from "./levels";
+import { VISIBLE_WORLDS, worldHidden, WORLDS } from "./levels";
 import { MODS, modBlurb, modDef, modName, type ModId } from "./mods";
 import { RELICS, relicDef, type RelicId } from "./relics";
 import { MUTATIONS, mutationById, mutationCostOf, type MutationId } from "./mutation";
@@ -546,18 +546,37 @@ const rewardRank = (r: Reward): number => REWARD_ORDER.indexOf(r.kind);
  * kind exists for one (see the note above on the deal's second roll) —
  * they are a property of the deal, not a thing the campaign owns.
  */
-export function rewardsAt(level: number): Reward[] {
+/**
+ * `shelved` is what separates the two readers of this function. The
+ * PROGRESS SCREEN wants what a player can actually be handed, so it takes
+ * the default and the boards that are not in the game today (levels.ts
+ * PLAYABLE_WORLD_IDS) are filtered out of it — a row promising a map the
+ * picker will not offer is a lie about what is in the game. The IMPORT
+ * CHECK below wants what the TABLES say, shelf and all, because what it
+ * is guarding against is a table drifting off the seam and a shelved
+ * board is not that.
+ */
+export function rewardsAt(level: number, shelved = false): Reward[] {
+  const showWorld = (id: string): boolean => shelved || !worldHidden(id);
   const out: Reward[] = [];
   for (const id of TURRETS_DEALT.get(level) ?? []) out.push({ kind: "turret", id });
   if (level === 1) {
     for (const id of STARTING_MODS) out.push({ kind: "mod", id });
-    for (const w of WORLDS)
+    // the VISIBLE table: a map nobody may pick is not a reward, and a
+    // progress screen that promises one is lying about what is in the game
+    for (const w of shelved ? WORLDS : VISIBLE_WORLDS)
       if (worldUnlockLevel(w.id) === 1) out.push({ kind: "world", worldId: w.id });
   }
   for (const id of MOD_UNLOCKS[level] ?? []) out.push({ kind: "mod", id });
   for (const id of DEALT.get(level) ?? []) out.push({ kind: "upgrade", id });
   for (const id of MUTATOR_UNLOCKS[level] ?? []) out.push({ kind: "mutator", id });
-  for (const p of PLACED) if (p.level === level) out.push(p.reward);
+  // ...and the hand-placed rewards. PLACED itself stays WHOLE — it is what
+  // worldUnlockLevel reads, and a board taken off the shelf later should
+  // land on the level it was always promised for — so the shelf is applied
+  // here, at the read, and never to the table.
+  for (const p of PLACED)
+    if (p.level === level && (p.reward.kind !== "world" || showWorld(p.reward.worldId)))
+      out.push(p.reward);
   // ...and the tables are only APPROXIMATELY in that order, so sort. A
   // stable sort keeps each kind in the order its table deals it
   return out.sort((a, b) => rewardRank(a) - rewardRank(b));
@@ -575,9 +594,21 @@ export const TRACK: readonly { level: number; rewards: Reward[] }[] = Array.from
  * now, so a bare row means a table has drifted off the seam (a mod moved
  * out of the build phase, a rule dropped, MAX_LEVEL raised past the last
  * one) and not a deliberate breather.
+ *
+ * IT IS CHECKED AGAINST THE TABLES AND NOT AGAINST THE SHELF
+ * (rewardsAt's `shelved`). With fifteen of the seventeen boards off the
+ * menu, level 15 hands out nothing a player can see — its one reward was
+ * Whitepeak — and that is the shelf doing exactly what it is for, not a
+ * table that has drifted. Putting the boards back fills those rows again
+ * without a line moving. What this still catches is the thing it was
+ * written for: a level whose tables are empty on their own.
  */
 (() => {
-  const bare = TRACK.filter((r) => r.rewards.length === 0).map((r) => r.level);
+  const authored = Array.from({ length: MAX_LEVEL }, (_, i) => ({
+    level: i + 1,
+    rewards: rewardsAt(i + 1, true),
+  }));
+  const bare = authored.filter((r) => r.rewards.length === 0).map((r) => r.level);
   if (bare.length > 0)
     throw new Error(
       `the track hands nothing out on level${bare.length > 1 ? "s" : ""} ${bare.join(", ")}`,
@@ -763,7 +794,7 @@ function rarityRank(reward: Reward): number {
 export function unlocksOf(kind: UnlockKind): UnlockEntry[] {
   const out: UnlockEntry[] = [];
   if (kind === "world")
-    for (const w of WORLDS)
+    for (const w of VISIBLE_WORLDS)
       out.push({ reward: { kind: "world", worldId: w.id }, level: worldUnlockLevel(w.id) });
   if (kind === "turret")
     for (const k of FIELDED_KINDS)
