@@ -399,6 +399,18 @@ export default function LevelEditorView({
                   label="Release time"
                   value={`${Math.ceil(summary.waves * WAVE_RELEASE_SECONDS)}s`}
                 />
+                {/* THE TWO ABOVE, ADDED UP — the sitting the script asks
+                    for. It is the clock a mission is authored against
+                    (WAVE_GAP_DEFAULT is set to land it near twenty
+                    minutes), and reading it off two rows in seconds was
+                    arithmetic nobody did. Sums the same way budget() does
+                    in ladder.ts; the walk-and-die on the end of the last
+                    wave is the board's and not the script's, so it is not
+                    counted here */}
+                <Row
+                  label="Run length"
+                  value={mmss(summary.waves * (waveGap + WAVE_RELEASE_SECONDS))}
+                />
               </dl>
             </section>
           </aside>
@@ -460,6 +472,12 @@ export default function LevelEditorView({
 
 function makeStep(): EditStep {
   return { uid: uid(), counts: { ironhide1: 10 } };
+}
+
+/** seconds as m:ss — a run length is minutes, and nobody reads 1109s */
+function mmss(seconds: number): string {
+  const t = Math.max(0, Math.round(seconds));
+  return `${(t / 60) | 0}:${String(t % 60).padStart(2, "0")}`;
 }
 
 function Row({ label, value }: { label: string; value: string }) {

@@ -60,7 +60,7 @@ one answer at a time, and air is fair.
 
 `public/levels/campaign.json` is the script every map plays — a
 `LevelDoc`, `{ id, waveGap, script }`, of raw per-kind counts per wave.
-`waveGap` is the seconds held between waves (15 as authored — the clock
+`waveGap` is the seconds held between waves (19 as authored — the clock
 starts when the previous wave has finished ENTERING, not when it dies, so
 the waves overlap and the field is a tide). Fifty waves, a few dozen bodies
 on wave 1 and thousands by the end, at Mindustry's own unit numbers.

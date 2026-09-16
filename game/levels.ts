@@ -2881,7 +2881,7 @@ export interface LevelSpec {
    * seconds held between waves. The clock starts when the previous wave
    * has finished ENTERING the field — the last unit spawning, not the last
    * unit dying — so a level whose waves outlive the gap will have several
-   * on the field at once. Fifteen seconds as authored (WAVE_GAP_DEFAULT):
+   * on the field at once. Nineteen seconds as authored (WAVE_GAP_DEFAULT):
    * the run is a tide, and the waves overlap.
    */
   waveGap: number;
@@ -2985,12 +2985,27 @@ export interface LevelDoc {
 
 
 /**
- * THE RUN'S CLOCK, as authored: a wave every fifteen seconds, fifty of
+ * THE RUN'S CLOCK, as authored: a wave every nineteen seconds, fifty of
  * them, each stronger than the last. The document
  * (public/levels/campaign.json) sets the gap; this is what a missing
  * document or a missing field plays.
+ *
+ * NINETEEN IS A RUN LENGTH, not a feel. The cadence a run actually keeps
+ * is this gap plus WAVE_RELEASE_SECONDS, so the script's own clock is
+ * WAVE_GAP_OPENING + 49 x (gap + release) + release: at fifteen that was
+ * 913s, a shade over fifteen minutes, and with the last wave's walk and
+ * die on the end a mission came in around sixteen. A mission is meant to
+ * be A TWENTY-MINUTE SITTING; nineteen puts the script at 1,109s and the
+ * clear on the end of it at about twenty.
+ *
+ * IT IS ALSO THE DIFFICULTY DIAL NOBODY CALLS ONE. The gap is what decides
+ * how much of a wave the board gets to itself before the next one lands,
+ * so lengthening it hands every wave a quarter more uncontested fire and
+ * thins the overlap the tide is made of. That softening is priced in here
+ * on purpose — the alternative levers (a longer release, or more waves)
+ * buy the same minutes and the counts are authored against this one.
  */
-export const WAVE_GAP_DEFAULT = 15;
+export const WAVE_GAP_DEFAULT = 19;
 
 /**
  * The OPENING gap only, in seconds. Every later wave waits WAVE_GAP_DEFAULT
@@ -3092,7 +3107,7 @@ export const WORLDS: LevelSpec[] = [
     // EVERY RUNG PLAYS THIS WHOLE LIST. There is one run per map and ten
     // difficulties to play it at, and a rung only scales the counts
     // (COUNT_SCALE in ladder.ts) — no wave is ever cut. THE SCRIPT IS
-    // FIFTY WAVES, fifteen seconds apart, each stronger than the last: a
+    // FIFTY WAVES, nineteen seconds apart, each stronger than the last: a
     // few dozen runts on wave 1, the first heavies by wave 10, waves in
     // the thousands by the end, and the boss as the boss that closes
     // it. The waves overlap — the gap is shorter than a wave takes to
