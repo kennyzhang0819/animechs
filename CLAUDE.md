@@ -14,8 +14,10 @@ curve belongs to the tide.
 
 **Enemy factions — the families** (`FAMILIES` in `game/levels.ts`). Six active, five
 tiers each (ground/ironhide, dartback, support/starhart, air/stoop, naval/skate,
-navalSupport/livewire), three shelved. Plus the `objective: true` trees — the boss and
-the worm — which **no wave may ever send**; only a mission puts those down.
+navalSupport/livewire), three shelved. Plus the `objective: true` trees — the boss,
+the worm, the railgun and the two tierless Wardens — which **no wave may ever send**;
+only a mission puts those down. A mission can also POST a body instead of sending it
+(`Sim.garrisonUnit` / `plantUnit`): it holds a circle and never walks at the core.
 
 **Mutators** (`game/mutation.ts`). The rules a run is played *under*, rolled rather
 than chosen. Each costs points; a rung carries a budget and a count. Mandatory from

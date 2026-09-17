@@ -29,13 +29,24 @@ Three consequences for everything below:
 - **Every progress bar reads the mission** (`missionProgress` in
   `game/levels.ts`, one number the sim publishes and every panel draws).
   A bar drawn off the wave number would fill to the brim and start again.
-- **The objective bodies belong to missions, not waves.** The Sovereign
-  and the Borer are `OBJECTIVE_KINDS` (`game/levels.ts`): one thing the
-  run has to go and deal with, which is the shape an objective has. A wave
-  cannot send one — `waveGroups` strips them — and each wears a **health
-  bar** at the top of the screen while it is on the field
-  (`Sim.objectiveBars`), stacked downward when there are several. A Borer
-  gets ONE bar over its whole twenty-piece pool.
+- **The objective bodies belong to missions, not waves.** The Sovereign,
+  the Borer, the Railgun and the two Wardens are `OBJECTIVE_KINDS`
+  (`game/levels.ts`): things the run has to go and deal with, which is the
+  shape an objective has. A wave cannot send one — `waveGroups` strips them
+  — and the two that are EVENTS wear a **health bar** at the top of the
+  screen while they are on the field (`Sim.objectiveBars`), stacked
+  downward when there are several. A Borer gets ONE bar over its whole
+  twenty-piece pool. The siege's ten do not get bars: ten bars is a wall of
+  chrome, and what a player needs off that mission is a COUNT.
+- **And a mission may post a body rather than send one.** Everything the
+  script sends walks at the core, because every route on the board runs
+  there — that is what makes the swarm a tide rather than an army, and it
+  is not a thing a kind opts into. `Sim.garrisonUnit` is the other way to
+  put a body down: it holds a circle, fights whatever the player builds
+  inside it, and never takes a step outside. `Sim.plantUnit` is the same
+  idea at radius zero — bolted down, unshoveable, unknockbackable. Neither
+  is a property of a KIND, so any body can be posted and a mission that
+  wants a camp, a nest or a picket writes a roster rather than a unit.
 
 ## What a mission has to work with
 
@@ -63,8 +74,11 @@ Three consequences, and every archetype below is shaped by them:
 
 ## What is built
 
-**Two of the eight, and they are the PAIR.** Coldline plays *intercept the
-crosser* — offered as **Borer Intercept**, since the picker names a row
+**Three of the eight.** Two of them are the PAIR — one crosser the board
+has to stop and one it has to keep alive. The third is the one that does
+not cross at all: it stands still, and it is shooting at you.
+
+Coldline plays *intercept the crosser* — offered as **Borer Intercept**, since the picker names a row
 after its mission and not after its ground: seven Borers — twenty-car
 boring machines — cross the map on two fixed roads while the wave script
 runs at the core underneath, and a run that lets two of them reach the far
@@ -117,6 +131,75 @@ thing it added was a body the SWARM shoots rather than one the board does.
 | what happens | `Sim.runConvoys`, `launchConvoy`, `updateConvoys`, `damageConvoy`, and the branches in `nearestStructure`, `structureAt`, `inReach` and `damageTower` |
 | what keeps the swarm off it | `Sim.aimIsConvoy` — the cart is a target and never a destination |
 
+**Crater plays *venture and destroy*, and it is the first mission that
+comes to you** — offered as **Railgun Siege**: ten enemy railguns in four
+batteries ringing the core at a hundred and twenty cells, rising one
+battery at a time on the clock (2:00, 6:00, 10:00, 14:00 — one gun, then
+two, then three, then four), each guarded, and every one of them firing at
+the base and at nothing else for as long as it stands. The run is over when
+all ten are down, or when the core is.
+
+What the archetype turned out to need, and what each piece is answering:
+
+- **THE OBJECTIVE HAS TO SHOOT BACK AT THE THING YOU CARE ABOUT.** This is
+  the archetype's whole problem: a static thing that waits to be killed is
+  a thing a player kills at their convenience, on a board that only gets
+  richer. A railgun is aimed at the core from the first second it exists
+  (`UnitStats.bombard`), ten health a second each, and the arithmetic lands
+  exactly — a run that answers nothing at all is at zero core at 14:00,
+  which is the tick the fourth battery finishes arriving. Every other lever
+  the archetype could have pulled (more health, better drops, a timer on
+  the objective) is a rule about the objective; this one is a rule about
+  the STAKE, and it is the only kind of pressure that competes with a wave
+  clock that never stops.
+- **IT RISES IN SECTIONS, AND THEY DO NOT WAIT.** Ten emplacements on the
+  board at wave one is one affordability question asked once, and a player
+  knows the answer before they have played the map. Four sections on an
+  absolute clock is the same question asked four times, each one harder —
+  and because the next one comes whether or not the last is down, falling
+  behind COSTS: a board that keeps up fights one battery at a time and a
+  board that does not fights six at once. The obvious other rule, "the next
+  rises when the last falls", makes the mission easier the worse you are at
+  it, which is the wrong direction for every clock in this game.
+- **A GARRISON IS A DIFFERENT KIND OF BODY, and it had to be built first.**
+  An emplacement on its own is answered by one long gun standing where
+  nothing can reach it; the mission only becomes about GROUND if the ground
+  around it is contested. So `Sim.garrisonUnit` (above): the Wardens hold
+  their circle, fight what you build in it, and cannot be pulled out of it.
+  That last clause is the design, not the implementation — a guard that
+  could be baited home would be a wave with extra steps, and this game
+  already has a wave.
+- **THE RING IS THE POWER GRID AND NOT THE TERRAIN.** The core lights
+  ninety cells (`CORE_POWER_R`); the batteries stand at a hundred and
+  twenty. So every one of them is thirty cells past the ground a run starts
+  with: the first can be answered by the longest gun in the game
+  (railhead, sixty-two) from the edge of your own light, and everything
+  after that is bought. Four of Crater's beacons reach the four posts —
+  one of them placed there for this mission — which is the archetype's own
+  "a beacon that reaches it", said in the only currency the map has.
+- **WHY THIS BOARD.** Crater is the one map drawn with open ground at the
+  same distance from the core in every quarter, because its core is dead
+  centre of a bowl with six mouths and the swarm comes from all of them. A
+  siege is a ring and a ring wants a middle. World 6 and world 10 traded
+  terrain to make that true (`WORLDS`) — both were shelved holds, so
+  nothing in the game moved.
+- **THE POSTS ARE ON SCREEN FROM WAVE ONE**, empty, with the number of
+  emplacements that will rise in each and a dial on the ring counting down
+  to the minute they do (`Game.drawMissionPosts`). No fog means no
+  surprises, and the question being asked is "will you have paid for a
+  position at the south-west by two minutes" — which is not a question you
+  can ask a player who cannot see where the south-west is.
+
+| | |
+|---|---|
+| `RazeMission` / `RazeSection` | `game/levels.ts` — the type, and Crater's authored numbers: when the first battery rises, how far apart they come, and what stands on each |
+| the posts | `game/missions.ts` — `POST_SPECS`, the centres in cells and the radius, per map id. `radius` is the layout AND the garrison's leash, deliberately one number |
+| the railgun | `game/levels.ts` (`railgun`, `UnitStats.bombard`), `game/weapons.ts` (the bombard row) and `game/wardenArt.ts` (the drawing) |
+| the Wardens | `game/levels.ts` (`bulwark`, `lance` — no tiers, T5 weight) and `game/wardenArt.ts` |
+| a body that holds ground | `Sim.garrisonUnit`, `Sim.plantUnit`, and the `ugar` arrays — the general mechanism, of which this mission is the first customer |
+| what happens | `Sim.runSections`, `raiseSection`, `clearNear`, `fireBombard`, and the lines in `won()` and `removeUnit` |
+| what the player sees | the objective pane in `components/Animechs.tsx`, and the post overlay in `Game.drawMissionPosts` |
+
 The other five archetypes have a MAP each and no rule yet (`WORLDS`, the
 mission sketches), and so do the holds. **Those boards are SHELVED and not
 in the game**
@@ -130,7 +213,7 @@ board is allowed to be unfinished, which is what shelving it says.
 A map carries ONE of these. Two stacked reads as noise, and the player
 stops being able to tell which thing is asking for the money.
 
-### 1. Venture and destroy
+### 1. Venture and destroy — BUILT, on Crater
 
 Kill a set number of static things away from the base.
 
@@ -138,6 +221,14 @@ Variants: super-elites · non-attacking buildings that buff the swarm ·
 shield projectors denying your ground · railguns chipping the base from
 out of range · nests that spawn forever once woken · suppressors that
 darken your zones.
+
+Crater plays the railgun variant — see **What is built** above for what it
+does with it and what the shape needed. The other five variants are the
+same three pieces in different arrangements (a posted body, a schedule, and
+a reason it cannot be ignored), so none of them needs new machinery: a nest
+is `garrisonUnit` on a spawner, a suppressor is one that writes to the
+power grid, and a super-elite is a section of one body with no emplacement
+in it.
 
 ### 2. Intercept the crosser — BUILT, on Coldline
 

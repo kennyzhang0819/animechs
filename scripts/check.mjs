@@ -551,6 +551,24 @@ for (const w of L.WORLDS) {
     for (let i = 1; i < m.halts.length; i++)
       if (!(m.halts[i] > m.halts[i - 1]))
         say(`halts out of order: ${m.halts[i - 1]} then ${m.halts[i]}`);
+  } else if (m.kind === "raze") {
+    // the posts are the mission's geometry and live with the terrain
+    // (game/missions.ts) — Sim.reset has already thrown if a section names
+    // a post the map does not carry, so what is left is the arithmetic and
+    // the one thing the sim cannot check for itself: that the schedule
+    // fits inside a run somebody might actually play
+    const guns = L.razeGuns(m);
+    if (!(guns > 0)) say(`a raze mission asking for ${guns} emplacements`);
+    if (m.sections.length === 0) say("a raze mission with no sections");
+    if (!(m.every > 0)) say(`sections ${m.every}s apart, which stands them all up at once`);
+    if (!(m.first >= 0)) say(`the first section rising at ${m.first}s`);
+    // ...and every section has to have something on it. A section with no
+    // emplacement is a post the mission draws a ring round, guards, and
+    // never counts — which reads to a player as a battery they cannot
+    // finish killing
+    m.sections.forEach((sec, i) => {
+      if (!(sec.guns > 0)) say(`section ${i} raises ${sec.guns} emplacements`);
+    });
   } else {
     say(`mission kind "${m.kind}" has no objective the sim knows how to meet`);
   }

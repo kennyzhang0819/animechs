@@ -53,6 +53,10 @@ import { WORM_N, wormCar, wormHead, wormTail } from "./wormArt";
 import { CONVOY_N, hauler } from "./convoyArt";
 import { RAIL_CELL, RAIL_INSET, RAIL_PIECES, RAIL_STYLES, railCanvas } from "./railArt";
 import { GRAPNEL_TIERS, grapnelMech } from "./grapnelArt";
+import {
+  BULWARK_TIER, LANCE_TIER, RAZE_TIER, bulwarkMech, lanceMech, razeMech,
+  type WardenTier,
+} from "./wardenArt";
 import { KETTLE_TIERS, kettle, kettleGeom } from "./kettleArt";
 import { KING_TIER, king, kingGeom } from "./kingArt";
 
@@ -1176,6 +1180,41 @@ export const SF4_CELLS = sfMechCells(4, GRAPNEL_TIERS[3].n, 128);
 export const SF5_CELLS = sfMechCells(5, GRAPNEL_TIERS[4].n, 256);
 
 /**
+ * THE SIEGE'S CELLS — the railgun and the two Wardens (wardenArt.ts), and
+ * the fourth set on the sheet to ask the packer for room of its own rather
+ * than draw over a Mindustry tree.
+ *
+ * Six cells a body, like every other thing on the mech rig: the body, the
+ * base plate and one side's legs, each with its silhouette beside it. The
+ * cell is the smallest 64-multiple that holds the hitbox in native px
+ * (112, 128 and 72 — see WardenTier), so the world px per native px is the
+ * same 0.625 the rest of the sheet has.
+ *
+ * THESE THREE ARE DRAWN WITH ANIMAL_ART OFF TOO, and they are the only
+ * bodies on the sheet that are. The flag's promise is that turning it off
+ * gives back the six Mindustry trees byte for byte — it says nothing about
+ * the things that were never Mindustry's. The Borer is already drawn
+ * either way for that reason, and the siege's machines are the same case:
+ * there is no upstream hull under them to fall back to, and a mission that
+ * silently stopped drawing its objective would be a black square the
+ * player is asked to shoot.
+ */
+const wardenCells = (name: string, n: number, cell: number) => ({
+  kind: name as UnitKind,
+  body: sprite(name, cell, n),
+  base: sprite(`${name}-base`, cell, n),
+  leg: sprite(`${name}-leg`, cell, n),
+  sil: {
+    body: sprite(`${name}-sil`, cell, n),
+    base: sprite(`${name}-base-sil`, cell, n),
+    leg: sprite(`${name}-leg-sil`, cell, n),
+  },
+});
+const RAZE_CELLS = wardenCells("railgun", RAZE_TIER.n, 128);
+const BULWARK_CELLS = wardenCells("bulwark", BULWARK_TIER.n, 128);
+const LANCE_CELLS = wardenCells("lance", LANCE_TIER.n, 128);
+
+/**
  * THE KETTLES' CELLS, and the third family to ask the packer for room of
  * its own rather than draw over a Mindustry tree (the Tuskers were the
  * first, the Grapnels the second). There is no upstream `kettle3` and no
@@ -1315,6 +1354,12 @@ const WORM_CELLS = {
 // per-kind unit art: atlas cell + world quad size. Both ride at true
 // Mindustry scale — ironhide1 48px art = 1.5 tiles, ironhide2 64px art = 2 tiles
 export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
+  // the siege's three, on cells nobody else owns (see THE SIEGE'S CELLS):
+  // 128 cells at the sheet's own px scale, so a railgun is drawn at the
+  // seven tiles its hitbox says it is
+  railgun: { uv: RAZE_CELLS.body, sprite: UNIT_SPRITE * 2 },
+  bulwark: { uv: BULWARK_CELLS.body, sprite: UNIT_SPRITE * 2 },
+  lance: { uv: LANCE_CELLS.body, sprite: UNIT_SPRITE * 2 },
   ironhide1: { uv: UV_IRONHIDE1_BODY, sprite: UNIT_SPRITE },
   ironhide2: { uv: UV_IRONHIDE2_BODY, sprite: UNIT_SPRITE },
   ironhide3: { uv: UV_IRONHIDE3_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
@@ -2197,6 +2242,26 @@ if (ANIMAL_ART) {
   MECH_ART.grapnel3 = sfMechArt(SF3_CELLS, GRAPNEL_TIERS[2], 2);
   MECH_ART.grapnel4 = sfMechArt(SF4_CELLS, GRAPNEL_TIERS[3], 2);
   MECH_ART.grapnel5 = sfMechArt(SF5_CELLS, GRAPNEL_TIERS[4], 4);
+
+  // ---- the siege: the railgun and the two Wardens ----
+  // the mech rig again, and the RAILGUN'S STRIDE IS ZERO (wardenArt.ts
+  // WardenTier): the rig draws its anchors where the legs go and the
+  // renderer swings them by nothing, which is what a machine bolted to the
+  // ground looks like from above. Nothing here carries a gun sprite — the
+  // barrel and the emitter are part of the body, because neither of them
+  // is on a mount that turns independently of the hull
+  const wardenMechArt = (c: typeof RAZE_CELLS, T: WardenTier): MechArt => ({
+    leg: c.leg,
+    base: c.base,
+    body: c.body,
+    guns: [],
+    stride: T.stride * PX,
+    sprite: UNIT_SPRITE * 2,
+    sil: { leg: c.sil.leg, base: c.sil.base, body: c.sil.body },
+  });
+  MECH_ART.railgun = wardenMechArt(RAZE_CELLS, RAZE_TIER);
+  MECH_ART.bulwark = wardenMechArt(BULWARK_CELLS, BULWARK_TIER);
+  MECH_ART.lance = wardenMechArt(LANCE_CELLS, LANCE_TIER);
 }
 
 const ENV = "/mindustry/sprites/blocks/environment";
@@ -3201,6 +3266,11 @@ function packAnimalArt(
     sil: { body: c.bodySil, base: c.baseSil, leg: c.legSil },
   }));
   sfCellSets.forEach((cells, i) => packMech(cells, grapnelMech(GRAPNEL_TIERS[i]), GRAPNEL_TIERS[i].n));
+  // ---- the siege: three machines on the mech rig, into cells nobody
+  // else owns (see THE SIEGE'S CELLS) ----
+  packMech(RAZE_CELLS, razeMech(RAZE_TIER), RAZE_TIER.n);
+  packMech(BULWARK_CELLS, bulwarkMech(BULWARK_TIER), BULWARK_TIER.n);
+  packMech(LANCE_CELLS, lanceMech(LANCE_TIER), LANCE_TIER.n);
 
   // ---- Stoop, Skate, Livewire ----
   // the wing rig: the composed sprite in the kind's own cell, the body

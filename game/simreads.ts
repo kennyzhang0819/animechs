@@ -197,6 +197,15 @@ export class World {
   get crossLive(): number {
     return this.header[HDR.CROSS_LIVE];
   }
+  /** THE RAZE MISSION'S LEDGER (levels.ts RazeMission) — emplacements
+   *  destroyed, and how many are still firing on the core. Zero on every
+   *  other mission */
+  get razeKilled(): number {
+    return this.header[HDR.RAZE_KILLED];
+  }
+  get razeUp(): number {
+    return this.header[HDR.RAZE_UP];
+  }
   /** THE ESCORT MISSION'S LEDGER (levels.ts EscortMission) — carts
    *  delivered and lost, how far the one on the road has got, how many
    *  halts it still has to make, and whether it is standing at one. Zero

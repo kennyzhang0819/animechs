@@ -40,6 +40,8 @@ import {
   missionLines,
   missionTarget,
   missionText,
+  razeGuns,
+  RAZE_NAME,
   rollFamilies,
   transformScript,
   unitName,
@@ -686,6 +688,7 @@ function ObjectivePane({ hud }: { hud: UiState }): React.ReactElement | null {
           must not be read as one */}
       {(hud.loopCycle > 0 ||
         (m.kind === "intercept" && hud.crossLive > 0) ||
+        (m.kind === "raze" && hud.razeUp > 0) ||
         (m.kind === "escort" && hud.convoyHpMax > 0)) && (
         <div className="mt-2 flex flex-col gap-1 border-t border-[#2a2a31] pt-2 text-[13px] leading-tight text-[#A6A6AF]">
           {/* THE TIDE, once it has turned: x2, x4, x8 — every body's
@@ -700,6 +703,18 @@ function ObjectivePane({ hud }: { hud: UiState }): React.ReactElement | null {
               {hud.crossLive === 1
                 ? `One ${WORM_NAME} is crossing now`
                 : `${hud.crossLive} ${WORM_NAME}s are crossing now`}
+            </span>
+          )}
+          {/* HOW MANY ARE FIRING ON THE CORE, which on a siege is the
+              number that decides how long the base has left (levels.ts
+              RazeMission). It belongs here and not in the list above for
+              the reason the tide does: nothing about it can be met or
+              broken, it is just what is true this second */}
+          {m.kind === "raze" && hud.razeUp > 0 && (
+            <span className="text-[#F25555]">
+              {hud.razeUp === 1
+                ? `One ${RAZE_NAME.toLowerCase()} is firing on the core`
+                : `${hud.razeUp} ${RAZE_NAME.toLowerCase()}s are firing on the core`}
             </span>
           )}
           {m.kind === "escort" && hud.convoyHpMax > 0 && (
@@ -3816,7 +3831,13 @@ export default function Animechs() {
                       "The hauler is gone"
                     : hud.mission.kind === "intercept" && hud.crossLeaked <= hud.mission.leaks
                       ? "Nothing left to stop"
-                      : "They got through"}
+                      : // ...AND A SIEGE NEVER REACHES THIS LINE. Every
+                        // headline under it is a mission failed with the
+                        // base still standing, and a raze has no such
+                        // ending: the only way to lose one is the core,
+                        // which the branch above has already named
+                        // (levels.ts RazeMission, Sim.lost)
+                        "They got through"}
               </div>
               <div className="mt-4 space-y-1 text-base text-[#EDEDEF]">
                 {/* HOW CLOSE IT CAME, and close to WHAT — the mission's own
@@ -3829,7 +3850,9 @@ export default function Animechs() {
                     over it says what the number is counting. */}
                 <div>
                   <div className="mb-1 text-[14px] uppercase tracking-widest text-[#71717C]">
-                    {hud.mission.kind === "intercept"
+                    {hud.mission.kind === "raze"
+                      ? `${hud.razeKilled} of ${razeGuns(hud.mission)} destroyed, ${hud.razeUp} still firing`
+                      : hud.mission.kind === "intercept"
                       ? `${hud.crossKilled} of ${hud.mission.kills} destroyed, ${hud.crossLeaked} past you`
                       : hud.mission.kind === "escort"
                         ? // HOW FAR IT GOT, which for an escort is the
@@ -3928,7 +3951,9 @@ export default function Animechs() {
                     ? "Line cut"
                     : hud.mission.kind === "escort"
                       ? "Delivered"
-                      : "Line held"}
+                      : hud.mission.kind === "raze"
+                        ? "Siege broken"
+                        : "Line held"}
               </div>
               <div className="mt-1 text-[14px] uppercase tracking-widest text-[#71717C]">
                 <span style={{ color: rungColor(hud.tier) }}>{rungLabel(hud.tier)}</span> ·{" "}
@@ -3945,6 +3970,12 @@ export default function Animechs() {
                   <div>
                     <span className="font-bold text-[#EDEDEF]">{hud.convoyDone}</span> delivered,{" "}
                     <span className="font-bold text-[#EDEDEF]">{hud.convoyLost}</span> lost
+                  </div>
+                )}
+                {hud.mission.kind === "raze" && (
+                  <div>
+                    <span className="font-bold text-[#EDEDEF]">{hud.razeKilled}</span> emplacements
+                    destroyed
                   </div>
                 )}
                 <div>
