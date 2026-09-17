@@ -1,45 +1,29 @@
-import { RARITIES, weightDial, type Rarity, type RarityWeights, type WeightDial } from "./rarity";
-
 /**
- * FORMATION — the SECOND roll on every card, and what makes a draw a
- * decision about ground rather than about a gun.
+ * FORMATION — the SHAPE half of a card, and what makes a draw a decision
+ * about ground rather than about a gun.
  *
- * A card carries two answers, rolled independently: WHICH turret
- * (rarity.ts) and HOW MANY OF IT, IN WHAT SHAPE — here. There is no
- * single-turret formation and there never will be: the floor of the deal
- * is the 2x2 quad, four turrets, and nothing smaller than it exists. So a
- * card is never "a tacker", it is "nine tackers in a block", and the question
- * it asks is where nine of anything can possibly go.
+ * A card carries two answers and NEITHER OF THEM IS A ROLL ANY MORE: the
+ * player picks the TIER with 1/2/3/4 (economy.ts TOWER_TIER) and the
+ * SHAPE with X, and the only thing the deal rolls is which gun of that
+ * tier comes up. So the price is known before the press, which is the
+ * whole reason the shape stopped being a second roll.
  *
  * THE CELLS ARE TURRETS, NOT TILES. Every offset below is counted in
  * WHOLE TURRETS, so a formation's footprint on the board is its grid
- * times the turret's own size: a quad of tackers is 2x2 tiles and a quad of
- * repeaters is 8x8. That is the whole reason the two rolls are separate —
- * a purple in a citadel is an ironhide3 and a common in one is a suburb,
- * and both come out of the same button.
+ * times the turret's own size — and since the tier IS the turret's size,
+ * a block is 3x3 tiles at tier 1 and 12x12 at tier 4. That is what the
+ * two buttons buy between them: which gun, and how much map.
  *
- * EVERY SHAPE IS A SQUARE, 2x2 up to 6x6, and there are five of them.
- * There were twelve once, with crosses and rings and a wedge cut into
- * them, and a hole in a formation is a hole in a wall — the swarm walks
- * it, so a carved card was a worse card wearing a better border. A square
- * has one thing to say and says it in its own diagram: THIS MUCH GROUND.
- * The decision the second roll asks is how big a patch a player can find
- * room for, and nothing about the outline made that question better.
- *
- * SHAPES HAVE RARITIES TOO, and they are the turrets' own four
- * (rarity.ts), worn on the same frames — so one palette answers "how good
- * is this card" twice over, once for the gun and once for the shape. The
- * band is read straight off the CELL COUNT, which for a square is its
- * side: 2x2 and 3x3 are common, 4x4 uncommon, 5x5 rare, and the 6x6 is
- * the jackpot.
+ * THREE SHAPES, ODD SQUARES, 3x3 to 7x7. An odd square has a middle, so
+ * the ghost sits centred on the cursor and the patch a player is aiming
+ * is the patch they get. Nothing is carved: a hole in a formation is a
+ * hole in a wall and the swarm walks it.
  *
  * NOTHING HERE IS EARNED. Every shape is a save's from wave one — the
- * track deals guns, modules, maps and rules (track.ts) and deals no
- * shapes at all, so a level-1 board rolls the same five a level-29 board
- * does and the 6x6 is rare because it is RARE, not because it is locked.
+ * track deals guns and maps and rules (track.ts) and deals no shapes.
  */
 
-export const FORMATION_IDS = ["quad", "block", "grid", "bastion", "citadel"] as const;
+export const FORMATION_IDS = ["block", "bastion", "citadel"] as const;
 export type FormationId = (typeof FORMATION_IDS)[number];
 
 export interface FormationDef {
@@ -60,25 +44,15 @@ const solid = (w: number, h: number): (readonly [number, number])[] => {
   return out;
 };
 
-/**
- * THE FIVE, smallest first — one solid square per side from 2 to 6, and
- * the name is the size. Nothing is carved and nothing is a line: what a
- * card hands over is a patch of ground, and the only question worth
- * putting on the second roll is how much of it.
- */
+/** the three, smallest first — the name is the size */
 export const FORMATIONS: Readonly<Record<FormationId, FormationDef>> = {
-  /* 4 — the floor of the deal, and nothing is ever smaller */
-  quad: { id: "quad", name: "Quad", w: 2, h: 2, cells: solid(2, 2) },
-  /* 9 */
+  /* 9 — the floor of the deal, and nothing is ever smaller */
   block: { id: "block", name: "Block", w: 3, h: 3, cells: solid(3, 3) },
-  /* 16 */
-  grid: { id: "grid", name: "Grid", w: 4, h: 4, cells: solid(4, 4) },
   /* 25 */
   bastion: { id: "bastion", name: "Bastion", w: 5, h: 5, cells: solid(5, 5) },
-  /* 36 — the largest thing the deal will ever hand over: thirty-six
-     repeaters is a 24x24 tile ironhide3, and finding the ground for one is
-     most of the reward */
-  citadel: { id: "citadel", name: "Citadel", w: 6, h: 6, cells: solid(6, 6) },
+  /* 49 — forty-nine repeaters is a 28x28 tile ironhide3, and finding the
+     ground for one is most of the reward */
+  citadel: { id: "citadel", name: "Citadel", w: 7, h: 7, cells: solid(7, 7) },
 };
 
 export const formationDef = (id: FormationId): FormationDef => FORMATIONS[id];
@@ -87,127 +61,17 @@ export const formationDef = (id: FormationId): FormationDef => FORMATIONS[id];
 export const formationCount = (id: FormationId, n = 1): number =>
   FORMATIONS[id].cells.length * Math.max(1, n);
 
-/**
- * THE BAND A SHAPE IS IN, read off its cell count and nothing else: nine
- * or fewer is common, ten to sixteen uncommon, seventeen to twenty-five
- * rare, and past that ultra. A rule rather than a table because the count
- * IS the worth — so the five squares fall out as two commons (2x2, 3x3),
- * one blue (4x4), one amber (5x5) and the 6x6 purple, and a square added
- * or taken away lands in its band by itself.
- */
-export function formationRarity(id: FormationId): Rarity {
-  const n = formationCount(id);
-  return n <= 9 ? "common" : n <= 16 ? "uncommon" : n <= 25 ? "rare" : "ultra";
-}
-
-/** every shape of one band, smallest first — for the codex and the track */
-export const formationsOfRarity = (r: Rarity): FormationId[] =>
-  FORMATION_IDS.filter((id) => formationRarity(id) === r);
+/** the shape after this one, wrapping — what the X button does */
+export const nextFormation = (id: FormationId): FormationId =>
+  FORMATION_IDS[(FORMATION_IDS.indexOf(id) + 1) % FORMATION_IDS.length];
 
 /**
- * THE SHAPE ODDS, AND THEY ARE DELIBERATELY SOFT. The turret roll is
- * where a run's tension lives — one draw in a hundred is purple there —
- * and this one is the generous half of the same button: an ultra SHAPE
- * comes up about one draw in ten. What a player should feel at the button
- * is "which gun" first and "how much of it" second, and odds as steep as
- * the turrets' would invert that.
- *
- * Weights are relative and renormalised over whatever bands the pool
- * handed in actually covers (rollFormation), so a caller that narrows
- * the pool still draws. Nothing narrows it in a run — every save owns
- * every shape — but the editors and the tests do.
- */
-export const FORMATION_WEIGHTS: RarityWeights = {
-  common: 40,
-  uncommon: 30,
-  rare: 20,
-  ultra: 10,
-};
-
-/** ...and the same table as a dial the dashboard can turn (rarity.ts
- *  weightDial). Read this, not the const, anywhere the live answer matters */
-export const SHAPE_ODDS: WeightDial = weightDial(FORMATION_WEIGHTS);
-
-/**
- * ONE DRAW OFF THE SHAPE TABLE: a band against the weights, then a shape
- * uniformly inside it. The same two-step the turret roll uses and for the
- * same reason — adding a sixth square should change WHICH shape of its
- * band comes up, never how often that band does.
- */
-export function rollFormation(
-  pool: readonly FormationId[] = FORMATION_IDS,
-  weights: RarityWeights = SHAPE_ODDS.live(),
-  rng: () => number = Math.random,
-): FormationId | null {
-  const byRarity = new Map<Rarity, FormationId[]>();
-  for (const id of pool) {
-    const r = formationRarity(id);
-    const list = byRarity.get(r);
-    if (list) list.push(id);
-    else byRarity.set(r, [id]);
-  }
-  const live = RARITIES.filter((r) => (byRarity.get(r)?.length ?? 0) > 0);
-  if (live.length === 0) return null;
-  const pick = (r: Rarity): FormationId => {
-    const list = byRarity.get(r)!;
-    return list[Math.floor(rng() * list.length) % list.length];
-  };
-  const total = live.reduce((n, r) => n + Math.max(0, weights[r]), 0);
-  if (total <= 0) return pick(live[live.length - 1]);
-  let n = rng() * total;
-  for (const r of live) {
-    n -= Math.max(0, weights[r]);
-    if (n <= 0) return pick(r);
-  }
-  return pick(live[live.length - 1]);
-}
-
-/**
- * THE FLEET — one card bought N TIMES, and what the Amount button in the
- * corner actually buys (economy.ts BUY_AMOUNTS).
- *
- * A x4 press does NOT roll four cards. It rolls ONE turret and ONE shape,
- * exactly as a single press does, and then TILES that shape four times.
- * So the two rolls stay the two rolls the deal has always had — the amount
- * is a third, independent axis, and what it multiplies is the GROUND the
- * card asks for rather than the variety it hands over. Nine citadels of
- * repeaters is one decision about one piece of map, and it is a decision
- * about a piece of map the size of a town.
- *
- * THE AMOUNTS ARE SQUARE NUMBERS AND THAT IS THE WHOLE REASON FOR THEM.
- * 4 is two copies by two, 9 is three by three and 16 is four by four,
- * and since every shape is a solid square that butts against its
- * neighbours (below), a fleet is simply THE SAME SQUARE, BIGGER: a x4
- * block is a solid 6x6 of turrets, a x9 grid is a solid 12x12 and a x16
- * grid is a solid 16x16. The Amount button does one thing a
- * player can see at a glance — it enlarges the patch — and the footprint
- * they have to find ground for keeps the proportions of the card. They
- * were 5 and 10 once, which are not squares — 5 had to be laid out as a
- * plus and 10 as a five-by-two slab, and a slab is a shape nobody asked
- * for that happens to be what an oblong number forces. A square amount
- * needs no authored layout at all: fleetLayout fills a square grid and
- * the answer is right by construction.
- *
- * THE COPIES BUTT TOGETHER. There is no gap between them — a x9 block of
- * tackers is one solid 9x9 of turrets, not nine 3x3s with lanes between. A
- * gutter of one turret-cell used to run between the copies so the fleet
- * would read as its copies; what it actually did was turn every square
- * amount back into an oblong footprint with holes in it, and holes in a
- * wall are where the swarm walks. The card's own diagram already says how
- * many copies are in the fleet.
+ * THE FLEET — one card's shape TILED n times. Nothing in the corner buys
+ * a fleet any more (the amount ladder became the shape button), so every
+ * live card is n = 1; the tiling is kept because the editors and the
+ * headless playtest still lay patches down with it.
  */
 
-/**
- * WHERE THE N COPIES SIT, in copies — the macro-grid the tiling is laid
- * out on, and the same kind of [col, row] list a formation's own cells
- * are.
- *
- * It fills a square grid row by row, which for a SQUARE amount (the only
- * kind the corner offers — see economy.ts BUY_AMOUNTS) is exactly the
- * square arrangement and needs no table of authored special cases. An
- * amount that is not square still lays out sensibly, with a short last
- * row, rather than throwing.
- */
 export function fleetLayout(n: number): readonly (readonly [number, number])[] {
   if (n <= 1) return [[0, 0]];
   const w = Math.ceil(Math.sqrt(n));
@@ -335,21 +199,13 @@ export function formationSpan(
   return [w * size, h * size];
 }
 
-/** EVERY FORMATION IS A SOLID SQUARE, none smaller than the quad — checked
- *  at import, because "the shapes are squares" is a rule the rest of the
- *  file leans on (the rarity bands, the fleet tiling, the turn) and a
- *  carved one added back by hand should fail loudly rather than quietly
- *  put a hole in a wall */
+/** EVERY FORMATION IS A SOLID ODD SQUARE — checked at import, because the
+ *  centred ghost and the fleet tiling both lean on it */
 (() => {
-  const floor = FORMATIONS.quad.cells.length;
   for (const id of FORMATION_IDS) {
     const f = FORMATIONS[id];
-    if (id !== "quad" && f.cells.length <= floor)
-      throw new Error(
-        `the formation "${id}" carries ${f.cells.length} turrets; nothing may be smaller than or equal to the quad's ${floor}`,
-      );
-    if (f.w < 2 || f.w !== f.h)
-      throw new Error(`the formation "${id}" is ${f.w}x${f.h}; every formation is a square of 2 or more`);
+    if (f.w < 3 || f.w !== f.h || f.w % 2 === 0)
+      throw new Error(`the formation "${id}" is ${f.w}x${f.h}; every formation is an odd square of 3 or more`);
     if (f.cells.length !== f.w * f.h)
       throw new Error(
         `the formation "${id}" carries ${f.cells.length} of its ${f.w * f.h} cells; every formation is solid`,
@@ -358,9 +214,6 @@ export function formationSpan(
       if (x < 0 || y < 0 || x >= f.w || y >= f.h)
         throw new Error(`the formation "${id}" has a cell outside its own ${f.w}x${f.h} grid`);
   }
-  // ...and a fleet lays down exactly the copies it was sold: the layout
-  // is generated rather than authored now, so this is guarding the
-  // arithmetic and not a table somebody might mistype
   for (const n of [1, 2, 4, 9, 16]) {
     if (fleetLayout(n).length !== n)
       throw new Error(`a fleet of ${n} lays down ${fleetLayout(n).length} copies`);

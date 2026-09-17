@@ -1,4 +1,4 @@
-import { FxKind, type RGB } from "./types";
+import { FxKind, type RGB, type TowerKind } from "./types";
 
 /**
  * THE GRID: 512 cells square. It was 256 — Mindustry's Ground Zero — while
@@ -598,8 +598,28 @@ export const PIERCER_CHARGE_SPARK = 38 / 60;
 export interface TowerStats {
   name: string;
   size: number; // footprint in tiles (size x size)
-  /** Mindustry's own block health for this turret, BEFORE TOWER_HP_SCALE
-   *  — see towerMaxHp for where each number comes from */
+  /**
+   * THE POOL, BEFORE TOWER_HP_SCALE — written on the row, one turret at a
+   * time, so a turret's toughness is tweaked where the rest of it lives
+   * and nowhere else.
+   *
+   * THE NUMBERS ARE NOT UPSTREAM'S ANY MORE, and they are not arbitrary
+   * either: they are banded by footprint, because a footprint is a tier
+   * is a rarity (rarity.ts) and the border on the card has to promise
+   * something the field can show. The bands are 300 / 900 / 2,400 /
+   * 6,000, and no turret in one may reach the one above it — a 3x3 that
+   * shrugs off what kills a 4x4 makes the card's colour a lie.
+   *
+   * INSIDE a band they sit within a sixth either way, because choosing
+   * between two commons is choosing a gun and never choosing how long
+   * the thing lives. Where a turret sits in that sixth is its RANGE,
+   * inverted: a short reach is planted in the swarm's path and takes the
+   * bite for as long as it works, a long one is picked off only by what
+   * got past everything else. Torch leads the commons, tether trails the
+   * uncommons, railhead sits at the floor of the ultras.
+   *
+   * So: move one freely, and keep it inside its band.
+   */
   health: number;
   /**
    * PLATING: a flat shave off every hit the structure takes, floored at a
@@ -696,7 +716,7 @@ const ZERO_BULLET: BulletStats = {
  * big guns and the heavies still chew through them, which is exactly the
  * relationship the swarm's own armour already has with the turrets'
  * bullets. It is deliberately NOT a fraction of the pool: the pool is
- * five times Mindustry's (TOWER_HP_SCALE) and this is not, so the two
+ * ten times the block health (TOWER_HP_SCALE) and this is not, so the two
  * dials are two dials.
  */
 export const TOWER_ARMOR_BY_SIZE: readonly number[] = [0, 0, 4, 9, 15];
@@ -818,7 +838,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   tacker: {
     name: "Tacker",
     size: 1,
-    health: 250,
+    health: 280, // common band (300), mid: 50 tiles
     armor: 0,
     range: 160 * MU,
     reload: 20 / TICK,
@@ -862,7 +882,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   lobber: {
     name: "Lobber",
     size: 1,
-    health: 260,
+    health: 250, // common band, the longest reach of the four
     armor: 0,
     range: 235 * MU,
     reload: 60 / TICK,
@@ -911,7 +931,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   autocannon: {
     name: "Autocannon",
     size: 2,
-    health: 960,
+    health: 930, // uncommon band
     armor: 4,
     range: 190 * MU,
     reload: 29 / TICK,
@@ -962,7 +982,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   airburst: {
     name: "Airburst",
     size: 2,
-    health: 800,
+    health: 870, // uncommon band
     armor: 4,
     range: 220 * MU,
     reload: 18 / TICK,
@@ -1012,7 +1032,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   cleaver: {
     name: "Cleaver",
     size: 3,
-    health: 1980,
+    health: 2800, // rare band (2,400) ceiling — 28 tiles
     armor: 9,
     range: 90 * MU,
     reload: 35 / TICK,
@@ -1054,7 +1074,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   torch: {
     name: "Torch",
     size: 1,
-    health: 400,
+    health: 350, // common band ceiling — 19 tiles, planted in the swarm
     armor: 0,
     range: 60 * MU,
     reload: 6 / TICK,
@@ -1100,7 +1120,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   coil: {
     name: "Coil",
     size: 1,
-    health: 260,
+    health: 320, // common band, short reach
     armor: 0,
     range: 90 * MU,
     reload: 35 / TICK,
@@ -1145,7 +1165,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   piercer: {
     name: "Piercer",
     size: 2,
-    health: 1120,
+    health: 990, // uncommon band
     armor: 4,
     range: 165 * MU,
     reload: 80 / TICK,
@@ -1188,7 +1208,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   barrage: {
     name: "Barrage",
     size: 3,
-    health: 1170,
+    health: 2000, // rare band floor — 91 tiles
     armor: 9,
     range: 290 * MU,
     minRange: 50 * MU,
@@ -1273,7 +1293,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   douser: {
     name: "Douser",
     size: 2,
-    health: 1000,
+    health: 1050, // uncommon band (900) ceiling — 34 tiles
     armor: 4,
     range: 110 * MU,
     reload: 45 / TICK,
@@ -1367,7 +1387,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   tether: {
     name: "Tether",
     size: 2,
-    health: 640,
+    health: 750, // uncommon band floor — 94 tiles
     armor: 4,
     range: 300 * MU,
     reload: 210 / TICK, // 3.5 s — SLOWER than railhead's 3.3, on purpose
@@ -1468,7 +1488,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   deluge: {
     name: "Deluge",
     size: 3,
-    health: 2250,
+    health: 2530, // rare band
     armor: 9,
     range: 190 * MU,
     reload: 15 / TICK,
@@ -1549,7 +1569,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   fixer: {
     name: "Fixer",
     size: 1,
-    health: 200,
+    health: 300, // common band, flat: retired, and a heal radius is not a range
     armor: 0,
     range: 40 * MU,
     reload: 200 / TICK,
@@ -1571,7 +1591,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   restorer: {
     name: "Restorer",
     size: 2,
-    health: 700,
+    health: 900, // uncommon band, flat: retired (types.ts RETIRED_KINDS)
     armor: 4,
     range: 85 * MU,
     reload: 250 / TICK,
@@ -1599,7 +1619,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   hive: {
     name: "Hive",
     size: 2,
-    health: 1200,
+    health: 810, // uncommon band
     armor: 4,
     range: 240 * MU,
     reload: (60 * 4) / 7 / TICK,
@@ -1661,7 +1681,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   whirl: {
     name: "Whirl",
     size: 3,
-    health: 1305,
+    health: 2270, // rare band
     armor: 9,
     range: 200 * MU,
     reload: 10 / TICK,
@@ -1749,7 +1769,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   repeater: {
     name: "Repeater",
     size: 4,
-    health: 2560,
+    health: 6000, // ultra band
     armor: 15,
     range: 260 * MU,
     reload: 7 / TICK,
@@ -1814,7 +1834,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   furnace: {
     name: "Furnace",
     size: 4,
-    health: 3200,
+    health: 7000, // ultra band (6,000) ceiling — 61 tiles
     armor: 15,
     range: 195 * MU,
     reload: 90 / TICK,
@@ -1887,7 +1907,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   railhead: {
     name: "Railhead",
     size: 4,
-    health: 2400,
+    health: 5000, // ultra band floor — 156 tiles, it is never in reach
     armor: 15,
     range: 500 * MU,
     reload: 200 / TICK,
@@ -1925,9 +1945,9 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
 
 /** every turret's stats under ONE hidden class each (normalizeTower) — the
  *  only table the game reads; RAW_TOWERS above is how they were written */
-export const TOWERS: Record<import("./types").TowerKind, TowerStats> = Object.fromEntries(
-  (Object.keys(RAW_TOWERS) as import("./types").TowerKind[]).map((k) => [k, normalizeTower(RAW_TOWERS[k])]),
-) as Record<import("./types").TowerKind, TowerStats>;
+export const TOWERS: Record<TowerKind, TowerStats> = Object.fromEntries(
+  (Object.keys(RAW_TOWERS) as TowerKind[]).map((k) => [k, normalizeTower(RAW_TOWERS[k])]),
+) as Record<TowerKind, TowerStats>;
 
 /**
  * HOW FAR POWER REACHES, in pixels, from the two things that carry it.
@@ -2026,15 +2046,14 @@ export const MAX_BEACONS = 64;
  * is the next acre worth more than the guns it would buy. Where that acre
  * is, is the player's business.
  *
- * THE NUMBERS, read against what a run earns. A fifty-wave clear takes
- * about 1.32 million scrap (ladder.ts stageAudit) and the unit of mid-run
- * spending is the thousand-scrap turret roll. So the first beacon is two
- * rolls — a stage-one purchase nobody agonises over — and by the fifth the
- * board is asking fifteen, which is more than any single gun in the game.
- * Cumulatively: two beacons cost 5.5k, five cost 36k, all ten cost 273k,
- * about a fifth of everything a full clear earns. A WHOLE MAP IS MEANT
- * TO BE UNAFFORDABLE: the ground a run opens should be a shape it chose,
- * not a box it ticked.
+ * THE NUMBERS, read against what a run earns. A fifty-wave run banks about
+ * 2.05 million scrap off the core (economy.ts) and the unit of mid-run
+ * spending is the 1,350-scrap tier-1 block. So the first beacon is about
+ * two blocks — an opening purchase nobody agonises over — and by the fifth
+ * the board is asking eighteen. Cumulatively: two beacons cost 8.5k, five
+ * cost 57k, all ten cost 436k, about a fifth of everything a run earns. A
+ * WHOLE MAP IS MEANT TO BE UNAFFORDABLE: the ground a run opens should be
+ * a shape it chose, not a box it ticked.
  *
  * THE CURVE WAS EASED ONCE, MOST OF ALL AT THE BOTTOM. Every step was cut
  * — about a third off the first, a tenth off the last — because the old
@@ -2055,7 +2074,7 @@ export const MAX_BEACONS = 64;
  * map itself. This list is the only place a beacon's price is written.
  */
 export const BEACON_LADDER: readonly number[] = [
-  2000, 3500, 6000, 9500, 15000, 22000, 31000, 44000, 60000, 80000,
+  3000, 5500, 9500, 15000, 24000, 35000, 50000, 70000, 96000, 128000,
 ];
 
 /**
@@ -2160,31 +2179,35 @@ export const targetingLine = (s: TowerStats): string =>
 
 
 /**
- * A TURRET'S POOL, TIMES THIS — the one dial over what a structure can
- * take (towerMaxHp). There are no walls to stand in front of a gun
+ * EVERY TURRET'S POOL, TIMES THIS — the one dial over what a structure
+ * can take (towerMaxHp). There are no walls to stand in front of a gun
  * (types.ts), so the gun itself holds the pool a line needs to be chewed
  * on for a while, and the swarm's bite (weapons.ts unitDamageScale) stays
- * at Mindustry's own number so a balance pass is done here and never row
- * by row.
+ * at its authored number so a balance pass is done on this side.
  *
- * FIVE. It was four, then eight when the deal came in — a turret is no
+ * IT IS THE WHOLE TABLE'S DIAL AND NOTHING ELSE. Which turret is tougher
+ * than which is written on the turret's own row (TowerStats.health, one
+ * band a footprint); this only says how big all four bands are at once.
+ *
+ * TEN. It was four, then eight when the deal came in — a turret is no
  * longer chosen and paid for at its own price but dealt (rarity.ts) and
  * placed free, so a line cannot be repaired by buying the same gun again
  * and a structure has to SURVIVE its mistake rather than be replaced out
- * of it. Eight bought that, and overshot: a pool that deep took the
- * pressure off the placement entirely, and a misplaced turret sat there
- * absorbing a whole tide instead of teaching anything. Five keeps the
- * lesson and gives the swarm back its teeth.
+ * of it — then five, on the reading that eight took the pressure off the
+ * placement entirely. Ten goes the other way deliberately: a line is
+ * meant to HOLD long enough to be worth building deep and worth
+ * defending with mods and relics, and at five the swarm's bite ate the
+ * front row faster than any of that could be brought to bear.
  *
  * The core is written on its own (CORE_HP) and did NOT move with it.
  */
-export const TOWER_HP_SCALE = 5;
+export const TOWER_HP_SCALE = 10;
 
 /** the stats of a structure kind — one funnel, so a caller never reads TOWERS by hand */
 export const structStats = (kind: import("./types").TowerKind): TowerStats => TOWERS[kind];
 
-/** a structure's full pool: its Mindustry block health times the dial */
-export const towerMaxHp = (kind: import("./types").TowerKind): number =>
+/** a structure's full pool: the health on its row, times the dial */
+export const towerMaxHp = (kind: TowerKind): number =>
   TOWERS[kind].health * TOWER_HP_SCALE;
 
 /*
@@ -2358,10 +2381,11 @@ export const SHRAPNEL = {
  * the run is over (Sim.lost).
  *
  * It used to read TOWER_HP_SCALE, and it stopped the day that dial was
- * doubled for the deal. Doubling the turrets is a statement about how long
- * a LINE holds; doubling the core would be a statement about how long the
- * whole fifty waves take to lose, which is every map's pacing at once and
- * is not a change anybody asked for. Four, where it has always been.
+ * doubled for the deal — it has moved again since, and this has not.
+ * Raising the turrets is a statement about how long a LINE holds; raising
+ * the core would be a statement about how long the whole fifty waves take
+ * to lose, which is every map's pacing at once and is not a change
+ * anybody asked for. Four, where it has always been.
  */
 export const CORE_HP_SCALE = 4;
 export const CORE_HP = 6000 * CORE_HP_SCALE;

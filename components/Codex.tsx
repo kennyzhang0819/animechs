@@ -27,16 +27,25 @@ import { tile } from "./tile";
  * slower than a page. So: a page.
  *
  * AND IT OPENS ON EVERYTHING. The filter strip is a filter and not a set
- * of doors: the default is ALL, every turret, mod, relic, map and rule in
- * one grid, because the first question is "what is there" and only the
- * second one is "what kind of thing is there". Categories stay contiguous
- * inside it — the guns, then the mods, then the relics, then the rules,
- * then the maps (FILTERS) — so the grid is one list and not a shuffle.
+ * of doors: the default is ALL, every turret, rule and map in one grid,
+ * because the first question is "what is there" and only the second one is
+ * "what kind of thing is there". Categories stay contiguous inside it —
+ * the guns, then the rules, then the maps (FILTERS) — so the grid is one
+ * list and not a shuffle.
  *
- * THE SHAPES ARE NOT ON IT. Every save owns all five squares from wave
+ * THE SHAPES ARE NOT ON IT. Every save owns all three squares from wave
  * one (formation.ts), nothing on the track deals one, and a tab of tiles
  * that are lit for everybody forever answers no question this board is
  * for.
+ *
+ * NEITHER ARE THE MODS AND THE RELICS. They had a tab each, and they are
+ * off the board because they are out of the game: nothing deals one
+ * (track.ts) and the corner no longer sells one (Deal.tsx). This board's
+ * promise is that everything which EXISTS is drawn here whether it can be
+ * reached or not, and a category with no way into a run does not qualify —
+ * a shelf of permanently dim tiles is a promise of something that is not
+ * coming. game/mods.ts and game/relics.ts are intact; the day either is
+ * dealt again it gets its tab back.
  *
  * AND INSIDE A CATEGORY IT IS SORTED BY RARITY (track.ts, unlocksOf):
  * commons first and purples last, with the level a tiebreak inside a
@@ -45,8 +54,8 @@ import { tile } from "./tile";
  * order teaches it, where one sorted by level scatters them.
  *
  * IT IS A WALL OF SQUARES AND NOTHING ELSE. No names under the tiles: the
- * square IS the answer at this size — a turret's own sprite, a module's
- * own glyph, a map's own thumbnail, a rule's own face — and forty-odd
+ * square IS the answer at this size — a turret's own sprite, a map's own
+ * thumbnail, a rule's own face — and forty-odd
  * captions under forty-odd pictures is a page of text pretending to be
  * a shelf. What the thing is CALLED is one hover away, with everything
  * else worth knowing about it.
@@ -67,24 +76,6 @@ import { tile } from "./tile";
  * before queueing — the surprise is meant to be WHICH ones a run rolls,
  * not what exists.
  *
- * WHICH IS WHY THE MODULES ARE HERE TOO — what the deal's M and G buttons
- * sell, in the two tabs they actually are: MODS (game/mods.ts) and RELICS
- * (game/relics.ts). They used to be one tab called "Upgrades", which put
- * two different purchases and the tech tree's per-turret rungs under a
- * word none of the three is called; a player reading it could not tell
- * that half the shelf was a chance on a placement and the other half a
- * rule over the whole board. Two categories, two tabs, and no tab named
- * for a thing that does not exist.
- *
- * THE MODS TAB IS A LADDER AND THE RELICS TAB IS A PROMISE. Every mod is
- * dealt inside the build phase (track.ts), so a save part way up sees a
- * Mods tab filling in as it climbs — the pacing of the catalog, visible.
- * The RELICS are reserved: no level deals one, so all fourteen tiles are
- * drawn and every one of them is dim, at level 1 and at the top of the
- * track alike. They stay ON THE BOARD because this board's whole promise
- * is that everything which exists is drawn here, whether it can be reached
- * or not.
- *
  * A LOCKED TILE IS DIMMED AND SAYS NOTHING ELSE. No level badged on it,
  * no line in its card about what hands it over. The track next door is
  * the screen that answers "when"; this one answers "what", and a number
@@ -93,35 +84,25 @@ import { tile } from "./tile";
 
 /**
  * THE ORDER, and it is the order a player thinks in rather than the order
- * the track deals in: the GUN first, then what can be bolted to it, then
- * the rule that governs the whole board, then the rules the run is played
- * under, then the ground it is played on. Turrets, mods, relics, mutators,
- * maps — one list that walks outward from the thing on the board to the
- * world round it, and the strip and the "All" grid use the same order so
- * switching a filter never re-shuffles what was already on screen.
- *
- * MODS BEFORE RELICS, which is both the order the corner's two buttons
- * read in and the order the track deals them in (track.ts): the mid game's
- * answer, then the late game's.
+ * the track deals in: the GUN first, then the rules the run is played
+ * under, then the ground it is played on. One list that walks outward from
+ * the thing on the board to the world round it, and the strip and the
+ * "All" grid use the same order so switching a filter never re-shuffles
+ * what was already on screen.
  */
 const FILTERS: readonly { id: Category | "all"; label: string }[] = [
   { id: "all", label: "All" },
   { id: "turret", label: "Turrets" },
-  { id: "mod", label: "Mods" },
-  { id: "relic", label: "Relics" },
   { id: "mutator", label: "Mutators" },
   { id: "world", label: "Maps" },
 ];
 
 /** every category, in strip order — what "All" concatenates */
-const EVERY: readonly Category[] = ["turret", "mod", "relic", "mutator", "world"];
+const EVERY: readonly Category[] = ["turret", "mutator", "world"];
 
 /**
- * A BOARD CATEGORY IS A TRACK CATEGORY — the same five names, asked of the
- * same function (unlocksOf). There is no sixth for the tech tree's
- * per-turret rungs: nothing deals one and nothing sells one, and the tab
- * that used to hold them held two other things as well under a name none
- * of the three went by.
+ * A BOARD CATEGORY IS A TRACK CATEGORY — the same three names, asked of
+ * the same function (unlocksOf).
  */
 type Category = UnlockKind;
 
@@ -141,8 +122,8 @@ const SCALE = TILE_PX / CHIP_PX;
  * everything else — the name included — in the card that opens on hover.
  *
  * It knows nothing about what it is drawing — the geometry is asked once,
- * which is the only way a grid of turrets, modules, rules and maps reads
- * as one shelf.
+ * which is the only way a grid of turrets, rules and maps reads as one
+ * shelf.
  *
  * A LOCKED TILE KEEPS ITS OWN COLOUR AND IS DIMMED, exactly as the
  * track's chip is (RewardChip in Progress.tsx): the border stays the
@@ -310,7 +291,7 @@ export default function Codex({
           {items.length === 0 ? (
             /* A CATEGORY WITH NOTHING IN IT says so in words rather than
                in an empty rectangle. No filter reaches this today — all
-               five tabs have something in them — but a category that
+               three tabs have something in them — but a category that
                empties out should explain itself rather than look broken */
             <div className="ms-pane mt-6 max-w-md px-5 py-4 text-center text-[14px] text-[#A6A6AF]">
               <div className="mb-1 font-display text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">

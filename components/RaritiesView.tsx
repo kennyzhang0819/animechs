@@ -3,7 +3,6 @@
 import { useCallback, useState } from "react";
 
 import { currentBalanceDoc, saveBalanceDoc } from "@/game/balance";
-import { SHAPE_ODDS, FORMATION_IDS, formationCount, formationDef, formationRarity } from "@/game/formation";
 import {
   authoredChance,
   chanceOf,
@@ -188,21 +187,6 @@ export default function RaritiesView() {
           turretsOfRarity(r)
             .filter((k) => FIELDED_KINDS.includes(k) && !isRetired(k))
             .map((k) => TOWERS[k].name)
-            .join(", ") || "nothing in this band"
-        }
-        onChange={touched}
-      />
-
-      <OddsTable
-        title="The shape deal — how much of it, and in what shape"
-        blurb="Deliberately the generous half of the same button: an ultra SHAPE should come
-          up about one draw in ten against an ultra turret's one in a hundred. What a player
-          feels at T is 'which gun' first and 'how much of it' second, and odds as steep as
-          the turrets' would invert that."
-        dial={SHAPE_ODDS}
-        contents={(r) =>
-          FORMATION_IDS.filter((id) => formationRarity(id) === r)
-            .map((id) => `${formationDef(id).name} (${formationCount(id)})`)
             .join(", ") || "nothing in this band"
         }
         onChange={touched}

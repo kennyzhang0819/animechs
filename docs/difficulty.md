@@ -1,6 +1,6 @@
 # Difficulty — the ladder
 
-One climb per world, ten tiers, four names, one script. Code: `game/ladder.ts`.
+One climb per world, nine tiers, four names, one script. Code: `game/ladder.ts`.
 The rules a high tier is played under are `docs/mutators.md`; what a run earns is
 `docs/economy.md`.
 
@@ -16,11 +16,11 @@ what rules they come under.
 | 2 | Onslaught | half | none |
 | 3 | Scourge | three quarters | none |
 | 4 | Nemesis | the script as authored, every body | none |
-| 5–10 | Nemesis +1 … +6 | the full swarm | a mutator roll that spends more and returns more each step |
+| 5–9 | Nemesis +1 … +5 | the full swarm | a mutator roll that spends more and returns more each step |
 
 So a tier is three numbers: the share of the count it sends (`COUNT_SCALE`), what its
 mutator roll may spend and how many rules it returns, and how much the XP it pays is
-multiplied by (`tierXpBonus`). **The four named difficulties are a size ramp; the six
+multiplied by (`tierXpBonus`). **The four named difficulties are a size ramp; the five
 above them are a rules ramp on top of the biggest size.**
 
 Indices are 0-based everywhere in code and in `window.__ladder`, because tier 0 indexes
@@ -69,14 +69,14 @@ dashboard's dial — because a map or a mutator may still want it.
 
 ## What a tier pays
 
-**Scrap is fixed per kill and never scales.** A tier's run banks the same scrap as any
-other, because scrap is what the turret prices are authored against and a tier that paid
-more scrap would be an easier fight, not a harder one.
+**Income reads the run clock and never the rung.** Every tier banks the same scrap at the
+same second (`docs/economy.md`), because scrap is what the turret prices are authored
+against and a tier that paid more would be an easier fight, not a harder one.
 
 **XP scales, and that gradient is the whole reason to climb.** `XP_STEP_PER_RUNG` is 0.5:
 tier n carries a raw weight of 1 + 0.5n, normalised so that `XP_BASE_TIER` (Nemesis — the
 whole script, no rules) is ×1, which is the tier `MISSION_XP` is priced for. Incursion pays
-×0.4 of it and Nemesis +6 pays ×2.2, so the top tier pays ×5.5 what Incursion does.
+×0.4 of it and Nemesis +5 pays ×2, so the top tier pays ×5 what Incursion does.
 
 **Linear, not compounding, because the fight does not compound any more.** The old loot
 bonus compounded at 1.34 a tier to keep pace with health that compounded at the same rate;
@@ -90,9 +90,9 @@ worth exactly what its kills are.
 
 ## Extending the ladder
 
-`RUNG_COUNT` is ten because ten is where the tuning has been checked, not because anything
+`RUNG_COUNT` is nine because nine is where the tuning has been checked, not because anything
 is finite. **Every tier's dials are arithmetic on its index** (`RUNGS`), and `clearedByMap`
-is an unbounded int per world, so raising `RUNG_COUNT` is the whole edit an eleventh tier
+is an unbounded int per world, so raising `RUNG_COUNT` is the whole edit a tenth tier
 needs.
 
 **The ladder is climbed once per world.** `RUNGS` says what a tier *is*; how far up it a

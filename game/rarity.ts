@@ -1,22 +1,20 @@
+import { TOWER_TIER, type TowerTier } from "./economy";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
 /**
- * RARITY — what a turret is worth to draw, and the colour it is drawn in.
+ * RARITY — WHICH TIER A TURRET IS IN, and the colour it is drawn in.
  *
- * The build card is gone (components/Animechs.tsx): a turret is not
- * picked off a shelf any more, it is DEALT. The player pays a flat fee
- * (TURRET_ROLL_PRICE in economy.ts), the deal rolls a rarity against the
- * weights below and then a turret uniformly inside it, and what comes out
- * pops onto the field as a card to place. So a rarity is two things at
- * once — how often the deal hands the thing over, and the border the card
- * wears so the answer is readable across a room.
+ * The four rarities ARE the four tiers (economy.ts TOWER_TIER): common is
+ * tier 1, ultra is tier 4, and a turret's tier is its footprint in tiles.
+ * The player presses 1/2/3/4 to name the band and the deal rolls
+ * uniformly inside it (rollTurretOfTier), so a rarity is no longer how
+ * OFTEN a thing is handed over — it is what the thing COSTS, and the
+ * border says which of the four prices was just paid.
  *
- * THE RARITIES ARE FIXED FOR THE WHOLE RUN, but the WEIGHTS are not: they
- * are handed in at the roll (rollTurret) rather than read off this module,
- * because a RELIC can shift them. That is what Ascendancy Protocol is
- * (relics.ts shiftedWeights) — a run that draws purple one time in twenty
- * rather than one in a hundred — and nothing here may assume BASE_WEIGHTS
- * is what is in force.
+ * The weights below are what is left of the old deal: nothing in a run
+ * reads them now that the band is chosen, and they stay because the admin
+ * odds dashboard and Ascendancy Protocol (relics.ts) are both written
+ * against the dial.
  */
 export const RARITIES = ["common", "uncommon", "rare", "ultra"] as const;
 export type Rarity = (typeof RARITIES)[number];
@@ -53,47 +51,15 @@ export const RARITY: Readonly<Record<Rarity, RarityDef>> = {
   ultra: { id: "ultra", name: "Ultra Rare", color: "#B07BFF", ground: "#221B2F" },
 };
 
-/**
- * WHICH TURRET IS WHICH — authored, not derived from price.
- *
- * It reads close to Mindustry's own build cost and deliberately is not it:
- * cleaver is an uncommon at four thousand scrap and deluge a rare at five,
- * because what the rarity is pricing is how much a board WANTS the thing,
- * and a liquid turret that stops a naval push cold is a rarer answer than
- * a short-range shotgun. The top rarity is the three 4x4s and nothing
- * else: the biggest footprint in the game is the thing a run is hoping
- * for, and one line says so.
- *
- * The two fixers are retired from the field (types.ts RETIRED_KINDS) and
- * are never dealt; they are filed as commons so the table stays total and
- * the day they come back they come back with a border already on them.
- */
-export const TURRET_RARITY: Readonly<Record<TowerKind, Rarity>> = {
-  // greyish white: the 1x1s and the 2x2 support guns — the board's floor
-  tacker: "common",
-  lobber: "common",
-  airburst: "common",
-  torch: "common",
-  coil: "common",
-  douser: "common",
-  // blue: the guns that answer one hard body or one massed lane
-  autocannon: "uncommon",
-  piercer: "uncommon",
-  tether: "uncommon",
-  barrage: "uncommon",
-  cleaver: "uncommon",
-  // amber: the specialists
-  hive: "rare",
-  whirl: "rare",
-  deluge: "rare",
-  // purple: every 4x4 in the game
-  repeater: "ultra",
-  furnace: "ultra",
-  railhead: "ultra",
-  // retired — see the note above
-  fixer: "common",
-  restorer: "common",
-};
+/** WHICH TURRET IS WHICH — derived, one band a tier (economy.ts) */
+export const TURRET_RARITY: Readonly<Record<TowerKind, Rarity>> = Object.fromEntries(
+  TOWER_KINDS.map((k) => [k, RARITIES[TOWER_TIER[k] - 1]]),
+) as Readonly<Record<TowerKind, Rarity>>;
+
+/** the band a tier wears, and the tier a band is — one table, both ways */
+export const rarityForTier = (t: TowerTier): Rarity => RARITIES[t - 1];
+export const tierForRarity = (r: Rarity): TowerTier =>
+  (RARITIES.indexOf(r) + 1) as TowerTier;
 
 export const rarityOf = (kind: TowerKind): Rarity => TURRET_RARITY[kind];
 export const rarityDef = (kind: TowerKind): RarityDef => RARITY[TURRET_RARITY[kind]];
@@ -227,6 +193,19 @@ export function rollTurret(
     }
   }
   const list = byRarity.get(live[live.length - 1])!;
+  return list[Math.floor(rng() * list.length) % list.length];
+}
+
+/** ONE DRAW OFF A TIER — what the corner's 1/2/3/4 actually roll:
+ *  uniformly among the turrets of that tier the save may field. Null when
+ *  the track has dealt it none of them */
+export function rollTurretOfTier(
+  pool: readonly TowerKind[],
+  tier: TowerTier,
+  rng: () => number = Math.random,
+): TowerKind | null {
+  const list = pool.filter((k) => TOWER_TIER[k] === tier);
+  if (list.length === 0) return null;
   return list[Math.floor(rng() * list.length) % list.length];
 }
 

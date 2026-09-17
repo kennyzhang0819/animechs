@@ -45,9 +45,9 @@ it takes ~10 minutes there and 40+ anywhere weaker. Narrow it with
 
 ## The four systems
 
-- **Difficulty — the ladder** (`game/ladder.ts`). Ten rungs. The four named ones
+- **Difficulty — the ladder** (`game/ladder.ts`). Nine rungs. The four named ones
   (Incursion → Onslaught → Scourge → Nemesis) send a quarter / half / three
-  quarters / all of every wave under no rules; Nemesis +1…+6 send the full swarm
+  quarters / all of every wave under no rules; Nemesis +1…+5 send the full swarm
   under a growing mutator roll. A rung is **size, then rules — never health**.
 - **Enemy families** (`FAMILIES` in `game/levels.ts`). Six active, five tiers
   each — ironhide, dartback, starhart, stoop, skate, livewire — plus three
@@ -56,18 +56,20 @@ it takes ~10 minutes there and 40+ anywhere weaker. Narrow it with
 - **Mutators** (`game/mutation.ts`). Thirteen rules a run is played *under*,
   rolled rather than chosen, each priced against a rung's budget. Mandatory from
   Nemesis +1 up; Custom mode may name a hand instead.
-- **Mods and relics** — never called "upgrades". A **mod** (`game/mods.ts`, 15)
-  is a chance riding every turret placed from now on, bought by the fistful: the
-  mid game's answer. A **relic** (`game/relics.ts`, 15) is a rule over the whole
-  board, bought once: the late game's answer.
+- **The economy** (`game/economy.ts`). The core trickles scrap on the RUN CLOCK
+  and nothing else — no kill pays — and a turret card costs its TIER (the gun's
+  footprint in tiles, 1 to 4) times its shape's cell count. See
+  [docs/economy.md](docs/economy.md). Mods and relics (`game/mods.ts`,
+  `game/relics.ts`) are out of play: the catalogs are intact, nothing deals them.
 
 Fire, poison and water are the three status channels, and all three damage
 through plating — see [docs/elements.md](docs/elements.md).
 
 ## Controls
 
-**T** draws a turret card (a formation of 4–36 turrets) — press again to re-roll,
-**R** to turn it, **X** to cycle ×1/×4/×9. **M** buys mods, **G** buys relics.
+**1 2 3 4** draw a turret card of that tier (**T** re-rolls the one in hand),
+**R** turns it, **X** cycles the shape 3×3 / 5×5 / 7×7. Drawing is free — the
+scrap leaves the purse when the card is placed, so switching tiers costs nothing.
 Left click selects, right click demolishes, delete sells. Pan with middle-drag or
 WASD, zoom with the wheel, pause with space. Full table in `game/game.ts`.
 

@@ -142,7 +142,7 @@ import {
 import { TOWER_DESC, TOWERS } from "@/game/constants";
 import { TOWER_ICONS } from "@/game/towerIcons";
 import { TOWER_KINDS, type RGB } from "@/game/types";
-import { levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
+import { coreIncomeRate, levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
 import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
 import ProgressView from "./Progress";
 import { bandFor, MutationFace } from "./mutationFace";
@@ -3698,6 +3698,14 @@ export default function Animechs() {
                   className="leading-none tracking-normal"
                 />
               )}
+              {/* WHAT THE CORE IS PAYING RIGHT NOW. The income is the whole
+                  economy (economy.ts) and it climbs on the clock beside it,
+                  so the rate belongs on this row and nowhere else */}
+              {hud.scrap !== null && (
+                <span className="leading-none tracking-normal text-[#6E7480]">
+                  +{Math.round(coreIncomeRate(hud.elapsed)).toLocaleString()}/s
+                </span>
+              )}
             </div>
             <div className="ms-pane p-1">
               <canvas
@@ -3854,15 +3862,14 @@ export default function Animechs() {
               </div>
               <div className="mt-4 space-y-1 text-base text-[#EDEDEF]">
                 {/* HOW CLOSE IT CAME, and close to WHAT — the mission's own
-                    objective, never the script's position in it. The bar
-                    used to be drawn off the wave number, which was honest
-                    only while clearing the script was the assignment; a
-                    wave count under a script that loops forever
-                    (Sim.loadStep) is a bar that fills up and starts again.
-                    It is one number now (`missionProgress`) and the line
-                    over it says what the number is counting. */}
+                    objective, never the script's position in it. A wave
+                    count under a script that loops forever (Sim.loadStep)
+                    would say nothing, so this counts the MISSION, and it
+                    is a sentence rather than a bar: what a loss wants to
+                    leave behind is the number to beat next time, which a
+                    filled stripe only approximates. */}
                 <div>
-                  <div className="mb-1 text-[14px] uppercase tracking-widest text-[#71717C]">
+                  <div className="text-[14px] uppercase tracking-widest text-[#71717C]">
                     {hud.mission.kind === "raze"
                       ? `${hud.razeKilled} of ${razeGuns(hud.mission)} destroyed, ${hud.razeUp} still firing`
                       : hud.mission.kind === "intercept"
@@ -3883,12 +3890,6 @@ export default function Animechs() {
                               hud,
                             ).done
                           } of ${missionTarget(hud.mission, hud.scriptWaves)} waves held`}
-                  </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-[#3a1f1f]">
-                    <div
-                      className="h-full rounded-full bg-[#e55454]"
-                      style={{ width: `${Math.min(100, 100 * hud.missionProgress)}%` }}
-                    />
                   </div>
                 </div>
                 <div>

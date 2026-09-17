@@ -25,7 +25,7 @@ import {
 import { ALL_LAYERS, Renderer, type TerrainLayers } from "./renderer";
 import { loadInvertZoom } from "./progress";
 import { MARK_KINDS, MAX_MARKS, markKind, markOpts, type MapMark, type MarkKind } from "./missionMarks";
-import { canHoldSpawn, isWaterFloor } from "./terrain";
+import { canHoldSpawn, isWaterFloor, rebuildReserved } from "./terrain";
 import { WALL_DEEP, WALL_PINE, type MapBeacon, type Prop, type Terrain } from "./terrain";
 
 // THE ZOOM FLOOR IS NO LONGER COVER. It used to be 1 — "the world fills
@@ -273,6 +273,7 @@ export class MapEditor {
     this.terrain.decor = s.decor;
     this.terrain.beacons = s.beacons;
     this.terrain.marks = s.marks;
+    rebuildReserved(this.terrain);
     this.terrain.base = s.base;
     this.dirty = true;
     this.renderer.rebuildTerrain(this, this.layers);
@@ -555,6 +556,7 @@ export class MapEditor {
     }
     this.terrain.marks.push({ kind: kind.id, x: x0, y: y0, opts: markOpts(kind, undefined) });
     this.picked = this.terrain.marks.length - 1;
+    rebuildReserved(this.terrain);
     this.dirty = true;
   }
 
@@ -574,6 +576,7 @@ export class MapEditor {
     this.terrain.marks.splice(hit, 1);
     if (this.picked === hit) this.picked = -1;
     else if (this.picked > hit) this.picked--;
+    rebuildReserved(this.terrain);
     this.dirty = true;
     return true;
   }

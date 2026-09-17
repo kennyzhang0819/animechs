@@ -179,17 +179,17 @@ export type Reward =
   | { kind: "upgrade"; id: UpgradeKind };
 
 /**
- * THE MAPS, and the spine of the build phase: ONE EVERY OTHER LEVEL from 2
- * to 14, then the ninth on ROSTER_TOP beside the last purple. Every second
- * row of the opening is somewhere new to take what the row before handed
- * over, and the phase closes on a map and the gun to christen it with.
+ * THE MAPS, and the spine of the build phase — and since every playable
+ * board carries a different MISSION, this table is also the order the
+ * missions arrive in: one a level, the intercept opening on level 1 by
+ * carrying no entry here at all (worldUnlockLevel defaults to 1).
  *
  * ONE MAP A LEVEL AND NEVER TWO. A map is the biggest thing a row can
  * carry and the eye reads it last (REWARD_ORDER), so a row carries one or
  * it carries none; the odd levels are where the gun and the module stand on
- * their own. The last of the nine is the whole of level 15 — the roster and
- * the bag both run out under it, so the phase closes on somewhere new to
- * take everything it just finished handing over.
+ * their own. The last of the nine is the whole of level 15 — the roster
+ * runs out under it, so the phase closes on somewhere new to take
+ * everything it just finished handing over.
  *
  * They used to run to level 22 — stretched out across the old 30-level
  * track so the back half had something to hand over besides rules. Two of
@@ -198,32 +198,58 @@ export type Reward =
  * campaign to be opening new ground in.
  */
 const PLACED: readonly { level: number; reward: Reward }[] = [
-  { level: 2, reward: { kind: "world", worldId: "4" } },
-  { level: 4, reward: { kind: "world", worldId: "2" } },
-  { level: 6, reward: { kind: "world", worldId: "5" } },
-  { level: 8, reward: { kind: "world", worldId: "6" } },
-  { level: 10, reward: { kind: "world", worldId: "7" } },
-  { level: 12, reward: { kind: "world", worldId: "3" } },
+  // THE THREE PLAYABLE BOARDS ARE THREE MISSIONS, and they come ONE A
+  // LEVEL. A mission is the thing a map is actually about (levels.ts
+  // Mission, docs/mission-design.md) — the waves are the same fifty on
+  // every board — so handing all three over at once is handing over the
+  // whole game before the first clear. Borer Intercept is the opening
+  // because it is the one whose objective is a thing to SHOOT, which is
+  // what the board already does; the escort asks the player to keep
+  // something alive that moves, and the siege asks them to attack
+  { level: 2, reward: { kind: "world", worldId: "12" } },
+  { level: 3, reward: { kind: "world", worldId: "10" } },
+  // ...and the shelved boards after them (levels.ts PLAYABLE_WORLD_IDS
+  // keeps all fifteen off the menu). They fill the tail of the phase so
+  // every row of the build phase still carries something
+  { level: 5, reward: { kind: "world", worldId: "4" } },
+  { level: 7, reward: { kind: "world", worldId: "2" } },
+  { level: 9, reward: { kind: "world", worldId: "5" } },
+  { level: 11, reward: { kind: "world", worldId: "6" } },
+  { level: 12, reward: { kind: "world", worldId: "7" } },
+  { level: 13, reward: { kind: "world", worldId: "3" } },
   { level: 14, reward: { kind: "world", worldId: "8" } },
   { level: 15, reward: { kind: "world", worldId: "9" } },
 ];
 
+
 /**
- * THE FIRST BOARD: a gun for the ground, a gun for the air, artillery for
- * the crowd, and the AUTOCANNON — the first gun that answers a single hard body
- * rather than a crowd, without which the first ten waves are answered by
- * putting down more tackers. Everything else is dealt one a level.
+ * THE FIRST BOARD IS ONE GUN OF EACH TIER, so a fresh save can press 1, 2,
+ * 3 and 4 and have all four mean something. A tier is CHOSEN now
+ * (economy.ts, Deal.tsx) rather than rolled, so a dark button is not a
+ * rarity — it is a button that does nothing.
  *
- * THE REPEATER USED TO BE HERE and has been moved to the top of the track
- * (UNLOCKS, level 12). It was in the opening hand to show a new save what
- * its scrap was FOR, back when scrap bought a named turret off a shelf —
- * and the deal (rarity.ts) answers that question by itself now. Worse, an
- * ultra-rare turret in the roster from wave one is an ultra-rare turret in
- * the DRAW POOL from wave one, and the one-in-a-hundred border means
- * nothing if the board it can come out of is four commons deep.
+ * WHAT GATES THE UPPER TWO IS THE PRICE and not the track: a tier-3 block
+ * is 54,000 and a tier-4 block is 270,000, which is most of an act's
+ * income. A level-1 save can see what its money is for from wave one and
+ * cannot afford it for half an hour, which is the right way round.
+ *
+ * SO THE TRACK WIDENS WHAT A BUTTON TURNS OVER, NOT WHAT CAN BE PRESSED.
+ * With one kind in a tier the button is deterministic — press 1, get
+ * tackers — and every level after this one puts another face in one of the
+ * four bands. That is a better thing for the opening to teach than a
+ * half-lit row of buttons.
+ *
+ * THE FOUR ARE THEIR BANDS' GENERALISTS: the tacker and the autocannon
+ * both answer air and ground, the barrage is the crowd artillery the
+ * script mostly asks for (it is the one gun here that cannot hit air —
+ * tier 1 and 2 cover that until the whirl lands on level 9), and the
+ * repeater is the big all-round gun. The repeater used to be in this hand,
+ * came out because an ultra in the pool from wave one made the
+ * one-in-a-hundred border meaningless, and comes back now that the border
+ * is a price band the player names rather than a draw frequency.
  */
 export const STARTING_ROSTER: readonly TowerKind[] = [
-  "tacker", "lobber", "airburst", "autocannon",
+  "tacker", "autocannon", "barrage", "repeater",
 ];
 
 /**
@@ -232,96 +258,59 @@ export const STARTING_ROSTER: readonly TowerKind[] = [
  * decision and not an arithmetic on build cost. Index 0 is level 2.
  */
 const UNLOCKS: Readonly<Record<number, readonly TowerKind[]>> = {
-  // THE COMMONS LEAD, because every one of them widens the floor of the
-  // draw rather than its ceiling: the opening levels are where a save
-  // learns what the deal FEELS like, and it should feel like a board being
-  // filled in. The two fixers that used to lead this list are retired
-  // (types.ts RETIRED_KINDS) and no level hands one out
-  2: ["torch"],
-  3: ["coil"],
-  // ...but the bands are INTERLEAVED rather than dealt in blocks. A blue
-  // among the commons is the first level that changes what a board can do
-  // instead of how much of it there is, and the last common lands after it
-  // so the floor is still being filled in while the ceiling rises
-  4: ["piercer"],
-  5: ["douser"],
-  6: ["barrage"],
-  // the first amber comes early for the same reason, and the blue that
-  // follows it keeps the middle of the phase from settling into a pattern
+  // LEVEL 2 CARRIES TWO, and it is the only row that does. A first clear
+  // should widen more than one button: the torch widens tier 1 and the
+  // airburst widens tier 2, so the row after the opening changes what BOTH
+  // of the affordable bands turn over. The two fixers that used to lead
+  // this list are retired (types.ts RETIRED_KINDS) and no level hands one out
+  2: ["torch", "airburst"],
+  3: ["lobber"],
+  4: ["coil"],
+  // ...then the rest of the 2x2s, the band a run spends most of its middle in
+  5: ["piercer"],
+  6: ["douser"],
   7: ["hive"],
-  8: ["tether"],
-  // THE PURPLES ARE SPREAD, and the last of them closes the roster. A 4x4
-  // is the thing a run is hoping the deal turns over, and handing all three
-  // out on consecutive levels spent the whole ceiling of the game in three
-  // clears. The gaps are the point — a save plays a good while WITH the
-  // repeater before the furnace turns up — and the blues and ambers below
-  // are what stands in them. Three levels apart, then two: the roster runs
-  // out one level before the phase does now that every row from 2 carries a
-  // gun, and the railhead would rather land a row early than leave a hole
-  9: ["repeater"],
-  10: ["whirl"],
-  11: ["cleaver"],
-  12: ["furnace"],
-  13: ["deluge"],
-  14: ["railhead"],
+  // THE UPPER TWO ARE SPREAD AND INTERLEAVED. A save already owns one gun
+  // of each of them (STARTING_ROSTER), so what these rows widen is WHICH
+  // gun the button turns over — and a band that arrived all at once would
+  // spend that whole question in two clears. The whirl leads because it is
+  // the tier-3 answer to air the barrage is not; the railhead closes the
+  // roster two levels before the phase ends
+  8: ["whirl"],
+  9: ["tether"],
+  10: ["cleaver"],
+  11: ["furnace"],
+  12: ["deluge"],
+  13: ["railhead"],
 };
+
 
 /**
  * THE SHAPES ARE NOT ON THE TRACK AT ALL (formation.ts). Every save owns
- * every one of the five squares from wave one, so nothing here deals one
- * and the codex has no Shapes tab. They were dealt once — three
- * to open with and nine earned — back when a shape was an OUTLINE and
- * learning what a saltire was for was a reward in itself. A table of
- * plain squares has nothing to teach that way: gating the 6x6 behind
- * level 26 only meant a low save's purple shape roll silently came back
- * as a smaller square, which reads as the deal being stingy rather than
- * as progress. The size is the rarity now and the roll is the whole of
- * it (SHAPE_ODDS).
+ * all three squares from wave one and the player CHOOSES between them, so
+ * nothing here deals one and the codex has no Shapes tab. They were dealt
+ * once — three to open with and nine earned — back when a shape was an
+ * OUTLINE and learning what a saltire was for was a reward in itself; a
+ * table of plain squares has nothing to teach that way.
  */
 
 /**
- * THE MODS (mods.ts) — the whole of the module catalog the track deals,
- * and the third thing the build phase hands over.
+ * THE MODS (mods.ts) ARE RESERVED, AND NO LEVEL DEALS ONE — same door the
+ * relics went out of, and for a related reason.
  *
- * A FRESH SAVE OPENS THE M BUTTON ON FOUR TICKS. The whole catalog used to
- * be on offer from level one: every module in the bag, so a first run's M
- * press was as likely to turn over an ALL ROUND as a save that had earned
- * its way to the top of the track. They are dealt now, exactly as the
- * turrets and the maps are, and the opening four are the four commons —
- * one per stat, so the first mod a run buys teaches what a mod IS (a
- * chance riding every turret placed) without also asking what a sabot is.
+ * A mod was a CHANCE riding every turret placed from then on, bought by
+ * the fistful. What it actually did to a run was make the board's strength
+ * a thing the bank bought rather than a thing the player built, and it did
+ * it in increments too small to aim: the answer to a hard wave was to press
+ * a button more times. The corner buys guns and ground now (Deal.tsx).
  *
- * THE ORDER IS CHEAPEST BAND FIRST and ONE A LEVEL FROM 2, so the catalog
- * is spent by level 12 and a save arrives at the mutator phase with nothing
- * left to be handed. The three ultras close it, back to back: the bag
- * finishes strongest right where the track stops filling it. Eleven mods
- * against thirteen guns means the bag runs dry two rows before the roster
- * does, which is the right way round — a module with no gun to ride is
- * worth less than a gun with no module on it.
- *
- * THERE IS NO SECOND HALF ANY MORE. The mods used to be the FRONT half of
- * a module catalog whose back half was the relics, dealt from 16 up; the
- * relics are off the track (see the relic note below), so the mods are the
- * whole of what a level can put in a bag.
+ * NOTHING IS DELETED AND NOTHING IS ROLLABLE. mods.ts, the odds, the shelf,
+ * the reveal card and the codex's Mods tab are all intact; what is gone is
+ * the LEVEL TABLE, so modsAt hands back an empty bag at every level and
+ * modUnlockLevel answers past the top of the track. Putting them back is
+ * giving these two functions a table again.
  */
-export const STARTING_MODS: readonly ModId[] = ["dmg1", "rate1", "hp1", "range1"];
-
-const MOD_UNLOCKS: Readonly<Record<number, readonly ModId[]>> = {
-  // the uncommons: the four dials again, twice the step, and the repair
-  2: ["dmg2"],
-  3: ["rate2"],
-  4: ["hp2"],
-  5: ["range2"],
-  6: ["regen1"],
-  // the rares: a shape rather than a dial — a frame, a wall and a spear
-  7: ["prototype"],
-  8: ["bulwark"],
-  9: ["sabot"],
-  // the ultras, back to back, closing the bag
-  10: ["giant"],
-  11: ["sniper"],
-  12: ["allround"],
-};
+export const STARTING_MODS: readonly ModId[] = [];
 
 /**
  * THE RELICS (relics.ts) ARE RESERVED, AND NO LEVEL DEALS ONE.
@@ -353,37 +342,10 @@ const MOD_UNLOCKS: Readonly<Record<number, readonly ModId[]>> = {
  * to start when they are placed again.
  */
 
-/** every MOD exactly once, inside the build phase — checked at import */
-(() => {
-  const seen = new Set<ModId>(STARTING_MODS);
-  if (seen.size !== STARTING_MODS.length) throw new Error("a starting mod is dealt twice");
-  for (const [level, row] of Object.entries(MOD_UNLOCKS)) {
-    if (row.length === 0) throw new Error(`level ${level} opens no mod`);
-    if (+level < 2 || +level > ROSTER_TOP)
-      throw new Error(`the track opens a mod on level ${level}, outside the build phase (2 to ${ROSTER_TOP})`);
-    for (const id of row) {
-      if (seen.has(id)) throw new Error(`the track opens the mod "${id}" twice`);
-      seen.add(id);
-    }
-  }
-  for (const m of MODS)
-    if (!seen.has(m.id)) throw new Error(`the track never opens the mod "${m.id}"`);
-  // one module a level from 2, unbroken — the same rule the roster is dealt
-  // by, and the bag simply runs out first
-  Object.keys(MOD_UNLOCKS)
-    .map(Number)
-    .sort((a, b) => a - b)
-    .forEach((l, i) => {
-      if (l !== i + 2) throw new Error(`the bag skips level ${i + 2} — one mod a level from 2`);
-    });
-})();
-
-/** the mods a level has dealt: the opening four and every one since */
-export function modsAt(level: number): Set<ModId> {
-  const out = new Set<ModId>(STARTING_MODS);
-  for (const [l, row] of Object.entries(MOD_UNLOCKS))
-    if (+l <= level) for (const id of row) out.add(id);
-  return out;
+/** ...and the bag a level has dealt, which is empty at every level (see
+ *  the mod note above) */
+export function modsAt(_level: number): Set<ModId> {
+  return new Set();
 }
 
 /**
@@ -398,10 +360,9 @@ export function relicsAt(_level: number): Set<RelicId> {
   return new Set();
 }
 
-/** the level a mod joins the deal — 1 for the opening four */
-export function modUnlockLevel(id: ModId): number {
-  if (STARTING_MODS.includes(id)) return 1;
-  for (const [l, row] of Object.entries(MOD_UNLOCKS)) if (row.includes(id)) return +l;
+/** ...and the level a mod joins the deal, PAST THE TOP OF THE TRACK for
+ *  every one of them: the codex draws all eleven tiles and lights none */
+export function modUnlockLevel(_id: ModId): number {
   return MAX_LEVEL + 1;
 }
 
@@ -567,7 +528,6 @@ export function rewardsAt(level: number, shelved = false): Reward[] {
     for (const w of shelved ? WORLDS : VISIBLE_WORLDS)
       if (worldUnlockLevel(w.id) === 1) out.push({ kind: "world", worldId: w.id });
   }
-  for (const id of MOD_UNLOCKS[level] ?? []) out.push({ kind: "mod", id });
   for (const id of DEALT.get(level) ?? []) out.push({ kind: "upgrade", id });
   for (const id of MUTATOR_UNLOCKS[level] ?? []) out.push({ kind: "mutator", id });
   // ...and the hand-placed rewards. PLACED itself stays WHOLE — it is what
@@ -758,7 +718,15 @@ export const TOWER_NAME: Readonly<Record<TowerKind, string>> = Object.fromEntrie
  * category any more — nothing is dealt under that name and no tab prints
  * it (see mods.ts and relics.ts).
  */
-export type UnlockKind = "world" | "turret" | "mutator" | "mod" | "relic";
+/**
+ * THE CODEX'S CATEGORIES (components/Codex.tsx) — and they are the things
+ * a run can actually meet. Mods and relics were two of them and are gone
+ * with the buttons that sold them: nothing deals one (modsAt, relicsAt)
+ * and nothing rolls one, so a shelf of them would be drawing a category
+ * the game no longer has. It is a narrower list than `Reward`, which still
+ * types both because the catalogs and this file's reward text do.
+ */
+export type UnlockKind = "world" | "turret" | "mutator";
 
 export interface UnlockEntry {
   reward: Reward;
@@ -799,21 +767,13 @@ export function unlocksOf(kind: UnlockKind): UnlockEntry[] {
   if (kind === "turret")
     for (const k of FIELDED_KINDS)
       out.push({ reward: { kind: "turret", id: k }, level: turretUnlockLevel(k) });
-  if (kind === "mod")
-    for (const m of MODS) out.push({ reward: { kind: "mod", id: m.id }, level: modUnlockLevel(m.id) });
-  if (kind === "relic")
-    for (const d of RELICS)
-      out.push({ reward: { kind: "relic", id: d.id }, level: relicUnlockLevel(d.id) });
   if (kind === "mutator")
     for (const m of MUTATIONS)
       out.push({ reward: { kind: "mutator", id: m.id }, level: mutatorUnlockLevel(m.id) });
-  // THE TECH-TREE BRANCHES ARE ON NO CATEGORY AT ALL. They are off the
-  // track (UPGRADES_ON_TRACK) and they are not a category either: this
-  // board has five tabs and none of them is called "Upgrades", because a
-  // tab named for a word nothing in the game is called was what lumped the
-  // mods, the relics and these rungs into one shelf (see UnlockKind). If a
-  // rung is ever dealt again it gets a tab of its own and a name a player
-  // uses, not a third tenancy on someone else's.
+  // THE TECH-TREE BRANCHES ARE ON NO CATEGORY AT ALL, the same as the mods
+  // and the relics: nothing deals one (UPGRADES_ON_TRACK) and nothing
+  // sells one. If a rung is ever dealt again it gets a tab of its own and
+  // a name a player uses, not a tenancy on someone else's.
   // RARITY FIRST, THEN SOONEST FIRST. The board is a shelf a player reads
   // to learn what exists, and what they are learning along the way is the
   // border: a tab that runs greyish white, then blue, then amber, then

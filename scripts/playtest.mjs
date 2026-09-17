@@ -10,10 +10,8 @@
  * The bot is deliberately ordinary: it walks the map's routes (ground,
  * water and air), scores every buildable cell by how much route it can
  * reach that nothing else covers yet, and BUYS THE WAY A PLAYER BUYS —
- * paying TURRET_ROLL_PRICE for a draw off the deal and putting down
- * whatever the roll hands it — which is a TURRET (rarity.ts) and a
- * FORMATION (formation.ts), so one fee buys between four and thirty-six
- * of the same gun. It places them at its own best spots rather than in
+ * naming a TIER it can afford (economy.ts cardPrice) and putting down the
+ * nine turrets a 3x3 card hands over. It places them at its own best spots rather than in
  * the shape: the bot has never been shape-aware, and what it is here to
  * measure is the ECONOMY — what a fee buys against what the script sends
  * — and not whether a citadel fits on a junction. It cannot choose a
@@ -198,15 +196,16 @@ const PROBE_SECONDS = PROBE_OPT === null ? 90 : +PROBE_OPT;
 const { COLS, ROWS, CELL, TOWERS } = C;
 const SUPPORT = new Set(["douser", "deluge", "tether", "furnace"]);
 const MIX = {
-  1: ["tacker", "lobber", "torch", "airburst"],
-  2: ["hive", "autocannon", "barrage", "whirl"],
-  3: ["repeater", "cleaver", "railhead"],
+  1: ["tacker", "lobber", "torch"],
+  2: ["hive", "autocannon", "airburst", "piercer"],
+  3: ["cleaver", "barrage", "whirl"],
+  4: ["repeater", "railhead"],
 };
 // a water lane is a FILE — hulls come down it one behind another — and the
 // beam turrets are the two that pierce, so on a front that is mostly hulls
 // the bot brings them the way a person would. Not the coil: its reach is
 // short enough that a shoreline placement is a Hydrophobic one
-const WET = { 1: [], 2: ["piercer"], 3: ["furnace"] };
+const WET = { 1: [], 2: ["piercer"], 3: ["deluge"], 4: ["furnace"] };
 // the stage the clock is in (STAGES in economy.ts) — no longer a gate on
 // anything, but still the bot's buying plan: it spends each stage on the
 // band that stage is priced for, as a player minding the bank would
@@ -221,7 +220,7 @@ const mixFor = (t, wet = false, roster = null) =>
     : MIX_MODE === "tacker"
       ? ["tacker"]
       : MIX_MODE === "all"
-        ? [...tierMix(1, wet), ...(t >= 2 ? tierMix(2, wet) : []), ...(t >= 3 ? tierMix(3, wet) : [])]
+        ? [1, 2, 3, 4].filter((b) => b <= t).flatMap((b) => tierMix(b, wet))
         : tierMix(t, wet);
 
 /**
@@ -301,8 +300,8 @@ function airCells(sim) {
 function play() {
   for (const k of TY.TOWER_KINDS)
     E.setScrapPrice(k, Math.max(1, Math.round(E.scrapPriceOf(k) * SCALE)));
-  // WHAT A DRAW COSTS is one flat number now (economy.ts
-  // TURRET_ROLL_PRICE), read at the buy below
+  // WHAT A CARD COSTS is its tier times its cell count (economy.ts
+  // cardPrice), read at the buy below
   if (START !== null) E.SCRAP_START = +START;
   if (UNIT_DAMAGE !== null) WP.setUnitDamageScale(+UNIT_DAMAGE);
 
@@ -315,9 +314,10 @@ function play() {
   const owned = tech.unlocked;
   /** what the deal may turn over for this save — Game.drawPool's twin */
   const roster = TY.FIELDED_KINDS.filter((k) => owned.has(k));
-  /** ...and the shapes it may turn over, which is the whole table: every
-   *  save owns all five squares (formation.ts) */
-  const shapes = FO.FORMATION_IDS;
+  /** ...and the shapes, which the player CHOOSES now (formation.ts). The
+   *  bot buys the smallest: the biggest patch it can find ground for is a
+   *  question about a map and not about a script */
+  const shape = FO.FORMATION_IDS[0];
   sim.setTech(tech);
 
   // THE ROUTES, one per movement layer, and WHAT EACH IS WORTH: the share
@@ -471,16 +471,15 @@ function play() {
     // nothing owned in it falls back to the tacker every save starts with
     const plan = mixFor(stageTier(sim.stageWave()), wet, roster).filter((k) => owned.has(k));
     const pool = plan.length > 0 ? plan : ["tacker"];
+    const want = FO.formationCount(shape);
     let stuck = 0;
     for (let tries = 0; tries < 40; tries++) {
-      if (sim.scrap < E.TURRET_ROLL_PRICE || sim.towers.length >= CAP) break;
-      // the two rolls decide, exactly as they do for a player at the
-      // button: which gun, and how many of it
-      const kind = RA.rollTurret(pool);
-      if (!kind) break;
-      const shape = FO.rollFormation(shapes);
-      if (!shape) break;
-      const want = FO.formationCount(shape);
+      // the bot buys the cheapest tier its plan still names it can afford,
+      // which is the player's own question at the four buttons
+      const afford = pool.filter((k) => sim.scrap >= E.cardPrice(E.TOWER_TIER[k], want));
+      if (afford.length === 0 || sim.towers.length >= CAP) break;
+      const kind = afford[Math.floor(Math.random() * afford.length)];
+      const fee = E.cardPrice(E.TOWER_TIER[kind], want);
       // the fee is charged once the FIRST of them lands rather than at the
       // draw, which is the one place the bot is kinder to itself than the
       // game is: a player who cannot find ground for a card watches it
@@ -488,7 +487,7 @@ function play() {
       // report a wall that is the bot's and not the map's
       let put = 0;
       for (let i = 0; i < want && sim.towers.length < CAP; i++) if (place(kind)) put++;
-      if (put > 0) { sim.spend(E.TURRET_ROLL_PRICE); rot++; }
+      if (put > 0) { sim.spend(fee); rot++; }
       else { rot++; if (++stuck > pool.length) break; }
     }
     if (w !== lastWave) {

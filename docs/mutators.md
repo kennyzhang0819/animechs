@@ -208,9 +208,9 @@ script sent — a corpse is off the board while it waits — so nothing about th
 physics or the drop zones changes. The second pass arrives *behind* the first: the bodies
 that rise are the ones that already walked deepest.
 
-**The ledger only counts the second death.** A first death pays no scrap, counts no kill
-and does not clear its wave. That keeps the drop-ratio audit honest: the rule adds no
-income to a run, only work. Neither does anything else that answers a death — Volatile
+**The ledger only counts the second death.** A first death counts no kill and does not
+clear its wave. (No death has paid scrap since the income became the core's clock —
+`docs/economy.md` — so the rule adds work and nothing else.) Neither does anything else that answers a death — Volatile
 does not detonate a body that is coming back and Mitosis does not split one.
 
 `RECONSTRUCT_GRACE` is how long the sim keeps trying to stand a corpse up before writing

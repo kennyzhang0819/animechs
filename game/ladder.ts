@@ -11,11 +11,13 @@ import {
   type RegionWave,
   type UnitKind,
   type WaveUnits,
+  WAVE_GAP_OPENING,
   WAVE_RELEASE_SECONDS,
 } from "./levels";
 import { TOWERS } from "./constants";
 import {
   addDrop,
+  coreIncomeBy,
   emptyDrop,
   MISSION_XP,
   SCRAP_START,
@@ -29,7 +31,7 @@ import {
 import { MUT_COUNT_MAX, MUT_FIRST_TIER, mutationBudget, mutationPicks } from "./mutation";
 
 /**
- * THE LADDER — one climb per world, ten tiers, four names, one script.
+ * THE LADDER — one climb per world, nine tiers, four names, one script.
  * docs/difficulty.md is the system: what a tier is, why the health curve
  * belongs to the tide and not to a tier, what a tier pays, and the dials.
  *
@@ -55,9 +57,11 @@ export const LEVELS_PER_DOUBLING = Math.round(Math.log(2) / Math.log(HP_PER_LEVE
  *  make the top tier the only one worth playing (docs/difficulty.md) */
 export const XP_STEP_PER_RUNG = 0.5;
 
-/** how many rungs the ladder has today — raising it is the whole edit an
- *  eleventh rung needs, because every dial below is arithmetic on the index */
-export const RUNG_COUNT = 10;
+/** how many rungs the ladder has today — moving it is the whole edit a
+ *  rung on either end needs, because every dial below is arithmetic on the
+ *  index. It was ten, and the tenth (Nemesis +6) came off: the top of the
+ *  ladder is Nemesis +5 */
+export const RUNG_COUNT = 9;
 
 /** the named difficulties, one per tier of the size ramp; above the last
  *  name a tier is that name with a "+n" (rungLabel) */
@@ -516,14 +520,21 @@ export interface WaveRow {
   armourShare: number;
   airShare: number;
   t3Share: number;
-  /** what the wave PAYS: its bodies' drops, which is the run's whole
-   *  income for the wave — nothing is paid for staging one */
+  /** what the CORE pays across this wave's slot on the clock — the run's
+   *  whole income (economy.ts coreIncomeBy). It reads the schedule and
+   *  nothing about the wave; the drops the bodies WOULD have paid are
+   *  waveCost().drops, which is a fact about the script and not a purse */
   scrap: number;
   /** what CLEARING the wave banks — its share of MISSION_XP, before the
    *  rung bonus. It reads off the wave's position and the script's
    *  length, never off what the wave holds */
   xp: number;
 }
+
+/** the second a wave's slot on the clock ends — wave 0 is the run's start
+ *  (levels.ts: the cadence IS the schedule) */
+const waveEndsAt = (spec: LevelSpec, wave: number): number =>
+  WAVE_GAP_OPENING + wave * (spec.waveGap + WAVE_RELEASE_SECONDS);
 
 /** the per-wave guide, at the authored baseline — one row a wave */
 export function waveGuide(spec: LevelSpec = WORLD): WaveRow[] {
@@ -541,7 +552,7 @@ export function waveGuide(spec: LevelSpec = WORLD): WaveRow[] {
       armourShare: c.armourShare,
       airShare: c.airShare,
       t3Share: c.t3Share,
-      scrap: c.drops.scrap,
+      scrap: Math.round(coreIncomeBy(waveEndsAt(spec, i + 1)) - coreIncomeBy(waveEndsAt(spec, i))),
       xp: waveXp(i + 1, waves),
     };
     prev = c.hp;
@@ -605,9 +616,10 @@ export function stageAudit(spec: LevelSpec = WORLD): StageRow[] {
  *  band is priced out of its own stage, above the ceiling the stage before
  *  could have bought it */
 export const STAGE_BOARDS: Readonly<Record<TowerTier, { min: number; max: number }>> = {
-  1: { min: 800, max: 2500 },
-  2: { min: 200, max: 800 },
-  3: { min: 50, max: 250 },
+  1: { min: 560, max: 1750 },
+  2: { min: 190, max: 750 },
+  3: { min: 40, max: 200 },
+  4: { min: 10, max: 60 },
 };
 
 /** one rung, weighed — the row the editor's ladder check renders */

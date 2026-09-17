@@ -148,7 +148,6 @@ import {
   UNIT_ID,
   UNIT_KINDS as UNIT_KINDS_IMPORT,
   UNIT_STATS,
-  unitDrop,
   waveGroups,
   WAVE_GAP_OPENING,
   WAVE_RELEASE_SECONDS,
@@ -288,7 +287,7 @@ import {
   type RelicId,
   type RelicsHeld,
 } from "./relics";
-import { RICH_SCRAP, SCRAP_START, sellValue } from "./economy";
+import { coreIncomeRate, RICH_SCRAP, SCRAP_START, sellValue } from "./economy";
 import { airWalkMask, isWaterFloor, navalWalkMask, type Terrain } from "./terrain";
 import {
   BOMBLET_LOOK,
@@ -1870,16 +1869,19 @@ export class Sim {
   loopLevel = 0;
   loopCycle = 0;
   /**
-   * THE RUN'S MONEY (economy.ts). Opens at SCRAP_START, every kill drops
-   * its tier's scrap, every wave staged pays its bonus, every turret
-   * placed costs its price and every one sold refunds SELL_REFUND of it.
-   * Charged only under a tech state — a sandbox or an editor (tech null)
-   * builds for free and the counter just runs.
+   * THE RUN'S MONEY (economy.ts). Opens at SCRAP_START and climbs off the
+   * CORE, on the run clock and nothing else: no kill pays, no wave pays,
+   * and a sale refunds SELL_REFUND of the price. Charged only under a tech
+   * state — a sandbox or an editor (tech null) builds for free and the
+   * counter just runs.
    */
   scrap = SCRAP_START;
-  /** scrap the run has taken in, kills and wave bonuses alike — the tally
-   *  the results screen reads */
+  /** scrap the core has paid out — the tally the results screen reads */
   scrapEarned = 0;
+  /** the fraction of a scrap the income is carrying between steps: the
+   *  rate is per SECOND and a step is a sixtieth of one, so the purse only
+   *  ever moves in whole scrap */
+  private incomeCarry = 0;
   // which towers may be built and how many of each — null (the default, and
   // the map editor's mode) places no restrictions; the campaign sets it from
   // the save's level through the track before play (see Game.setTech)
@@ -2520,6 +2522,7 @@ export class Sim {
     this.killsByKind.fill(0);
     this.scrap = SCRAP_START;
     this.scrapEarned = 0;
+    this.incomeCarry = 0;
     // the run's modules are the RUN's (see `mods` and `relics`): a new
     // board owns none of either half
     this.mods = {};
@@ -4562,6 +4565,7 @@ export class Sim {
         this.profLiveMs += gap < DT_CAP * 1000 ? gap : DT_CAP * 1000;
       }
     }
+    this.runIncome(dt);
     this.runScript(dt);
     // ...and the mission's own schedule, where it has one (levels.ts
     // InterceptMission): the crossers are an appointment somewhere else
@@ -4874,6 +4878,26 @@ export class Sim {
       return this.stageOne();
     }
     return false;
+  }
+
+  /**
+   * THE CORE PAYS, AND IT IS THE ONLY THING THAT DOES (economy.ts
+   * coreIncomeRate). The rate reads the run clock — not the board, not the
+   * swarm, not the rung — so every difficulty sends the same money at the
+   * same second and a harder rung is harder rather than poorer.
+   *
+   * Nothing is paid on a free board: the sandbox's purse is RICH_SCRAP and
+   * an income on top of it would just be arithmetic on a number already
+   * past every check.
+   */
+  private runIncome(dt: number): void {
+    if (!this.charging || this.rich || this.lost() || dt <= 0) return;
+    this.incomeCarry += coreIncomeRate(this.time) * dt;
+    const paid = Math.floor(this.incomeCarry);
+    if (paid <= 0) return;
+    this.incomeCarry -= paid;
+    this.scrap += paid;
+    this.scrapEarned += paid;
   }
 
   /**
@@ -6938,20 +6962,9 @@ export class Sim {
               // dartback1 charge, the row's own splash centred on itself.
               // Either way it is gone, and no kill goes on the ledger.
               //
-              // AN ARRIVAL PAYS HALF. A bomber shot down pays its kill
-              // like any body; one that arrived pays half of it — the
-              // run's whole income is the swarm's health (economy.ts), and
-              // a wing that paid nothing for arriving starved the board
-              // that was failing to stop it (the headless bot, bombers
-              // alone: 261 scrap in twenty waves). Half keeps the reason
-              // to shoot them down without making a wing a famine
               if (KIND_PAYLOAD[ukind[i]]) {
                 if (!this.aimReach(tgt, x, y, CONTACT_REACH)) break;
                 this.detonate(i);
-                // half the drop, for every body the stack stood for
-                const half = Math.round((unitDrop(kind).scrap * dropScale(this.relics)) / 2) * this.ustack[i];
-                this.scrap += half;
-                this.scrapEarned += half;
               } else {
                 this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
                 this.splashStructures(x, y, wpSplash, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1);
@@ -8003,6 +8016,7 @@ export class Sim {
     return {
       blocked: this.terrain.blocked,
       spawn: this.terrain.spawn,
+      reserved: this.terrain.reserved,
       isGoal: this.field.isGoal,
       occupied: this.occupied,
       waterlogged: this.waterlogged,
@@ -9602,12 +9616,8 @@ export class Sim {
     // see the bodies the wave actually sent
     const stack = this.ustack[i];
     this.killsByKind[kind] += stack;
-    // the kill's scrap, into the run — off the kind's health (economy.ts)
-    // ...times what the SCAVENGER RIG relics add (mods.ts), which is the
-    // one thing in the run that moves what a body is worth
-    const drop = Math.round(unitDrop(UNIT_KINDS[kind]).scrap * dropScale(this.relics)) * stack;
-    this.scrap += drop;
-    this.scrapEarned += drop;
+    // A KILL PAYS NOTHING. The run's whole income is the core's clock
+    // (economy.ts coreIncomeRate, runIncome below)
     this.pushDeathFx(x, y);
     // THE DEATH BURST (levels.ts starburst, the Grapnels): A GRAPNEL
     // EMPTIES ITSELF WHEN IT DIES — five stars at once, one down every
@@ -9802,9 +9812,6 @@ export class Sim {
       if (body.grace > 0) continue;
       // nowhere to stand, and no more time to wait: it was a kill after all
       this.killsByKind[body.kind] += body.stack;
-      const drop = Math.round(unitDrop(UNIT_KINDS[body.kind]).scrap * dropScale(this.relics)) * body.stack;
-      this.scrap += drop;
-      this.scrapEarned += drop;
       this.kills += body.stack;
       this.waveDown[body.wave] = (this.waveDown[body.wave] ?? 0) + 1;
       this.corpses[c] = this.corpses[this.corpses.length - 1];

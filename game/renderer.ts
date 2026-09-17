@@ -1,4 +1,4 @@
-import { MARK_KINDS } from "./missionMarks";
+import { forEachMarkPadCell, MARK_KINDS } from "./missionMarks";
 import { RAIL_SPAN } from "./railArt";
 import { FLOOR_STYLE, WATER_VARIANTS, WATER_WAVE_VARIANT, type FloorKind } from "./tiles";
 import { LINOCUT_TERRAIN } from "./terrainFlag";
@@ -2338,23 +2338,12 @@ export class Renderer {
     // a match never draws one, but the plated ground under it is GROUND —
     // the point of it is that a player sees the three places the swarm
     // keeps re-taking before anything has risen on them.
-    for (const m of T.marks) {
-      const k = MARK_KINDS.find((mk) => mk.id === m.kind);
-      if (!k || k.pad <= 0) continue;
-      const x0 = Math.max(0, m.x - k.pad), y0 = Math.max(0, m.y - k.pad);
-      const x1 = Math.min(mapCols, m.x + k.size + k.pad);
-      const y1 = Math.min(mapRows, m.y + k.size + k.pad);
-      for (let y = y0; y < y1; y++)
-        for (let x = x0; x < x1; x++) {
-          // the corners are cut so the patch reads as a laid deck rather
-          // than as a rectangle someone dropped on the snow
-          const dx = Math.min(x - x0, x1 - 1 - x), dy = Math.min(y - y0, y1 - 1 - y);
-          if (dx + dy < k.pad) continue;
-          const lit = this.litAt((x + 0.5) * CELL, (y + 0.5) * CELL);
-          this.push(w, (x + 0.5) * CELL, (y + 0.5) * CELL, CELL, CELL, 0, UV_MARK_PAD,
-            lit, lit, lit, 1);
-        }
-    }
+    for (const m of T.marks)
+      forEachMarkPadCell(m, mapCols, mapRows, (x, y) => {
+        const lit = this.litAt((x + 0.5) * CELL, (y + 0.5) * CELL);
+        this.push(w, (x + 0.5) * CELL, (y + 0.5) * CELL, CELL, CELL, 0, UV_MARK_PAD,
+          lit, lit, lit, 1);
+      });
     if (layers.spawn) {
       const [sr, sg, sb] = SPAWN_STYLE.tint;
       for (let y = 0; y < mapRows; y++)

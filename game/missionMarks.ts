@@ -130,6 +130,37 @@ const BUFF_TOWER: MarkKind = {
 
 export const MARK_KINDS: readonly MarkKind[] = [BUFF_TOWER];
 
+/**
+ * EVERY CELL OF METAL DECKING A MARK LAYS — its own footprint and the pad
+ * round it, corners cut so the patch reads as a laid deck rather than as a
+ * rectangle somebody dropped on the snow.
+ *
+ * ONE FUNCTION BECAUSE IT IS ONE PATCH: the renderer draws these cells
+ * (renderer.rebuildTerrain) and the board refuses to build on them
+ * (board.ts `reserved`), and the plate a player can see has to be exactly
+ * the plate they are kept off. It takes the map's bounds because the rect
+ * is clipped to them before the corners are cut, so a mark near the edge
+ * keeps the shape it is drawn with.
+ */
+export function forEachMarkPadCell(
+  m: MapMark,
+  cols: number,
+  rows: number,
+  fn: (x: number, y: number) => void,
+): void {
+  const k = markKind(m.kind);
+  if (!k) return;
+  const x0 = Math.max(0, m.x - k.pad), y0 = Math.max(0, m.y - k.pad);
+  const x1 = Math.min(cols, m.x + k.size + k.pad);
+  const y1 = Math.min(rows, m.y + k.size + k.pad);
+  for (let y = y0; y < y1; y++)
+    for (let x = x0; x < x1; x++) {
+      const dx = Math.min(x - x0, x1 - 1 - x), dy = Math.min(y - y0, y1 - 1 - y);
+      if (dx + dy < k.pad) continue;
+      fn(x, y);
+    }
+}
+
 export const markKind = (id: string): MarkKind | null =>
   MARK_KINDS.find((k) => k.id === id) ?? null;
 

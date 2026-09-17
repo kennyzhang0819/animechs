@@ -6,9 +6,9 @@ trees, StarCraft II co-op's mutators.
 
 ## The four systems, briefly
 
-**Difficulty — the ladder** (`game/ladder.ts`). Ten rungs. The four named ones
+**Difficulty — the ladder** (`game/ladder.ts`). Nine rungs. The four named ones
 (Incursion → Onslaught → Scourge → Nemesis) send a quarter / half / three quarters /
-all of every wave's count, under no rules. Nemesis +1…+6 send the full swarm under an
+all of every wave's count, under no rules. Nemesis +1…+5 send the full swarm under an
 ever-larger mutator roll. A rung is **size, then rules — never health**; the health
 curve belongs to the tide.
 
@@ -23,11 +23,13 @@ only a mission puts those down. A mission can also POST a body instead of sendin
 than chosen. Each costs points; a rung carries a budget and a count. Mandatory from
 Nemesis +1 up. Custom mode may name a hand instead of rolling.
 
-**Mods and relics** — the two module categories, and neither is called "upgrade". A
-**mod** (`game/mods.ts`) is a chance riding every turret placed from now on, bought by
-the fistful: the mid game's answer. A **relic** (`game/relics.ts`) is a rule over the
-whole board, bought once: the late game's answer, for when better guns stop being
-enough.
+**The economy** (`game/economy.ts`, `docs/economy.md`). The core pays on the RUN
+CLOCK and nothing else — no kill drops, no wave bonus — so difficulty and income are
+independent. A turret card costs its TIER (the gun's footprint in tiles, 1 to 4, picked
+with 1/2/3/4) times its shape's cell count (3x3 / 5x5 / 7x7, cycled with X). **Mods and
+relics** (`game/mods.ts`, `game/relics.ts`) are OUT OF PLAY: the catalogs, odds, shelf
+and codex tabs are intact and `track.ts` deals neither, so nothing in a run can roll one.
+Do not delete them.
 
 ## Checks — read this before running one
 

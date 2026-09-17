@@ -540,17 +540,19 @@ export const bestClearOn = (p: Progress, worldId: string): number =>
  * rather than a boolean because every caller that cares needs to SAY it.
  */
 /**
- * EVERY MAP IS PLAYABLE FROM THE FIRST RUN WHILE THE BOARDS ARE BEING
- * LOOKED AT. The track still PROMISES them where it always did (track.ts
- * PLACED, and the progress screen reads the same), it simply does not bar
- * any of them: seventeen boards went in at once and the point of having
- * them is to sit down on each one, not to grind eight levels first.
+ * THE GATE IS BACK ON, because a playable board is a MISSION now and not
+ * just different ground. The three that are on the menu carry the three
+ * mission kinds (levels.ts PLAYABLE_WORLD_IDS, docs/mission-design.md) and
+ * the track deals them ONE A LEVEL (track.ts PLACED), so a first run plays
+ * the intercept and nothing else. Handing over all three at once hands
+ * over the whole game before the first clear.
  *
- * Flip this back to false and the gates are exactly what they were —
- * nothing else moved. What is off the MENU entirely is a different
- * question and lives in one list (levels.ts HIDDEN_WORLD_IDS).
+ * It was true while seventeen boards went in at once and the point was to
+ * sit down on each of them rather than grind eight levels first; fifteen
+ * of those are off the MENU entirely now, which is a different question
+ * and lives in one list (levels.ts HIDDEN_WORLD_IDS).
  */
-const EVERY_MAP_OPEN = true;
+const EVERY_MAP_OPEN = false;
 
 export const worldLock = (p: Progress, worldId: string): { level: number } | null => {
   if (EVERY_MAP_OPEN) return null;

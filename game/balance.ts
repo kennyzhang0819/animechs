@@ -1,6 +1,5 @@
 import { allScrapPriceOverrides, applyScrapPriceOverrides } from "./economy";
 import { allHitboxOverrides, applyHitboxOverrides, type HitboxSpec } from "./hitbox";
-import { SHAPE_ODDS } from "./formation";
 import { allRungOverrides, applyRungOverrides, type RungKnobs } from "./ladder";
 import { allChanceOverrides, applyChanceOverrides, MOD_ODDS } from "./mods";
 import { allMutationCostOverrides, applyMutationCostOverrides } from "./mutation";
@@ -24,10 +23,9 @@ import { TURRET_ODDS } from "./rarity";
  *   `mutations`     what each mutator is WORTH, keyed by its catalog id
  *                   (mutationCostOf in mutation.ts) — the one dial that
  *                   decides which difficulties can afford which rules
- *   `rarities`      THE ODDS. The four band tables the four rolls are
- *                   weighed against — `turret` (rarity.ts), `shape`
- *                   (formation.ts), `mod` (mods.ts) and `relic`
- *                   (relics.ts) — and `chances`, the per-mod odds of
+ *   `rarities`      THE ODDS. The band tables the rolls are weighed
+ *                   against — `turret` (rarity.ts), `mod` (mods.ts) and
+ *                   `relic` (relics.ts) — and `chances`, the per-mod odds of
  *                   landing on one new turret (mods.ts ModDef.chance).
  *                   Five tables in one section because they are one
  *                   question asked five times: how often does the good
@@ -57,7 +55,6 @@ export interface BalanceDoc {
   mutations?: Record<string, number>;
   rarities?: {
     turret?: Record<string, number>;
-    shape?: Record<string, number>;
     mod?: Record<string, number>;
     relic?: Record<string, number>;
     chances?: Record<string, number>;
@@ -94,12 +91,11 @@ export async function loadBalanceDoc(): Promise<void> {
     // apply refills the tables the sim reads every tick (hitbox.ts), and
     // a shape dropped from the document goes back to its authored circle
     applyHitboxOverrides(hitboxes && typeof hitboxes === "object" ? hitboxes : {});
-    // THE ODDS, all five tables. Each apply CLEARS what it held first, so
+    // THE ODDS, all four tables. Each apply CLEARS what it held first, so
     // a band dropped from the document goes back to the authored weight
     // rather than lingering from the last load
     const odds = rarities && typeof rarities === "object" ? rarities : {};
     TURRET_ODDS.apply(odds.turret ?? {});
-    SHAPE_ODDS.apply(odds.shape ?? {});
     MOD_ODDS.apply(odds.mod ?? {});
     RELIC_ODDS.apply(odds.relic ?? {});
     applyChanceOverrides(odds.chances ?? {});
@@ -134,8 +130,6 @@ export function currentBalanceDoc(): BalanceDoc {
   const rarities: NonNullable<BalanceDoc["rarities"]> = {};
   const turret = TURRET_ODDS.overrides();
   if (Object.keys(turret).length > 0) rarities.turret = turret as Record<string, number>;
-  const shape = SHAPE_ODDS.overrides();
-  if (Object.keys(shape).length > 0) rarities.shape = shape as Record<string, number>;
   const mod = MOD_ODDS.overrides();
   if (Object.keys(mod).length > 0) rarities.mod = mod as Record<string, number>;
   const relic = RELIC_ODDS.overrides();

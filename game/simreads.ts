@@ -283,11 +283,12 @@ export class World {
     return Array.from(this.flat.aliveByKind);
   }
 
-  /** the six masks a placement reads (board.ts) */
+  /** the masks a placement reads (board.ts) */
   grids(): BoardGrids {
     return {
       blocked: this.terrain.blocked,
       spawn: this.terrain.spawn,
+      reserved: this.terrain.reserved,
       isGoal: this.isGoal,
       occupied: this.occupied,
       waterlogged: this.waterlogged,

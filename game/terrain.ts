@@ -1,5 +1,5 @@
 import { BASE, CELL, clamp, COLS, NCELLS, ROWS } from "./constants";
-import type { MapMark } from "./missionMarks";
+import { forEachMarkPadCell, type MapMark } from "./missionMarks";
 import type { RailTile } from "./missions";
 import { DECOR_TILES, WATER_FLOOR_GROUPS } from "./atlas";
 
@@ -205,6 +205,17 @@ export interface Terrain {
   /** the mission furniture placed on this map (missionMarks.ts MapMark):
    *  where a mission's own things stand, and nothing about when */
   marks: MapMark[];
+  /**
+   * ...AND THE GROUND THOSE THINGS WILL RISE ON, as a mask: 1 on every cell
+   * of metal decking a mark lays (missionMarks.ts forEachMarkPadCell).
+   *
+   * DERIVED FROM `marks` AND NEVER AUTHORED — rebuildReserved is the one
+   * way it is filled, so the plate the renderer draws and the plate a
+   * placement is refused on cannot drift apart. It is a mask rather than a
+   * walk of the marks because a build cursor asks about it once per cell
+   * of its footprint, every frame (board.ts groundClear).
+   */
+  reserved: Uint8Array;
   /**
    * THE RAIL BED, if this map carries a road mission: one painted piece a
    * cell (missions.ts railsFor, game/railArt.ts).
@@ -517,7 +528,7 @@ export function generateTerrain(seed: number): Terrain {
     }
 
   return {
-    blocked, floor, wall, spawn, pines, decor, valleyY,
+    blocked, floor, wall, spawn, reserved: new Uint8Array(NCELLS), pines, decor, valleyY,
     // the generated fallback board carries NONE: beacons are authored, and
     // a board nobody authored has nothing to say about where a run may
     // spread to. It plays inside the circle its base lights
@@ -528,4 +539,13 @@ export function generateTerrain(seed: number): Terrain {
     rails: [],
     base: { ...BASE }, rows: ROWS, cols: COLS,
   };
+}
+
+/** refill `reserved` from `marks` — called wherever the marks change */
+export function rebuildReserved(t: Terrain): void {
+  t.reserved.fill(0);
+  for (const m of t.marks)
+    forEachMarkPadCell(m, t.cols, t.rows, (x, y) => {
+      t.reserved[y * COLS + x] = 1;
+    });
 }

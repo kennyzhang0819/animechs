@@ -1,139 +1,149 @@
 # The economy — scrap, prices and XP
 
-Two currencies that never touch. Code: `game/economy.ts` (drops, prices, the XP ladder),
+Two currencies that never touch. Code: `game/economy.ts` (income, prices, the XP ladder),
 `game/track.ts` (what a level hands over), `game/progress.ts` (the save).
 What a run is played under is `docs/difficulty.md` and `docs/mutators.md`.
 
 ## Scrap — the run's money
 
-**Every bit of it comes off the swarm.** A kill drops scrap off its own health pool; a boss
-adds a lump. That is the whole income: the core pays nothing, nothing is mined, no wave pays
-for being survived, and a sale returns nothing (`SELL_REFUND` = 0). Drops are fixed per
-**kind** — an ironhide1 always pays this, on every tier, on every map — so the roll fee can be
-authored against the script.
+**Every bit of it comes off the CORE, on a clock.** A kill drops nothing, a wave pays nothing
+for being survived, nothing is mined, and a sale returns nothing (`SELL_REFUND` = 0). The core
+trickles scrap at a rate that reads the **run clock** and nothing else — not the board, not the
+swarm, not the rung.
 
-**There is no wave bonus.** Staging a wave used to pay a lump on top of what its bodies
-dropped — 250, and 50 more each wave — and it was passive income: a board that killed nothing
-banked it anyway, just for surviving the gap. The bank moves when bodies fall and at no other
-time, which is the only version of this economy a player can reason about.
+**Why it is decoupled.** Income used to be the swarm's health: a kill dropped scrap off its own
+pool and a boss added a lump. That tied two things together that want to move independently.
+A wave's size is a difficulty statement, and under a kill economy it was also a paycheck, so
+making a stretch of script harder made the run richer — which is most of the way back to
+making it easier. It also meant a board that was *losing* got poorer at exactly the moment it
+needed to buy its way out, and that the whole late script had to be re-priced every time a unit
+tree's health moved. The clock has none of those properties: two runs at minute twelve have
+banked the same money, whatever happened on the field, so the difference between them is the
+board they built with it. That is the traditional tower-defense shape, and it is the shape the
+turret prices below are authored against.
 
-### What a kill pays
+### The curve
 
-`SCRAP_PER_HP` = 1/15, anchored on the ironhide1: 150 health at a fifteenth is the ten scrap
-it has always paid. The drop used to be one number per unit tier — ten for a T1, five hundred
-for a T5 — and a tier is far too coarse a bucket: an ironhide4 carries sixty runts' health and
-paid twenty runts' scrap, so the late script was the part of the run that paid worst for the
-work it asked. Reading the kind's own health fixes that for every kind at once — a stats edit
-moves the drop with it, and a new kind is priced the moment its health is written.
+```
+rate(t) = CORE_INCOME_RATE x 2 ^ (min(t, CORE_INCOME_RAMP) / CORE_INCOME_DOUBLING)
+```
 
-It reads the **authored** health, never the level-scaled pool: a full clear has to pay the
-same scrap on every difficulty tier, or the turret prices would mean a different thing on each.
+| | |
+|---|---|
+| `CORE_INCOME_RATE` | 240 scrap a second, at t = 0 |
+| `CORE_INCOME_DOUBLING` | 230 seconds |
+| `CORE_INCOME_RAMP` | 1,125 — the shipped campaign's own length |
+| `SCRAP_START` | 4,000 |
 
-**The rate bends at the heavy end** (`payableHp`), because a health pool is what a body is
-worth to *kill* and not what it should be worth to *bank*. The unit trees do not climb
-smoothly — a T3 hull is nine hundred health and the T4 above it is nine thousand — so the step
-from the middle of the script to the end multiplied income by ten in one shelf. An ironhide5
-paid 1,600, a card and a half for one body, and a late wave is hundreds of bodies: by wave 40
-the bank stopped being a constraint at all.
+**The doubling is the one knob.** 230 seconds against the 22.5-second wave cadence
+(`docs/authoring-waves.md`) is about **7% a wave**, so the run's wealth spreads about 27x from
+the first wave to the fiftieth. `CORE_INCOME_RATE` moves the whole run's wealth and nothing
+else.
 
-So health under `DROP_KNEE_HP` (600) pays the full rate and health above it pays a shrinking
-one (`DROP_HEAVY_EXP` 0.7). A heavier kind is still strictly worth more than a lighter one —
-that is the whole reason the drop reads health — but the curve is flatter than the health
-curve. The knee at 600 is the top of the T2 shelf, which makes this a late-game edit and not a
-balance sweep: every T1 and T2 body pays exactly what it always paid, a T3 gives up roughly a
-tenth, and the cut lands where the complaint was — about 55% off a T4 and 65% off a T5.
+| wave | second | rate/s | banked by then |
+|---|---|---|---|
+| 1 | 26 | 259 | 10,361 |
+| 10 | 228 | 477 | 82,680 |
+| 20 | 453 | 940 | 236,261 |
+| 30 | 678 | 1,852 | 538,829 |
+| 40 | 903 | 3,648 | 1,134,916 |
+| 50 | 1,128 | 7,123 | 2,309,162 |
 
-`BOSS_SCRAP` (5,000) is on top: a boss is an event as well as a body.
+**It was 130 a second doubling every 190s, and that starved the opening.** A 190-second
+doubling puts 98% of a run's money after wave twenty; playtested, the first three minutes could
+not reach tier 2 at all. A curve that steep only pays the player who already survived it, which
+is the opposite of what a defence economy is for. The fix was half here and half in the prices
+below — see the tier-2 note.
 
-`SCRAP_START` is 10,000. `RICH_SCRAP` is the admin view's bottomless purse — large enough that
-no price or bulk-buy check comes up short, small enough to render on the HUD; the spending
-itself is a no-op.
+**It stops climbing at the ramp.** Past `CORE_INCOME_RAMP` the rate is flat while the tide
+keeps doubling the swarm's health every cycle (`docs/mission-design.md`), so no map can be
+banked out of — the same rule the tide already enforces on the board, stated once more in the
+purse.
+
+**Every rung pays the same.** Income reads the clock, so Incursion and Nemesis +5 hand over
+identical money at identical seconds. A harder rung is harder, not poorer.
+
+`RICH_SCRAP` is the admin view's bottomless purse — large enough that no price check comes up
+short, small enough to render on the HUD; the income is skipped entirely while it is on.
+
+The kill-drop table (`dropForUnit`, `SCRAP_PER_HP`, `payableHp`, `BOSS_SCRAP`) is **still
+here and nothing in a run reads it**: the level editor and `ladder.ts` still weigh a script by
+what it would have paid, which is a useful number about a script even though it is no longer a
+number about a purse.
 
 ## What a run spends on
 
-A turret is **not bought at its own price**. The player pays one roll fee, the deal rolls a
-rarity and a formation and hands over a card, and the card is placed for nothing. So
-`TOWER_PRICE` stopped being what a board spends and became what a draw is *worth*: the number
-the odds are composed against, and nothing a player ever pays.
+**Turret cards, and nothing else.** Mods and relics are off the track and off the corner
+(`track.ts`; the catalogs in `mods.ts` and `relics.ts` are intact and nothing deals from them).
 
-| | price | |
-|---|---|---|
-| `TURRET_ROLL_PRICE` | 1,000 | flat, on every pool and at every level |
-| `MOD_ROLL_PRICE` | 5,000 | a chance riding every turret placed from now on |
-| `RELIC_ROLL_PRICE` | 150,000 | a rule over the whole board, in force the moment it is paid for |
+### The tier is the footprint
 
-**The roll fee is flat.** It was briefly derived from what the save's pool was worth, and that
-stopped being worth the cleverness the moment a card started carrying a **formation**: a draw
-is four to thirty-six turrets now, so what it is worth swings by more with one roll than the
-pool's depth ever moved it.
+`TOWER_TIER` files every turret by its size in tiles, so tier 1 is the 1x1s, tier 2 the 2x2s,
+tier 3 the 3x3s and tier 4 the three 4x4s — checked at import. The corner's **1 / 2 / 3 / 4**
+keys name the tier and the deal rolls uniformly inside it (`rarity.ts rollTurretOfTier`), so
+the number on the button says how much ground the card will want before the roll happens. The
+four rarities ARE the four tiers, which is where the card's border colour comes from.
 
-**Both modules are dearer than a turret card**, because the two things are not the same
-purchase: a turret card is *spent* — placed, shot at, one day gone — and a module is *owned*
-for the rest of the run.
+| tier | per turret | 3x3 (9) | 5x5 (25) | 7x7 (49) | ground at 3x3 | at 7x7 |
+|---|---|---|---|---|---|---|
+| 1 | 150 | 1,350 | 3,750 | 7,350 | 3x3 tiles | 7x7 |
+| 2 | 1,000 | 9,000 | 25,000 | 49,000 | 6x6 | 14x14 |
+| 3 | 6,000 | 54,000 | 150,000 | 294,000 | 9x9 | 21x21 |
+| 4 | 30,000 | 270,000 | 750,000 | 1,470,000 | 12x12 | 28x28 |
 
-**And a relic is dearer than a mod.** A mod is a **chance** — it improves nothing standing and
-adds a roll to every turret placed from here on, so what it is worth depends on how much board
-the run has left to buy. A relic is **in force the moment it is paid for**, over every turret
-already up and every one still to come, and it never stops. The third button buys certainty
-and the second buys odds, and the prices have to say so. They are also the two eras they were
-written for: a mod is what a run spends on in the middle, a relic what a late game saves for.
+**The gaps are about six times a step and two hundred end to end**, which is far steeper than
+the per-kind prices this replaced (110 to 9,500 was 86x). Per TILE it is 150 / 250 / 667 /
+1,875 — a 12.5x spread, which is exactly the ratio a tacker and a railhead already carried. So
+the steepening is in the per-turret price and not in what a square of board is worth: a tier-4
+gun is expensive because it is sixteen tiles of gun, and then expensive again on top of that
+because reach and splash are worth more than raw damage.
 
-**The mod price was 2,000 and every step in the catalog went up by the same 2.5×**, so the same
-bank buys the same total; what it buys is *fewer presses of a bigger thing*. Two thousand made
-the button a thing a comfortable run tapped twenty times between waves for twenty tweaks too
-small to feel — a click count standing in for a decision. At five thousand a press is an event,
-and it comes with a choice of three.
+**The price is the tier's, flat, for every gun in it.** It has to be: the gun is rolled and the
+price is printed on the button before the press. `TOWER_PRICE` is derived from the tier and the
+admin dashboard can still bend one kind (`setScrapPrice`).
 
-**150,000 for a relic is not a typo.** It was 3,500, which is where a "+10% damage" belongs, and
-every relic has since been rewritten to change the game rather than nudge it. Thirty thousand
-was still too cheap, and what proved it was how early the button stopped being a decision:
-thirty turret cards is a bank a run rebuilds inside a couple of waves once a line is holding, so
-relics arrived in a block in the mid-game. At a hundred and fifty thousand — the opening bank
-twenty times over — a relic is a whole act of a run saved for, and buying one is giving up the
-board that money would have been. (Note the track does not deal relics at present; the price is
-waiting for its door.)
+**What the numbers buy**, measured as SECONDS OF INCOME at the rate in force — which is the
+number that decides whether a band is reachable, not the raw price. A tier-2 block is under a
+wave's income from wave one (24s at wave 1, 15s at wave 8). A tier-3 block is about 1.7 waves
+at wave 20, a real save-up. A tier-4 block is about 4.4 waves at wave 40, a genuine commitment.
+Saving every coin, the earliest a bank covers a 3x3 is wave 1 / wave 1 / wave 5 / **wave 25**,
+and a run actually holding a line reaches those much later. A whole run banks about 2.31M.
 
-### Offers and amounts
+### The shape
 
-`TURRET_CHOICES` and `MOD_CHOICES` are both 3. **Three is the smallest number that is a
-choice**: two is a coin flip with the sides named, four is a reading exercise mid-wave, and
-three fits in one glance at the width the corner already is. The press pays for **one** and
-rolls three to ask which — it is not a discount; what the three buy is the right to take the
-best of three rolls.
+`FORMATION_IDS` is three solid odd squares — **3x3, 5x5, 7x7** — cycled with **X** as a
+standing setting. It multiplies all four prices by its cell count, flat, **with no bulk
+discount**: what it buys is ground, and a 7x7 of tier 4 is a 28x28 patch of map and most of a
+run's bank.
 
-The two are separate constants because they are separate experiments. The mod panel is settled;
-the turret one is not, and `TURRET_CHOICES = 1` is the switch that returns the T button to one
-roll straight into the hand, with nothing else to touch. A trial that cannot be undone in one
-line is a trial nobody runs twice.
+They are ODD squares so the shape has a middle and the ghost sits centred on the cursor. The
+floor is nine turrets and there is nothing smaller: a card is never "a tacker", it is "nine
+tackers in a block", and the question it asks is where nine of anything can go.
 
-`BUY_AMOUNTS` = 1, 4, 9, 16. **They are squares**, and that is the point of these four and not
-some other four: on the turret button the amount *tiles* the shape, so a square amount tiles
-into a square and a fleet comes out with the proportions of the card that bought it. They were
-5 and 10, and an oblong number has to be laid out as something nobody designed. Checked at
-import.
+**Neither half of a card is a roll any more.** The tier is chosen and the shape is chosen; the
+only thing the deal turns over is which gun of the band came up, and every gun of a band is the
+same footprint and the same money. A press is a decision about ground and about how much of the
+bank to commit, and never a slot machine with a price on it.
 
-**Flat multiplier, no bulk discount anywhere** — ×16 turrets costs exactly sixteen roll fees.
-The button saves keystrokes and nothing else; a discount would make the single press strictly
-wrong, and the single press is the whole T-click-T-click flow the deal was built around. What
-the multiplier buys differs by side: on the turret button it is **one** card carrying the shape
-tiled N times; on the module buttons it is **N independent draws**, because there is no ground
-to tile.
+### Nothing is paid until the ground takes it
 
-## Turret price bands
+**Drawing a card is free, and so is re-drawing.** The purse moves in `Game.placeFormation` and
+nowhere else, so 1, 2, 3, 4 is a way of *asking* what each tier would put down here — the ghost
+answers on the terrain under the cursor, which is the only place the question can honestly be
+answered. Charging at the press made looking cost money, and a player who cannot afford to look
+ends up buying the tier they already know.
 
-Three bands along Mindustry's build-cost order (`TOWER_TIER`), priced so that the stage that
-meets them is roughly what buys them. **A pricing table and nothing else** — no band is held
-shut inside a run.
+The bank is still checked at the draw: a card that cannot be paid for is a ghost that cannot be
+placed, and a hand holding one would be a lie the player only finds out about on the click.
 
-The support pair sits a band below what it keeps alive: a fixer is an opening purchase, and the
-projector goes down beside the first band-2 gun it is there to nurse.
+**A card is charged in full the moment any of it lands.** Ground that takes none of the shape
+keeps the card in hand to try somewhere else; ground that takes part of it spends the card on
+the part, which is the player's call and the ghost showed them exactly which cells they were
+making it about.
 
-`STAGES` cuts the run at waves 1–20 / 21–35 / 36–50, one per band. `ladder.ts stageAudit` is the
-table the prices are authored against and the one to read after touching either side.
-
-Prices are bendable without a rebuild (`scrapPriceOf`, `setScrapPrice`); the authored
-`TOWER_PRICE` is where a Reset returns to. `pricePerTile` is the number to compare two turrets
-by.
+`STAGES` cuts the run at waves 1-14 / 15-28 / 29-40 / 41-50, one per tier.
+`ladder.ts stageAudit` and `STAGE_BOARDS` are the table the prices are authored against and the
+one to read after touching either side.
 
 ## XP — the save's progress
 

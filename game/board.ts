@@ -59,6 +59,17 @@ export interface BoardGrids {
   readonly blocked: Uint8Array;
   /** the swarm's doors: a corked one spawns nothing, so nothing builds on it */
   readonly spawn: Uint8Array;
+  /**
+   * THE METAL DECKING ROUND A MISSION MARK (missionMarks.ts
+   * forEachMarkPadCell): ground a mission's own structures will rise on,
+   * so the player may not stand a turret in their way.
+   *
+   * IT IS THE PLATE THAT IS DRAWN, cell for cell — the decking is on the
+   * board from the first frame precisely so the three places the swarm
+   * keeps re-taking are readable before anything has risen on them, and
+   * ground that LOOKS reserved has to BE reserved or the picture is a lie.
+   */
+  readonly reserved: Uint8Array;
   /** the core's own cells */
   readonly isGoal: Uint8Array;
   /** a structure stands here */
@@ -175,7 +186,7 @@ export function groundClear(g: BoardGrids, gx: number, gy: number, sz: number): 
   for (let y = gy; y < gy + sz; y++)
     for (let x = gx; x < gx + sz; x++) {
       const i = y * COLS + x;
-      if (g.blocked[i] || g.isGoal[i] || g.spawn[i] || g.occupied[i]) return false;
+      if (g.blocked[i] || g.isGoal[i] || g.spawn[i] || g.occupied[i] || g.reserved[i]) return false;
     }
   return true;
 }

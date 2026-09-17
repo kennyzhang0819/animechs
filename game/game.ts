@@ -43,15 +43,16 @@ import {
   type UnitKind,
 } from "./levels";
 import {
+  cardPrice,
   MOD_CHOICES,
   MOD_ROLL_PRICE,
   missionXp,
-  nextAmount,
   RELIC_ROLL_PRICE,
   scrapPriceOf,
   sellValue,
-  TURRET_ROLL_PRICE,
-  type BuyAmount,
+  TOWER_TIER,
+  TOWER_TIERS,
+  type TowerTier,
 } from "./economy";
 import {
   anyModOpen,
@@ -71,13 +72,14 @@ import {
 import {
   FORMATION_IDS,
   formationCells,
+  formationCount,
   formationSpan,
   nextFacing,
-  rollFormation,
+  nextFormation,
   type Facing,
   type FormationId,
 } from "./formation";
-import { RARITY, rollTurret, TURRET_ODDS, type RarityWeights } from "./rarity";
+import { RARITY, rollTurretOfTier, TURRET_ODDS, type RarityWeights } from "./rarity";
 import {
   HEALTH_BARS_DEFAULT,
   STATUS_MARKS_DEFAULT,
@@ -128,12 +130,8 @@ import {
  */
 export type DealHalf = "open" | "owned" | "locked";
 
-/**
- * WHAT ONE PRESS OF M OR G HANDED OVER — the reveal's whole input
- * (Game.lastDraw). One press is one button, so a draw is all mods or all
- * relics; the tag is what lets the card say the right word and read the
- * right catalog.
- */
+/** WHAT ONE PRESS OF M OR G HANDED OVER — the reveal's whole input
+ *  (Game.lastDraw). Neither button is on the corner now (Deal.tsx) */
 export type ModDraw =
   | { kind: "mod"; ids: readonly ModId[] }
   | { kind: "relic"; ids: readonly RelicId[] }
@@ -141,38 +139,14 @@ export type ModDraw =
 
 /**
  * THE THREE MODS A PRESS OF M PUT ON THE TABLE, and the one the player
- * has not picked yet (Game.modOffer).
- *
- * A MOD PRESS IS A CHOICE NOW, and that is the whole of this type. It
- * used to be a draw: the button rolled, the mod landed, and a run with
- * money pressed it twenty times between waves for twenty numbers too
- * small to feel — a click count standing in for a decision. A mod costs
- * two and a half times as much and is worth two and a half times as
- * much (economy.ts MOD_ROLL_PRICE, mods.ts), so the presses are few
- * enough that each one can afford to ask a question, and the question
- * is CHOOSE 1 OF 3.
- *
- * THE MONEY IS ALREADY GONE. The press pays; the choice only says what
- * the money bought. That is deliberate and it is the only honest way to
- * do it: an offer a player could walk away from is a free re-roll with
- * extra steps, and this game has no free re-rolls anywhere: a turret
- * card whose shape a player cannot use still costs a thousand scrap to
- * throw away (buyTurretCard).
- *
- * THE THREE ARE DISTINCT wherever the pool can manage it, because three
- * of one mod is not a choice. A save whose track has opened fewer than
- * three mods is offered what there is.
- *
- * `copies` IS THE AMOUNT BUTTON, folded in: a x4 press pays four times
- * and the chosen mod is taken four times. The amount used to be four
- * independent draws, which cannot survive a choice — four questions
- * from one press is four panels — so it became four copies of ONE
- * answer, which is the same money for a deeper stack and one decision.
+ * has not picked yet (Game.modOffer). NOTHING RAISES ONE ANY MORE — the
+ * module buttons are off the corner and the track deals no mod (track.ts)
+ * — and it is kept intact against the day either comes back.
  */
 export interface ModOffer {
   /** the three on the table, in the order they were rolled */
   ids: readonly ModId[];
-  /** how many copies of whichever one is picked — the amount button */
+  /** how many copies of whichever one is picked */
   copies: number;
 }
 
@@ -245,10 +219,10 @@ export interface UiState {
   buildForm: FormationId | null;
   /** ...and the quarter turns R has put on it (Game.buildFacing) */
   buildFacing: Facing;
-  /** THE CARD THE RUN OWNS, bought and not yet placed, and how many
-   *  copies of its shape it carries (the amount it was bought at). It
-   *  outlives the aiming: a right click clears buildKind and leaves this
-   *  standing, so the corner keeps drawing it and a click picks it back up */
+  /** THE CARD THE RUN OWNS, bought and not yet placed (`n` is the fleet
+   *  tiling, always 1 now — formation.ts). It outlives the aiming: a right
+   *  click clears buildKind and leaves this standing, so the corner keeps
+   *  drawing it and a click picks it back up */
   held: { kind: TowerKind; form: FormationId; n: number } | null;
   /** the demolish tool is picked: the next press sells instead of selecting */
   paused: boolean;
@@ -373,13 +347,13 @@ export interface UiState {
   /** is this board DEALT (a charged run) or PICKED (sandbox, editors)? —
    *  which of the two corners the overlay puts in the bottom right */
   dealing: boolean;
-  /** what ONE draw off each of the three buttons costs right now — before
-   *  the amount, which multiplies all three flat (economy.ts) */
-  rollPrice: number;
+  /** what a card of each tier costs at the standing shape — the four
+   *  numbers on the four buttons (economy.ts cardPrice) */
+  tierPrices: Record<TowerTier, number>;
   modPrice: number;
   relicPrice: number;
-  /** how many a press buys: the corner's fourth button (BUY_AMOUNTS) */
-  amount: BuyAmount;
+  /** the shape the next press buys: the corner's X button */
+  shape: FormationId;
   /**
    * WHAT THE RUN OWNS, IN TWO LISTS BECAUSE IT IS TWO CATEGORIES. The
    * shelf on the top-left of the field draws the relics first and then the
@@ -1242,7 +1216,7 @@ export class Game {
    * they are aiming.
    *
    * It used to be: buildKind was the card, so putting the ghost away
-   * threw a thousand scrap in the bin. A right click is the gesture every
+   * threw the whole price in the bin. A right click is the gesture every
    * player in this game already uses to mean "put that down" — it has
    * cancelled build mode since long before the deal existed — and having
    * it mean "burn what you just bought" made the safest reflex on the
@@ -1255,17 +1229,11 @@ export class Game {
    */
   private heldCard: { kind: TowerKind; form: FormationId; n: number } | null = null;
   /**
-   * THE AMOUNT THE NEXT PRESS BUYS (economy.ts BUY_AMOUNTS) — the
-   * corner's fourth button, cycled with X and shared by all three of the
-   * others. It is a STANDING setting and not a modifier held down: a
-   * player who has decided they are buying in tens is buying in tens
-   * until they say otherwise, and a run spent holding a key would be a
-   * worse run.
-   *
-   * It survives a reset. The amount is a habit of the player's, not a
-   * fact about the level.
+   * THE SHAPE THE NEXT PRESS BUYS (formation.ts) — the corner's X button,
+   * a STANDING setting and not a modifier held down. It survives a reset:
+   * the shape is a habit of the player's, not a fact about the level.
    */
-  private buyAmount: BuyAmount = 1;
+  private buyShape: FormationId = FORMATION_IDS[0];
   private building = false;
   private buildFrom = { x: 0, y: 0 };
   /**
@@ -1350,7 +1318,7 @@ export class Game {
    * mod still reads as a second draw. The reveal's timing is the React
    * layer's business; this is the whole of the sim-side state behind it.
    *
-   * A LIST RATHER THAN ONE ID, because the amount button buys ten at a
+   * A LIST RATHER THAN ONE ID, because a press used to buy ten at a
    * time: one press is one reveal, and what it reveals is everything that
    * press handed over. The counter still moves once per PRESS, so ten
    * relics is one card of ten chips and not ten cards fighting over the
@@ -1791,8 +1759,13 @@ export class Game {
    *
    * A GIANT THAT WILL NOT FIT IS NOT A WASTED CARD. If the ground has no
    * room for the doubled footprint, the shape goes down as it always
-   * would — the roll was the game's, and the player should not lose a
-   * thousand scrap to it.
+   * would — the roll was the game's, and the player should not lose the
+   * card's price to it.
+   *
+   * AND THIS IS WHERE THE MONEY GOES (buyTurretCard takes none). The whole
+   * card is charged the moment any of it lands: ground that takes part of
+   * the shape spends the card on the part, which is the player's call and
+   * the ghost showed them exactly which cells they were making it about.
    */
   private placeFormation(p: { x: number; y: number }): number {
     const kind = this.buildKind;
@@ -1809,6 +1782,12 @@ export class Game {
     // the same instant. If any cell will take it then at least one turret
     // lands, which is the whole of what the hand needs to know.
     if (!cells.some((c) => this.view.canPlace(c.gx, c.gy, kind))) return 0;
+    // ...and only once the ground has said yes does the purse move. The
+    // bank was checked at the draw too, but income is the only thing that
+    // moves it and the card may have been held across a placement
+    const price = this.heldPrice();
+    if (!this.world.spend(price)) return 0;
+    this.host.spend(price);
     this.host.placeFormation(cells, kind);
     return 1;
   }
@@ -1825,57 +1804,52 @@ export class Game {
   }
 
   /**
-   * ONE DRAW OFF THE DEAL, AND IT GOES STRAIGHT INTO THE HAND: pay the
-   * fee, roll the two tables, and the card that comes out is ALREADY
-   * PICKED — the ghost is on the board before the finger has left the T.
-   * There is no hand and no second click: the flow is T, click, T, click,
-   * and a shape a player does not want is one more T away.
+   * ONE CARD OFF THE DEAL, AND IT GOES STRAIGHT INTO THE HAND: name the
+   * tier and the card that comes out is ALREADY PICKED — the ghost is on
+   * the board before the finger has left the key. The flow is 1, click,
+   * 1, click.
    *
-   * It overwrites whatever was in hand, which is what makes that spam
-   * work. The card it throws away is not refunded — the thousand scrap IS
-   * the price of another look at the shape table.
+   * IT COSTS NOTHING UNTIL THE GROUND TAKES IT (placeFormation). Drawing
+   * is free and so is re-drawing, so 1, 2, 3, 4 is a way of ASKING what
+   * each tier would put down here — the ghost answers on the terrain the
+   * cursor is over, which is the only place the question can honestly be
+   * answered. Charging at the press made looking cost money, and a player
+   * who cannot afford to look ends up buying the tier they already know.
    *
-   * THE AMOUNT IS A THIRD AXIS AND IT IS NOT A THIRD ROLL. At x4 this
-   * still rolls ONE turret and ONE shape and then TILES that shape four
-   * times (formation.ts fleetLayout) — so what the amount multiplies is
-   * the GROUND the card asks for, not the variety it hands over. Nine
-   * citadels of repeaters is one decision about one piece of map, and the
-   * ghost of it is most of the reward for pressing the button.
+   * The bank is still checked here: a card that cannot be paid for is a
+   * ghost that cannot be placed, and a hand holding one would be a lie the
+   * player only finds out about on the click.
    *
-   * IT IS ALL OR NOTHING ON THE SCRAP. The fee is flat (economy.ts, no
-   * bulk discount) times the amount, and a bank that cannot cover the
-   * whole fleet buys none of it rather than quietly handing over the
-   * seven the money stretched to — a press that silently changes what it
-   * bought is a press the player cannot aim.
+   * THE PRICE IS KNOWN BEFORE THE PRESS. The tier is chosen and the shape
+   * is chosen; the only roll left is WHICH gun of the tier comes up, and
+   * every gun of a tier is the same footprint and the same money.
    *
    * The turret pool is what the track has dealt, minus the kinds that are
-   * off the field for now (types.ts RETIRED_KINDS). THE SHAPE POOL IS
-   * ALWAYS THE WHOLE TABLE — every save owns all five squares from wave
-   * one (formation.ts) — so the second roll is the same roll on a level-1
-   * board as on a finished one. A free board draws from everything for
-   * nothing, so the button works in the sandbox.
-   *
-   * Returns what it drew, or null when the bank could not cover it or the
-   * run is over.
+   * off the field for now (types.ts RETIRED_KINDS); a tier the save owns
+   * nothing in refuses the press. A free board draws from everything for
+   * nothing, so the buttons work in the sandbox.
    */
-  buyTurretCard(): { kind: TowerKind; form: FormationId; n: number } | null {
+  buyTurretCard(tier: TowerTier): { kind: TowerKind; form: FormationId; n: number } | null {
     if (this.world.lost || this.won() || this.menuOpen) return null;
-    const kind = rollTurret(this.drawPool(), this.rarityWeights);
+    const kind = rollTurretOfTier(this.drawPool(), tier);
     if (!kind) return null;
-    // TWO ROLLS, INDEPENDENT: which gun, and how much of it in what shape
-    const form = rollFormation(FORMATION_IDS);
-    if (!form) return null;
-    const n = this.buyAmount;
-    const price = this.rollPrice() * n;
-    if (!this.world.spend(price)) return null;
-    this.host.spend(price);
-    this.heldCard = { kind, form, n };
+    if (this.world.scrap < this.cardPriceOf(tier)) return null;
+    const form = this.buyShape;
+    this.heldCard = { kind, form, n: 1 };
     this.buildKind = kind;
     this.buildForm = form;
     this.buildFacing = 0; // a new card is a new question about the ground
 
     this.host.clearStructSelection();
-    return { kind, form, n };
+    return { kind, form, n: 1 };
+  }
+
+  /** what the card in hand will cost when the ground takes it — 0 on a
+   *  free board, and 0 with an empty hand */
+  private heldPrice(): number {
+    const c = this.heldCard;
+    if (!c || !this.dealing) return 0;
+    return cardPrice(TOWER_TIER[c.kind], formationCount(c.form, c.n));
   }
 
   /**
@@ -1933,7 +1907,7 @@ export class Game {
     if (!this.canBuyModules() || this.modDeal() !== "open") return [];
     if (this.modOffer) return []; // one question at a time
     const each = this.dealing ? MOD_ROLL_PRICE : 0;
-    const n = this.buyAmount;
+    const n = 1; // the module buttons are off the corner (economy.ts)
     // the whole press or none of it — checked before anything is rolled,
     // so a refused press has changed nothing at all
     if (this.world.scrap < each * n && this.world.charging) return [];
@@ -2006,7 +1980,7 @@ export class Game {
   buyRelics(): RelicId[] {
     if (!this.canBuyModules() || this.relicDeal() !== "open") return [];
     const each = this.dealing ? RELIC_ROLL_PRICE : 0;
-    const n = this.buyAmount;
+    const n = 1; // the module buttons are off the corner (economy.ts)
     if (this.world.scrap < each * n && this.world.charging) return [];
     const got: RelicId[] = [];
     for (let i = 0; i < n; i++) {
@@ -2062,14 +2036,11 @@ export class Game {
     return true;
   }
 
-  /**
-   * THE AMOUNT BUTTON (X): 1 -> 5 -> 10 -> 1, and it spends nothing.
-   * It is a standing setting shared by all three buy buttons — see
-   * Game.buyAmount for why it is not a held modifier.
-   */
-  cycleBuyAmount(): BuyAmount {
-    this.buyAmount = nextAmount(this.buyAmount);
-    return this.buyAmount;
+  /** THE SHAPE BUTTON (X): 3x3 -> 5x5 -> 7x7 -> 3x3, and it spends
+   *  nothing. A standing setting, not a held modifier */
+  cycleBuyShape(): FormationId {
+    this.buyShape = nextFormation(this.buyShape);
+    return this.buyShape;
   }
 
   /** throw the owned card away — what a second T does to the first one's
@@ -2142,10 +2113,10 @@ export class Game {
     return anyRelicLeft(this.world.relicsHeld, this.relicPool()) ? "open" : "owned";
   }
 
-  /** what one draw costs right now — flat (economy.ts), and nothing at
-   *  all on a free board */
-  private rollPrice(): number {
-    return this.dealing ? TURRET_ROLL_PRICE : 0;
+  /** what a card of this tier costs at the standing shape — and nothing
+   *  at all on a free board */
+  private cardPriceOf(tier: TowerTier): number {
+    return this.dealing ? cardPrice(tier, formationCount(this.buyShape)) : 0;
   }
 
   /** point the deal at different odds — what Ascendancy Protocol does */
@@ -2487,7 +2458,7 @@ export class Game {
    *
    * IT NO LONGER PUTS THE CARD DOWN. Clearing buildKind here was free
    * when a building was merely PICKED off a shelf; the thing in hand is a
-   * card somebody paid a thousand scrap for now, and pausing to look at
+   * card somebody paid for now, and pausing to look at
    * the settings must not spend it. The card waits, ghost and all, under
    * the overlay.
    */
@@ -2714,10 +2685,12 @@ export class Game {
       counts: w.report.counts,
       unlocked: this.tech ? Array.from(this.tech.unlocked) : null,
       dealing: this.dealing,
-      rollPrice: this.rollPrice(),
+      tierPrices: Object.fromEntries(
+        TOWER_TIERS.map((t) => [t, this.cardPriceOf(t)]),
+      ) as Record<TowerTier, number>,
       modPrice: this.dealing ? MOD_ROLL_PRICE : 0,
       relicPrice: this.dealing ? RELIC_ROLL_PRICE : 0,
-      amount: this.buyAmount,
+      shape: this.buyShape,
       shelfMods: w.report.mods,
       shelfRelics: w.report.relics,
       lastDraw: this.lastDraw,

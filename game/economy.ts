@@ -3,18 +3,22 @@ import { TOWER_KINDS, type TowerKind } from "./types";
 
 /**
  * THE ECONOMY — two currencies that never touch. docs/economy.md is the
- * system: what a kill pays and why the rate bends, what a run spends on
+ * system: what the core pays and why the rate bends, what a run spends on
  * and why each price is what it is, and the XP ladder.
  *
- * SCRAP is the run's money and EVERY BIT COMES OFF THE SWARM — no core
- * income, no mining, no wave bonus, no refund on a sale. Drops are fixed
- * per KIND and read AUTHORED health, so a full clear pays the same on
- * every tier and the prices can be authored against the script.
+ * SCRAP is the run's money and ALL OF IT COMES OFF THE CORE, on a clock —
+ * no kill drops, no wave bonus, no refund on a sale. The income reads the
+ * RUN CLOCK and nothing about the board or the swarm, so a rung is harder
+ * without also being poorer and the prices can be authored against the
+ * schedule (levels.ts: wave n lands at a fixed second).
  *
  * XP is the save's progress, paid for objectives and never for kills.
  */
 
-/** what one kill leaves on the ground */
+/** what one kill leaves on the ground. NOTHING IN A RUN READS THIS any
+ *  more — the income is the core's clock (coreIncomeRate) — but the level
+ *  editor and the ladder audit still weigh a script by what it would have
+ *  paid, so the table stays */
 export interface Drop {
   scrap: number;
 }
@@ -59,60 +63,56 @@ export function dropForUnit(hp: number, boss = false): Drop {
   };
 }
 
-/** every run opens with this much in the bank */
-export const SCRAP_START = 10000;
+/** every run opens with this much in the bank — three tier-1 blocks and
+ *  change, which is the opening decision and not a board */
+export const SCRAP_START = 4000;
+
+/**
+ * THE CORE'S INCOME — the whole of a run's money, and a function of the
+ * RUN CLOCK alone (docs/economy.md). Scrap per second at time zero, and
+ * the seconds it takes that rate to double; the rate stops climbing at
+ * CORE_INCOME_RAMP so the tide cannot be banked out of.
+ *
+ * The doubling is the one knob that matters: 230s against the 22.5s wave
+ * cadence is about 7% a wave. It was 190s and 130 a second, which put 98%
+ * of a run's money after wave twenty and starved the opening — a tier-2
+ * block cost one and a half waves of TOTAL income at wave eight, so the
+ * only way to reach the band was to stop building for two waves while the
+ * swarm grew. A doubling that long is a curve that only pays the player
+ * who already survived it.
+ */
+export const CORE_INCOME_RATE = 240;
+export const CORE_INCOME_DOUBLING = 230;
+/** the shipped campaign's own length, 3 + 50 x 22.5 (levels.ts) */
+export const CORE_INCOME_RAMP = 1125;
+
+/** scrap a second at `t` seconds of run time */
+export function coreIncomeRate(t: number): number {
+  const at = Math.min(Math.max(0, t), CORE_INCOME_RAMP);
+  return CORE_INCOME_RATE * Math.pow(2, at / CORE_INCOME_DOUBLING);
+}
+
+/** everything the core has paid by `t` seconds — the curve integrated,
+ *  flat past the ramp */
+export function coreIncomeBy(t: number): number {
+  const at = Math.max(0, t);
+  const ramp = Math.min(at, CORE_INCOME_RAMP);
+  const grown =
+    ((CORE_INCOME_RATE * CORE_INCOME_DOUBLING) / Math.LN2) *
+    (Math.pow(2, ramp / CORE_INCOME_DOUBLING) - 1);
+  return grown + Math.max(0, at - CORE_INCOME_RAMP) * coreIncomeRate(CORE_INCOME_RAMP);
+}
 
 /** the admin view's bottomless purse — past any price or bulk-buy check
  *  and still a number the HUD can render. The spending is a no-op */
 export const RICH_SCRAP = 99_999_999;
 
-/**
- * WHAT ONE TURRET CARD COSTS — the fee the player actually pays. A turret
- * is not bought at its own price: the fee rolls a rarity and a formation
- * and the card is placed for nothing, so TOWER_PRICE below is what a draw
- * is WORTH and nothing a player ever pays.
- */
-export const TURRET_ROLL_PRICE = 1000;
-
-/** what one mod costs — dearer than a turret card because a card is SPENT
- *  and a module is OWNED, and cheaper than a relic because a mod is a
- *  CHANCE and a relic is in force the moment it is paid for
- *  (docs/economy.md) */
+/** what one mod costs. THE MODULE BUTTONS ARE OFF THE CORNER (mods.ts,
+ *  relics.ts are still here, and the track deals neither) — the prices
+ *  stay against the day either category comes back */
 export const MOD_ROLL_PRICE = 5000;
-
-/** how many mods a press of M puts on the table, of which the player
- *  takes ONE. It is NOT a discount: the press pays for one, and what the
- *  three buy is the right to take the best of three rolls */
 export const MOD_CHOICES = 3;
-
-/** what one relic costs — a whole act of a run saved for, and not a typo.
- *  Every relic changes the game rather than nudging it, and at anything
- *  cheaper the G button stopped being a decision by the mid-game. The
- *  amount ladder still multiplies it: sixteen relics is sixteen relics */
 export const RELIC_ROLL_PRICE = 150000;
-
-/**
- * THE AMOUNT LADDER — the corner's fourth button, multiplying whichever
- * of the other three is pressed next. THEY ARE SQUARES because on the
- * turret button the amount TILES the shape (formation.ts). A FLAT
- * multiplier with no bulk discount: the button saves keystrokes and
- * nothing else. On the turret button it is ONE card carrying the shape
- * tiled N times; on the module buttons it is N INDEPENDENT DRAWS.
- */
-export const BUY_AMOUNTS = [1, 4, 9, 16] as const;
-export type BuyAmount = (typeof BUY_AMOUNTS)[number];
-
-/** the amount after this one, wrapping — what the fourth button does */
-export const nextAmount = (n: BuyAmount): BuyAmount =>
-  BUY_AMOUNTS[(BUY_AMOUNTS.indexOf(n) + 1) % BUY_AMOUNTS.length];
-
-/** EVERY AMOUNT IS A SQUARE, so every fleet tiles into a square — see
- *  BUY_AMOUNTS for why, and formation.ts fleetLayout for what reads it */
-(() => {
-  for (const n of BUY_AMOUNTS)
-    if (!Number.isInteger(Math.sqrt(n)))
-      throw new Error(`the buy amount ${n} is not a square; a fleet of it cannot tile square`);
-})();
 
 /** a placement is spent: selling returns this fraction of the price */
 export const SELL_REFUND = 0;
@@ -121,68 +121,93 @@ export const SELL_REFUND = 0;
 export const sellValue = (kind: TowerKind): number =>
   Math.floor(scrapPriceOf(kind) * SELL_REFUND);
 
-export type TowerTier = 1 | 2 | 3;
+export type TowerTier = 1 | 2 | 3 | 4;
+export const TOWER_TIERS = [1, 2, 3, 4] as const;
 
-/** three price bands along Mindustry's build-cost order, priced so the
- *  stage that meets a band is roughly what buys it. A pricing table and
- *  nothing else — no band is held shut inside a run */
+/**
+ * THE TIER IS THE TURRET'S FOOTPRINT, in tiles — a tier-3 gun is 3x3 and
+ * nothing else is filed there. The corner's 1/2/3/4 keys pick the tier
+ * and the gun is rolled uniformly inside it, so the number has to mean
+ * something before the roll: it means how much ground the card will want.
+ * That also makes the price legible, since a card is the tier's price
+ * times its cell count and a tier-3 block is a 9x9 patch of map.
+ *
+ * The two retired kinds (types.ts RETIRED_KINDS) are filed by footprint
+ * like everything else so the table stays total.
+ */
 export const TOWER_TIER: Record<TowerKind, TowerTier> = {
   tacker: 1,
   torch: 1,
   lobber: 1,
   coil: 1,
-  airburst: 1,
-  douser: 1,
-  // the support pair sits a band below what it keeps alive: a fixer is
-  // an opening purchase, and the projector goes down beside the first
-  // tier-2 gun it is there to nurse
   fixer: 1,
-  restorer: 2,
-  hive: 2,
-  piercer: 2,
   autocannon: 2,
-  barrage: 2,
+  airburst: 2,
+  piercer: 2,
+  douser: 2,
   tether: 2,
-  whirl: 2,
+  hive: 2,
+  restorer: 2,
   cleaver: 3,
+  barrage: 3,
   deluge: 3,
-  repeater: 3,
-  furnace: 3,
-  railhead: 3,
+  whirl: 3,
+  repeater: 4,
+  furnace: 4,
+  railhead: 4,
+};
+
+/**
+ * WHAT ONE TURRET OF A TIER COSTS. A card is this times the shape's cell
+ * count (cardPrice), so the smallest tier-4 card is 360,000 and no opening
+ * bank comes near one.
+ *
+ * THE STEEPNESS IS AT THE TOP, WHERE IT BUYS SOMETHING. About six times a
+ * step through the middle and TEN into tier 4 — 333x end to end — because
+ * the thing worth gating is the 4x4, and a gap at the bottom gates nothing
+ * except whether the run gets started. Tier 2 was 1,000 and it walled the
+ * band off for the whole opening: the minimum card is nine turrets, so a
+ * 6.7x per-turret step is a 6.7x step in the smallest purchase that band
+ * can make, and the bank at wave eight could not clear it without giving
+ * up two waves of building.
+ *
+ * Per tile that is 120 / 175 / 444 / 2,500. docs/economy.md.
+ */
+export const TIER_PRICE: Record<TowerTier, number> = {
+  1: 120,
+  2: 700,
+  3: 4000,
+  4: 40000,
 };
 
 /** every turret of one tier, in roster order */
 export const towersOfTier = (tier: TowerTier): TowerKind[] =>
   TOWER_KINDS.filter((k) => TOWER_TIER[k] === tier);
 
-/** the run cut into three stages, one a price band (see ladder.ts stageAudit) */
+/** what a card of `cells` turrets at this tier costs — flat, no bulk
+ *  discount anywhere (docs/economy.md) */
+export const cardPrice = (tier: TowerTier, cells: number): number =>
+  TIER_PRICE[tier] * Math.max(0, Math.floor(cells));
+
+/** the run cut into four stages, one a tier (see ladder.ts stageAudit) */
 export const STAGES: readonly { tier: TowerTier; from: number; to: number }[] = [
-  { tier: 1, from: 1, to: 20 },
-  { tier: 2, from: 21, to: 35 },
-  { tier: 3, from: 36, to: 50 },
+  { tier: 1, from: 1, to: 14 },
+  { tier: 2, from: 15, to: 28 },
+  { tier: 3, from: 29, to: 40 },
+  { tier: 4, from: 41, to: 50 },
 ];
 
-export const TOWER_PRICE: Record<TowerKind, number> = {
-  tacker: 60,
-  torch: 110,
-  lobber: 120,
-  coil: 150,
-  airburst: 180,
-  douser: 300,
-  fixer: 250,
-  restorer: 1200,
-  hive: 1000,
-  piercer: 900,
-  autocannon: 900,
-  barrage: 1400,
-  tether: 1500,
-  whirl: 1800,
-  cleaver: 4000,
-  deluge: 5000,
-  repeater: 7500,
-  furnace: 9000,
-  railhead: 12000,
-};
+/** the price of one turret, per kind — the tier's, for every kind in it */
+export const TOWER_PRICE: Record<TowerKind, number> = Object.fromEntries(
+  TOWER_KINDS.map((k) => [k, TIER_PRICE[TOWER_TIER[k]]]),
+) as Record<TowerKind, number>;
+
+/** THE TIER IS THE FOOTPRINT, and the corner's four keys promise it */
+(() => {
+  for (const k of TOWER_KINDS)
+    if (TOWERS[k].size !== TOWER_TIER[k])
+      throw new Error(`${k} is ${TOWERS[k].size}x${TOWERS[k].size} but filed at tier ${TOWER_TIER[k]}`);
+})();
 
 const priceOverrides = new Map<TowerKind, number>();
 
