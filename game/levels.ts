@@ -455,8 +455,10 @@ export interface EnergyFieldSpec {
  * adds StatusEffects.wet to the immunities of every naval type the moment
  * it detects one (the `water preset` block, alongside canDrown = false), so
  * it is not a per-unit authoring choice upstream and is not one here — all
- * ten ships declare it, and a douser or deluge soaking a boat does nothing
- * at all. Burning immunity is the opposite: two kinds have it by hand.
+ * ten ships declare it. It now buys immunity to the SLOW ALONE: a boat is
+ * already in the water, but soak still builds on it and still breaks it
+ * down under the threshold (docs/elements.md). Burning immunity is the
+ * opposite: two kinds have it by hand.
  */
 export type StatusKind = "burning" | "wet";
 

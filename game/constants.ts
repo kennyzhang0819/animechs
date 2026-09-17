@@ -2316,8 +2316,10 @@ export const FIRE_MAX_STACKS = 15;
 export const FIRE_SECONDS = 3;
 export const FIRE_SPREAD_CHANCE = 0.35;
 /** how far past touching a body may still catch: fire spreads on CONTACT,
- *  so the reach is the two hitboxes plus this and nothing else */
-export const FIRE_SPREAD_GAP = 4;
+ *  so the reach is the two hitboxes plus this and nothing else. Loose
+ *  enough that a marching column still passes it along; nowhere near a
+ *  lone hull's neighbours */
+export const FIRE_SPREAD_GAP = 12;
 /** status ticks between one body's spread rolls; staggered by index so the
  *  whole burning crowd never rolls on the same tick */
 export const FIRE_SPREAD_STRIDE = 12;

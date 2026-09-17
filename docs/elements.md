@@ -90,6 +90,13 @@ no longer wet at all; the threshold still stands.
 Soaked bodies also take `WET_SHOCK_MUL` from electric shots, and that half rides
 the slow, not the soak — it only applies while wet.
 
+**Ships take the soak and shrug off the slow.** All ten naval kinds declare wet
+immunity (`KIND_WET_IMMUNE`), and that immunity gates the slow only — a hull is
+already in the water, but soak still builds on it and still breaks it down under
+the threshold. The same split covers the SPEEDY mutator. Before this the
+immunity refused the whole status, so a douser soaking a boat did nothing at
+all.
+
 The threshold is **flat health**, so water is lethal against a lane of trash and
 irrelevant against a 20k-hull or a boss. That asymmetry is the identity: water
 clears crowds, poison kills heavies, fire connects them.

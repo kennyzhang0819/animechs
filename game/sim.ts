@@ -13293,9 +13293,12 @@ export class Sim {
    * droplet, while an equal or deeper soak re-times freely.
    */
   private applyWet(i: number, spec: { duration: number; slow: number; soak: number }): void {
-    // the soak is permanent and the slow is not; SPEEDY (mutation.ts) is
-    // immunity to the slow alone, so the threshold still builds under it
+    // the soak is permanent and the slow is not, so the two immunities are
+    // separate: SPEEDY (mutation.ts) and a HULL (KIND_WET_IMMUNE — a boat is
+    // already in the water) both shrug off the slow, and neither stops the
+    // threshold building
     this.usoak[i] += spec.soak;
+    if (KIND_WET_IMMUNE[this.ukind[i]]) return;
     const slow = this.speedyOn ? 1 : spec.slow;
     if (this.uwet[i] <= 0 || slow < this.uwetSlow[i]) this.uwetSlow[i] = slow;
     this.uwet[i] = spec.duration;
@@ -14042,7 +14045,7 @@ export class Sim {
             }
             if (uhp[i] > 0 && b.burn && !KIND_BURN_IMMUNE[this.ukind[i]]) this.applyBurn(i, b.burn);
             if (uhp[i] > 0 && b.poison) this.applyPoison(i, b.poison);
-            if (uhp[i] > 0 && b.wet && !KIND_WET_IMMUNE[this.ukind[i]]) this.applyWet(i, b.wet);
+            if (uhp[i] > 0 && b.wet) this.applyWet(i, b.wet);
             // BulletType.hitEffect, at the bullet rather than the victim.
             // A splash shot skips it — the blast in the `dead` branch below
             // is its hit effect — and so does a killing blow, whose death
@@ -14264,7 +14267,7 @@ export class Sim {
       // a direct hit — lighting a corpse is a fire nobody sees
       if (uhp[i] > 0) {
         if (burn && !KIND_BURN_IMMUNE[ukind[i]]) this.applyBurn(i, burn);
-        if (wet && !KIND_WET_IMMUNE[ukind[i]]) this.applyWet(i, wet);
+        if (wet) this.applyWet(i, wet);
       }
     }
     splashHits.sort((a, b) => b - a);

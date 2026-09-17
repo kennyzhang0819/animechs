@@ -1049,6 +1049,10 @@ const hpColor = (f: number): string => (f > 0.5 ? "#7BE58A" : f > 0.2 ? "#FFD37F
  */
 const ENEMY_HP = "#FF5A5A";
 
+/** the soak band: health already forfeit, drawn from the left of the bar
+ *  (docs/elements.md — a body breaks down the moment hp falls under it) */
+const BAR_SOAK = "#7FC4FF";
+
 /**
  * THE PLACEMENT GHOST'S WASHES — refused, and taxed by the Hydrophobic
  * rule. An ORDINARY cell has no wash and no outline: it is the turret's
@@ -3864,7 +3868,7 @@ export class Game {
     cx: number,
     topY: number,
     width: number,
-    bars: ReadonlyArray<{ v: number; col: string }>,
+    bars: ReadonlyArray<{ v: number; col: string; doomed?: number }>,
   ): number {
     if (bars.length === 0) return topY;
     const w = Math.max(width, BAR_MIN_W);
@@ -3878,6 +3882,14 @@ export class Game {
       if (f > 0) {
         c.fillStyle = b.col;
         c.fillRect(x, y, w * f, BAR_H);
+      }
+      // the soak threshold, over the fill rather than under it: the blue is
+      // health the body no longer gets to spend, so the coloured part
+      // shrinking to meet it IS the moment it breaks down
+      const d = clamp(b.doomed ?? 0, 0, 1);
+      if (d > 0) {
+        c.fillStyle = BAR_SOAK;
+        c.fillRect(x, y, w * d, BAR_H);
       }
       c.strokeStyle = BAR_EDGE;
       c.lineWidth = 0.5;
@@ -4019,7 +4031,7 @@ export class Game {
    */
   private drawUnitBars(c: CanvasRenderingContext2D): void {
     const w = this.world;
-    const { upx, upy, urad, uhp, uhpmax } = w.flat;
+    const { upx, upy, urad, uhp, uhpmax, usoak } = w.flat;
     const n = w.n;
     const bars = this.barBuf;
     const ids = this.statusBuf;
@@ -4055,7 +4067,13 @@ export class Game {
       bars.length = 0;
       if (!noBars) {
         const f = clamp(uhp[i] / Math.max(1, uhpmax[i]), 0, 1);
-        if (this.barsOn(false, f, false)) bars.push({ v: f, col: ENEMY_HP });
+        // a SOAKED body shows its bar whatever the mode says, short of
+        // "never": the threshold is the only warning the player gets, and
+        // an untouched body carrying one is exactly the case "damaged"
+        // would have hidden
+        const doomed = clamp(usoak[i] / Math.max(1, uhpmax[i]), 0, 1);
+        if (this.barsOn(false, f, false) || (doomed > 0 && this.enemyBars !== "never"))
+          bars.push({ v: f, col: ENEMY_HP, doomed });
       }
       // THE GATE, and why this is affordable over eight hundred bodies:
       // six typed-array reads, no allocation, and a no for nearly all of
@@ -4101,7 +4119,7 @@ export class Game {
 
   /** scratch for the two passes over the board, reused rather than
    *  rebuilt: one body's bars, and one body's status symbols */
-  private readonly barBuf: { v: number; col: string }[] = [];
+  private readonly barBuf: { v: number; col: string; doomed?: number }[] = [];
   private readonly statusBuf: StatusId[] = [];
 
   /**
