@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode, type RefObject } from "react";
 
 import { TOWER_DESC, TOWERS } from "@/game/constants";
+import { MOD_CHOICES } from "@/game/economy";
 import {
   fleetFootprint,
   formationCount,
@@ -13,10 +14,11 @@ import {
   type FormationId,
 } from "@/game/formation";
 import type { DealHalf, Game, ModDraw, UiState } from "@/game/game";
+import type { ModId } from "@/game/mods";
 import { RARITY, rarityDef } from "@/game/rarity";
 import type { TowerKind } from "@/game/types";
 import { TOWER_ICONS } from "./towerIcons";
-import { Glyph, ModReveal } from "./Relics";
+import { Glyph, ModChoice, ModReveal } from "./Relics";
 import { HoverCard, useHoverCard } from "./HoverCard";
 import { tile } from "./tile";
 
@@ -62,6 +64,20 @@ const HALF_SUB: Record<Exclude<DealHalf, "open">, string> = {
  *   button that flipped a coin between them let the player aim at
  *   neither.
  *
+ *   AND THE M BUTTON ASKS A QUESTION BACK. It pays, rolls THREE mods
+ *   and raises a CHOOSE 1 MOD panel over the square (ModChoice in
+ *   Relics.tsx, game.ts ModOffer); the player takes one with a click
+ *   or with 1, 2 or 3, and the other two are gone. That is new, and
+ *   it is the whole reason the mod price went from two thousand to
+ *   five: at two thousand the button was TAPPED — twenty presses
+ *   between waves, each worth a number too small to feel, which is a
+ *   click count wearing a decision's clothes. At five thousand there
+ *   are two fifths as many presses, each worth two and a half times
+ *   as much (mods.ts), and each one is a fork in the run. The G
+ *   button has no such panel and wants none: a relic is drawn from a
+ *   pool of fourteen that a run empties, so the question "which one"
+ *   answers itself over a run.
+ *
  *   AMOUNT (X) cycles 1 -> 4 -> 9 and multiplies whichever of the other
  *   three is pressed next. It spends nothing and it is a standing
  *   setting, not a held modifier.
@@ -75,8 +91,13 @@ const HALF_SUB: Record<Exclude<DealHalf, "open">, string> = {
  * one press was a coin-flip between a mod and a relic, and therefore the
  * key an older run's fingers already go to for a module.
  *
- * WHAT THE AMOUNT DOES IS DIFFERENT ON THE TWO SIDES, and that is the
- * whole design. On the modules it is N draws: nine relics is nine relics.
+ * WHAT THE AMOUNT DOES IS DIFFERENT ON ALL THREE, and that is the whole
+ * design. On the RELICS it is N draws: nine relics is nine relics. On the
+ * MODS it is N COPIES OF THE ONE CHOSEN — it cannot be nine draws any
+ * more, because nine draws under a choose-1 panel is nine panels, and
+ * nine questions from one press is not one press. So a x9 mod press pays
+ * nine fees, asks once, and stacks the answer nine deep (game.ts
+ * ModOffer): the same money, a deeper stack and a single decision.
  * On the TURRET it is not nine cards — it is ONE card whose shape is
  * TILED nine times (formation.ts fleetLayout), so a x9 press still rolls
  * one gun and one shape and what it multiplies is the GROUND being asked
@@ -88,7 +109,10 @@ const HALF_SUB: Record<Exclude<DealHalf, "open">, string> = {
  *   BECAUSE A MODULE HAS NOWHERE TO LAND, THE DRAW GETS A REVEAL: a card
  *   over the buttons for a few seconds saying what was bought, and then
  *   gone. It is the only feedback the purchase has at the moment it is
- *   made, and a x10 press gets ONE card listing its ten.
+ *   made, and a x10 press gets ONE card listing its ten. A MOD PRESS
+ *   REVEALS AFTER THE CHOICE, not before: the choice panel stands in
+ *   the same place, they are the two stages of one moment, and they
+ *   are never on screen together.
  *
  * THE FLOW IS T, CLICK, T, CLICK. There is no hand to manage, no slot to
  * choose and no clock to beat: a card is drawn already aimed, and it
@@ -131,6 +155,9 @@ export const cardOf = (hud: UiState | null): DealCard | null => hud?.held ?? nul
 export interface DealActions {
   buy: () => void;
   buyMods: () => void;
+  /** take one of the three the last M press put on the table
+   *  (game.ts ModOffer) */
+  chooseMod: (id: ModId) => void;
   buyRelics: () => void;
   cycleAmount: () => void;
   rotate: () => void;
@@ -153,14 +180,28 @@ export function useDeal(
     refresh();
   }, [gameRef, refresh]);
 
-  /** THE MODULES, AND THEY ARE ALREADY APPLIED — there is nothing to pick
-   *  up and nothing to re-roll (see the header) */
+  /**
+   * THE MODS, AND THE PRESS IS ONLY HALF OF IT — it pays, and puts THREE
+   * on the table for the player to choose one of (game.ts ModOffer). The
+   * other half is `chooseMod` below.
+   */
   const buyMods = useCallback(() => {
     const g = gameRef.current;
     if (!g) return;
     g.buyMods();
     refresh();
   }, [gameRef, refresh]);
+
+  /** ...and the answer, which spends nothing: the press already did */
+  const chooseMod = useCallback(
+    (id: ModId) => {
+      const g = gameRef.current;
+      if (!g) return;
+      g.chooseMod(id);
+      refresh();
+    },
+    [gameRef, refresh],
+  );
 
   const buyRelics = useCallback(() => {
     const g = gameRef.current;
@@ -184,6 +225,19 @@ export function useDeal(
     if (!g) return;
     if (g.rotateHeld()) refresh();
   }, [gameRef, refresh]);
+
+  /** the nth card on the table, for the number keys — read off the LIVE
+   *  offer rather than a remembered list, because the panel and the
+   *  keyboard must never disagree about what 2 is */
+  const pick = useCallback(
+    (at: number) => {
+      const g = gameRef.current;
+      if (!g) return;
+      const id = g.ui().modOffer?.ids[at];
+      if (id) chooseMod(id);
+    },
+    [gameRef, chooseMod],
+  );
 
   /** pick the owned card back up, or put the ghost down — it spends
    *  nothing either way */
@@ -215,6 +269,15 @@ export function useDeal(
       KeyG: buyRelics,
       KeyX: cycleAmount,
       KeyR: rotate,
+      // 1, 2 and 3 TAKE ONE OF THE THREE while a choice is on the table,
+      // and do nothing at all when one is not: the Game refuses an id that
+      // is not on offer (Game.chooseMod), so these are dead keys outside
+      // the one moment they mean something. They are read off the OFFER
+      // rather than off a fixed list, so a save that could only be shown
+      // two mods has two live keys
+      Digit1: () => pick(0),
+      Digit2: () => pick(1),
+      Digit3: () => pick(2),
     };
     const onKey = (e: KeyboardEvent): void => {
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
@@ -232,9 +295,9 @@ export function useDeal(
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dealing, over, buy, buyMods, buyRelics, cycleAmount, rotate, gameRef]);
+  }, [dealing, over, buy, buyMods, buyRelics, cycleAmount, rotate, pick, gameRef]);
 
-  return { buy, buyMods, buyRelics, cycleAmount, rotate, toggle };
+  return { buy, buyMods, buyRelics, chooseMod, cycleAmount, rotate, toggle };
 }
 
 /** how long the reveal stands before it goes (seconds x 1000) */
@@ -508,9 +571,15 @@ export function DealCorner({
   const relicCost = hud.relicPrice * n;
   const short = (cost: number): boolean => hud.scrap !== null && hud.scrap < cost;
   const free = hud.scrap === null;
+  // THE CHOICE STANDS IN THE REVEAL'S PLACE, never beside it. They are
+  // the same moment at two stages — "which of these three" and "here is
+  // what you took" — and a run that presses M twice in a row would
+  // otherwise have last press's answer sitting over this press's question
+  const choosing = hud.modOffer !== null;
   return (
     <div className="flex flex-col items-end gap-2">
-      <ModReveal draw={revealed} />
+      <ModChoice offer={hud.modOffer} onChoose={deal.chooseMod} />
+      {!choosing && <ModReveal draw={revealed} />}
       {card && (
         <TurretCard
           card={card}
@@ -558,23 +627,31 @@ export function DealCorner({
             sub={
               hud.modDeal !== "open"
                 ? HALF_SUB[hud.modDeal]
-                : n > 1
-                  ? `${n} draws`
-                  : "on new turrets"
+                : choosing
+                  ? "choose one"
+                  : n > 1
+                    ? `${n} copies`
+                    : "on new turrets"
             }
             price={hud.modDeal === "open" && !free ? modCost : null}
             poor={short(modCost)}
-            disabled={hud.modDeal !== "open"}
+            // DARK WHILE A CHOICE IS ON THE TABLE, because the press it
+            // would make is one the Game refuses anyway (Game.buyMods —
+            // one question at a time) and a live button that does nothing
+            // is worse than a dark one that says why
+            disabled={hud.modDeal !== "open" || choosing}
             amount={n}
             tint="#7BDFF2"
             glyph={<Glyph glyph="barrel" className="h-[22px] w-[22px]" />}
             onPress={deal.buyMods}
             aria={
-              hud.modDeal === "open"
-                ? `Buy ${n} mod${n > 1 ? "s" : ""} for ${modCost} scrap, shortcut M`
-                : hud.modDeal === "owned"
-                  ? "Buy mods — every mod is owned"
-                  : "Buy mods — the track has dealt this save none"
+              choosing
+                ? "Buy mods — choose one of the three on offer first"
+                : hud.modDeal === "open"
+                  ? `Buy a mod at ${n} cop${n > 1 ? "ies" : "y"} for ${modCost} scrap, choose 1 of ${MOD_CHOICES}, shortcut M`
+                  : hud.modDeal === "owned"
+                    ? "Buy mods — every mod is owned"
+                    : "Buy mods — the track has dealt this save none"
             }
           />
           <BuyButton

@@ -17,6 +17,7 @@ import {
   clamp,
   COLS,
   H,
+  BEACON_LADDER,
   BEACON_POWER_R,
   BEACON_SIZE,
   beaconPriceAt,
@@ -42,6 +43,7 @@ import {
   type UnitKind,
 } from "./levels";
 import {
+  MOD_CHOICES,
   MOD_ROLL_PRICE,
   missionXp,
   nextAmount,
@@ -138,6 +140,43 @@ export type ModDraw =
   | null;
 
 /**
+ * THE THREE MODS A PRESS OF M PUT ON THE TABLE, and the one the player
+ * has not picked yet (Game.modOffer).
+ *
+ * A MOD PRESS IS A CHOICE NOW, and that is the whole of this type. It
+ * used to be a draw: the button rolled, the mod landed, and a run with
+ * money pressed it twenty times between waves for twenty numbers too
+ * small to feel — a click count standing in for a decision. A mod costs
+ * two and a half times as much and is worth two and a half times as
+ * much (economy.ts MOD_ROLL_PRICE, mods.ts), so the presses are few
+ * enough that each one can afford to ask a question, and the question
+ * is CHOOSE 1 OF 3.
+ *
+ * THE MONEY IS ALREADY GONE. The press pays; the choice only says what
+ * the money bought. That is deliberate and it is the only honest way to
+ * do it: an offer a player could walk away from is a free re-roll with
+ * extra steps, and this game has no free re-rolls anywhere: a turret
+ * card whose shape a player cannot use still costs a thousand scrap to
+ * throw away (buyTurretCard).
+ *
+ * THE THREE ARE DISTINCT wherever the pool can manage it, because three
+ * of one mod is not a choice. A save whose track has opened fewer than
+ * three mods is offered what there is.
+ *
+ * `copies` IS THE AMOUNT BUTTON, folded in: a x4 press pays four times
+ * and the chosen mod is taken four times. The amount used to be four
+ * independent draws, which cannot survive a choice — four questions
+ * from one press is four panels — so it became four copies of ONE
+ * answer, which is the same money for a deeper stack and one decision.
+ */
+export interface ModOffer {
+  /** the three on the table, in the order they were rolled */
+  ids: readonly ModId[];
+  /** how many copies of whichever one is picked — the amount button */
+  copies: number;
+}
+
+/**
  * THE PICKED BEACON, as the panel at the bottom of the screen prints it
  * (components/Beacon.tsx).
  *
@@ -151,7 +190,7 @@ export interface BeaconPanel {
   i: number;
   /** is it already switched on? then there is no price and no button */
   bought: boolean;
-  /** what it costs — the rung of the map's ladder this run has reached, the
+  /** what it costs — the rung of the campaign's ladder this run has reached, the
    *  same for every beacon on the board (Game.beaconPrice), or 0 where
    *  building is free (the sandbox, the editors) */
   price: number;
@@ -359,6 +398,10 @@ export interface UiState {
    *  reveal needs to fire, including for a repeat (Game.lastDraw) */
   lastDraw: ModDraw;
   modDraws: number;
+  /** THE THREE ON THE TABLE waiting to be chosen between, or null when
+   *  nothing is pending — what raises the Choose 1 panel over the deal
+   *  (Deal.tsx ModChoice, Game.modOffer) */
+  modOffer: ModOffer | null;
   /** what each half of the catalog can do for this press — what lights
    *  the M button and the G button, and what each says when it cannot
    *  (Deal.tsx). The two halves are asked separately: a run that has taken
@@ -1204,6 +1247,18 @@ export class Game {
   private lastDraw: ModDraw = null;
   private modDraws = 0;
   /**
+   * THE PRESS OF M THAT HAS BEEN PAID FOR AND NOT YET ANSWERED (ModOffer)
+   * — null whenever there is no question on the table, which is nearly
+   * always.
+   *
+   * IT IS THE ONE PIECE OF DEAL STATE THE GAME HOLDS BESIDES THE CARD,
+   * and it is held here rather than in the panel for the same reason the
+   * card is: the money left the run's purse when the press happened, so
+   * what the money bought cannot live in a React component that a
+   * re-mount would throw away.
+   */
+  private modOffer: ModOffer | null = null;
+  /**
    * HOW MANY STRUCTURES THIS RUN HAS PLACED, only ever going up. The card
    * layer (Animechs) owns the deal, and it has no other way to learn that
    * the card in hand actually LANDED: it watches this number across the
@@ -1738,27 +1793,96 @@ export class Game {
    * the two categories, not an accident — see relics.ts anyRelicLeft.
    */
 
-  /** THE M BUTTON: mods, a chance riding every placement still to come */
+  /**
+   * THE M BUTTON: mods, a chance riding every placement still to come —
+   * and it PUTS THREE ON THE TABLE rather than handing one over (ModOffer).
+   *
+   * THE PRESS PAYS AND THE CHOICE ANSWERS. Everything about the purchase
+   * happens here: the half is checked, the bank is checked, and the whole
+   * fee for the whole amount leaves the purse before a single id is
+   * rolled. What `chooseMod` does afterwards is not a second half of a
+   * transaction, it is the player saying which of the three things they
+   * already paid for they want — so a press that is never answered has
+   * still spent, and there is nothing here a player can press their way
+   * out of.
+   *
+   * A SECOND PRESS WHILE AN OFFER STANDS DOES NOTHING, and must not: the
+   * alternative is paying five thousand to re-roll three mods, which is
+   * the free re-roll this game does not have on any other button.
+   *
+   * IT RETURNS THE THREE, for a caller that wants to know what it put up.
+   */
   buyMods(): ModId[] {
     if (!this.canBuyModules() || this.modDeal() !== "open") return [];
+    if (this.modOffer) return []; // one question at a time
     const each = this.dealing ? MOD_ROLL_PRICE : 0;
     const n = this.buyAmount;
-    // the whole fleet or none of it — checked before a single draw is
-    // taken, so a refused press has changed nothing at all
+    // the whole press or none of it — checked before anything is rolled,
+    // so a refused press has changed nothing at all
     if (this.world.scrap < each * n && this.world.charging) return [];
-    const got: ModId[] = [];
+    const ids = this.rollOffer(MOD_CHOICES);
+    if (ids.length === 0) return []; // the save has opened no mod at all
+    // ...and only now does it cost anything. The amount is folded into the
+    // ONE choice (see ModOffer), so it is n fees for n copies of whichever
+    // of the three comes back
     for (let i = 0; i < n; i++) {
-      const id = rollMod(MOD_ODDS.live(), Math.random, this.modPool());
-      if (!id) break; // the save has opened no mod at all
       if (!this.world.spend(each)) break;
       this.host.spend(each);
+    }
+    this.modOffer = { ids, copies: n };
+    return ids;
+  }
+
+  /**
+   * THE THREE ON THE TABLE, DISTINCT — one roll off the mod table per slot
+   * (mods.ts rollMod), re-rolled past anything already showing.
+   *
+   * THE RETRIES ARE BOUNDED AND THE SHORT ANSWER IS A LEGAL ONE. A save
+   * whose track has opened two mods cannot be offered three different
+   * ones, and the panel is perfectly happy to ask a player to choose
+   * between two: what it must never do is spin forever looking for a
+   * third that does not exist.
+   *
+   * EACH SLOT IS A FULL, INDEPENDENT ROLL off the band weights, so the
+   * band a mod comes from is exactly as likely as it ever was — what the
+   * three do is let the player TAKE the best of them, which is the whole
+   * point and the one real buff in the change.
+   */
+  private rollOffer(want: number): ModId[] {
+    const pool = this.modPool();
+    const ids: ModId[] = [];
+    for (let tries = 0; ids.length < want && tries < 64; tries++) {
+      const id = rollMod(MOD_ODDS.live(), Math.random, pool);
+      if (!id) break; // the save has opened no mod at all
+      if (!ids.includes(id)) ids.push(id);
+    }
+    return ids;
+  }
+
+  /**
+   * THE ANSWER: one of the three, taken as many times as the press paid
+   * for (ModOffer.copies), and the offer comes off the table.
+   *
+   * IT SPENDS NOTHING. The press already did (buyMods), which is why this
+   * refuses only on an id that is not on the table — a press that has been
+   * paid for always ends in a mod.
+   *
+   * THE REVEAL FIRES FROM HERE rather than from the press, because the
+   * press had nothing to reveal: the card over the buttons says what the
+   * run now OWNS, and until this is called nothing is owned.
+   */
+  chooseMod(id: ModId): boolean {
+    const offer = this.modOffer;
+    if (!offer || !offer.ids.includes(id)) return false;
+    this.modOffer = null;
+    const got: ModId[] = [];
+    for (let i = 0; i < Math.max(1, offer.copies); i++) {
       this.host.takeMod(id);
       got.push(id);
     }
-    if (got.length === 0) return [];
     this.lastDraw = { kind: "mod", ids: got };
     this.modDraws++;
-    return got;
+    return true;
   }
 
   /** THE G BUTTON: relics, in force over the whole board the moment they land */
@@ -2481,6 +2605,7 @@ export class Game {
       shelfRelics: w.report.relics,
       lastDraw: this.lastDraw,
       modDraws: this.modDraws,
+      modOffer: this.modOffer,
       modDeal: this.modDeal(),
       relicDeal: this.relicDeal(),
       inspect: w.report.inspect,
@@ -2530,6 +2655,8 @@ export class Game {
     this.rarityWeights = TURRET_ODDS.live();
     this.lastDraw = null;
     this.modDraws = 0;
+    // ...and a question nobody answered dies with the run that asked it
+    this.modOffer = null;
     this.soakLayer = null; // a new level is a new coastline
     this.spawnOutline = null; // ...and new mouths
     this.mmBase = null; // ...and a new ground under the minimap
@@ -2885,10 +3012,10 @@ export class Game {
    * WHAT THE NEXT BEACON COSTS ON THIS BOARD — and it is the same number
    * for every beacon on it.
    *
-   * ONE RISING PRICE, NOT A PRICE PER HILL. The map carries a ladder
-   * (maps.ts MapData.beaconPrices, constants.ts BEACON_LADDER) and the run
-   * is offered the rung it has reached: with none bought, every beacon on
-   * the board costs rung 1; buy any one of them and every other moves to
+   * ONE RISING PRICE, NOT A PRICE PER HILL — and one ladder for the whole
+   * campaign, not one per map (constants.ts BEACON_LADDER). The run is
+   * offered the rung it has reached: with none bought, every beacon on the
+   * board costs rung 1; buy any one of them and every other moves to
    * rung 2. So the question a player answers is how much ground to open,
    * not which hill happens to be marked down — and the far edge of a map
    * is reachable early by a run willing to spend its whole middle game on
@@ -2905,7 +3032,7 @@ export class Game {
   private beaconPrice(i: number): number {
     const r = this.world.terrain.beacons[i];
     if (!r || !this.dealing) return 0;
-    return beaconPriceAt(this.world.terrain.beaconPrices, this.beaconsBought());
+    return beaconPriceAt(BEACON_LADDER, this.beaconsBought());
   }
 
   /** how many of this map's beacons the run has switched on — the rung of
@@ -3015,7 +3142,7 @@ export class Game {
       // climbed rather than after: a player who cannot see that the next
       // beacon is half again as dear has no way to plan the purchase they
       // are being asked to plan (beaconPrice). Zero where building is free
-      next: this.dealing ? beaconPriceAt(this.world.terrain.beaconPrices, bought + 1) : 0,
+      next: this.dealing ? beaconPriceAt(BEACON_LADDER, bought + 1) : 0,
       /** how many the run has already switched on — the rung it stands on */
       taken: bought,
       total: this.world.terrain.beacons.length,

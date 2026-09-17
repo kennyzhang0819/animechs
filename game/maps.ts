@@ -1,4 +1,4 @@
-import { BASE, BEACON_LADDER, COLS, MAX_BEACONS, NCELLS, ROWS } from "./constants";
+import { BASE, COLS, MAX_BEACONS, NCELLS, ROWS } from "./constants";
 
 /**
  * The grid width every map was authored at before the board grew. Documents
@@ -107,21 +107,13 @@ export interface MapData {
    * beacon.
    */
   beacons?: MapBeacon[];
-  /**
-   * WHAT THE FIRST BEACON COSTS, THEN THE SECOND, AND SO ON — this map's
-   * price ladder (constants.ts BEACON_LADDER), edited in the map editor's
-   * Beacon prices panel.
-   *
-   * IT IS THE MAP'S AND NOT THE BEACON'S. Every beacon on the board is
-   * offered at the same price and buying any one of them moves the rest up
-   * a rung, so a run's decision is how much ground to open rather than
-   * which hill happens to be marked down.
-   *
-   * Absent means the shared default, which is what every document written
-   * before the ladder carries. Shorter than the map's beacon count means
-   * the last rung repeats — a ceiling, deliberately reachable.
-   */
-  beaconPrices?: number[];
+  // A MAP SAYS NOTHING ABOUT WHAT A BEACON COSTS. It carried a ladder of
+  // its own for a while, editable in the map editor; no document on disk
+  // ever set one, and a per-map price list was a dial that answered a
+  // question the campaign already answers — every beacon everywhere is
+  // offered at the rung the run has reached, off the one ladder in
+  // constants.ts BEACON_LADDER. A `beaconPrices` left in a hand-edited or
+  // exported document is simply ignored, like a `price` on a beacon.
   /** where this map's base sits (top-left cell). Absent = the default BASE
    * position, which is what every pre-per-base document means */
   base?: { x: number; y: number };
@@ -443,8 +435,8 @@ export const PALETTE: readonly PaletteSet[] = [
   // so does the eraser — they are a layer of their own now (renderer.ts
   // TerrainLayers.beacon), which is what lets them be hidden while the
   // rock under them is painted. What one COSTS is not on the brush and not
-  // on the beacon: it is the map's ladder (MapData.beaconPrices), edited
-  // in the Beacon prices panel
+  // on the beacon: it is the campaign's one ladder, and no map or editor
+  // sets it (constants.ts BEACON_LADDER)
   { id: "beacon", label: "Beacon", kind: "beacon", variants: [0], noRandom: true,
     icons: ["/mindustry/sprites/blocks/power/power-node-large.png"] },
   // the swarm's buildings — the player's roster, on the swarm's side —
@@ -674,11 +666,10 @@ export function mapFromTerrain(
     spawnTiles: spawnTileList(t.spawn, n),
     pines: t.pines.map((p) => ({ ...p })),
     decor: t.decor.map((p) => ({ ...p })),
-    // the beacons carry NO price: what one costs is the map's ladder, and
-    // a number left on each of them would be a second answer to the same
-    // question (terrain.ts MapBeacon)
+    // the beacons carry NO price: what one costs is the campaign's ladder,
+    // and a number left on each of them would be a second answer to the
+    // same question (terrain.ts MapBeacon)
     beacons: t.beacons.map((r) => ({ x: r.x, y: r.y })),
-    beaconPrices: [...t.beaconPrices],
     valleyY: Array.from(t.valleyY).map((v) => Math.round(v * 100) / 100),
   };
 }
@@ -700,26 +691,6 @@ function lift(src: readonly number[], pad: number, srcW: number): Uint8Array {
   for (let y = 0; y < rows; y++)
     for (let x = 0; x < cols; x++) out[y * COLS + x] = src[y * srcW + x];
   return out;
-}
-
-/**
- * THIS MAP'S PRICE LADDER, cleaned up on the way in — the list of what the
- * first beacon costs, then the second, and so on (constants.ts
- * BEACON_LADDER for the rule and the default numbers).
- *
- * A document may carry no ladder at all, which is what every map written
- * before the ladder existed carries, and it plays on the shared default.
- * One that carries garbage — a string, a negative, a hole — is not worth
- * crashing a run over: each rung is read as a whole number of scrap or
- * dropped, and a ladder left with nothing in it falls back to the default
- * rather than making a board's beacons free by accident.
- */
-export function beaconLadderOf(raw: readonly unknown[] | undefined): number[] {
-  const rungs = (raw ?? [])
-    .map((v) => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.round(v)) : -1))
-    .filter((v) => v >= 0)
-    .slice(0, MAX_BEACONS);
-  return rungs.length > 0 ? rungs : [...BEACON_LADDER];
 }
 
 export function terrainFromMap(m: MapData): Terrain {
@@ -756,8 +727,6 @@ export function terrainFromMap(m: MapData): Terrain {
     // are both gone from every map on disk and from the type. A stray one
     // in a hand-edited document is dropped here rather than half-read
     beacons: (m.beacons ?? []).slice(0, MAX_BEACONS).map((r) => ({ x: r.x, y: r.y })),
-    // ...and the one price they all share, rung by rung (beaconLadderOf)
-    beaconPrices: beaconLadderOf(m.beaconPrices),
     // THE RAILS, by the document's own id — so the bed on the ground and
     // the line the mission's bodies walk are the same line, read out of
     // the same table (missions.ts ROAD_SPECS). A map that carries no road

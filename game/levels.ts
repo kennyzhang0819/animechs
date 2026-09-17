@@ -2550,32 +2550,46 @@ export const CONVOY_MEND = 2000;
  * walk — which is the only way five repetitions of one event stay a
  * decision instead of a chore.
  *
- * IT IS GEOMETRIC, AND IT USED TO BE A CENTRED LINE. 0.7 stepping to 1.3
- * was built to hold the mission's total where a flat pool would have put
- * it, which made it a rule about SHAPE — and the shape was not the
- * problem. Across the whole pattern it was worth 1.86x from first to
- * last, so the fifth train met a board with thirteen extra minutes of
- * scrap in it and was under twice the first one. The player out-scaled it
- * and the back half of the mission got easier as it went.
+ * IT USED TO BE A CENTRED LINE, AND THEN A PLAIN GEOMETRIC ONE. 0.7
+ * stepping to 1.3 was built to hold the mission's total where a flat pool
+ * would have put it, which made it a rule about SHAPE — and the shape was
+ * not the problem; it was worth 1.86x from first to last, so the player
+ * out-scaled it and the back half got easier as it went. A third again
+ * every launch fixed that but kept ONE rate for the whole pattern, and a
+ * board compounding for thirteen extra minutes does not grow at one rate:
+ * the opening was priced right and the close was still catching up.
  *
- * Compounding a third a launch is what a curve has to do to stay ahead of
- * a board that is itself compounding: x1.00, x1.35, x1.82, x2.46, x3.32,
- * and x4.48 for the spare. From 6,000 a car at the first launch that is
- * just under 20,000 at the fifth, and the pattern's seven worms are 1.9M
- * of health against the 330k they used to be. This is the mission being
- * MUCH harder, on purpose, and the growth rate is the one number to move
- * if the back half overshoots.
+ * SO THE RATE ITSELF CLIMBS. The step is GROWTH at the first gap and a
+ * further ACCEL each gap after it, which compounds the growth rather than
+ * the pool: x1.00, x1.35, x1.95, x3.01, x4.99, and x8.82 for the spare.
+ * The first two launches are within a whisker of where they already were
+ * — that end was not broken — and the fifth is FIVE times the first
+ * instead of three and a third, on the board with the most scrap behind
+ * it. From 6,000 a car at the first launch that is just under 30,000 at
+ * the fifth, and the pattern's seven worms are 3.2M of health.
  *
- * THE SPARE KEEPS CLIMBING. It is launched at index `pattern.length`, so
- * the replacement for a train that got through is the heaviest thing the
- * mission sends — which is what a second chance earned by a mistake ought
- * to feel like. And the DROP does not ramp with it: scrap comes off the
- * kind's authored health like every other body's (unitDrop), the same way
- * the level curve leaves drops alone however high the rung climbs.
+ * TWO NUMBERS TO MOVE, and they do different jobs. GROWTH is the opening
+ * — raise it and the early trains get harder. ACCEL is the back half
+ * alone — raise it and only launches four, five and the spare feel it.
+ * If the close overshoots, ACCEL is the one to touch.
+ *
+ * THE SPARE KEEPS CLIMBING, and now steeply: it is launched at index
+ * `pattern.length`, so the replacement for a train that got through is
+ * nearly nine times the first one — which is what a second chance earned
+ * by a mistake ought to feel like. And the DROP does not ramp with it:
+ * scrap comes off the kind's authored health like every other body's
+ * (unitDrop), the same way the level curve leaves drops alone however
+ * high the tier climbs.
  */
 export const WORM_RAMP_GROWTH = 1.35;
-export const wormRamp = (launch: number): number =>
-  WORM_RAMP_GROWTH ** Math.max(0, launch);
+export const WORM_RAMP_ACCEL = 1.07;
+export const wormRamp = (launch: number): number => {
+  const n = Math.max(0, launch);
+  // GROWTH^n is the flat geometric curve; ACCEL^(n(n-1)/2) is the sum of
+  // one extra step per gap already taken, which is what makes the RATE
+  // rise instead of the pool. n = 0 and n = 1 are untouched by ACCEL.
+  return WORM_RAMP_GROWTH ** n * WORM_RAMP_ACCEL ** ((n * (n - 1)) / 2);
+};
 
 /**
  * IS THIS KIND A PIECE OF A TRAIN — one flag per kind id, for the readers
@@ -4519,7 +4533,8 @@ export const WORLDS: LevelSpec[] = [
     // WHAT IT COSTS. Neither road passes within a hundred cells of the
     // core, so every gun that shoots a Borer is a gun bought outside the
     // ground the core lights, on a beacon paid for out of the same purse
-    // the defence comes out of (the map carries nine at 3,000 to 12,000).
+    // the defence comes out of (nine of them, on the one rising ladder in
+    // constants.ts BEACON_LADDER — 2,000 for the first up to 60,000).
     // Nothing built on a road defends the base, and the sale returns
     // nothing, so the whole difficulty of this map is that one decision
     // made five or six times.
@@ -4531,14 +4546,16 @@ export const WORLDS: LevelSpec[] = [
     // seven. Two through and it is over: there is no second spare and
     // the arithmetic says so before the player has to work it out.
     //
-    // ...AND EACH LAUNCH IS HEAVIER THAN THE LAST (wormRamp), by a third
-    // again every time: the fifth Borer carries three and a third times
-    // the first one's health and the spare four and a half, on a board
-    // that has had thirteen more minutes of scrap to spend. Compounding
-    // is what it takes to stay ahead of a board that is itself
-    // compounding — a battery that answered the first train is nowhere
-    // near the battery that answers the fifth, which is what keeps the
-    // third repetition from being the second one again.
+    // ...AND EACH LAUNCH IS HEAVIER THAN THE LAST (wormRamp), by more
+    // each time: a third again at the first gap, and a steeper step at
+    // every gap after it, so the fifth Borer carries FIVE times the first
+    // one's health and the spare nearly nine — on a board that has had
+    // thirteen more minutes of scrap to spend. Compounding is what it
+    // takes to stay ahead of a board that is itself compounding, and
+    // compounding faster is what it takes at the end, where the board's
+    // own curve is steepest: a battery that answered the first train is
+    // nowhere near the battery that answers the fifth, which is what
+    // keeps the third repetition from being the second one again.
     //
     // THE CLOCK. First launch at 2:30, one every 3:20 after it, the last
     // of the pattern at 15:50 and the spare at 19:10; a Borer is on the

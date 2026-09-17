@@ -1,4 +1,4 @@
-import { BASE, BEACON_LADDER, CELL, clamp, COLS, NCELLS, ROWS } from "./constants";
+import { BASE, CELL, clamp, COLS, NCELLS, ROWS } from "./constants";
 import type { RailTile } from "./missions";
 import { DECOR_TILES, WATER_FLOOR_GROUPS } from "./atlas";
 
@@ -157,13 +157,13 @@ export function airWalkMask(t: Terrain): Uint8Array {
  * cannot make that decision. Moving one beacon forty cells is a mission
  * edit.
  *
- * THE PRICE IS NOT ON IT. A beacon costs whatever the map's LADDER says
- * the next one costs (maps.ts MapData.beaconPrices, Terrain.beaconPrices):
- * every beacon on the board wears the same price, and buying any of them
- * moves every other one up a rung. A number stamped per beacon meant the
- * cheap ones were bought in whatever order the map happened to lay them
- * out; one rising price means the DECISION is how many acres to open, not
- * which bargain to find.
+ * THE PRICE IS NOT ON IT, AND NOT ON THE MAP EITHER. A beacon costs
+ * whatever the campaign's one ladder says the next one costs (constants.ts
+ * BEACON_LADDER): every beacon on every board wears the same price, and
+ * buying any of them moves every other one up a rung. A number stamped per
+ * beacon meant the cheap ones were bought in whatever order the map
+ * happened to lay them out; one rising price means the DECISION is how
+ * many acres to open, not which bargain to find.
  */
 export interface MapBeacon {
   /** top-left cell of its BEACON_SIZE footprint */
@@ -172,7 +172,7 @@ export interface MapBeacon {
   // A BEACON IS A PLACE AND NOTHING ELSE. It used to carry a `price` of
   // its own; every official document has been stripped of it and the
   // field is gone from the type, so there is one place a price can be
-  // written and it is the map's ladder. A stray `price` in a hand-edited
+  // written and it is BEACON_LADDER. A stray `price` in a hand-edited
   // or exported document is simply ignored — terrainFromMap reads the two
   // coordinates and builds the beacon from those.
 }
@@ -201,16 +201,6 @@ export interface Terrain {
   /** the beacons standing on this map's hills, as authored (maps.ts
    *  MapBeacon) — where the buildable ground can be extended to */
   beacons: MapBeacon[];
-  /**
-   * WHAT THE NEXT BEACON COSTS, AND THE ONE AFTER THAT: this map's price
-   * ladder, one rung per purchase (maps.ts BEACON_LADDER).
-   *
-   * Every beacon on the board is offered at `beaconPrices[bought]`, so the
-   * first one a run switches on costs rung 1 wherever it stands and the
-   * next costs rung 2. Past the last rung the last price repeats — a
-   * ladder shorter than the map's beacon count is a ceiling, not a bug.
-   */
-  beaconPrices: number[];
   /**
    * THE RAIL BED, if this map carries a road mission: one painted piece a
    * cell (missions.ts railsFor, game/railArt.ts).
@@ -526,10 +516,8 @@ export function generateTerrain(seed: number): Terrain {
     blocked, floor, wall, spawn, pines, decor, valleyY,
     // the generated fallback board carries NONE: beacons are authored, and
     // a board nobody authored has nothing to say about where a run may
-    // spread to. It plays inside the circle its base lights — and with no
-    // beacons to buy, the ladder over them is the shared default
+    // spread to. It plays inside the circle its base lights
     beacons: [],
-    beaconPrices: [...BEACON_LADDER],
     // ...and no rails, for the same reason: a road is authored against a
     // map id (missions.ts ROAD_SPECS) and this board has none
     rails: [],

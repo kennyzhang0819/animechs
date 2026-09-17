@@ -8,7 +8,7 @@ import { MOD_GRID, modGlyph } from "./modArt";
 import { RARITY } from "@/game/rarity";
 import { HoverCard, useHoverCard } from "./HoverCard";
 import { tile } from "./tile";
-import type { ModDraw } from "@/game/game";
+import type { ModDraw, ModOffer } from "@/game/game";
 
 /**
  * THE SHELF — every module the run owns, in a row along the top-left of
@@ -246,6 +246,143 @@ const drawnRelic = (id: RelicId): Drawn => {
   const d = relicDef(id);
   return { id, name: d.name, glyph: d.glyph, rarity: d.rarity, blurb: d.blurb, note: null };
 };
+
+/**
+ * CHOOSE 1 MOD — the panel that stands over the deal between the press of
+ * M and the mod actually landing (game.ts ModOffer).
+ *
+ * A MOD PRESS IS A DECISION NOW. It used to be a slot machine: press,
+ * something lands, press again — and a run with money did that twenty
+ * times between waves for twenty numbers too small to feel. A mod costs
+ * two and a half times as much and is worth two and a half times as much
+ * (economy.ts MOD_ROLL_PRICE, mods.ts), so there are far fewer presses,
+ * and a press that happens rarely can afford to ask a question. Three on
+ * the table, one taken, the other two gone.
+ *
+ * THE MONEY IS ALREADY SPENT when this appears, so there is no cancel and
+ * no close button: this is not a shop confirming a purchase, it is the
+ * purchase asking what it bought. The panel stands until one of the three
+ * is clicked — the board carries on running underneath it, the wave does
+ * not stop, and a player who wants to keep fighting takes one and gets
+ * back to it.
+ *
+ * IT SAYS "CHOOSE 1 MOD" IN WORDS, at the top, in the biggest type on the
+ * panel. A row of three cards is a choice to anyone who has seen one
+ * before and a mystery to everyone else, and the one thing a player must
+ * not have to work out mid-wave is what the game is waiting for.
+ *
+ * ONE, TWO, THREE ARE KEYS. The whole corner is a keyboard — T, M, G, X,
+ * R — so the panel that interrupts it is one too, and the number printed
+ * on each card is the key that takes it (Deal.tsx).
+ *
+ * EACH CARD IS THE REVEAL'S OWN CARD (SingleReveal, right below): the
+ * band's colour, the band's name and the mod's blurb. What a player needs
+ * in order to choose is exactly what the reveal used to tell them once it
+ * was too late to choose anything.
+ */
+export function ModChoice({
+  offer,
+  onChoose,
+}: {
+  offer: ModOffer | null;
+  onChoose: (id: ModId) => void;
+}) {
+  if (!offer || offer.ids.length === 0) return null;
+  const copies = Math.max(1, offer.copies);
+  return (
+    <div
+      className="ms-pane pointer-events-auto flex w-[17rem] flex-col gap-1.5 p-2"
+      role="group"
+      aria-label={`Choose 1 mod of ${offer.ids.length}`}
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="font-display text-[13px] font-bold uppercase leading-none tracking-wide text-[#FFD37F]">
+          Choose 1 mod
+        </span>
+        {/* THE AMOUNT, WHERE IT MATTERS: a x4 press paid four fees and the
+            one card taken is taken four times (game.ts ModOffer). That is
+            a fact about the choice, so it is read before it and not after */}
+        {copies > 1 && (
+          <span className="font-display text-[10px] font-bold uppercase leading-none tabular-nums text-[#7BDFF2]">
+            {"×"}
+            {copies} copies
+          </span>
+        )}
+      </div>
+      <span className="text-[9px] font-bold uppercase leading-none tracking-widest text-[#8A8E98]">
+        {copies > 1 ? `The one you pick, ${copies} times over` : "The other two are gone"}
+      </span>
+      {offer.ids.map((id, i) => (
+        <ChoiceCard key={id} id={id} slot={i + 1} copies={copies} onChoose={onChoose} />
+      ))}
+    </div>
+  );
+}
+
+/** one of the three, as a button: its band's colour, its glyph, what it
+ *  does, and the number key that takes it */
+function ChoiceCard({
+  id,
+  slot,
+  copies,
+  onChoose,
+}: {
+  id: ModId;
+  /** its place on the table, which is also its key: 1, 2 or 3 */
+  slot: number;
+  copies: number;
+  onChoose: (id: ModId) => void;
+}) {
+  const d = drawnMod(id);
+  const r = RARITY[d.rarity];
+  // WHAT THE PRESS ADDS, and only where the amount makes that differ from
+  // the blurb — every mod is linear in copies (mods.ts), so the total at
+  // `copies` IS what these copies are worth, and at x1 it would be the
+  // blurb's own number said twice
+  const stack = copies > 1 ? stackLine(modDef(id), copies) : null;
+  return (
+    <button
+      onClick={() => onChoose(id)}
+      aria-keyshortcuts={String(slot)}
+      aria-label={`Take ${d.name}, ${r.name}. ${d.blurb} Shortcut ${slot}.`}
+      className="ms-deal-card ms-tile flex w-full cursor-pointer flex-col gap-1 p-2 text-left"
+      style={tile(r.color)}
+    >
+      <div className="flex items-center gap-1.5">
+        {/* the number key, printed the way the deal's letters are
+            (globals.css .ms-key) but sitting IN the row rather than over
+            the corner, because the glyph already owns the corner */}
+        <span className="shrink-0 bg-[var(--ms-key-face)] px-[3px] font-display text-[9px] font-bold leading-[12px] text-[var(--ms-outline)]">
+          {slot}
+        </span>
+        <span
+          className="ms-tile ms-tile-sm flex h-[22px] w-[22px] shrink-0 items-center justify-center"
+          style={tile(r.color)}
+        >
+          <Glyph glyph={d.glyph} />
+        </span>
+        <span
+          className="min-w-0 flex-1 truncate text-[11px] font-bold uppercase leading-none tracking-wide"
+          style={{ color: r.color }}
+        >
+          {d.name}
+        </span>
+      </div>
+      <span
+        className="text-[9px] font-bold uppercase leading-none tracking-wide opacity-70"
+        style={{ color: r.color }}
+      >
+        {r.name}
+      </span>
+      <span className="text-[10px] leading-snug text-[#EDEDEF]">{d.blurb}</span>
+      {stack && (
+        <span className="text-[10px] font-bold leading-snug" style={{ color: r.color }}>
+          {stack} at {copies} copies
+        </span>
+      )}
+    </button>
+  );
+}
 
 export function ModReveal({ draw }: { draw: ModDraw }) {
   if (!draw || draw.ids.length === 0) return null;

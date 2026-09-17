@@ -55,10 +55,6 @@ interface Snapshot {
   pines: Prop[];
   decor: Prop[];
   beacons: MapBeacon[];
-  /** the map's beacon price ladder (maps.ts MapData.beaconPrices) — it is
-   *  edited in a panel rather than painted, and an author who types a rung
-   *  by mistake wants the same Ctrl+Z every brush stroke has */
-  beaconPrices: number[];
   base: { x: number; y: number; size: number };
 }
 
@@ -274,7 +270,6 @@ export class MapEditor {
     this.terrain.pines = s.pines;
     this.terrain.decor = s.decor;
     this.terrain.beacons = s.beacons;
-    this.terrain.beaconPrices = s.beaconPrices;
     this.terrain.base = s.base;
     this.dirty = true;
     this.renderer.rebuildTerrain(this, this.layers);
@@ -300,7 +295,6 @@ export class MapEditor {
       pines: this.terrain.pines.map((p) => ({ ...p })),
       decor: this.terrain.decor.map((p) => ({ ...p })),
       beacons: this.terrain.beacons.map((r) => ({ ...r })),
-      beaconPrices: [...this.terrain.beaconPrices],
       base: { ...this.terrain.base },
     });
     if (this.undoStack.length > UNDO_CAP) this.undoStack.shift();
@@ -472,11 +466,12 @@ export class MapEditor {
    * rather than raising rock to oblige: the author asked for a beacon, not
    * for terrain.
    *
-   * IT CARRIES NO PRICE. What a beacon costs is the map's ladder and not
-   * this beacon's business (maps.ts MapData.beaconPrices): every one on
-   * the board is offered at the same rung, and buying any of them moves
-   * the rest up. Placing one changes what the LAST rung of a full sweep
-   * costs, which is why the price panel counts the beacons beside it.
+   * IT CARRIES NO PRICE, AND NEITHER DOES THE MAP. What a beacon costs is
+   * the campaign's one rising ladder (constants.ts BEACON_LADDER): every
+   * beacon on every board is offered at the rung the run has reached, and
+   * buying any of them moves the rest up. Placing one here decides where
+   * a run may spread to and how dear the last acre is — nothing about
+   * price, which is why this editor has no price field anywhere in it.
    */
   private toggleBeacon(gx: number, gy: number): void {
     // a hidden beacon layer is out of reach, exactly like the others
@@ -514,43 +509,6 @@ export class MapEditor {
     rs.splice(hit, 1);
     this.dirty = true;
     return true;
-  }
-
-  /** this map's beacon price ladder, rung by rung (maps.ts
-   *  MapData.beaconPrices) — what the panel prints */
-  beaconLadder(): readonly number[] {
-    return this.terrain.beaconPrices;
-  }
-
-  /** how many beacons are standing — how many rungs of the ladder this
-   *  board can actually reach (the last rung repeats past the end) */
-  beaconCount(): number {
-    return this.terrain.beacons.length;
-  }
-
-  /**
-   * WRITE THE LADDER. Undoable like a stroke, because typing a rung is an
-   * edit to the map and Ctrl+Z is what an author reaches for after any
-   * edit they did not mean. Rungs are whole scrap and never negative; an
-   * empty ladder would make every beacon on the board free, so the panel's
-   * last rung cannot be removed (see MapEditorView).
-   *
-   * ONE SNAPSHOT PER BURST OF TYPING, not one per keystroke. A number
-   * field fires on every character, so snapshotting each call would fill
-   * the whole forty-deep stack with "3", "30", "300" and throw away every
-   * brush stroke behind them. A second's pause is a new edit, which is the
-   * granularity a text field has taught everyone to expect.
-   */
-  private ladderEditAt = -Infinity;
-
-  setBeaconLadder(rungs: readonly number[]): void {
-    const now = performance.now();
-    if (now - this.ladderEditAt > 1000) this.snapshot();
-    this.ladderEditAt = now;
-    this.terrain.beaconPrices = rungs
-      .slice(0, MAX_BEACONS)
-      .map((v) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0));
-    this.dirty = true;
   }
 
   private placeBase(gx: number, gy: number): void {
@@ -875,9 +833,10 @@ export class MapEditor {
     //
     // NO PRICE IS DRAWN ON THEM ANY MORE. Each one used to wear its own
     // four-figure number here, and that number no longer exists: a beacon
-    // costs whichever rung of the map's ladder the run has reached
-    // (constants.ts BEACON_LADDER), so a price painted on one hill would
-    // be a lie about every other. The ladder is read in its own panel.
+    // costs whichever rung of the campaign's one ladder the run has
+    // reached (constants.ts BEACON_LADDER), so a price painted on one hill
+    // would be a lie about every other — and the ladder is not a map's to
+    // set, so there is nothing to draw here and no panel to draw it in.
     //
     // On the OVERLAY rather than in the terrain batch (Renderer.
     // rebuildTerrain) because beacons are not tiles — they are a list of

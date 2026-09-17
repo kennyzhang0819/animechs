@@ -211,16 +211,16 @@ for (const id of ids) {
   }
   // nearest first in the document, so the file reads as the ladder it is
   taken.sort((a, b) => a.d - b.d);
-  // NO PRICE IS WRITTEN ON THEM: the document prices beacons in one place,
-  // its ladder, and a map that carries none plays on the shared default
+  // NO PRICE IS WRITTEN ON THEM, and none is written on the map either:
+  // a beacon costs the rung the run has reached off the campaign's one
+  // ladder (constants.ts BEACON_LADDER), wherever it is standing
   doc.beacons = taken.map((t) => ({ x: t.x, y: t.y }));
   writeFileSync(path, `${JSON.stringify(doc)}\n`);
   touched++;
-  const ladder = doc.beaconPrices?.length ? doc.beaconPrices : BEACON_LADDER;
   const rings = [0, 0, 0];
   for (const t of taken) rings[t.d <= RING_FROM[0] ? 0 : t.d <= RING_FROM[1] ? 1 : 2]++;
   let sum = 0;
-  for (let i = 0; i < taken.length; i++) sum += beaconPriceAt(ladder, i);
+  for (let i = 0; i < taken.length; i++) sum += beaconPriceAt(BEACON_LADDER, i);
   console.log(
     `${id}: ring 1/2/3 = ${rings.join("/")}, ` +
       `${sum.toLocaleString("en-US")} scrap to open the whole map, ` +

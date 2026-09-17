@@ -2,18 +2,16 @@ import { TOWERS } from "./constants";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
 /**
- * THE ECONOMY — two currencies that never touch.
+ * THE ECONOMY — two currencies that never touch. docs/economy.md is the
+ * system: what a kill pays and why the rate bends, what a run spends on
+ * and why each price is what it is, and the XP ladder.
  *
- * SCRAP is the run's money, and EVERY BIT OF IT COMES OFF THE SWARM. A
- * kill drops SCRAP OFF ITS OWN HEALTH POOL (SCRAP_PER_HP, a boss its lump
- * on top), and that is the WHOLE income: the core pays nothing, nothing is
- * mined, no wave pays for being survived, and a sale returns nothing
- * (SELL_REFUND). Drops are fixed per KIND — an ironhide1 always pays this, on
- * every rung, on every map — so the roll fee can be authored against the
- * script (the stage table in ladder.ts).
+ * SCRAP is the run's money and EVERY BIT COMES OFF THE SWARM — no core
+ * income, no mining, no wave bonus, no refund on a sale. Drops are fixed
+ * per KIND and read AUTHORED health, so a full clear pays the same on
+ * every tier and the prices can be authored against the script.
  *
- * XP is the save's progress, paid for objectives (the waves cleared),
- * never for kills — see MISSION_XP and waveXpShare below.
+ * XP is the save's progress, paid for objectives and never for kills.
  */
 
 /** what one kill leaves on the ground */
@@ -31,53 +29,16 @@ export function addDrop(into: Drop, d: Drop, n = 1): void {
 
 export const isEmptyDrop = (d: Drop): boolean => d.scrap === 0;
 
-/**
- * WHAT A KILL PAYS, PER POINT OF HEALTH. The drop used to be one number a
- * tier — ten for an ironhide1, five hundred for an ironhide5 — and a tier is far too
- * coarse a bucket to price a body by: an ironhide4 carries sixty runts'
- * health and paid twenty runts' scrap, so the late script, where the T4
- * and T5 hulls are, was the part of the run that paid worst for the work it
- * asked. Reading the kind's OWN health pool fixes that at the root, and it
- * fixes it for every kind at once — a stats edit moves the drop with it,
- * and a new kind is priced the moment its health is written.
- *
- * The rate is anchored on the ironhide1, which is the unit every other number
- * in this game is anchored on: 150 health at a fifteenth is the ten scrap
- * it has always paid.
- *
- * It reads the AUTHORED health (UnitStats.hp), never the level-scaled pool
- * (unitHpAtLevel): a full clear has to pay the same scrap on every
- * difficulty tier, or the turret prices would mean a different thing on
- * each of them.
- */
+/** what a kill pays per point of health, anchored on the ironhide1: 150
+ *  health at a fifteenth is the ten scrap it has always paid. It reads the
+ *  AUTHORED pool, never the level-scaled one (docs/economy.md) */
 export const SCRAP_PER_HP = 1 / 15;
 
-/**
- * AND THE RATE BENDS AT THE HEAVY END, because a health pool is what a
- * body is worth to KILL and not what it should be worth to BANK.
- *
- * Straight health times the rate was right about the shape and wrong about
- * the late game's scale. The unit trees do not climb smoothly: a T3 hull
- * is nine hundred health and the T4 above it is nine THOUSAND, so the step
- * from the middle of the script to the end of it multiplied the income by
- * ten in one shelf. An ironhide5 paid 1,600 — a card and a half for one body —
- * and a late wave is hundreds of bodies, so by wave 40 the bank stopped
- * being a constraint at all: everything was affordable, every roll was
- * free, and the only decision left was where to put what fell out.
- *
- * So health under the knee pays the full rate and health above it pays a
- * shrinking one: the drop is the ironhide1-anchored rate applied to `hp`
- * raised to DROP_HEAVY_EXP past DROP_KNEE_HP. A heavier kind is still
- * strictly worth more than a lighter one — that is the whole reason the
- * drop reads health, and it is untouched — but the curve is flatter than
- * the health curve, so the T4 and T5 shelves no longer pay ten times the
- * shelf below them for being ten times the pool.
- *
- * The knee sits at 600, the top of the T2 shelf, which is what makes this
- * a LATE-GAME edit and not a balance sweep: every T1 and T2 body pays
- * exactly what it always paid, a T3 gives up roughly a tenth, and the
- * cut lands where the complaint was — about 55% off a T4 and 65% off a T5.
- */
+/** ...and the rate bends at the heavy end: health under the knee pays
+ *  full and health above it pays a shrinking rate, because the unit trees
+ *  step by ten between shelves and a T5 paying a card and a half a body
+ *  made the bank stop being a constraint by wave 40. Every T1 and T2 body
+ *  pays exactly what it always paid */
 export const DROP_KNEE_HP = 600;
 export const DROP_HEAVY_EXP = 0.7;
 
@@ -101,125 +62,42 @@ export function dropForUnit(hp: number, boss = false): Drop {
 /** every run opens with this much in the bank */
 export const SCRAP_START = 10000;
 
-/**
- * WHAT THE ADMIN VIEW'S BOTTOMLESS PURSE READS ON THE COUNTER. Large
- * enough that no price or bulk-buy check can ever come up short, small
- * enough to still render as a number on the HUD — the spending itself is
- * a no-op (Sim.spend), so this is a display and a threshold, not a budget.
- */
+/** the admin view's bottomless purse — past any price or bulk-buy check
+ *  and still a number the HUD can render. The spending is a no-op */
 export const RICH_SCRAP = 99_999_999;
 
-/*
- * THERE IS NO WAVE BONUS. Staging a wave used to pay a lump on top of
- * what its bodies dropped — 250 and 50 more each wave, so 500 by wave 5
- * and 2,750 by wave 50 — and it was passive income: a board that killed
- * nothing banked it anyway, just for surviving the gap. EVERY SCRAP NOW
- * COMES OFF THE SWARM. The bank moves when bodies fall and at no other
- * time, which is the only version of this economy a player can reason
- * about: build more, kill more, buy more.
- */
-
 /**
- * WHAT ONE TURRET CARD COSTS — the run's only outgoing, and the whole
- * shape of the economy now.
- *
- * A turret is not bought at its own price any more. The player pays this
- * one fee, the deal rolls a rarity and a formation and hands over a card
- * (rarity.ts, formation.ts), and the card is placed for nothing. So
- * TOWER_PRICE below stopped being what a board spends and became what a
- * draw is WORTH: the number the odds are composed against, and nothing a
- * player ever pays.
- *
- * A THOUSAND, FLAT, on every pool and at every level. The fee was briefly
- * derived from what the save's pool was worth — which priced a level-2
- * deal fairly and a level-14 one fairly too — and it stopped being worth
- * the cleverness the moment a card started carrying a FORMATION: a draw
- * is four to thirty-six turrets now, so what it is worth swings by more
- * with one roll than the whole pool's depth ever moved it. One number a
- * player can hold in their head, and one number to turn.
+ * WHAT ONE TURRET CARD COSTS — the fee the player actually pays. A turret
+ * is not bought at its own price: the fee rolls a rarity and a formation
+ * and the card is placed for nothing, so TOWER_PRICE below is what a draw
+ * is WORTH and nothing a player ever pays.
  */
 export const TURRET_ROLL_PRICE = 1000;
 
-/**
- * WHAT ONE MOD COSTS, AND WHAT ONE RELIC COSTS — the deal's second and
- * third buttons, and the run's only other outgoings.
- *
- * BOTH ARE DEARER THAN A TURRET CARD, because the two things are not the
- * same purchase. A turret card is SPENT: it is placed, it is shot at, and
- * one day it is gone. A module is OWNED for the rest of the run.
- *
- * AND A RELIC IS DEARER THAN A MOD, because they are two categories and
- * not the same purchase either. A MOD (mods.ts) is a CHANCE — it improves
- * nothing standing and adds a roll to every turret placed from here on, so
- * what it is worth depends on how much board the run has left to buy. A
- * RELIC (relics.ts) is IN FORCE THE MOMENT IT IS PAID FOR, over every
- * turret already up and every one still to come, and it never stops. The
- * player pressing the third button is buying certainty and the second one
- * is buying odds, and the prices have to say so.
- *
- * THE TWO PRICES ARE ALSO THE TWO ERAS THEY WERE WRITTEN FOR. A mod at two
- * thousand is what a run spends on in the middle; a relic at a hundred and
- * fifty thousand is what a late game saves for. The track used to say the
- * same thing — mods across the front of a campaign, relics across the back
- * — and it no longer deals a relic at all (track.ts: they are reserved),
- * so for now the relic price is a number waiting for its door rather than
- * one a run can reach.
- *
- * Flat, like the roll fee and for the same reason: numbers a player can
- * hold in their head, and numbers a balance sweep turns.
- */
-export const MOD_ROLL_PRICE = 2000;
+/** what one mod costs — dearer than a turret card because a card is SPENT
+ *  and a module is OWNED, and cheaper than a relic because a mod is a
+ *  CHANCE and a relic is in force the moment it is paid for
+ *  (docs/economy.md) */
+export const MOD_ROLL_PRICE = 5000;
 
-/**
- * A HUNDRED AND FIFTY THOUSAND FOR A RELIC, AND IT IS NOT A TYPO. It was
- * three and a half thousand, which is where a "+10% damage" belongs, and
- * every relic in the catalog has since been rewritten to change the game
- * rather than nudge it (relics.ts) — the board fires twice as fast, every
- * kill pays triple, every turret revives. A rule that size at four
- * cards' price would be the first thing every run bought and the last
- * decision it ever made.
- *
- * THIRTY THOUSAND WAS STILL TOO CHEAP, and what proved it was how early
- * the button stopped being a decision: thirty turret cards is a bank a
- * run rebuilds inside a couple of waves once a line is holding, so the
- * relics arrived in a block in the mid-game and after that the G button
- * was a formality with nothing left behind it. At a HUNDRED AND FIFTY
- * thousand — a hundred and fifty cards, the opening bank twenty times
- * over — a relic is a whole act of a run saved for, and buying one is
- * giving up the board that money would have been. That is the trade the
- * button is supposed to put in front of the player, and it is the right
- * trade for what a relic ANSWERS: a wall of T5 hulls, which a board of
- * ordinary turrets does not beat by being a little bigger.
- *
- * The amount ladder still multiplies it, so x16 relics is two and a
- * quarter million — sixteen relics is sixteen relics.
- */
+/** how many mods a press of M puts on the table, of which the player
+ *  takes ONE. It is NOT a discount: the press pays for one, and what the
+ *  three buy is the right to take the best of three rolls */
+export const MOD_CHOICES = 3;
+
+/** what one relic costs — a whole act of a run saved for, and not a typo.
+ *  Every relic changes the game rather than nudging it, and at anything
+ *  cheaper the G button stopped being a decision by the mid-game. The
+ *  amount ladder still multiplies it: sixteen relics is sixteen relics */
 export const RELIC_ROLL_PRICE = 150000;
 
 /**
- * THE AMOUNT LADDER — the corner's fourth button, which cycles through
- * these and multiplies whichever of the other three is pressed next.
- *
- * THEY ARE SQUARE NUMBERS, and that is the point of these four and not
- * some other four. On the turret button the amount TILES the shape
- * (formation.ts), so a square amount tiles into a square: 4 is two copies
- * by two, 9 is three by three and 16 is four by four, and a fleet comes
- * out with the proportions of the card that bought it. They were 5 and
- * 10, which are not squares, and an oblong number has to be laid out as
- * something — a plus, a five-by-two slab — that nobody designed and the
- * player has to find ground for anyway.
- *
- * IT IS A FLAT MULTIPLIER ON THE PRICE, with no bulk discount anywhere:
- * x16 turrets costs exactly sixteen roll fees. The button saves KEYSTROKES
- * and nothing else — a discount would make the single press strictly
- * wrong, and the single press is the whole T-click-T-click flow the deal
- * was built around.
- *
- * What the multiplier buys is different on the two sides. On the turret
- * button it is ONE card carrying the shape tiled N times (formation.ts —
- * one turret roll, one shape roll, a fleet on the ground). On the module
- * buttons it is N INDEPENDENT DRAWS, because there is no ground involved
- * and nothing to tile: sixteen relics is sixteen relics.
+ * THE AMOUNT LADDER — the corner's fourth button, multiplying whichever
+ * of the other three is pressed next. THEY ARE SQUARES because on the
+ * turret button the amount TILES the shape (formation.ts). A FLAT
+ * multiplier with no bulk discount: the button saves keystrokes and
+ * nothing else. On the turret button it is ONE card carrying the shape
+ * tiled N times; on the module buttons it is N INDEPENDENT DRAWS.
  */
 export const BUY_AMOUNTS = [1, 4, 9, 16] as const;
 export type BuyAmount = (typeof BUY_AMOUNTS)[number];
@@ -245,11 +123,9 @@ export const sellValue = (kind: TowerKind): number =>
 
 export type TowerTier = 1 | 2 | 3;
 
-/**
- * THREE PRICE BANDS along Mindustry's build-cost order. A band is priced
- * so its stage (STAGES) is roughly what buys it — a pricing table and
- * nothing else; no band is held shut inside a run.
- */
+/** three price bands along Mindustry's build-cost order, priced so the
+ *  stage that meets a band is roughly what buys it. A pricing table and
+ *  nothing else — no band is held shut inside a run */
 export const TOWER_TIER: Record<TowerKind, TowerTier> = {
   tacker: 1,
   torch: 1,
@@ -343,15 +219,10 @@ export const pricePerTile = (kind: TowerKind): number =>
 
 /**
  * THE MISSION POT: what a CLEAR at Nemesis is worth — the mission met,
- * whichever mission the map carries (levels.ts Mission, Sim.won). The
- * rungs below pay a share of it and the rungs above a bonus (ladder.ts
- * tierXpBonus).
- *
- * A DEFEAT IS PAID OUT OF THE SAME POT, one wave at a time as the waves
- * are broken (waveXpShare, missionXp). That is the consolation ledger and
- * not the objective: the waves stopped being what a map is finished by
- * (docs/mission-design.md), and a run that met its mission at wave twelve
- * banks the whole pot with thirty-eight waves still on the board.
+ * whichever mission the map carries. Tiers below pay a share and tiers
+ * above a bonus (ladder.ts). A DEFEAT IS PAID OUT OF THE SAME POT, one
+ * wave at a time: that is the consolation ledger and not the objective,
+ * and a run that met its mission at wave twelve banks the whole pot.
  */
 export const MISSION_XP = 100_000;
 
@@ -386,43 +257,10 @@ export function missionXp(cleared: number, waves: number): number {
 
 /**
  * THE CLIMB IS STARCRAFT II'S MASTERY LADDER, CUT BY A THIRD. The table
- * below is Blizzard's own, transcribed, and SC2_SCALE is the only thing
- * done to it.
- *
- *   THE MASTERY LADDER, levels 1 to ASCENSION_FROM — MASTERY_LEVELS of
- *   them, their mastery 0 being our level 1. Theirs pays a mastery point a
- *   level; ours pays one too, and THERE IS NOTHING TO SPEND IT ON YET. The
- *   points bank against a system that is not written, and that is fine: the
- *   ladder already pays in the track (track.ts), which deals the whole
- *   toolkit over the first 15 levels and then a rule a level to MAX_LEVEL,
- *   opening the rungs that roll them at MUTATORS_FROM.
- *
- *   THE ASCENSION WALL, ASCENSION_FROM to LEVEL_CAP: XP_LEVEL_FLAT a level,
- *   forever. Nothing is handed over up here in their game or in ours. A
- *   farm has to have a KNOWN rate, and a wall is the only honest shape for
- *   one — a cost that kept climbing past the last reward is a curve quietly
- *   leaving the player behind.
- *
- * THEIR COMMANDER LEVELS ARE DELIBERATELY NOT HERE. SC2 runs 15 commander
- * levels BEFORE mastery opens, and those levels are the reason its mastery
- * table is allowed to start at 5,000 — a player reaching mastery 0 has
- * already paid 1,045,000 for the privilege. Dropping that phase and
- * starting at mastery 0 is what makes this ladder cheap early ON PURPOSE:
- * the toolkit is handed over inside the first FIVE clears, and the long
- * climb is the rules and the points, not the guns.
- *
- * SC2_SCALE MAKES IT EASIER THAN THEIRS, TWICE OVER, and the factor is
- * doing real work rather than decorating. A Brutal clear pays them 44,000;
- * a Nemesis clear pays us MISSION_XP, which is 2.27 times that, so their
- * numbers left alone would already cost us 56% fewer clears than they cost
- * a co-op player. Scaling by 1.5 hands a third of that discount back and
- * keeps the rest: we charge about A THIRD FEWER CLEARS than SC2 for the
- * same rung. Their mastery 90 is 420 Brutal clears and ours is 277; their
- * ascension level is 4.55 and ours is 3.
- *
- * THIS IS THE ONE KNOB. Every number on the ladder is SC2's times this, so
- * moving it moves the whole grind and nothing else — and the table is all
- * multiples of 500, so any sane factor lands on whole XP.
+ * below is Blizzard's own, transcribed; SC2_SCALE is the only thing done
+ * to it and THE ONE KNOB — moving it moves the whole grind and nothing
+ * else. What the two phases are, why their commander levels are not here
+ * and what the factor is worth in clears: docs/economy.md.
  */
 
 /** what our clear is worth against a Brutal one — every SC2 number below is
@@ -493,15 +331,6 @@ export function levelProgress(xp: number): { level: number; into: number; need: 
   const into = level >= LEVEL_CAP ? need : Math.max(0, Math.floor(xp)) - xpAtLevel(level);
   return { level, into, need };
 }
-
-/*
- * A RANDOM MAP PAYS NOTHING EXTRA (RANDOM_MAP_XP_BONUS, a quarter, gone).
- * It was a bribe to leave the macro alone, and a bribe is the wrong tool:
- * Random is the DEFAULT and the best way to play the game, and a run that
- * pays a quarter more for it makes every deliberate map choice feel like
- * a tax on knowing what you want. The only thing that moves what a run
- * pays is the difficulty it is played at.
- */
 
 /** the scrap sprite and colour (Mindustry Items.scrap, 777777, lifted) */
 export const SCRAP_ICON = "/mindustry/sprites/items/item-scrap.png";

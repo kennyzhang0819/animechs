@@ -256,12 +256,13 @@ What Coldline does with it, and what the shape turned out to need:
   refusing the player ground on the one map about buying ground. The
   arrival is a clock the road advertises from wave one; the only answer
   to it is killing the thing.
-- **EVERY LAUNCH IS HEAVIER THAN THE LAST** (`wormRamp`) — 0.7 of the
-  pool at the first and 1.3 at the fifth, with the spare past that. The
-  five launches add up to the same total health a flat pool would, so
-  this is the mission's shape rather than its price: a board gets richer
-  between launches, and a train worth what the last one was worth is a
-  train the player has already solved.
+- **EVERY LAUNCH IS HEAVIER THAN THE LAST** (`wormRamp`) — and the step
+  itself grows: x1.00, x1.35, x1.95, x3.01, x4.99 across the pattern,
+  with the spare at x8.82 past that. This is the mission's price and not
+  just its shape: a board gets richer between launches, faster towards
+  the end, and a train worth what the last one was worth is a train the
+  player has already solved. `WORM_RAMP_GROWTH` sets the opening,
+  `WORM_RAMP_ACCEL` the back half alone.
 - **It walks an AUTHORED line and it walks it kinematically.** Not the
   flow field, not the crowd shove, not wall collision — a position read
   off a polyline at an arc length. Everything else on the board ends up
@@ -398,9 +399,10 @@ map has to supply:
 - **Somewhere the objective is, that is not on the way to anything.** A
   gun placed there defends nothing, which is what makes buying it a
   decision.
-- **A beacon that reaches it.** Its price is the map's ladder rung, not its
-  own (docs/authoring-maps.md), so the entry fee is how DEEP into the ladder
-  a run has to go to stand a gun there — how many beacons it must already
+- **A beacon that reaches it.** Its price is the rung the run has reached on
+  the campaign's one ladder, not its own and not the map's
+  (docs/authoring-maps.md), so the entry fee is how DEEP into that ladder a
+  run has to go to stand a gun there — how many beacons it must already
   have bought, and what the next rung asks.
 - **A reason the objective cannot be answered by one turret.** It fights
   back, it moves, it is only open for a moment, or it takes a damage type

@@ -2025,28 +2025,42 @@ export const MAX_BEACONS = 64;
  *
  * THE NUMBERS, read against what a run earns. A fifty-wave clear takes
  * about 1.32 million scrap (ladder.ts stageAudit) and the unit of mid-run
- * spending is the thousand-scrap turret roll. So the first beacon is three
+ * spending is the thousand-scrap turret roll. So the first beacon is two
  * rolls — a stage-one purchase nobody agonises over — and by the fifth the
- * board is asking eighteen, which is more than any single gun in the game.
- * Cumulatively: two beacons cost 8k, five cost 46k, all ten cost 316k,
- * about a quarter of everything a full clear earns. A WHOLE MAP IS MEANT
+ * board is asking fifteen, which is more than any single gun in the game.
+ * Cumulatively: two beacons cost 5.5k, five cost 36k, all ten cost 273k,
+ * about a fifth of everything a full clear earns. A WHOLE MAP IS MEANT
  * TO BE UNAFFORDABLE: the ground a run opens should be a shape it chose,
  * not a box it ticked.
  *
+ * THE CURVE WAS EASED ONCE, MOST OF ALL AT THE BOTTOM. Every step was cut
+ * — about a third off the first, a tenth off the last — because the old
+ * first three (3k/5k/8k) priced the opening acre against guns a run still
+ * badly needed, and the choice read as "not yet" rather than as a choice.
+ * The shape is unchanged: still geometric, still ending somewhere no run
+ * comfortably reaches.
+ *
  * TEN RUNGS, AND THE LAST ONE REPEATS. A map carrying more beacons than
  * the ladder has rungs offers the eleventh at the tenth's price — the
- * curve has already made its point by then, and an author who wants
- * something else writes their own ladder into the document
- * (maps.ts MapData.beaconPrices, edited in the map editor).
+ * curve has already made its point by then.
+ *
+ * ONE LADDER FOR THE WHOLE CAMPAIGN. Maps used to be able to carry a
+ * ladder of their own, typed into a panel in the map editor; no map ever
+ * did, and a per-map price list was a second answer to a question this
+ * curve already answers. An author who wants a board to cost more opens
+ * it with MORE BEACONS, which is a decision about ground and reads on the
+ * map itself. This list is the only place a beacon's price is written.
  */
 export const BEACON_LADDER: readonly number[] = [
-  3000, 5000, 8000, 12000, 18000, 26000, 36000, 50000, 68000, 90000,
+  2000, 3500, 6000, 9500, 15000, 22000, 31000, 44000, 60000, 80000,
 ];
 
 /**
  * WHAT THE NEXT BEACON COSTS on a board that has already bought `bought`
- * of them, off that board's ladder. Past the last rung the last price
- * repeats; an empty ladder is free ground.
+ * of them. Past the last rung the last price repeats; an empty ladder is
+ * free ground. It takes the ladder as an argument rather than reading
+ * BEACON_LADDER itself so that the rule stays testable against a made-up
+ * curve; every caller in the game passes BEACON_LADDER.
  */
 export const beaconPriceAt = (ladder: readonly number[], bought: number): number => {
   if (ladder.length === 0) return 0;

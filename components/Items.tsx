@@ -47,18 +47,28 @@ export function ScrapAmount({
   amount,
   size = "sm",
   short,
+  tone,
   className = "",
 }: {
   amount: number;
   size?: Size;
   /** the run can't cover this amount — draw it as a shortfall */
   short?: boolean;
+  /**
+   * PAINT THE NUMBER THIS INSTEAD OF the scrap tint — for the one place a
+   * count sits in a row with another number and has to match it rather
+   * than stand out from it (the HUD's clock row over the minimap). The
+   * sprite in front of it is what says "scrap" there; two different
+   * colours on one row only said "these are two unrelated things".
+   * A shortfall still overrides it: that is not decoration.
+   */
+  tone?: string;
   className?: string;
 }) {
   return (
     <span
       className={`inline-flex items-center gap-1 font-bold ${className}`}
-      style={{ color: short ? "#FF8A8A" : SCRAP_COLOR }}
+      style={{ color: short ? "#FF8A8A" : (tone ?? SCRAP_COLOR) }}
       title="Scrap"
     >
       <img

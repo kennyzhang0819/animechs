@@ -263,6 +263,18 @@
         "5140"
       ],
       "port": 5140
+    },
+    {
+      "name": "animechs-5233",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:hot",
+        "--",
+        "-p",
+        "5233"
+      ],
+      "port": 5233
     }
   ]
 }

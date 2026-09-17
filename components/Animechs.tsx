@@ -610,8 +610,8 @@ const TOP_RULELESS_TIER = Math.max(
  * THE OBJECTIVE PANEL — WHAT THIS RUN IS FOR, top-left under the shelf,
  * and on EVERY mission (levels.ts Mission).
  *
- * IT IS A LIST OF REQUIREMENTS IN PLAIN TEXT, in a box, and that is a
- * rewrite of what it was rather than a restyle. It used to be a display:
+ * IT IS A LIST OF REQUIREMENTS IN PLAIN TEXT, and that is a rewrite of
+ * what it was rather than a restyle. It used to be a display:
  * a forty-pixel number, a caption under it, a row of lamps, a progress
  * bar, and on the escort a second bar for the cart's health. Five widgets,
  * none of which said what the mission WAS — the number was "1 / 7" and the
@@ -645,20 +645,26 @@ const TOP_RULELESS_TIER = Math.max(
  * not the thing being played. Thirteen and fourteen px is the size of the
  * rest of the HUD's text.
  *
- * WHAT IS STILL NOT A REQUIREMENT stays under the box: the tide, the
+ * WHAT IS STILL NOT A REQUIREMENT stays under the list: the tide, the
  * crossers on the board, and whether the cart is moving. Those are facts
  * about right now, and mixing them into a list of requirements would be
- * putting things the player cannot fail on a list of things they can.
+ * putting things the player cannot fail on a list of things they can. The
+ * quieter grey is the whole of what separates them — no rule, no heading.
+ *
+ * NO PLATE, NO HEADING, NO PADDING. It wore the HUD's steel plate
+ * (.ms-pane) under a "Mission" label, which is chrome answering a question
+ * nobody asks: a player reading three sentences in the corner of the
+ * screen knows they are the assignment, and the plate was a second box in
+ * a corner that already has the relic shelf above it. The lines sit
+ * straight on the board, tight against each other, and carry the HUD's
+ * text shadow instead so they stay readable over bright terrain.
  */
 function ObjectivePane({ hud }: { hud: UiState }): React.ReactElement | null {
   const m = hud.mission;
   const lines = missionLines(m, missionTarget(m, hud.scriptWaves), hud);
   return (
-    <div className="ms-pane px-3.5 py-2.5">
-      <div className="font-display text-[11px] font-bold uppercase leading-none tracking-widest text-[#71717C]">
-        Mission
-      </div>
-      <div className="mt-2 flex flex-col gap-1.5">
+    <div className="[text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
+      <div className="flex flex-col gap-0.5">
         {lines.map((l) => (
           <div key={l.text} className="flex items-baseline gap-3">
             <span
@@ -690,7 +696,7 @@ function ObjectivePane({ hud }: { hud: UiState }): React.ReactElement | null {
         (m.kind === "intercept" && hud.crossLive > 0) ||
         (m.kind === "raze" && hud.razeUp > 0) ||
         (m.kind === "escort" && hud.convoyHpMax > 0)) && (
-        <div className="mt-2 flex flex-col gap-1 border-t border-[#2a2a31] pt-2 text-[13px] leading-tight text-[#A6A6AF]">
+        <div className="mt-1.5 flex flex-col gap-0.5 text-[13px] leading-tight text-[#A6A6AF]">
           {/* THE TIDE, once it has turned: x2, x4, x8 — every body's
               health, and nothing else (ladder.ts LEVELS_PER_DOUBLING) */}
           {hud.loopCycle > 0 && (
@@ -3444,7 +3450,13 @@ export default function Animechs() {
                 >
                   {b.name}
                 </div>
-                <div className="ms-bar w-full">
+                {/* THINNER THAN THE SHARED TROUGH (.ms-bar, 18px), which
+                    is sized for the loading bar. This one is stacked — a
+                    siege puts ten of them on the screen at once — and at
+                    the full height the stack was a wall across the top of
+                    the board. Ten px still carries the light and dark
+                    rows that make it a trough */}
+                <div className="ms-bar h-[10px] w-full">
                   <div
                     className="transition-[width] duration-150 ease-linear"
                     style={{
@@ -3649,13 +3661,31 @@ export default function Animechs() {
                 (UiState.elapsed), so a run at 2x reads the clock the wave
                 script is actually keeping rather than the wall's.
 
-                It wears no pane, for the same reason the scrap in the
-                opposite corner does not: the two are one number each,
-                sitting the same distance above the square below them at
-                the same size, and the bottom of the screen reads as a
-                pair. A box round one of them breaks that. */}
-            <div className="mb-2 text-left text-xl font-bold uppercase tracking-widest tabular-nums text-[#A1A1AA]">
-              {clock(hud.elapsed)}
+                IT SHARES ITS ROW WITH THE BANK, clock left and scrap
+                right, both straight on the screen with no pane under
+                them. The two are the run's only bare numbers and they
+                used to sit in opposite corners reading as a pair across
+                the whole width of the board, which is a pair nobody can
+                look at twice; on one row over the minimap they are one
+                glance. The width is the minimap's, so the scrap is
+                right-aligned to the square's edge. */}
+            <div className="mb-2 flex h-6 items-center justify-between gap-3 text-xl font-bold uppercase leading-none tracking-widest tabular-nums text-[#A1A1AA]">
+              <span className="leading-none">{clock(hud.elapsed)}</span>
+              {/* THE SAME COLOUR AND THE SAME HEIGHT AS THE CLOCK, which is
+                  the whole point of putting them on one row: centred
+                  rather than sat on a shared baseline, because the sprite
+                  is a 20px block and a baseline would hang it below the
+                  digits beside it. The clock's wide tracking is the
+                  clock's, though — a number with a sprite in front of it
+                  reads as one thing at normal tracking. */}
+              {hud.scrap !== null && (
+                <ScrapAmount
+                  amount={hud.scrap}
+                  size="md"
+                  tone="#A1A1AA"
+                  className="leading-none tracking-normal"
+                />
+              )}
             </div>
             <div className="ms-pane p-1">
               <canvas
@@ -3746,13 +3776,13 @@ export default function Animechs() {
                 reach a NAMED turret, which is the one thing a random deal
                 cannot do. Like the minimap, whichever of the two it is
                 stands until the run ends: the end screens own the frame. */}
-            {/* THE BANK SITS ON THE CARD IT IS SPENT ON. It used to be
-                alone in the top-left corner, a screen away from the
-                prices it is read against; here it is one line above the
-                badges it has to cover, still drawn straight onto the
-                screen with no chrome under it — no pane, no border, no
-                background, just the number. */}
-            {hud.scrap !== null && <ScrapAmount amount={hud.scrap} size="md" className="text-xl" />}
+            {/* THE BANK IS NOT HERE ANY MORE. It sat one line above the
+                deal card, on the prices it is spent against; it reads
+                better on the clock's row over the minimap, where the run's
+                two bare numbers are one glance apart instead of a screen
+                apart (see the minimap block). The prices it has to cover
+                are still a card away, which is a shorter trip than the
+                one across the board it used to ask of the clock. */}
             {hud.dealing ? (
               <DealCorner hud={hud} icons={icons} deal={deal} />
             ) : (

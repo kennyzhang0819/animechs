@@ -60,7 +60,9 @@ game/game.ts           the client — input, UiState, overlays
 components/Animechs.tsx   the React shell and all HUD
 public/maps/*.json public/levels/*.json     authored data, no rules
 scripts/check.mjs playtest.mjs maps/*.mjs   checks and generators
-docs/                  mission-design, authoring-maps, authoring-waves, unit-art, …
+docs/                  the SYSTEMS live here, not in the files: mutators,
+                       difficulty, economy, mission-design, authoring-maps,
+                       authoring-waves, unit-art, …
 ```
 
 ## Things that will bite you
@@ -90,6 +92,31 @@ docs/                  mission-design, authoring-maps, authoring-waves, unit-art
 7. **The file headers are the documentation.** `sim.ts`, `levels.ts`, `missions.ts`
    and the art files carry long headers explaining *why* a thing is the way it is.
    Read the header before editing the file, and update it when you change the reason.
+   Reading them is the rule; writing more of them is not — see below.
+
+## Comments: write as few as possible
+
+The existing long headers and comment blocks are legacy. **Do not add more, and do
+not match their density.** Default to writing NO comment.
+
+- Comment only when a future agent would get it **wrong** without it: a non-obvious
+  invariant, a constraint from somewhere else in the codebase, a deliberate choice
+  that looks like a mistake. Nothing else earns a line.
+- When one is genuinely needed, keep it to **one or two lines**. No headers, no
+  banners, no ASCII rules, no CAPITALISED declarations, no essays on design intent.
+- Never narrate what the code already says, restate a name, log what changed, or
+  explain a number that is self-evident from its identifier.
+- Editing a file with a big header: update it only if your change makes it **wrong**.
+  Fix it in place, tersely — don't expand it, and don't append a new section.
+
+**Explanation that covers a whole SYSTEM goes in `docs/`, not in the file.** If what
+you want to write is about how mutators work, what the difficulty tiers mean, how the
+families are balanced, or why a set of numbers is shaped the way it is, that is a
+document — `docs/mutators.md`, `docs/difficulty.md` — and it is one place instead of
+scattered across every declaration it touches. Write it there, or add to the document
+that already covers it (`mission-design`, `authoring-waves`, `authoring-maps`,
+`unit-art`, …). In the code, leave at most a pointer: `// see docs/mutators.md`. Do
+not paste the explanation into both — the file loses first, every time.
 
 ## Two modes
 

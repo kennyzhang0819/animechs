@@ -303,14 +303,14 @@ older or imported document up to the sealed-rim rule in place.
 **A run may only build where its base and its bought beacons light the
 ground.** The base lights a circle 90 cells across the radius
 (`CORE_POWER_R`), free and from wave one; everything past that edge is
-bought, one beacon at a time, off the map's price ladder.
+bought, one beacon at a time, off the campaign's price ladder.
 
 A beacon is **map furniture, not a building** (`MapBeacon`, `game/terrain.ts`).
 It stands on a 3x3 of rock, on a hill, where nothing can reach it: no health,
 never targeted, never destroyed, never placed by a player. What it has is a
 circle it opens (`BEACON_POWER_R`, 60 cells). Buying one is permanent — the
 ground stays open for the rest of the run, and nothing refunds or reverses
-it, which is what lets the last rung of a ladder be brutal.
+it, which is what lets the last rung of the ladder be brutal.
 
 It is **drawn like one of the player's turrets** (`BEACON_SIZE`): the same
 3x3 plate a three-cell gun stands on, with a diamond mast on top instead of
@@ -328,8 +328,9 @@ opposite and stays so — see below.
 **This is where a map's mission is written.** Deciding which circle of
 ground a run can afford to open, and when, is most of what makes one map
 play differently from another. Move a beacon forty cells and you have
-rewritten the mission; how many a board carries, and what its ladder asks
-for them, rewrites it again.
+rewritten the mission; how many a board carries rewrites it again — that
+count is the only dial a map has over what opening it costs, because the
+prices themselves are the campaign's and not the map's.
 
 ### Authoring them
 
@@ -358,11 +359,10 @@ the eraser included.
 
 ### The price ladder
 
-**Every beacon on a map costs the same, and the price rises as they are
-bought.** The map carries a ladder — what the first beacon a run switches on
-costs, then the second, and so on (`MapData.beaconPrices`, default
-`BEACON_LADDER` in `game/constants.ts`) — and nothing about where a beacon
-stands changes its price:
+**Every beacon in the game costs the same, and the price rises as they are
+bought.** There is one ladder, `BEACON_LADDER` in `game/constants.ts` — what
+the first beacon a run switches on costs, then the second, and so on — and
+neither where a beacon stands nor which map it is on changes its price:
 
 | rung | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -387,21 +387,22 @@ No document carries a `price` on a beacon any more — every official map was
 stripped of the field and it is gone from `MapBeacon`. A stray one in a
 hand-edited document is ignored: a beacon is two coordinates.
 
-### Editing the ladder
+### The map has no say in the price
 
-The editor's **Beacon prices** panel is the whole of what a beacon costs on
-that map. Each row is a rung, in the order they are **bought** rather than
-placed; the arrows reorder them, `✕` removes one, `+ Rung` adds another and
-`Default` puts the game's own ladder back. A rung past the map's beacon count
-is dimmed, because nothing can reach it.
+**There is nothing to edit.** The ladder is not a map's to set: it lived in
+the document for a while (`beaconPrices`) with a panel in the editor to type
+rungs into, no map ever set one, and a per-map price list was a second answer
+to a question the curve above already answers. The field is gone from
+`MapData` and a stray one in a hand-edited document is ignored, exactly like
+a `price` on a beacon.
 
-The footer is the number an author is actually tuning: how many beacons the
-board carries and what taking all of them costs. Read that sum rather than
-the rungs — a rising price looks affordable one rung at a time.
-
-Fewer beacons is a dearer board, since the count is how many rungs a run can
-climb. That makes **how many a map carries a progression decision**, not just
-a layout one.
+What a map decides is **how many beacons it carries**, and that is the whole
+of its say: the count is how many rungs a run can climb, so fewer beacons is
+a dearer board with less ground to open and more of them is a cheaper one.
+Placement decides which acre each rung buys. That makes **how many a map
+carries a progression decision**, not just a layout one — and the sum to read
+is the cumulative one above, since a rising price looks affordable one rung
+at a time.
 
 ### The generator overwrites them
 

@@ -64,11 +64,11 @@ import { armored, faster, piercing, reaching, stronger } from "./upgrades";
  * A SECOND COPY IS A BIGGER NUMBER, NOT BETTER ODDS. This is the one
  * rule in the file that has been turned round: a copy used to be another
  * independent roll, folded into one probability, and the effect was fixed
- * at the def — so the tenth "+10% damage" a run bought was still +10%
+ * at the def — so the tenth "+5% damage" a run bought was still +5%
  * damage, bought at odds that were already nearly certain. It bought
  * nothing a player could feel. Now the ODDS ARE THE DEF'S AND NEVER MOVE,
  * and the copies multiply what a turret born with the mod gets: three
- * copies of +8% damage is +24% on every turret that wins the same one
+ * copies of +5% damage is +15% on every turret that wins the same one
  * roll in three.
  *
  * THE COPIES SCALE THE BONUS AND NEVER THE PRICE. Every mod's upside is
@@ -100,13 +100,34 @@ import { armored, faster, piercing, reaching, stronger } from "./upgrades";
  * THE LOW BANDS WERE HALVED WHEN THE COPIES STARTED COUNTING. A tick was
  * worth a tenth of a turret when a tenth was all it would ever be worth;
  * the same tenth, ten times over, is a doubled gun, and the commons are
- * the band a run banks by the fistful. So every unnamed tick is half what
- * it shipped at — five per cent and twelve rather than ten and
- * twenty-five — and the SECOND copy is where a player gets back to the
- * number they used to buy with the first.
+ * the band a run banks by the fistful. So every unnamed tick was halved,
+ * and then cut again when the copies proved to be thirty rather than
+ * three, and for a while the grey band was two per cent a copy.
  *
- * AND THEN THE ULTRAS WERE CUT TO A THIRD, for the same reason one step
- * later. "A run holding three of one has earned whatever that is" was the
+ * AND THEN THE WHOLE CATALOG WAS MULTIPLIED BY TWO AND A HALF, which is
+ * the number every step in this file now carries and the only balance
+ * fact worth holding: a mod costs FIVE THOUSAND rather than two
+ * (economy.ts MOD_ROLL_PRICE), and every step went up by exactly the
+ * same ratio, so the same bank still buys the same total. WHAT CHANGED
+ * IS THE NUMBER OF PRESSES, not the arithmetic at the end of a run. Two
+ * thousand made the M button a thing a comfortable run tapped twenty
+ * times between waves, each tap worth a number too small to notice, and
+ * a click count is not a decision. At five thousand a press happens
+ * rarely enough to be an event, and the press now OFFERS THREE AND
+ * TAKES ONE (game.ts modOffer), which is the decision the twenty taps
+ * never were.
+ *
+ * SO EVERY STEP IN THE CATALOG IS A ROUND NUMBER. Two and a half times
+ * a two is a five and not a four-point-nine, and the grey damage tick
+ * reads "+5% damage" rather than "+5.2% damage", because a mod is read
+ * off a chip mid-wave and a decimal on a chip is arithmetic nobody
+ * asked for. Where the ratio landed between two round numbers the
+ * catalog took the round one and let the ratio bend a little.
+ *
+ * THE ULTRAS WERE ONCE CUT TO A THIRD, for the same reason one step
+ * later, and the sweep above multiplied them back up with everything
+ * else — so the arithmetic below is about the RATIO between an ultra and
+ * a tick, which has not moved, and not about the figures, which have. "A run holding three of one has earned whatever that is" was the
  * rule here, and it does not survive contact with what three of one
  * actually came to: the ultras were authored as ONCE-ONLY prizes, back
  * when a copy bought better odds rather than a bigger number, and every
@@ -124,7 +145,7 @@ import { armored, faster, piercing, reaching, stronger } from "./upgrades";
  * which was only ever payable because of the reach it came with (below).
  *
  * ONLY THE RARE AND ULTRA MODS HAVE NAMES. A common is not a character,
- * it is a tick: "+10% damage" IS its name, and a made-up one over the top
+ * it is a tick: "+5% damage" IS its name, and a made-up one over the top
  * of that ("Honed Barrels") is a word the player has to learn in order to
  * be told a thing the number already said. So the low bands print their
  * tweak and the top two print a name — and the glyph says WHICH STAT
@@ -211,7 +232,7 @@ export interface ModDef {
   name?: string;
   /**
    * WHAT IT DOES TO THE STATS, in the fewest words that can be true:
-   * "+10% damage", "+50% damage, +50% fire rate". EVERY mod carries one —
+   * "+5% damage", "+30% damage, +30% fire rate". EVERY mod carries one —
    * it is the LABEL of an unnamed one and the summary line of a named
    * one. It is written by hand rather than derived from `apply`, because
    * a function that returns a TowerStats cannot be asked what it changed
@@ -219,8 +240,8 @@ export interface ModDef {
    */
   tweak?: string;
   /**
-   * THE SAME TWEAK AT THE COPY COUNT THE RUN ACTUALLY HOLDS — "+2%
-   * damage" at one, "+14% damage" at seven. Every mod carries one. A
+   * THE SAME TWEAK AT THE COPY COUNT THE RUN ACTUALLY HOLDS — "+5%
+   * damage" at one, "+35% damage" at seven. Every mod carries one. A
    * relic has no equivalent and needs none: it is held once, so its blurb
    * is already the whole of what it is worth (relics.ts).
    *
@@ -344,19 +365,18 @@ const bigger = (s: TowerStats, mul: number): TowerStats => ({ ...s, size: s.size
  * there is no third, because a third band of the same dial is what the
  * NAMED rares are for.
  *
- * THE STEPS ARE SMALL AND THAT IS THE POINT. Every turret rolls for every
- * attribute the run owns, so a late run is folding eight or ten of these
- * multipliers onto one gun; a common worth a quarter of a turret
- * compounds into nonsense, and a common worth a twentieth compounds into
- * a gun that is noticeably better than the one beside it.
+ * THE STEPS ARE STILL SMALL NEXT TO A NAMED MOD, and that is the point.
+ * Every turret rolls for every attribute the run owns, so a late run is
+ * folding eight or ten of these multipliers onto one gun; a common worth
+ * half a turret compounds into nonsense, and a common worth a twentieth
+ * compounds into a gun that is noticeably better than the one beside it.
  *
  * AND EVERY COPY ADDS ITS STEP AGAIN — `apply` is handed the run's count
  * and the tick is written linear in it, so four of the common damage tick
- * is one turret in three carrying +20%. That is what HALVED these numbers
- * from the tenth and the quarter they shipped at: the tick is a dial now
- * and a dial is read at the far end of its travel, not at the first stop,
- * and what the old step was worth once a run owns it is what the new one
- * is worth twice over.
+ * is one turret in three carrying +20%. The tick is a DIAL and a dial is
+ * read at the far end of its travel, not at the first stop, which is why
+ * these numbers have been cut twice and multiplied back once: what
+ * matters is what the stack comes to, never what one copy reads.
  */
 const tick = (
   id: ModId,
@@ -400,29 +420,32 @@ const bothOf =
     parts.map((f) => f(n)).join(", ");
 
 const TURRET_MODS: readonly ModDef[] = [
-  // ---- COMMON: a fiftieth of a turret, at three rolls in ten ----------
+  // ---- COMMON: a twentieth of a turret, at three rolls in ten ---------
   //
-  // THE TICKS ARE A FIFTH OF WHAT THEY WERE, and this is the second time
-  // they have been cut for the same reason: the copies are the dial (see
-  // the header) and a late run does not hold three of a common, it holds
-  // THIRTY. At +5% a copy, thirty commons was a turret firing at four
-  // times its own damage off the grey band alone, which made the rares
-  // and the ultras a rounding error on the way past. At +2% the same
-  // thirty is +60% — a real number, earned by a stack nobody assembles
-  // by accident, and still worth less than one Prototype Chassis.
-  tick("dmg1", "common", "barrel", "+2% damage", pctOf(1.02, "damage"), 0.3, (t, n) => stronger(t, per(1.02, n))),
-  tick("rate1", "common", "gear", "+2% fire rate", pctOf(1.02, "fire rate"), 0.3, (t, n) => faster(t, per(1.02, n))),
-  tick("hp1", "common", "plate", "+4% health", pctOf(1.04, "health"), 0.3, (t, n) => tougher(t, per(1.04, n))),
-  tick("range1", "common", "lens", "+2% range", pctOf(1.02, "range"), 0.3, (t, n) => reaching(t, per(1.02, n))),
+  // FIVE PER CENT A COPY, AND THE STACK IS TWELVE RATHER THAN THIRTY.
+  // The tick was cut to +2% back when a mod cost two thousand and a
+  // late run held THIRTY of one — at +5% that stack was a turret firing
+  // at four times its own damage off the grey band alone, which made
+  // the rares and the ultras a rounding error on the way past. A mod
+  // costs five thousand now (economy.ts), so the same money buys twelve
+  // of them and not thirty, and +5% a copy puts that stack at +60%:
+  // exactly the number the +2% stack came to, bought in two fifths as
+  // many presses. THE STACK IS THE THING THAT IS BALANCED, never the
+  // step — which is why the step could be raised without anything else
+  // in the game moving.
+  tick("dmg1", "common", "barrel", "+5% damage", pctOf(1.05, "damage"), 0.3, (t, n) => stronger(t, per(1.05, n))),
+  tick("rate1", "common", "gear", "+5% fire rate", pctOf(1.05, "fire rate"), 0.3, (t, n) => faster(t, per(1.05, n))),
+  tick("hp1", "common", "plate", "+10% health", pctOf(1.1, "health"), 0.3, (t, n) => tougher(t, per(1.1, n))),
+  tick("range1", "common", "lens", "+5% range", pctOf(1.05, "range"), 0.3, (t, n) => reaching(t, per(1.05, n))),
   // ---- UNCOMMON: twice the common step, at under one roll in five -----
-  tick("dmg2", "uncommon", "barrel", "+4% damage", pctOf(1.04, "damage"), 0.18, (t, n) => stronger(t, per(1.04, n))),
-  tick("rate2", "uncommon", "gear", "+4% fire rate", pctOf(1.04, "fire rate"), 0.18, (t, n) => faster(t, per(1.04, n))),
-  tick("hp2", "uncommon", "plate", "+8% health", pctOf(1.08, "health"), 0.18, (t, n) => tougher(t, per(1.08, n))),
-  tick("range2", "uncommon", "lens", "+4% range", pctOf(1.04, "range"), 0.18, (t, n) => reaching(t, per(1.04, n))),
+  tick("dmg2", "uncommon", "barrel", "+10% damage", pctOf(1.1, "damage"), 0.18, (t, n) => stronger(t, per(1.1, n))),
+  tick("rate2", "uncommon", "gear", "+10% fire rate", pctOf(1.1, "fire rate"), 0.18, (t, n) => faster(t, per(1.1, n))),
+  tick("hp2", "uncommon", "plate", "+20% health", pctOf(1.2, "health"), 0.18, (t, n) => tougher(t, per(1.2, n))),
+  tick("range2", "uncommon", "lens", "+10% range", pctOf(1.1, "range"), 0.18, (t, n) => reaching(t, per(1.1, n))),
   // THERE IS NO PIERCE TICK, and the gap is deliberate. PIERCE IS A WHOLE
   // BODY AND NEVER A PERCENTAGE: there is no "+10% of a body to punch
   // through", so unlike the four dials above it cannot be shaved when the
-  // copies start adding up — a stack of ten commons is +20% damage and a
+  // copies start adding up — a stack of ten commons is +50% damage and a
   // stack of ten one-body ticks is a gun whose rounds cross the whole
   // lane. The thing it wanted to be at a cut rate would have been "+1
   // every second copy", and ONE STACK IS ONE STACK — a copy that does
@@ -439,11 +462,11 @@ const TURRET_MODS: readonly ModDef[] = [
   // is the whole thing rather than a percentage of nothing. Its copies are
   // summed by modRegen rather than here — `regen` is a field, not an apply
   tick(
-    "regen1", "uncommon", "weave", "+0.15% repair a second",
-    (n) => `+${(0.15 * nOf(n)).toFixed(2).replace(/\.?0+$/, "")}% repair a second`,
+    "regen1", "uncommon", "weave", "+0.4% repair a second",
+    (n) => `+${(0.4 * nOf(n)).toFixed(2).replace(/\.?0+$/, "")}% repair a second`,
     0.18,
     (t) => t,
-    0.0015,
+    0.004,
   ),
 
   // ---- RARE: NAMED, and a pair of stats rather than a dial ------------
@@ -451,54 +474,55 @@ const TURRET_MODS: readonly ModDef[] = [
   // SHAPE — a gun, a wall, a spear — so rolling one says something about
   // the turret it landed on.
   //
-  // THESE WERE CUT WITH THE TICKS, and for the same reason: an amber
-  // attribute comes up one draw in ten, which over a run is a fistful
-  // and not a prize. Half a turret a copy compounded into a board that
-  // had stopped caring what the purple band did, so the rare step is now
-  // a QUARTER of a turret on two axes at once — still the biggest thing
-  // below the ultras, and still the band a build is named after.
+  // THESE WERE CUT WITH THE TICKS AND RAISED WITH THEM, and the RATIO is
+  // what the band is: an amber attribute comes up one draw in ten, which
+  // over a run is a handful rather than a prize, so a rare copy is worth
+  // somewhere around six commons — a bit over half a turret on two axes
+  // at once. Still the biggest thing below the ultras, and still the
+  // band a build is named after.
   {
     id: "prototype",
     name: "Prototype Chassis",
-    tweak: "+12% damage, +12% fire rate",
-    total: bothOf(pctOf(1.12, "damage"), pctOf(1.12, "fire rate")),
+    tweak: "+30% damage, +30% fire rate",
+    total: bothOf(pctOf(1.3, "damage"), pctOf(1.3, "fire rate")),
     rarity: "rare",
     glyph: "chassis",
     chance: 0.1,
-    apply: (t, n) => faster(stronger(t, per(1.12, n)), per(1.12, n)),
+    apply: (t, n) => faster(stronger(t, per(1.3, n)), per(1.3, n)),
   },
   {
     id: "bulwark",
     name: "Bulwark Plating",
-    tweak: "+25% health, +2 armor, +0.8% repair a second",
-    total: bothOf(pctOf(1.25, "health"), flatOf(2, "armor"), (n) =>
-      `+${(0.8 * nOf(n)).toFixed(2).replace(/\.?0+$/, "")}% repair a second`),
+    tweak: "+60% health, +5 armor, +2% repair a second",
+    total: bothOf(pctOf(1.6, "health"), flatOf(5, "armor"), (n) =>
+      `+${(2 * nOf(n)).toFixed(2).replace(/\.?0+$/, "")}% repair a second`),
     rarity: "rare",
     glyph: "shield",
     chance: 0.1,
-    // the +2 is half an ironhide2's plate — a copy is not the difference
-    // between an ironhide1 biting and bouncing off any more, but four are
-    apply: (t, n) => armored(tougher(t, per(1.25, n)), 2 * Math.max(1, n)),
-    regen: 0.008,
+    // the +5 is an ironhide2's whole plate and a bit over — ONE copy is
+    // now the difference between an ironhide1 biting and bouncing off,
+    // which is what a mod at five thousand has to be worth on its own
+    apply: (t, n) => armored(tougher(t, per(1.6, n)), 5 * Math.max(1, n)),
+    regen: 0.02,
   },
   {
     id: "sabot",
     name: "Sabot Rounds",
-    tweak: "+1 pierce, +15% damage",
-    total: bothOf(flatOf(1, "pierce"), pctOf(1.15, "damage")),
+    tweak: "+2 pierce, +40% damage",
+    total: bothOf(flatOf(2, "pierce"), pctOf(1.4, "damage")),
     rarity: "rare",
     glyph: "spike",
     chance: 0.1,
-    apply: (t, n) => piercing(stronger(t, per(1.15, n)), 1 * Math.max(1, n)),
+    apply: (t, n) => piercing(stronger(t, per(1.4, n)), 2 * Math.max(1, n)),
   },
   // ---- ULTRA: NAMED, and the turret changes species --------------------
   {
     id: "giant",
     name: "Giant",
-    tweak: "+150% health, +75% damage, +3 armor, −50% range, twice the footprint",
+    tweak: "+400% health, +200% damage, +8 armor, −50% range, twice the footprint",
     // the short sight and the footprint are the PRICE and never scale, so
     // they read the same at every count — see `scale`
-    total: bothOf(pctOf(2.5, "health"), pctOf(1.75, "damage"), flatOf(3, "armor"), () =>
+    total: bothOf(pctOf(5, "health"), pctOf(3, "damage"), flatOf(8, "armor"), () =>
       "−50% range, twice the footprint"),
     rarity: "ultra",
     glyph: "giant",
@@ -511,15 +535,15 @@ const TURRET_MODS: readonly ModDef[] = [
     // giant standing on exactly the same ground, still seeing half as far
     // as its kind
     apply: (t, n) =>
-      bigger(armored(tougher(reaching(stronger(t, per(1.75, n)), 0.5), per(2.5, n)), 3 * Math.max(1, n)), GIANT_SCALE),
+      bigger(armored(tougher(reaching(stronger(t, per(3, n)), 0.5), per(5, n)), 8 * Math.max(1, n)), GIANT_SCALE),
     scale: GIANT_SCALE,
     solo: true,
   },
   {
     id: "sniper",
     name: "Sniper",
-    tweak: "+50% range, +50% fire rate, +25% damage, −50% health",
-    total: bothOf(pctOf(1.5, "range"), pctOf(1.5, "fire rate"), pctOf(1.25, "damage"), () => "−50% health"),
+    tweak: "+125% range, +125% fire rate, +60% damage, −50% health",
+    total: bothOf(pctOf(2.25, "range"), pctOf(2.25, "fire rate"), pctOf(1.6, "damage"), () => "−50% health"),
     rarity: "ultra",
     glyph: "scope",
     chance: 0.04,
@@ -529,15 +553,15 @@ const TURRET_MODS: readonly ModDef[] = [
     // the thing walking at it was never hit, so the price was one it rarely
     // paid. At half again the reach it is well inside the swarm's, so the
     // same tenth would be a mod that simply dies, and a trap is not a nerf
-    apply: (t, n) => tougher(faster(reaching(stronger(t, per(1.25, n)), per(1.5, n)), per(1.5, n)), 0.5),
+    apply: (t, n) => tougher(faster(reaching(stronger(t, per(1.6, n)), per(2.25, n)), per(2.25, n)), 0.5),
   },
   {
     id: "allround",
     name: "All Round",
-    tweak: "+35% damage, +35% fire rate, +35% health, +15% range, +1 pierce",
+    tweak: "+90% damage, +90% fire rate, +90% health, +40% range, +2 pierce",
     total: bothOf(
-      pctOf(1.35, "damage"), pctOf(1.35, "fire rate"), pctOf(1.35, "health"), pctOf(1.15, "range"),
-      flatOf(1, "pierce"),
+      pctOf(1.9, "damage"), pctOf(1.9, "fire rate"), pctOf(1.9, "health"), pctOf(1.4, "range"),
+      flatOf(2, "pierce"),
     ),
     rarity: "ultra",
     glyph: "allround",
@@ -547,8 +571,8 @@ const TURRET_MODS: readonly ModDef[] = [
     chance: 0.03,
     apply: (t, n) =>
       piercing(
-        tougher(reaching(faster(stronger(t, per(1.35, n)), per(1.35, n)), per(1.15, n)), per(1.35, n)),
-        1 * Math.max(1, n),
+        tougher(reaching(faster(stronger(t, per(1.9, n)), per(1.9, n)), per(1.4, n)), per(1.9, n)),
+        2 * Math.max(1, n),
       ),
   },
 ];
@@ -868,7 +892,7 @@ export function rollMod(
 
 /**
  * WHAT A MOD DOES, AS ONE SENTENCE: the odds, and the stats it grants.
- * "30% chance for a new turret to have +2% damage."
+ * "30% chance for a new turret to have +5% damage."
  *
  * IT IS DERIVED, not written per def. Every mod is the same sentence with
  * two blanks in it — the chance and the tweak — so a hand-written blurb
@@ -902,7 +926,7 @@ export function modBlurb(d: ModDef): string {
  * 3". A number multiplied three times in the head, mid-wave, over a
  * sentence that had already said the same thing on the chip. So the def
  * carries the total as a function of the count (ModDef.total) and this
- * prints it: the chip says "+2% damage" and the card says "+6% damage",
+ * prints it: the chip says "+5% damage" and the card says "+15% damage",
  * which is the only number a player wanted off the shelf.
  *
  * ONE COPY PRINTS NOTHING for an unnamed tick, because the tick's own

@@ -28,115 +28,37 @@ import {
 import { MUT_COUNT_MAX, MUT_FIRST_TIER, mutationBudget, mutationPicks } from "./mutation";
 
 /**
- * THE LADDER — ONE CLIMB PER WORLD, TEN RUNGS, FOUR NAMES, ONE SCRIPT.
+ * THE LADDER — one climb per world, ten tiers, four names, one script.
+ * docs/difficulty.md is the system: what a tier is, why the health curve
+ * belongs to the tide and not to a tier, what a tier pays, and the dials.
  *
- * EVERY RUNG PLAYS THE WHOLE AUTHORED SCRIPT — all fifty waves, wave 1 to
- * wave 50, the same fifty every time, and EVERY BODY AT THE SAME HEALTH BAR
- * ONE. What changes is HOW MANY come and WHAT RULES they come under:
- *
- *   Incursion     a quarter of every wave's count       no rules
- *   Onslaught     half                                  no rules
- *   Scourge       three quarters                        no rules
- *   Nemesis       the script as authored, every body    no rules
- *   Nemesis +1 to +6   the full swarm, under a mutator roll that
- *                 spends more and returns more with every step (mutation.ts)
- *
- * So a rung is three numbers: the share of the count it sends
- * (COUNT_SCALE), what its mutator roll may spend and how many rules it
- * returns, and one more: how much the XP it pays is multiplied by
- * (tierXpBonus). The four NAMED difficulties are a size ramp; the six
- * above them are a rules ramp on top of the biggest size.
- *
- * THE ONE BODY AT A DIFFERENT HEALTH IS THE BOSS, and it is that same size
- * ramp wearing the only shape it can. A boss wave sends one body at every
- * difficulty — a quarter of one boss is not a body — so the boss pays the
- * rung's count share in HIT POINTS instead (tierBossHpScale, below the
- * table it reads). It is the size ramp, not a health curve: the same
- * quarter, half, three quarters, whole.
- *
- * THE HEALTH CURVE IS NOT THE LADDER'S — IT IS THE TIDE'S. A rung used to
- * be an enemy LEVEL as well, and that column is authored to zero on every
- * rung now: difficulty is count and then rules, which is what makes the
- * top rung a different fight rather than the same fight eight times over.
- *
- * What turns the curve instead is the SCRIPT RUNNING OUT. Past the last
- * authored wave the tail goes again, LEVELS_PER_DOUBLING heavier each
- * cycle, forever (Sim.loadStep) — so the two axes are cleanly split: a
- * rung says how big the swarm is and what rules it plays under, and the
- * tide says how long the run has been going. (The mechanism is shared —
- * unitHpAtLevel, LevelSpec.enemyLevel, the balance dashboard's dial — and
- * a map or a mutator may still want it.)
- *
- * WHAT A RUNG PAYS. Scrap is fixed per kill and never scales (economy.ts):
- * a rung's run banks the same scrap as any other, because scrap is what
- * the turret prices are authored against and a rung that paid more scrap
- * would be an easier fight, not a harder one. XP scales — see
- * XP_STEP_PER_RUNG — and that gradient is the whole reason to climb. A
- * clear pays the same the first time and the fifth: there is no
- * first-clear bonus, so a rung is worth exactly what its kills are.
- *
- * THE LADDER SCALES BY ONE CONSTANT. RUNG_COUNT is ten today because ten is
- * where the tuning has been checked, not because anything is finite: every
- * rung's dials are arithmetic on its index (see RUNGS), and `clearedByMap`
- * is an unbounded int per world, so raising RUNG_COUNT is the whole edit an
- * eleventh rung needs.
+ * A TIER IS SIZE, THEN RULES — NEVER HEALTH. Every tier plays the whole
+ * authored script with every body at the same health; what moves is how
+ * many come (COUNT_SCALE) and what rules they come under (mutation.ts).
+ * The boss is the one body that cannot pay a count share, so it pays the
+ * same share in hit points instead (tierBossHpScale).
  */
 
-/**
- * Mindustry's own per-level health curve. 1.06^12 = 2.01, so twelve levels
- * is exactly double health, and NOTHING else scales: armour, speed, hitbox
- * and drop all stay at their base values forever. Every rung is authored
- * at level 0 (see the note at the top of the file); the curve is what the
- * TIDE turns (Sim.loadStep) once a script has been spent, and the dial the
- * balance dashboard bends.
- */
+/** Mindustry's own per-level health curve, and the only thing a level
+ *  moves: armour, speed, hitbox and drop never scale. Every tier is
+ *  authored at level 0 — this is what the TIDE turns (Sim.loadStep) */
 export const HP_PER_LEVEL = 1.06;
 
-/**
- * HOW MANY ENEMY LEVELS ARE ONE DOUBLING OF HEALTH — twelve, and derived
- * rather than typed so a change to HP_PER_LEVEL carries.
- *
- * THIS IS THE STEP OF THE INFINITE CLIMB. A script is finite; the run on
- * top of it is not (docs/authoring-waves.md). When the last wave has been
- * sent and the mission is still open, the tail of the script goes again
- * with this many levels added — x2 health, then x4, then x8, one doubling
- * a cycle, forever. Levels are the right knob for it because a level moves
- * HEALTH AND NOTHING ELSE: the swarm that comes back is the swarm the
- * player just beat, walking at the same speed in the same shape, and the
- * only question it asks is whether the guns bought so far still cut it.
- * Counts would change the picture; speed would change the puzzle.
- */
+/** how many enemy levels are one doubling — derived, so a change to
+ *  HP_PER_LEVEL carries. This is the step of the tide's infinite climb */
 export const LEVELS_PER_DOUBLING = Math.round(Math.log(2) / Math.log(HP_PER_LEVEL));
 
-/**
- * HOW MUCH MORE XP EACH RUNG PAYS THAN THE ONE BELOW, linear: rung n
- * carries a raw weight of 1 + XP_STEP_PER_RUNG x n, and the ladder is
- * NORMALISED so that the last named difficulty (XP_BASE_TIER, Nemesis —
- * the whole script, no rules) is x1: that is the rung the mission pot
- * (MISSION_XP in economy.ts) is priced for. Incursion pays x0.4 of it,
- * Nemesis +6 pays x2.2 — the top rung still pays x5.5 what Incursion does.
- *
- * LINEAR, NOT COMPOUNDING, because the fight does not compound any more.
- * The old loot bonus compounded at 1.34 a rung to keep pace with health
- * that compounded at the same rate; with health flat, a compounding payout
- * would make the top rung the only one worth playing by a factor of
- * fourteen, and the mutator roll — the thing that actually makes a high
- * rung harder — is not fourteen times harder. Half again a rung is a
- * gradient a player feels and a farm they still choose: it was a third,
- * and playtests said the rules a high rung rolls make it a good deal more
- * than a third harder.
- */
+/** how much more XP each tier pays than the one below, LINEAR: tier n
+ *  weighs 1 + step*n, normalised so XP_BASE_TIER is x1. Compounding would
+ *  make the top tier the only one worth playing (docs/difficulty.md) */
 export const XP_STEP_PER_RUNG = 0.5;
 
 /** how many rungs the ladder has today — raising it is the whole edit an
  *  eleventh rung needs, because every dial below is arithmetic on the index */
 export const RUNG_COUNT = 10;
 
-/**
- * THE NAMED DIFFICULTIES, in order, one per rung of the size ramp. The
- * rungs above the last name are that name with a "+n" (rungLabel): the
- * same full swarm, n steps of mutators on top.
- */
+/** the named difficulties, one per tier of the size ramp; above the last
+ *  name a tier is that name with a "+n" (rungLabel) */
 export const DIFFICULTY_NAMES: readonly string[] = [
   "Incursion",
   "Onslaught",
@@ -144,32 +66,19 @@ export const DIFFICULTY_NAMES: readonly string[] = [
   "Nemesis",
 ];
 
-/**
- * THE RUNG THE MISSION POT IS PRICED FOR: the last named difficulty,
- * where the script is sent whole. A clear there pays exactly MISSION_XP;
- * the size ramp below it pays a share, the rules ramp above it a bonus.
- */
+/** the tier the mission pot is priced for: the last named difficulty,
+ *  where the script is sent whole. A clear there pays exactly MISSION_XP */
 export const XP_BASE_TIER = DIFFICULTY_NAMES.length - 1;
 
-/**
- * THE SHARE OF EVERY WAVE'S COUNT A RUNG SENDS. The named difficulties
- * climb a quarter at a time to the script as authored; everything above
- * sends the whole of it. A count that scales to nothing still sends one
- * body — a boss wave at Incursion is still a boss wave.
- */
+/** the share of every wave's count a tier sends. A count that scales to
+ *  nothing still sends one body — a boss wave is always a boss wave */
 export const COUNT_SCALE: readonly number[] = [0.25, 0.5, 0.75, 1];
 
 /**
- * THE RUNGS, and the only place their shape is written down.
- *
- * Every dial is arithmetic on the rung's index, which is what makes the
- * ladder extend rather than need re-authoring. A rung is shown by name
- * (rungLabel) in a colour read off its position (rungColor).
- *
- * THIS LADDER IS CLIMBED ONCE PER WORLD. This table says what a rung IS;
- * how far up it a save has got is a per-world number (clearedByMap in
- * progress.ts), so standing on rung 8 somewhere says nothing about
- * anywhere else.
+ * THE TIERS, and the only place their shape is written down. Every dial is
+ * arithmetic on the index, which is what makes the ladder extend rather
+ * than need re-authoring. How far up a save has got is per-world
+ * (clearedByMap in progress.ts), not a property of this table.
  */
 export const RUNGS: readonly {
   level: number;
@@ -190,13 +99,7 @@ export const RUNGS: readonly {
   xpBonus: (1 + XP_STEP_PER_RUNG * i) / (1 + XP_STEP_PER_RUNG * XP_BASE_TIER),
 }));
 
-/**
- * THE COLOUR OF A RUNG, and the only identity one has beyond its number.
- *
- * Four anchors, evenly spaced across the ladder and interpolated between:
- * the UI palette's green, gold and red — the three the named difficulties
- * used to own outright — and the purple the hidden top tier wore.
- */
+/** four anchors, evenly spaced across the ladder and interpolated */
 const RUNG_COLORS: readonly [number, number, number][] = [
   [0x7b, 0xe5, 0x8a], // green
   [0xff, 0xd3, 0x7f], // gold
@@ -212,15 +115,12 @@ const clampTier = (tier: number): number =>
   Math.min(TOP_TIER, Math.max(0, Math.floor(tier)));
 
 /**
- * WHAT THE PLAYER IS SHOWN. Rung index 0 reads "Incursion", index 3
- * "Nemesis", index 4 "Nemesis +1" and so on up.
+ * WHAT THE PLAYER IS SHOWN — "Incursion", "Nemesis", "Nemesis +1".
  *
- * `tier` is 0-based everywhere in the code and in window.__ladder, because
- * tier 0 indexes RUNGS and an offset there would put a +1 in the middle of
- * the arithmetic. Nothing player-facing should ever print that index — use
- * this. Every label goes through here, so the internal index and the shown
- * name meet in exactly one place. "Level" is never the word: a level is
- * the player's, and a difficulty is a difficulty.
+ * `tier` is 0-based everywhere in the code and in window.__ladder, and
+ * nothing player-facing may print that index: every label goes through
+ * here, so the internal index and the shown name meet in one place.
+ * "Level" is never the word — a level is the player's.
  */
 export function rungLabel(tier: number): string {
   const t = clampTier(tier);
@@ -231,41 +131,17 @@ export function rungLabel(tier: number): string {
 /** the count share a rung sends, 0.25 at the bottom, 1 from Nemesis up */
 export const tierCountScale = (tier: number): number => RUNGS[clampTier(tier)].countScale;
 
-/**
- * ...AND WHAT A BOSS PAYS INSTEAD, because it cannot pay that.
- *
- * The size ramp is the whole of what the named difficulties are: a rung
- * sends a SHARE OF EVERY WAVE'S COUNT. But a boss wave has a count of one
- * and scaleWave floors it there on purpose — a quarter of one boss is not
- * a body, and "a boss wave at Incursion is still a boss wave" is the rule
- * that keeps it. Which left the one body on the roster that is an EVENT
- * rather than a volume arriving at Incursion exactly as it arrives at
- * Nemesis +6: the bottom of the ladder ending on the hardest thing in the
- * game, unscaled, while everything in front of it came at a quarter
- * strength.
- *
- * So THE BOSS PAYS THE RUNG'S SHARE IN HIT POINTS. The same number off the
- * same table meaning the same thing — a quarter of the fight at Incursion,
- * all of it from Nemesis up — applied to the one dial a single body has.
- * Nothing else about it moves: armour, speed, hitbox and drop are what
- * UNIT_STATS says at every rung, exactly as they are for every other body,
- * and the drop in particular is deliberate (economy.ts prices scrap per
- * kill, and a rung that paid more scrap would be an easier fight).
- *
- * It rides specForTier like the count does, so the sim, the audit and the
- * picker's detail card all read one number.
- */
+/** ...and what a boss pays instead, because a count of one cannot carry a
+ *  share: the same number off the same table, applied to hit points.
+ *  Nothing else about it moves (docs/difficulty.md) */
 export const tierBossHpScale = (tier: number): number => tierCountScale(tier);
 
 /** how many mutator steps above Nemesis a rung stands — 0 on every named one */
 export const tierMutationStep = (tier: number): number =>
   Math.max(0, clampTier(tier) - MUT_FIRST_TIER + 1);
 
-/**
- * The rung's colour, wherever its label is shown — green through gold and
- * red to purple as the ladder climbs (see RUNG_COLORS). Same clamping as
- * the label, so a label and its colour can never disagree.
- */
+/** the tier's colour — same clamping as the label, so the two can never
+ *  disagree */
 export function rungColor(tier: number): string {
   const t = TOP_TIER > 0 ? clampTier(tier) / TOP_TIER : 0;
   const span = RUNG_COLORS.length - 1;
@@ -278,11 +154,8 @@ export function rungColor(tier: number): string {
   return `#${hex.toUpperCase()}`;
 }
 
-/**
- * The 1-based ordinal — the number the label is built from, for the places
- * that want the number without the word: the editor's per-wave badge, an
- * axis label, a sort key, the balance document's own keys.
- */
+/** the 1-based ordinal, for the places that want the number without the
+ *  word: a badge, an axis label, a sort key, the balance document's keys */
 export const rungOf = (tier: number): number => clampTier(tier) + 1;
 
 /** enemy level of a rung — through the dials, so an override applies */
@@ -295,25 +168,18 @@ export const tierHpScale = (tier: number): number => HP_PER_LEVEL ** tierLevel(t
 export const tierXpBonus = (tier: number): number => rungKnobsOf(tier).xpBonus;
 
 /**
- * THE RUNG DIALS, tunable without a rebuild — the admin dashboard bends
- * these in module state, the balance document persists what is bent, and
- * everything in the sim and the lints reads through rungKnobsOf so an edit
- * takes effect on the next spawn. The authored values in RUNGS stay the
- * source of truth; once a number is settled it belongs there.
+ * THE TIER DIALS, tunable without a rebuild — the dashboard bends these in
+ * module state, the balance document persists them, and everything reads
+ * through rungKnobsOf. The authored values in RUNGS stay the source of
+ * truth; once a number is settled it belongs there.
  */
 export interface RungKnobs {
   /** enemy level — every unit's hp is x HP_PER_LEVEL^level, nothing else
    *  moves. Authored 0 on every rung; the dial is here for experiments */
   level: number;
-  /**
-   * THE MUTATION PAIR — what this tier's roll may spend, and how many
-   * rules it comes back with (see mutation.ts). They are dials here rather
-   * than constants there because they ARE the tier's difficulty now.
-   *
-   * BOTH ARE ZERO ON EVERY NAMED DIFFICULTY as authored, which is the
-   * whole of what "Incursion through Nemesis are the campaign as
-   * authored, at a size" means.
-   */
+  /** what this tier's roll may spend, and how many rules it returns
+   *  (mutation.ts). Dials here rather than constants there because they
+   *  ARE the tier's difficulty; both zero on every named difficulty */
   mutationPoints: number;
   /** how many rules the roll returns, 0 to MUT_COUNT_MAX */
   mutationCount: number;
@@ -323,23 +189,15 @@ export interface RungKnobs {
 
 const RUNG_KNOB_KEYS = ["level", "mutationPoints", "mutationCount", "xpBonus"] as const;
 
-/**
- * The ceiling a dial may be set to, where it has one. Only the mutator
- * count does: a hand-edited document asking for forty simultaneous rules
- * would deploy a run nobody wrote, and the cap is a design statement
- * (MUT_COUNT_MAX) rather than a UI convenience — so it is enforced on
- * write and on load, not only in the stepper.
- */
+/** the ceiling a dial may be set to, where it has one. Only the mutator
+ *  count does, and it is a design statement rather than a UI convenience,
+ *  so it is enforced on write and on load and not only in the stepper */
 const RUNG_KNOB_MAX: Partial<Record<keyof RungKnobs, number>> = {
   mutationCount: MUT_COUNT_MAX,
 };
 
-/**
- * Keyed by the rung's ORDINAL as a string — "1" through "10". A rung has
- * no name, and its ordinal is the most stable thing there is: reordering
- * the table would be a redesign, and a document naming a rung the table
- * no longer has is simply dropped on load (see applyRungOverrides).
- */
+/** keyed by the tier's ORDINAL as a string — a tier has no name, and a
+ *  document naming one the table no longer has is dropped on load */
 const rungOverrides = new Map<string, Partial<RungKnobs>>();
 
 /** the balance document's key for a rung — its 1-based ordinal */
@@ -401,13 +259,9 @@ export function applyRungOverrides(doc: Record<string, Partial<RungKnobs>>): voi
   }
 }
 
-/**
- * THE MUTATION PAIR IN FORCE AT A TIER — the two numbers a deploy hands
- * rollMutations, and the only way anything outside this file should ask.
- * Every reader goes through these rather than through mutationBudget and
- * mutationPicks directly, because those are the AUTHORED curves and these
- * are what the balance document may have bent.
- */
+/** the mutation pair in force at a tier — the only way anything outside
+ *  this file should ask, because mutationBudget and mutationPicks are the
+ *  AUTHORED curves and these are what the balance document may have bent */
 export const tierMutationPoints = (tier: number): number =>
   rungKnobsOf(tier).mutationPoints;
 export const tierMutationCount = (tier: number): number =>
@@ -417,32 +271,18 @@ export const tierMutationCount = (tier: number): number =>
 export const unitHpAtLevel = (kind: UnitKind, level: number): number =>
   UNIT_STATS[kind].hp * HP_PER_LEVEL ** Math.max(0, level);
 
-/**
- * ...and what one body of it is actually WORTH ON A RUNG: the level curve
- * above, times the boss's share of the size ramp (tierBossHpScale) if this
- * kind is the boss and nothing at all if it is not.
- *
- * Every price in this file and the health the sim hands a spawn go through
- * here, so the strength the picker prints, the audit's totals and the body
- * on the field cannot disagree about what a boss weighs. `bossHpScale`
- * comes off the expanded spec (LevelSpec, specForTier); unset — the
- * authored baseline the editor and the raw arithmetic use — is 1.
- */
+/** ...and what one body is worth on a TIER: the level curve times the
+ *  boss's share of the size ramp if this kind is the boss. Every price
+ *  here and the health the sim hands a spawn go through this */
 export const unitHpOnRung = (kind: UnitKind, level: number, bossHpScale = 1): number =>
   unitHpAtLevel(kind, level) * (UNIT_STATS[kind].boss === true ? bossHpScale : 1);
 
 // ---------- expansion ----------
 
 /**
- * The playable spec for one rung: the WHOLE authored script at the rung's
- * count share (COUNT_SCALE), carrying the enemy level the sim scales
- * health by (zero, as authored) and the rung it was expanded for.
- *
- * THE COUNT IS SCALED HERE AND NOWHERE ELSE, so the sim, the audit
- * (budget) and the picker's detail card all read the same swarm. Every
- * region contingent scales on its own and a nonzero count never rounds to
- * nothing — a wave that sends one of something sends that one at every
- * size, which keeps a boss wave a boss wave.
+ * The playable spec for one tier: the whole authored script at the tier's
+ * count share. THE COUNT IS SCALED HERE AND NOWHERE ELSE, so the sim, the
+ * audit and the picker's detail card all read the same swarm.
  */
 export function specForTier(spec: LevelSpec, tier: number): LevelSpec {
   const n = clampTier(tier);
@@ -477,13 +317,8 @@ function scaleWave(
 
 // ---------- strength ----------
 
-/**
- * STRENGTH IS PRINTED HEALTH. That is the whole measure, and it is
- * weapon-agnostic on purpose: the player never fields one turret, so any
- * single-turret denominator says more about the denominator than about
- * the wave. Armour, shields and air ride along as COMPOSITION — shares
- * reported next to the health, never multiplied into it.
- */
+/** STRENGTH IS PRINTED HEALTH — weapon-agnostic on purpose, and armour,
+ *  shields and air ride along as composition, never multiplied in */
 export const waveHp = (step: LevelStep, level = 0, bossHpScale = 1): number => {
   let hp = 0;
   for (const g of waveGroups(step.wave))
@@ -560,14 +395,10 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
 // ---------- the debut rule ----------
 
 /**
- * Units whose armour meets nothing that can efficiently hurt it, WHERE THAT
- * ACTUALLY DECIDES ANYTHING — inside the first stage, where a fresh save's
- * board is tackers and whatever tier-1 turret it has managed to unlock.
- *
- * This is a NOTE, not a gate. Nothing is ever unkillable — the 10% floor
- * means a tacker always lands 0.9 — so a heavily armoured debut costs more
- * scrap, which is a legitimate thing for a script to ask for. What it
- * reports is the size of that ask, so an author choosing it is choosing it.
+ * Units whose armour meets nothing that can efficiently hurt it, inside
+ * the first stage where that decides anything. A NOTE, not a gate: the 10%
+ * floor means nothing is ever unkillable, so a heavy debut just costs more
+ * scrap, and this reports the size of the ask (docs/difficulty.md).
  */
 export function debutViolations(spec: LevelSpec = WORLD): LadderIssue[] {
   const debut = new Map<UnitKind, number>();
@@ -668,14 +499,8 @@ export function waveCost(step: LevelStep, level = 0, bossHpScale = 1): WaveCost 
   return out;
 }
 
-/**
- * ONE WAVE, WEIGHED — the per-wave half of the number guide.
- *
- * `share` is the wave's slice of the whole run, which is the number to
- * author against: a wave carrying 5% of the run is filler, one carrying
- * 25% is a spike, and a stage's LAST wave should be its heaviest or the
- * stage tails off into the next.
- */
+/** one wave, weighed. `share` is the number to author against: 5% is
+ *  filler, 25% is a spike, and a stage's LAST wave should be its heaviest */
 export interface WaveRow {
   /** 1-based wave number, as the editor shows it */
   wave: number;
@@ -722,12 +547,8 @@ export function waveGuide(spec: LevelSpec = WORLD): WaveRow[] {
   });
 }
 
-/**
- * ONE STAGE OF THE RUN, PRICED: what the waves in it pay against what its
- * turret tier costs. THIS IS THE TABLE THE TURRET PRICES ARE AUTHORED
- * AGAINST (TOWER_PRICE in economy.ts), and the one to read after touching
- * either side.
- */
+/** one stage of the run, priced: what its waves pay against what its
+ *  turret band costs. THE TABLE THE PRICES ARE AUTHORED AGAINST */
 export interface StageRow {
   tier: TowerTier;
   /** 1-based inclusive wave range */
@@ -743,12 +564,8 @@ export interface StageRow {
   cheapest: number;
   dearest: number;
   mean: number;
-  /**
-   * HOW MANY OF THE TIER'S TURRETS THE STAGE BUYS, at the mean price —
-   * the number that says whether the stage is the tier's stage. Tier 1
-   * wants a board of them (dozens), tier 2 a line (tens), tier 3 a
-   * handful. The opening scrap counts toward stage 1 only.
-   */
+  /** how many of the band's turrets the stage buys at the mean price —
+   *  the number that says whether the stage is the band's stage */
   boards: number;
 }
 
@@ -782,14 +599,9 @@ export function stageAudit(spec: LevelSpec = WORLD): StageRow[] {
   });
 }
 
-/**
- * HOW MANY OF ITS TIER'S TURRETS A STAGE SHOULD BUY, at the mean price:
- * below the floor the tier is priced out of its own stage, above the
- * ceiling it is so cheap the stage before could have bought it. Tier 1
- * is a line of dozens, tier 2 a dozen, tier 3 a handful — RTS numbers: a
- * wave is a few dozen bodies and a turret stands at Mindustry's health,
- * so a board is tens of emplacements, not hundreds.
- */
+/** how many of its band's turrets a stage should buy: below the floor the
+ *  band is priced out of its own stage, above the ceiling the stage before
+ *  could have bought it */
 export const STAGE_BOARDS: Readonly<Record<TowerTier, { min: number; max: number }>> = {
   1: { min: 800, max: 2500 },
   2: { min: 200, max: 800 },
@@ -823,11 +635,9 @@ export interface AuditRow {
   xp: number;
 }
 
-/**
- * WALK THE LADDER AND REPORT WHAT EACH RUNG ASKS FOR AND PAYS. Every row
- * sends the same eight waves at the same health, so the only columns that
- * move are the XP ones — which is the ladder saying what it is.
- */
+/** walk the ladder and report what each tier asks for and pays — every
+ *  row sends the same waves at the same health, so the only columns that
+ *  move are the XP ones, which is the ladder saying what it is */
 export function audit(spec: LevelSpec = WORLD): AuditRow[] {
   const rows: AuditRow[] = [];
   const guide = waveGuide(spec);
@@ -859,16 +669,9 @@ export function audit(spec: LevelSpec = WORLD): AuditRow[] {
   return rows;
 }
 
-/**
- * HOW MANY BODIES ONE RUN SENDS, exactly — the script's whole length in
- * units, at the authored counts. Fifty thousand over fifty waves: a round
- * number a player can hold, a thousand a wave on average, and a fixed
- * quantity of salvage for the turret prices to be authored against.
- *
- * It is a rule rather than an observation, which is why check() below
- * enforces it: a wave edit that quietly moves it has changed the run's
- * income as well as its fight.
- */
+/** how many bodies one run sends, exactly — a RULE and not an
+ *  observation, which is why check() enforces it: a wave edit that quietly
+ *  moves it has changed the run's income as well as its fight */
 export const SCRIPT_BODIES = 50_000;
 
 /**
@@ -913,12 +716,7 @@ export function check(spec: LevelSpec = WORLD): LadderIssue[] {
   return out;
 }
 
-/**
- * THE ECONOMY AS ONE TABLE OF TEXT — `window.__ladder.stages()`. The
- * three stages against their tiers, then the XP ladder, because the
- * interaction between income and price is the thing that cannot be seen
- * from any single constant.
- */
+/** the economy as one table of text — window.__ladder.stages() */
 export function stageTable(spec: LevelSpec = WORLD): string {
   const head = "stage  waves     units     scrap        xp   cheapest  dearest   mean  boards";
   const rows = stageAudit(spec).map(
