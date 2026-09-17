@@ -32,7 +32,11 @@ enough.
 - **`npm run check`** — run this on all your work. Quick crash gate + typecheck.
 - **`npm run check:full`** — **only if you touched units or in-game logic.** Another
   agent is currently expanding it into something very comprehensive, so a run may take
-  **~10 minutes**. Run it deliberately, never by reflex.
+  **~10 minutes**. Run it deliberately, never by reflex. It is also **GPU-gated**: run
+  it only on local dev on an Apple Silicon Pro/Max chip (the M3 Pro this repo is
+  developed on, or better). On anything weaker — a base chip, a VM, CI, a cloud box —
+  it takes 40 minutes or more: do not start it, say you skipped it and why, and leave
+  `npm run check` as the gate.
 
 ## Where things live
 
