@@ -18,7 +18,8 @@
  * free to bend 37 degrees would need the art rotated to match, and a
  * rotated pixel sprite is a blurred one.
  *
- * SIX SHAPES, IN TWO STYLES. A cell's piece is the UNORDERED PAIR of
+ * SIX SHAPES, IN TWO STYLES (one of them currently unlaid — see
+ * RAIL_STYLES). A cell's piece is the UNORDERED PAIR of
  * neighbours its line connects, and a quarter turn maps most pairs onto
  * each other, so six paintings carry the whole lattice: straight-through
  * in an orthogonal and a diagonal; a 45-degree bend in two hands (they
@@ -29,8 +30,8 @@
  *
  * The SHAPES are the lattice's and never vary. The STYLE is the railway's
  * — its gauge, its sleepers, what its bed is made of — and there are two
- * of them, one per road mission (RAIL_STYLES). Twelve cells in all, which
- * is what the whole system costs the sheet.
+ * of them (RAIL_STYLES). Twelve cells in all, which is what the whole
+ * system costs the sheet.
  *
  * A PIECE PAINTS ITS OWN SLICE OF THE LINE AND NOTHING ELSE. The window
  * is three cells square, centred on the cell, and the centreline inside
@@ -118,9 +119,13 @@ export interface RailStyle {
 }
 
 /**
- * THE TWO RAILWAYS.
+ * THE TWO RAILWAYS. ONLY THE TRAMWAY IS LAID TODAY — Coldline's two
+ * lines were stripped back to bare ground (missions.ts ROAD_SPECS), so
+ * the Borer bed is drawn, packed and unused. It is kept whole rather than
+ * deleted because a road takes it back with one word, and half a railway
+ * is not a thing anyone would rebuild from a diff.
  *
- * BORER — Coldline's, and the swarm's. A heavy main line: a wide bed of
+ * BORER — the swarm's. A heavy main line: a wide bed of
  * crushed cold stone, steel sleepers set well apart, and a broad gauge in
  * bright steel. Two and three quarter cells of ballast is 55 world px,
  * under a Borer's car of 66 (levels.ts) — a body wider than its track,
@@ -130,7 +135,8 @@ export interface RailStyle {
  * snow map, and its road is the same metal a step darker, so the bed sits
  * UNDER the train rather than beside it.
  *
- * TRAMWAY — Thornway's, and the player's. Everything the main line is
+ * TRAMWAY — Thornway's, and the player's, and the one on the board.
+ * Everything the main line is
  * not: a narrow cinder formation, TIMBER sleepers laid close and running
  * nearly the full width of it, and a light narrow gauge worn pale on top.
  * It reads as something built for work and left there years ago, which is

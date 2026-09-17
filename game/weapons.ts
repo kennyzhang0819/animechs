@@ -358,6 +358,16 @@ export interface UnitWeapon {
    *  livewire5 every one */
   shortChance?: number;
   /**
+   * THE SOAK this weapon leaves on every structure it reaches — the
+   * struck one and everything inside its burst — in seconds, at `soakRate`
+   * of the gun's own reload (Sim.soakTower, the same landing the Grapnels'
+   * soaked star uses). The Kettles' wet bomb and nothing else.
+   */
+  soak?: number;
+  /** ...and how slowly the gun reloads while it runs; 1, or absent, is no
+   *  soak at all */
+  soakRate?: number;
+  /**
    * THE REND — the Tuskers' bite, and the other half of what fx "melee"
    * means: on top of `damage`, every blow that connects takes this SHARE
    * OF THE STRUCTURE'S OWN MAX HEALTH (Tower.hpMax, Sim.hitStructure). 0.01
@@ -785,18 +795,17 @@ const venomOrb = (size: number, o: { trail?: boolean } = {}): ShotLook => ({
  * same numbers they were.
  */
 /**
- * THE KETTLES' WING PODS — the one weapon the vultures carry, and the one
- * kind of row this family has. A mirrored PAIR on every tier, mounted
- * where the gunmetal strap runs out along each arm (game/kettleArt.ts),
- * firing the same instant round the copper guns above do in the family's
- * own rust.
+ * THE KETTLES' WING PODS — the close weapon of the two the vultures carry,
+ * and the one that finishes a building. A mirrored PAIR on every tier,
+ * mounted where the gunmetal strap runs out along each arm
+ * (game/kettleArt.ts), firing the same instant round the copper guns above
+ * do in the family's own rust.
  *
- * IT IS A PLAIN GUN ON PURPOSE. The Kettles went on the board with no
- * ability of any kind (levels.ts, the Kettles' stat block) — no aura, no
- * charge, no field — so what a tier buys here is what a tier buys on the
- * ground mechs: CALIBRE and REACH, and nothing that needs explaining.
- * A body that arrives at the core has to be able to do something to it,
- * and this is the smallest thing that is true of.
+ * IT IS A PLAIN GUN ON PURPOSE. What a tier buys here is what a tier buys
+ * on the ground mechs: CALIBRE and REACH, and nothing that needs
+ * explaining. A body that arrives at the core has to be able to do
+ * something to it, and this is the smallest thing that is true of. The
+ * family's one trick is the other row (wetBomb).
  */
 const pods = (name: string, reload: number, damage: number, reach: number): UnitWeapon => ({
   name,
@@ -809,6 +818,63 @@ const pods = (name: string, reload: number, damage: number, reach: number): Unit
   shoot: FxKind.ShootSmall,
   smoke: FxKind.SmokeSmall,
   shootColor: PAL.carrion,
+});
+
+/**
+ * THE KETTLES' WET BOMB — the family's one ability, and the only thing on
+ * the roster that soaks a gun without being one of the Grapnels' stars.
+ *
+ * A HEAVY SLOSH LOBBED OVER THE LINE, from further out than the pods
+ * reach and at a quarter of anything else's pace: it is visibly in the air
+ * for most of a second, it does not collide on the way, and it bursts wide
+ * for very little health. What it is really doing is the SOAK — every gun
+ * inside the burst reloads at KETTLE_SOAK_RATE while it runs.
+ *
+ * THE SOAK IS DELIBERATELY WEAK, because of how the landing stacks
+ * (Sim.soakTower): it takes the DEEPEST rate in force and refreshes the
+ * clock, so one number over a whole family is one number a crowd cannot
+ * deepen — only hold. Twenty per cent off a board's rate of fire for as
+ * long as kettles are overhead is a tax the player plays around; anything
+ * near the Grapnels' 0.4 would be a stun a flock could keep up forever.
+ */
+const KETTLE_SOAK_RATE = 0.8;
+
+const wetBombLook = (size: number): ShotLook => ({
+  region: "orb",
+  width: u(size),
+  height: u(size),
+  shrinkX: 0,
+  shrinkY: 0,
+  slope: true,
+  // the soaked star's two blues, so the board reads one colour for one
+  // status however it arrives (elemStar above)
+  back: PAL.water,
+  front: PAL.piercerLaser,
+  shoot: FxKind.ShootLiquid,
+  hit: FxKind.WaterBurst,
+  hitColor: PAL.piercerLaser,
+  trail: { size: u(size * 0.3), mult: 1.4, color: PAL.water },
+  collide: false as const,
+});
+
+const wetBomb = (
+  name: string,
+  o: { reload: number; damage: number; splash: number; radius: number;
+       life: number; soak: number; size: number },
+): UnitWeapon => ({
+  name,
+  reload: t(o.reload),
+  mounts: 1,
+  damage: o.damage,
+  splash: o.splash,
+  splashRadius: u(o.radius),
+  // a third of the venom line's thrown bomb: the arc is the tell
+  range: rng(2, o.life),
+  speed: spd(2),
+  fx: "shell",
+  soak: o.soak,
+  soakRate: KETTLE_SOAK_RATE,
+  look: wetBombLook(o.size),
 });
 
 const copper = (name: string, reload: number, mounts: number, damage = 9): UnitWeapon => ({
@@ -1416,22 +1482,39 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   grapnel5: [],
   // ---- the Kettles, the vulture -------------------------------------
   //
-  // THE ONLY THING THIS FAMILY DOES. A kettle does not dive and does not
-  // go off (levels.ts): it crosses the board, holds at the core's edge
-  // and fires these, so the reach has to clear the hover — a flyer parks
-  // about a tile and a half off the core's own edge — at every tier, and
-  // the runt's twenty-eight units is already well past it.
+  // TWO ROWS, AT TWO DISTANCES. A kettle does not dive and does not go off
+  // (levels.ts): it crosses the board and holds at the core's edge. The
+  // PODS are what it works on the core with, so their reach has to clear
+  // the hover — a flyer parks about a tile and a half off the core's own
+  // edge — at every tier, and the runt's twenty-eight units is already
+  // well past it. Their ladder is the ground mechs' (see the ironhide1
+  // row): one class, five tiers, calibre and reach, eighteen a round to a
+  // hundred and ten on a pair of mounts at a rate that barely moves.
   //
-  // The ladder is the ground mechs' (see the ironhide1 row): one weapon
-  // class, five tiers, and what a tier buys is calibre and reach. Eighteen
-  // a round to a hundred and ten, on a pair of mounts, at a rate that
-  // barely moves — the apex is not firing faster, it is hitting harder
-  // from further out.
-  kettle1: [pods("kettle1-pod", 45, 18, 28)],
-  kettle2: [pods("kettle2-pod", 42, 30, 32)],
-  kettle3: [pods("kettle3-pod", 40, 48, 38)],
-  kettle4: [pods("kettle4-pod", 38, 76, 46)],
-  kettle5: [pods("kettle5-pod", 36, 110, 54)],
+  // The WET BOMB is what it does to everything else on the way, from five
+  // tiles out at the runt to eleven at the apex — so the family opens fire
+  // long before the pods bear, and what it opens with is a wide, cheap
+  // burst that soaks the guns under it rather than a shot that kills one.
+  kettle1: [
+    pods("kettle1-pod", 45, 18, 28),
+    wetBomb("kettle1-bomb", { reload: 150, damage: 8, splash: 14, radius: 24, life: 20, soak: 2.5, size: 10 }),
+  ],
+  kettle2: [
+    pods("kettle2-pod", 42, 30, 32),
+    wetBomb("kettle2-bomb", { reload: 160, damage: 12, splash: 22, radius: 28, life: 26, soak: 3, size: 12 }),
+  ],
+  kettle3: [
+    pods("kettle3-pod", 40, 48, 38),
+    wetBomb("kettle3-bomb", { reload: 175, damage: 18, splash: 34, radius: 34, life: 32, soak: 3.5, size: 14 }),
+  ],
+  kettle4: [
+    pods("kettle4-pod", 38, 76, 46),
+    wetBomb("kettle4-bomb", { reload: 190, damage: 24, splash: 50, radius: 40, life: 38, soak: 4, size: 17 }),
+  ],
+  kettle5: [
+    pods("kettle5-pod", 36, 110, 54),
+    wetBomb("kettle5-bomb", { reload: 210, damage: 32, splash: 70, radius: 48, life: 44, soak: 4.5, size: 20 }),
+  ],
   // THE CROSSER CARRIES NOTHING, and that is the archetype rather than a
   // gap in the table (levels.ts, the worm block): a Borer walks its road
   // and never looks at the base or at anything the player built beside
@@ -1503,6 +1586,12 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
       fx: "laser", laser: LANCE_LASER, charge: t(20), shoot: FxKind.HitPiercer,
     },
   ],
+  // THE PYLONS CARRY NOTHING (levels.ts goad, bastion). A buff tower does
+  // not shoot: what it does is a number on the train (Sim.goadMul,
+  // Sim.bastionCut), and a gun on one would make it a second railgun —
+  // a thing that hurts you where it stands — which is not what it is for.
+  goad: [],
+  bastion: [],
 };
 
 /**

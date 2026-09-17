@@ -292,7 +292,7 @@ export default function MenuBackground({
       // COUNTRY. The ground, its rock and its props are all a map is here
       renderer.rebuildTerrain(
         { terrain },
-        { wall: true, props: true, spawn: false, rails: false, base: false, beacon: false },
+        { wall: true, props: true, spawn: false, rails: false, base: false, beacon: false, mark: false },
       );
       shots = shotsFor(terrain, rng);
     };

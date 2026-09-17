@@ -263,6 +263,12 @@ What Coldline does with it, and what the shape turned out to need:
   the end, and a train worth what the last one was worth is a train the
   player has already solved. `WORM_RAMP_GROWTH` sets the opening,
   `WORM_RAMP_ACCEL` the back half alone.
+- **AND THE WHOLE TRAIN IS A SHARE OF THE TIER.** A Borer is an objective,
+  so its pool carries `tierObjectiveHpScale` like the Sovereign and the
+  siege do — a quarter at Incursion, three quarters at Scourge, all of it
+  from Nemesis up (`docs/difficulty.md`). The ramp rides on top of that
+  share: the tier says how big a train is, the ramp how much heavier this
+  one is than the last.
 - **It walks an AUTHORED line and it walks it kinematically.** Not the
   flow field, not the crowd shove, not wall collision — a position read
   off a polyline at an arc length. Everything else on the board ends up
@@ -390,6 +396,13 @@ Mutually exclusive investments the run cannot both afford.
 Variants: two expansion arms · three blessings with different drawbacks
 · which of three threats to ignore · which swarm family to shut out of
 the run entirely.
+
+## Placing a mission's furniture
+
+Geometry an author places by hand — the buff towers on Coldline today —
+lives in the map document and is authored in the map editor, off one
+registry. See **[mission-marks.md](mission-marks.md)**; it is also the thing
+to extend when a new mission needs something put on a map.
 
 ## What the map owes the mission
 

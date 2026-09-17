@@ -68,7 +68,7 @@ import {
   stageTable,
   waveCost,
   waveGuide,
-  tierBossHpScale,
+  tierObjectiveHpScale,
   tierCountScale,
   tierLevel,
   tierMutationCount,
@@ -1388,7 +1388,7 @@ function DealFamiliesCell({ families }: { families: readonly FamilyKey[] }) {
           } object-contain [image-rendering:pixelated]`}
         />
       ))}
-      <HoverCard tip={tip} title="Swarm families" tag="Deal" color={DEAL_COLOR} align="right">
+      <HoverCard tip={tip} title="Swarm families" tag="Deal" color={DEAL_COLOR} align="left">
         {families.length === 1 ? (
           <>The only faction this run sends.</>
         ) : (
@@ -1418,7 +1418,7 @@ function DealRuleCell({ def }: { def: MutationDef }) {
       style={tile(band.color)}
     >
       <MutationFace id={def.id} size="h-7 w-7" />
-      <HoverCard tip={tip} title={def.name} tag={band.label} color={band.color} align="right">
+      <HoverCard tip={tip} title={def.name} tag={band.label} color={band.color} align="left">
         {def.blurb}
       </HoverCard>
     </div>
@@ -2395,7 +2395,7 @@ export default function Animechs() {
             // touching a price or a wave
             stages: () => stageAudit(WORLD),
             grind: () => console.log(stageTable(WORLD)),
-            wave: (i: number, tier = 0) => waveCost(WORLD.script[i], tierLevel(tier), tierBossHpScale(tier)),
+            wave: (i: number, tier = 0) => waveCost(WORLD.script[i], tierLevel(tier), tierObjectiveHpScale(tier)),
           };
         }
         // hold the screen out to its minimum, then dissolve it. The game is
@@ -3413,13 +3413,6 @@ export default function Animechs() {
             out={loadUi.out}
           />
         )}
-        {hud?.paused && (
-          // on a phone the wave panel already fills the top of the screen, so
-          // the badge drops onto the map rather than landing on top of it
-          <div className="ms-pane absolute left-1/2 top-[30%] -translate-x-1/2 border-[#FFD37F] px-4 py-1.5 font-display text-base font-bold uppercase text-[#FFD37F] sm:top-[1rem]">
-            Paused
-          </div>
-        )}
         {/* ONE THIN BAR PER OBJECTIVE BODY ON THE FIELD — a Sovereign, a
             Borer train, or the escort's own hauler (Sim.objectiveBars) —
             stacked top-centre, newest DOWNWARD, and keyed by an id that
@@ -3669,6 +3662,25 @@ export default function Animechs() {
                 look at twice; on one row over the minimap they are one
                 glance. The width is the minimap's, so the scrap is
                 right-aligned to the square's edge. */}
+            {/* THE RUN'S DEAL: a column of squares growing upward off the
+                clock, the family composition (LevelSpec.families) nearest
+                it and every mutator in force above. Each cell opens the
+                shared hover card saying what it is, so the corner answers
+                itself mid-wave rather than sending a player to the codex */}
+            {level && (
+              <div
+                role="list"
+                aria-label="families and rules in force"
+                className="pointer-events-none mb-2 flex flex-col-reverse items-start gap-1.5"
+              >
+                {level.families && level.families.length > 0 && (
+                  <DealFamiliesCell families={level.families} />
+                )}
+                {hudRules.map((def) => (
+                  <DealRuleCell key={def.id} def={def} />
+                ))}
+              </div>
+            )}
             <div className="mb-2 flex h-6 items-center justify-between gap-3 text-xl font-bold uppercase leading-none tracking-widest tabular-nums text-[#A1A1AA]">
               <span className="leading-none">{clock(hud.elapsed)}</span>
               {/* THE SAME COLOUR AND THE SAME HEIGHT AS THE CLOCK, which is
@@ -3723,40 +3735,11 @@ export default function Animechs() {
             <Beacon beacon={hud.beacon} scrap={hud.scrap} onBuy={buyBeacon} />
           </div>
         )}
-        {/* THE BOTTOM-RIGHT CORNER, in ONE column: the run's deal on top
-            and the command card under it, both hanging off the same
-            anchor. They used to be two absolutely-positioned boxes, the
-            deal held off the floor by a hand-written 15rem — which was
-            the height of a FOUR-row command card, so the day the card
-            grew its fifth row it simply painted over the deal and the
-            composition square went off the screen. A flex column cannot
-            get that wrong: the card is as tall as it is, and the deal
-            sits on top of whatever that comes to. */}
+        {/* THE BOTTOM-RIGHT CORNER: the command card. The run's deal used
+            to sit above it and now grows off the clock in the left margin
+            instead, over the minimap. */}
         {hud && !hud.lost && !hud.won && !hud.menuOpen && (
           <div className="ui-zoom absolute bottom-[1rem] right-[1rem] z-10 flex flex-col items-end gap-2">
-            {/* THE RUN'S DEAL, StarCraft-style, up the right margin: a
-                column of squares growing upward from over the build menu.
-                The BOTTOM square is always the family composition — the
-                families the die dealt this map (LevelSpec.families), as
-                their first bodies — and every square above it is one
-                mutator in force, face and band border. Every cell opens
-                the shared hover card (DealFamiliesCell, DealRuleCell)
-                saying what it is, so the corner answers itself mid-wave
-                rather than sending a player to the codex */}
-            {level && (
-              <div
-                role="list"
-                aria-label="families and rules in force"
-                className="pointer-events-none flex flex-col-reverse items-end gap-1.5"
-              >
-                {level.families && level.families.length > 0 && (
-                  <DealFamiliesCell families={level.families} />
-                )}
-                {hudRules.map((def) => (
-                  <DealRuleCell key={def.id} def={def} />
-                ))}
-              </div>
-            )}
             {/* THE CORNER IS ONE OF TWO THINGS.
 
                 ON A CHARGED RUN it is THE DEAL (Deal.tsx): a square the

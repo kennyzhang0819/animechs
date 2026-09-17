@@ -36,7 +36,13 @@ import {
   NAVAL_WATER_SPEED,
   NCELLS,
   type MoveLayer,
-  BURN_DPS as BURN_DPS_IMPORT,
+  FIRE_DPS_PER_STACK as FIRE_DPS_IMPORT,
+  FIRE_MAX_STACKS,
+  FIRE_SECONDS,
+  FIRE_SPREAD_CHANCE,
+  FIRE_SPREAD_GAP,
+  FIRE_SPREAD_STRIDE,
+  POISON_SECONDS,
   BURN_FX_CHANCE as BURN_FX_CHANCE_IMPORT,
   AURA_LINGER,
   DAMAGE_SMOKE_BELOW,
@@ -90,7 +96,7 @@ import {
 // a tick, which made the getters one of the largest line items in a CPU
 // profile. A module-local const is a plain read everywhere. The values are
 // constants, so nothing is lost.
-const BURN_DPS = BURN_DPS_IMPORT;
+const FIRE_DPS_PER_STACK = FIRE_DPS_IMPORT;
 const BURN_FX_CHANCE = BURN_FX_CHANCE_IMPORT;
 const WET_FX_CHANCE = WET_FX_CHANCE_IMPORT;
 const SPAWN_INVINCIBLE = SPAWN_INVINCIBLE_IMPORT;
@@ -136,6 +142,9 @@ import {
   razeGuns,
   type RazeSection,
   unitName,
+  BASTION_CUT,
+  GOAD_SPEED_MUL,
+  pylonRamp,
   UNIT_ID,
   UNIT_KINDS as UNIT_KINDS_IMPORT,
   UNIT_STATS,
@@ -247,6 +256,7 @@ import {
   VOLATILE_RADIUS,
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
+import { markKind, parseWaves } from "./missionMarks";
 import { postProblems, postsFor, roadAt, roadProblems, roadsFor, type Post, type Road } from "./missions";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
 import { countSensitive } from "./upgrades";
@@ -329,6 +339,11 @@ const UNIT_FX_LIFE: Partial<Record<FxKind, number>> = {
   [FxKind.MassiveExplosion]: 30 / 60,
   [FxKind.Pulverize]: 40 / 60,
 };
+/** a buff tower's footprint in cells (missionMarks.ts) — the one number
+ *  the sim needs off the registry, to put a body at the middle of the
+ *  square an author placed */
+const MARK_TOWER_SIZE = markKind("buffTower")?.size ?? 4;
+
 const fxLife = (kind: FxKind): number =>
   (FX_LIFE as Partial<Record<FxKind, number>>)[kind] ?? UNIT_FX_LIFE[kind] ?? 20 / 60;
 /** ExplosionEffect lifetimes by style (EXPLOSION_STYLES) */
@@ -927,9 +942,10 @@ const KIND_WET_IMMUNE = Uint8Array.from(UNIT_KINDS, (k) =>
  * tints, never douses a fire it is carrying, never hands the electric
  * ammunition the soaked bonus. This one takes everything the soak does
  * and refuses only the seconds, which is the same split the Speedy
- * mutation already draws (applyWet). The two readers are the drive in
- * updateUnits and the advance in updateCrosser, and every slow this game
- * grows later has to come through one of them.
+ * mutation already draws (applyWet). The ONE reader is the drive in
+ * updateUnits, and every slow this game grows later has to come through
+ * it — a crosser never reaches it, because its advance reads no
+ * multiplier of any kind (updateCrosser).
  */
 const KIND_NO_SLOW = Uint8Array.from(UNIT_KINDS, (k) =>
   UNIT_STATS[k].unslowable ? 1 : 0,
@@ -1225,7 +1241,15 @@ export class Sim {
    * the full statusDuration rather than stacking, exactly like Mindustry's
    * status map, which keeps one entry per effect
    */
+  /** fire STACKS, not seconds (docs/elements.md) */
   readonly uburn = shared.f32(MAX_UNITS);
+  private readonly uburnT = new Float32Array(MAX_UNITS);
+  /** poison damage a second; hits add and it never caps */
+  readonly upoison = shared.f32(MAX_UNITS);
+  private readonly upoisonT = new Float32Array(MAX_UNITS);
+  /** accumulated soak: the hp a body breaks down under. Never expires */
+  readonly usoak = shared.f32(MAX_UNITS);
+  private statusFrame = 0;
   /**
    * THE TWO STAMPED AURAS (constants.ts AURA_LINGER), each a value and the
    * seconds it has left to run: extra armour from an ironhide5, a speed
@@ -1399,10 +1423,15 @@ export class Sim {
    *
    * A crosser does not read the flow field, is not shoved by the crowd,
    * and does not collide with rock: it walks a road somebody drew, and
-   * `ucrossS` is how far along that road it has got, in world px. So the
-   * two arrays together are the whole of a Borer's movement — see
-   * updateCrosser, which is the branch updateUnits takes for these bodies
-   * instead of everything else it does.
+   * `ucrossS` is how far behind the HEAD this piece is laid, in world px —
+   * a constant, written once at the launch and never touched again.
+   *
+   * THE TRAIN HAS ONE CLOCK AND IT IS THE WORM'S (`crossers[].s`). Every
+   * piece's arc length is that clock minus its own offset, so the chain
+   * cannot stretch, bunch or come apart whatever is happening to any one
+   * car — which it could, and did, while each car advanced itself: a
+   * dartback3's pace stamp reaches ten tiles and a Borer is seventy-four
+   * long, so a haste that caught four cars pulled them out of the train.
    *
    * THEY ARE NOT SHARED. The renderer draws a Borer off upx/upy/urot like
    * any other body, because that is all a body IS on the sheet — the
@@ -1411,6 +1440,14 @@ export class Sim {
    */
   private readonly ucross = new Int16Array(MAX_UNITS);
   private readonly ucrossS = new Float32Array(MAX_UNITS);
+  /**
+   * IMMOVABLE: this body takes no share of a crowd shove and hands the
+   * whole overlap to whatever it met (physkernel.ts). A crosser and a
+   * planted emplacement both carry it, and for the same reason — their
+   * position is somebody else's promise (a road, a mission's mark), so
+   * the only honest resolution of a pair is that the other body moves.
+   */
+  readonly ufix = shared.u8(MAX_UNITS);
   /**
    * THE POST A BODY HOLDS — 0 for everything the script ever sent, and the
    * whole of how a mission puts a body somewhere and keeps it there
@@ -1476,7 +1513,7 @@ export class Sim {
    * `hpMax` is the sum of what the pieces spawned with, so the level
    * curve and the launch ramp both still land exactly as they did.
    */
-  private crossers: { road: number; alive: number; leaked: boolean; hp: number; hpMax: number }[] = [];
+  private crossers: { road: number; alive: number; leaked: boolean; hp: number; hpMax: number; s: number; spd: number }[] = [];
   /** the roads this map carries (missions.ts), empty on every other map */
   private roads: readonly Road[] = [];
   /** crossers destroyed whole — every piece of them down before the exit */
@@ -1485,6 +1522,18 @@ export class Sim {
   crossLeaked = 0;
   /** launches made, counting into the pattern and then the spare */
   private crossLaunched = 0;
+  /**
+   * THE BUFF TOWER SPOTS THIS MAP CARRIES (missionMarks.ts MapMark,
+   * docs/mission-marks.md): a kind, a place, and every train wave that
+   * place is due to put one up on.
+   *
+   * A SPOT IS NOT A RISE. The list is read once at reset and never spent —
+   * a spot whose tower was knocked down raises another on its next wave,
+   * and one whose tower is still standing does nothing. So what an author
+   * places is a piece of ground the swarm keeps re-taking, and what the
+   * board buys by killing a tower is the waves until the next one.
+   */
+  private towerSpots: { kind: UnitKind; x: number; y: number; waves: number[] }[] = [];
   /**
    * IS THE MISSION'S SECOND CLOCK DISARMED? — true once there is nothing
    * left to launch, ever (runCrossers).
@@ -2453,7 +2502,7 @@ export class Sim {
     return {
       upx: this.upx, upy: this.upy, uvx: this.uvx, uvy: this.uvy,
       urad: this.urad, urot: this.urot, ufly: this.ufly, unav: this.unav,
-      uheavy: this.uheavy, ukind: this.ukind, uid: this.uid,
+      uheavy: this.uheavy, ufix: this.ufix, ukind: this.ukind, uid: this.uid,
       clear: this.field.clearShared, wclear: this.navalField.clearShared,
       bStart: this.bStart, bUnits: this.bUnits,
     };
@@ -2520,6 +2569,7 @@ export class Sim {
     this.crossLaunched = 0;
     this.crossDone = mission.kind !== "intercept";
     this.crossSweeping = false;
+    this.towerSpots = [];
     // ...and so does an ESCORT, off the same roads (runConvoys). Both
     // missions are drawn on missions.ts lines, so the geometry is fetched
     // once here for whichever of the two is being played
@@ -2603,6 +2653,24 @@ export class Sim {
     const doc = (this.level.map ? loadMap(this.level.map) : null) ?? OFFICIAL_MAPS[0];
     if (!doc) throw new Error("official maps not loaded — await loadOfficialMaps() first");
     this.terrain = terrainFromMap(doc);
+    // THE BUFF TOWERS AN AUTHOR PLACED, if this mission understands them
+    // (missionMarks.ts). It is read HERE and not up with the rest of the
+    // mission reset because the marks come off the terrain, and the board
+    // is not loaded until this line. Where each one stands is the map's and
+    // WHEN it rises is the number on that mark; nothing is put down yet —
+    // runCrossers spends the list as the trains go out
+    if (this.level.mission.kind === "intercept")
+      for (const mk of this.terrain.marks) {
+        if (mk.kind !== "buffTower") continue;
+        const kind = String(mk.opts?.tower ?? "") as UnitKind;
+        if (kind !== "goad" && kind !== "bastion") continue;
+        const waves = parseWaves(mk.opts?.waves);
+        if (waves.length === 0) continue;
+        // the mark's top-left cell is a footprint corner; a body stands at
+        // the middle of the square an author drew
+        const half = (MARK_TOWER_SIZE * CELL) / 2;
+        this.towerSpots.push({ kind, x: mk.x * CELL + half, y: mk.y * CELL + half, waves });
+      }
     // the Hydrophobic mask needs the terrain, so it is built here rather
     // than up with the other rules — and only where the rule is in force
     this.waterlogged = hasMutation(inForce, "hydrophobic") ? this.buildWaterlogged() : null;
@@ -5076,6 +5144,11 @@ export class Sim {
       // other would be reading a die roll, not a schedule
       for (const r of m.pattern[this.crossLaunched]) this.launchCrosser(r, this.crossLaunched);
       this.crossLaunched++;
+      // ...and whatever the author hung on THIS train wave comes up with
+      // it. The wave is 1-based because that is how an author counts
+      // trains; a jump (skipToTime) walks this loop, so every rise the
+      // jump passed over happens at once, like every launch it passed over
+      this.raiseMarkTowers(this.crossLaunched);
     }
     if (this.crossLaunched < m.pattern.length) return;
     // ...and then the spare, owed to any run that has let one through.
@@ -5094,6 +5167,16 @@ export class Sim {
       // ...and the spare is one rung PAST the pattern's last (wormRamp),
       // which falls out of the index rather than being a number of its own
       for (const r of m.spare) this.launchCrosser(r, this.crossLaunched);
+      // THE SPARE IS A TRAIN WAVE LIKE ANY OTHER as far as the towers are
+      // concerned (missionMarks.ts): it is the wave after the pattern's
+      // last, so a spot authored "2-7" covers it without naming it.
+      // ONLY IF ONE WAS ACTUALLY SENT — a mission with an empty spare list
+      // reaches this line too, and counting a train that never left would
+      // burn a wave number and skip whatever was authored on it
+      if (m.spare.length > 0) {
+        this.crossLaunched++;
+        this.raiseMarkTowers(this.crossLaunched);
+      }
       this.crossDone = true;
       return;
     }
@@ -5152,6 +5235,84 @@ export class Sim {
    * railguns and standing up nine would be a run that can never be won,
    * reported nowhere.
    */
+  /**
+   * THE TOWERS DUE ON THIS TRAIN WAVE, put down where the author placed
+   * them (missionMarks.ts). Bolted to the ground like an emplacement is
+   * (plantUnit) and pointing at the core, which is the only heading a body
+   * that never turns can be given.
+   *
+   * IT DOES NOT clearNear. A raze section is rung round a post by the sim
+   * and may land its geometry on a boulder, so it walks for open ground; a
+   * buff tower was put on a cell by a person looking at the map, and moving
+   * it a couple of tiles "for them" would mean the thing they placed and
+   * the thing that rose are in different places. A tower placed in rock is
+   * an authoring mistake and the editor is where it is caught.
+   */
+  private raiseMarkTowers(wave: number): void {
+    for (const t of this.towerSpots) {
+      if (!t.waves.includes(wave)) continue;
+      // A SPOT WITH ITS TOWER STILL ON IT DOES NOTHING. Not a second tower
+      // stacked on the first, and not a refresh of the one standing: the
+      // board's reward for killing one is the waves before the next, and
+      // topping it up would take that away without showing the player why
+      if (this.towerStanding(t.x, t.y)) continue;
+      if (!this.spawnUnit(t.kind, { x: t.x, y: t.y, exact: true }, 0)) continue;
+      const i = this.n - 1;
+      this.plantUnit(i);
+      // ...AND IT IS MADE OF THE WAVE IT ROSE ON (levels.ts pylonRamp), so
+      // every tower up on one wave is the same tower and the next wave's
+      // are tougher. Applied here, over whatever the level curve and the
+      // tier's objective share already made it, exactly as the train's own
+      // launch ramp rides on top of its pool (launchCrosser)
+      const ramp = pylonRamp(wave);
+      this.uhp[i] *= ramp;
+      this.uhpmax[i] *= ramp;
+      const a = Math.atan2(this.core.y - t.y, this.core.x - t.x);
+      this.urot[i] = a;
+      this.ubrot[i] = a;
+      this.uheldRot[i] = a;
+    }
+  }
+
+  /**
+   * IS ONE OF THIS SPOT'S TOWERS STILL UP? A planted body never moves, so
+   * the question is only whether a living Pylon is standing on that point.
+   *
+   * It walks the board, and that is fine: it is asked once per spot per
+   * train wave — a couple of dozen times in a whole run — and the
+   * alternative is a unit id to keep in step across a reap that swaps
+   * slots (removeUnit), which is a second thing to get wrong.
+   */
+  private towerStanding(x: number, y: number): boolean {
+    for (let i = 0; i < this.n; i++) {
+      if (this.ukind[i] !== UNIT_ID.goad && this.ukind[i] !== UNIT_ID.bastion) continue;
+      if (this.uhp[i] <= 0) continue;
+      if (Math.abs(this.upx[i] - x) < CELL && Math.abs(this.upy[i] - y) < CELL) return true;
+    }
+    return false;
+  }
+
+  /**
+   * WHAT THE STANDING PYLONS ARE WORTH RIGHT NOW (levels.ts GOAD_SPEED_MUL,
+   * BASTION_CUT) — read off the alive census rather than stored, so a tower
+   * the board takes down stops counting the same tick and there is no
+   * clock to expire and nothing to get out of step.
+   *
+   * THEY STACK BY MULTIPLYING, which is what keeps two of them from being
+   * an instant loss: two Bastions at a quarter off each leave 56% of the
+   * damage getting through rather than half, and ten of them still never
+   * reach zero. An author who rings a road with towers gets a hard mission,
+   * not an unkillable one.
+   */
+  private get goadMul(): number {
+    const n = this.aliveByKind[UNIT_ID.goad];
+    return n > 0 ? GOAD_SPEED_MUL ** n : 1;
+  }
+  private get bastionCut(): number {
+    const n = this.aliveByKind[UNIT_ID.bastion];
+    return n > 0 ? (1 - BASTION_CUT) ** n : 1;
+  }
+
   private raiseSection(sec: RazeSection): void {
     const post = this.posts[sec.post];
     if (!post) return;
@@ -5243,6 +5404,7 @@ export class Sim {
    *  is exactly where the mission said it would be for the whole run */
   plantUnit(i: number): void {
     this.ugar[i] = 2;
+    this.ufix[i] = 1;
     this.ugarx[i] = this.upx[i];
     this.ugary[i] = this.upy[i];
     this.ugarr[i] = 0;
@@ -5271,7 +5433,7 @@ export class Sim {
     const road = this.roads[roadIdx];
     if (!road) return;
     const id = this.crossers.length;
-    const worm = { road: roadIdx, alive: 0, leaked: false, hp: 0, hpMax: 0 };
+    const worm = { road: roadIdx, alive: 0, leaked: false, hp: 0, hpMax: 0, s: WORM_LENGTH, spd: 0 };
     this.crossers.push(worm);
     const ramp = wormRamp(launch);
     const slots: number[] = [];
@@ -5282,7 +5444,13 @@ export class Sim {
       const i = this.n - 1;
       slots.push(i);
       this.ucross[i] = id;
-      this.ucrossS[i] = s;
+      // the piece's fixed place in the chain, not its arc: the worm's own
+      // clock carries the arc (see ucross)
+      this.ucrossS[i] = k * WORM_SPACING;
+      // ...and the train's pace is the head's, read off the body the level
+      // curve and the Speedy roll have already finished with
+      if (k === 0) worm.spd = this.uspd[i];
+      this.ufix[i] = 1;
       // the heading is the road's, from the first frame: a piece that
       // spawned facing +x and swung round over the next second would
       // enter the map sideways
@@ -5340,7 +5508,10 @@ export class Sim {
   private drainCrosser(id: number, amount: number): void {
     const worm = this.crossers[id];
     if (!worm || worm.hp <= 0) return;
-    worm.hp -= amount;
+    // ...less whatever the standing Bastions are taking off it. Here, at
+    // the ONE place every hit on a train lands, so a shot, a splash, a rot
+    // tick and an execute all pay it once and none of them can forget to
+    worm.hp -= amount * this.bastionCut;
     // TERMINAL PROTOCOL (relics.ts) reads the pool like every other
     // execute, which on a shared pool means it takes the whole train. That
     // is the honest reading of the rule — the body it is knocking over is
@@ -5386,19 +5557,21 @@ export class Sim {
    * heading is the road's own tangent.
    *
    * WHAT STILL REACHES IT is everything that is done TO a body rather than
-   * by it — the haste stamp scales the advance, damage lands, statuses
-   * land — WITH ONE EXCEPTION, and it is the one that used to be the
-   * headline here: a Borer is `unslowable` (levels.ts), so the wet slow no
-   * longer buys the board seconds. A douser on the line still soaks it,
+   * by it — damage lands, statuses land — BUT NOTHING THAT MOVES THE
+   * CLOCK. A Borer is `unslowable` (levels.ts) and it is un-hastenable
+   * with it: the advance below reads neither the wet slow nor the
+   * dartback3's pace stamp, and it reads the WORM's arc rather than this
+   * piece's, so the train is one body at one speed however many of its
+   * cars are standing in an aura. A douser on the line still soaks it,
    * still puts a fire on it out, still hands the electric ammunition the
-   * soaked bonus; it simply cannot move the arrival. That is the mission's
-   * promise being kept — the road is drawn from wave one and so is the
-   * clock — and it means the only way to stop a train is to kill it.
+   * soaked bonus; it simply cannot move the arrival. That is the
+   * mission's promise being kept — the road is drawn from wave one and so
+   * is the clock — and it means the only way to stop a train is to kill it.
    *
    * Returns true when the piece has reached the exit, which is a LEAK: the
    * caller lifts it off the board (see updateUnits).
    */
-  private updateCrosser(i: number, dt: number): CrosserStep {
+  private updateCrosser(i: number): CrosserStep {
     const worm = this.crossers[this.ucross[i]];
     const road = this.roads[worm.road];
     // THE TRAIN'S HEALTH ONTO THIS CAR, every tick. The pool is the truth
@@ -5422,12 +5595,8 @@ export class Sim {
     // A Borer is walking from its first frame — the road is where it came
     // from, and a train that stood still for half a second on the rim
     // would be standing still in the one place nothing can reach it
-    const haste = HAS_HASTE_AURA && this.uhasteT[i] > 0 ? this.uhasteMul[i] : 1;
-    const slow =
-      this.uwet[i] > 0 && !KIND_NO_SLOW[this.ukind[i]] ? this.uwetSlow[i] : 1;
-    const spd = this.uspd[i] * slow * haste;
-    const s = this.ucrossS[i] + spd * dt;
-    this.ucrossS[i] = s;
+    const spd = worm.spd * this.goadMul;
+    const s = worm.s - this.ucrossS[i];
     if (s >= road.length) return CROSS_LEAKED;
     roadAt(road, s, this.roadTmp);
     this.upx[i] = this.roadTmp.x;
@@ -5443,7 +5612,7 @@ export class Sim {
     this.ubrot[i] = ang;
     this.uaimx[i] = this.uvx[i];
     this.uaimy[i] = this.uvy[i];
-    this.uwalk[i] += spd * dt;
+    this.uwalk[i] = s;
     return CROSS_WALKING;
   }
 
@@ -6810,8 +6979,8 @@ export class Sim {
                 poisonChance: wp.poisonChance ?? 1,
                 homing: 0,
                 seek: null,
-                soakT: 0,
-                soakRate: 1,
+                soakT: wp.soak ?? 0,
+                soakRate: wp.soakRate ?? 1,
                 burn: 0,
               });
             }
@@ -7034,13 +7203,14 @@ export class Sim {
       // when it was fired (weapons.ts UnitWeapon.poison)
       poison: wp.poison ?? 0,
       poisonChance: wp.poisonChance ?? 1,
-      // no weapon on the roster steers, soaks a gun or lights one: those
-      // three belong to the Grapnels' stars, which are not weapons and are
-      // not fired from here (fireStar)
+      // no weapon on the roster steers or lights a gun: those two belong to
+      // the Grapnels' stars, which are not weapons and are not fired from
+      // here (fireStar). The soak has a weapon row behind it as well now —
+      // the Kettles' wet bomb (weapons.ts UnitWeapon.soak)
       homing: 0,
       seek: null,
-      soakT: 0,
-      soakRate: 1,
+      soakT: wp.soak ?? 0,
+      soakRate: wp.soakRate ?? 1,
       burn: 0,
     });
     // the bullet's own shootEffect and smokeEffect, in its hitColor (what
@@ -7475,9 +7645,10 @@ export class Sim {
   }
 
   /**
-   * WHAT A STAR LEAVES BEHIND BESIDES A HOLE (weapons.ts StarSpec): the
-   * soaked star's slowed reload and the fire star's flames, on the
-   * building it struck and on everything its burst reached.
+   * WHAT A ROUND LEAVES BEHIND BESIDES A HOLE (weapons.ts StarSpec, and
+   * UnitWeapon.soak for the one weapon row that carries one): the soaked
+   * star's and the wet bomb's slowed reload, and the fire star's flames,
+   * on the building it struck and on everything its burst reached.
    *
    * THE ROT IS NOT HERE and does not need to be: poison already rides
    * every shot in the game (EnemyShot.poison) and hitStructure and
@@ -7507,8 +7678,9 @@ export class Sim {
   }
 
   /**
-   * THE SOAK LANDING (Tower.soakT / soakRate, the Grapnels' soaked star):
-   * this gun reloads at `rate` of its own for `dur` seconds.
+   * THE SOAK LANDING (Tower.soakT / soakRate, the Grapnels' soaked star
+   * and the Kettles' wet bomb): this gun reloads at `rate` of its own for
+   * `dur` seconds.
    *
    * IT WEARS THE SAME CHIP AS WATERLOGGING and it is not the same thing
    * (see the note on the field): a wound a round left, not a fact about
@@ -7556,6 +7728,11 @@ export class Sim {
       case FxKind.EmpHit:
         this.pushFxCol(sh.x, sh.y, 50 / 60, FxKind.EmpHit, 0, sh.splashRadius, look.hitColor ?? PAL.heal, 0,
           false, (Math.random() * 0x7fffffff) | 0);
+        break;
+      case FxKind.WaterBurst:
+        // drawn at the radius it actually soaked, like the dousers' own
+        this.pushFxCol(sh.x, sh.y, fxLife(FxKind.WaterBurst), FxKind.WaterBurst, 0, sh.splashRadius,
+          look.hitColor ?? PAL.water, 0, false, (Math.random() * 0x7fffffff) | 0);
         break;
       case FxKind.Explosion:
         this.pushFx(sh.x, sh.y, EXPLOSION_LIFE[look.hitStyle ?? 0] ?? 22 / 60, FxKind.Explosion, 0, 0,
@@ -7692,13 +7869,13 @@ export class Sim {
    *
    * Two dials, and they are the run's rather than the body's: the LEVEL
    * curve (the spec's enemyLevel plus whatever the loop has added), and
-   * the BOSS'S SHARE OF THE SIZE RAMP (ladder.ts tierBossHpScale) — a
-   * quarter of its health at Incursion and all of it from Nemesis up,
-   * because one boss is one boss at every difficulty and the share has to
-   * land somewhere. Both come off the level document; unset is 1.
+   * the OBJECTIVE BODIES' SHARE OF THE SIZE RAMP (ladder.ts
+   * tierObjectiveHpScale) — a quarter of their health at Incursion and all
+   * of it from Nemesis up, because a mission puts down one body whatever
+   * the difficulty. Both come off the level document; unset is 1.
    */
   private baseHpOf(kind: UnitKind): number {
-    return unitHpOnRung(kind, (this.level.enemyLevel ?? 0) + this.loopLevel, this.level.bossHpScale ?? 1);
+    return unitHpOnRung(kind, (this.level.enemyLevel ?? 0) + this.loopLevel, this.level.objectiveHpScale ?? 1);
   }
 
   /**
@@ -8516,6 +8693,10 @@ export class Sim {
       // the instant it lands, by the same splash that killed its parent
       this.uspawn[i] = brood ? 0 : SPAWN_INVINCIBLE;
       this.uburn[i] = 0;
+      this.uburnT[i] = 0;
+      this.upoison[i] = 0;
+      this.upoisonT[i] = 0;
+      this.usoak[i] = 0;
       this.uwet[i] = 0;
       this.uwetSlow[i] = 1;
       // a body walks in unstamped: the ironhide5's plating and the dartback3's
@@ -8588,6 +8769,7 @@ export class Sim {
       // (launchCrosser writes these two straight after the spawn)
       this.ucross[i] = -1;
       this.ucrossS[i] = 0;
+      this.ufix[i] = 0;
       // ...nor holds a post unless the mission gives it one (garrisonUnit
       // and plantUnit write these four straight after the spawn)
       this.ugar[i] = 0;
@@ -8866,7 +9048,8 @@ export class Sim {
    * swap-removed without skipping its neighbour.
    */
   private updateStatus(dt: number): void {
-    const { uburn, uwet, uhp, uhpmax, upx, upy, urad, uspawn } = this;
+    const { uburn, uwet, uhp, uhpmax, upx, upy, urad, uspawn, upoison, usoak } = this;
+    this.statusFrame++;
     this.bodyIters += this.n;
     for (let i = this.n - 1; i >= 0; i--) {
       // the arrival clock. Nothing is drawn when it runs out any more:
@@ -8960,14 +9143,51 @@ export class Sim {
           );
         }
       }
+      // soak never expires, so this is the whole of the water kill: a body
+      // whose pool has fallen under what it has taken on simply breaks down
+      if (usoak[i] > 0 && uhp[i] < usoak[i]) {
+        this.damageUnit(i, uhp[i], true, 1, DMG_NEITHER);
+        if (uhp[i] <= 0) {
+          this.killUnit(i);
+          continue;
+        }
+      }
+      if (upoison[i] > 0) {
+        if ((this.upoisonT[i] -= dt) <= 0) {
+          upoison[i] = 0;
+          this.upoisonT[i] = 0;
+        } else {
+          this.damageUnit(i, upoison[i] * dt, true, 1, DMG_NEITHER);
+          if (uhp[i] <= 0) {
+            this.killUnit(i);
+            continue;
+          }
+          if (Math.random() < BURN_FX_CHANCE * dt) {
+            const a = Math.random() * Math.PI * 2;
+            const r = (Math.random() * 2 - 1) * (urad[i] / 2);
+            this.pushFxCol(
+              upx[i] + Math.cos(a) * r, upy[i] + Math.sin(a) * r,
+              35 / 60, FxKind.Burning, 0, 0, PAL.venom, 0,
+            );
+          }
+        }
+      }
       if (uburn[i] <= 0) continue;
-      uburn[i] -= dt;
+      if ((this.uburnT[i] -= dt) <= 0) {
+        uburn[i] = 0;
+        this.uburnT[i] = 0;
+        continue;
+      }
       // fire is not a round and never was: a cloak does not put it out
-      this.damageUnit(i, BURN_DPS * dt, true, 1, DMG_NEITHER);
+      this.damageUnit(i, FIRE_DPS_PER_STACK * uburn[i] * dt, true, 1, DMG_NEITHER);
       if (uhp[i] <= 0) {
         this.killUnit(i);
         continue;
       }
+      // the spread roll is staggered by index so the whole burning crowd
+      // never walks the hash on one tick
+      if ((this.statusFrame + i) % FIRE_SPREAD_STRIDE === 0 && Math.random() < FIRE_SPREAD_CHANCE)
+        this.spreadFire(i);
       // Mathf.chanceDelta: the per-tick chance scaled by the frame's ticks
       if (Math.random() < BURN_FX_CHANCE * dt) {
         // Tmp.v1.rnd(Mathf.range(hitSize / 2)): a random point in the disc
@@ -8976,6 +9196,39 @@ export class Sim {
         this.pushFx(upx[i] + Math.cos(a) * r, upy[i] + Math.sin(a) * r, 35 / 60, FxKind.Burning);
       }
     }
+  }
+
+  /**
+   * One stack jumps to a body TOUCHING this one — reservoir pick, one pass.
+   * Contact, not a radius: an isolated hull has nothing to give fire to,
+   * which is the whole of why fire is a crowd weapon (docs/elements.md).
+   */
+  private spreadFire(from: number): void {
+    const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
+    const x = upx[from], y = upy[from];
+    // the search box has to allow for the BIGGEST body alive reaching in
+    const reach = urad[from] + FIRE_SPREAD_GAP + this.rmaxAliveFor(true, true);
+    const hx0 = clamp(((x - reach) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((y - reach) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((x + reach) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((y + reach) / HC) | 0, 0, HROWS - 1);
+    let pick = -1, seen = 0;
+    for (let hy = hy0; hy <= hy1; hy++) {
+      const row = hy * HCOLS;
+      const e = bStart[row + hx1 + 1];
+      const e0 = bStart[row + hx0];
+      this.probes += e - e0;
+      for (let k = e0; k < e; k++) {
+        const i = bUnits[k];
+        if (i === from || i >= this.n || uhp[i] <= 0) continue;
+        if (this.uburn[i] >= FIRE_MAX_STACKS || KIND_BURN_IMMUNE[ukind[i]]) continue;
+        const dx = upx[i] - x, dy = upy[i] - y;
+        const touch = urad[from] + urad[i] + FIRE_SPREAD_GAP;
+        if (dx * dx + dy * dy > touch * touch) continue;
+        if (Math.random() * ++seen < 1) pick = i;
+      }
+    }
+    if (pick >= 0) this.applyBurn(pick, 1);
   }
 
   /**
@@ -9656,6 +9909,10 @@ export class Sim {
       this.ucd[i * MAX_WEAPONS + w] = this.ucd[n * MAX_WEAPONS + w];
     this.uforceDown[i] = this.uforceDown[n];
     this.uburn[i] = this.uburn[n];
+    this.uburnT[i] = this.uburnT[n];
+    this.upoison[i] = this.upoison[n];
+    this.upoisonT[i] = this.upoisonT[n];
+    this.usoak[i] = this.usoak[n];
     this.uwet[i] = this.uwet[n];
     this.uwetSlow[i] = this.uwetSlow[n];
     this.uarmorAdd[i] = this.uarmorAdd[n];
@@ -9695,6 +9952,7 @@ export class Sim {
     // somebody else's train, or a runt teleported onto a road
     this.ucross[i] = this.ucross[n];
     this.ucrossS[i] = this.ucrossS[n];
+    this.ufix[i] = this.ufix[n];
     // ...and the post it was holding, for the same reason: a body that
     // inherited a stale slot would be leashed to somebody else's circle,
     // or an ordinary walker bolted to a patch of open ground
@@ -10089,11 +10347,19 @@ export class Sim {
     // removeUnit swaps the last row down into the dead one's slot, and a
     // descending walk that removed in place would step straight over
     // whatever landed there
+    // ...and their clock is wound ONCE, here, for the whole train (see
+    // ucross). A per-piece advance inside the loop is what let a chain
+    // come apart
+    // ...times whatever the standing Goads are adding (see goadMul). The
+    // reported velocity below is multiplied by the same number, so a
+    // turret's aim lead and the ground going past agree
+    const gm = this.goadMul;
+    for (const w of this.crossers) if (w.alive > 0 && w.hp > 0) w.s += w.spd * gm * dt;
     let leaked: number[] | null = null;
     let slain: number[] | null = null;
     for (let i = this.n - 1; i >= 0; i--) {
       if (this.ucross[i] >= 0) {
-        const step = this.updateCrosser(i, dt);
+        const step = this.updateCrosser(i);
         if (step === CROSS_LEAKED) (leaked ??= []).push(i);
         else if (step === CROSS_DEAD) (slain ??= []).push(i);
         continue;
@@ -10652,7 +10918,7 @@ export class Sim {
         if (s.regenT <= 0) {
           s.shield = s.shieldMax;
           s.shieldAlpha = 1; // the flash a fresh dome comes back on
-          this.pushFx(s.x, s.y, 0.5, FxKind.ShieldWave);
+          this.pushFxCol(s.x, s.y, 0.5, FxKind.ShieldWave, 0, 0, TEAM_CRUX_RGB);
         }
       }
       if (s.shield > 0 && s.scale > 0.5) this.domesUp = true;
@@ -10746,7 +11012,7 @@ export class Sim {
       // player's placement (board.ts domesClear) and thin air to the
       // horde walking under it: raising one changes no route and costs no
       // Dijkstra, which is what makes a cap of twenty affordable
-      this.pushFx(this.shieldTowers[idx].x, this.shieldTowers[idx].y, 0.7, FxKind.ShieldWave);
+      this.pushFxCol(this.shieldTowers[idx].x, this.shieldTowers[idx].y, 0.7, FxKind.ShieldWave, 0, 0, TEAM_CRUX_RGB);
       this.pushFx(this.shieldTowers[idx].x, this.shieldTowers[idx].y, 0.35, FxKind.Shockwave);
       return;
     }
@@ -10775,10 +11041,10 @@ export class Sim {
         // stays dented — there is no trickle and no top-up anywhere in
         // this rule, only whole domes and broken ones
         s.regenT = SHIELD_TOWER_SHIELD_DELAY;
-        // the dome pops the way a carrier's does — same effect, its own red
-        this.pushFx(
+        // the dome pops the way a carrier's does — same effect, same red
+        this.pushFxCol(
           s.x, s.y, 0.5, FxKind.ShieldBreak,
-          0, s.domeR * s.scale,
+          0, s.domeR * s.scale, TEAM_CRUX_RGB,
         );
       }
       return;
@@ -11643,8 +11909,8 @@ export class Sim {
         t.jamT = 0;
         t.jamRate = 1;
       }
-      // ...and the SOAK (Tower.soakT, the Grapnels' soaked star) beside
-      // it, on the same terms and its own clock
+      // ...and the SOAK (Tower.soakT, the soaked star and the wet bomb)
+      // beside it, on the same terms and its own clock
       if (t.soakT > 0 && (t.soakT -= dt) <= 0) {
         t.soakT = 0;
         t.soakRate = 1;
@@ -12787,6 +13053,7 @@ export class Sim {
           // it, so a body held under the beam burns for the full term
           // from the moment it leaves — which is the point of a furnace
           if (b.burn && !KIND_BURN_IMMUNE[this.ukind[i]]) this.applyBurn(i, b.burn);
+          if (b.poison) this.applyPoison(i, b.poison);
           this.bulletFx(b.hitFx, upx[i], upy[i], t.beamRot, b.fxColor);
         } else dead.push(i);
       }
@@ -13006,14 +13273,16 @@ export class Sim {
    * other for the status slot exactly as they do upstream.
    */
 
-  private applyBurn(i: number, duration: number): void {
-    if (this.uwet[i] > 0) {
-      this.uwet[i] -= duration * 0.5;
-      if (this.uwet[i] > 0) return; // still soaked: the flame was spent drying it
-      this.uwet[i] = 0;
-      this.uwetSlow[i] = 1;
-    }
-    this.uburn[i] = duration;
+  private applyBurn(i: number, stacks: number): void {
+    this.uburn[i] = Math.min(this.uburn[i] + stacks, FIRE_MAX_STACKS);
+    this.uburnT[i] = FIRE_SECONDS;
+  }
+
+  /** hits ADD and never cap — the punishing one (docs/elements.md) */
+  applyPoison(i: number, dps: number): void {
+    if (i < 0 || i >= this.n || this.uhp[i] <= 0) return;
+    this.upoison[i] += dps;
+    this.upoisonT[i] = POISON_SECONDS;
   }
 
   /**
@@ -13023,23 +13292,13 @@ export class Sim {
    * the entry — a deluge soaking cannot be watered down by a douser
    * droplet, while an equal or deeper soak re-times freely.
    */
-  private applyWet(i: number, spec: { duration: number; slow: number }): void {
-    if (this.uburn[i] > 0) {
-      this.uburn[i] -= spec.duration * 0.5;
-      if (this.uburn[i] > 0) return; // still alight: the water was spent quenching
-      this.uburn[i] = 0;
-    }
-    // SPEEDY (mutation.ts) is immunity to the SLOW, not to the status. The
-    // soak still lands, still tints, still puts a fire out and still
-    // carries whatever the ammunition does — it is simply worth a
-    // multiplier of 1, so every "strongest slow wins" comparison below and
-    // every drive read in updateUnits behaves exactly as it does on a dry
-    // unit. Refusing the status outright would have deleted the
-    // fire-dousing rule with it, which is not what the card promises.
+  private applyWet(i: number, spec: { duration: number; slow: number; soak: number }): void {
+    // the soak is permanent and the slow is not; SPEEDY (mutation.ts) is
+    // immunity to the slow alone, so the threshold still builds under it
+    this.usoak[i] += spec.soak;
     const slow = this.speedyOn ? 1 : spec.slow;
-    if (this.uwet[i] > 0 && slow > this.uwetSlow[i]) return;
+    if (this.uwet[i] <= 0 || slow < this.uwetSlow[i]) this.uwetSlow[i] = slow;
     this.uwet[i] = spec.duration;
-    this.uwetSlow[i] = slow;
   }
 
   /** Mindustry Damage.applyArmor: flat reduction, floored at 10% of the raw hit */
@@ -13507,7 +13766,7 @@ export class Sim {
         // Bullet.type.shieldDamage: the shot's damage, shieldDamageMultiplier 1
         ushield[hit] -= damage;
         ushieldAlpha[hit] = 1;
-        this.pushFx(px, py, 12 / 60, FxKind.Absorb);
+        this.pushFxCol(px, py, 12 / 60, FxKind.Absorb, 0, 0, TEAM_CRUX_RGB);
         return true;
       }
     }
@@ -13521,7 +13780,7 @@ export class Sim {
         const dx = px - s.x, dy = py - s.y;
         if (dx * dx + dy * dy > rad * rad) continue;
         this.damageShieldTower(s, damage);
-        this.pushFx(px, py, 12 / 60, FxKind.Absorb);
+        this.pushFxCol(px, py, 12 / 60, FxKind.Absorb, 0, 0, TEAM_CRUX_RGB);
         return true;
       }
     }
@@ -13782,6 +14041,7 @@ export class Sim {
               this.impulse(i, (dx / d) * mag, (dy / d) * mag);
             }
             if (uhp[i] > 0 && b.burn && !KIND_BURN_IMMUNE[this.ukind[i]]) this.applyBurn(i, b.burn);
+            if (uhp[i] > 0 && b.poison) this.applyPoison(i, b.poison);
             if (uhp[i] > 0 && b.wet && !KIND_WET_IMMUNE[this.ukind[i]]) this.applyWet(i, b.wet);
             // BulletType.hitEffect, at the bullet rather than the victim.
             // A splash shot skips it — the blast in the `dead` branch below

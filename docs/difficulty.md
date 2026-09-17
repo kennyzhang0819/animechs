@@ -29,13 +29,21 @@ player-facing prints that index — everything goes through `rungLabel`, so the 
 index and the shown name meet in exactly one place. "Level" is never the word for it: a
 level is the player's.
 
-**The one body at a different health is the boss**, and it is the same size ramp wearing
-the only shape it can. A boss wave sends one body at every difficulty — a quarter of one
-boss is not a body, and `scaleWave` floors a nonzero count at one on purpose — so the boss
-pays the tier's count share in **hit points** instead (`tierBossHpScale`). Nothing else
-about it moves: armour, speed, hitbox and drop are what `UNIT_STATS` says at every tier.
+**The bodies at a different health are the objectives**, and that is the same size ramp
+wearing the only shape it can. A mission puts down **one** body whatever the difficulty —
+a quarter of one boss is not a body, and `scaleWave` floors a nonzero count at one on
+purpose — so every `OBJECTIVE_KINDS` body pays the tier's count share in **hit points**
+instead (`tierObjectiveHpScale`, applied in `unitHpOnRung`). That is the Sovereign, the
+Borer's whole train, the railgun emplacement and both Wardens: a quarter of their health
+at Incursion, three quarters at Scourge, all of it from Nemesis up.
+
+Nothing else about them moves: armour, speed, hitbox and drop are what `UNIT_STATS` says at
+every tier — drops in particular, for the same reason the level curve leaves drops alone.
 Without this, the bottom of the ladder ended on the hardest thing in the game, unscaled,
 while everything in front of it came at quarter strength.
+
+The Borer's launch ramp (`wormRamp`) rides on top of the share, not instead of it: the
+tier says how big a train is and the ramp says how much heavier this one is than the last.
 
 ## The health curve is not the ladder's — it is the tide's
 

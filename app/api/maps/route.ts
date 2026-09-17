@@ -3,6 +3,7 @@ import { ADMIN_ENABLED } from "@/game/env";
 import path from "path";
 import { NextResponse } from "next/server";
 import type { MapData } from "@/game/maps";
+import { MARK_KINDS } from "@/game/missionMarks";
 
 /**
  * Dev-only map persistence: the editor POSTs an official map document and
@@ -78,6 +79,22 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
   if (!Array.isArray(map.pines) || !Array.isArray(map.decor))
     return NextResponse.json({ error: "bad props" }, { status: 400 });
+
+  // THE MISSION MARKS (missionMarks.ts). The loader already drops a mark
+  // it cannot read (maps.ts marksOf), so this is not what keeps a bad one
+  // out of a run — it is what stops a bad one being WRITTEN, where it
+  // would sit in the repo file looking authored and quietly do nothing
+  if (map.marks !== undefined) {
+    if (!Array.isArray(map.marks))
+      return NextResponse.json({ error: "marks is not a list" }, { status: 400 });
+    for (const m of map.marks) {
+      const kind = MARK_KINDS.find((k) => k.id === m?.kind);
+      if (!kind)
+        return NextResponse.json({ error: `unknown mark kind "${m?.kind}"` }, { status: 400 });
+      if (!Number.isInteger(m.x) || !Number.isInteger(m.y) || m.x < 0 || m.y < 0)
+        return NextResponse.json({ error: `mark "${kind.id}" is off the board` }, { status: 400 });
+    }
+  }
 
   const file = path.join(process.cwd(), "public", "maps", `${map.id}.json`);
   try {

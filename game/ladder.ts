@@ -1,5 +1,6 @@
 import {
   dropsForKills,
+  isObjectiveKind,
   UNIT_KINDS,
   UNIT_STATS,
   unitDrop,
@@ -35,8 +36,9 @@ import { MUT_COUNT_MAX, MUT_FIRST_TIER, mutationBudget, mutationPicks } from "./
  * A TIER IS SIZE, THEN RULES — NEVER HEALTH. Every tier plays the whole
  * authored script with every body at the same health; what moves is how
  * many come (COUNT_SCALE) and what rules they come under (mutation.ts).
- * The boss is the one body that cannot pay a count share, so it pays the
- * same share in hit points instead (tierBossHpScale).
+ * An OBJECTIVE body cannot pay a count share — one boss, one Borer, one
+ * emplacement at every difficulty — so it pays the same share in hit
+ * points instead (tierObjectiveHpScale).
  */
 
 /** Mindustry's own per-level health curve, and the only thing a level
@@ -131,10 +133,10 @@ export function rungLabel(tier: number): string {
 /** the count share a rung sends, 0.25 at the bottom, 1 from Nemesis up */
 export const tierCountScale = (tier: number): number => RUNGS[clampTier(tier)].countScale;
 
-/** ...and what a boss pays instead, because a count of one cannot carry a
- *  share: the same number off the same table, applied to hit points.
- *  Nothing else about it moves (docs/difficulty.md) */
-export const tierBossHpScale = (tier: number): number => tierCountScale(tier);
+/** ...and what an OBJECTIVE pays instead, because a count of one cannot
+ *  carry a share: the same number off the same table, applied to hit
+ *  points. Nothing else about it moves (docs/difficulty.md) */
+export const tierObjectiveHpScale = (tier: number): number => tierCountScale(tier);
 
 /** how many mutator steps above Nemesis a rung stands — 0 on every named one */
 export const tierMutationStep = (tier: number): number =>
@@ -274,8 +276,8 @@ export const unitHpAtLevel = (kind: UnitKind, level: number): number =>
 /** ...and what one body is worth on a TIER: the level curve times the
  *  boss's share of the size ramp if this kind is the boss. Every price
  *  here and the health the sim hands a spawn go through this */
-export const unitHpOnRung = (kind: UnitKind, level: number, bossHpScale = 1): number =>
-  unitHpAtLevel(kind, level) * (UNIT_STATS[kind].boss === true ? bossHpScale : 1);
+export const unitHpOnRung = (kind: UnitKind, level: number, objectiveHpScale = 1): number =>
+  unitHpAtLevel(kind, level) * (isObjectiveKind(kind) ? objectiveHpScale : 1);
 
 // ---------- expansion ----------
 
@@ -294,7 +296,7 @@ export function specForTier(spec: LevelSpec, tier: number): LevelSpec {
           ...step,
           wave: scaleWave(step.wave, scale),
         }));
-  return { ...spec, script, tier: n, enemyLevel: tierLevel(n), bossHpScale: tierBossHpScale(n) };
+  return { ...spec, script, tier: n, enemyLevel: tierLevel(n), objectiveHpScale: tierObjectiveHpScale(n) };
 }
 
 /** one wave at a share of its count — the group form keeps its region ids */
@@ -319,11 +321,11 @@ function scaleWave(
 
 /** STRENGTH IS PRINTED HEALTH — weapon-agnostic on purpose, and armour,
  *  shields and air ride along as composition, never multiplied in */
-export const waveHp = (step: LevelStep, level = 0, bossHpScale = 1): number => {
+export const waveHp = (step: LevelStep, level = 0, objectiveHpScale = 1): number => {
   let hp = 0;
   for (const g of waveGroups(step.wave))
     g.counts.forEach((count, i) => {
-      if (count > 0) hp += unitHpOnRung(UNIT_KINDS[i], level, bossHpScale) * count;
+      if (count > 0) hp += unitHpOnRung(UNIT_KINDS[i], level, objectiveHpScale) * count;
     });
   return hp;
 };
@@ -351,7 +353,7 @@ export interface Budget {
 export function budget(spec: LevelSpec, tier = 0): Budget {
   const run = specForTier(spec, tier);
   const level = run.enemyLevel ?? 0;
-  const bossHp = run.bossHpScale ?? 1;
+  const bossHp = run.objectiveHpScale ?? 1;
   let units = 0;
   let hp = 0;
   let armour = 0;
@@ -463,7 +465,7 @@ export interface WaveCost {
   drops: Drop;
 }
 
-export function waveCost(step: LevelStep, level = 0, bossHpScale = 1): WaveCost {
+export function waveCost(step: LevelStep, level = 0, objectiveHpScale = 1): WaveCost {
   const out: WaveCost = {
     units: 0,
     hp: 0,
@@ -480,7 +482,7 @@ export function waveCost(step: LevelStep, level = 0, bossHpScale = 1): WaveCost 
       if (count <= 0) return;
       const kind = UNIT_KINDS[i];
       const stats = UNIT_STATS[kind];
-      const h = unitHpOnRung(kind, level, bossHpScale) * count;
+      const h = unitHpOnRung(kind, level, objectiveHpScale) * count;
       out.units += count;
       out.hp += h;
       if (stats.tier >= 3) t3 += h;

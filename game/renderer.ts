@@ -1,3 +1,4 @@
+import { MARK_KINDS } from "./missionMarks";
 import { RAIL_SPAN } from "./railArt";
 import { FLOOR_STYLE, WATER_VARIANTS, WATER_WAVE_VARIANT, type FloorKind } from "./tiles";
 import { LINOCUT_TERRAIN } from "./terrainFlag";
@@ -20,6 +21,7 @@ import {
   UV_PINE,
   UV_PINES,
   UV_RAILS,
+  UV_MARK_PAD,
   UV_SPAWN,
   UV_RING,
   UV_CLEAVER,
@@ -132,7 +134,6 @@ import {
   AMPHIBIOUS_GROWTH,
   HUNGRY_GROWTH,
   HUNGRY_HUE,
-  SHIELD_TOWER_COL,
   SHIELD_TOWER_SIZE,
 } from "./mutation";
 import { MAX_LEGS, MAX_SEGS, MUZZLE_FLASH_LIFE, WAKE_PTS } from "./sim";
@@ -371,11 +372,31 @@ const rng = (): number => {
   return (x >>> 0) / 4294967296;
 };
 /**
- * Pal.shield #ffd37f — the warm amber Mindustry uses for the PLAYER's
- * shields: the shield tower's dome, its waves and its break, and Fx.absorb
- * (Pal.accent) wherever a shot dies on an outline.
+ * THE TWO SHIELD COLOURS, AND THERE ARE ONLY TWO.
+ *
+ * Pal.shield #ffd37f, the warm amber Mindustry uses, is THE PLAYER'S AND
+ * NOTHING ELSE now — a relic's discharge ring, the pop when insurance pays
+ * out a wreck. Everything the swarm puts up is SHIELD_FOE, the crux red
+ * the whole game already means "theirs" by.
+ *
+ * IT USED TO GO BY FAMILY (KIND_ACCENT), and that was a colour answering
+ * the wrong question. A bubble is not a badge: it is the reason a shot
+ * just stopped, and what a player needs off it at a glance is whose it is
+ * and nothing else. Six factions meant six shield colours, one of them the
+ * player's own amber on a Starhart's dome, and the shield towers' waves
+ * came out amber too because they were pushed without a colour at all —
+ * so the swarm's most conspicuous defensive structure wore the hue this
+ * game reserves for things you are keeping alive.
+ *
+ * The FAMILY's colour has not gone anywhere: it is still the cell on every
+ * hull and the flame behind every engine (KIND_ACCENT), which is where a
+ * badge belongs.
  */
 const SHIELD_COL = [0xff / 255, 0xd3 / 255, 0x7f / 255] as const;
+/** ...and the swarm's, which is the swarm's own red and not a shade of
+ *  its own: one red for the carriers' bubbles, the regen halo, the shield
+ *  towers' domes and every wave, break and absorb any of them throws */
+const SHIELD_FOE: RGB = TEAM_CRUX_RGB;
 /**
  * UnitEngine.draw: the flame behind a flyer, a disc in the team's colour
  * breathing on Mathf.absin(Time.time, 2, radius / 4) with a white disc
@@ -880,6 +901,10 @@ export interface TerrainLayers {
    *  are also out of reach: the editor's brush will not stamp one and the
    *  eraser will not take one off (MapEditor.paintCell) */
   beacon: boolean;
+  /** the mission marks an author placed (missionMarks.ts) — an editor-only
+   *  layer: they are drawn in the editor's own overlay and never on a
+   *  board, where what stands there is a real body the mission raised */
+  mark: boolean;
 }
 export const ALL_LAYERS: TerrainLayers = {
   wall: true,
@@ -888,6 +913,7 @@ export const ALL_LAYERS: TerrainLayers = {
   rails: true,
   base: true,
   beacon: true,
+  mark: true,
 };
 /**
  * What a MATCH draws. The spawn pads are an authoring layer: they are how
@@ -899,6 +925,9 @@ export const ALL_LAYERS: TerrainLayers = {
 export const GAME_LAYERS: TerrainLayers = {
   wall: true,
   props: true,
+  // a mark is an authoring note, never a thing on a board: in a match what
+  // stands there is the body the mission raised (Sim.raiseMarkTowers)
+  mark: false,
   spawn: false,
   // ...but the RAILS are not an authoring layer. They are the mission
   // telling the player where the thing is going to walk, which is a fact
@@ -2304,6 +2333,28 @@ export class Renderer {
         this.push(w, x, y, span, span, r.rot * (Math.PI / 2), UV_RAILS[r.style][r.piece], lit, lit, lit, 1);
       }
     }
+    // THE DECKING ROUND A MISSION MARK (missionMarks.ts MarkKind.pad).
+    // NOT gated on `layers.mark`: the mark itself is an authoring note and
+    // a match never draws one, but the plated ground under it is GROUND —
+    // the point of it is that a player sees the three places the swarm
+    // keeps re-taking before anything has risen on them.
+    for (const m of T.marks) {
+      const k = MARK_KINDS.find((mk) => mk.id === m.kind);
+      if (!k || k.pad <= 0) continue;
+      const x0 = Math.max(0, m.x - k.pad), y0 = Math.max(0, m.y - k.pad);
+      const x1 = Math.min(mapCols, m.x + k.size + k.pad);
+      const y1 = Math.min(mapRows, m.y + k.size + k.pad);
+      for (let y = y0; y < y1; y++)
+        for (let x = x0; x < x1; x++) {
+          // the corners are cut so the patch reads as a laid deck rather
+          // than as a rectangle someone dropped on the snow
+          const dx = Math.min(x - x0, x1 - 1 - x), dy = Math.min(y - y0, y1 - 1 - y);
+          if (dx + dy < k.pad) continue;
+          const lit = this.litAt((x + 0.5) * CELL, (y + 0.5) * CELL);
+          this.push(w, (x + 0.5) * CELL, (y + 0.5) * CELL, CELL, CELL, 0, UV_MARK_PAD,
+            lit, lit, lit, 1);
+        }
+    }
     if (layers.spawn) {
       const [sr, sg, sb] = SPAWN_STYLE.tint;
       for (let y = 0; y < mapRows; y++)
@@ -3000,7 +3051,7 @@ export class Renderer {
         // UnitType.drawShield: Fill.light at hitSize * 1.3 — a disc that is
         // clear at the centre and carries the colour at its rim
         const sr = urad[i] * 2 * 1.3 * 2;
-        const sc = KIND_ACCENT[k];
+        const sc = SHIELD_FOE;
         this.push(dyn, upx[i], upy[i], sr, sr, 0, UV_RING,
           // shieldColor lerped to white by the hit flash, at 0.7 x alpha
           sc[0] + (1 - sc[0]) * Math.min(1, ushieldAlpha[i]),
@@ -3498,8 +3549,8 @@ export class Renderer {
         // shieldWave:      circle(4 + finpow*60) in the shield colour at a=0.7
         const heal = e.kind === FxKind.HealWave;
         const grow = heal ? (e.len ?? 0) : 60 * MU;
-        // a unit's regen field throws its wave in the team colour (e.col);
-        // the shield tower's is the player's amber
+        // every wave carries its own colour (e.col): the swarm's red off
+        // anything of theirs, and the amber below is the player's alone
         const wc: RGB = heal ? PAL_HEAL : e.col ?? SHIELD_COL;
         this.strokeCircle(dyn, e.x, e.y, 4 * MU + FIN_POW(t) * grow, (1 - t) * 2 * MU,
           wc[0], wc[1], wc[2], (heal ? 1 : 0.7) * RING_ALPHA);
@@ -3653,8 +3704,9 @@ export class Renderer {
       } else if (e.kind === FxKind.Absorb) {
         // Fx.absorb: stroke(fout*2), circle(5*fout) in Pal.accent — the
         // little pop where a shot died on the outline
+        const ac = e.col ?? SHIELD_COL;
         this.strokeCircle(dyn, e.x, e.y, 5 * MU * (1 - t), (1 - t) * 2 * MU,
-          SHIELD_COL[0], SHIELD_COL[1], SHIELD_COL[2], RING_ALPHA);
+          ac[0], ac[1], ac[2], RING_ALPHA);
       } else if (e.kind === FxKind.ShieldBreak) {
         // Fx.shieldBreak: stroke(fout*3), circle(radius + fin) — the
         // outline snapping outward as the bubble pops. Every field here
@@ -3813,7 +3865,7 @@ export class Renderer {
       // rides into the buffer with the fill, so the shader's rim and hatch
       // pick it up without knowing anything about the carrier
       const w = Math.min(1, ushieldAlpha[i]);
-      const sc = KIND_ACCENT[ukind[i]];
+      const sc = SHIELD_FOE;
       const col: RGB = [
         sc[0] + (1 - sc[0]) * w,
         sc[1] + (1 - sc[1]) * w,
@@ -3833,7 +3885,8 @@ export class Renderer {
       }
     }
     // THE SHIELD TOWERS' DOMES (the Shield Towers mutator): same pass, same
-    // shader, same circle, their own RED
+    // shader, same circle, and the SAME red as every other thing the swarm
+    // puts up (SHIELD_FOE)
     for (const s of sim.shieldTowers) {
       if (s.hp <= 0 || s.shield <= 0) continue;
       const rad = s.domeR * s.scale;
@@ -3842,9 +3895,9 @@ export class Renderer {
       if (s.x < vx0 - bm || s.x > vx1 + bm || s.y < vy0 - bm || s.y > vy1 + bm) continue;
       const w = Math.min(1, s.shieldAlpha);
       const col: RGB = [
-        SHIELD_TOWER_COL[0] + (1 - SHIELD_TOWER_COL[0]) * w,
-        SHIELD_TOWER_COL[1] + (1 - SHIELD_TOWER_COL[1]) * w,
-        SHIELD_TOWER_COL[2] + (1 - SHIELD_TOWER_COL[2]) * w,
+        SHIELD_FOE[0] + (1 - SHIELD_FOE[0]) * w,
+        SHIELD_FOE[1] + (1 - SHIELD_FOE[1]) * w,
+        SHIELD_FOE[2] + (1 - SHIELD_FOE[2]) * w,
       ];
       if (buffered) {
         // ONE QUAD, NEVER A FAN. A fan of `sides` textured triangles

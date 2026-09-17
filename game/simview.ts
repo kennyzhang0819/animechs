@@ -111,6 +111,8 @@ export interface UnitsView {
    */
   readonly uspawn: Float32Array;
   readonly uburn: Float32Array;
+  readonly upoison: Float32Array;
+  readonly usoak: Float32Array;
   readonly uvet: Float32Array;
   readonly uled: Float32Array;
   readonly uvirus: Uint8Array;

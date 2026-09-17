@@ -696,17 +696,104 @@ const MM_SCALE = 1;
 const MM_UNIT_PX = 3.75;
 const MM_STRUCT_PX = 4.5;
 /**
- * ...AND THE CROSSER'S HEAD, which is not a body on this map, it is the
- * OBJECTIVE. On the intercept mission the one question a glance at the
+ * ...AND THE PINS, which are not bodies on this map, they are the
+ * OBJECTIVES. On the intercept mission the one question a glance at the
  * corner has to answer is "where is the train and how far has it got"
  * (docs/mission-design.md), and a Borer's twenty pieces at MM_UNIT_PX
  * are twenty red specks in a row indistinguishable from a wave walking
- * in a line. So the HEAD alone gets a mark of its own: a diamond, half
- * again a structure's size so it is the biggest thing on the canvas, in
- * its own colour and on top of everything — the nose of the train, which
- * is the end a player is trying to get in front of.
+ * in a line. So a thing the mission is ABOUT gets a mark of its own, in
+ * its own colour and on top of everything.
+ *
+ * A PIN IS FIVE TIMES A STRUCTURE'S SIZE, which is not a mark on a map of
+ * bodies, it is a pin on a map of ground. Everything else the corner
+ * draws is a body dilated until it can be seen; there is at most a
+ * handful of these, and at a dozen px one was a small amber lozenge
+ * nobody could tell from a selection dot. At two dozen there is room for
+ * a shape, which is the whole point of the glyphs below.
  */
-const MM_CROSS_PX = 12;
+const MM_CROSS_PX = 24;
+/**
+ * THE BREATH: a pin swells and shrinks by this much of itself, once every
+ * MM_PULSE_SECONDS. Everything else on this canvas is a still mark, so
+ * the one that MOVES is the one the eye goes to — which is the whole
+ * claim a pin makes, and the reason it is worth spending motion on when
+ * the arrival ping has long since finished. Every pin breathes on the run
+ * clock and therefore together: one thing pulsing among several still
+ * ones is an alert, several pulsing out of step is a fairground.
+ */
+const MM_PULSE_AMP = 0.18;
+const MM_PULSE_SECONDS = 1.8;
+
+/**
+ * A MARK AS A DRAWING: a square bitmap, '#' where the mark is. It is blown
+ * up to the pin's live size and OUTLINED BY ITS OWN DILATION — every cell
+ * that is not the mark but touches it goes black — so a glyph carries its
+ * edge onto pale snow and dark rock alike without a second drawing, and a
+ * hole left inside one comes out as a black band rather than as ground.
+ *
+ * NOTHING NARROWER THAN TWO SOURCE PX, and the border row and column stay
+ * blank. The scale up is nearest, there being no filtering anywhere on
+ * this canvas: a one px detail lands as one cell or two depending where it
+ * falls, and a glyph that touches its own edge loses its outline there.
+ *
+ * THERE ARE TWO OF THEM AND THERE SHOULD GO ON BEING TWO. A pin answers
+ * one question — is this thing mine or theirs — and it is read at a
+ * glance at the size of a fingernail, where a portrait of the machine is
+ * a smudge and a SILHOUETTE is a word. A drawing per objective was tried
+ * first: a drill for the Borer, a cart for the hauler. It made the corner
+ * a rebus, and it meant every new objective owed a drawing nobody would
+ * ever look at twice. So: a face is theirs, a shield is ours, and
+ * anything the game grows later is already drawn.
+ */
+type MmIcon = readonly string[];
+/**
+ * THEIRS: a horned face, scowling. A caltrop stood here first and it was
+ * only a shape — the eye read "something angular" and had to be told the
+ * rest. A FACE IS READ BEFORE IT IS LOOKED AT, which is the one property
+ * worth having in a mark this small, and the horns give it a silhouette
+ * that survives being halved on a narrow HUD where the features do not.
+ *
+ * The eyes are the whole of the expression: two gaps that step INWARD as
+ * they go down, so the dilation lays them in as slanted slits (see
+ * MmIcon). Nothing else here is doing any work — the mouth is one wide
+ * gap with a tooth in it, and at a fingernail's width it is a dark band.
+ */
+const MM_ICON_FOE: MmIcon = [
+  "               ",
+  " ##         ## ",
+  " ###       ### ",
+  " ############# ",
+  " ############# ",
+  " ###  ###  ### ",
+  " ####  #  #### ",
+  " ############# ",
+  " ############# ",
+  "  ##       ##  ",
+  "  ## ##### ##  ",
+  "  ###########  ",
+  "   #########   ",
+  "               ",
+  "               ",
+];
+/** OURS: a shield. The thing being kept rather than the thing being
+ *  killed, and blank where the face is a face */
+const MM_ICON_ALLY: MmIcon = [
+  "               ",
+  "  ###########  ",
+  " ############# ",
+  " ############# ",
+  " ############# ",
+  " ############# ",
+  " ############# ",
+  "  ###########  ",
+  "  ###########  ",
+  "   #########   ",
+  "    #######    ",
+  "     #####     ",
+  "      ###      ",
+  "               ",
+  "               ",
+];
 
 /**
  * THE ARRIVAL PING — what the corner does for the first two and a half
@@ -735,8 +822,15 @@ const MM_CROSS_PX = 12;
  */
 const MM_PING_SECONDS = 2.5;
 const MM_PING_PULSES = 3;
-/** how much bigger than the icon each ring starts */
-const MM_PING_SCALE = 3.5;
+/**
+ * How much bigger than the icon each ring starts. IT CAME DOWN WHEN THE
+ * ICON WENT UP: the alert is sized in screen px and was tuned there, and a
+ * multiple of the icon alone would have doubled the outermost ring with it
+ * — a ring a third of the way across the map, which is an alarm and not an
+ * alert. Twice a doubled icon is very nearly where three and a half times
+ * the old one landed.
+ */
+const MM_PING_SCALE = 2;
 /**
  * THE MINIMAP'S MARKS, PACKED A PIXEL AT A TIME instead of a byte.
  *
@@ -759,22 +853,22 @@ const mmColor = (r: number, g: number, b: number): number =>
 const MM_RED = mmColor(0xf2, 0x55, 0x55);
 const MM_WHITE = mmColor(0xff, 0xff, 0xff);
 /**
- * THE CROSSER HEAD'S AMBER, and the black it is outlined in. Amber
- * because the corner map speaks two colours and both are taken — red is
- * "theirs" and white is "ours", and the train is neither: it is the thing
- * the mission is ABOUT, and it is the board's selection amber for exactly
+ * A HOSTILE PIN'S AMBER, and the black it is outlined in. Amber because
+ * the corner map speaks two colours and both are taken — red is "theirs"
+ * and white is "ours", and an objective is neither: it is the thing the
+ * mission is ABOUT, and it is the board's selection amber for exactly
  * that reason. The outline is what makes it survive the ground it lands
- * on: a bare amber diamond on Coldline's pale snow is a smudge, and on a
+ * on: a bare amber mark on Coldline's pale snow is a smudge, and on a
  * hill it is invisible.
  */
 const MM_CROSS = mmColor(0xff, 0xc2, 0x4a);
 /**
- * ...AND THE HAULER'S, which is the player's own amber — the hue the core,
- * the beacons and every price on the HUD are drawn in (turretArt.ts
- * POWER). A Borer and a hauler are the same MARK, a diamond on the corner
- * map, because they are the same kind of thing: the body a mission is
- * about. They are different COLOURS because one of them is coming to do
- * something to you and the other is yours to lose.
+ * ...AND AN ALLIED PIN'S, which is the player's own amber — the hue the
+ * core, the beacons and every price on the HUD are drawn in (turretArt.ts
+ * POWER). The SHAPE is what says whose it is (MM_ICON_FOE against
+ * MM_ICON_ALLY); the colour is the second telling, because two ambers a
+ * shade apart is not a distinction anyone can make at a fingernail's
+ * width and a silhouette is.
  */
 const MM_CONVOY = mmColor(0xff, 0xd3, 0x7f);
 /** the hauler's key in the ping ledger (Game.mmPing). There is one cart,
@@ -795,8 +889,27 @@ const HALT_RING_R = (CONVOY_SIZE * CELL * 2) / 3;
 /** scratch for the road sampler on the draw side — one call site */
 const ROAD_AT = { x: 0, y: 0, dx: 0, dy: 0 };
 const MM_CROSS_EDGE = mmColor(0x00, 0x00, 0x00);
-/** the one kind that wears it (drawMinimap), looked up once rather than per body */
-const WORM_HEAD_ID = UNIT_ID.wormhead;
+/**
+ * WHICH KINDS WEAR THE HOSTILE PIN — one flag per kind, so the mark loop
+ * is a typed-array read per body rather than a list scan, and ADDING ONE
+ * IS ADDING ONE NAME HERE.
+ *
+ * WHAT EARNS A PIN: a body the player has to go and deal with somewhere
+ * other than at the core. That is the whole of the rule, and it is why
+ * the wave is not on this list however heavy it gets — a wave comes to
+ * you, and the corner already draws it in red. The Borer's head, the
+ * siege's emplacements, the two Pylons out by a road and the Sovereign
+ * all are that; each one is a trip.
+ *
+ * THE TRAIN IS ITS HEAD AND NOTHING ELSE. Twenty cars would be twenty
+ * pins, which is a corner map made of pins; the head is the end a player
+ * is trying to get in front of. The two Wardens are off it for the same
+ * reason — a siege stands sixteen of them, and they are the emplacement's
+ * fence rather than the thing behind it.
+ */
+const MM_PIN_FOE = Uint8Array.from(UNIT_KINDS, (k) =>
+  k === "wormhead" || k === "railgun" || k === "goad" || k === "bastion" || k === "boss" ? 1 : 0,
+);
 /**
  * HOW DARK A HILL IS ON THE MINIMAP, as a factor on the rock's true tone.
  *
@@ -2677,7 +2790,9 @@ export class Game {
     this.view = new DrawView(
       w.flat,
       w.terrain,
-      (k, f) => w.bulletFor(k, f),
+      // `alt` must travel: without it every odd-barrel shot is drawn — and
+      // read — as the turret's main ammo (deluge's fire nozzle drew water)
+      (k, f, a) => w.bulletFor(k, f, a),
       w.grids(),
       w.bodies,
       () => this.view.shieldTowers,
@@ -3357,9 +3472,9 @@ export class Game {
    *   minimap keeps the fog's promise), and the map's shield towers
    *   wherever they have once been seen, a building being a thing that
    *   stays put;
-   *   the CROSSER'S HEAD an amber diamond over all of it, on the map
-   *   that carries one: the mission's objective rather than a body, and
-   *   the only mark here that is not a square (MM_CROSS_PX);
+   *   the OBJECTIVES over all of it as amber PINS, a scowl for theirs
+   *   and a shield for ours, breathing so the eye finds them: the only
+   *   marks here that are neither a square nor still (MM_PIN_FOE);
    *   the VIEWPORT as a white frame, which a press or a drag on the map
    *   moves (onMmDown).
    *
@@ -3481,24 +3596,44 @@ export class Game {
       boxIn(tpx, gx - off, gy - off, s, col);
     };
     /**
-     * A DIAMOND, |dx| + |dy| <= r, centred on a cell — the one mark on
-     * this canvas that is not a square, which is the whole of why it is
-     * here: at a handful of pixels a side, shape is the only channel left
-     * once red and white are spoken for, and a rotated square is the
-     * shape that survives four of them. Clipped and filled a row at a
-     * time like `box`, for the same reason.
+     * AN OBJECTIVE'S MARK: a glyph (MmIcon) blown up to `2r + 1` cells and
+     * laid down over the ground, with its own dilation under it as an edge.
+     * Nearest-sampled and clipped a cell at a time — the marks layer is a
+     * cell a pixel, so there is nothing to interpolate and nowhere to write
+     * outside the map.
+     *
+     * THE DILATION IS IN THE GLYPH'S OWN PIXELS AND NOT IN CELLS, which is
+     * what keeps the edge a fixed share of the mark at every zoom the
+     * corner is drawn at: a one-cell outline under a mark this size is a
+     * sub-pixel hairline by the time the canvas has been scaled down to the
+     * width the HUD gives it. One source px is one nineteenth of the icon,
+     * whatever a cell happens to be worth today — and it is why the glyphs
+     * keep a blank border, which is the room this edge is drawn in.
      */
-    const diamond = (gx: number, gy: number, r: number, col: number): void => {
-      for (let dy = -r; dy <= r; dy++) {
-        const y = gy + dy;
-        if (y < 0 || y >= rows) continue;
-        const half = r - (dy < 0 ? -dy : dy);
-        const x0 = gx - half < 0 ? 0 : gx - half;
-        const x1 = gx + half + 1 > cols ? cols : gx + half + 1;
-        if (x1 > x0) mpx.fill(col, y * cols + x0, y * cols + x1);
+    const icon = (gx: number, gy: number, r: number, g: MmIcon, fill: number, edge: number): void => {
+      const src = g.length, d = r * 2 + 1;
+      const on = (sx: number, sy: number): boolean =>
+        sx >= 0 && sy >= 0 && sx < src && sy < src && g[sy][sx] === "#";
+      for (let y = 0; y < d; y++) {
+        const py = gy - r + y;
+        if (py < 0 || py >= rows) continue;
+        const row = py * cols, sy = ((y * src) / d) | 0;
+        for (let x = 0; x < d; x++) {
+          const px = gx - r + x;
+          if (px < 0 || px >= cols) continue;
+          const sx = ((x * src) / d) | 0;
+          if (on(sx, sy)) mpx[row + px] = fill;
+          else if (
+            on(sx - 1, sy) || on(sx + 1, sy) || on(sx, sy - 1) || on(sx, sy + 1) ||
+            on(sx - 1, sy - 1) || on(sx + 1, sy - 1) || on(sx - 1, sy + 1) || on(sx + 1, sy + 1)
+          ) mpx[row + px] = edge;
+        }
       }
     };
-    /** the same diamond as an OUTLINE — `t` px of edge and nothing inside */
+    /** the arrival ping's ring: a diamond OUTLINE, `t` px of edge and
+     *  nothing inside. The ring stayed a diamond when the icons stopped
+     *  being one — what it has to do is MOVE (MM_PING_SECONDS), and a ring
+     *  closing on a glyph points at it whatever shape either of them is */
     const diamondRing = (gx: number, gy: number, r: number, t: number, col: number): void => {
       for (let dy = -r; dy <= r; dy++) {
         const y = gy + dy;
@@ -3557,20 +3692,69 @@ export class Game {
       tlc.putImageData(timg, 0, 0);
     }
     mpx.fill(0);
-    // ...AND THE NOSE OF EVERY TRAIN ON THE BOARD, last of all and over
-    // the line itself (MM_CROSS_PX). It is drawn from the kind rather
-    // than from a mission flag, so a map with no crossers on it pays one
-    // typed-array read per body for a loop that marks nothing — and the
-    // head of a train that has lost its head is simply not there, which
-    // is the truth about that train. The edge goes down first and the
-    // fill one pixel inside it, so the mark carries its own outline
-    // MM_CROSS_PX is the mark's WIDTH and the diamond takes a radius, so
-    // the half is not a fudge — a diamond of r spans 2r + 1 cells
-    const crossR = Math.max(2, Math.round(MM_CROSS_PX / perCell / 2));
+    // MM_CROSS_PX is a pin's WIDTH and `icon` takes a radius, so the half
+    // is not a fudge — a glyph of r spans 2r + 1 cells. `pinR` is that
+    // radius after the breath (MM_PULSE_AMP); the PING still sizes itself
+    // off the steady one, or the alert would beat against the breath
+    const crossR = Math.max(4, Math.round(MM_CROSS_PX / perCell / 2));
     const now = view.time;
+    const pinR = Math.max(
+      4,
+      Math.round(crossR * (1 + MM_PULSE_AMP * Math.sin((now / MM_PULSE_SECONDS) * Math.PI * 2))),
+    );
     this.mmPingSeen.clear();
+    /**
+     * ONE OBJECTIVE PINNED: its arrival alert if this is the first the
+     * corner has seen of it, and then the mark itself.
+     *
+     * `key` is what the ping ledger remembers it by — a unit's id, or a
+     * key of its own for the things that are not units. A pin that
+     * changed key would ping again every time it did.
+     */
+    const pin = (gx: number, gy: number, key: number, glyph: MmIcon, col: number): void => {
+      this.mmPingSeen.add(key);
+      let since = this.mmPing.get(key);
+      if (since === undefined) {
+        since = now;
+        this.mmPing.set(key, now);
+      }
+      const age = now - since;
+      if (age >= 0 && age < MM_PING_SECONDS) {
+        // three rings, each closing from MM_PING_SCALE onto the pin. The
+        // square on the remaining fraction is what makes a ring spend most
+        // of its life NEAR the pin and cross the outside fast, which is
+        // the shape SC2's has and the reason it reads as an arrival rather
+        // than as a throb
+        const beat = MM_PING_SECONDS / MM_PING_PULSES;
+        const left = 1 - ((age % beat) / beat);
+        const ringR = Math.round(crossR * (1 + (MM_PING_SCALE - 1) * left * left));
+        // THE RING IS PULLED BACK ONTO THE CANVAS, the pin is not.
+        //
+        // A Borer enters at the west rim, which is where the alert is
+        // worth the most and where a ring twice the pin is half cut off by
+        // the edge it is standing on — the first and biggest pulse, the
+        // one that has to catch the eye, was the one losing the most of
+        // itself. So the ring is clamped inside the map by its own radius
+        // and the PIN stays exactly where the body is: the alert is whole,
+        // and because the clamp relaxes as the ring closes, the ring
+        // slides onto the pin as it shrinks and points at it on the way.
+        // It is what SC2 does with an alert that fires off the edge of its
+        // minimap, for the same reason.
+        const rx = ringR + 1 > cols - 1 - ringR ? gx : clamp(gx, ringR + 1, cols - 2 - ringR);
+        const ry = ringR + 1 > rows - 1 - ringR ? gy : clamp(gy, ringR + 1, rows - 2 - ringR);
+        diamondRing(rx, ry, ringR + 1, 2, MM_CROSS_EDGE);
+        diamondRing(rx, ry, ringR, 2, col);
+      }
+      icon(gx, gy, pinR, glyph, col, MM_CROSS_EDGE);
+    };
+    // EVERY HOSTILE OBJECTIVE ON THE BOARD, last of all and over the line
+    // itself. It is driven off the KIND (MM_PIN_FOE) rather than off a
+    // mission flag, so a map with no objectives on it pays one typed-array
+    // read per body for a loop that marks nothing — and a train that has
+    // lost its head is simply not pinned, which is the truth about that
+    // train.
     for (let i = 0; i < n; i++) {
-      if (ukind[i] !== WORM_HEAD_ID) continue;
+      if (!MM_PIN_FOE[ukind[i]]) continue;
       const gx = (upx[i] / CELL) | 0, gy = (upy[i] / CELL) | 0;
       // A TRAIN SPAWNS OFF THE WEST RIM and crawls in (missions.ts — the
       // run-up is a hundred cells of road outside the map), so the head
@@ -3579,78 +3763,22 @@ export class Game {
       // pulsing half off the canvas is a ring nobody reads, and the alert
       // is worth spending at the moment the thing becomes real.
       if (gx < 0 || gy < 0 || gx >= cols || gy >= rows) continue;
-      const id = uid[i];
-      this.mmPingSeen.add(id);
-      let since = this.mmPing.get(id);
-      if (since === undefined) {
-        since = now;
-        this.mmPing.set(id, now);
-      }
-      const age = now - since;
-      if (age >= 0 && age < MM_PING_SECONDS) {
-        // three rings, each closing from MM_PING_SCALE onto the icon. The
-        // square on the remaining fraction is what makes a ring spend most
-        // of its life NEAR the icon and cross the outside fast, which is
-        // the shape SC2's has and the reason it reads as an arrival rather
-        // than as a throb
-        const beat = MM_PING_SECONDS / MM_PING_PULSES;
-        const phase = (age % beat) / beat;
-        const left = 1 - phase;
-        const ringR = Math.round(crossR * (1 + (MM_PING_SCALE - 1) * left * left));
-        // THE RING IS PULLED BACK ONTO THE CANVAS, the icon is not.
-        //
-        // A Borer enters at the west rim, which is where the alert is
-        // worth the most and where a ring three and a half times the icon
-        // is half cut off by the edge it is standing on — the first and
-        // biggest pulse, the one that has to catch the eye, was the one
-        // losing the most of itself. So the ring is clamped inside the
-        // map by its own radius and the ICON stays exactly where the head
-        // is: the alert is whole, and because the clamp relaxes as the
-        // ring closes, the ring slides onto the icon as it shrinks and
-        // points at it on the way. It is what SC2 does with an alert that
-        // fires off the edge of its minimap, for the same reason.
-        const rx = ringR + 1 > cols - 1 - ringR ? gx : clamp(gx, ringR + 1, cols - 2 - ringR);
-        const ry = ringR + 1 > rows - 1 - ringR ? gy : clamp(gy, ringR + 1, rows - 2 - ringR);
-        diamondRing(rx, ry, ringR + 1, 2, MM_CROSS_EDGE);
-        diamondRing(rx, ry, ringR, 2, MM_CROSS);
-      }
-      diamond(gx, gy, crossR, MM_CROSS_EDGE);
-      diamond(gx, gy, crossR - 1, MM_CROSS);
+      pin(gx, gy, uid[i], MM_ICON_FOE, MM_CROSS);
     }
-    // ...AND THE HAULER, on the same mark and the same alert (simview.ts
-    // ConvoyView). It is the other road mission's body and the player's
-    // own, so it is drawn in the player's amber rather than the swarm's —
-    // and it is drawn BIGGER, because on Thornway it is the single thing
-    // the whole map is about and there is only ever one of it.
+    // ...AND THE HAULER, the one ALLIED objective there is (simview.ts
+    // ConvoyView). Same pin, the other glyph and the player's amber: it is
+    // the one thing on the corner map that is the player's to lose rather
+    // than theirs to take away.
     //
-    // ITS PING FIRES ONCE, at the departure, and the icon is what the
+    // ITS PING FIRES ONCE, at the departure, and the pin is what the
     // player reads for the fifteen minutes after. A cart that pinged at
     // every halt would be an alert that means "this is where it always
     // stops", which is the definition of furniture.
     if (view.convoy.live) {
       const cv = view.convoy;
       const gx = (cv.x / CELL) | 0, gy = (cv.y / CELL) | 0;
-      if (gx >= 0 && gy >= 0 && gx < cols && gy < rows) {
-        const cr = crossR + 1;
-        this.mmPingSeen.add(MM_CONVOY_PING_ID);
-        let since = this.mmPing.get(MM_CONVOY_PING_ID);
-        if (since === undefined) {
-          since = now;
-          this.mmPing.set(MM_CONVOY_PING_ID, now);
-        }
-        const age = now - since;
-        if (age >= 0 && age < MM_PING_SECONDS) {
-          const beat = MM_PING_SECONDS / MM_PING_PULSES;
-          const left = 1 - ((age % beat) / beat);
-          const ringR = Math.round(cr * (1 + (MM_PING_SCALE - 1) * left * left));
-          const rx = ringR + 1 > cols - 1 - ringR ? gx : clamp(gx, ringR + 1, cols - 2 - ringR);
-          const ry = ringR + 1 > rows - 1 - ringR ? gy : clamp(gy, ringR + 1, rows - 2 - ringR);
-          diamondRing(rx, ry, ringR + 1, 2, MM_CROSS_EDGE);
-          diamondRing(rx, ry, ringR, 2, MM_CONVOY);
-        }
-        diamond(gx, gy, cr, MM_CROSS_EDGE);
-        diamond(gx, gy, cr - 1, MM_CONVOY);
-      }
+      if (gx >= 0 && gy >= 0 && gx < cols && gy < rows)
+        pin(gx, gy, MM_CONVOY_PING_ID, MM_ICON_ALLY, MM_CONVOY);
     }
     // the trains that are no longer on the field let go of their clocks,
     // so a run does not carry an entry per Borer it has ever launched

@@ -6,7 +6,7 @@ import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // import must never become a value one or the two files form a cycle
 import type { MutationId } from "./mutation";
 
-export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail", "railgun", "bulwark", "lance"] as const;
+export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail", "railgun", "bulwark", "lance", "goad", "bastion"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -69,6 +69,9 @@ export const UNIT_ID: Record<UnitKind, number> = {
   railgun: 49,
   bulwark: 50,
   lance: 51,
+  // ...and the two buff towers an intercept plants (PYLON_NAME)
+  goad: 52,
+  bastion: 53,
 };
 
 /**
@@ -162,6 +165,44 @@ export const WORM_NAME = "Borer";
  */
 export const RAZE_NAME = "Railgun";
 export const WARDEN_NAME = "Wardens";
+/** the two buff towers a mission plants over its road (docs/mission-marks.md) */
+export const PYLON_NAME = "Pylons";
+/**
+ * WHAT ONE PYLON IS WORTH, and both are deliberately small enough that the
+ * interesting number is HOW MANY an author placed rather than how big one
+ * is (Sim.goadMul, Sim.bastionCut — they stack by multiplying).
+ *
+ * A Goad at 1.25 takes a Borer's four-and-a-quarter minute crossing down
+ * to three and a half, which is most of a minute of firing taken off a
+ * board that paid for a position; a Bastion at 0.25 makes the same board
+ * need a third again the guns on it. Either alone is a tax. Three of them
+ * over one road is the mission saying that road is now the hard one.
+ *
+ * MARKED ON THE MAP, NOT IN A WAVE: no script may send one (UNIT_TREES,
+ * objective), so these two numbers are only ever spent by an author
+ * placing towers in the editor (docs/mission-marks.md).
+ */
+export const GOAD_SPEED_MUL = 1.5;
+export const BASTION_CUT = 0.5;
+
+/**
+ * WHAT A TOWER RISING ON TRAIN WAVE `w` IS MADE OF — its health times this.
+ *
+ * EVERY TOWER THAT RISES ON ONE WAVE IS THE SAME TOWER, and the next wave's
+ * are tougher. That is the whole rule: a board that has answered the pair
+ * on wave 4 is not told it has answered wave 6's, and a player reads the
+ * difficulty off the wave number rather than off a health bar.
+ *
+ * IT IS GENTLER THAN THE TRAIN'S (WORM_RAMP_GROWTH, 1.35 compounding on
+ * itself). A Borer is ONE body the whole board shoots for four minutes; a
+ * tower is a thing that has to be knocked down again between trains, and a
+ * curve that steep would go from "kill it each time" to "never kill it
+ * again" inside two waves. 1.28 a wave puts wave 6 at a shade over three
+ * times wave 1, which is a board keeping up, not a board locked out.
+ */
+export const PYLON_RAMP_GROWTH = 1.28;
+export const pylonRamp = (wave: number): number =>
+  PYLON_RAMP_GROWTH ** Math.max(0, Math.floor(wave) - 1);
 
 /**
  * THE NAVAL TANKS RUN SLOWER THAN MINDUSTRY'S HULLS. A skate1's stock 1.1
@@ -1045,15 +1086,18 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     // on its feet and scuttles instead of striding.
     //
     // THE ANIMAL TRIAL (animalFlag.ts): as the Dartback T2 the legs are a
-    // frog's, and a frog's leg is SHORT AND THICK. The whole tree is cut
-    // to plant its feet about 1.75 body radii out (`baseOffset` +
-    // `length` * `lengthScl` over `radius`) where it used to reach 2.85,
-    // and `lengthScl` 0.8 folds the knee well clear of the flank instead
-    // of running the limb out straight. Long thin limbs on long mounts
-    // are what read as a spider however few of them there are; the
-    // stroke that goes with these is in FROG_TIERS (game/familyArt.ts)
+    // frog's — SHORT, THICK AND FOLDED UNDER. The whole tree plants its
+    // feet about 1.2 body radii out (`baseOffset` + `length` *
+    // `lengthScl` over `radius`) where it used to reach 2.85, on mounts
+    // pulled in near the centre, so the thigh is buried under the flank
+    // and what clears the outline is a stub of shank and the webbed pad
+    // on the end of it. `extension` runs that shank back over its own
+    // knee, which is what lets the rig drop its caps (game/atlas.ts).
+    // Long thin limbs on long mounts are what read as a spider however
+    // few of them there are; the strokes and the pad are in FROG_TIERS
+    // and frogLegged (game/familyArt.ts)
     legs: ANIMAL_ART
-      ? legs({ count: 4, length: 11 * MU, forwardScl: 0.6, moveSpace: 0.7, baseOffset: 2 * MU, lengthScl: 0.85, elevation: 0.15 })
+      ? legs({ count: 4, length: 8 * MU, forwardScl: 0.6, moveSpace: 1, baseOffset: 1 * MU, extension: 2 * MU, lengthScl: 0.85, elevation: 0.1 })
       : legs({ count: 4, length: 5 * MU, forwardScl: 0.6, moveSpace: 1.1, elevation: 0.12 }),
   },
   // dartback3: the line's T3 — 1000 hp, armor 9, a 1.875x1.875-block hitbox,
@@ -1075,9 +1119,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     // included, and it is the only speed buff in the game.
     hasteField: { mult: 1.35, reload: 2, range: 10 * CELL },
     // THE ANIMAL TRIAL (animalFlag.ts): the Dartback T3 — the T2's
-    // crouch on the bigger body, at the same 1.75 radii
+    // crouch on the bigger body, at the same 1.2 radii
     legs: ANIMAL_ART
-      ? legs({ count: 4, length: 12.5 * MU, forwardScl: 0.65, moveSpace: 0.7, baseOffset: 2.5 * MU, lengthScl: 0.85, elevation: 0.18 })
+      ? legs({ count: 4, length: 9 * MU, forwardScl: 0.65, moveSpace: 1, baseOffset: 1 * MU, extension: 2.2 * MU, lengthScl: 0.85, elevation: 0.12 })
       : legs({
           count: 6,
           length: 6.5 * MU,
@@ -1118,14 +1162,15 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     legs: ANIMAL_ART
       ? legs({
           count: 4,
-          length: 19 * MU,
+          length: 14 * MU,
           forwardScl: 0.7,
           pairOffset: 3 * MU,
-          moveSpace: 0.7,
-          baseOffset: 4 * MU,
+          moveSpace: 0.95,
+          baseOffset: 1.5 * MU,
+          extension: 3.8 * MU,
           lengthScl: 0.85,
           speed: 0.2,
-          elevation: 0.25,
+          elevation: 0.18,
           ripple: 2,
         })
       : legs({
@@ -1172,14 +1217,15 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     legs: ANIMAL_ART
       ? legs({
           count: 4,
-          length: 21.5 * MU,
+          length: 16 * MU,
           forwardScl: 0.7,
           pairOffset: 3 * MU,
-          moveSpace: 0.65,
-          baseOffset: 4.5 * MU,
+          moveSpace: 0.9,
+          baseOffset: 1.5 * MU,
+          extension: 4.2 * MU,
           lengthScl: 0.85,
           speed: 0.18,
-          elevation: 0.3,
+          elevation: 0.2,
           ripple: 3,
         })
       : legs({
@@ -1581,11 +1627,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // per cent.
   //
   // HEALTH IS 720,000 AT NEMESIS, five times what the Erekir hull carried,
-  // and it is a SHARE OF THE RUNG (ladder.ts bossHpScale): a boss cannot
-  // pay the size ramp in bodies the way every other wave does — one boss
-  // is one boss at every difficulty — so it pays it in hit points, a
-  // quarter of them at Incursion and all of them from Nemesis up, which is
-  // exactly the count share the rest of the script is scaled by.
+  // and it is a SHARE OF THE TIER (ladder.ts tierObjectiveHpScale), like
+  // every objective body: one boss is one boss at every difficulty, so it
+  // pays the size ramp in hit points instead of in bodies.
   //
   // Speed stays at 2.0 tiles/s, the slowest thing in the game, and the
   // turn is slower than anything else that flies: a boss is a deadline the
@@ -2151,6 +2195,52 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     starburst: { chance: 0.3, cooldown: 2.4, merge: 10 },
   },
 
+  // ── THE PYLONS, the two buff towers (game/pylonArt.ts) ────────────────
+  //
+  // MISSION ASSETS AND NOTHING ELSE. No wave may send one (UNIT_TREES,
+  // objective) — a mission puts them down, on ground an author placed in
+  // the map editor, on the train wave that author named (missionMarks.ts).
+  //
+  // WHAT THEY DO IS NOT HERE, and that is the point: a Pylon has no aura
+  // field, no weapon and no ability in this block. It buffs the TRAIN,
+  // which is not a body on the field but a crosser (Sim.crossers), so the
+  // dial is read off the standing census where the train's own numbers are
+  // spent — `Sim.goadMul` and `Sim.bastionCut`. A tower that is down stops
+  // counting the same tick, and there is nothing to expire.
+  //
+  // THEY ARE BOLTED DOWN (Sim.plantUnit) and they do not shoot, so the
+  // whole of what the board has to do is REACH one. Both stand on their
+  // own ground out by a road, which is the same purchase the mission
+  // already asks for and the reason they are worth placing at all.
+  //
+  // 128 NATIVE PX IS FOUR TILES square, at the sheet's 0.625 world px per
+  // native px — so UR x 4 is the drawing's own extent, exactly as the
+  // siege's three are (levels.ts railgun, game/pylonArt.ts).
+  //
+  // THE BASTION IS THE TOUGHER OF THE TWO. It is the one whose loss the
+  // player feels immediately — a train's damage taken goes back up the
+  // moment it falls — so it is the one worth defending, and a mission
+  // that wants it answered early should place it where a board can get at
+  // it rather than make it soft.
+  goad: {
+    hp: 9000,
+    speed: 0,
+    armor: 14,
+    radius: UR * 4,
+    tier: 5,
+    rotateSpeed: 30,
+    unslowable: true,
+  },
+  bastion: {
+    hp: 14000,
+    speed: 0,
+    armor: 20,
+    radius: UR * 4,
+    tier: 5,
+    rotateSpeed: 30,
+    unslowable: true,
+  },
+
   // ── THE KETTLES, the vulture (game/kettleArt.ts) ──────────────────────
   //
   // THE SECOND THING IN THE SKY, AND THE FIRST THAT ARRIVES. The Skyfall
@@ -2168,14 +2258,17 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // one of them is gone. The whole of what the board has to do is stop it
   // ON THE WAY, which is the one thing the sky has never asked for here.
   //
-  // AND IT HAS NOTHING ELSE. No aura, no field, no charge, no veterancy,
-  // no blink, no cloak, no death burst — deliberately, and this stat block
-  // is as short as it is for that reason. The family was picked off a
-  // concept sheet (docs/air-concepts.md) for a gimmick it does NOT yet
-  // carry: the carrion mechanic, where every body that dies under a kettle
-  // feeds it. The drawing has the crop for it and the sim has nothing, so
-  // what is on the board today is a plain flyer with a gun, which is a
-  // thing this roster did not have and is worth fielding on its own.
+  // WHAT IT DOES ON THE WAY IS THE WET BOMB (weapons.ts, the kettle rows):
+  // a slow, wide, cheap slosh lobbed at the guns under it that leaves them
+  // reloading at 80% for a few seconds. The soak is the family's only
+  // ability — no aura, no field, no charge, no veterancy, no blink, no
+  // cloak, no death burst — and it is deliberately the weakest one in the
+  // game, because the landing takes the deepest rate in force and refreshes
+  // the clock, so a flock can hold the tax but never deepen it.
+  //
+  // THE GIMMICK IT WAS PICKED FOR IS STILL NOT HERE: the carrion mechanic
+  // (docs/air-concepts.md), where every body that dies under a kettle feeds
+  // it. The drawing has the crop for it and the sim has nothing.
   //
   // THE PACE IS A SOARER'S: 5.5 tiles/s down to 3.5, a hair under the
   // Stoop's 8-to-4 at the light end and level with it at the heavy. The
@@ -2184,13 +2277,13 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // trades its speed for is the health to still be flying at the end of
   // the crossing.
   //
-  // THE HEALTH IS THE MIDDLE OF THE ROSTER, above the bombers at every
-  // rung and under the walls. A stoop5 is 14,000 on the softest plate in
-  // the game because it only has to reach one building; a kettle5 has to
-  // reach the core and then STAY there, so it is 15,000 behind armour 16
-  // — still nowhere near the tusker5's 25,000 and 104, because a body
-  // that ignores the maze must never also be the body that ignores the
-  // guns.
+  // THE HEALTH IS THE UPPER MIDDLE OF THE ROSTER, over the bombers at
+  // every tier and under the walls. A stoop5 is 14,000 on the softest
+  // plate in the game because it only has to reach one building; a kettle5
+  // has to cross the whole board lobbing bombs and then STAY at the core,
+  // so it is 19,500 behind armour 22 — still well short of the tusker5's
+  // 25,000 and 104, because a body that ignores the maze must never also
+  // be the body that ignores the guns.
   //
   // THESE ARE A FIRST CUT. The shape is argued above; the numbers want a
   // pass on the balance page and a playtest before anyone calls them
@@ -2206,9 +2299,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // apex is wide — under the stoop5's 7.25 and over everything else — and
   // that is the one thing a player is meant to see coming.
   kettle1: {
-    hp: 220,
+    hp: 300,
     speed: 5.5 * CELL,
-    armor: 2,
+    armor: 3,
     radius: UR * 1.25,
     tier: 1,
     drag: 0.03,
@@ -2216,9 +2309,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     flying: true,
   },
   kettle2: {
-    hp: 760,
+    hp: 1000,
     speed: 5 * CELL,
-    armor: 4,
+    armor: 6,
     radius: UR * 1.75,
     tier: 2,
     drag: 0.03,
@@ -2226,9 +2319,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     flying: true,
   },
   kettle3: {
-    hp: 1900,
+    hp: 2500,
     speed: 4.5 * CELL,
-    armor: 7,
+    armor: 10,
     radius: UR * 2.75,
     tier: 3,
     drag: 0.035,
@@ -2236,9 +2329,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     flying: true,
   },
   kettle4: {
-    hp: 7200,
+    hp: 9400,
     speed: 4 * CELL,
-    armor: 13,
+    armor: 18,
     radius: UR * 5.25,
     tier: 4,
     drag: 0.04,
@@ -2246,9 +2339,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     flying: true,
   },
   kettle5: {
-    hp: 15000,
+    hp: 19500,
     speed: 3.5 * CELL,
-    armor: 16,
+    armor: 22,
     radius: UR * 6.75,
     tier: 5,
     drag: 0.04,
@@ -2275,30 +2368,27 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // a gun. The head leads and is the toughest; the cars are the body; the
   // tail is the piece that says the train has ended.
   //
-  // THE POOL IS THE DIAL, and it is 126,000 for a whole worm at the first
-  // launch: twenty-one car-equivalents (the head is worth two, the tail
-  // one) at 6,000 apiece. It is a SHARED pool — every piece reports it and
-  // a hit on any car comes off it (Sim.drainCrosser) — so these three
-  // numbers are a way of writing one number down with the head's share
+  // THE POOL IS THE DIAL, and it is 252,000 for a whole worm at the first
+  // launch at Nemesis: twenty-one car-equivalents (the head is worth two,
+  // the tail one) at 12,000 apiece. It is a SHARED pool — every piece
+  // reports it and a hit on any car comes off it (Sim.drainCrosser) — so
+  // these three numbers are one number written down with the head's share
   // of it visible, and nothing reads them per piece any more.
   //
-  // IT WAS 45,000 AND IT WAS FAR TOO LITTLE. Two things had quietly
-  // undercut the measurement it was set from: the roads were refit
-  // straighter and shorter, and the train stopped taking the wet slow, so
-  // the seconds a board gets a Borer under fire fell twice over while the
-  // pool stayed where it was. A first train that a starting board rolls
-  // over is not an opening question, it is a cutscene.
+  // A Borer is an OBJECTIVE, so what actually spawns is this times the
+  // tier's count share (ladder.ts tierObjectiveHpScale) and then times the
+  // launch ramp (wormRamp): a quarter of it at Incursion, all of it from
+  // Nemesis up.
   //
-  // WHAT IT COSTS NOW, scaled from the one measurement there is rather
-  // than re-guessed: eight tier-three heads beside the south line were
-  // worth about 3,200 damage a second against a Borer, so the opening
-  // train is forty seconds of that battery and the last of the pattern is
-  // a shade over two minutes — against a crossing of four and three
-  // quarter minutes, most of which is spent out of any one battery's
-  // reach. The mission's price is now several batteries and the beacons
-  // to reach them, which is the decision the map is for.
+  // IT WAS 45,000, THEN 126,000. The first number was measured before the
+  // roads were refit straighter and before the train stopped taking the
+  // wet slow, so the seconds a board gets a Borer under fire had fallen
+  // twice over while the pool stayed where it was; the second was the
+  // rescale, and the doubling to this is the same complaint answered
+  // again. A first train a starting board rolls over is not an opening
+  // question, it is a cutscene.
   wormhead: {
-    hp: 12000,
+    hp: 24000,
     speed: WORM_SPEED,
     armor: 12,
     // HALF AGAIN THE NATIVE SCALE, like the boss and for the same reason:
@@ -2316,13 +2406,15 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     // tangent, written straight onto the body (Sim.updateCrosser), so
     // nothing here is ever asked to catch up with a corner
     rotateSpeed: 30,
-    // ...and NOTHING SLOWS IT. See UnitStats.unslowable: a douser on the
-    // line can still soak a Borer, and the soak is still worth what
-    // electric ammunition pays for it — it simply buys no seconds
+    // ...and NOTHING MOVES ITS CLOCK. See UnitStats.unslowable: a douser
+    // on the line can still soak a Borer, and the soak is still worth
+    // what electric ammunition pays for it — it simply buys no seconds,
+    // and a dartback3's pace stamp buys none in the other direction
+    // (Sim.updateCrosser reads no multiplier at all)
     unslowable: true,
   },
   wormcar: {
-    hp: 6000,
+    hp: 12000,
     speed: WORM_SPEED,
     armor: 12,
     radius: UR * 3.75,
@@ -2332,7 +2424,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     unslowable: true,
   },
   wormtail: {
-    hp: 6000,
+    hp: 12000,
     speed: WORM_SPEED,
     armor: 12,
     radius: UR * 3.75,
@@ -2565,8 +2657,8 @@ export const CONVOY_MEND = 2000;
  * The first two launches are within a whisker of where they already were
  * — that end was not broken — and the fifth is FIVE times the first
  * instead of three and a third, on the board with the most scrap behind
- * it. From 6,000 a car at the first launch that is just under 30,000 at
- * the fifth, and the pattern's seven worms are 3.2M of health.
+ * it. At Nemesis that is 252,000 of train at the first launch and 1.26M
+ * at the fifth; the whole pattern of seven is 6.4M.
  *
  * TWO NUMBERS TO MOVE, and they do different jobs. GROWTH is the opening
  * — raise it and the early trains get harder. ACCEL is the back half
@@ -2642,6 +2734,10 @@ export const UNIT_TREES = [
   // tiers at all, so the two slots are two jobs rather than two rungs
   { key: "railgun", name: RAZE_NAME, kinds: ["railgun"], objective: true },
   { key: "warden", name: WARDEN_NAME, kinds: ["bulwark", "lance"], objective: true },
+  // THE PYLONS — the two buff towers an intercept plants over its road
+  // (missionMarks.ts, Sim.raiseMarkTowers). One row and not an upgrade
+  // path: the two are two jobs, like the Wardens, and neither is a rung
+  { key: "pylon", name: PYLON_NAME, kinds: ["goad", "bastion"], objective: true },
 ] as const satisfies readonly {
   key: string;
   name: string;
@@ -4076,15 +4172,15 @@ export interface LevelSpec {
   /** which tier of the ladder this spec was expanded for; unset = baseline */
   tier?: number;
   /**
-   * THE BOSS'S SHARE OF THE SIZE RAMP, and the boss's alone (ladder.ts
-   * tierBossHpScale): every unit's count is scaled to the rung, but a boss
-   * wave sends one body at every difficulty, so the boss pays that share
-   * in HEALTH instead — a quarter of it at Incursion, all of it from
-   * Nemesis up. Nothing else on the roster reads this.
+   * THE OBJECTIVE BODIES' SHARE OF THE SIZE RAMP (ladder.ts
+   * tierObjectiveHpScale): a wave's count is scaled to the tier, but a
+   * mission puts down ONE body whatever the difficulty, so every
+   * OBJECTIVE_KINDS body pays that share in HEALTH instead. Nothing else
+   * on the roster reads this.
    *
    * Unset (the authored baseline) means 1. Set by specForTier().
    */
-  bossHpScale?: number;
+  objectiveHpScale?: number;
   /**
    * THE FAMILIES THIS RUN SENDS — the die roll (rollFamilies) the deploy
    * made, in the order the deal walks them: the script's first wave plays
@@ -4550,7 +4646,8 @@ export const WORLDS: LevelSpec[] = [
     // each time: a third again at the first gap, and a steeper step at
     // every gap after it, so the fifth Borer carries FIVE times the first
     // one's health and the spare nearly nine — on a board that has had
-    // thirteen more minutes of scrap to spend. Compounding is what it
+    // thirteen more minutes of scrap to spend. The whole pattern is also
+    // a share of the tier, like every objective body. Compounding is what it
     // takes to stay ahead of a board that is itself compounding, and
     // compounding faster is what it takes at the end, where the board's
     // own curve is steepest: a battery that answered the first train is

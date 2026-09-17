@@ -1,14 +1,15 @@
 # A second air family: three candidates, drawn
 
-> **The Kettle shipped — the art, and only the art.** It is a family now:
-> `kettle1`..`kettle5` in `game/levels.ts`, drawn in `game/kettleArt.ts`,
-> packed into cells of its own in `game/atlas.ts`. It went on WITHOUT the
-> carrion mechanic described below — it has no ability of any kind, just a
-> body, a pair of wing pods and the promise every candidate here was built
-> around: it does not dive, it crosses the board over the guns, and it
-> arrives at the core. The carrion gimmick is still the design this
-> drawing was picked for and is still unbuilt; the crop on its breast is
-> the room left for it. The Skein and the Gyre are still drawings and
+> **The Kettle shipped, WITHOUT the carrion mechanic below.** It is a
+> family now: `kettle1`..`kettle5` in `game/levels.ts`, drawn in
+> `game/kettleArt.ts`, packed into cells of its own in `game/atlas.ts`. It
+> keeps the promise every candidate here was built around — it does not
+> dive, it crosses the board over the guns, and it arrives at the core —
+> and it carries a pair of wing pods for the core plus one ability: a
+> **wet bomb**, a slow wide lob that soaks the guns it lands on (they
+> reload at 80% for a few seconds). The carrion gimmick is still the design
+> this drawing was picked for and is still unbuilt; the crop on its breast
+> is the room left for it. The Skein and the Gyre are still drawings and
 > nothing else.
 
 The Stoop is the only thing in the sky and it is a **bomber**: it picks a

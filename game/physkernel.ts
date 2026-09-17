@@ -72,6 +72,9 @@ export interface PhysIn {
   readonly ufly: Uint8Array;
   readonly unav: Uint8Array;
   readonly uheavy: Uint8Array;
+  /** Sim.ufix: a body whose position is somebody else's promise — it takes
+   *  no share of a pair's separation and hands the whole of it over */
+  readonly ufix: Uint8Array;
   readonly ukind: Uint8Array;
   readonly uid: Int32Array;
   /** the walkers' clearance map and the naval tanks' (FlowField.clearShared) */
@@ -175,7 +178,7 @@ export function runPhysics(P: PhysIn, T: PhysTables, S: PhysScratch, O: PhysOut,
     sqzU[i] = -1;
     sqzD[i] = 0;
   }
-  const { ukind, uheavy } = P;
+  const { ukind, uheavy, ufix } = P;
   for (let i = 0; i < n; i++) {
     const fly = ufly[i];
     // the size split (see HB_HEAVY): a heavy owns EVERY pair it is part
@@ -281,6 +284,23 @@ export function runPhysics(P: PhysIn, T: PhysTables, S: PhysScratch, O: PhysOut,
           dy = (pa * hy + pl * ly) / pn;
         }
         const mj = urad[j] * urad[j];
+        // ...and where one of the pair is FIXED (ufix) the split by mass
+        // is off: the movable one takes the whole overlap and the fixed
+        // one does not budge, so a Borer on its road and a railgun on its
+        // mark plough the crowd aside instead of trading shoves with it
+        const fi = ufix[i], fj = ufix[j];
+        if (fi !== 0 || fj !== 0) {
+          if (fi === 0) {
+            const push = (rs - dst) / PHYS_SCL;
+            pxi += dx * push;
+            pyi += dy * push;
+          } else if (fj === 0) {
+            const push = (rs - dst) / PHYS_SCL;
+            phx[j] -= dx * push;
+            phy[j] -= dy * push;
+          }
+          continue;
+        }
         const push = (rs - dst) / PHYS_SCL / (mi + mj);
         pxi += dx * push * mj;
         pyi += dy * push * mj;

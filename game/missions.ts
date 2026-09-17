@@ -44,8 +44,8 @@
  * and no other amount. `roadProblems` refuses a road that breaks either,
  * so this is an invariant of the file and not a habit of the numbers.
  *
- * THE REASON IS THE RAILS (game/railArt.ts). The line is drawn on the
- * ground now, as tiles, one per cell, and 0/45/90/135 are the only
+ * THE REASON IS THE RAILS (game/railArt.ts). Where a line is drawn on the
+ * ground, it is drawn as tiles, one per cell, and 0/45/90/135 are the only
  * headings a square pixel grid draws exactly: a 45-degree line is one
  * pixel across for one pixel along, so a rail piece is painted once and
  * stamped with a quarter turn, never rotated and never resampled. A road
@@ -54,6 +54,11 @@
  * lines rather than the other way about — which is also why these three
  * came out with FEWER corners than the hand-fitted ones they replace
  * (Coldline's south went from nine to six) instead of more.
+ *
+ * THE LATTICE HOLDS FOR EVERY ROAD, bed or no bed. Coldline's two carry
+ * no rail today (ROAD_SPECS) and the rule still binds them: a corner is
+ * also a kink in seventy tiles of train, and the terrain along them was
+ * cut to the lattice's corridor (railbed.mjs) and stays cut to it.
  *
  * A RUN IS AT LEAST THREE CELLS, checked with the rest. A bend's tile
  * covers the three cells around its corner, so two corners closer than
@@ -97,8 +102,12 @@ export interface RoadSpec {
    * what the bed is made of. It is per ROAD rather than per map because
    * the thing it says — whose line is this — is a fact about the mission,
    * the same fact the overlay says in red or amber (game.ts ROAD_MINE).
+   *
+   * OMITTED IS A ROAD WITH NO BED AT ALL: the line is still walked and
+   * still drawn by the overlay, but nothing is painted on the ground.
+   * Coldline's two are laid that way — see ROAD_SPECS.
    */
-  rail: RailStyleName;
+  rail?: RailStyleName;
   /** the line, in map cells, entry first and exit last */
   cells: readonly (readonly [number, number])[];
 }
@@ -125,6 +134,12 @@ export interface Road {
  * COLDLINE is the intercept map (levels.ts world 11, scripts/maps/
  * coldline.mjs): two roads west to east with the core on its own ground
  * between them, far enough from each that one battery cannot cover both.
+ *
+ * NEITHER OF ITS LINES IS RAILED. They carry no `rail`, so nothing is
+ * painted on the ground along them: the Borers still walk them and the
+ * dashed overlay still shows where, but the plain reads as plain. The
+ * corridor railbed.mjs cut through the rock is still there — the ground
+ * the line needs is not the drawing on it.
  *
  * THE TERRAIN IS NOW FIT TO THEM, which is the reversal the lattice
  * bought. These lines used to be traced by hand through whatever gap the
@@ -160,7 +175,6 @@ export const ROAD_SPECS: Record<string, readonly RoadSpec[]> = {
   coldline: [
     {
       name: "the south line",
-      rail: "borer",
       // 13,780 px rim to rim, in six corners. The first leg is the run-up
       // — 114 cells due east, comfortably past the 74 of train — and the
       // last runs off the east rim on the same heading it arrives at
@@ -171,7 +185,6 @@ export const ROAD_SPECS: Record<string, readonly RoadSpec[]> = {
     },
     {
       name: "the north line",
-      rail: "borer",
       // 12,270 px rim to rim, and still the straighter of the two: four
       // long east-west runs with a single diagonal step between each. The
       // step at 314 is the one corner here that the TERRAIN put in rather
@@ -418,6 +431,7 @@ export function railsFor(mapId: string | undefined): readonly RailTile[] {
   const out: RailTile[] = [];
   const seen = new Set<number>();
   for (const spec of specs) {
+    if (!spec.rail) continue;
     const style = railStyleIndex(spec.rail);
     const cells = walkCells(spec);
     for (let i = 0; i < cells.length; i++) {

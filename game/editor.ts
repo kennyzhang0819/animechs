@@ -24,6 +24,7 @@ import {
 } from "./maps";
 import { ALL_LAYERS, Renderer, type TerrainLayers } from "./renderer";
 import { loadInvertZoom } from "./progress";
+import { MARK_KINDS, MAX_MARKS, markKind, markOpts, type MapMark, type MarkKind } from "./missionMarks";
 import { canHoldSpawn, isWaterFloor } from "./terrain";
 import { WALL_DEEP, WALL_PINE, type MapBeacon, type Prop, type Terrain } from "./terrain";
 
@@ -55,6 +56,7 @@ interface Snapshot {
   pines: Prop[];
   decor: Prop[];
   beacons: MapBeacon[];
+  marks: MapMark[];
   base: { x: number; y: number; size: number };
 }
 
@@ -270,6 +272,7 @@ export class MapEditor {
     this.terrain.pines = s.pines;
     this.terrain.decor = s.decor;
     this.terrain.beacons = s.beacons;
+    this.terrain.marks = s.marks;
     this.terrain.base = s.base;
     this.dirty = true;
     this.renderer.rebuildTerrain(this, this.layers);
@@ -295,6 +298,7 @@ export class MapEditor {
       pines: this.terrain.pines.map((p) => ({ ...p })),
       decor: this.terrain.decor.map((p) => ({ ...p })),
       beacons: this.terrain.beacons.map((r) => ({ ...r })),
+      marks: this.terrain.marks.map((r) => ({ ...r, opts: { ...r.opts } })),
       base: { ...this.terrain.base },
     });
     if (this.undoStack.length > UNDO_CAP) this.undoStack.shift();
@@ -400,6 +404,7 @@ export class MapEditor {
       // of it — erasing two thirds of a three-cell block would leave a
       // beacon standing that the author was plainly rubbing out
       if (L.beacon) this.removeBeaconAt(gx, gy);
+      if (L.mark) this.removeMarkAt(gx, gy);
     }
     this.dirty = true;
   }
@@ -511,6 +516,92 @@ export class MapEditor {
     return true;
   }
 
+  /**
+   * STAMP A MISSION MARK, or take one off — the beacon's toggle, over the
+   * registry (missionMarks.ts).
+   *
+   * IT ASKS LESS OF THE GROUND THAN A BEACON DOES. A beacon has to stand
+   * on rock because that is what it means; a mark is a place a mission
+   * will put something, and which ground that needs is the mission's
+   * business, not the brush's. What is refused is only what would be a
+   * mark nobody could ever see or use: off the board, or on top of one
+   * that is already there.
+   *
+   * A CLICK ON A STANDING MARK SELECTS IT rather than removing it, because
+   * the fields are the point — an author places one and then says which
+   * tower it is and which train wave it rises on. The eraser is how one
+   * comes off.
+   */
+  private toggleMark(gx: number, gy: number): void {
+    if (!this.layers.mark) return;
+    const kind = markKind(this.set.mark ?? "");
+    if (!kind) return;
+    const hit = this.markAt(gx, gy);
+    if (hit >= 0) {
+      this.picked = hit;
+      return;
+    }
+    if (this.terrain.marks.length >= MAX_MARKS) return;
+    const half = (kind.size / 2) | 0;
+    const x0 = clamp(gx - half, 0, COLS - kind.size);
+    const y0 = clamp(gy - half, 0, ROWS - kind.size);
+    // no two marks may overlap: two things in one place is an author who
+    // cannot click the one underneath
+    for (const m of this.terrain.marks) {
+      const k = markKind(m.kind);
+      if (!k) continue;
+      if (x0 < m.x + k.size && x0 + kind.size > m.x && y0 < m.y + k.size && y0 + kind.size > m.y)
+        return;
+    }
+    this.terrain.marks.push({ kind: kind.id, x: x0, y: y0, opts: markOpts(kind, undefined) });
+    this.picked = this.terrain.marks.length - 1;
+    this.dirty = true;
+  }
+
+  /** the mark whose footprint covers this cell, or -1 */
+  private markAt(gx: number, gy: number): number {
+    return this.terrain.marks.findIndex((m) => {
+      const k = markKind(m.kind);
+      return !!k && gx >= m.x && gx < m.x + k.size && gy >= m.y && gy < m.y + k.size;
+    });
+  }
+
+  /** take the mark on this cell off, if there is one — what the eraser
+   *  calls, and the only way one comes off */
+  private removeMarkAt(gx: number, gy: number): boolean {
+    const hit = this.markAt(gx, gy);
+    if (hit < 0) return false;
+    this.terrain.marks.splice(hit, 1);
+    if (this.picked === hit) this.picked = -1;
+    else if (this.picked > hit) this.picked--;
+    this.dirty = true;
+    return true;
+  }
+
+  // ---- what the panel talks to ----
+  /** which mark the author has selected, or -1 */
+  private picked = -1;
+  /** the selected mark and its kind, for the panel to render fields from */
+  selected(): { i: number; mark: MapMark; kind: MarkKind } | null {
+    const m = this.terrain.marks[this.picked];
+    const k = m ? markKind(m.kind) : null;
+    return m && k ? { i: this.picked, mark: m, kind: k } : null;
+  }
+  /** set one field on the selected mark — the panel's only write */
+  setMarkOpt(key: string, value: string | number): void {
+    const sel = this.selected();
+    if (!sel) return;
+    this.snapshot();
+    sel.mark.opts = { ...sel.mark.opts, [key]: value };
+    this.dirty = true;
+    this.redraw();
+  }
+  /** every mark kind this map could use, given the missions its worlds
+   *  play — what the palette filters its Mission group down to */
+  markKindsHere(missions: readonly string[]): readonly MarkKind[] {
+    return MARK_KINDS.filter((k) => k.missions.some((m) => missions.includes(m)));
+  }
+
   private placeBase(gx: number, gy: number): void {
     const T = this.terrain;
     const half = (BASE_SIZE / 2) | 0;
@@ -542,6 +633,10 @@ export class MapEditor {
     }
     if (this.set.kind === "beacon") {
       this.toggleBeacon(gx, gy);
+      return;
+    }
+    if (this.set.kind === "mark") {
+      this.toggleMark(gx, gy);
       return;
     }
     if (this.set.kind === "path") {
@@ -859,6 +954,47 @@ export class MapEditor {
         c.fillRect(r.x * CELL, r.y * CELL, side, side);
         c.strokeRect(r.x * CELL, r.y * CELL, side, side);
       }
+    }
+
+    // THE MISSION MARKS, on the same terms as the beacons: a list of
+    // blocks drawn over the ground rather than tiles in the batch. Each
+    // wears its kind's ink, and its FIELDS are printed on it — an author
+    // has to be able to read "goad, train 2" off the map without clicking
+    // every square, because the whole thing they are authoring is which
+    // tower is where on which wave. The selected one is ringed.
+    if (this.layers.mark && this.terrain.marks.length > 0) {
+      c.lineWidth = 1.5 / s;
+      c.textAlign = "center";
+      c.textBaseline = "middle";
+      for (let i = 0; i < this.terrain.marks.length; i++) {
+        const m = this.terrain.marks[i];
+        const k = markKind(m.kind);
+        if (!k) continue;
+        const side = k.size * CELL;
+        c.fillStyle = k.color;
+        c.globalAlpha = 0.75;
+        c.fillRect(m.x * CELL, m.y * CELL, side, side);
+        c.globalAlpha = 1;
+        c.strokeStyle = i === this.picked ? "#ffffff" : "rgba(20,4,8,0.9)";
+        c.lineWidth = (i === this.picked ? 3 : 1.5) / s;
+        c.strokeRect(m.x * CELL, m.y * CELL, side, side);
+        // its fields, one short line each, under the block
+        c.fillStyle = "#ffffff";
+        c.font = `${Math.round(side / 4)}px monospace`;
+        let ty = m.y * CELL + side + side / 5;
+        for (const f of k.fields) {
+          const v = m.opts?.[f.key];
+          const txt = f.kind === "choice"
+            ? (f.choices.find((ch) => ch.value === v)?.label ?? String(v)).split(" ")[0]
+            : `${f.label.split(" ").pop()} ${v}`;
+          c.strokeStyle = "rgba(10,10,14,0.9)";
+          c.lineWidth = 4 / s;
+          c.strokeText(txt, m.x * CELL + side / 2, ty);
+          c.fillText(txt, m.x * CELL + side / 2, ty);
+          ty += side / 4;
+        }
+      }
+      c.lineWidth = 1.5 / s;
     }
 
     // NOTHING MARKS THE SPAWN LAYER HERE ANY MORE. It used to be a ring per

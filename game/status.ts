@@ -32,7 +32,7 @@
  * are the thing itself.
  */
 
-import { CELL, firesBullets, WET_SHOCK_MUL, type BulletStats } from "./constants";
+import { CELL, FIRE_DPS_PER_STACK, firesBullets, WET_SHOCK_MUL, type BulletStats } from "./constants";
 import { UNIT_KINDS, UNIT_STATS, type UnitKind } from "./levels";
 import { AMPHIBIOUS_MAX_STACKS, HUNGRY_MAX_MEALS, LEADERSHIP_CAP, VIRUS_DPS } from "./mutation";
 import { PAL } from "./pixelArt";
@@ -44,6 +44,7 @@ import type { Sim } from "./sim";
 // drawn on the side that may not have one (simview.ts)
 import type { UnitsView } from "./simview";
 import { isCore, type Structure, type Tower } from "./types";
+import { UNIT_WEAPONS } from "./weapons";
 
 export type StatusId =
   // WHAT THE GUN DOES AND HOW OFTEN — the two numbers a player clicking a
@@ -82,6 +83,7 @@ export type StatusId =
   | "immune"
   | "wet"
   | "burning"
+  | "poison"
   | "shield"
   | "arriving"
   | "hungry"
@@ -188,7 +190,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Soaks",
     color: PAL.waterLite,
     blurb:
-      "Its hits soak the target: slowed, and takes double damage from electric shots.",
+      "Its hits leave the target soaked: a body drives slower and takes double damage from electric shots, a gun reloads slower.",
     field: false,
   },
   {
@@ -354,7 +356,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Soaked",
     color: PAL.waterLite,
     blurb:
-      "It moves slower, and takes double damage from electric shots. A fresh soak re-times it rather than stacking.",
+      "Soak builds up and never washes off; the body breaks down the moment its health falls under it. The slow and the double damage from electric shots last only while it is wet.",
     field: true,
   },
   {
@@ -362,7 +364,15 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Burning",
     color: PAL.ember,
     blurb:
-      "It is losing health a second to fire, which ignores plating. A second hit re-lights it rather than stacking.",
+      "Stacks of fire, each burning health a second through plating. It spreads to a body nearby now and then, and the whole stack goes out together if nothing re-lights it.",
+    field: true,
+  },
+  {
+    id: "poison",
+    name: "Poisoned",
+    color: PAL.venom,
+    blurb:
+      "Losing health a second through plating. Every hit ADDS to the rate rather than re-timing it, so it only gets worse while the guns keep landing.",
     field: true,
   },
   {
@@ -479,7 +489,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Waterlogged",
     color: PAL.water,
     blurb:
-      "This gun reloads slower: built near water under Hydrophobic, which never lifts, or hit by a Grapnel's soaked star, which runs out.",
+      "This gun reloads slower: built near water under Hydrophobic, which never lifts, or caught by a Grapnel's soaked star or a Kettle's wet bomb, which run out.",
     field: true,
   },
   {
@@ -531,6 +541,8 @@ export function unitHasFieldStatus(sim: UnitsView, i: number): boolean {
   return (
     sim.uwet[i] > 0 ||
     sim.uburn[i] > 0 ||
+    sim.upoison[i] > 0 ||
+    sim.usoak[i] > 0 ||
     sim.ushield[i] > 0 ||
     sim.uspawn[i] > 0 ||
     sim.uhungry[i] !== 0 ||
@@ -548,6 +560,8 @@ export function unitFieldStatuses(sim: UnitsView, i: number, out: StatusId[]): n
   out.length = 0;
   if (sim.uwet[i] > 0) out.push("wet");
   if (sim.uburn[i] > 0) out.push("burning");
+  if (sim.upoison[i] > 0) out.push("poison");
+  if (sim.usoak[i] > 0) out.push("wet");
   if (sim.ushield[i] > 0) out.push("shield");
   if (sim.uspawn[i] > 0) out.push("arriving");
   if (sim.uhungry[i] !== 0) out.push("hungry");
@@ -664,6 +678,15 @@ function unitTraits(kind: UnitKind): StatusChip[] {
     );
   if (u.immunities && u.immunities.length > 0)
     add("immune", `${u.immunities.map((k) => (k === "burning" ? "fire" : "water")).join(" and ")} never takes on it`);
+  // ...and the one trait that is a WEAPON's and not a stat's (weapons.ts
+  // UnitWeapon.soak, the Kettles' wet bomb)
+  const soaker = UNIT_WEAPONS[kind].find((w) => (w.soak ?? 0) > 0);
+  if (soaker)
+    add(
+      "soaks",
+      `guns within ${tiles(soaker.splashRadius ?? 0)} of where it lands reload at ` +
+        `${Math.round((soaker.soakRate ?? 1) * 100)}% for ${dur(soaker.soak ?? 0)}`,
+    );
   return out;
 }
 
@@ -675,18 +698,34 @@ export function unitStatusChips(sim: Sim, i: number): StatusChip[] {
     { id: "armor", n: Math.round(armor), note: num(armor) + " off every hit" },
     ...unitTraits(UNIT_KINDS[sim.ukind[i]]),
   ];
-  if (sim.uwet[i] > 0)
+  if (sim.usoak[i] > 0)
+    out.push({
+      id: "wet",
+      n: Math.round(sim.usoak[i]),
+      note:
+        `breaks down under ${Math.round(sim.usoak[i])} health` +
+        (sim.uwet[i] > 0
+          ? ` — drives at ${Math.round(sim.uwetSlow[i] * 100)}%, takes x${WET_SHOCK_MUL} from electric, ${secs(sim.uwet[i])}`
+          : ""),
+    });
+  else if (sim.uwet[i] > 0)
     out.push({
       id: "wet",
       n: null,
-      // the slow is what a soak DOES and the conducting is what it SETS
-      // UP, so the note carries both and the clock follows. THE ELECTRIC
-      // HALF LIVES HERE AND NOWHERE ELSE: being wet is the whole of what
-      // the swarm carries, and a soaked body takes the multiple from the
-      // first electric shot that lands on it
       note: `drives at ${Math.round(sim.uwetSlow[i] * 100)}% — takes x${WET_SHOCK_MUL} from electric shots — ${secs(sim.uwet[i])}`,
     });
-  if (sim.uburn[i] > 0) out.push({ id: "burning", n: null, note: secs(sim.uburn[i]) });
+  if (sim.uburn[i] > 0)
+    out.push({
+      id: "burning",
+      n: Math.round(sim.uburn[i]),
+      note: `${num(sim.uburn[i] * FIRE_DPS_PER_STACK)} a second through plating`,
+    });
+  if (sim.upoison[i] > 0)
+    out.push({
+      id: "poison",
+      n: Math.round(sim.upoison[i]),
+      note: `${num(sim.upoison[i])} a second through plating`,
+    });
   if (sim.ushield[i] > 0) {
     const s = Math.ceil(sim.ushield[i]);
     out.push({ id: "shield", n: s, note: `${s} absorbed before health` });

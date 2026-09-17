@@ -275,13 +275,15 @@ export function hartLegged(T: IronTier): LegParts {
 export const FROG: Mat = ["#1c2430", "#3c5068"];
 export const ACID: Mat = ["#6c9a18", "#d8ff40"];
 /** hitboxes UR x 1 / 1.625 / 1.875 / 2.875 / 3.25; th and sh the leg
- *  strokes, a fifth of the grid (the rhino's are a ninth) */
+ *  strokes, a QUARTER of the grid (the rhino's are a ninth) — the thigh
+ *  is buried under the flank at this stance and only the shank and the
+ *  pad clear it, so anything thinner is a wire with a foot on it */
 export const FROG_TIERS: readonly IronTier[] = [
   { t: 1, n: 32, stride: 5, small: 16, th: 4, sh: 4 },
-  { t: 2, n: 52, stride: 0, small: 32, th: 10, sh: 8 },
-  { t: 3, n: 60, stride: 0, small: 32, th: 12, sh: 9 },
-  { t: 4, n: 92, stride: 0, small: 48, th: 18, sh: 14 },
-  { t: 5, n: 104, stride: 0, small: 48, th: 21, sh: 16 },
+  { t: 2, n: 52, stride: 0, small: 32, th: 13, sh: 11 },
+  { t: 3, n: 60, stride: 0, small: 32, th: 15, sh: 12 },
+  { t: 4, n: 92, stride: 0, small: 48, th: 23, sh: 19 },
+  { t: 5, n: 104, stride: 0, small: 48, th: 26, sh: 21 },
 ];
 function frogBody(P: Pen, T: IronTier): void {
   const { n, t } = T; const { q, w } = scaler(n); const c = n / 2; const U = w(2);
@@ -364,24 +366,30 @@ export function frogMech(T: IronTier): MechParts {
     stride: T.stride,
   };
 }
-/** T2-T5 on the legged rig: four thick legs of hide, and a foot that is
- *  a broad pad WIDER THAN THE LEG IT HANGS OFF — a frog's splayed toes —
- *  with the acid across its front */
+/** T2-T5 on the legged rig: four short thick legs of hide under a
+ *  WEBBED PAD — three acid toes off a chamfered web twice the width of
+ *  the shank, which at this stance is most of the leg anyone ever sees.
+ *  NO CAPS: the knee is covered by the shank's own extension
+ *  (game/levels.ts) and the mount sits inside the flank, so a knee cap
+ *  and a shoulder plate would be eight quads a body drawing nothing */
 export function frogLegged(T: IronTier): LegParts {
-  const { n, small, th } = T; const { q, w } = scaler(n); const c = n / 2; const sc = small / 2;
+  const { n, small } = T; const { q, w } = scaler(n); const c = n / 2; const sc = small / 2;
   const { art, cell } = drawWithCell(n, (P) => frogBody(P, T), ACID);
   return {
     body: art,
     base: draw(n, (P) => P.octa(c - q(10), q(10), c + q(10), n - q(2), w(5), GUN)),
     cell,
     foot: draw(small, (P) => {
-      P.box(sc - w(5), sc - w(3), sc + w(5), sc + w(3), FROG);
-      P.box(sc - w(5), sc - w(3), sc + w(5), sc - w(3) + w(2), ACID);
+      const pw = w(7), pl = w(4), toe = w(2), cut = w(1);
+      P.octa(sc - pw, sc - pl, sc + pw, sc + pl, w(2), FROG);
+      P.box(sc - pw, sc - pl, sc + pw, sc - pl + toe, ACID);
+      for (const s of [-1, 1]) {
+        const x = sc + s * Math.round(pw * 0.45);
+        P.box(x - cut / 2, sc - pl, x + cut / 2, sc - pl + toe, FROG);
+      }
     }, false),
-    joint: draw(small, (P) => P.disc(sc, sc, Math.max(2, Math.round(th / 2)), FROG), false),
-    baseJoint: draw(small, (P) => P.disc(sc, sc, Math.max(3, Math.round(th * 0.75)), GUN), false),
     small,
-    leg: segment(64, th, FROG),
+    leg: segment(64, T.th, FROG),
     legBase: segment(64, T.sh, FROG),
   };
 }

@@ -246,6 +246,7 @@ Math.random = () => {
 const R = (m) => require(path.join(DIST, m));
 const L = R("levels.js"), M = R("maps.js"), LA = R("ladder.js"), C = R("constants.js");
 const TR = R("track.js"), FA = R("foundryArt.js"), T = R("types.js");
+const MK = R("missionMarks.js");
 /** the most turrets the frames check will stand up. Every world we ship runs
  *  out of legal ground long before this, so it is a stop against a future
  *  map that does not, never a target. */
@@ -395,7 +396,7 @@ report("atlas", atlasProblems, atlasDetail);
 // gets caught, every time — it is the tier whose ornament is cut last.
 const cellFamilies = (() => {
   const IA = R("ironhideArt.js"), FAM = R("familyArt.js"), TA = R("tuskerArt.js"), SA = R("grapnelArt.js");
-  const KA = R("kingArt.js"), KE = R("kettleArt.js");
+  const KA = R("kingArt.js"), KE = R("kettleArt.js"), PY = R("pylonArt.js");
   // a ground family's tier is a mech tier or a legged one; the Grapnels
   // ride the mech rig at every tier with no stride at all, so the rig is
   // named per family rather than read off the stride
@@ -413,6 +414,10 @@ const cellFamilies = (() => {
     // the boss is not a family and has exactly one tier, but its cell is
     // packed and refused the same way every other body's is
     ["king", [KA.KING_TIER], () => KA.king()],
+    // ...and the two buff towers, on the same terms: no family, one tier
+    // each, and a cell the atlas refuses at load if it is empty
+    ["goad", [PY.GOAD_TIER], PY.goadMech],
+    ["bastion", [PY.BASTION_TIER], PY.bastionMech],
   ];
 })();
 const cellProblems = [];
@@ -531,6 +536,29 @@ for (const w of L.WORLDS) {
       say(`the pattern sends ${sent} crossers and the mission asks for ${m.kills}`);
     if (m.leaks > 0 && m.spare.length === 0)
       say(`${m.leaks} leaks allowed and no spare launch to make them back`);
+    // ...and the buff towers an author placed on this map (game/
+    // missionMarks.ts). A tower due on a train that never comes is a
+    // tower that never rises, which is an authoring mistake the editor
+    // cannot see — it does not know how long the pattern is
+    for (const mk of sim.terrain.marks) {
+      if (mk.kind !== "buffTower") continue;
+      const waves = MK.parseWaves(mk.opts?.waves);
+      if (waves.length === 0)
+        say(`a buff tower at ${mk.x},${mk.y} names no waves, so it never rises`);
+      // the spare is the wave after the pattern's last; anything past it
+      // is a rise that never comes
+      const last = m.pattern.length + (m.spare.length > 0 ? 1 : 0);
+      if (waves.length > 0 && waves[0] > last)
+        say(`a buff tower at ${mk.x},${mk.y} first rises on train ${waves[0]} of ${last}`);
+      // a tower dropped in rock is a tower nothing can see to shoot
+      // (Sim.canSee) — and unlike a raze section it is never walked clear
+      const size = 4;
+      let rock = 0;
+      for (let y = mk.y; y < mk.y + size; y++)
+        for (let x = mk.x; x < mk.x + size; x++)
+          if (sim.terrain.blocked[y * COLS + x]) rock++;
+      if (rock > 0) say(`a buff tower at ${mk.x},${mk.y} stands on ${rock} cells of rock`);
+    }
   } else if (m.kind === "escort") {
     // the same shape of arithmetic pointed the other way: enough carts to
     // meet the count, and a halt has to be a fraction of a road (Sim.reset

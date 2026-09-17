@@ -115,12 +115,6 @@ export function Beacon({
   // beacon they did not touch — which reads as a bug and teaches nothing.
   // A board whose last rung has been reached says the price is flat rather
   // than promising a rise that will not come.
-  const ladder =
-    bought || free
-      ? null
-      : next > price
-        ? `Every beacon on this map costs ${price.toLocaleString()}. Buy one and the rest go to ${next.toLocaleString()}.`
-        : `Every beacon on this map costs ${price.toLocaleString()}, and this is as dear as they get.`;
   return (
     <div
       className="ms-pane pointer-events-auto flex max-w-[calc(100vw-30rem)] items-center gap-3 px-3 py-2"
@@ -165,9 +159,6 @@ export function Beacon({
           )}
         </div>
         <p className="max-w-[30rem] text-[12px] leading-snug text-[#A1A1AA]">{note}</p>
-        {ladder && (
-          <p className="max-w-[30rem] text-[12px] leading-snug text-[#71717C]">{ladder}</p>
-        )}
       </div>
       {/* THE PURCHASE, and nothing else in this corner of the panel. It
           carries the price on its own face rather than beside it: the

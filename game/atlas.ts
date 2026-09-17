@@ -58,6 +58,7 @@ import {
   type WardenTier,
 } from "./wardenArt";
 import { KETTLE_TIERS, kettle, kettleGeom } from "./kettleArt";
+import { BASTION_TIER, GOAD_TIER, bastionMech, goadMech } from "./pylonArt";
 import { KING_TIER, king, kingGeom } from "./kingArt";
 
 /**
@@ -683,6 +684,11 @@ export const DECOR_DRAWN: readonly boolean[] = DECOR_KINDS.map(
 // mechanical spawn-pad tile: one of these is drawn on every painted spawn
 // cell, tinted by SPAWN_STYLE (Renderer.rebuildTerrain)
 export const UV_SPAWN = tile("spawn-pad", 64, 2);
+/** the decking a mission mark lays round itself (missionMarks.ts
+ *  MarkKind.pad, Renderer.rebuildTerrain): plated ground, so the three
+ *  places the swarm keeps re-taking read as PREPARED rather than as open
+ *  snow a tower happens to be standing on */
+export const UV_MARK_PAD = tile("mark-pad", 64, 2);
 /**
  * THE RAIL BED, one cell a piece per railway (game/railArt.ts, missions.ts
  * railsFor), indexed [style][piece].
@@ -1213,6 +1219,10 @@ const wardenCells = (name: string, n: number, cell: number) => ({
 const RAZE_CELLS = wardenCells("railgun", RAZE_TIER.n, 128);
 const BULWARK_CELLS = wardenCells("bulwark", BULWARK_TIER.n, 128);
 const LANCE_CELLS = wardenCells("lance", LANCE_TIER.n, 128);
+/** the two buff towers (pylonArt.ts), on the same six-cell mech rig — 128
+ *  native px is four tiles, so a 128 cell holds them at the sheet's scale */
+const GOAD_CELLS = wardenCells("goad", GOAD_TIER.n, 128);
+const BASTION_CELLS = wardenCells("bastion", BASTION_TIER.n, 128);
 
 /**
  * THE KETTLES' CELLS, and the third family to ask the packer for room of
@@ -1358,6 +1368,8 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   // 128 cells at the sheet's own px scale, so a railgun is drawn at the
   // seven tiles its hitbox says it is
   railgun: { uv: RAZE_CELLS.body, sprite: UNIT_SPRITE * 2 },
+  goad: { uv: GOAD_CELLS.body, sprite: UNIT_SPRITE * 2 },
+  bastion: { uv: BASTION_CELLS.body, sprite: UNIT_SPRITE * 2 },
   bulwark: { uv: BULWARK_CELLS.body, sprite: UNIT_SPRITE * 2 },
   lance: { uv: LANCE_CELLS.body, sprite: UNIT_SPRITE * 2 },
   ironhide1: { uv: UV_IRONHIDE1_BODY, sprite: UNIT_SPRITE },
@@ -2099,8 +2111,10 @@ if (ANIMAL_ART) {
   // ---- Dartback ----
   // the frog: the runt keeps the dartback1 mech's rig and cells (feet tucked,
   // guns off — the venom is drawn live, never off a sprite), dartback2 up
-  // keep the venom line's legged rig on four legs, with segments of their
-  // own and a knee the dartback4 and dartback5 never had
+  // keep the venom line's legged rig on four short legs, with segments of
+  // their own and NO CAPS at any tier — the shank's extension covers every
+  // knee and the flank covers every mount, so the two cap passes would be
+  // eight quads a body drawing nothing
   MECH_ART.dartback1 = { ...MECH_ART.dartback1!, guns: [], stride: FROG_TIERS[0].stride * PX };
   const frogLegArt = (k: UnitKind, i: number, parts: Omit<LegArt, "legStroke" | "legBaseStroke" | "guns" | "sprite" | "small">, cellScale: 1 | 2 | 4): void => {
     const T = FROG_TIERS[i];
@@ -2114,16 +2128,16 @@ if (ANIMAL_ART) {
     };
   };
   frogLegArt("dartback2", 1, {
-    body: UV_DARTBACK2_BODY, base: UV_DARTBACK2_BASE, joint: UV_DARTBACK2_JOINT, foot: UV_DARTBACK2_FOOT, leg: UV_DARTBACK2_LEG_SEG, legBase: UV_DARTBACK2_LEG_BASE_SEG,
-    sil: { body: UV_DARTBACK2_BODY_SIL, base: UV_DARTBACK2_BASE_SIL, joint: UV_DARTBACK2_JOINT_SIL, foot: UV_DARTBACK2_FOOT_SIL },
+    body: UV_DARTBACK2_BODY, base: UV_DARTBACK2_BASE, foot: UV_DARTBACK2_FOOT, leg: UV_DARTBACK2_LEG_SEG, legBase: UV_DARTBACK2_LEG_BASE_SEG,
+    sil: { body: UV_DARTBACK2_BODY_SIL, base: UV_DARTBACK2_BASE_SIL, foot: UV_DARTBACK2_FOOT_SIL },
   }, 2);
   frogLegArt("dartback3", 2, {
-    body: UV_DARTBACK3_BODY, joint: UV_DARTBACK3_JOINT, foot: UV_DARTBACK3_FOOT, leg: UV_DARTBACK3_LEG_SEG, legBase: UV_DARTBACK3_LEG_BASE_SEG,
-    sil: { body: UV_DARTBACK3_BODY_SIL, joint: UV_DARTBACK3_JOINT_SIL, foot: UV_DARTBACK3_FOOT_SIL },
+    body: UV_DARTBACK3_BODY, foot: UV_DARTBACK3_FOOT, leg: UV_DARTBACK3_LEG_SEG, legBase: UV_DARTBACK3_LEG_BASE_SEG,
+    sil: { body: UV_DARTBACK3_BODY_SIL, foot: UV_DARTBACK3_FOOT_SIL },
   }, 2);
   frogLegArt("dartback4", 3, {
-    body: UV_DARTBACK4_BODY, joint: UV_DARTBACK4_JOINT, baseJoint: UV_DARTBACK4_JOINT_BASE, foot: UV_DARTBACK4_FOOT, leg: UV_DARTBACK4_LEG_SEG, legBase: UV_DARTBACK4_LEG_BASE_SEG,
-    sil: { body: UV_DARTBACK4_BODY_SIL, joint: UV_DARTBACK4_JOINT_SIL, baseJoint: UV_DARTBACK4_JOINT_BASE_SIL, foot: UV_DARTBACK4_FOOT_SIL },
+    body: UV_DARTBACK4_BODY, foot: UV_DARTBACK4_FOOT, leg: UV_DARTBACK4_LEG_SEG, legBase: UV_DARTBACK4_LEG_BASE_SEG,
+    sil: { body: UV_DARTBACK4_BODY_SIL, foot: UV_DARTBACK4_FOOT_SIL },
   }, 4);
   // ---- Stoop, Skate, Livewire ----
   // the bat, the manta and the narwhal on the wing rig — and the boss
@@ -2170,8 +2184,8 @@ if (ANIMAL_ART) {
   // thing that keeps it in the air is the beat
   wingPart("boss", KING_TIER, [KING_CELLS.body, KING_CELLS.wing], kingGeom(), false, BOSS_SCALE);
   frogLegArt("dartback5", 4, {
-    body: UV_DARTBACK5_BODY, joint: UV_DARTBACK5_JOINT, baseJoint: UV_DARTBACK5_JOINT_BASE, foot: UV_DARTBACK5_FOOT, leg: UV_DARTBACK5_LEG_SEG, legBase: UV_DARTBACK5_LEG_BASE_SEG,
-    sil: { body: UV_DARTBACK5_BODY_SIL, joint: UV_DARTBACK5_JOINT_SIL, baseJoint: UV_DARTBACK5_JOINT_BASE_SIL, foot: UV_DARTBACK5_FOOT_SIL },
+    body: UV_DARTBACK5_BODY, foot: UV_DARTBACK5_FOOT, leg: UV_DARTBACK5_LEG_SEG, legBase: UV_DARTBACK5_LEG_BASE_SEG,
+    sil: { body: UV_DARTBACK5_BODY_SIL, foot: UV_DARTBACK5_FOOT_SIL },
   }, 4);
 
   // ---- Tusker ----
@@ -2260,6 +2274,8 @@ if (ANIMAL_ART) {
     sil: { leg: c.sil.leg, base: c.sil.base, body: c.sil.body },
   });
   MECH_ART.railgun = wardenMechArt(RAZE_CELLS, RAZE_TIER);
+  MECH_ART.goad = wardenMechArt(GOAD_CELLS, GOAD_TIER);
+  MECH_ART.bastion = wardenMechArt(BASTION_CELLS, BASTION_TIER);
   MECH_ART.bulwark = wardenMechArt(BULWARK_CELLS, BULWARK_TIER);
   MECH_ART.lance = wardenMechArt(LANCE_CELLS, LANCE_TIER);
 }
@@ -2402,6 +2418,7 @@ const SPRITES = {
   foundryFurnace: FOUNDRY_HEAD_URLS.furnace!,
   foundryRailhead: FOUNDRY_HEAD_URLS.railhead!,
   spawnPad: `${ENV}/dark-panel-2.png`,
+  markPad: `${ENV}/dark-metal1.png`,
   towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
   towerBase1: "/mindustry/sprites/blocks/turrets/bases/block-1.png",
   towerBase3: "/mindustry/sprites/blocks/turrets/bases/block-3.png",
@@ -3192,8 +3209,8 @@ function packAnimalArt(
     part(cells.body, body); part(cells.sil.body, body, true);
     part(cells.foot, foot); part(cells.sil.foot, foot, true);
     if (cells.base && cells.sil.base) { const base = toCanvas(a.base); part(cells.base, base); part(cells.sil.base, base, true); }
-    if (cells.joint && cells.sil.joint) { const joint = toCanvas(a.joint); part(cells.joint, joint); part(cells.sil.joint, joint, true); }
-    if (cells.baseJoint && cells.sil.baseJoint) { const bj = toCanvas(a.baseJoint); part(cells.baseJoint, bj); part(cells.sil.baseJoint, bj, true); }
+    if (a.joint && cells.joint && cells.sil.joint) { const joint = toCanvas(a.joint); part(cells.joint, joint); part(cells.sil.joint, joint, true); }
+    if (a.baseJoint && cells.baseJoint && cells.sil.baseJoint) { const bj = toCanvas(a.baseJoint); part(cells.baseJoint, bj); part(cells.sil.baseJoint, bj, true); }
     seg(cells.leg, toCanvasRect(a.leg.px, a.leg.w, a.leg.h));
     seg(cells.legBase, toCanvasRect(a.legBase.px, a.legBase.w, a.legBase.h));
     dropCell(cells.kind);
@@ -3230,14 +3247,14 @@ function packAnimalArt(
     frogMech(FROG_TIERS[0]), FROG_TIERS[0].n,
   );
   const frogLegCells: readonly LegCells[] = [
-    { kind: "dartback2", body: UV_DARTBACK2_BODY, base: UV_DARTBACK2_BASE, joint: UV_DARTBACK2_JOINT, foot: UV_DARTBACK2_FOOT, leg: UV_DARTBACK2_LEG_SEG, legBase: UV_DARTBACK2_LEG_BASE_SEG,
-      sil: { body: UV_DARTBACK2_BODY_SIL, base: UV_DARTBACK2_BASE_SIL, joint: UV_DARTBACK2_JOINT_SIL, foot: UV_DARTBACK2_FOOT_SIL } },
-    { kind: "dartback3", body: UV_DARTBACK3_BODY, joint: UV_DARTBACK3_JOINT, foot: UV_DARTBACK3_FOOT, leg: UV_DARTBACK3_LEG_SEG, legBase: UV_DARTBACK3_LEG_BASE_SEG,
-      sil: { body: UV_DARTBACK3_BODY_SIL, joint: UV_DARTBACK3_JOINT_SIL, foot: UV_DARTBACK3_FOOT_SIL } },
-    { kind: "dartback4", body: UV_DARTBACK4_BODY, joint: UV_DARTBACK4_JOINT, baseJoint: UV_DARTBACK4_JOINT_BASE, foot: UV_DARTBACK4_FOOT, leg: UV_DARTBACK4_LEG_SEG, legBase: UV_DARTBACK4_LEG_BASE_SEG,
-      sil: { body: UV_DARTBACK4_BODY_SIL, joint: UV_DARTBACK4_JOINT_SIL, baseJoint: UV_DARTBACK4_JOINT_BASE_SIL, foot: UV_DARTBACK4_FOOT_SIL } },
-    { kind: "dartback5", body: UV_DARTBACK5_BODY, joint: UV_DARTBACK5_JOINT, baseJoint: UV_DARTBACK5_JOINT_BASE, foot: UV_DARTBACK5_FOOT, leg: UV_DARTBACK5_LEG_SEG, legBase: UV_DARTBACK5_LEG_BASE_SEG,
-      sil: { body: UV_DARTBACK5_BODY_SIL, joint: UV_DARTBACK5_JOINT_SIL, baseJoint: UV_DARTBACK5_JOINT_BASE_SIL, foot: UV_DARTBACK5_FOOT_SIL } },
+    { kind: "dartback2", body: UV_DARTBACK2_BODY, base: UV_DARTBACK2_BASE, foot: UV_DARTBACK2_FOOT, leg: UV_DARTBACK2_LEG_SEG, legBase: UV_DARTBACK2_LEG_BASE_SEG,
+      sil: { body: UV_DARTBACK2_BODY_SIL, base: UV_DARTBACK2_BASE_SIL, foot: UV_DARTBACK2_FOOT_SIL } },
+    { kind: "dartback3", body: UV_DARTBACK3_BODY, foot: UV_DARTBACK3_FOOT, leg: UV_DARTBACK3_LEG_SEG, legBase: UV_DARTBACK3_LEG_BASE_SEG,
+      sil: { body: UV_DARTBACK3_BODY_SIL, foot: UV_DARTBACK3_FOOT_SIL } },
+    { kind: "dartback4", body: UV_DARTBACK4_BODY, foot: UV_DARTBACK4_FOOT, leg: UV_DARTBACK4_LEG_SEG, legBase: UV_DARTBACK4_LEG_BASE_SEG,
+      sil: { body: UV_DARTBACK4_BODY_SIL, foot: UV_DARTBACK4_FOOT_SIL } },
+    { kind: "dartback5", body: UV_DARTBACK5_BODY, foot: UV_DARTBACK5_FOOT, leg: UV_DARTBACK5_LEG_SEG, legBase: UV_DARTBACK5_LEG_BASE_SEG,
+      sil: { body: UV_DARTBACK5_BODY_SIL, foot: UV_DARTBACK5_FOOT_SIL } },
   ];
   frogLegCells.forEach((cells, i) => packLegged(cells, frogLegged(FROG_TIERS[1 + i]), FROG_TIERS[1 + i].n));
   // the elephants, into cells nobody else owns (see THE TUSKERS' CELLS).
@@ -3271,6 +3288,9 @@ function packAnimalArt(
   packMech(RAZE_CELLS, razeMech(RAZE_TIER), RAZE_TIER.n);
   packMech(BULWARK_CELLS, bulwarkMech(BULWARK_TIER), BULWARK_TIER.n);
   packMech(LANCE_CELLS, lanceMech(LANCE_TIER), LANCE_TIER.n);
+  // ...and the two buff towers, on the same rig (pylonArt.ts)
+  packMech(GOAD_CELLS, goadMech(GOAD_TIER), GOAD_TIER.n);
+  packMech(BASTION_CELLS, bastionMech(BASTION_TIER), BASTION_TIER.n);
 
   // ---- Stoop, Skate, Livewire ----
   // the wing rig: the composed sprite in the kind's own cell, the body
@@ -3501,6 +3521,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   PINE_KINDS.forEach((k, i) => draw(UV_PINES[i], antialiased(propCanvas(k))));
   DECOR_KINDS.forEach(([k], i) => draw(UV_DECOR[i], antialiased(propCanvas(k))));
   draw(UV_SPAWN, antialiased(img.spawnPad));
+  draw(UV_MARK_PAD, antialiased(img.markPad));
   // THE RAIL PIECES, painted like the floors and through the same filter
   RAIL_STYLES.forEach((_, st) =>
     RAIL_PIECES.forEach((_p, i) => draw(UV_RAILS[st][i], antialiased(railCanvas(st, i)))),

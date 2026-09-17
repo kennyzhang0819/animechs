@@ -6,6 +6,7 @@ import { BASE, COLS, MAX_BEACONS, NCELLS, ROWS } from "./constants";
  * Never change it — it is a fact about files already on disk.
  */
 export const LEGACY_COLS = 128;
+import { MARK_KINDS, MAX_MARKS, markOpts, type MapMark } from "./missionMarks";
 import { railsFor } from "./missions";
 import { canHoldSpawn, WALL_DEEP, WALL_PINE, type MapBeacon, type Prop, type Terrain } from "./terrain";
 import {
@@ -107,6 +108,23 @@ export interface MapData {
    * beacon.
    */
   beacons?: MapBeacon[];
+  /**
+   * THE MISSION FURNITURE placed on this map (missionMarks.ts MapMark):
+   * the buff towers an intercept plants, and whatever a later mission
+   * asks an author to put down.
+   *
+   * A LIST, like the beacons and for the same reasons — there are a
+   * handful, each covers a footprint several cells across, and a
+   * cell-per-entry grid cannot say which cells are one mark.
+   *
+   * IT CARRIES A SCHEDULE NUMBER and that is the one place this document
+   * goes past pure terrain. The wave a tower rises on is an attribute of
+   * THAT TOWER, and the map document is the only thing the editor can
+   * write (app/api/levels refuses everything but the campaign's script),
+   * so an author who can place one can set it. What a wave IS stays the
+   * mission's (levels.ts InterceptMission).
+   */
+  marks?: MapMark[];
   // A MAP SAYS NOTHING ABOUT WHAT A BEACON COSTS. It carried a ladder of
   // its own for a while, editable in the map editor; no document on disk
   // ever set one, and a per-map price list was a dial that answered a
@@ -230,6 +248,10 @@ export type PaintKind =
   /** a beacon on a hill (terrain.ts MapBeacon): a click stamps one on rock
    *  and a click on one takes it back off */
   | "beacon"
+  /** a mission's own furniture (missionMarks.ts MapMark): the same stamp-
+   *  and-take-off a beacon has, and which KIND of mark is the palette
+   *  set's id — one swatch per entry in MARK_KINDS */
+  | "mark"
   /** deep water: blocks the swarm like a wall, takes no tower like a pine
    *  — a floor index plus the WALL_DEEP sentinel (see terrain.ts) */
   | "deep"
@@ -272,6 +294,10 @@ export interface PaletteSet {
   // interchangeable art: the picker always shows them all and randomize
   // never applies
   noRandom?: boolean;
+  /** for kind "mark": which mark kind this swatch places (missionMarks.ts
+   *  MarkKind.id), and the missions that understand it — the editor hides
+   *  a swatch no world on this map could use */
+  mark?: string;
 }
 
 /**
@@ -442,6 +468,18 @@ export const PALETTE: readonly PaletteSet[] = [
   // the swarm's buildings — the player's roster, on the swarm's side —
   // one swatch a kind: a click stamps one on open ground and the eraser
   // takes it back off (MapData.enemies)
+  // THE MISSION MARKS, one swatch a kind, built from the registry rather
+  // than typed out (missionMarks.ts MARK_KINDS): adding a mission's
+  // furniture is an entry there and no edit here
+  ...MARK_KINDS.map((k) => ({
+    id: `mark-${k.id}`,
+    label: k.label,
+    kind: "mark" as const,
+    variants: [0],
+    noRandom: true,
+    icons: ["/mindustry/sprites/blocks/power/power-node-large.png"],
+    mark: k.id,
+  })),
   { id: "erase", label: "Erase", kind: "erase", variants: [0], icons: [`${ENV}/clear-editor.png`] },
 ];
 
@@ -475,6 +513,9 @@ export const PALETTE_SECTIONS: readonly { label: string; ids: readonly string[] 
   // floors: ore is not a floor tile at all but a layer over one (T.ore),
   // and it is the only brush that decides what a run EARNS
   { label: "Zones", ids: ["spawn", "base", "beacon"] },
+  // ...and the mission's own, which is the group that grows as the mission
+  // list does (missionMarks.ts)
+  { label: "Mission", ids: MARK_KINDS.map((k) => `mark-${k.id}`) },
   { label: "Tools", ids: ["erase"] },
 ];
 
@@ -670,6 +711,13 @@ export function mapFromTerrain(
     // and a number left on each of them would be a second answer to the
     // same question (terrain.ts MapBeacon)
     beacons: t.beacons.map((r) => ({ x: r.x, y: r.y })),
+    // ...through each kind's own reader, so a field half-typed in the
+    // editor ("2-") is cleaned on the way out rather than written to the
+    // repo file and quietly read as a default next load
+    marks: t.marks.flatMap((r) => {
+      const k = MARK_KINDS.find((mk) => mk.id === r.kind);
+      return k ? [{ x: r.x, y: r.y, kind: r.kind, opts: markOpts(k, r.opts) }] : [];
+    }),
     valleyY: Array.from(t.valleyY).map((v) => Math.round(v * 100) / 100),
   };
 }
@@ -690,6 +738,30 @@ function lift(src: readonly number[], pad: number, srcW: number): Uint8Array {
   // document lands in the top-left and the rest of the board stays `pad`
   for (let y = 0; y < rows; y++)
     for (let x = 0; x < cols; x++) out[y * COLS + x] = src[y * srcW + x];
+  return out;
+}
+
+/**
+ * The marks a document carries, cleaned: an unknown kind is dropped, a
+ * position is clamped onto the board, and every field is read through its
+ * own kind (missionMarks.ts markOpts). A hand-edited document cannot put
+ * a half-built mark on a map.
+ */
+function marksOf(raw: readonly MapMark[] | undefined): MapMark[] {
+  const out: MapMark[] = [];
+  for (const m of raw ?? []) {
+    const kind = MARK_KINDS.find((k) => k.id === m?.kind);
+    if (!kind) continue;
+    const x = Math.round(Number(m.x)), y = Math.round(Number(m.y));
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    out.push({
+      kind: kind.id,
+      x: Math.max(0, Math.min(COLS - kind.size, x)),
+      y: Math.max(0, Math.min(ROWS - kind.size, y)),
+      opts: markOpts(kind, m.opts),
+    });
+    if (out.length >= MAX_MARKS) break;
+  }
   return out;
 }
 
@@ -727,6 +799,12 @@ export function terrainFromMap(m: MapData): Terrain {
     // are both gone from every map on disk and from the type. A stray one
     // in a hand-edited document is dropped here rather than half-read
     beacons: (m.beacons ?? []).slice(0, MAX_BEACONS).map((r) => ({ x: r.x, y: r.y })),
+    // THE MARKS, read the same way and cleaned against their own kinds
+    // (missionMarks.ts markOpts): a mark naming a kind this build does
+    // not have is DROPPED rather than half-read, and a field it is
+    // missing takes that field's default. Done here, where the document
+    // is read, so both threads see the same list
+    marks: marksOf(m.marks),
     // THE RAILS, by the document's own id — so the bed on the ground and
     // the line the mission's bodies walk are the same line, read out of
     // the same table (missions.ts ROAD_SPECS). A map that carries no road

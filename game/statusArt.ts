@@ -448,6 +448,15 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
    */
   burning: (g) => flame(g),
 
+  // POISON — the venom orb of `rot`, doubled and offset: what is on the
+  // body is a dose that has been added to, so the symbol is two of them
+  poison: (g) => {
+    g.disc(0.34, 0.6, 0.3, PAL.venomDark);
+    g.over((o) => o.disc(0.3, 0.56, 0.16, PAL.venom));
+    g.disc(0.68, 0.34, 0.24, PAL.venomDark);
+    g.over((o) => o.disc(0.66, 0.3, 0.12, PAL.venom));
+  },
+
   /**
    * FORCE FIELD — a canopy over a body, not a shield outline. Plating is
    * already a shield silhouette in this catalog and two shield

@@ -611,10 +611,6 @@ export const shieldTowerWaveScale = (wave: number): number =>
 export const SHIELD_TOWER_MEGA_WAVE = 6;
 /** its dome, in px (16 cells) — four times the ordinary dome's area */
 export const SHIELD_TOWER_MEGA_DOME_R = 320;
-/** the dome's colour — RED, deliberately not the amber of friendly
- *  shields: amber means "the swarm is protected by one of its own", red
- *  means "the RULE is protecting them", and the two must never read alike */
-export const SHIELD_TOWER_COL: readonly [number, number, number] = [1.0, 0.36, 0.36];
 
 // ---------- CONQUEST — docs/mutators.md -------------------------------
 //

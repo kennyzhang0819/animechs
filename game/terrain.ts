@@ -1,4 +1,5 @@
 import { BASE, CELL, clamp, COLS, NCELLS, ROWS } from "./constants";
+import type { MapMark } from "./missionMarks";
 import type { RailTile } from "./missions";
 import { DECOR_TILES, WATER_FLOOR_GROUPS } from "./atlas";
 
@@ -201,6 +202,9 @@ export interface Terrain {
   /** the beacons standing on this map's hills, as authored (maps.ts
    *  MapBeacon) — where the buildable ground can be extended to */
   beacons: MapBeacon[];
+  /** the mission furniture placed on this map (missionMarks.ts MapMark):
+   *  where a mission's own things stand, and nothing about when */
+  marks: MapMark[];
   /**
    * THE RAIL BED, if this map carries a road mission: one painted piece a
    * cell (missions.ts railsFor, game/railArt.ts).
@@ -518,6 +522,7 @@ export function generateTerrain(seed: number): Terrain {
     // a board nobody authored has nothing to say about where a run may
     // spread to. It plays inside the circle its base lights
     beacons: [],
+    marks: [],
     // ...and no rails, for the same reason: a road is authored against a
     // map id (missions.ts ROAD_SPECS) and this board has none
     rails: [],

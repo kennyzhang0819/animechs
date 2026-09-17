@@ -732,6 +732,8 @@ export type FlatWorld = {
   readonly aliveByKind: Int32Array;
   readonly uspawn: Float32Array;
   readonly uburn: Float32Array;
+  readonly upoison: Float32Array;
+  readonly usoak: Float32Array;
   readonly uvet: Float32Array;
   readonly uled: Float32Array;
   readonly uvirus: Uint8Array;
@@ -763,7 +765,7 @@ export const FLAT_KEYS = [
   "ufly", "uwet", "uhungry", "ueaten", "uwade", "ucloakT", "ustack", "ushield",
   "ushieldAlpha", "uforceScale", "ubeamT", "ucharge", "uheldRot", "ulegFX", "ulegFY",
   "ulegJX", "ulegJY", "ulegStage", "ulegMove", "usegX", "usegY", "uwakeX", "uwakeY",
-  "uwakeN", "aliveByKind", "uspawn", "uburn", "uvet", "uled", "uvirus", "fxX", "fxY", "fxAge", "fxTtl", "fxKind", "fxLen", "fxRot",
+  "uwakeN", "aliveByKind", "uspawn", "uburn", "upoison", "usoak", "uvet", "uled", "uvirus", "fxX", "fxY", "fxAge", "fxTtl", "fxKind", "fxLen", "fxRot",
   "fxSeed", "fxSides", "fxUnit", "fxHasCol", "fxColR", "fxColG", "fxColB", "fxPts",
 ] as const satisfies readonly (keyof FlatWorld)[];
 // ...and the other direction: every key of the type is in the list
@@ -826,6 +828,8 @@ export class DrawView implements SimView {
   readonly aliveByKind: Int32Array;
   readonly uspawn: Float32Array;
   readonly uburn: Float32Array;
+  readonly upoison: Float32Array;
+  readonly usoak: Float32Array;
   readonly uvet: Float32Array;
   readonly uled: Float32Array;
   readonly uvirus: Uint8Array;
@@ -911,6 +915,8 @@ export class DrawView implements SimView {
     this.aliveByKind = src.aliveByKind;
     this.uspawn = src.uspawn;
     this.uburn = src.uburn;
+    this.upoison = src.upoison;
+    this.usoak = src.usoak;
     this.uvet = src.uvet;
     this.uled = src.uled;
     this.uvirus = src.uvirus;

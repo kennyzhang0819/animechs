@@ -332,9 +332,10 @@ export interface BulletStats {
   // the bullet's own contact radius in px (Mindustry hitSize / 2). Left
   // unset it keeps the 2.5px the original four turrets have always used
   hitRadius?: number;
-  // StatusEffects.burning, applied for this many seconds on every hit
-  // (Mindustry statusDuration). Refreshing an already-burning unit resets it
+  // fire STACKS added per hit, not seconds — see docs/elements.md
   burn?: number;
+  // poison damage a second added per hit; stacks add and never cap
+  poison?: number;
   // Mindustry LaserBulletType: an instant beam, not a projectile. Unlike a
   // `ray` it is capped — Damage.collideLaser stops at the pierceCap'th
   // victim and the DRAWN beam stops there too, so a laser that runs into a
@@ -403,7 +404,7 @@ export interface BulletStats {
   // rather than stacking — one status entry per unit, strongest slow in
   // force (see Sim.applyWet). Wet and burning are opposites(): each lands
   // on the other as a quench/dry rather than taking hold
-  wet?: { duration: number; slow: number };
+  wet?: { duration: number; slow: number; soak: number };
   // ELECTRIC (status.ts "electric"): this shot conducts. It is a FLAG and
   // not a duration, because there is nothing to time — an electric shot
   // leaves no mark of its own on the body it hits.
@@ -747,6 +748,7 @@ export function normalizeBullet(b: BulletStats): BulletStats {
     pierce: b.pierce,
     hitRadius: b.hitRadius,
     burn: b.burn,
+    poison: b.poison,
     laser: b.laser,
     lightning: b.lightning,
     lock: b.lock,
@@ -925,6 +927,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     bullet: {
       speed: 4 * TICK * MU,
       damage: 28,
+      poison: 1.5, // venom rounds: the armour bypass this gun lacks
       lifetime: (190 + 9 + 10) / 4 / TICK, // limitRange() default margin 9
       splash: 0,
       splashRadius: 0,
@@ -1076,7 +1079,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       collidesGround: true,
       pierce: true,
       hitRadius: (7 / 2) * MU, // hitSize 7
-      burn: 4, // statusDuration 60 * 4
+      burn: 2,
       // no `sprite`: a bare BulletType draws nothing but its trail and its
       // parts, and coal ammo has neither. Fx.shootSmallFlame IS the weapon
       shootFx: FxKind.Flame,
@@ -1302,7 +1305,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       // the hit radius is the ball's own size rather than BulletType's
       // default 4, so the burst centre reads as the ball's centre
       hitRadius: 5 * MU,
-      wet: { duration: 2, slow: 0.65 },
+      wet: { duration: 2, slow: 0.65, soak: 14 },
       orb: 5 * MU, // one ball, not a droplet — LiquidBulletType.draw's disc
       // LiquidTurret zeroes the block's own effects; the bullet's
       // shootEffect is still Fx.shootLiquid. The landing is not: hitLiquid
@@ -1488,7 +1491,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       collidesAir: true,
       collidesGround: true,
       hitRadius: 6 * MU, // the ball's own size, as wave's
-      wet: { duration: 4, slow: 0.45 },
+      wet: { duration: 4, slow: 0.45, soak: 36 },
       orb: 6 * MU, // the heavy ball
       shootFx: FxKind.ShootLiquid,
       hitFx: FxKind.WaterBurst,
@@ -1511,7 +1514,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
         collidesAir: true,
         collidesGround: true,
         hitRadius: 6 * MU,
-        burn: 4, // statusDuration 60 * 4, as torch's
+        burn: 2,
         orb: 6 * MU,
         shootFx: FxKind.Flame,
         // THE FLOOD SHAPE IN FLAME COLOURS, and deliberately not
@@ -1842,7 +1845,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       // both ignited and conducted would have been undoing its own combo
       // every tick. So the beam ignites, the burn runs six seconds, and
       // the blue line is coil and piercer — the two that pair with water
-      burn: 6,
+      burn: 3,
       continuous: {
         length: 200 * MU,
         damageInterval: 5 / TICK,
@@ -2307,10 +2310,18 @@ export const NAVAL_WATER_SPEED = 1.5;
  *  arrival draws now */
 export const FX_UNIT_SPAWN = 30 / TICK;
 
-// StatusEffects.burning, 1:1: 0.167 damage per tick, and it pierces armor
-// (StatusEffect.update calls damageContinuousPierce) — but a shield still
-// soaks it. Fx.burning flickers off a burning unit at effectChance per tick
-export const BURN_DPS = 0.167 * TICK;
+// the three elements — what each number means is docs/elements.md
+export const FIRE_DPS_PER_STACK = 4;
+export const FIRE_MAX_STACKS = 15;
+export const FIRE_SECONDS = 3;
+export const FIRE_SPREAD_CHANCE = 0.35;
+/** how far past touching a body may still catch: fire spreads on CONTACT,
+ *  so the reach is the two hitboxes plus this and nothing else */
+export const FIRE_SPREAD_GAP = 4;
+/** status ticks between one body's spread rolls; staggered by index so the
+ *  whole burning crowd never rolls on the same tick */
+export const FIRE_SPREAD_STRIDE = 12;
+export const POISON_SECONDS = 5;
 export const BURN_FX_CHANCE = 0.15 * TICK; // Mathf.chanceDelta(0.15)
 // StatusEffects.wet's flicker: Fx.wet at effectChance 0.09 per tick, from
 // a random point inside the hitbox exactly like burning's. The status's

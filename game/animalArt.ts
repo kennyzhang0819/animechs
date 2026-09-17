@@ -90,8 +90,9 @@ export interface MechParts { body: Art; base: Art; leg: Art; cell: Art; stride: 
 /** the legged rig's parts */
 export interface LegParts {
   body: Art; base: Art; cell: Art;
-  /** on the small grid: foot (drawn pointing up, packed facing +x), knee cap, shoulder cap */
-  foot: Art; joint: Art; baseJoint: Art; small: number;
+  /** on the small grid: foot (drawn pointing up, packed facing +x), and the
+   *  knee and shoulder caps, which a rig whose joints are covered omits */
+  foot: Art; joint?: Art; baseJoint?: Art; small: number;
   /** the two stretched segments, mount on the left, as exact rects */
   leg: Rect; legBase: Rect;
 }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { ADMIN_ENABLED } from "@/game/env";
 import { useConfirm } from "./ConfirmDialog";
 import { MapEditor, PATH_WIDTHS, type BrushShape } from "@/game/editor";
+import { markKind } from "@/game/missionMarks";
 import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
 import {
   LEGACY_COLS,
@@ -24,6 +25,9 @@ const LAYER_ROWS: ReadonlyArray<[keyof TerrainLayers, string]> = [
   // they stand on, and while they are hidden neither the brush nor the
   // eraser can touch one (game/editor.ts)
   ["beacon", "Beacons"],
+  // the mission's own furniture (missionMarks.ts) — an authoring layer
+  // like the pads: a match never draws one, it draws what rose there
+  ["mark", "Mission marks"],
 ];
 
 const POS_KEY = "animechs.editor.panels.v1";
@@ -228,6 +232,9 @@ export default function MapEditorView({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   // why the last save was refused — null when the last attempt succeeded
+  const [picked, setPicked] = useState<
+    { i: number; kind: string; opts: Record<string, string | number> } | null
+  >(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -254,6 +261,11 @@ export default function MapEditorView({
       const ed = editorRef.current;
       if (!ed) return;
       setDirty(ed.dirty);
+      // the selected mark is picked by CLICKING THE MAP, so the panel
+      // learns about it the way it learns about `dirty` — there is no
+      // event out of the editor and one poll already runs
+      const sel = ed.selected();
+      setPicked(sel ? { i: sel.i, kind: sel.kind.id, opts: { ...sel.mark.opts } } : null);
     }, 250);
     return () => {
       alive = false;
@@ -522,6 +534,57 @@ export default function MapEditorView({
               ))}
             </span>
           </label>
+          {/* ---- the selected mission mark, as its kind's own fields ----
+              Built from missionMarks.ts MarkKind.fields rather than written
+              per kind, which is the whole point: a new mission's furniture
+              is an entry in that registry and costs no UI here. */}
+          {picked && markKind(picked.kind) && (
+            <div className="flex flex-col gap-1.5 border-t border-[#2E2E36] pt-2">
+              <span className="text-[15px] uppercase tracking-widest text-[#71717C]">
+                {markKind(picked.kind)?.label}
+              </span>
+              {markKind(picked.kind)?.fields.map((f) => (
+                <label key={f.key} className="flex items-center justify-between gap-2">
+                  <span className="text-[15px] text-[#A6A6AF]">{f.label}</span>
+                  {f.kind === "choice" ? (
+                    <select
+                      value={String(picked.opts[f.key] ?? f.def)}
+                      onChange={(e) => editorRef.current?.setMarkOpt(f.key, e.target.value)}
+                      className="rounded bg-[#1A1A1F] px-1.5 py-0.5 text-[15px] text-[#EDEDEF]"
+                    >
+                      {f.choices.map((c) => (
+                        <option key={c.value} value={c.value}>{c.label}</option>
+                      ))}
+                    </select>
+                  ) : f.kind === "waves" ? (
+                    <input
+                      type="text"
+                      value={String(picked.opts[f.key] ?? f.def)}
+                      placeholder="2-7"
+                      title={'Which train waves this spot raises a tower on: "2-7", "2,4,6", "2-3,6"'}
+                      onChange={(e) => editorRef.current?.setMarkOpt(f.key, e.target.value)}
+                      className="w-24 rounded bg-[#1A1A1F] px-1.5 py-0.5 text-right text-[15px] text-[#EDEDEF]"
+                    />
+                  ) : (
+                    <input
+                      type="number"
+                      min={f.min}
+                      max={f.max}
+                      value={Number(picked.opts[f.key] ?? f.def)}
+                      onChange={(e) =>
+                        editorRef.current?.setMarkOpt(f.key, Number(e.target.value))
+                      }
+                      className="w-16 rounded bg-[#1A1A1F] px-1.5 py-0.5 text-right text-[15px] text-[#EDEDEF]"
+                    />
+                  )}
+                </label>
+              ))}
+              <div className="text-[14px] leading-tight text-[#71717C]">
+                Click a mark to select it. The eraser takes one off.
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-col gap-1 border-t border-[#2E2E36] pt-2">
             <span className="text-[15px] uppercase tracking-widest text-[#71717C]">Layers</span>
             {LAYER_ROWS.map(([key, label]) => (

@@ -614,12 +614,16 @@ const DOUSER: readonly TurretUpgradeDef[] = [
     tier: 3,
     name: "Cryofluid Mix",
     blurb:
-      "Uses cryofluid instead of water: soaked enemies move at 40% speed rather than 65%, and stay soaked 50% longer.",
+      "Uses cryofluid instead of water: soaked enemies move at 40% speed rather than 65%, and it lays 50% more soak.",
     glyph: "frost",
     apply: (s) =>
       s.bullet.wet
         ? withBullet(s, {
-            wet: { duration: s.bullet.wet.duration * 1.5, slow: 0.4 },
+            wet: {
+              duration: s.bullet.wet.duration * 1.5,
+              slow: 0.4,
+              soak: s.bullet.wet.soak * 1.5,
+            },
             fxColor: PAL.piercerLaser,
           })
         : s,
@@ -883,12 +887,16 @@ const DELUGE: readonly TurretUpgradeDef[] = [
     tier: 3,
     name: "Cryofluid Mix",
     blurb:
-      "Uses cryofluid instead of water: soaked enemies move at 25% speed rather than 45%, and stay soaked 40% longer.",
+      "Uses cryofluid instead of water: soaked enemies move at 25% speed rather than 45%, and it lays 40% more soak.",
     glyph: "frost",
     apply: (s) =>
       s.bullet.wet
         ? withBullet(s, {
-            wet: { duration: s.bullet.wet.duration * 1.4, slow: 0.25 },
+            wet: {
+              duration: s.bullet.wet.duration * 1.4,
+              slow: 0.25,
+              soak: s.bullet.wet.soak * 1.4,
+            },
             fxColor: PAL.piercerLaser,
           })
         : s,
