@@ -775,6 +775,9 @@ const MM_HILL_SHADE = 0.12;
  *  clientWidth is a layout read, and one per frame is a reflow per frame;
  *  the width only moves when the window or the HUD's zoom does */
 const MM_CSS_EVERY = 30;
+/** frames between repaints of the minimap's marks layer (drawMinimap) —
+ *  fifteen paints a second at sixty frames */
+const MM_LAYER_EVERY = 4;
 
 /**
  * THE BAR STACK over a thing on the board (Game.drawBars), in world px.
@@ -799,6 +802,19 @@ const BAR_H = 3.5;
 const BAR_GAP = 1.5;
 /** ...and a floor on the width, so a 1x1 turret's bar is still a bar */
 const BAR_MIN_W = 14;
+/**
+ * THE FLOOR UNDER A BAR, in device pixels of its HEIGHT: under it no bar
+ * is drawn, for anything. Measured on the render bench at the whole-map
+ * zoom, seven thousand turrets each wore a bar a third of a pixel tall
+ * and a rarity pip a sixth of a pixel wide — three fillRects, a
+ * strokeRect, an arc, a fill and a stroke on the overlay canvas, per
+ * turret, per frame, for marks no eye could find. The same floor the
+ * status symbols already have (STATUS_MIN_PX), asked the same way: once
+ * a frame, of the camera (barsLegible)
+ */
+const BAR_MIN_SCREEN_PX = 1;
+/** ...and under a mod pip (drawStructureBars), in device px of its RADIUS */
+const PIP_MIN_SCREEN_PX = 1;
 /**
  * A STATUS SYMBOL ON THE FIELD (status.ts, drawStatusRow): how wide one
  * is in world px, the gap between two of them, and how far the row floats
@@ -999,6 +1015,16 @@ export class Game {
   /** the same buffer as mmPixels, a pixel at a time (see MM_LE) — made with
    *  it and replaced with it, so the two can never be over different bytes */
   private mmPx32: Uint32Array | null = null;
+  /** the minimap's other two layers (drawMinimap): the BUILDINGS, painted
+   *  only when the line changes (mmTowerKey is the line as last painted),
+   *  and the MARKS — the trains' noses and the cart — over everything */
+  private mmTowerLayer: HTMLCanvasElement | null = null;
+  private mmTowerPixels: ImageData | null = null;
+  private mmTowerPx32: Uint32Array | null = null;
+  private mmTowerKey = -1;
+  private mmMarkLayer: HTMLCanvasElement | null = null;
+  private mmMarkPixels: ImageData | null = null;
+  private mmMarkPx32: Uint32Array | null = null;
   /** the minimap's CSS width in px and the countdown to measuring it
    *  again (MM_CSS_EVERY) — what a dilated mark's size is worked out from */
   /**
@@ -1018,6 +1044,8 @@ export class Game {
   private readonly mmPingSeen = new Set<number>();
   private mmCssW = 0;
   private mmCssTick = 0;
+  /** frames until the minimap's marks are painted again (MM_LAYER_EVERY) */
+  private mmLayerTick = 0;
   private mmDrag = false;
   // cursor mode: null is the normal cursor (click a tower to inspect its
   // range); a kind from the tower menu turns on the ghost + paint placement
@@ -2587,6 +2615,11 @@ export class Game {
     return `${p.ms.toFixed(1)}ms ${p.worst >= STEP_BUDGET_MS ? `(worst ${p.worst.toFixed(0)}) ` : ""}· ${top}`;
   }
 
+  /** the last frame's quads by source (Renderer.drawTally) — the bench's column */
+  drawTally(): ReturnType<Renderer["drawTally"]> {
+    return this.renderer.drawTally();
+  }
+
   stats(): Stats {
     return {
       units: this.world.n,
@@ -3234,6 +3267,44 @@ export class Game {
       this.mmPx32 = new Uint32Array(img.data.buffer);
     }
     const px = this.mmPx32;
+    // ...and the two layers beside it, same size, same reuse
+    if (!this.mmTowerLayer) {
+      this.mmTowerLayer = document.createElement("canvas");
+      this.mmTowerLayer.width = cols;
+      this.mmTowerLayer.height = rows;
+    }
+    if (!this.mmMarkLayer) {
+      this.mmMarkLayer = document.createElement("canvas");
+      this.mmMarkLayer.width = cols;
+      this.mmMarkLayer.height = rows;
+    }
+    const tlc = this.mmTowerLayer.getContext("2d"), mlc = this.mmMarkLayer.getContext("2d");
+    if (!tlc || !mlc) return;
+    let timg = this.mmTowerPixels;
+    if (!timg || timg.width !== cols || timg.height !== rows || !this.mmTowerPx32) {
+      timg = this.mmTowerPixels = tlc.createImageData(cols, rows);
+      this.mmTowerPx32 = new Uint32Array(timg.data.buffer);
+      this.mmTowerKey = -1;
+    }
+    let mimg = this.mmMarkPixels;
+    if (!mimg || mimg.width !== cols || mimg.height !== rows || !this.mmMarkPx32) {
+      mimg = this.mmMarkPixels = mlc.createImageData(cols, rows);
+      this.mmMarkPx32 = new Uint32Array(mimg.data.buffer);
+    }
+    const tpx = this.mmTowerPx32, mpx = this.mmMarkPx32;
+    // THE MARKS ARE REPAINTED EVERY MM_LAYER_EVERY FRAMES, NOT EVERY ONE.
+    // Ten thousand bodies and seven thousand turrets are seventeen
+    // thousand marks a paint, and painted sixty times a second they were a
+    // fifth of the whole frame on the render bench — at EVERY zoom, since
+    // the minimap does not care where the camera is. Nothing on it moves
+    // faster than a body walks, and a body walks well under a cell in the
+    // frames between paints. The composite below still runs every frame,
+    // so the viewport frame tracks the camera without a hitch
+    if (this.mmLayerTick-- > 0) {
+      this.compositeMinimap(c, cols, rows, w, h);
+      return;
+    }
+    this.mmLayerTick = MM_LAYER_EVERY - 1;
     px.fill(0);
     /**
      * ONE MARK. It is CLIPPED ONCE and then laid down a ROW AT A TIME: a
@@ -3244,16 +3315,18 @@ export class Game {
      * renderer and very nearly ahead of the sim. A row of a clipped box is
      * a fill of a typed array, which is a memset.
      */
-    const box = (gx: number, gy: number, sz: number, col: number): void => {
+    const boxIn = (buf: Uint32Array, gx: number, gy: number, sz: number, col: number): void => {
       const x0 = gx < 0 ? 0 : gx;
       const y0 = gy < 0 ? 0 : gy;
       const x1 = gx + sz > cols ? cols : gx + sz;
       const y1 = gy + sz > rows ? rows : gy + sz;
       for (let y = y0; y < y1; y++) {
         const row = y * cols;
-        px.fill(col, row + x0, row + x1);
+        buf.fill(col, row + x0, row + x1);
       }
     };
+    /** a body's mark, on the bodies' layer */
+    const box = (gx: number, gy: number, sz: number, col: number): void => boxIn(px, gx, gy, sz, col);
     // HOW MANY CELLS A MARK SPANS so that it reads at MM_*_PX on screen
     // (see those). The CSS width is measured rarely and kept, and the
     // fallback while it is unknown is the backing store's own width,
@@ -3269,7 +3342,7 @@ export class Game {
      *  bigger, and kept centred on the footprint either way */
     const struct = (gx: number, gy: number, sz: number, col: number): void => {
       const s = Math.max(sz, structSz), off = (s - sz) >> 1;
-      box(gx - off, gy - off, s, col);
+      boxIn(tpx, gx - off, gy - off, s, col);
     };
     /**
      * A DIAMOND, |dx| + |dy| <= r, centred on a cell — the one mark on
@@ -3286,7 +3359,7 @@ export class Game {
         const half = r - (dy < 0 ? -dy : dy);
         const x0 = gx - half < 0 ? 0 : gx - half;
         const x1 = gx + half + 1 > cols ? cols : gx + half + 1;
-        if (x1 > x0) px.fill(col, y * cols + x0, y * cols + x1);
+        if (x1 > x0) mpx.fill(col, y * cols + x0, y * cols + x1);
       }
     };
     /** the same diamond as an OUTLINE — `t` px of edge and nothing inside */
@@ -3300,13 +3373,13 @@ export class Game {
         // no inside left to leave out
         if (half <= t) {
           const x0 = Math.max(0, gx - half), x1 = Math.min(cols, gx + half + 1);
-          if (x1 > x0) px.fill(col, row + x0, row + x1);
+          if (x1 > x0) mpx.fill(col, row + x0, row + x1);
           continue;
         }
         const l0 = Math.max(0, gx - half), l1 = Math.min(cols, gx - half + t);
-        if (l1 > l0) px.fill(col, row + l0, row + l1);
+        if (l1 > l0) mpx.fill(col, row + l0, row + l1);
         const r0 = Math.max(0, gx + half - t + 1), r1 = Math.min(cols, gx + half + 1);
-        if (r1 > r0) px.fill(col, row + r0, row + r1);
+        if (r1 > r0) mpx.fill(col, row + r0, row + r1);
       }
     };
     // the swarm red, and everything of ours white, so the map answers
@@ -3319,17 +3392,35 @@ export class Game {
       box(gx - uoff, gy - uoff, unitSz, MM_RED);
     }
     // the map's shield towers, wherever they have been seen
-    for (const s of view.shieldTowers) {
-      if (s.hp <= 0) continue;
-      struct(s.gx, s.gy, SHIELD_TOWER_SIZE, MM_RED);
-    }
-    // ...and the player's, over everything: the line is what the map is read
-    // for — with the swarm's conquered turrets (Conquest) in its own red,
-    // so a lost emplacement is visible on the minimap as a hole in the line
+    // THE BUILDINGS ARE THEIR OWN LAYER, PAINTED ONLY WHEN THE LINE CHANGES.
+    // Seven thousand turrets are seven thousand dilated marks a paint, and
+    // the line changes on the frame a turret goes down or comes up — not
+    // sixty times a second, and on a standing board never. The key is the
+    // line as last painted: every footprint, size and side, and the domes
+    // with whether each stands. The MARKS (below) are the other way round
+    // — a handful, and animated — so they get a layer of their own too,
+    // over the buildings, where "over the line itself" puts them
+    let key = (view.towers.length * 31 + structSz) | 0;
     for (const t of view.towers)
-      if (t.team === "player") struct(t.gx, t.gy, t.size, MM_WHITE);
-      else struct(t.gx, t.gy, t.size, MM_RED);
-    struct(T.base.x, T.base.y, T.base.size, MM_WHITE);
+      key = (key * 31 + ((t.gy * COLS + t.gx) << 5) + t.size + (t.team === "player" ? 0 : 16)) | 0;
+    for (const s of view.shieldTowers) key = (key * 31 + ((s.gy * COLS + s.gx) << 1) + (s.hp > 0 ? 1 : 0)) | 0;
+    if (key !== this.mmTowerKey) {
+      this.mmTowerKey = key;
+      tpx.fill(0);
+      for (const s of view.shieldTowers) {
+        if (s.hp <= 0) continue;
+        struct(s.gx, s.gy, SHIELD_TOWER_SIZE, MM_RED);
+      }
+      // ...and the player's, over everything: the line is what the map is read
+      // for — with the swarm's conquered turrets (Conquest) in its own red,
+      // so a lost emplacement is visible on the minimap as a hole in the line
+      for (const t of view.towers)
+        if (t.team === "player") struct(t.gx, t.gy, t.size, MM_WHITE);
+        else struct(t.gx, t.gy, t.size, MM_RED);
+      struct(T.base.x, T.base.y, T.base.size, MM_WHITE);
+      tlc.putImageData(timg, 0, 0);
+    }
+    mpx.fill(0);
     // ...AND THE NOSE OF EVERY TRAIN ON THE BOARD, last of all and over
     // the line itself (MM_CROSS_PX). It is drawn from the kind rather
     // than from a mission flag, so a map with no crossers on it pays one
@@ -3430,11 +3521,22 @@ export class Game {
     if (this.mmPing.size > this.mmPingSeen.size)
       for (const id of this.mmPing.keys()) if (!this.mmPingSeen.has(id)) this.mmPing.delete(id);
     lc.putImageData(img, 0, 0);
+    mlc.putImageData(mimg, 0, 0);
 
+    this.compositeMinimap(c, cols, rows, w, h);
+  }
+
+  /** the minimap as shown: the ground, the marks layer as last painted, and
+   *  the viewport's frame — every frame, so the frame never lags the camera
+   *  even when the marks under it are a few frames old (MM_LAYER_EVERY) */
+  private compositeMinimap(c: CanvasRenderingContext2D, cols: number, rows: number, w: number, h: number): void {
+    if (!this.mmBase || !this.mmLayer || !this.mmTowerLayer || !this.mmMarkLayer) return;
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.imageSmoothingEnabled = false;
     c.drawImage(this.mmBase, 0, 0, cols, rows, 0, 0, w, h);
     c.drawImage(this.mmLayer, 0, 0, cols, rows, 0, 0, w, h);
+    c.drawImage(this.mmTowerLayer, 0, 0, cols, rows, 0, 0, w, h);
+    c.drawImage(this.mmMarkLayer, 0, 0, cols, rows, 0, 0, w, h);
     // THE VIEWPORT'S FRAME: where on the whole map the screen is looking.
     // Kept inside the minimap (a view run out into the void past the map
     // would otherwise carry its frame off the edge and lose a side), and
@@ -3671,6 +3773,8 @@ export class Game {
     // nothing to draw at all: no bars anywhere, and either no symbols or
     // a `selected` field with nothing marked to put them over
     if (noBars && (!symbols || (onlyMarked && only < 0))) return;
+    // ...and nothing legible at this zoom means nothing drawn (barsLegible)
+    if (!this.barsLegible()) return;
     // WHAT IS ACTUALLY ON THE SCREEN. This loop runs over every body on
     // the map, and the map is several windows wide at the zoom it opens
     // on — so most of what it was drawing was landing outside the canvas
@@ -3714,6 +3818,12 @@ export class Game {
     return STATUS_PX * this.scale * this.zoom >= STATUS_MIN_PX;
   }
 
+  /** is a health bar tall enough to be one right now (BAR_MIN_SCREEN_PX)?
+   *  A no here is also a no for the symbols: STATUS_MIN_PX sits well above */
+  private barsLegible(): boolean {
+    return BAR_H * this.scale * this.zoom >= BAR_MIN_SCREEN_PX;
+  }
+
   /**
    * DOES THE FIELD WEAR STATUS SYMBOLS AT ALL right now — the Interface
    * tab's knob (setStatusMarks) and the legibility floor in one question,
@@ -3745,6 +3855,10 @@ export class Game {
    * (Sim.coreMineT) — it is the run's first and largest earner, and a bar
    */
   private drawStructureBars(view: SimView, c: CanvasRenderingContext2D): void {
+    // nothing on this pass is legible — the bars, the symbols above them
+    // or the pips — so the walk over the line is not made at all
+    if (!this.barsLegible()) return;
+    const pipS = this.scale * this.zoom;
     const bars: { v: number; col: string }[] = [];
     // A BUILDING IN THE SELECTION COUNTS AS PICKED, exactly as a body in it
     // does (barsOn). Each building carries the answer now (TowerView.selected)
@@ -3801,7 +3915,7 @@ export class Game {
       // and not on hover, because the whole point of a chance-based
       // attribute is that a player can look at a patch of thirty-six and
       // see which four of them came out special.
-      if (t.mods !== 0) {
+      if (t.mods !== 0 && Math.max(1.6, sz * 0.075) * pipS >= PIP_MIN_SCREEN_PX) {
         const band = maskRarity(t.mods);
         if (band) {
           const r = Math.max(1.6, sz * 0.075);

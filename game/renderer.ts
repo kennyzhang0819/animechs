@@ -140,6 +140,8 @@ import { MAX_LEGS, MAX_SEGS, MUZZLE_FLASH_LIFE, WAKE_PTS } from "./sim";
 // Not `Sim` itself: what the picture is allowed to know is a written-down
 // list, and reaching past it has to go through that list first.
 import type { ShotView, SimView, TowerView } from "./simview";
+import { PROJ_F } from "./snapshot";
+import { TOWER_KINDS } from "./types";
 import {
   BEAM_STYLES,
   EXPLOSION_STYLES,
@@ -967,6 +969,91 @@ const KIND_CULL = UNIT_KINDS.map((k, i) => {
 const FX_CULL_PAD = 240;
 
 /**
+ * LEVEL OF DETAIL, BY SCREEN SIZE.
+ *
+ * Until 2026-09-17 there was none: a thing in view was assembled in full
+ * whether it covered forty pixels or a third of one. Measured on the
+ * render bench (scripts/bench.mjs, the `upgrades` scene: ten thousand
+ * bodies, seven thousand turrets, a hundred and sixty thousand shots) the
+ * whole-map zoom was the slowest frame at 32ms against an 8ms goal, and
+ * the profile said why — every fragment under a pixel was two sprite
+ * quads with a shrink curve, every walker under six pixels was feet,
+ * knees, segments, mount, guns, body and a silhouette pass under them,
+ * every furnace beam had thirty triangles of rounded cap at a width the
+ * screen could not show. None of it reached a pixel.
+ *
+ * The rule is the SCREEN size, `ppw` (device px per world px this frame,
+ * set in begin): world size times ppw, against these floors. The
+ * thresholds are conservative — each sits at or under the size at which
+ * the detail it drops stops being visible — so nothing a player could
+ * see changes; only what the frame costs at the zooms where it did not
+ * matter. Zoomed in, every branch below is dead and the drawing is what
+ * it always was.
+ */
+/** a shot whose longer side is under this on screen is not drawn at all */
+const LOD_SHOT_SKIP_PX = 1;
+/** ...and under this it is ONE flat quad in the round's back colour: no
+ *  front layer, no shrink curve. A round under four pixels long is a dot
+ *  with, at most, one lighter pixel in it; the swarm's rounds run 15 to
+ *  87 world px, so at the whole-map zoom this takes the carbines and the
+ *  siege rounds and leaves the ironhide4's and 5's shells their shape */
+const LOD_SHOT_FLAT_PX = 4;
+/** ...and under this it is its back sprite alone, shrinking as it flies,
+ *  one per DOT_CELL_PX screen cell: two rounds under eight pixels whose
+ *  centres share a three-pixel cell cover the same pixels, and the
+ *  lighter core of a round is a pixel or two at that size */
+const LOD_SHOT_ONE_PX = 8;
+/** a body whose HITBOX is under this across on screen is its hull sprite
+ *  alone — no legs, no mech parts, no wake, no engines, no shadow, no
+ *  shield halo, no team cell. The hitbox (urad) and not the sprite cell
+ *  (KIND_SPRITE): the cell is the atlas square the art is packed in, 40 to
+ *  480 px, two to three times the hull it holds, and a floor read against
+ *  it let every T4 walker keep its legs at a zoom where the walker was
+ *  five pixels. A leg is a stroke a few world px wide: under a ten-pixel
+ *  body it is a pixel, and a pixel-wide line is a flicker, not a leg.
+ *  The same floor takes a TURRET to its base plate alone — the head's
+ *  bearing is unreadable on a four-pixel square */
+const LOD_BODY_PX = 10;
+/** a beam thinner than this on screen has no rounded caps (flameFront): a
+ *  cap is half the stroke in radius, and under a pixel and a half of
+ *  radius the thirty triangles that round it change no pixel */
+const LOD_CAP_PX = 3;
+/**
+ * ONE DOT PER SCREEN CELL for the flat shot tier: a dot is drawn only if no
+ * dot has landed in its DOT_CELL_PX-square of device pixels this frame.
+ * The cell is under the dot (LOD_SHOT_FLAT_PX), so dots still touch or
+ * overlap and the haze stays a haze. Two dots on the same pixel are one dot — the second changes nothing on
+ * screen and costs a quad — and at the whole-map zoom a hundred thousand
+ * shots land on a few thousand cells. The picture keeps every place a
+ * shot is; it loses only the copies. Cleared every frame (dotGrid)
+ */
+const DOT_CELL_PX = 3;
+/** a bolt or chain whose links are under this on screen is stroked between
+ *  every n-th of its points instead (polyline): a joint skipped moves the
+ *  line by the joint's own wander, and a coil bolt wanders twenty degrees
+ *  over a 37px step — half a pixel here, on a four-pixel link */
+const LOD_LINK_PX = 4;
+/** ...and a path whose JITTER is under this on screen is one straight
+ *  stroke from its first point to its last: every joint is within a pixel
+ *  of the line it would draw anyway (polyline `jitter`). The wraith
+ *  chains throw their joints 7.5 world px — 0.7 px at the whole-map zoom */
+const LOD_JITTER_PX = 1;
+/** a beam whose widest wash is under this on screen is ONE stroke, not
+ *  four washes and their caps: at that width the passes land on the same
+ *  pixels and read as the middle one anyway */
+const LOD_BEAM_ONE_PX = 3;
+/** a quad under this on screen in BOTH dimensions is not pushed at all
+ *  (push): it covers less than a pixel, and a pixel it does not cover is a
+ *  pixel it cannot change. Every effect particle, spark and smoke grain at
+ *  the whole-map zoom is one of these */
+const LOD_QUAD_PX = 0.75;
+/** the silhouette under-layer of a walker (pushMech, pushLegs) is drawn
+ *  only while its rim would show: the rim is one art pixel — a Mindustry
+ *  unit, MU world px — around every part, and under LOD_QUAD_PX of it on
+ *  screen the layer is a second copy of the body under the body (rimOn) */
+const RIM_WORLD_PX = MU;
+
+/**
  * A reused view of one slot of the sim's struct-of-arrays effect pool.
  * The effect draw helpers below all read the classic Effect shape; the
  * main effects pass refills this ONE object per effect per frame instead
@@ -1175,6 +1262,16 @@ interface Batch {
   data: Float32Array;
   n: number;
   cap: number;
+  /**
+   * IS THIS BATCH REFILLED EVERY FRAME? Only one that is may be thinned by
+   * the screen-size rules (push, LOD_QUAD_PX): those read the CAMERA, and a
+   * batch that is filled once and drawn for the rest of the map's life
+   * (the floors, the water, the walls, the rail bed under them) would bake
+   * whatever zoom happened to be up when it was built into the ground
+   * itself — a prop dropped at the whole-map zoom would stay missing after
+   * the player zoomed in, until something else rebuilt the terrain.
+   */
+  lod: boolean;
 }
 
 /**
@@ -1266,6 +1363,42 @@ export class Renderer {
    */
   private shieldReady = true;
   // the visible world rect this frame (set by render), for culling
+  /** device px per world px this frame — what the LOD floors are read against */
+  private ppw = 1;
+  /** is a walker's silhouette rim (RIM_WORLD_PX) a pixel or more this frame? */
+  private rimOn = true;
+  /**
+   * WHAT THE LAST FRAME WAS MADE OF, in quads, by source — read off the
+   * batch's count before and after each pass (render). The render bench
+   * prints it beside the draw time, so a slow frame says whether it was
+   * the shots, the bodies, the buildings or the effects that filled it,
+   * rather than one number a frame. `fx` also holds the unit beams and
+   * fields, which are pushed between the bodies and the effect pool
+   */
+  private readonly tally = { towers: 0, beams: 0, bodies: 0, shots: 0, fx: 0, total: 0, ppw: 1, lodBodies: 0, lodShots: 0, bigGrown: 0, fxKinds: new Uint32Array(128) };
+  drawTally(): Readonly<typeof this.tally> {
+    return this.tally;
+  }
+  /** the flat-dot occupancy of the screen this frame, one byte a DOT_CELL_PX
+   *  square (see DOT_CELL_PX); sized to the canvas in begin */
+  /** the ammo met this frame, by (kind index, frag, alt) — bulletFor once
+   *  an ammo a frame rather than once a shot (pushBullets); cleared in begin */
+  private readonly bulletTbl: (BulletStats | null)[] = new Array(TOWER_KINDS.length * 4).fill(null);
+  private dotGrid = new Uint8Array(0);
+  private dotCols = 0;
+  private dotRows = 0;
+  /** may a flat dot land at this world point — is its DOT_CELL_PX screen
+   *  cell still free this frame? Marks the cell when it is */
+  private dotFree(x: number, y: number): boolean {
+    const v = this.view;
+    const sx = ((x * v.zoom + v.offX) * v.kPx / DOT_CELL_PX) | 0;
+    const sy = ((y * v.zoom + v.offY) * v.kPx / DOT_CELL_PX) | 0;
+    if (sx < 0 || sy < 0 || sx >= this.dotCols || sy >= this.dotRows) return true;
+    const di = sy * this.dotCols + sx;
+    if (this.dotGrid[di]) return false;
+    this.dotGrid[di] = 1;
+    return true;
+  }
   private vx0 = 0;
   private vy0 = 0;
   private vx1 = W;
@@ -1348,12 +1481,12 @@ export class Renderer {
     );
 
     // floor tile + up to 8 floor-edge fades per cell (worst-case borders)
-    this.terrain = this.makeBatch(NCELLS * 6 + 512);
+    this.terrain = this.makeBatch(NCELLS * 6 + 512, false);
     // one quad per water cell — a map that is all sea is the worst case
-    this.water = this.makeBatch(NCELLS + 64);
+    this.water = this.makeBatch(NCELLS + 64, false);
     // wall tiles + decor/pine props
-    this.walls = this.makeBatch(NCELLS * 2 + 2048);
-    this.shadow = this.makeBatch(4);
+    this.walls = this.makeBatch(NCELLS * 2 + 2048, false);
+    this.shadow = this.makeBatch(4, false);
     this.dark = this.makeBatch(4);
     // a swarm budget, not a worst case: 12 quads is a walking mech with one
     // mirrored gun drawn twice (silhouette rim under, art over), which is
@@ -1469,7 +1602,7 @@ export class Renderer {
     return p;
   }
 
-  private makeBatch(cap: number): Batch {
+  private makeBatch(cap: number, lod = true): Batch {
     const gl = this.gl;
     const vao = gl.createVertexArray();
     const vbo = gl.createBuffer();
@@ -1494,7 +1627,7 @@ export class Renderer {
       gl.vertexAttribDivisor(loc, 1);
     }
     gl.bindVertexArray(null);
-    return { vao, vbo, data: new Float32Array(cap * FLOATS), n: 0, cap };
+    return { vao, vbo, data: new Float32Array(cap * FLOATS), n: 0, cap, lod };
   }
 
   /**
@@ -1595,10 +1728,12 @@ export class Renderer {
     // silhouette pass: every part as a solid dilated shape, drawn first so
     // the art covers all of it but a single rim around the assembly — the
     // outer border without a line at every seam of the walking mech
-    for (let k = 0; k < np; k++) {
-      const p = MECH_PARTS[k];
-      this.push(b, p.x, p.y, p.w, p.h, p.r, p.sil, tint[0], tint[1], tint[2], 1);
-    }
+    // ...while the rim is a pixel or more (rimOn, LOD)
+    if (this.rimOn)
+      for (let k = 0; k < np; k++) {
+        const p = MECH_PARTS[k];
+        this.push(b, p.x, p.y, p.w, p.h, p.r, p.sil, tint[0], tint[1], tint[2], 1);
+      }
     for (let k = 0; k < np; k++) {
       const p = MECH_PARTS[k];
       this.push(b, p.x, p.y, p.w, p.h, p.r, p.uv, tint[0] * p.dk, tint[1] * p.dk, tint[2] * p.dk, 1);
@@ -1658,7 +1793,8 @@ export class Renderer {
         sm, sm, fa, art.foot, 0, 0, 0, SHADOW_ALPHA);
     }
 
-    for (let pass = 0; pass < 2; pass++) {
+    // the under-layer only while its rim would show (rimOn, LOD)
+    for (let pass = this.rimOn ? 0 : 1; pass < 2; pass++) {
       const painted = pass === 1; // 0 = silhouette under-layer, 1 = the art
       for (let j = n - 1; j >= 0; j--) {
         // Mindustry's draw order: 0, n-1, 1, n-2, … — outermost pair last
@@ -1872,6 +2008,9 @@ export class Renderer {
     a: number,
   ): void {
     if (b.n >= b.cap) return;
+    // LOD (LOD_QUAD_PX): a quad the screen cannot show is not written —
+    // on the per-frame batches only (Batch.lod), never on the ground
+    if (b.lod && (w < 0 ? -w : w) * this.ppw < LOD_QUAD_PX && (h < 0 ? -h : h) * this.ppw < LOD_QUAD_PX) return;
     const f = this.sScale;
     if (f !== 1) {
       x = this.sPivotX + (x - this.sPivotX) * f;
@@ -2402,6 +2541,15 @@ export class Renderer {
   private begin(zoom: number, offX: number, offY: number, kPx: number): void {
     const gl = this.gl;
     this.view = { zoom, offX, offY, kPx };
+    this.ppw = zoom * kPx;
+    this.rimOn = RIM_WORLD_PX * this.ppw >= LOD_QUAD_PX;
+    this.bulletTbl.fill(null);
+    const dc = Math.ceil(this.canvas.width / DOT_CELL_PX) + 1, dr = Math.ceil(this.canvas.height / DOT_CELL_PX) + 1;
+    if (dc !== this.dotCols || dr !== this.dotRows) {
+      this.dotCols = dc;
+      this.dotRows = dr;
+      this.dotGrid = new Uint8Array(dc * dr);
+    } else this.dotGrid.fill(0);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.disable(gl.SCISSOR_TEST); // the clear is the whole canvas (scissorWorld)
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -2532,24 +2680,38 @@ export class Renderer {
       }
       this.fillCircle(dyn, ex, ey, len * (1 - fxAge[f] / fxTtl[f]), col, 1);
     }
-    for (const p of sim.projs) {
-      if (p.x < vx0 - 48 || p.x > vx1 + 48 || p.y < vy0 - 48 || p.y > vy1 + 48) continue;
+    // THE TURRETS' SHOTS OFF THE PACKED LANES (ShotsView.projPacked), not
+    // the mirrors — this is the one walk over every shot in the air, every
+    // frame. Fields as snapshot.ts packs them: x, y, vx, vy, kind index,
+    // frag, age, life, bare, alt (PROJ_F a shot)
+    const P = sim.projPacked, pn = sim.projN;
+    const tbl = this.bulletTbl;
+    for (let i = 0; i < pn; i++) {
+      const o = i * PROJ_F;
+      const px = P[o], py = P[o + 1];
+      if (px < vx0 - 48 || px > vx1 + 48 || py < vy0 - 48 || py > vy1 + 48) continue;
       // the SIM's resolution, not the static table: a tacker the tree has
       // upgraded fires a different bullet, and drawing the stock one made
-      // the graphite round invisible as a graphite round
-      const b = sim.bulletFor(p.kind, p.frag, p.alt);
+      // the graphite round invisible as a graphite round. Once an ammo a
+      // frame (bulletTbl): the answer cannot change inside one
+      const kid = P[o + 4], frag = P[o + 5] !== 0, alt = P[o + 9] !== 0;
+      const ti = (kid << 2) | (frag ? 1 : 0) | (alt ? 2 : 0);
+      let b = tbl[ti];
+      if (b === null) b = tbl[ti] = sim.bulletFor(TOWER_KINDS[kid], frag, alt);
       // LiquidBulletType.draw: a water orb is not a sprite pair but a
       // filled disc of the liquid's own colour — Fill.circle(x, y,
       // orbSize). (The fout()/100 lerp toward white is a 1% shade and is
       // dropped.)
       if (b.orb) {
-        this.fillCircle(dyn, p.x, p.y, b.orb, b.fxColor ?? PAL.white, 1);
+        if (b.orb * 2 * this.ppw >= LOD_SHOT_SKIP_PX)
+          this.fillCircle(dyn, px, py, b.orb, b.fxColor ?? PAL.white, 1);
         continue;
       }
       // a bare BulletType has no sprite at all — torch's flame lives
       // entirely in its shoot and hit effects. A shot thrown by a frag
       // burst carries the CHILD ammo's sprite, not the shell's
       const sp = b.sprite;
+      const life = P[o + 7], age = P[o + 6];
       if (!sp) {
         // THE ONE TURRET A MISSING EFFECT WOULD SILENCE. With its shoot
         // and hit effects gone, a spriteless bullet has no visible shot
@@ -2565,18 +2727,32 @@ export class Renderer {
         // pool drops the newest push, which is the flash of the shot
         // being fired, and a wave big enough to saturate the budget is
         // exactly when a player is reading the line for dead guns. The
-        // sim marks the shots it could not draw (Projectile.bare), so
+        // sim marks the shots it could not draw (projs.ts PROJ_BARE), so
         // this is per BULLET and not per frame: a torch whose flame
         // landed keeps its full tongue and is never drawn twice.
-        if (!this.fxOn || p.bare) {
-          const fout = clamp(p.life / (p.life + p.age), 0, 1);
+        if (!this.fxOn || P[o + 8] !== 0) {
+          const fout = clamp(life / (life + age), 0, 1);
           this.fillCircle(
-            dyn, p.x, p.y,
+            dyn, px, py,
             (0.65 + fout * 1.5) * MU,
             ramp(LIGHT_FLAME, DARK_FLAME, FLAME_GRAY, 1 - fout),
             1,
           );
         }
+        continue;
+      }
+      // LOD (LOD_SHOT_SKIP_PX, LOD_SHOT_FLAT_PX): under a pixel, nothing;
+      // under a few, one flat quad — a dot in the round's own colour
+      const spx = Math.max(sp.along, sp.across) * this.ppw;
+      if (spx < LOD_SHOT_SKIP_PX) continue;
+      const vx = P[o + 2], vy = P[o + 3];
+      if (spx < LOD_SHOT_FLAT_PX) {
+        this.tally.lodShots++;
+        // ...and only the first dot to land on each screen cell (DOT_CELL_PX)
+        if (!this.dotFree(px, py)) continue;
+        const [flat] = BULLET_REGIONS[sp.region];
+        this.push(dyn, px, py, sp.along, sp.across, Math.atan2(vy, vx), flat,
+          sp.back[0], sp.back[1], sp.back[2], 1);
         continue;
       }
       // BasicBulletType.draw: shrinkInterp(fout) drives both axes, so a
@@ -2585,14 +2761,20 @@ export class Renderer {
       // life + age is the lifetime the shot was born with, EXCEPT on a flak
       // shell whose fuse has primed it: that zeroes the life outright, and
       // reading fout 0 off it is exactly Mindustry's b.time = b.lifetime
-      const fout = clamp(p.life / (p.life + p.age), 0, 1);
+      const fout = clamp(life / (life + age), 0, 1);
       const shrink = sp.slopeShrink ? 1 - Math.abs(fout - 0.5) * 2 : fout;
       const along = sp.along * (1 - sp.shrinkY + sp.shrinkY * shrink);
       const across = sp.across * (1 - sp.shrinkX + sp.shrinkX * shrink);
-      const rot = Math.atan2(p.vy, p.vx);
+      const rot = Math.atan2(vy, vx);
       const [back, front] = BULLET_REGIONS[sp.region];
-      this.push(dyn, p.x, p.y, along, across, rot, back, sp.back[0], sp.back[1], sp.back[2], 1);
-      this.push(dyn, p.x, p.y, along, across, rot, front, sp.front[0], sp.front[1], sp.front[2], 1);
+      // LOD (LOD_SHOT_ONE_PX): the back sprite alone, one a screen cell
+      if (spx < LOD_SHOT_ONE_PX) {
+        if (!this.dotFree(px, py)) continue;
+        this.push(dyn, px, py, along, across, rot, back, sp.back[0], sp.back[1], sp.back[2], 1);
+        continue;
+      }
+      this.push(dyn, px, py, along, across, rot, back, sp.back[0], sp.back[1], sp.back[2], 1);
+      this.push(dyn, px, py, along, across, rot, front, sp.front[0], sp.front[1], sp.front[2], 1);
     }
     // THE SWARM'S SHOTS (Sim.shots): BasicBulletType.draw off each weapon's
     // own ShotLook (weapons.ts) — its sprite pair at its size in its
@@ -2600,6 +2782,22 @@ export class Renderer {
     // over it, or a liquid orb's plain disc
     for (const sh of sim.shots) {
       if (sh.x < vx0 - 48 || sh.x > vx1 + 48 || sh.y < vy0 - 48 || sh.y > vy1 + 48) continue;
+      // LOD (LOD_SHOT_SKIP_PX, LOD_SHOT_FLAT_PX), the swarm's rounds under
+      // the same floors as the turrets': under a pixel nothing, under a
+      // few one dot per screen cell, in the round's own back colour — a
+      // star included, whose arms are under a pixel each at that size
+      const lk = sh.look;
+      const hpx = Math.max(lk.height, lk.width) * this.ppw;
+      if (hpx < LOD_SHOT_SKIP_PX) continue;
+      if (hpx < LOD_SHOT_FLAT_PX) {
+        this.tally.lodShots++;
+        if (!this.dotFree(sh.x, sh.y)) continue;
+        const r0 = sh.vx === 0 && sh.vy === 0 ? 0 : Math.atan2(sh.vy, sh.vx);
+        const pair = (SHOT_REGIONS as Partial<Record<typeof lk.region, readonly [UVRect | null, UVRect]>>)[lk.region];
+        this.push(dyn, sh.x, sh.y, lk.height, lk.width, r0, pair ? (pair[0] ?? pair[1]) : UV_SOLID,
+          lk.back[0], lk.back[1], lk.back[2], 1);
+        continue;
+      }
       const look = sh.look;
       // a bomb has no velocity: it keeps the heading it was dropped on, 0
       const rot = sh.vx === 0 && sh.vy === 0 ? 0 : Math.atan2(sh.vy, sh.vx);
@@ -2629,6 +2827,13 @@ export class Renderer {
       const along = look.height * (1 - look.shrinkY + look.shrinkY * shrink);
       const across = look.width * (1 - look.shrinkX + look.shrinkX * shrink);
       const [back, front] = SHOT_REGIONS[look.region];
+      // LOD (LOD_SHOT_ONE_PX): one sprite, one a screen cell
+      if (hpx < LOD_SHOT_ONE_PX) {
+        if (!this.dotFree(sh.x, sh.y)) continue;
+        const uv = back ?? front, c = back ? look.back : look.front;
+        this.push(dyn, sh.x, sh.y, along, across, rot, uv, c[0], c[1], c[2], 1);
+        continue;
+      }
       if (back) this.push(dyn, sh.x, sh.y, along, across, rot, back, look.back[0], look.back[1], look.back[2], 1);
       this.push(dyn, sh.x, sh.y, along, across, rot, front, look.front[0], look.front[1], look.front[2], 1);
       if (look.bolt) {
@@ -2758,8 +2963,16 @@ export class Renderer {
       if (upx[i] < vx0 - cm || upx[i] > vx1 + cm || upy[i] < vy0 - cm || upy[i] > vy1 + cm)
         continue;
       const usz = KIND_SPRITE[k];
+      // LOD (LOD_BODY_PX): a body this small on screen is one quad of its
+      // hull — decided here, before the shadow and the halo, since a
+      // two-pixel body casts no shadow anyone can see either
+      const lod = urad[i] * 2 * grow * this.ppw < LOD_BODY_PX;
       if (grow !== 1) this.beginScale(upx[i], upy[i], grow);
       if (shadow) {
+        if (lod) {
+          this.endScale();
+          continue;
+        }
         // the body's own quad, flattened to black and thrown down-right:
         // clear of the flyer it hangs under, a rim under the walker it
         // belongs to (GROUND_SHADOW_ELEV). A mech's and a walker's body is
@@ -2783,7 +2996,7 @@ export class Renderer {
       // A force field carrier sets drawShields = false — its pool is
       // already on screen as the bubble, and a halo under it would read
       // as a second, smaller shield
-      if (ushield[i] > 0.0001 && !KIND_FORCE[k]) {
+      if (!lod && ushield[i] > 0.0001 && !KIND_FORCE[k]) {
         // UnitType.drawShield: Fill.light at hitSize * 1.3 — a disc that is
         // clear at the centre and carries the colour at its rim
         const sr = urad[i] * 2 * 1.3 * 2;
@@ -2822,6 +3035,14 @@ export class Renderer {
       this.cellTint[0] = team[0] * tint[0];
       this.cellTint[1] = team[1] * tint[1];
       this.cellTint[2] = team[2] * tint[2];
+      if (!lod && grow !== 1 && !shadow) this.tally.bigGrown++;
+      if (lod) {
+        this.tally.lodBodies++;
+        this.push(dyn, upx[i], upy[i], usz, usz, urot[i], KIND_UV[k],
+          tint[0], tint[1], tint[2], ucloakT[i] > 0 ? 0.2 : 1);
+        this.endScale();
+        continue;
+      }
       const cell = this.kindCell[k];
       const legArt = KIND_LEG[k], gait = KIND_GAIT[k];
       const mech = KIND_MECH[k];
@@ -2946,6 +3167,11 @@ export class Renderer {
     const dyn = this.dyn;
     dyn.n = 0;
     this.shields.n = 0;
+    const tl = this.tally;
+    tl.towers = tl.beams = tl.bodies = tl.shots = tl.fx = tl.total = tl.lodBodies = tl.lodShots = tl.bigGrown = 0;
+    tl.fxKinds.fill(0);
+    tl.ppw = this.ppw;
+    let n0 = 0;
     this.fields.n = 0;
     // settled before the fills are gathered, because it decides what they
     // ARE: solid shapes for the shader to work on, or the finished
@@ -2953,6 +3179,7 @@ export class Renderer {
     const buffered = this.ensureShieldTarget(this.canvas.width, this.canvas.height);
     this.drawForceFields(sim, buffered);
     this.drawFieldRings(sim, buffered);
+    n0 = dyn.n;
     for (const t of sim.towers) {
       // THE FOOTPRINT IT ACTUALLY STANDS ON (Tower.size), not the table's:
       // a GIANT is twice its kind's edge, so its sprite is drawn over four
@@ -2985,6 +3212,9 @@ export class Renderer {
       const g = own ? tint[1] : tint[1] * TEAM_CRUX_RGB[1];
       const b = own ? tint[2] : tint[2] * TEAM_CRUX_RGB[2];
       this.push(dyn, t.x, t.y, px, px, 0, base, r, g, b, 1);
+      // LOD (LOD_BODY_PX): a turret this small on screen is its base plate
+      // — the head's bearing and the muzzle flash are under a pixel
+      if (px * this.ppw < LOD_BODY_PX) continue;
       this.push(dyn, t.x, t.y, px, px, angle, top, r, g, b, 1);
       // THE FALLBACK MUZZLE FLASH (Sim, Tower.flashT): this turret fired
       // and the effect pool refused its muzzle effect, so the shot has
@@ -3012,6 +3242,8 @@ export class Renderer {
     // own (Sim.trySpawnShieldTower) and never overlap one, so the order is
     // only about the domes drawing over the board.
     // Dead shieldTowers draw nothing; their ground is open again
+    tl.towers += dyn.n - n0;
+    n0 = dyn.n;
     for (const s of sim.shieldTowers) {
       if (s.hp <= 0) continue;
       const spx = SHIELD_TOWER_SIZE * CELL;
@@ -3115,9 +3347,15 @@ export class Renderer {
     // those is not here: it is drawn after the darkness at the end of the
     // frame (pushUnitPass), so a flyer crossing a range is not swallowed
     // by it
+    // everything between the buildings and the bodies is the buildings'
+    // beams (drawLockBeam, drawContinuousBeam), the domes and the cart
+    tl.beams += dyn.n - n0;
+    n0 = dyn.n;
     this.pushUnitPass(dyn, sim, 0);
     this.pushUnitPass(dyn, sim, 1);
     this.pushUnitPass(dyn, sim, 2);
+    tl.bodies += dyn.n - n0;
+    n0 = dyn.n;
     // WHAT A UNIT IS DOING RIGHT NOW, drawn off the unit rather than the
     // effect pool: a starhart4's held beam for as long as it burns, the green
     // ring a starhart5 gathers before its shot, and the energy field's orbit
@@ -3208,6 +3446,7 @@ export class Renderer {
         e.col = undefined;
       }
       const t = e.age / e.ttl;
+      const q0 = dyn.n;
       if (e.kind === FxKind.Death) {
         // the kill puff's own orange unless the push named a colour — a
         // body DEVOURED by a hungry unit wears the hungry hue instead, so
@@ -3492,6 +3731,7 @@ export class Renderer {
         const s = 9 + t * 30;
         this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 0.34, 0.89, 0.54, (1 - t) * 0.9);
       }
+      this.tally.fxKinds[kind] += dyn.n - q0;
     }
     // the core last, above units and the fx at its feet — it is the one
     // building the whole swarm is walking at, and it stands over the crowd
@@ -3516,10 +3756,16 @@ export class Renderer {
     // effects are already on the frame under it. The rounds go over both
     // (pushBullets): a shot flies across rock no walker can stand on, and
     // one that went dark halfway there was a shot the player lost
+    tl.fx += dyn.n - n0;
+    tl.total += dyn.n;
     dyn.n = 0;
     this.pushUnitPass(dyn, sim, 3);
+    tl.bodies += dyn.n;
+    n0 = dyn.n;
     // ...and the shots over them, above the darkness as well (pushBullets)
     this.pushBullets(dyn, sim);
+    tl.shots += dyn.n - n0;
+    tl.total += dyn.n;
     this.draw(dyn, true);
   }
 
@@ -3838,8 +4084,13 @@ export class Renderer {
     a: number,
   ): void {
     if (radius <= 0.01 || stroke <= 0.01 || a <= 0.004) return;
-    // Lines.circleVertices: 11 + rad*0.6, with rad in Mindustry units
-    const sides = 11 + Math.floor((radius / MU) * 0.6);
+    // LOD: a ring under a pixel of radius is nothing; a bigger one has as
+    // many sides as its SCREEN circumference asks for, one every three
+    // pixels, never fewer than six — Mindustry's count (11 + 0.6 a unit of
+    // radius) is the ceiling, for the zooms where it was written
+    const rs = radius * this.ppw;
+    if (rs < LOD_QUAD_PX) return;
+    const sides = Math.min(11 + Math.floor((radius / MU) * 0.6), Math.max(6, Math.ceil((Math.PI * 2 * rs) / 3)));
     const step = (Math.PI * 2) / sides;
     // segment chord, overlapped slightly so the joints leave no gaps
     const chord = 2 * radius * Math.sin(step / 2) + stroke * 0.5;
@@ -3953,6 +4204,8 @@ export class Renderer {
     spread: number,
     body: (x: number, y: number, bearing: number) => void,
   ): void {
+    // LOD: a spray whose whole reach is under a pixel on screen is nothing
+    if (len * this.ppw < LOD_QUAD_PX) return;
     rngSeed(seed);
     for (let i = 0; i < n; i++) {
       const a = ang + (spread === 0 ? 0 : (rng() * 2 - 1) * spread);
@@ -4412,10 +4665,12 @@ export class Renderer {
       base[1] + (1 - base[1]) * t,
       base[2] + (1 - base[2]) * t,
     ];
-    for (let i = 0; i + 3 < pts.length; i += 2)
-      this.pushSeg(dyn, pts[i], pts[i + 1], pts[i + 2], pts[i + 3], UV_SOLID, stroke, col);
-    for (let i = 0; i < pts.length; i += 2)
-      this.fillCircle(dyn, pts[i], pts[i + 1], stroke / 2, col, 1);
+    this.polyline(dyn, pts, UV_SOLID, stroke, col);
+    // the joint dots are half the stroke across: under LOD_LINK_PX of stroke
+    // on screen they are inside the line they sit on (LOD)
+    if (stroke * this.ppw >= LOD_LINK_PX)
+      for (let i = 0; i < pts.length; i += 2)
+        this.fillCircle(dyn, pts[i], pts[i + 1], stroke / 2, col, 1);
   }
 
   /**
@@ -4531,7 +4786,10 @@ export class Renderer {
     a: number,
   ): void {
     if (length <= 0.01 || width <= 0.01 || a <= 0.004) return;
-    const DIV = 15; // Mathf.round(divisions=13, 2) + 1
+    // LOD: as many wedges as the cap's arc has pixels, one every two or so,
+    // never fewer than three and never more than Mindustry's fifteen — a
+    // six-pixel cap in fifteen wedges is fifteen quads for one pixel of arc
+    const DIV = Math.min(15, Math.max(3, Math.ceil((Math.PI * Math.max(length, width) * this.ppw) / 2)));
     const cos = Math.cos(rot), sin = Math.sin(rot);
     // local (u, v): u along the beam, v across it. The arc runs from -90
     // through the nose at 0 to +90, so the polygon closes on its own base
@@ -4599,6 +4857,14 @@ export class Renderer {
     const width = style.width + ABSIN(time, 0.8, 1.5); // width + absin(oscScl, oscMag)
     const cos = Math.cos(rot), sin = Math.sin(rot);
     const colors = style.colors;
+    // LOD (LOD_BEAM_ONE_PX): under the floor, the second wash alone at the
+    // first wash's width — the one line the four would have summed to
+    if (width * fout * 2 * MU * this.ppw < LOD_BEAM_ONE_PX) {
+      const [[cr, cg, cb], ca] = colors[Math.min(1, colors.length - 1)];
+      const col: RGB = [Math.min(1, cr * shimmer), Math.min(1, cg * shimmer), Math.min(1, cb * shimmer)];
+      this.strokeLine(dyn, ox, oy, rot, len, width * fout * 2 * MU, col, ca);
+      return;
+    }
     for (let i = 0; i < colors.length; i++) {
       const [[cr, cg, cb], ca] = colors[i];
       const col: RGB = [
@@ -4616,8 +4882,12 @@ export class Renderer {
       const r = stroke / 2;
       const body = Math.max(0, len - r);
       this.strokeLine(dyn, ox, oy, rot, body, stroke, col, ca);
-      this.flameFront(dyn, ox, oy, rot + Math.PI, r, r, col, ca);
-      this.flameFront(dyn, ox + cos * body, oy + sin * body, rot, r, r, col, ca);
+      // LOD (LOD_CAP_PX): thirty triangles of rounded cap on a line the
+      // screen shows one pixel wide is a cost and not a shape
+      if (stroke * this.ppw >= LOD_CAP_PX) {
+        this.flameFront(dyn, ox, oy, rot + Math.PI, r, r, col, ca);
+        this.flameFront(dyn, ox + cos * body, oy + sin * body, rot, r, r, col, ca);
+      }
     }
   }
 
@@ -4728,7 +4998,10 @@ export class Renderer {
     const col: RGB = [r, g, b];
     const tri = (tx: number, ty: number, w: number, l: number, a: number): void =>
       this.tri(dyn, tx, ty, w, l, a, col, 1);
-    for (let i = 0; i < S.serrations; i++) {
+    // LOD (LOD_QUAD_PX): a serration thinner than a pixel on screen is a
+    // smear on the bolt, not a tooth — the bolt and its back spike stay
+    const teeth = S.serrationWidth * this.ppw >= LOD_QUAD_PX ? S.serrations : 0;
+    for (let i = 0; i < teeth; i++) {
       const px = x + Math.cos(rot) * i * S.serrationSpacing;
       const py = y + Math.sin(rot) * i * S.serrationSpacing;
       const fade = Math.min(Math.max(fout - S.serrationFadeOffset, 0), 1);
@@ -5006,8 +5279,39 @@ export class Renderer {
     const stroke = 2.5 * MU * (1 - t);
     if (stroke <= 0.01) return;
     const col = ramp(PAL.white, e.col ?? PAL_HEAL, null, t);
-    for (let i = 0; i + 3 < pts.length; i += 2)
-      this.pushSeg(dyn, pts[i], pts[i + 1], pts[i + 2], pts[i + 3], UV_SOLID, stroke, col);
+    // the chain's joints sit within range/2 of the straight line (chainFx)
+    this.polyline(dyn, pts, UV_SOLID, stroke, col, 1, 3 * MU);
+  }
+
+  /**
+   * A POLYLINE OF POINT PAIRS, STRODE FOR THE ZOOM (LOD_LINK_PX): every
+   * link at a zoom where a link is a few pixels, every n-th joint where it
+   * is not — the last point always reached, so the path still lands where
+   * it landed. The stride is read off the FIRST link, which for every
+   * path the sim builds (chainFx, unitBolt, the coil's walk) is the
+   * spacing all its links share. Measured on the render bench at the
+   * whole-map zoom, the wraith chains of ten thousand livewires were a
+   * ninth of the frame drawn joint by joint; strode, the same lines at the
+   * same pixels for a fraction
+   */
+  private polyline(
+    dyn: Batch, pts: readonly number[], uv: UVRect, stroke: number, col: RGB, alpha = 1,
+    jitter = Infinity,
+  ): void {
+    const n = pts.length;
+    // a path whose wander the screen cannot show is the line under it
+    // (LOD_JITTER_PX) — the chains, whose joints are thrown a few world
+    // units off a straight line, and nothing else: a bolt WALKS
+    if (jitter * this.ppw < LOD_JITTER_PX) {
+      this.pushSeg(dyn, pts[0], pts[1], pts[n - 2], pts[n - 1], uv, stroke, col, alpha);
+      return;
+    }
+    const link = Math.hypot(pts[2] - pts[0], pts[3] - pts[1]) * this.ppw;
+    const stride = link >= LOD_LINK_PX || link <= 0 ? 2 : 2 * Math.ceil(LOD_LINK_PX / link);
+    let i = 0;
+    for (; i + stride + 1 < n; i += stride)
+      this.pushSeg(dyn, pts[i], pts[i + 1], pts[i + stride], pts[i + stride + 1], uv, stroke, col, alpha);
+    if (i + 1 < n - 2) this.pushSeg(dyn, pts[i], pts[i + 1], pts[n - 2], pts[n - 1], uv, stroke, col, alpha);
   }
 
   /**
