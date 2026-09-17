@@ -441,7 +441,7 @@ export interface BulletStats {
   // every field anyway.
   //
   // IT IS RESOLVED WHERE `frag` IS (bulletOf, Sim.bulletFor) and written
-  // onto the projectile as one more flag (Projectile.alt), so a ball in
+  // onto the projectile as one more flag (projs.ts PROJ_ALT), so a ball in
   // the air answers for its own stats and the renderer draws the ammo
   // that was actually fired. Alt first, then frag: a fragment of the
   // fire ball is the FIRE ball's child.
@@ -700,7 +700,116 @@ const ZERO_BULLET: BulletStats = {
  */
 export const TOWER_ARMOR_BY_SIZE: readonly number[] = [0, 0, 4, 9, 15];
 
-export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
+/**
+ * ONE HIDDEN CLASS FOR EVERY BULLET, AND ONE FOR EVERY TURRET.
+ *
+ * WHY. V8 gives an object literal a hidden class from the keys it was
+ * written with, and every ammo below is written with a different set of
+ * optional keys — hive has `homing`, whirl has `flak` and `frag`, torch
+ * has none of the sprite fields. A property read like `b.splash` in the
+ * sim's hot loops is fast while it has met at most four classes; past that
+ * it is a hash lookup on every read. Measured on the turret clocks
+ * (scripts/check.mjs, ten thousand of one kind): the whirl pass cost 10ms
+ * with only whirl's two ammos seen, and 13.8ms in a process that had
+ * stepped a mixed board first — the same code, the same shots, a third
+ * slower because the stats reads had gone megamorphic. A real board is
+ * always the mixed one.
+ *
+ * SO EVERY STATS OBJECT IS REBUILT WITH EVERY KEY, in one fixed order,
+ * absent ones as undefined (normalizeBullet, normalizeTower), and the
+ * table the game reads (TOWERS) holds only those. A read of an absent key
+ * is undefined either way; the code never asks `"homing" in b`. Spreads
+ * downstream (`{ ...b, damage }` in upgrades.ts, mods.ts, relics.ts) keep
+ * the shape: a clone of one class with an existing key overwritten is the
+ * same class. Written as LITERALS rather than a key loop on purpose — V8
+ * turns an object that gains more than a dozen properties through keyed
+ * stores into a dictionary, which would be the very thing this prevents.
+ * `Full<T>` is the exhaustiveness check: a field added to the interface and
+ * not to the literal is a type error here, not a silently dropped stat.
+ */
+// (`keyof T & string` keeps the mapped type non-homomorphic, so an optional
+// field is required HERE — the exhaustiveness — while its value may still be
+// undefined; a plain `-?` would strip the undefined and refuse the absent ones)
+type Full<T> = { [K in keyof T & string]: T[K] };
+
+export function normalizeBullet(b: BulletStats): BulletStats {
+  const out: Full<BulletStats> = {
+    speed: b.speed,
+    damage: b.damage,
+    lifetime: b.lifetime,
+    splash: b.splash,
+    splashRadius: b.splashRadius,
+    collidesAir: b.collidesAir,
+    collidesGround: b.collidesGround,
+    flak: b.flak,
+    ray: b.ray,
+    artillery: b.artillery,
+    pierce: b.pierce,
+    hitRadius: b.hitRadius,
+    burn: b.burn,
+    laser: b.laser,
+    lightning: b.lightning,
+    lock: b.lock,
+    armorMultiplier: b.armorMultiplier,
+    pierceArmor: b.pierceArmor,
+    lifeScaleRand: b.lifeScaleRand,
+    homing: b.homing,
+    pierceCap: b.pierceCap,
+    knockback: b.knockback,
+    wet: b.wet,
+    electric: b.electric,
+    orb: b.orb,
+    alt: b.alt ? normalizeBullet(b.alt) : undefined,
+    frag: b.frag ? { ...b.frag, bullet: normalizeBullet(b.frag.bullet) } : undefined,
+    rail: b.rail,
+    continuous: b.continuous,
+    sprite: b.sprite,
+    trail: b.trail,
+    puff: b.puff,
+    shootFx: b.shootFx,
+    smokeFx: b.smokeFx,
+    hitFx: b.hitFx,
+    hitFx2: b.hitFx2,
+    despawnFx: b.despawnFx,
+    pierceFx: b.pierceFx,
+    pointFx: b.pointFx,
+    chargeFx: b.chargeFx,
+    fxColor: b.fxColor,
+  };
+  return out;
+}
+
+export function normalizeTower(s: TowerStats): TowerStats {
+  const out: Full<TowerStats> = {
+    name: s.name,
+    size: s.size,
+    health: s.health,
+    armor: s.armor,
+    range: s.range,
+    reload: s.reload,
+    shots: s.shots,
+    shotDelay: s.shotDelay,
+    spread: s.spread,
+    inaccuracy: s.inaccuracy,
+    shootCone: s.shootCone,
+    rotateSpeed: s.rotateSpeed,
+    targetAir: s.targetAir,
+    targetGround: s.targetGround,
+    shootY: s.shootY,
+    minRange: s.minRange,
+    chargeTime: s.chargeTime,
+    velocityRnd: s.velocityRnd,
+    lifeScaleOffset: s.lifeScaleOffset,
+    barrels: s.barrels,
+    sort: s.sort,
+    heal: s.heal,
+    bullet: normalizeBullet(s.bullet),
+  };
+  return out;
+}
+
+/** the roster as written — see TOWERS below for the one the game reads */
+const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // Tacker, 1:1 from mindustry/content/Blocks.java with copper ammo
   // (BasicBulletType(2.5, 9)): one shot every 20 ticks, alternating between
   // twin barrels 3.5 units apart (ShootAlternate)
@@ -1811,6 +1920,12 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   },
 };
 
+/** every turret's stats under ONE hidden class each (normalizeTower) — the
+ *  only table the game reads; RAW_TOWERS above is how they were written */
+export const TOWERS: Record<import("./types").TowerKind, TowerStats> = Object.fromEntries(
+  (Object.keys(RAW_TOWERS) as import("./types").TowerKind[]).map((k) => [k, normalizeTower(RAW_TOWERS[k])]),
+) as Record<import("./types").TowerKind, TowerStats>;
+
 /**
  * HOW FAR POWER REACHES, in pixels, from the two things that carry it.
  *
@@ -2068,7 +2183,7 @@ export const towerMaxHp = (kind: import("./types").TowerKind): number =>
  * own ammo — the exception is a shot thrown by BulletType.createFrags,
  * which is the PARENT ammo's child and has its own speed, damage, life and
  * sprite. One boolean rather than a stats pointer on every projectile
- * keeps Projectile a flat record, which is what the sim's hot loop wants.
+ * keeps a projectile a flat set of lanes (projs.ts), which is what the sim's hot loop wants.
  */
 export function bulletOf(
   kind: import("./types").TowerKind,

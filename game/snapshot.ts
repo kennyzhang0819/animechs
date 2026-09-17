@@ -33,6 +33,7 @@
  * `bulletFor` is a pure lookup over a table that is the same on both sides.
  * Neither crosses.
  */
+import { PROJ_ALT, PROJ_BARE, PROJ_FRAG, type Projs } from "./projs";
 import { TOWER_KINDS, type RGB, type TowerKind } from "./types";
 import { UNIT_KINDS, UNIT_STATS } from "./levels";
 import * as shared from "./shared";
@@ -102,7 +103,7 @@ type Barrel = { continuous?: Cont; fxColor?: RGB };
 const TOWER_F = 30;
 /** ...a dome, a shot of ours, and a shot of theirs */
 const DOME_F = 10;
-const PROJ_F = 10;
+export const PROJ_F = 10;
 const SHOT_F = 7;
 /** ...and the core, which there is exactly one of */
 const CORE_F = 8;
@@ -222,7 +223,11 @@ export const emptySnapshot = (): Snapshot => ({
 });
 
 /** what packSnapshot reads — the sim side of SimView, and nothing else */
-export interface Packable extends ShotsView {
+export interface Packable extends Omit<ShotsView, "projs" | "projPacked" | "projN"> {
+  /** the player's shots as the SIM has them — lanes (projs.ts), which the
+   *  packer copies straight across; the drawing side reads them back as
+   *  ProjectileView mirrors */
+  readonly projs: Projs;
   readonly time: number;
   readonly n: number;
   readonly fxN: number;
@@ -347,23 +352,26 @@ export function packSnapshot(w: Packable, out: Snapshot, withPts = false): Snaps
   }
 
   // ---- ours in the air ----
-  const pn = w.projs.length;
+  // ...straight off the sim's lanes (projs.ts): the kind lane already IS
+  // the TOWER_KINDS index the mirror reads back, and the flags are bits
+  const pj = w.projs;
+  const pn = pj.n;
   out.projs = fit(out.projs, pn * PROJ_F);
   out.projN = pn;
   const P = out.projs;
   for (let i = 0; i < pn; i++) {
-    const p = w.projs[i];
     const o = i * PROJ_F;
-    P[o] = p.x;
-    P[o + 1] = p.y;
-    P[o + 2] = p.vx;
-    P[o + 3] = p.vy;
-    P[o + 4] = TOWER_ID.get(p.kind) ?? 0;
-    P[o + 5] = p.frag ? 1 : 0;
-    P[o + 6] = p.age;
-    P[o + 7] = p.life;
-    P[o + 8] = p.bare ? 1 : 0;
-    P[o + 9] = p.alt ? 1 : 0;
+    const fl = pj.flags[i];
+    P[o] = pj.x[i];
+    P[o + 1] = pj.y[i];
+    P[o + 2] = pj.vx[i];
+    P[o + 3] = pj.vy[i];
+    P[o + 4] = pj.kind[i];
+    P[o + 5] = fl & PROJ_FRAG ? 1 : 0;
+    P[o + 6] = pj.age[i];
+    P[o + 7] = pj.life[i];
+    P[o + 8] = fl & PROJ_BARE ? 1 : 0;
+    P[o + 9] = fl & PROJ_ALT ? 1 : 0;
   }
 
   // ---- ...and theirs ----
@@ -605,8 +613,22 @@ export class SnapshotView implements StructuresView, ShotsView {
 
   towers: readonly TowerView[] = [];
   shieldTowers: readonly ShieldTowerView[] = [];
-  projs: readonly ProjectileView[] = [];
   shots: readonly ShotView[] = [];
+  /** the shots as packed (ShotsView.projPacked) — what the renderer reads */
+  projPacked: Float32Array = new Float32Array(0);
+  projN = 0;
+  /** ...and as mirrors, built the first time a frame asks (ShotsView.projs) */
+  private projsCache: readonly ProjectileView[] = [];
+  private projsStale = true;
+  get projs(): readonly ProjectileView[] {
+    if (this.projsStale) {
+      pool(this.projPool, this.projN, () => new ProjMirror());
+      for (let i = 0; i < this.projN; i++) this.projPool[i].read(this.projPacked, i * PROJ_F);
+      this.projsCache = this.projPool.slice(0, this.projN);
+      this.projsStale = false;
+    }
+    return this.projsCache;
+  }
   readonly core: CoreView;
   readonly convoy: ConvoyView;
   time = 0;
@@ -636,9 +658,9 @@ export class SnapshotView implements StructuresView, ShotsView {
     for (let i = 0; i < s.domeN; i++) this.domePool[i].read(s.domes, i * DOME_F);
     this.shieldTowers = this.domePool.slice(0, s.domeN);
 
-    pool(this.projPool, s.projN, () => new ProjMirror());
-    for (let i = 0; i < s.projN; i++) this.projPool[i].read(s.projs, i * PROJ_F);
-    this.projs = this.projPool.slice(0, s.projN);
+    this.projPacked = s.projs;
+    this.projN = s.projN;
+    this.projsStale = true;
 
     pool(this.shotPool, s.shotN, () => new ShotMirror());
     for (let i = 0; i < s.shotN; i++) this.shotPool[i].read(s.shots, i * SHOT_F);
@@ -925,6 +947,12 @@ export class DrawView implements SimView {
   }
   get projs(): readonly ProjectileView[] {
     return this.snap.projs;
+  }
+  get projPacked(): Float32Array {
+    return this.snap.projPacked;
+  }
+  get projN(): number {
+    return this.snap.projN;
   }
   get shots(): readonly ShotView[] {
     return this.snap.shots;

@@ -319,6 +319,17 @@ export interface StructuresView {
 /** ...and everything in the air between them */
 export interface ShotsView {
   readonly projs: readonly ProjectileView[];
+  /**
+   * THE SAME SHOTS AS PACKED FLOATS, PROJ_F (snapshot.ts) a shot, in the
+   * order the snapshot packs them: x, y, vx, vy, kind index into
+   * TOWER_KINDS, frag, age, life, bare, alt. For the one reader that walks
+   * every shot in the air every frame (Renderer.pushBullets): at a hundred
+   * and forty thousand shots the mirror objects behind `projs` were a
+   * millisecond of every frame before a quad was pushed, so `projs` is
+   * built from these on demand and the renderer never asks for it.
+   */
+  readonly projPacked: Float32Array;
+  readonly projN: number;
   readonly shots: readonly ShotView[];
   /** the bullet table, which is a pure lookup and crosses no threads */
   bulletFor(kind: TowerKind, frag: boolean, alt?: boolean): BulletStats;

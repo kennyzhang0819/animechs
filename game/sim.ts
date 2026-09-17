@@ -291,10 +291,10 @@ import {
   type StarSpec,
   type UnitWeapon,
 } from "./weapons";
+import { Projs, TOWER_KIND_ID, PROJ_FRAG, PROJ_ALT, PROJ_ENEMY, PROJ_BARE } from "./projs";
 import {
   FxKind,
   TOWER_KINDS,
-  type Projectile,
   type RGB,
   type Core,
   isCore,
@@ -363,6 +363,14 @@ const FX_CAP = 1400;
 const FX_WEAPON_CAP = 3000;
 /** the most links a chain-lightning path is built from (chainFx) */
 const CHAIN_LINKS_MAX = 64;
+/** seconds a homing shot holds its quarry before it searches for a nearer
+ *  one — six ticks (updateProjectiles) */
+const HOMING_REPICK = 6 / 60;
+/** the hit list, highest body index first, so swap-removes below never
+ *  disturb a removal still pending above (updateProjectiles) */
+const PROJ_DESC = (a: number, b: number): number => b - a;
+/** an ammo's shape as bits, one byte a table slot (updateProjectiles) */
+const BF_HOMING = 1, BF_PUFF = 2, BF_TRAIL = 4, BF_FLAK = 8, BF_ARTILLERY = 16, BF_SPLASH = 32, BF_FRAG = 64;
 /**
  * Footfall dust gets 140 of those and no more — a fixed slice, not a share,
  * so raising the budget above buys room for shots rather than for grit. It
@@ -1998,7 +2006,14 @@ export class Sim {
    *  distance stays honest for a building whose middle sits a ring further
    *  out than the wall a body would actually reach */
   private structMaxHalf = 0;
-  projs: Projectile[] = [];
+  /** the player's shots in flight, as lanes — see projs.ts for why */
+  readonly projs = new Projs();
+  /** the stats and bucket span of each (kind, frag, alt) met in ONE pass of
+   *  updateProjectiles — cleared at the top of every pass */
+  private readonly bulletTbl: (BulletStats | null)[] = new Array(TOWER_KINDS.length * 4).fill(null);
+  private readonly bulletSp = new Float64Array(TOWER_KINDS.length * 4);
+  private readonly bulletFl = new Uint8Array(TOWER_KINDS.length * 4);
+  private readonly bulletBrad = new Float64Array(TOWER_KINDS.length * 4);
 
   /**
    * THE RUN'S SHIELD TOWERS (the Shield Towers mutator, mutation.ts) —
@@ -2470,7 +2485,7 @@ export class Sim {
     }
     this.loopLevel = 0;
     this.loopCycle = 0;
-    this.projs.length = 0;
+    this.projs.clear();
     // drop the fx pool: the count is the pool, but the bolt-path refs must
     // actually go or the last run's arrays sit unreachable-but-held
     this.fxPts.fill(null, 0, this.fxN);
@@ -4319,8 +4334,9 @@ export class Sim {
    */
   profileCensus(): ProfileCensus {
     let shots = 0, hostile = this.shots.length;
-    for (const p of this.projs) {
-      if (p.enemy) hostile++;
+    const FL = this.projs.flags;
+    for (let i = 0; i < this.projs.n; i++) {
+      if (FL[i] & PROJ_ENEMY) hostile++;
       else shots++;
     }
     // THE PAD ONE BULLET PAYS, in hash cells: the sweep in
@@ -4505,7 +4521,7 @@ export class Sim {
         // dearest step was actually carrying, and without this there is
         // nothing to divide that step's milliseconds by
         this.profWorstBodies = this.n;
-        this.profWorstShots = this.projs.length;
+        this.profWorstShots = this.projs.n;
       }
       if (ms > STEP_BUDGET_MS) {
         this.profOver++;
@@ -4524,7 +4540,7 @@ export class Sim {
       // HIGHER than its own peak, which reads as a broken instrument and
       // costs the reader their trust in every other figure in the block
       if (this.n > this.profPeakBodies) this.profPeakBodies = this.n;
-      if (this.projs.length > this.profPeakShots) this.profPeakShots = this.projs.length;
+      if (this.projs.n > this.profPeakShots) this.profPeakShots = this.projs.n;
       const rm = this.rmaxAliveAir > this.rmaxAliveGround ? this.rmaxAliveAir : this.rmaxAliveGround;
       if (rm > this.profPeakRmax) this.profPeakRmax = rm;
     }
@@ -11761,32 +11777,23 @@ export class Sim {
     if (lr) life *= lr[0] + Math.random() * (lr[1] - lr[0]);
     const vr = st.velocityRnd ?? 0;
     const speed = bul.speed * (vr > 0 ? 1 - vr + Math.random() * vr : 1);
-    this.projs.push({
-      kind: t.kind,
-      x,
-      y,
-      vx: cos * speed,
-      vy: sin * speed,
-      life,
-      age: 0,
-      primeT: -1,
-      flakT: bul.flak ? bul.flak.interval : 0,
-      pierced: bul.pierce ? [] : null,
-      trailT: 0,
-      frag: false,
+    this.projs.push(
+      TOWER_KIND_ID[t.kind], x, y, cos * speed, sin * speed, life,
+      bul.flak ? bul.flak.interval : 0,
+      bul.pierce ? [] : null,
       // which nozzle threw it, so the ball answers for its own stats for
       // the rest of its flight (Sim.bulletFor) and is drawn as the ammo
-      // that was actually fired
-      alt,
+      // that was actually fired (PROJ_ALT);
       // a shot of the swarm's flies past every body and lands on the
-      // player's buildings instead (stepHostileProjectile)
-      enemy: hostile,
+      // player's buildings instead (PROJ_ENEMY, stepHostileProjectile);
       // TORCH, AND ONLY TORCH: a bullet with neither sprite nor orb has
       // no visible body of its own, so when the pool refused its flame
       // there is nothing left on screen at all. Say so, and the renderer
-      // draws the bullet itself down the lane (see Projectile.bare)
-      bare: !shownShoot && !bul.sprite && !bul.orb,
-    });
+      // draws the bullet itself down the lane (PROJ_BARE)
+      (alt ? PROJ_ALT : 0) |
+        (hostile ? PROJ_ENEMY : 0) |
+        (!shownShoot && !bul.sprite && !bul.orb ? PROJ_BARE : 0),
+    );
   }
 
 
@@ -11806,50 +11813,51 @@ export class Sim {
    * Returns true once the shot is spent, with its hit, blast and
    * fragments done.
    */
-  private stepHostileProjectile(pr: Projectile, b: BulletStats, dt: number): boolean {
-    pr.x += pr.vx * dt;
-    pr.y += pr.vy * dt;
-    pr.life -= dt;
-    pr.age += dt;
+  private stepHostileProjectile(p: number, b: BulletStats, dt: number): boolean {
+    const P = this.projs;
+    const px = (P.x[p] += P.vx[p] * dt);
+    const py = (P.y[p] += P.vy[p] * dt);
+    P.life[p] -= dt;
+    P.age[p] += dt;
     // the trails are the shot's own look and belong to whoever fired it
     if (b.puff && Math.random() < b.puff.chance * dt)
-      this.pushTrail(pr.x, pr.y, b.puff.size, b.sprite?.back);
+      this.pushTrail(px, py, b.puff.size, b.sprite?.back);
     if (b.trail) {
-      const fin = pr.age / (pr.age + pr.life);
+      const fin = P.age[p] / (P.age[p] + P.life[p]);
       const slope = 1 - Math.abs(fin - 0.5) * 2;
-      pr.trailT += dt;
+      P.trailT[p] += dt;
       const every = ((3 + slope * 2) * b.trail.mult) / 60;
-      if (pr.trailT >= every) {
-        pr.trailT = 0;
-        this.pushTrail(pr.x, pr.y, slope * b.trail.size, b.sprite?.back);
+      if (P.trailT[p] >= every) {
+        P.trailT[p] = 0;
+        this.pushTrail(px, py, slope * b.trail.size, b.sprite?.back);
       }
     }
-    const off = pr.x < 0 || pr.y < 0 || pr.x >= W || pr.y >= H;
-    let dead = pr.life <= 0 || off;
-    const rot = Math.atan2(pr.vy, pr.vx);
+    const off = px < 0 || py < 0 || px >= W || py >= H;
+    let dead = P.life[p] <= 0 || off;
+    const rot = Math.atan2(P.vy[p], P.vx[p]);
     if (!dead && !b.artillery) {
-      const s = this.structureAt(pr.x, pr.y, "player");
+      const s = this.structureAt(px, py, "player");
       if (s) {
         // through the swarm's own damage dial, exactly as its bodies' shots
         this.hitStructure(s, b.damage);
-        if (b.splash <= 0) this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor);
+        if (b.splash <= 0) this.bulletFx(b.hitFx, px, py, rot, b.fxColor);
         dead = true;
       }
     }
     if (!dead) return false;
     if (!off) {
       if (b.splash > 0) {
-        this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor, false,
+        this.bulletFx(b.hitFx, px, py, rot, b.fxColor, false,
           b.hitFx === FxKind.WaterBurst ? b.splashRadius : 0);
-        this.bulletFx(b.hitFx2, pr.x, pr.y, rot, b.fxColor, false,
+        this.bulletFx(b.hitFx2, px, py, rot, b.fxColor, false,
           b.hitFx2 === FxKind.WaterBurst ? b.splashRadius : 0);
         // the blast takes the player's buildings and nothing else: the
         // swarm's shell never chips the swarm's own turret, and it has no
         // bodies of the player's to catch
-        this.splashStructures(pr.x, pr.y, b.splash, b.splashRadius);
+        this.splashStructures(px, py, b.splash, b.splashRadius);
       }
-      if (pr.life <= 0) this.bulletFx(b.despawnFx, pr.x, pr.y, rot, b.fxColor);
-      if (b.frag) this.createFrags(pr, b.frag);
+      if (P.life[p] <= 0) this.bulletFx(b.despawnFx, px, py, rot, b.fxColor);
+      if (b.frag) this.createFrags(p, b.frag);
     }
     return true;
   }
@@ -11862,37 +11870,28 @@ export class Sim {
    * blast. Whirl's six plastanium fragments are the only user, and they
    * are what turns one shell into a wall.
    */
-  private createFrags(pr: Projectile, spec: NonNullable<BulletStats["frag"]>): void {
-    const rot = Math.atan2(pr.vy, pr.vx);
+  private createFrags(p: number, spec: NonNullable<BulletStats["frag"]>): void {
+    const P = this.projs;
+    // the parent, read BEFORE the first push: a push can re-allocate the
+    // lanes (Projs.grow), and the parent's slot is about to be removed
+    const px = P.x[p], py = P.y[p];
+    const rot = Math.atan2(P.vy[p], P.vx[p]);
+    const kind = P.kind[p];
+    // ...of the ammo the parent was: a fragment of the fire ball is the
+    // fire ball's child (PROJ_ALT — bulletOf resolves alt before frag);
+    // fragments belong to whoever threw the parent (PROJ_ENEMY); and a
+    // fragment is thrown by a burst, not by a barrel: it has no muzzle
+    // effect to have been refused, and every frag ammo in the game has a
+    // sprite of its own — never PROJ_BARE
+    const flags = PROJ_FRAG | (P.flags[p] & (PROJ_ALT | PROJ_ENEMY));
     const child = spec.bullet;
     for (let i = 0; i < spec.count; i++) {
       const off = spec.offsetMin + Math.random() * (spec.offsetMax - spec.offsetMin);
       const a = rot + (Math.random() - 0.5) * spec.spread;
       const v = child.speed * (spec.velMin + Math.random() * (spec.velMax - spec.velMin));
       const cos = Math.cos(a), sin = Math.sin(a);
-      this.projs.push({
-        kind: pr.kind,
-        x: pr.x + cos * off,
-        y: pr.y + sin * off,
-        vx: cos * v,
-        vy: sin * v,
-        life: child.lifetime,
-        age: 0,
-        primeT: -1,
-        flakT: 0,
-        pierced: child.pierce ? [] : null,
-        trailT: 0,
-        frag: true,
-        // ...of the ammo the parent was: a fragment of the fire ball is
-        // the fire ball's child (bulletOf resolves alt before frag)
-        alt: pr.alt,
-        // fragments belong to whoever threw the parent
-        enemy: pr.enemy,
-        // a fragment is thrown by a burst, not by a barrel: it has no
-        // muzzle effect to have been refused, and every frag ammo in the
-        // game has a sprite of its own
-        bare: false,
-      });
+      P.push(kind, px + cos * off, py + sin * off, cos * v, sin * v, child.lifetime, 0,
+        child.pierce ? [] : null, flags);
     }
   }
 
@@ -13000,7 +12999,7 @@ export class Sim {
   private collectForceFields(): void {
     this.fldN = 0;
     this.fldMaxR = 0;
-    if (this.projs.length === 0) return;
+    if (this.projs.n === 0) return;
     // the census already knows how many carriers are out there: none means
     // no scan at all, and the count doubles as the scan's early exit once
     // it has seen the last one
@@ -13103,172 +13102,270 @@ export class Sim {
   }
 
   private updateProjectiles(dt: number): void {
-    const { upx, upy, uhp, uarmor, urad, projs, bStart, bUnits } = this;
-    this.bodyIters += projs.length;
+    const { upx, upy, uhp, bStart, bUnits } = this;
+    const P = this.projs;
+    this.bodyIters += P.n;
     this.collectForceFields();
-    for (let p = projs.length - 1; p >= 0; p--) {
-      const pr = projs[p];
-      const b = this.bulletFor(pr.kind, pr.frag, pr.alt);
+    // THE LANES ARE READ THROUGH `P` EVERY TIME, NEVER HELD IN LOCALS, AND
+    // THIS LOOP CREATES NO CLOSURE. Both are V8 rules, not style. A local
+    // per lane (`const X = P.x`) needs re-taking after any push that can
+    // re-allocate the lanes (createFrags, Projs.grow), and the re-take
+    // was a closure over those locals; a comparator for the hit sort was
+    // another, made inside the loop. Either closure makes V8 desugar
+    // `for (let p ...)` into a per-iteration-environment loop — two
+    // nested loops in the bytecode with a copy flag — and put the locals
+    // in a heap context. Traced (--trace-deopt) that shape deoptimized
+    // on EVERY call, "exit from OSR'd inner loop": each pass entered
+    // unoptimized, was on-stack-replaced into Maglev, and fell out at the
+    // end, so the shot loop never ran in TurboFan at all. A lane load
+    // through a constant-shaped object is one L1 read; it is not the
+    // cost. The comparator is PROJ_DESC, made once at module scope
+    const K = P.kind, FL = P.flags, PIER = P.pierced;
+    const { uid, ufly } = this;
+    // THE STATS, ONCE A PASS PER (KIND, FRAG, ALT) rather than once a shot:
+    // bulletFor is a map lookup on a string and a chain of reads, and
+    // beside it the bucket span (rmaxAliveFor, a ceil and a divide) is
+    // the same for every shot of one ammo for the whole pass — the live
+    // roster's widest hitbox is taken at the hash build and holds until
+    // the next. So both are looked up the first time an ammo is met and
+    // read back from a table for the rest, keyed by the kind index and
+    // the two low flag bits (PROJ_FRAG, PROJ_ALT). Cleared every pass:
+    // seventy-six slots, and no version to keep honest
+    const tbl = this.bulletTbl, spt = this.bulletSp, bft = this.bulletFl, brt = this.bulletBrad;
+    tbl.fill(null);
+    // ...AND THE AMMO'S SHAPE AS ONE INTEGER (BF_*). The common tick asks
+    // eight yes/no questions of the stats — does it home, puff, trail,
+    // fuse, arc, splash, fragment, how wide is it — and each was a
+    // property load on an object whose hidden class differs from ammo to
+    // ammo (every BulletStats literal has its own set of optional keys),
+    // so every one was a polymorphic inline cache: measured, 3ms of a
+    // whirl pass, as much as the whole move-and-sweep floor. Folded into
+    // a byte per table slot they are one typed read and a mask, and the
+    // stats object is touched only inside the branch that fires
+    const eaten = this.fldN > 0 || this.domesUp;
+    let probes = 0;
+    for (let p = P.n - 1; p >= 0; p--) {
+      const fl = FL[p];
+      const ti = (K[p] << 2) | (fl & (PROJ_FRAG | PROJ_ALT));
+      let b = tbl[ti];
+      if (b === null) {
+        b = this.bulletFor(TOWER_KINDS[K[p]], (fl & PROJ_FRAG) !== 0, (fl & PROJ_ALT) !== 0);
+        tbl[ti] = b;
+        // the static HIT_SPAN/FRAG_SPAN bound, shrunk to the LIVE largest
+        // hitbox on the layers this bullet can touch — same hits, fewer
+        // buckets walked in the waves that field no heavy
+        brt[ti] = b.hitRadius ?? 2.5;
+        spt[ti] = Math.max(
+          1,
+          Math.ceil((this.rmaxAliveFor(b.collidesAir, b.collidesGround) + brt[ti]) / HC),
+        );
+        bft[ti] =
+          (b.homing ? BF_HOMING : 0) |
+          (b.puff ? BF_PUFF : 0) |
+          (b.trail ? BF_TRAIL : 0) |
+          (b.flak ? BF_FLAK : 0) |
+          (b.artillery ? BF_ARTILLERY : 0) |
+          (b.splash > 0 ? BF_SPLASH : 0) |
+          (b.frag ? BF_FRAG : 0);
+      }
+      const bf = bft[ti];
       // A SHOT OF THE SWARM'S (Conquest) runs its own, much shorter step:
       // it flies past every body and lands on the player's buildings, by
       // the cell it is over — the enemy shots' rule (updateEnemyShots) on
       // a turret's own bullet
-      if (pr.enemy) {
-        if (this.stepHostileProjectile(pr, b, dt)) {
-          projs[p] = projs[projs.length - 1];
-          projs.pop();
-        }
+      if (fl & PROJ_ENEMY) {
+        if (this.stepHostileProjectile(p, b, dt)) P.remove(p);
         continue;
       }
       // BulletType.updateHoming, BEFORE the step: the shot picks the
-      // nearest target within homingRange OF ITSELF and swings toward it,
-      // re-picking every tick — so a missile whose mark dies latches onto
-      // whatever it passes next instead of flying on into the ground.
+      // nearest target within homingRange OF ITSELF and swings toward it
+      // — so a missile whose mark dies latches onto whatever it passes
+      // next instead of flying on into the ground.
       // The swarm's missile homes on nothing: its marks are buildings
-      if (b.homing) {
-        const tgt = this.nearestInRange(pr.x, pr.y, b.homing.range, b.collidesAir, b.collidesGround);
+      //
+      // THE SEARCH IS ON A CLOCK, NOT ON EVERY TICK. Mindustry re-picks
+      // every tick; here the quarry is HELD (homeI, checked by uid) and
+      // the hash is searched again only when it is gone — dead, out of
+      // range, or a different body under a reused index — or when
+      // HOMING_REPICK has run out. Between searches the missile turns
+      // onto what it holds exactly as before. What changes is only how
+      // soon it notices a NEARER body than the one it has, and at four
+      // degrees a tick of turn a tenth of a second is inside the swing
+      // it was already making. Measured on the hive clock (79,000
+      // missiles in flight, one body on the board) the every-tick search
+      // was a third of the projectiles phase: every one of them walked
+      // its 5x5 buckets each tick and found nothing, sixty times a second
+      if (bf & BF_HOMING) {
+        const hm = b.homing!;
+        let tgt = P.homeI[p];
         if (tgt >= 0) {
-          const want = Math.atan2(upy[tgt] - pr.y, upx[tgt] - pr.x);
-          const cur = Math.atan2(pr.vy, pr.vx);
+          if (tgt >= this.n || uhp[tgt] <= 0 || uid[tgt] !== P.homeUid[p]) tgt = -1;
+          else {
+            const hdx = upx[tgt] - P.x[p], hdy = upy[tgt] - P.y[p];
+            if (hdx * hdx + hdy * hdy >= hm.range * hm.range) tgt = -1;
+          }
+        }
+        P.homeT[p] -= dt;
+        if (tgt < 0 || P.homeT[p] <= 0) {
+          tgt = this.nearestInRange(P.x[p], P.y[p], hm.range, b.collidesAir, b.collidesGround);
+          P.homeI[p] = tgt;
+          P.homeUid[p] = tgt >= 0 ? uid[tgt] : 0;
+          P.homeT[p] = HOMING_REPICK;
+        }
+        if (tgt >= 0) {
+          const want = Math.atan2(upy[tgt] - P.y[p], upx[tgt] - P.x[p]);
+          const cur = Math.atan2(P.vy[p], P.vx[p]);
           const diff = Sim.angleDiff(cur, want);
-          const turn = b.homing.power * dt;
+          const turn = hm.power * dt;
           const a = Math.abs(diff) <= turn ? want : cur + Math.sign(diff) * turn;
           // Vec2.setAngle keeps the speed and turns the heading
-          const sp = Math.sqrt(pr.vx * pr.vx + pr.vy * pr.vy);
-          pr.vx = Math.cos(a) * sp;
-          pr.vy = Math.sin(a) * sp;
+          const spd = Math.sqrt(P.vx[p] * P.vx[p] + P.vy[p] * P.vy[p]);
+          P.vx[p] = Math.cos(a) * spd;
+          P.vy[p] = Math.sin(a) * spd;
         }
       }
-      pr.x += pr.vx * dt;
-      pr.y += pr.vy * dt;
-      pr.life -= dt;
-      pr.age += dt;
+      const px = (P.x[p] += P.vx[p] * dt);
+      const py = (P.y[p] += P.vy[p] * dt);
+      P.life[p] -= dt;
+      P.age[p] += dt;
 
       // BulletType.updateTrailEffects: a puff on a per-tick CHANCE, at a
       // constant radius — Fx.missileTrail, which is Fx.artilleryTrail's
       // fading disc under another name, so it rides the same pass
-      if (b.puff && Math.random() < b.puff.chance * dt)
-        this.pushTrail(pr.x, pr.y, b.puff.size, b.sprite?.back);
+      // ...rolled only while the pool would take it: a puff is dressing,
+      // refused above FX_CAP (pushSlot), and a roll for a refused puff is
+      // a random and a call per missile per tick for nothing. The pool is
+      // at its cap on every late board, which is exactly when there are
+      // eighty thousand missiles asking
+      if (bf & BF_PUFF && this.fxOn && this.fxN < FX_CAP && Math.random() < b.puff!.chance * dt)
+        this.pushTrail(px, py, b.puff!.size, b.sprite?.back);
 
       // ArtilleryBulletType.update: a puff every (3 + fslope*2) * mult
       // ticks, at a radius of fslope * size. fslope peaks at half life, so
       // the trail is both fastest and fattest at the top of the arc and
       // thins away at both ends — which is the whole illusion of height
-      if (b.trail) {
-        const fin = pr.age / (pr.age + pr.life);
+      if (bf & BF_TRAIL) {
+        const tr = b.trail!;
+        const fin = P.age[p] / (P.age[p] + P.life[p]);
         const slope = 1 - Math.abs(fin - 0.5) * 2;
-        pr.trailT += dt;
-        const every = ((3 + slope * 2) * b.trail.mult) / 60;
-        if (pr.trailT >= every) {
-          pr.trailT = 0;
-          this.pushTrail(pr.x, pr.y, slope * b.trail.size, b.sprite?.back);
+        P.trailT[p] += dt;
+        const every = ((3 + slope * 2) * tr.mult) / 60;
+        if (P.trailT[p] >= every) {
+          P.trailT[p] = 0;
+          this.pushTrail(px, py, slope * tr.size, b.sprite?.back);
         }
       }
 
       // a force field eats the shot where it stands: no hit, no splash —
       // and a shield tower's dome the same way (domesUp gates its half of the
       // sweep the way fldN gates the carriers')
-      if ((this.fldN > 0 || this.domesUp) && this.absorb(pr.x, pr.y, b.damage)) {
-        projs[p] = projs[projs.length - 1];
-        projs.pop();
+      if (eaten && this.absorb(px, py, b.damage)) {
+        P.remove(p);
         continue;
       }
 
       // flak proximity fuse: check every interval; an enemy inside
       // explodeRange (+ its hitbox) primes the shell, which detonates
       // explodeDelay later while continuing to fly
-      if (b.flak && pr.primeT < 0) {
-        pr.flakT -= dt;
-        if (pr.flakT <= 0) {
-          pr.flakT += b.flak.interval;
-          if (this.anyUnitWithin(pr.x, pr.y, b.flak.explodeRange, b.collidesAir, b.collidesGround)) {
-            pr.primeT = b.flak.explodeDelay;
+      if (bf & BF_FLAK && P.primeT[p] < 0) {
+        const fk = b.flak!;
+        P.flakT[p] -= dt;
+        if (P.flakT[p] <= 0) {
+          P.flakT[p] += fk.interval;
+          if (this.anyUnitWithin(px, py, fk.explodeRange, b.collidesAir, b.collidesGround)) {
+            P.primeT[p] = fk.explodeDelay;
           }
         }
       }
-      if (pr.primeT >= 0) {
-        pr.primeT -= dt;
-        if (pr.primeT <= 0) pr.life = 0;
+      if (P.primeT[p] >= 0) {
+        P.primeT[p] -= dt;
+        if (P.primeT[p] <= 0) P.life[p] = 0;
       }
 
       // shots come from elevated towers and arc over terrain — they never
       // collide with rock, only with units or their range-capped life.
       // Artillery shells overfly units too: they only die on target, where
       // the splash below is their whole damage
-      let dead = pr.life <= 0;
-      if (!dead && !b.artillery) {
-        const brad = b.hitRadius ?? 2.5;
-        // the static HIT_SPAN/FRAG_SPAN bound, shrunk to the LIVE largest
-        // hitbox on the layers this bullet can touch — same hits, fewer
-        // buckets walked in the waves that field no heavy
-        const sp = Math.max(
-          1,
-          Math.ceil((this.rmaxAliveFor(b.collidesAir, b.collidesGround) + brad) / HC),
-        );
-        const hx = clamp((pr.x / HC) | 0, 0, HCOLS - 1);
-        const hy = clamp((pr.y / HC) | 0, 0, HROWS - 1);
+      let dead = P.life[p] <= 0;
+      if (!dead && !(bf & BF_ARTILLERY)) {
+        const pier = PIER[p];
+        const brad = brt[ti];
+        const sp = spt[ti];
+        const hx = clamp((px / HC) | 0, 0, HCOLS - 1);
+        const hy = clamp((py / HC) | 0, 0, HROWS - 1);
         // a piercing shot may hit several units this tick and outlive them
         // all, so its victims are gathered first and removed afterwards
         // from the highest index down — a swap-remove mid-scan would drag
         // an unvisited unit into a bucket we have already walked past
+        // A LENGTH IS NOT A STORE. `hits.length = 0` on an array is a
+        // runtime call in V8, and run unconditionally it cost 3.4ms of a
+        // whirl pass — for a list that is already empty on all but a few
+        // hundred of a hundred and forty thousand shots. Asked first
         const hits = this.splashHits;
-        hits.length = 0;
+        if (hits.length !== 0) hits.length = 0;
         const cx0 = Math.max(0, hx - sp), cx1 = Math.min(HCOLS - 1, hx + sp);
         outer: for (let cy = Math.max(0, hy - sp); cy <= Math.min(HROWS - 1, hy + sp); cy++) {
           const row = cy * HCOLS;
           const e = bStart[row + cx1 + 1];
           const e0 = bStart[row + cx0];
-          this.probes += e - e0;
+          probes += e - e0;
           for (let k = e0; k < e; k++) {
             const i = bUnits[k];
             if (i >= this.n || uhp[i] <= 0) continue;
-            if (this.ufly[i] !== 0 ? !b.collidesAir : !b.collidesGround) continue;
+            if (ufly[i] !== 0 ? !b.collidesAir : !b.collidesGround) continue;
             // Bullet.collides: a pierce shot skips whoever it already hit
-            if (pr.pierced && pr.pierced.includes(this.uid[i])) continue;
-            const dx = upx[i] - pr.x, dy = upy[i] - pr.y;
+            if (pier && pier.includes(uid[i])) continue;
+            const dx = upx[i] - px, dy = upy[i] - py;
             const d2 = dx * dx + dy * dy;
             const hr = this.hitR(i, dx, dy, d2) + brad;
             if (d2 < hr * hr) {
               hits.push(i);
               // Bullet.collision: a plain shot is spent on the first hit,
               // a piercing one is only added to `collided` and flies on
-              if (!pr.pierced) {
+              if (!pier) {
                 dead = true;
                 break outer;
               }
-              pr.pierced.push(this.uid[i]);
+              pier.push(uid[i]);
               // Mindustry pierceCap: a capped pierce is SPENT once it
               // has been through that many bodies, rather than running
               // its whole lifetime
-              if (b.pierceCap !== undefined && pr.pierced.length >= b.pierceCap) {
+              if (b.pierceCap !== undefined && pier.length >= b.pierceCap) {
                 dead = true;
                 break outer;
               }
             }
           }
         }
-        for (const i of hits) {
-          this.damageUnit(i, b.damage, false, 1, TOWER_NATURE[pr.kind]);
-          // BulletType.hitEntity: an impulse of knockback * 80 world units
-          // straight out from the shot. Unit.impulse divides by mass, so
-          // the same shove all but stops an ironhide1 and leans on an ironhide3
-          if (b.knockback) {
-            const dx = upx[i] - pr.x, dy = upy[i] - pr.y;
-            const d = Math.sqrt(dx * dx + dy * dy) || 1;
-            const mag = b.knockback * 80;
-            this.impulse(i, (dx / d) * mag, (dy / d) * mag);
+        // NOTHING WAS HIT, WHICH IS THE COMMON CASE BY FAR: a shot spends
+        // almost all its ticks over empty ground, and the sort and the
+        // two loops below have nothing to do — skipped rather than run on
+        // an empty list, because at a hundred and forty thousand shots a
+        // step the call alone is a line in the profile
+        if (hits.length > 0) {
+          for (const i of hits) {
+            this.damageUnit(i, b.damage, false, 1, TOWER_NATURE[TOWER_KINDS[K[p]]]);
+            // BulletType.hitEntity: an impulse of knockback * 80 world units
+            // straight out from the shot. Unit.impulse divides by mass, so
+            // the same shove all but stops an ironhide1 and leans on an ironhide3
+            if (b.knockback) {
+              const dx = upx[i] - px, dy = upy[i] - py;
+              const d = Math.sqrt(dx * dx + dy * dy) || 1;
+              const mag = b.knockback * 80;
+              this.impulse(i, (dx / d) * mag, (dy / d) * mag);
+            }
+            if (uhp[i] > 0 && b.burn && !KIND_BURN_IMMUNE[this.ukind[i]]) this.applyBurn(i, b.burn);
+            if (uhp[i] > 0 && b.wet && !KIND_WET_IMMUNE[this.ukind[i]]) this.applyWet(i, b.wet);
+            // BulletType.hitEffect, at the bullet rather than the victim.
+            // A splash shot skips it — the blast in the `dead` branch below
+            // is its hit effect — and so does a killing blow, whose death
+            // puff would only be buried under it
+            if (uhp[i] > 0 && b.splash <= 0)
+              this.bulletFx(b.hitFx, px, py, Math.atan2(P.vy[p], P.vx[p]), b.fxColor);
           }
-          if (uhp[i] > 0 && b.burn && !KIND_BURN_IMMUNE[this.ukind[i]]) this.applyBurn(i, b.burn);
-          if (uhp[i] > 0 && b.wet && !KIND_WET_IMMUNE[this.ukind[i]]) this.applyWet(i, b.wet);
-          // BulletType.hitEffect, at the bullet rather than the victim.
-          // A splash shot skips it — the blast in the `dead` branch below
-          // is its hit effect — and so does a killing blow, whose death
-          // puff would only be buried under it
-          if (uhp[i] > 0 && b.splash <= 0)
-            this.bulletFx(b.hitFx, pr.x, pr.y, Math.atan2(pr.vy, pr.vx), b.fxColor);
+          if (hits.length > 1) hits.sort(PROJ_DESC);
+          for (const i of hits) if (uhp[i] <= 0) this.killUnit(i);
         }
-        hits.sort((a2, b2) => b2 - a2);
-        for (const i of hits) if (uhp[i] <= 0) this.killUnit(i);
         // a shield tower's BODY is a target no bucket holds: there are at most a
         // handful alive, so a direct circle test per shot costs less than
         // teaching the spatial hash about buildings. The dome (absorbed
@@ -13281,18 +13378,18 @@ export class Sim {
             // the pierce ledger holds unit uids; a shield tower rides it as a
             // negative sentinel no uid can collide with
             const sid = -1000 - si;
-            if (pr.pierced && pr.pierced.includes(sid)) continue;
-            const sdx = s.x - pr.x, sdy = s.y - pr.y;
+            if (pier && pier.includes(sid)) continue;
+            const sdx = s.x - px, sdy = s.y - py;
             const hr = SHIELD_TOWER_BODY_R + brad;
             if (sdx * sdx + sdy * sdy >= hr * hr) continue;
             this.damageShieldTower(s, b.damage);
-            this.bulletFx(b.hitFx, pr.x, pr.y, Math.atan2(pr.vy, pr.vx), b.fxColor);
-            if (!pr.pierced) {
+            this.bulletFx(b.hitFx, px, py, Math.atan2(P.vy[p], P.vx[p]), b.fxColor);
+            if (!pier) {
               dead = true;
               break;
             }
-            pr.pierced.push(sid);
-            if (b.pierceCap !== undefined && pr.pierced.length >= b.pierceCap) {
+            pier.push(sid);
+            if (b.pierceCap !== undefined && pier.length >= b.pierceCap) {
               dead = true;
               break;
             }
@@ -13303,61 +13400,65 @@ export class Sim {
         // turned round. A piercing shot goes through a building once, on a
         // sentinel below any shield tower's
         if (!dead && this.enemyTowers > 0) {
-          const es = this.structureAt(pr.x, pr.y, "enemy");
+          const es = this.structureAt(px, py, "enemy");
           if (es) {
             const sid = -1000000 - (es.gy * COLS + es.gx);
-            if (!pr.pierced || !pr.pierced.includes(sid)) {
+            if (!pier || !pier.includes(sid)) {
               this.damageTower(es, b.damage);
               if (b.splash <= 0)
-                this.bulletFx(b.hitFx, pr.x, pr.y, Math.atan2(pr.vy, pr.vx), b.fxColor);
-              if (!pr.pierced) dead = true;
+                this.bulletFx(b.hitFx, px, py, Math.atan2(P.vy[p], P.vx[p]), b.fxColor);
+              if (!pier) dead = true;
               else {
-                pr.pierced.push(sid);
-                if (b.pierceCap !== undefined && pr.pierced.length >= b.pierceCap) dead = true;
+                pier.push(sid);
+                if (b.pierceCap !== undefined && pier.length >= b.pierceCap) dead = true;
               }
             }
           }
         }
       }
       if (dead) {
-        const rot = Math.atan2(pr.vy, pr.vx);
+        const rot = Math.atan2(P.vy[p], P.vx[p]);
         // BulletType.hit: the blast, and the hit effect a splash bullet
         // saves for it rather than firing per victim above. Mindustry gives
         // every splash bullet despawnHit, so a shell that simply runs out
         // of lifetime blasts exactly as one that ran into something
-        if (b.splash > 0) {
+        if (bf & BF_SPLASH) {
           // ONLY the water burst is told how far the blast reached. Every
           // other hit effect — a flak pop, a shockwave ring — carries its
           // own fixed Mindustry size, and handing them a radius here would
           // quietly resize effects that have drawn the same for every
           // turret that shipped before this one
-          this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor, false,
+          this.bulletFx(b.hitFx, px, py, rot, b.fxColor, false,
             b.hitFx === FxKind.WaterBurst ? b.splashRadius : 0);
-          this.bulletFx(b.hitFx2, pr.x, pr.y, rot, b.fxColor, false,
+          this.bulletFx(b.hitFx2, px, py, rot, b.fxColor, false,
             b.hitFx2 === FxKind.WaterBurst ? b.splashRadius : 0);
           this.splash(
-            pr.x,
-            pr.y,
+            px,
+            py,
             b.splashRadius,
             b.splash,
             b.collidesAir,
             b.collidesGround,
             b.burn,
             b.wet,
-            TOWER_NATURE[pr.kind],
+            TOWER_NATURE[TOWER_KINDS[K[p]]],
           );
         }
         // BulletType.despawned, and only that: a shot spent on a direct
         // hit was removed, not despawned, and leaves nothing behind
-        if (pr.life <= 0) this.bulletFx(b.despawnFx, pr.x, pr.y, rot, b.fxColor);
+        if (P.life[p] <= 0) this.bulletFx(b.despawnFx, px, py, rot, b.fxColor);
         // BulletType.hit -> createFrags: the burst that makes a whirl
         // shell a wall rather than a point. Fired here, at the end, so a
-        // fragment is never walked by the loop it was born in
-        if (b.frag) this.createFrags(pr, b.frag);
-        projs[p] = projs[projs.length - 1];
-        projs.pop();
+        // fragment is never walked by the loop it was born in — it lands
+        // past `p`, which this backward walk has already left behind. K, FL
+        // and PIER are safe across the grow a push can cause: a grow copies
+        // the lanes, and the old buffers still hold every slot below p,
+        // which is all this walk has left to visit
+        if (bf & BF_FRAG) this.createFrags(p, b.frag!);
+        P.remove(p);
       }
     }
+    this.probes += probes;
   }
 
   /** is any live targetable unit's hitbox within r of (x, y)? */
@@ -13617,7 +13718,7 @@ export class Sim {
    * Returns whether the effect actually LANDED. Nearly every caller
    * ignores it; fireShot does not, because a muzzle effect the pool
    * refused is a shot with nothing to show for it (see the fallback flash
-   * on Tower.flashT and the bare flag on Projectile).
+   * on Tower.flashT and the bare flag on the shot, projs.ts PROJ_BARE).
    */
   private bulletFx(
     kind: BulletFx | undefined,

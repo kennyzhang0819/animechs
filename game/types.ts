@@ -410,7 +410,7 @@ export interface Tower {
 
 /**
  * A UNIT'S SHOT IN FLIGHT — a bullet, missile or shell fired at a
- * structure (Sim.updateUnitWeapons). A flat record like Projectile, but
+ * structure (Sim.updateUnitWeapons). A flat record, as a shot once was, but
  * its own list: it hits STRUCTURES, by the cell it is over, and never a
  * unit, so it runs none of the swarm's collision machinery. `tx, ty` is
  * where a shell was aimed — it bursts there when its life runs out even
@@ -470,56 +470,6 @@ export interface EnemyShot {
   /** THE FIRE STAR (Sim.burnTower): raw health a second it sets what it
    *  hits alight for, over TOWER_BURN_TIME. 0 on everything else */
   burn: number;
-}
-
-export interface Projectile {
-  kind: TowerKind; // which tower's bullet stats drive it
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  life: number;
-  age: number;
-  // flak proximity fuse (Mindustry FlakBulletType): primeT < 0 means not
-  // primed; once an enemy strays inside explodeRange it counts down to boom
-  primeT: number;
-  flakT: number; // seconds until the next proximity check
-  // Mindustry Bullet.collided: a piercing shot keeps flying and remembers
-  // whom it already hit, so one flame tongue costs each unit exactly one
-  // hit however many ticks it spends inside the hitbox. Unit IDS, not
-  // indices — swap-remove reshuffles indices under us. null = no pierce
-  pierced: number[] | null;
-  // Bullet.timer(0, ...), the rolling clock ArtilleryBulletType.update
-  // drops its trail puffs on. Left at 0 by everything else
-  trailT: number;
-  // a shot thrown by BulletType.createFrags rather than by a barrel: its
-  // stats are the parent ammo's `frag.bullet`, not the turret's own. One
-  // flag rather than a stats pointer keeps a projectile a flat record —
-  // see bulletOf() in constants.ts
-  frag: boolean;
-  // thrown by the ODD BARREL of a turret that loads two ammos
-  // (constants.ts BulletStats.alt — deluge's fire nozzle, and nothing
-  // else today), so its stats are that second bullet's rather than the
-  // turret's own. One more flag rather than a stats pointer, for the same
-  // reason `frag` is one: a projectile stays a flat record
-  alt: boolean;
-  // fired by one of the SWARM's turrets (Tower.team): it flies past every
-  // unit and lands on the player's structures, by the cell it is over —
-  // the enemy shots' rule (updateEnemyShots) on the turrets' own bullets
-  enemy: boolean;
-  /**
-   * A shot with NO SPRITE OF ITS OWN — torch's flame is the only one —
-   * whose muzzle effect the pool refused. Such a bullet normally draws
-   * nothing at all, the visible weapon being Fx.shootSmallFlame at the
-   * barrel, so with the flame dropped the turret reads as one that tracks
-   * and never fires. Flagged here, the renderer draws the bullet itself as
-   * a single disc on the flame's own ramp: a twelfth of the quads, and a
-   * tongue that still leaves the barrel and runs down the lane.
-   *
-   * False for every bullet that has a sprite or an orb, and false again
-   * the moment the pool has room — the real flame is always preferred.
-   */
-  bare: boolean;
 }
 
 export const enum FxKind {

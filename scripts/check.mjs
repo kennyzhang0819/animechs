@@ -51,7 +51,7 @@
  *            matters)
  *   scale    the same siege at three, six, nine and twelve thousand
  *            turrets, so the cost of the board is read as a CURVE and not
- *            a point (held to SIEGE_LENIENT_MS for now — see there)
+ *            a point
  *   maps     the siege on every PLAYABLE world, because a choke is a
  *            different fight from an open field and the board that lags is
  *            the one the player happens to be on
@@ -937,6 +937,17 @@ const SIEGE_BUYS = 150;
  *  gated to there and printed past it */
 const SIEGE_PRE = 3000;
 const SIEGE_FULL = 9000;
+/** bodies through the doors per step, the whole window — a wave streaming
+ *  in rather than a crowd dropped at once, so the field holds a steady
+ *  population that keeps the line under attack for the length of the sample */
+const SIEGE_RATE = 12;
+/** seconds the swarm walks before the fill and the clock */
+const SIEGE_MARCH = 3;
+/** samples timed, and seconds in each: the verdict is the least of their medians */
+const SIEGE_SAMPLES = 3;
+const SIEGE_SAMPLE = 2;
+/** the share of steps over a whole frame (STEP_BUDGET_MS) that fails outright */
+const SIEGE_OVER = 1 / 3;
 /**
  * THE BAR `scale` AND `maps` ARE HELD TO TODAY, in ms a step — and it is
  * NOT the budget. Measured with every fix to date in, the siege at nine
@@ -949,24 +960,15 @@ const SIEGE_FULL = 9000;
  * changing today; `siege` itself, on the one world that fits, is still
  * held to SIM_BUDGET_MS.
  *
- * WHEN THE PROJECTILE WORK LANDS, SET THIS BACK TO SIM_BUDGET_MS, and the
- * over-frame share (SIEGE_LENIENT_OVER) back to SIEGE_OVER. The number is
- * the worst least-median seen (20.5, Greenwood) plus room for the
- * machine, so that it passes reliably now and fails if that cost grows.
+ * THE PROJECTILE WORK LANDED (2026-09-16: game/projs.ts, the shot loop in
+ * Sim.updateProjectiles, and normalizeBullet in constants.ts — the whirl
+ * clock went from 20.7ms to 10.7 at ten thousand turrets), so the bar is
+ * the budget again and the over-frame share is the siege's own. The
+ * names stay so the two call sites read as what they were: the checks
+ * that were once held looser than the rest.
  */
-const SIEGE_LENIENT_MS = 25;
-const SIEGE_LENIENT_OVER = 1;
-/** bodies through the doors per step, the whole window — a wave streaming
- *  in rather than a crowd dropped at once, so the field holds a steady
- *  population that keeps the line under attack for the length of the sample */
-const SIEGE_RATE = 12;
-/** seconds the swarm walks before the fill and the clock */
-const SIEGE_MARCH = 3;
-/** samples timed, and seconds in each: the verdict is the least of their medians */
-const SIEGE_SAMPLES = 3;
-const SIEGE_SAMPLE = 2;
-/** the share of steps over a whole frame (STEP_BUDGET_MS) that fails outright */
-const SIEGE_OVER = 1 / 3;
+const SIEGE_LENIENT_MS = SIM_BUDGET_MS;
+const SIEGE_LENIENT_OVER = SIEGE_OVER;
 
 /** how many cells a world will take a tacker on — the room a board has */
 const legalCells = (world) => {
@@ -1184,7 +1186,7 @@ if (FULL) {
     curve.push(`${full / 1000}k ${Number.isFinite(r.step) ? r.step.toFixed(1) : "?"}ms`);
     for (const p of r.problems) scaleProblems.push(`${full / 1000}k: ${p}`);
   }
-  if (wants("scale")) report("scale", scaleProblems, `${curve.join(" · ")} a step (held to ${SIEGE_LENIENT_MS}ms until projectiles is fixed)`);
+  if (wants("scale")) report("scale", scaleProblems, `${curve.join(" · ")} a step of ${SIEGE_LENIENT_MS.toFixed(1)}`);
 
   // every playable world: a choke is a different fight from an open field.
   // A small map takes fewer buildings, so the target is what its ground
@@ -1197,7 +1199,7 @@ if (FULL) {
     perWorld.push(`${w.name} ${Number.isFinite(r.step) ? r.step.toFixed(1) : "?"}`);
     for (const p of r.problems) mapProblems.push(`${w.name}: ${p}`);
   }
-  if (wants("maps")) report("maps", mapProblems, `ms a step, held to ${SIEGE_LENIENT_MS} until projectiles is fixed — ${perWorld.join(" · ")}`);
+  if (wants("maps")) report("maps", mapProblems, `ms a step of ${SIEGE_LENIENT_MS.toFixed(1)} — ${perWorld.join(" · ")}`);
 
   // ---------- the standard: ten thousand of everything ----------
 
