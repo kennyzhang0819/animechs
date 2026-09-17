@@ -18,14 +18,19 @@
  * free to bend 37 degrees would need the art rotated to match, and a
  * rotated pixel sprite is a blurred one.
  *
- * FOUR PAINTINGS AND TWO CAPS, because a cell's piece is the UNORDERED
- * PAIR of neighbours its line connects, and a quarter turn maps most
- * pairs onto each other. Straight-through comes in an orthogonal and a
- * diagonal; a 45-degree bend comes in two hands (they are mirror images,
- * and the renderer has no mirror, so both are drawn); and a line that
- * simply stops — Thornway's core and its far post — takes a buffer.
- * Everything else on the sheet is one of those six turned by a multiple
+ * SIX SHAPES, IN TWO STYLES. A cell's piece is the UNORDERED PAIR of
+ * neighbours its line connects, and a quarter turn maps most pairs onto
+ * each other, so six paintings carry the whole lattice: straight-through
+ * in an orthogonal and a diagonal; a 45-degree bend in two hands (they
+ * are mirror images, and the renderer has no mirror, so both are drawn);
+ * and a buffer for a line that simply stops — Thornway's core and its far
+ * post. Everything else on the sheet is one of those turned by a multiple
  * of ninety (missions.ts PIECE_AT).
+ *
+ * The SHAPES are the lattice's and never vary. The STYLE is the railway's
+ * — its gauge, its sleepers, what its bed is made of — and there are two
+ * of them, one per road mission (RAIL_STYLES). Twelve cells in all, which
+ * is what the whole system costs the sheet.
  *
  * A PIECE PAINTS ITS OWN SLICE OF THE LINE AND NOTHING ELSE. The window
  * is three cells square, centred on the cell, and the centreline inside
@@ -50,15 +55,15 @@
  * corner to corner is 41 per cent longer than one crossed edge to edge,
  * so a fixed count would put the diagonals' sleepers that much further
  * apart. Each piece divides its OWN length into whole sleepers nearest
- * the target gap, which lands every run within about six per cent of
- * sixteen px and — because the count is whole and the sleepers centred
- * in their slots — tiles seamlessly along a run of any length.
+ * its style's target gap, which lands every run within about six per cent
+ * of it and — because the count is whole and the sleepers centred in
+ * their slots — tiles seamlessly along a run of any length.
  */
 
 /** px across one cell of rail art: the ground's own 32 (game/tiles.ts) */
 export const RAIL_ART = 32;
 /** cells across a piece's window — the bed is under three, and a bend's
- *  round cap reaches BALLAST px of the centre, inside the 48px half */
+ *  round cap reaches a style's `ballast` of the centre, inside the 48px half */
 export const RAIL_SPAN = 3;
 /** px painted past the window on every side, for the antialias pass */
 export const RAIL_MARGIN = 4;
@@ -69,45 +74,104 @@ export const RAIL_CELL = RAIL_PX * 2;
 export const RAIL_INSET = RAIL_MARGIN * 2;
 
 /**
- * THE BED, IN ART PX FROM THE CENTRELINE. Two and three quarter cells of
- * ballast is 55 world px, under a Borer's car of 66 and the Hauler's 120
- * (levels.ts) — a body wider than its track, which is what rolling stock
- * looks like and what stops the bed reading as a runway. Everything here
- * clears the four-px floor (tiles.ts MIN_MARK): no line on the ground is
- * allowed to be thinner than the ground's own smallest mark.
+ * ONE STYLE OF TRACK: what a bed is made of and how big its parts are.
+ *
+ * TWO MISSIONS, TWO RAILWAYS, and they are meant to be told apart at a
+ * glance from across the board — the same way missions.ts calls Coldline
+ * and Thornway "opposites" and the overlay paints one road red and the
+ * other amber. A line that is the SWARM'S and a line that is the
+ * PLAYER'S should not be the same object in two colours.
+ *
+ * Every measurement here is in art px from the centreline, on the 32-px
+ * cell the ground is drawn at, and every one of them clears the four-px
+ * floor (tiles.ts MIN_MARK): no line on the ground is allowed to be
+ * thinner than the ground's own smallest mark. `ballast` also has a
+ * ceiling — a bend's round join reaches it from the corner, so anything
+ * past the window's 48-px half would be cut off at the cell edge.
  */
-const BALLAST = 44;
-/** the darker shoulder along both edges of the bed */
-const SHOULDER = 4;
-/** how far a sleeper reaches either side, and how thick it is along the line */
-const SLEEPER_HALF = 34;
-const SLEEPER_W = 6;
-/** the gap a piece aims for between sleeper centres, before it is rounded
- *  to a whole count of its own length */
-const SLEEPER_GAP = 15.5;
-/** the rails themselves: their offset from the centreline and their width.
- *  A gauge of 44 px under a 66 px car is the ratio real stock carries */
-const RAIL_OFF = 22;
-const RAIL_W = 6;
-/** the buffer beam that closes a line that simply stops */
-const BUFFER_W = 8;
+export interface RailStyle {
+  name: string;
+  /** half the bed's width; the shoulder is the darker band inside that */
+  ballast: number;
+  shoulder: number;
+  /** how far a sleeper reaches either side, and how thick along the line */
+  sleeperHalf: number;
+  sleeperW: number;
+  /** the gap it aims for between sleeper centres, before that is rounded
+   *  to a whole count of the piece's own length */
+  sleeperGap: number;
+  /** the rails: offset from the centreline (half the gauge) and width */
+  railOff: number;
+  railW: number;
+  /** the beam that closes a line which simply stops */
+  bufferW: number;
+  /** flat colours, and FLAT IS DELIBERATE. A floor tile can carry a mark
+   *  because it has two paintings and the renderer picks between them per
+   *  cell (tiles.ts); a rail piece is ONE painting stamped hundreds of
+   *  times down a line, so anything scattered into it repeats at the cell
+   *  pitch and reads as a pattern rather than as gravel. The rhythm on a
+   *  bed is its sleepers. */
+  ballastColor: string;
+  shoulderColor: string;
+  sleeperColor: string;
+  railColor: string;
+}
 
 /**
- * THE COLOURS ARE THE BORER'S, not the ground's. wormArt.ts gives the
- * train a cold blue-grey of its own precisely so it reads as the coldest
- * thing on a snow map; its road is the same metal, one step darker so the
- * bed sits UNDER the train rather than beside it.
+ * THE TWO RAILWAYS.
  *
- * FLAT, WITH NO SPECKLE. A floor tile can carry a mark because it has two
- * paintings and the renderer picks between them per cell (tiles.ts); a
- * rail piece is ONE painting stamped hundreds of times down a line, so
- * anything scattered into it repeats at the cell pitch and reads as a
- * pattern rather than as gravel. The rhythm on this bed is the sleepers.
+ * BORER — Coldline's, and the swarm's. A heavy main line: a wide bed of
+ * crushed cold stone, steel sleepers set well apart, and a broad gauge in
+ * bright steel. Two and three quarter cells of ballast is 55 world px,
+ * under a Borer's car of 66 (levels.ts) — a body wider than its track,
+ * which is what rolling stock looks like and what stops the bed reading
+ * as a runway. The colours are wormArt.ts's: that train is given a cold
+ * blue-grey of its own precisely so it reads as the coldest thing on a
+ * snow map, and its road is the same metal a step darker, so the bed sits
+ * UNDER the train rather than beside it.
+ *
+ * TRAMWAY — Thornway's, and the player's. Everything the main line is
+ * not: a narrow cinder formation, TIMBER sleepers laid close and running
+ * nearly the full width of it, and a light narrow gauge worn pale on top.
+ * It reads as something built for work and left there years ago, which is
+ * the honest fiction for a map where the thing using it is a TRACKED cart
+ * (convoyArt.ts) driving the line rather than running on it.
+ *
+ * ITS SLEEPERS ARE LIGHTER THAN ITS BED, where the Borer's are darker,
+ * and that inversion is most of what separates the two at field zoom —
+ * further than any colour, a viewer reads which of the two tones is the
+ * repeating one. Warm against Thornway's grass and dirt (tiles.ts: the
+ * ground there is #6a9b52 and #8f6b4a), cold against Coldline's snow.
  */
-const C_BALLAST = "#3a3f4d";
-const C_SHOULDER = "#2b2f3a";
-const C_SLEEPER = "#22252e";
-const C_RAIL = "#8b93a8";
+export const RAIL_STYLES: readonly RailStyle[] = [
+  {
+    name: "borer",
+    ballast: 44, shoulder: 4,
+    sleeperHalf: 34, sleeperW: 6, sleeperGap: 15.5,
+    railOff: 22, railW: 6, bufferW: 8,
+    ballastColor: "#3a3f4d", shoulderColor: "#2b2f3a",
+    sleeperColor: "#22252e", railColor: "#8b93a8",
+  },
+  {
+    name: "tramway",
+    // 45 world px of formation against the main line's 55, and half of
+    // its length is timber where the Borer's is 39 per cent steel — a
+    // light railway is laid closer and lighter. The sleepers stop ten px
+    // short of the bed's edge so there is CINDER either side of them to
+    // read: at sleeperHalf 32 the timbers ran to the shoulder and the
+    // whole thing came out as a boardwalk rather than as track
+    ballast: 36, shoulder: 5,
+    sleeperHalf: 26, sleeperW: 7, sleeperGap: 14,
+    railOff: 14, railW: 4, bufferW: 10,
+    ballastColor: "#433a30", shoulderColor: "#2f2921",
+    sleeperColor: "#74593a", railColor: "#b3a184",
+  },
+];
+
+/** how a road names the railway it is laid as (missions.ts RoadSpec) */
+export type RailStyleName = "borer" | "tramway";
+export const railStyleIndex = (name: RailStyleName): number =>
+  RAIL_STYLES.findIndex((s) => s.name === name);
 
 /** the eight headings, as the offset to the neighbour they point at */
 export const RAIL_DIRS: readonly (readonly [number, number])[] = [
@@ -155,8 +219,9 @@ function ray(p: Vec, from: Vec, to: Vec): { t: number; d: number; L: number } {
  * Deterministic and DOM-free, so the check's art stage can run it in Node
  * exactly as the browser does (scripts/check.mjs).
  */
-export function paintRail(piece: number): Uint8ClampedArray<ArrayBuffer> {
+export function paintRail(style: number, piece: number): Uint8ClampedArray<ArrayBuffer> {
   const spec = RAIL_PIECES[piece];
+  const S = RAIL_STYLES[style];
   const out = new Uint8ClampedArray(RAIL_PX * RAIL_PX * 4);
   const mid = RAIL_PX / 2;
   const at = (k: number): Vec => ({
@@ -174,7 +239,7 @@ export function paintRail(piece: number): Uint8ClampedArray<ArrayBuffer> {
   const inA: Vec = { x: (centre.x - A.x) / (la || 1), y: (centre.y - A.y) / (la || 1) };
   const lb = B ? len(sub(centre, B)) : 0;
   const total = la + lb;
-  const slots = Math.max(spec.b === null ? 1 : 2, Math.round(total / SLEEPER_GAP));
+  const slots = Math.max(spec.b === null ? 1 : 2, Math.round(total / S.sleeperGap));
   const gap = total / slots;
 
   const put = (x: number, y: number, hex: string): void => {
@@ -233,22 +298,22 @@ export function paintRail(piece: number): Uint8ClampedArray<ArrayBuffer> {
         if (d < 1e-6) { s = la; }
         else {
           const cos = ((p.x - centre.x) * inA.x + (p.y - centre.y) * inA.y) / d;
-          s = la + (Math.acos(Math.min(1, Math.max(-1, cos))) - Math.PI / 2) * RAIL_OFF;
+          s = la + (Math.acos(Math.min(1, Math.max(-1, cos))) - Math.PI / 2) * S.railOff;
         }
       }
       else continue;
-      if (d > BALLAST) continue;
-      let col = d > BALLAST - SHOULDER ? C_SHOULDER : C_BALLAST;
+      if (d > S.ballast) continue;
+      let col = d > S.ballast - S.shoulder ? S.shoulderColor : S.ballastColor;
       // the sleepers: whole slots along this piece's own length, each
       // centred in its slot so none is cut in half by a cell boundary.
       // The modulo is taken positive because `s` runs negative inside the
       // margin, where the pattern has to keep stepping backwards
       const phase = Math.abs((((s / gap) % 1) + 1) % 1 - 0.5) * gap;
-      if (d <= SLEEPER_HALF && phase <= SLEEPER_W / 2) col = C_SLEEPER;
+      if (d <= S.sleeperHalf && phase <= S.sleeperW / 2) col = S.sleeperColor;
       // ...and the two rails over them
-      if (Math.abs(d - RAIL_OFF) <= RAIL_W / 2) col = C_RAIL;
+      if (Math.abs(d - S.railOff) <= S.railW / 2) col = S.railColor;
       // a cap's buffer beam, square across the line at the cell's centre
-      if (spec.b === null && s > total - BUFFER_W && d <= SLEEPER_HALF) col = C_RAIL;
+      if (spec.b === null && s > total - S.bufferW && d <= S.sleeperHalf) col = S.railColor;
       put(x, y, col);
     }
   }
@@ -256,11 +321,11 @@ export function paintRail(piece: number): Uint8ClampedArray<ArrayBuffer> {
 }
 
 /** the same painting as a canvas, for the packer (browser only) */
-export function railCanvas(piece: number): HTMLCanvasElement {
+export function railCanvas(style: number, piece: number): HTMLCanvasElement {
   const c = document.createElement("canvas");
   c.width = c.height = RAIL_PX;
   const g = c.getContext("2d");
   if (!g) throw new Error("2d context unavailable for a rail piece");
-  g.putImageData(new ImageData(paintRail(piece), RAIL_PX, RAIL_PX), 0, 0);
+  g.putImageData(new ImageData(paintRail(style, piece), RAIL_PX, RAIL_PX), 0, 0);
   return c;
 }

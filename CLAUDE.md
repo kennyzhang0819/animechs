@@ -41,7 +41,7 @@ game/sim.ts            the authority — bodies, towers, combat, missions. The b
 game/levels.ts         the data — unit stats, FAMILIES, waves, WORLDS, Mission
 game/constants.ts      tunables + TOWERS
 game/missions.ts       the authored roads the road missions walk + their rails
-game/railArt.ts        the rail bed those roads are painted as
+game/railArt.ts        the rail beds those roads are painted as — two railways
 game/flowfield.ts      pathing; everything routes to the core
 game/economy.ts track.ts progress.ts        scrap, XP, the level track, saves
 game/weapons.ts status.ts upgrades.ts       shots, statuses, stat dials

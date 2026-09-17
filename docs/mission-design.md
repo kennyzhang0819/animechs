@@ -179,7 +179,12 @@ What Coldline does with it, and what the shape turned out to need:
   get across" a question about physics.
 - **The roads are on screen from wave one.** Drawn under everything, dark
   and dashed, with an arrowhead on the last leg — and now painted on the
-  GROUND as well, as a rail bed (`game/railArt.ts`). A mission with no fog
+  GROUND as well, as a rail bed (`game/railArt.ts`). The two missions get
+  two railways, because the overlay already says whose line it is in red
+  or amber and the ground should not contradict it: Coldline's is the
+  swarm's heavy main line, cold and broad-gauge; Thornway's is a works
+  tramway, narrow and timber-sleepered, which the Hauler drives rather
+  than runs on. A mission with no fog
   in it has no discovery in it either (see above), so a road a player
   found out about by watching something walk down it would be a different
   and worse mission.

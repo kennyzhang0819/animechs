@@ -51,7 +51,7 @@ import { IRON_TIERS, ironLegged, ironMech, type IronTier } from "./ironhideArt";
 import { TUSK_TIERS, tuskLegged, tuskMech } from "./tuskerArt";
 import { WORM_N, wormCar, wormHead, wormTail } from "./wormArt";
 import { CONVOY_N, hauler } from "./convoyArt";
-import { RAIL_CELL, RAIL_INSET, RAIL_PIECES, railCanvas } from "./railArt";
+import { RAIL_CELL, RAIL_INSET, RAIL_PIECES, RAIL_STYLES, railCanvas } from "./railArt";
 import { GRAPNEL_TIERS, grapnelMech } from "./grapnelArt";
 import { KETTLE_TIERS, kettle, kettleGeom } from "./kettleArt";
 import { KING_TIER, king, kingGeom } from "./kingArt";
@@ -680,17 +680,20 @@ export const DECOR_DRAWN: readonly boolean[] = DECOR_KINDS.map(
 // cell, tinted by SPAWN_STYLE (Renderer.rebuildTerrain)
 export const UV_SPAWN = tile("spawn-pad", 64, 2);
 /**
- * THE RAIL BED, one cell a piece (game/railArt.ts, missions.ts railsFor).
+ * THE RAIL BED, one cell a piece per railway (game/railArt.ts, missions.ts
+ * railsFor), indexed [style][piece].
  *
  * Each is painted three cells square with a four-px margin and sampled
  * back in to exactly the three: the margin is what the antialias pass
  * averages against, and without it every cut between two pieces would
- * come out as a hairline down the line. Six paintings carry the whole
+ * come out as a hairline down the line. Six shapes carry the whole
  * lattice — two straights, two hands of bend and two buffers — because a
- * quarter turn maps everything else onto one of them.
+ * quarter turn maps everything else onto one of them; the two STYLES are
+ * the two road missions' own railways, which look nothing like each other
+ * on purpose.
  */
-export const UV_RAILS: readonly UVRect[] = RAIL_PIECES.map((p) =>
-  tile(`rail-${p.name}`, RAIL_CELL, RAIL_INSET),
+export const UV_RAILS: readonly (readonly UVRect[])[] = RAIL_STYLES.map((st) =>
+  RAIL_PIECES.map((p) => tile(`rail-${st.name}-${p.name}`, RAIL_CELL, RAIL_INSET)),
 );
 // a stroked ring, procedural
 export const UV_RING = reserve("ring", 64, 64, { art: 54, upright: true });
@@ -3429,7 +3432,9 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   DECOR_KINDS.forEach(([k], i) => draw(UV_DECOR[i], antialiased(propCanvas(k))));
   draw(UV_SPAWN, antialiased(img.spawnPad));
   // THE RAIL PIECES, painted like the floors and through the same filter
-  RAIL_PIECES.forEach((_, i) => draw(UV_RAILS[i], antialiased(railCanvas(i))));
+  RAIL_STYLES.forEach((_, st) =>
+    RAIL_PIECES.forEach((_p, i) => draw(UV_RAILS[st][i], antialiased(railCanvas(st, i)))),
+  );
 
   // ---------- the units ----------
   // Every part is drawn at its native size into the cell declared for

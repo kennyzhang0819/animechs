@@ -2162,7 +2162,7 @@ export class Renderer {
       for (const r of T.rails) {
         const x = (r.x + 0.5) * CELL, y = (r.y + 0.5) * CELL;
         const lit = this.litAt(x, y);
-        this.push(w, x, y, span, span, r.rot * (Math.PI / 2), UV_RAILS[r.piece], lit, lit, lit, 1);
+        this.push(w, x, y, span, span, r.rot * (Math.PI / 2), UV_RAILS[r.style][r.piece], lit, lit, lit, 1);
       }
     }
     if (layers.spawn) {

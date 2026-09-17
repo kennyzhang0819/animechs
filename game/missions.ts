@@ -67,7 +67,7 @@
  * legal position, just a bad one.
  */
 import { CELL, COLS, ROWS } from "./constants";
-import { RAIL_DIRS, RAIL_PIECES } from "./railArt";
+import { RAIL_DIRS, RAIL_PIECES, railStyleIndex, type RailStyleName } from "./railArt";
 
 /** the shortest straight run a road may carry, in cells: a bend's tile
  *  covers the three cells around its corner, so two corners closer than
@@ -78,6 +78,14 @@ const MIN_RUN = 3;
 export interface RoadSpec {
   /** what the objective panel calls it — the player's word for this line */
   name: string;
+  /**
+   * WHICH RAILWAY IT IS LAID AS (railArt.ts RAIL_STYLES). The shapes are
+   * the lattice's and never vary; this is the gauge, the sleepers and
+   * what the bed is made of. It is per ROAD rather than per map because
+   * the thing it says — whose line is this — is a fact about the mission,
+   * the same fact the overlay says in red or amber (game.ts ROAD_MINE).
+   */
+  rail: RailStyleName;
   /** the line, in map cells, entry first and exit last */
   cells: readonly (readonly [number, number])[];
 }
@@ -139,6 +147,7 @@ export const ROAD_SPECS: Record<string, readonly RoadSpec[]> = {
   coldline: [
     {
       name: "the south line",
+      rail: "borer",
       // 13,780 px rim to rim, in six corners. The first leg is the run-up
       // — 114 cells due east, comfortably past the 74 of train — and the
       // last runs off the east rim on the same heading it arrives at
@@ -149,6 +158,7 @@ export const ROAD_SPECS: Record<string, readonly RoadSpec[]> = {
     },
     {
       name: "the north line",
+      rail: "borer",
       // 12,270 px rim to rim, and still the straighter of the two: four
       // long east-west runs with a single diagonal step between each. The
       // step at 314 is the one corner here that the TERRAIN put in rather
@@ -189,6 +199,18 @@ export const ROAD_SPECS: Record<string, readonly RoadSpec[]> = {
    * exactly where it was. The halts moved by at most three cells, so
    * their fractions below did not have to move at all.
    *
+   * IT IS A DIFFERENT RAILWAY, not the same one in another colour. The
+   * Borer's is a heavy main line — a wide bed of cold crushed stone,
+   * steel sleepers set well apart, a broad gauge in bright steel. This is
+   * a works TRAMWAY: a narrow cinder formation, timber sleepers laid
+   * close, a light narrow gauge worn pale on top (railArt.ts
+   * RAIL_STYLES). Its sleepers are LIGHTER than its bed where the
+   * Borer's are darker, which is the thing a player actually reads at
+   * field zoom. The fiction it buys is worth the six extra cells on the
+   * sheet: the Hauler is drawn with TRACKS (convoyArt.ts), so a cart
+   * driving a disused line reads honestly where rolling stock on a live
+   * one would not.
+   *
    * THE CART DOES NOT COLLIDE (Sim.updateConvoy), so the corridor cut for
    * this line is about the PICTURE and not about fitting: seven cells of
    * cleared ground under a five-tile cart is a lane, not a squeeze.
@@ -201,6 +223,7 @@ export const ROAD_SPECS: Record<string, readonly RoadSpec[]> = {
   thornway: [
     {
       name: "the long way round",
+      rail: "tramway",
       // 23,970 px, core to post. The halts (levels.ts EscortMission) are
       // fractions of it, chosen to land in the clearings at 22, 40, 60
       // and 76 per cent
@@ -284,12 +307,14 @@ export function roadAt(road: Road, s: number, out: { x: number; y: number; dx: n
 // THE RAILS: the same line, as ground
 // ---------------------------------------------------------------------
 
-/** one painted cell of rail bed — which piece, and how far round */
+/** one painted cell of rail bed — which painting, and how far round */
 export interface RailTile {
   /** the cell the piece is centred on; it covers RAIL_SPAN cells square */
   x: number;
   y: number;
-  /** an index into railArt RAIL_PIECES */
+  /** an index into railArt RAIL_STYLES: which railway this is */
+  style: number;
+  /** an index into railArt RAIL_PIECES: which shape of it */
   piece: number;
   /** quarter turns clockwise to apply when it is stamped */
   rot: number;
@@ -380,6 +405,7 @@ export function railsFor(mapId: string | undefined): readonly RailTile[] {
   const out: RailTile[] = [];
   const seen = new Set<number>();
   for (const spec of specs) {
+    const style = railStyleIndex(spec.rail);
     const cells = walkCells(spec);
     for (let i = 0; i < cells.length; i++) {
       const [x, y] = cells[i];
@@ -394,7 +420,7 @@ export function railsFor(mapId: string | undefined): readonly RailTile[] {
         back >= 0 && on >= 0 ? PIECE_AT[back][on] : CAP_AT[back >= 0 ? back : on] ?? null;
       if (!pick) continue;
       seen.add(key);
-      out.push({ x, y, piece: pick[0], rot: pick[1] });
+      out.push({ x, y, style, piece: pick[0], rot: pick[1] });
     }
   }
   RAILS.set(mapId, out);
