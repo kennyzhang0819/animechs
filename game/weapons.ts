@@ -1,4 +1,4 @@
-import { CELL, PAL, SHRAPNEL } from "./constants";
+import { CELL, PAL, SHRAPNEL, TEAM_CRUX_RGB } from "./constants";
 import type { UnitKind } from "./levels";
 import { FxKind, type RGB, type TowerKind } from "./types";
 
@@ -528,6 +528,36 @@ const STARHART5_LASER = laserStyle({
  *  45-degree stoop1 cut down to match. Style 0 is piercer's and the two
  *  green ones above are Mindustry's own; these two are this game's, so
  *  the family's opening tiers fire the family's light */
+/**
+ * THE SIEGE'S TWO BEAMS (the railgun and the Lance, UNIT_WEAPONS below).
+ * Both are the SWARM'S OWN CRIMSON rather than a family's colour, because
+ * neither body is in a family: the garrison wears the crux the way the
+ * Sovereign does, and a player who sees red on the line knows what side
+ * it came from without being told.
+ *
+ * The railgun's is the widest beam in the game after the Starlight apex's
+ * and it is drawn for a hundred and twenty tiles of travel — it has to
+ * read as a LINE ACROSS THE BOARD from the corner of the eye, because
+ * that is all the warning the core gets. The Lance's is the thin one: a
+ * needle on a two-second clock, meant to be seen a dozen times a fight
+ * rather than once.
+ */
+const RAZE_LASER = laserStyle({
+  colors: [[PAL.sap, 0.4], [TEAM_CRUX_RGB, 1], [WHITE, 1]],
+  width: 46,
+  sideAngle: 15 * DEG,
+  sideWidth: 0,
+  sideLength: 0,
+  lifetime: t(48),
+});
+const LANCE_LASER = laserStyle({
+  colors: [[PAL.sap, 0.4], [TEAM_CRUX_RGB, 1], [WHITE, 1]],
+  width: 7,
+  sideAngle: 45 * DEG,
+  sideWidth: 0.6,
+  sideLength: 8,
+  lifetime: t(14),
+});
 const STARHART1_LASER = laserStyle({
   colors: [[PAL.starDark, 0.4], [PAL.star, 1], [WHITE, 1]],
   width: 4,
@@ -1410,6 +1440,69 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   wormhead: [],
   wormcar: [],
   wormtail: [],
+
+  // ---- THE SIEGE: the railgun, and the two Wardens over it -----------
+  //
+  // THE RAILGUN'S REACH IS THE BOARD. Two hundred tiles is not a number
+  // anything else on this table comes near, and it is not meant to be
+  // read as reach at all — it is the weapon saying "distance is not part
+  // of this". The body holds ONE target for its whole life (levels.ts
+  // UnitStats.bombard, Sim.updateUnitWeapons) and that target is the
+  // core, so the gate this number opens is the only gate there is.
+  //
+  // WHAT IT DOES TO THE CORE, and why it is a small number beside every
+  // other row here. The core is 24,000 (constants.ts CORE_HP) and there
+  // are TEN railguns: a Warden's 560 a shot would take the base down in
+  // under a minute with the last section up. 120 every twelve seconds is
+  // ten health a second EACH, and on Crater's schedule (levels.ts world
+  // 10) that arithmetic lands on a number worth writing down: a siege
+  // NOBODY ANSWERS takes the core to zero at 14:00, which is the exact
+  // moment the fourth battery rises. Ignore the mission completely and
+  // you lose on the tick it finishes arriving. A board that clears each
+  // section before the next one is up pays about half the core for the
+  // privilege instead. That is the whole balance of the mission, and it
+  // is these two numbers.
+  //
+  // THE CHARGE IS THE TELL. Two seconds of gathering light before the
+  // beam, on a body a hundred and twenty tiles away: it is how a player
+  // reading the base learns which way to look, and it is the only warning
+  // the mission gives.
+  railgun: [
+    {
+      name: "railgun-bombard", reload: t(720), mounts: 1, damage: 120,
+      range: u(1600), speed: 0, fx: "laser", laser: RAZE_LASER, charge: t(120),
+      shoot: FxKind.HitPiercer,
+    },
+  ],
+  // THE BULWARK'S TUSKS are the Tusker apex's, number for number
+  // (tusker5 above): 800 a swing off a mirrored pair, 280 of splash over
+  // four and a half tiles, and the rend that eats a building's armour.
+  // It is meant to be recognised — "this is a T5 melee body, standing
+  // still" is the entire brief — so copying the row rather than inventing
+  // one is the honest way to say it.
+  bulwark: [
+    {
+      name: "bulwark-tusks", reload: t(40), mounts: 2, damage: 800, splash: 280, splashRadius: u(36),
+      range: u(38), speed: 0, fx: "melee", rend: 0.012,
+    },
+  ],
+  // THE LANCE'S BEAM is the Starlight apex's bite on a third of its
+  // cycle and a third of its reach, and it does NOT pierce.
+  //
+  // THAT TRADE IS THE BODY. A starhart5 charges for a second and a third,
+  // fires 560 down fifty-seven tiles of nine-cell corridor, and then
+  // spends five and a half seconds doing nothing — a siege weapon, once a
+  // volley. This one carries the same 560 into a twenty-four-tile line
+  // every two and a sixth seconds, at one target, which over a minute is
+  // more than twice the damage from a third the distance. A guard's job
+  // is to make the ground in front of an emplacement expensive to stand
+  // in, and expensive means CONSTANT, not enormous.
+  lance: [
+    {
+      name: "lance-beam", reload: t(130), mounts: 1, damage: 560, range: u(190), speed: 0,
+      fx: "laser", laser: LANCE_LASER, charge: t(20), shoot: FxKind.HitPiercer,
+    },
+  ],
 };
 
 /**

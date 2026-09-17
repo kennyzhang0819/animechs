@@ -1,14 +1,27 @@
 /**
- * WHERE A MISSION'S BODY WALKS — the hard-coded roads the two ROAD
- * MISSIONS are drawn on (docs/mission-design.md).
+ * A MISSION'S GEOMETRY — where its bodies WALK and where they STAND
+ * (docs/mission-design.md). Two kinds of thing live here:
  *
- * TWO MISSIONS SHARE THIS FILE and they are opposites. INTERCEPT sends
- * the swarm's Borers across Coldline and asks the board to stop them;
- * ESCORT sends the player's own convoy up Thornway and asks the board to
- * get it through. One road machine, because the thing a road IS — a line
- * somebody drew, an arc length along it, a heading at that point — is the
- * same question either way, and a second copy of it would be a second
- * place for a corner to be wrong.
+ *   ROADS — the hard-coded lines the two ROAD MISSIONS are drawn on, and
+ *           most of this file (RoadSpec, ROAD_SPECS, roadsFor, roadAt).
+ *   POSTS — the places a mission may PLANT something, at the bottom
+ *           (PostSpec, POST_SPECS, postsFor). A road is a line and a post
+ *           is a circle, and that is the whole difference.
+ *
+ * WHAT THEY HAVE IN COMMON IS WHY THEY SHARE A FILE: both are AUTHORED
+ * WITH THE TERRAIN and keyed by map id, so a mission's geometry and the
+ * ground it was fitted to cannot drift apart without the id changing. The
+ * mission itself (levels.ts) only ever names an index into one of these.
+ *
+ * THREE MISSIONS USE IT. INTERCEPT sends the swarm's Borers across
+ * Coldline and asks the board to stop them; ESCORT sends the player's own
+ * convoy up Thornway and asks the board to get it through — one road
+ * machine for both, because the thing a road IS (a line somebody drew, an
+ * arc length along it, a heading at that point) is the same question
+ * either way, and a second copy of it would be a second place for a corner
+ * to be wrong. RAZE rings Crater's core with batteries and asks the board
+ * to go and break them; that one wants no line at all, only four places
+ * and how far each one reaches.
  *
  * A ROAD IS AUTHORED, NOT PATHFOUND, and that is the whole point of both
  * archetypes. Everything else on the field reads the flow field and ends
@@ -478,5 +491,125 @@ export function roadProblems(road: Road): string[] {
       );
     last = d;
   }
+  return out;
+}
+
+/**
+ * A POST: a place a mission may plant something on, in map cells.
+ *
+ * IT IS THE ROAD'S OPPOSITE NUMBER. A road is where a body WALKS and a
+ * post is where a body STANDS, and the raze mission is built out of posts
+ * the way the two crossing missions are built out of roads: authored with
+ * the terrain, indexed from the mission's own schedule (levels.ts
+ * RazeMission.sections), and on the board from the first frame so the
+ * player can price a position against it before anything is standing
+ * there (Game.drawMissionPosts).
+ *
+ * `radius` IS TWO THINGS AT ONCE and that is deliberate. It is how wide
+ * the section is laid out — the emplacements are rung around the centre
+ * inside it, and the garrison inside them — and it is the LEASH the
+ * garrison is held to (Sim.garrisonUnit): a Warden posted here will cross
+ * the circle to get at a turret standing in it and will never take a step
+ * outside. One number, so what the player sees drawn on the board is
+ * exactly the ground the guards contest, and there is no second radius to
+ * disagree with the first.
+ */
+export interface PostSpec {
+  /** what the objective panel and the board overlay call it */
+  name: string;
+  /** the centre, in map cells */
+  cell: readonly [number, number];
+  /** how far the section reaches, in cells — the layout AND the leash */
+  radius: number;
+}
+
+/** one post, ready to use: the same place in world px */
+export interface Post {
+  name: string;
+  x: number;
+  y: number;
+  /** the radius in world px */
+  r: number;
+}
+
+/**
+ * THE POSTS, BY MAP. A map with no entry here carries no posts and cannot
+ * hold the raze mission — Sim.reset says so out loud rather than running a
+ * siege with nowhere to stand it.
+ *
+ * CRATER is the siege map (levels.ts world 10, scripts/maps/crater.mjs):
+ * the core dead centre of a basalt bowl with six mouths, and the one board
+ * drawn with open ground on EVERY side of the base at the same distance
+ * from it. That is what this mission needs and what nothing else has — a
+ * siege is a ring, and a ring wants a middle.
+ *
+ * THE RADIUS OF THE RING IS A HUNDRED AND TWENTY CELLS, and the number
+ * comes from the power grid rather than from the terrain: the core lights
+ * ninety (constants.ts CORE_POWER_R), so a post at a hundred and twenty is
+ * THIRTY CELLS PAST THE EDGE OF THE GROUND A RUN STARTS WITH. Only the
+ * longest gun in the game reaches that far from the last cell a fresh
+ * board may build on (railhead, sixty-two and a half cells), which is
+ * exactly the pressure wanted: the first section can be answered with what
+ * the board already owns IF the board owns the right gun, and everything
+ * after it is bought.
+ *
+ * AND EVERY POST HAS A BEACON. Three of Crater's own stand inside sixty
+ * cells of one — the disc a beacon lights — and the fourth was placed on
+ * the rock beside the south-west post for this mission (public/maps/
+ * crater.json). That is the archetype's own requirement: "a beacon that
+ * reaches it", so the entry fee is how deep into the ladder a run has to
+ * go rather than whether the map felt like helping.
+ *
+ * THE ORDER IS THE RISING ORDER and it climbs with the map's help. The
+ * south-west is first and stands alone with one emplacement on it; the
+ * north-west is last, has four, and sits inside the disc of the beacon a
+ * long run will have bought by then.
+ */
+export const POST_SPECS: Record<string, readonly PostSpec[]> = {
+  crater: [
+    // 0 — the south-west shelf. Open ground, no beacon closer than the one
+    // put there for it, and the section the board meets first
+    { name: "South-west battery", cell: [169, 339], radius: 26 },
+    // 1 — the south-east, under the disc of the beacon on the east rim
+    { name: "South-east battery", cell: [339, 339], radius: 26 },
+    // 2 — the north-east, inside the beacon above it
+    { name: "North-east battery", cell: [339, 169], radius: 28 },
+    // 3 — the north-west, the heaviest, and the one the map helps most with
+    { name: "North-west battery", cell: [169, 169], radius: 30 },
+  ],
+};
+
+const POSTS = new Map<string, readonly Post[]>();
+
+/**
+ * THE POSTS THIS MAP CARRIES, or an empty list — roadsFor's opposite
+ * number, and built the same way and for the same reason: the id is the
+ * level's own `map` field, so a post list and the terrain it stands on
+ * cannot drift apart without the id changing.
+ */
+export function postsFor(mapId: string | undefined): readonly Post[] {
+  if (!mapId) return [];
+  const had = POSTS.get(mapId);
+  if (had) return had;
+  const spec = POST_SPECS[mapId];
+  if (!spec) return [];
+  const built = spec.map((p) => ({
+    name: p.name,
+    x: (p.cell[0] + 0.5) * CELL,
+    y: (p.cell[1] + 0.5) * CELL,
+    r: p.radius * CELL,
+  }));
+  POSTS.set(mapId, built);
+  return built;
+}
+
+/** Does this post stand on the board at all? The same cheapest-possible
+ *  gate roadProblems is — a section rung round a centre off the rim would
+ *  put half its emplacements somewhere nothing can reach */
+export function postProblems(post: Post): string[] {
+  const out: string[] = [];
+  if (post.x - post.r < 0 || post.y - post.r < 0 || post.x + post.r > COLS * CELL || post.y + post.r > ROWS * CELL)
+    out.push(`${post.name}: a post at (${Math.round(post.x / CELL)}, ${Math.round(post.y / CELL)}) reaches off the board`);
+  if (post.r <= 0) out.push(`${post.name}: a post of no radius`);
   return out;
 }

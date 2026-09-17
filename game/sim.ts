@@ -133,6 +133,8 @@ import {
   WORLDS,
   missionProgress,
   missionTarget,
+  razeGuns,
+  type RazeSection,
   unitName,
   UNIT_ID,
   UNIT_KINDS as UNIT_KINDS_IMPORT,
@@ -245,7 +247,7 @@ import {
   VOLATILE_RADIUS,
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
-import { roadAt, roadProblems, roadsFor, type Road } from "./missions";
+import { postProblems, postsFor, roadAt, roadProblems, roadsFor, type Post, type Road } from "./missions";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
 import { countSensitive } from "./upgrades";
 import {
@@ -745,6 +747,16 @@ const HAS_CHARGE = KIND_CHARGE.some((r) => r > 0);
 const KIND_SEEK = Float64Array.from(UNIT_KINDS, (k) =>
   Math.max(UNIT_REACH[k], UNIT_STATS[k].charge?.range ?? 0),
 );
+/**
+ * DOES THIS KIND SHOOT THE CORE AND NOTHING ELSE (levels.ts
+ * UnitStats.bombard)? — the siege's emplacement, and nothing else on the
+ * roster. HAS_BOMBARD reads the ROSTER, not the run: it is true while any
+ * kind carries the flag, and it is here so the branch in the target pick
+ * costs one already-loaded boolean rather than an array index on every
+ * body on the board, every tick, on every map.
+ */
+const KIND_BOMBARD = Uint8Array.from(UNIT_KINDS, (k) => (UNIT_STATS[k].bombard ? 1 : 0));
+const HAS_BOMBARD = KIND_BOMBARD.some((b) => b === 1);
 /**
  * THE STARBURST (levels.ts UnitStats.starburst), the Grapnels' trait, and
  * the stars it throws (weapons.ts GRAPNEL_STARS) resolved per KIND — the
@@ -1392,6 +1404,47 @@ export class Sim {
   private readonly ucross = new Int16Array(MAX_UNITS);
   private readonly ucrossS = new Float32Array(MAX_UNITS);
   /**
+   * THE POST A BODY HOLDS — 0 for everything the script ever sent, and the
+   * whole of how a mission puts a body somewhere and keeps it there
+   * (garrisonUnit, plantUnit).
+   *
+   * EVERY BODY IN THIS GAME WALKS AT THE CORE. That is not a behaviour a
+   * kind opts into, it is the shape of the field (flowfield.ts — every
+   * route on the board runs to the base), and it is why the swarm is a
+   * TIDE rather than an army. A mission that wants a thing to be SOMEWHERE
+   * — an emplacement to go and break, a garrison standing over it, a camp,
+   * a nest, a picket on a road — cannot ask for it in that language: a
+   * body handed to the field is a body that will be at your door in ninety
+   * seconds whatever it was put down for.
+   *
+   * So a garrisoned body simply does not read the field. `ugar` says which
+   * of three things it is:
+   *
+   *   0  FREE — the field, the crowd, the core. Everything else.
+   *   1  LEASHED — it holds the circle at (ugarx, ugary) of radius ugarr.
+   *      It walks at what it has picked inside that circle, walks back to
+   *      the middle when it has nothing, and never takes a step outside
+   *      (updateUnits). Its target search is clipped to the same circle
+   *      (updateUnitWeapons), so a turret a tile beyond the line is a
+   *      turret it does not know about. That last part is the mission
+   *      design and not an optimisation: a guard that could be pulled off
+   *      its post by building near it would be a wave with extra steps.
+   *   2  PLANTED — bolted to the ground it was put on. No heading, no
+   *      crowd shove, no knockback, no beam drag. An emplacement the
+   *      physics could walk off its own footprint is an emplacement that
+   *      ends up somewhere the mission did not author.
+   *
+   * IT IS DELIBERATELY NOT A PROPERTY OF THE KIND. The Wardens are the
+   * first bodies to use it and they are not the point — the point is that
+   * ANY kind can be posted, so the next mission that wants a Tusker herd
+   * camped on a hill writes a roster (levels.ts RazeSection.guards) rather
+   * than a new unit.
+   */
+  private readonly ugar = new Uint8Array(MAX_UNITS);
+  private readonly ugarx = new Float32Array(MAX_UNITS);
+  private readonly ugary = new Float32Array(MAX_UNITS);
+  private readonly ugarr = new Float32Array(MAX_UNITS);
+  /**
    * THE CROSSERS THIS RUN HAS LAUNCHED, in launch order and never
    * reordered — `ucross` is an index into this, and an index that moved
    * would put a car in somebody else's train. A dead crosser keeps its
@@ -1482,6 +1535,32 @@ export class Sim {
   /** the furthest any cart has got along its road, 0 to 1 — what the bar
    *  and the end screen read once there is nothing on the road (convoyAt) */
   private convoyBest = 0;
+
+  /**
+   * THE SIEGE — the RAZE mission's ledger (levels.ts RazeMission), the
+   * third thing missions.ts's geometry is for, and the first mission whose
+   * bodies STAND rather than walk.
+   *
+   * There is no per-section record here on purpose, and that is worth a
+   * line because the two road missions both keep one. A crosser has state
+   * of its own — where it is on the road, how much of it is left, whether
+   * it got across — and so does a cart. A SECTION HAS NONE: it is a moment
+   * in the schedule and a handful of bodies, and once they are on the
+   * board they are ordinary bodies that the ordinary machinery kills. So
+   * what the mission has to remember is three numbers.
+   *
+   * `razeRisen` is how many sections have been stood up, which is the
+   * whole of the schedule's state (runSections reads it against the
+   * clock). `razeKilled` is emplacements destroyed, counted at the one
+   * door out (removeUnit) for the same reason a crosser's ledger is:
+   * a railgun can leave the board killed, devoured or blown apart by a
+   * cascade, and a count kept at the kill would miss two of those.
+   */
+  private razeRisen = 0;
+  /** railguns destroyed — the mission's whole objective */
+  razeKilled = 0;
+  /** the posts this map carries (missions.ts), empty on every other map */
+  private posts: readonly Post[] = [];
 
   /**
    * THE WAVE EVERY BODY BELONGS TO, 1-based: the number loadStep staged
@@ -2435,6 +2514,22 @@ export class Sim {
     this.convoyOut = 0;
     this.convoyEnd = mission.kind !== "escort";
     this.convoyBest = 0;
+    // ...and a RAZE reads the map's POSTS the way the other two read its
+    // roads (missions.ts): the schedule is the mission's and the places
+    // are the terrain's, so a siege put on a map with nowhere to stand
+    // says so at load instead of quietly raising nothing
+    this.razeRisen = 0;
+    this.razeKilled = 0;
+    this.posts = mission.kind === "raze" ? postsFor(this.level.map) : [];
+    if (mission.kind === "raze") {
+      const bad: string[] = [];
+      if (mission.sections.length === 0) bad.push("a siege with no sections in it");
+      for (const sec of mission.sections)
+        if (!this.posts[sec.post])
+          bad.push(`a section names post ${sec.post} and the map has ${this.posts.length}`);
+      for (const post of this.posts) bad.push(...postProblems(post));
+      if (bad.length > 0) throw new Error(`${this.level.name}: ${bad.join("; ")}`);
+    }
     const onRoads = mission.kind === "intercept" || mission.kind === "escort";
     this.roads = onRoads ? roadsFor(this.level.map) : [];
     if (onRoads) {
@@ -3143,6 +3238,7 @@ export class Sim {
       crossKilled: this.crossKilled,
       convoyDone: this.convoyDone,
       convoyAt: this.convoyAt(),
+      razeKilled: this.razeKilled,
     });
   }
 
@@ -3175,6 +3271,10 @@ export class Sim {
     // swarm is what can lose the run, and the crossers are what wins it
     const m = this.level.mission;
     if (m.kind === "intercept") return this.crossKilled >= m.kills;
+    // ...A SIEGE IS MET BY ITS COUNT AND BY NOTHING ELSE either: the last
+    // emplacement going down ends the run, with whatever is left of the
+    // garrison still standing on ground nobody needs any more
+    if (m.kind === "raze") return this.razeKilled >= razeGuns(m);
     // ...and an escort the moment the last cart is at the post
     if (m.kind === "escort") return this.convoyDone >= m.deliver;
     if (m.kind === "survive") return this.time >= this.deadline;
@@ -4384,6 +4484,9 @@ export class Sim {
     // on the map, not a wave — and, like the waves, an appointment kept by
     // the clock rather than by whatever the board is doing
     this.runCrossers();
+    // ...and one section up per moment, on the same absolute clock
+    // (runSections)
+    this.runSections();
     // ...and the escort's, which is the same clock read the other way:
     // one departure per cart, on absolute moments (runConvoys)
     this.runConvoys();
@@ -4773,6 +4876,22 @@ export class Sim {
       const due = Math.floor((want - m.first) / Math.max(1e-6, m.every)) + 1;
       this.crossLaunched = Math.min(m.pattern.length, Math.max(this.crossLaunched, due - 1));
     }
+    // ...AND THE SIEGE'S SECTIONS THE SAME WAY, for the same reason.
+    // runSections also reads the schedule off `time`, so a jump to minute
+    // thirteen would otherwise stand all four batteries up in one tick, on
+    // top of each other's ground. What minute thirteen looks like is the
+    // battery minute thirteen called and the ones before it long since
+    // fought; that is what a jump leaves, with the cursor one short so
+    // runSections raises the current one a tick later.
+    //
+    // THE SKIPPED BATTERIES ARE NOT MADE BACK, so a jumped siege cannot be
+    // met — which is exactly as true of a jumped intercept and a jumped
+    // hold. Skipped time is worth nothing here. The swept emplacements do
+    // not score either: removeUnit ran above under `crossSweeping`.
+    if (m.kind === "raze") {
+      const dueSec = Math.floor((want - m.first) / Math.max(1e-6, m.every)) + 1;
+      this.razeRisen = Math.min(m.sections.length, Math.max(this.razeRisen, dueSec - 1));
+    }
 
     // WALK THE CURSOR RATHER THAN LEAPING IT, and stop ONE SHORT. A script
     // step is only a wave once it has been looked at — empty ones are
@@ -4968,6 +5087,152 @@ export class Sim {
   }
 
   /**
+   * THE SIEGE'S SCHEDULE (levels.ts RazeMission): section `n` rises at
+   * `first + n * every` and every one of them rises, whether or not the
+   * board has finished the last.
+   *
+   * IT IS ABSOLUTE MOMENTS, like the two road missions' launches and for
+   * the same reason: nothing here is a timer counting down, so a jump
+   * (skipToTime) cannot leave the schedule out of step with the clock, and
+   * a player can read the next rise off run time rather than off a hidden
+   * countdown.
+   *
+   * AND IT DOES NOT WAIT. The obvious other rule — "the next section rises
+   * when the last one falls" — reads well and makes the mission strictly
+   * easier the worse you are at it, which is the wrong direction for every
+   * clock in this game. Rising on the clock means falling behind COSTS:
+   * the fourth section arriving over a third that is still firing is six
+   * emplacements on the core at once, and that is the shape the mission
+   * wants — a board that keeps up fights one at a time, and a board that
+   * does not fights all of it.
+   */
+  private runSections(): void {
+    const m = this.level.mission;
+    if (m.kind !== "raze") return;
+    while (
+      this.razeRisen < m.sections.length &&
+      this.time >= m.first + this.razeRisen * m.every
+    ) {
+      this.raiseSection(m.sections[this.razeRisen]);
+      this.razeRisen++;
+    }
+  }
+
+  /**
+   * ONE SECTION UP: the emplacements rung round the post, the garrison
+   * scattered inside it (levels.ts RazeSection, missions.ts PostSpec).
+   *
+   * THE EMPLACEMENTS ARE ON A RING AND THE GUARDS ARE NOT. A railgun is
+   * the thing the player has to reach, so where each one stands is the
+   * mission's geometry and has to be legible: one in the middle when there
+   * is one, and otherwise evenly round a circle at half the post's radius,
+   * which reads as a battery from any direction rather than as a heap. The
+   * guards are scattered because a garrison in formation reads as a wave
+   * that has stopped, and because they are going to move anyway.
+   *
+   * IT NEVER FAILS TO PLACE. `clearNear` walks out from the wanted spot
+   * for open ground and the spawn is `exact`, so a section rung over a
+   * rock does not quietly come up short — a mission asking for ten
+   * railguns and standing up nine would be a run that can never be won,
+   * reported nowhere.
+   */
+  private raiseSection(sec: RazeSection): void {
+    const post = this.posts[sec.post];
+    if (!post) return;
+    const guns = Math.max(0, Math.floor(sec.guns));
+    const ring = post.r * 0.5;
+    for (let g = 0; g < guns; g++) {
+      // one in the middle; two or more evenly round the ring, opened at a
+      // quarter turn so a pair stands across the player's approach rather
+      // than one behind the other
+      const ang = (g / guns) * Math.PI * 2 + Math.PI / 4;
+      const wantX = guns === 1 ? post.x : post.x + Math.cos(ang) * ring;
+      const wantY = guns === 1 ? post.y : post.y + Math.sin(ang) * ring;
+      const spot = this.clearNear(wantX, wantY, HB_OUTER[UNIT_ID.railgun]);
+      if (!this.spawnUnit("railgun", { x: spot.x, y: spot.y, exact: true }, 0)) return;
+      const i = this.n - 1;
+      this.plantUnit(i);
+      // it is BUILT POINTING AT THE BASE. A planted body never turns
+      // (updateUnits leaves its facing alone, since it has no drive to
+      // aim off), so the heading it rises on is the heading it keeps —
+      // and the only heading a railgun ever wants is the one its beam
+      // goes down.
+      const ang2 = Math.atan2(this.core.y - spot.y, this.core.x - spot.x);
+      this.urot[i] = ang2;
+      this.ubrot[i] = ang2;
+      this.uheldRot[i] = ang2;
+    }
+    for (const [kind, n] of Object.entries(sec.guards) as [UnitKind, number][]) {
+      for (let g = 0; g < Math.max(0, Math.floor(n)); g++) {
+        // anywhere inside the post, biased outward: sqrt of a uniform roll
+        // spreads them evenly over the AREA rather than piling them at the
+        // middle, which is where the railguns already are
+        const a = Math.random() * Math.PI * 2;
+        const d = Math.sqrt(Math.random()) * post.r * 0.85;
+        const spot = this.clearNear(post.x + Math.cos(a) * d, post.y + Math.sin(a) * d, HB_OUTER[UNIT_ID[kind]]);
+        if (!this.spawnUnit(kind, { x: spot.x, y: spot.y, exact: true }, 0)) return;
+        this.garrisonUnit(this.n - 1, post.x, post.y, post.r);
+      }
+    }
+  }
+
+  /**
+   * THE NEAREST OPEN SPOT TO A POINT, for a body of radius `r` — a spiral
+   * of rings out to a few tiles, taking the first that is not rock.
+   *
+   * It is the one thing standing between an authored post and the terrain
+   * it was authored over: a mission names a place in cells and the ground
+   * there may have a boulder on it, and a body dropped inside rock is a
+   * body nothing can see to shoot (canSee). The walk is small and it runs
+   * a couple of dozen times a run, at the moment a section rises.
+   */
+  private clearNear(x: number, y: number, r: number): { x: number; y: number } {
+    const field = this.field;
+    const fit = (px: number, py: number): boolean =>
+      px >= r && py >= r && px <= W - r && py <= H - r && !field.hitsWall(px, py, WALL_R);
+    if (fit(x, y)) return { x, y };
+    for (let step = 1; step <= 10; step++) {
+      const rad = step * CELL * 1.5;
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * Math.PI * 2;
+        const px = x + Math.cos(a) * rad, py = y + Math.sin(a) * rad;
+        if (fit(px, py)) return { x: px, y: py };
+      }
+    }
+    return { x: clamp(x, r, W - r), y: clamp(y, r, H - r) };
+  }
+
+  /**
+   * POST A BODY TO A CIRCLE (see ugar): it holds this ground, fights
+   * whatever the player builds inside it, and never leaves.
+   *
+   * THIS IS THE GENERAL MECHANISM AND THE SIEGE IS ITS FIRST CUSTOMER.
+   * Anything a mission wants standing somewhere — a camp, a nest, a picket
+   * on a road, an escort of the swarm's own — is this call and a roster,
+   * with no new unit kinds and nothing in UNIT_STATS.
+   */
+  garrisonUnit(i: number, x: number, y: number, r: number): void {
+    this.ugar[i] = 1;
+    this.ugarx[i] = x;
+    this.ugary[i] = y;
+    this.ugarr[i] = r;
+    // it drops whatever the spawn's target clock happened to leave on it:
+    // a pick made before the leash was written is a pick from the whole
+    // board, and the clip only runs at the next re-pick
+    this.utgt[i] = null;
+  }
+
+  /** BOLT A BODY DOWN (see ugar): no heading, no shove, no knockback. What
+   *  an emplacement is, and the only way to put something on the board that
+   *  is exactly where the mission said it would be for the whole run */
+  plantUnit(i: number): void {
+    this.ugar[i] = 2;
+    this.ugarx[i] = this.upx[i];
+    this.ugary[i] = this.upy[i];
+    this.ugarr[i] = 0;
+  }
+
+  /**
    * ONE BORER ONTO ONE ROAD: the whole chain laid nose to tail at the
    * road's entry, head furthest along (levels.ts WORM_CHAIN).
    *
@@ -5073,6 +5338,14 @@ export class Sim {
    * one car left is still one thing to shoot, and a panel counting bodies
    * would read "14 on the line" for two half-dead worms.
    */
+  /** HOW MANY EMPLACEMENTS ARE FIRING ON THE CORE right now — the siege's
+   *  second number (levels.ts missionLines). It is the alive census and
+   *  not "risen minus killed", because the census is already kept for
+   *  every kind on the board and cannot drift from what is standing */
+  razeUp(): number {
+    return this.aliveByKind[UNIT_ID.railgun];
+  }
+
   crossersLive(): number {
     let n = 0;
     for (const w of this.crossers) if (w.alive > 0) n++;
@@ -6149,6 +6422,21 @@ export class Sim {
       // ...and its VETERANCY (uvet): what every hit below is multiplied by
       // (hitStructure), and what a shot leaving the muzzle carries
       this.dmgMul = HAS_VET ? this.uvet[i] : 1;
+      // THE EMPLACEMENT HOLDS THE CORE AND ASKS NOTHING (levels.ts
+      // UnitStats.bombard). No search, no clock, no reach test, no sight
+      // ray: the target is the base, it is the base for as long as the
+      // base is standing, and the weapon's reach is the board (weapons.ts,
+      // the railgun row). Every other branch below is about finding
+      // something, and a railgun has nothing to find.
+      if (HAS_BOMBARD && KIND_BOMBARD[ukind[i]]) {
+        const core = this.core;
+        if (core.hp > 0) {
+          const half = (core.size * CELL) / 2;
+          const dx = core.x - x, dy = core.y - y;
+          this.fireBombard(i, x, y, ws, Math.sqrt(dx * dx + dy * dy) - half, dt);
+        }
+        continue;
+      }
       // the target, re-picked every few tenths of a second, dropped the
       // moment it dies or walks out of the longest gun's reach
       utT[i] -= dt;
@@ -6182,6 +6470,24 @@ export class Sim {
         // its reach is a few tiles — a ray a candidate costs nothing there.
         const seek = HAS_CHARGE && KIND_CHARGE[ukind[i]] > 0;
         tgt = this.pickAim(x, y, reach, sighted && seek);
+        // A POSTED BODY SEES ONLY ITS OWN GROUND (see ugar). The pick is
+        // the ordinary one and then it is CLIPPED to the post's circle:
+        // anything standing outside the leash is not a target, however
+        // near it is and however far the gun reaches.
+        //
+        // WHY IT IS A FILTER AND NOT A SEARCH FROM THE POST. The search
+        // takes the nearest structure and stops (see nearestStructure),
+        // so clipping can throw away a pick and leave a legal one further
+        // out unfound — a turret just outside the line can shadow one just
+        // inside it for a re-pick or two. That is the honest trade: a
+        // search centred on the post would need its own ring walk with its
+        // own radius on top of the one every body already pays for, to fix
+        // a case that lasts a third of a second and resolves itself the
+        // moment either body moves.
+        if (tgt && this.ugar[i] === 1) {
+          const gx = tgt.x - this.ugarx[i], gy = tgt.y - this.ugary[i];
+          if (gx * gx + gy * gy > this.ugarr[i] * this.ugarr[i]) tgt = null;
+        }
         utgt[i] = tgt;
         utcell[i] = -1;
       }
@@ -6826,6 +7132,71 @@ export class Sim {
    * the bench, where the gate is the whole map and the length must stay
    * the weapon's own (see wreach / wspan in updateUnitWeapons)
    */
+  /**
+   * THE EMPLACEMENT'S CYCLE, and the whole of what a railgun does with its
+   * life (levels.ts UnitStats.bombard, weapons.ts the railgun row).
+   *
+   * IT IS A SEPARATE PATH BECAUSE IT HAS NO QUESTIONS IN IT. The ordinary
+   * weapon loop is mostly search, sight and reach — pick a target, ask
+   * whether the body can see it, ask whether this mount reaches it, drop
+   * it when it dies — and every one of those has exactly one answer here:
+   * the core, yes, yes, and it does not. What is left is a clock and a
+   * beam, which is this function.
+   *
+   * THE BEAM IS DRAWN TO THE CORE AND NOT TO THE WEAPON'S REACH. The reach
+   * is two hundred tiles (it has to clear any board), and the fx is drawn
+   * `span` long from the muzzle — so a railgun a hundred and twenty tiles
+   * out would otherwise paint a line eighty tiles out the far side of the
+   * base. `dist` is measured to the core's own edge by the caller and
+   * passed in, so what is drawn is what is hit.
+   */
+  private fireBombard(
+    i: number,
+    x: number,
+    y: number,
+    ws: readonly UnitWeapon[],
+    dist: number,
+    dt: number,
+  ): void {
+    const core = this.core;
+    const aim = Math.atan2(core.y - y, core.x - x);
+    this.bombardAim.x = core.x;
+    this.bombardAim.y = core.y;
+    this.bombardAim.half = (core.size * CELL) / 2;
+    this.bombardAim.s = core;
+    for (let w = 0; w < ws.length; w++) {
+      const wp = ws[w];
+      const slot = i * MAX_WEAPONS + w;
+      // the charge is the tell (weapons.ts): the light gathers on the
+      // heading for firstShotDelay and the beam goes down it after
+      if (wp.charge) {
+        if (this.ucharge[i] > 0) {
+          this.ucharge[i] -= dt;
+          if (this.ucharge[i] <= 0) {
+            this.fireUnitLaser(x, y, this.uheldRot[i], this.bombardAim, wp, wp.range, true, 1, dist);
+            this.ucd[slot] = wp.reload - wp.charge;
+          }
+          continue;
+        }
+        this.ucd[slot] -= dt;
+        if (this.ucd[slot] <= 0) {
+          this.uheldRot[i] = aim;
+          this.ucharge[i] = wp.charge;
+        }
+        continue;
+      }
+      this.ucd[slot] -= dt;
+      if (this.ucd[slot] > 0) continue;
+      this.ucd[slot] = wp.reload / wp.mounts;
+      this.fireUnitLaser(x, y, aim, this.bombardAim, wp, wp.range, true, 1, dist);
+    }
+  }
+
+  /** the one Aim a bombarding body ever holds, rewritten in place: it is
+   *  the core every time, and ten emplacements allocating one apiece every
+   *  tick would be garbage for a fact that never changes */
+  private readonly bombardAim: Aim = { x: 0, y: 0, half: 0, s: null as unknown as Structure };
+
   private fireUnitLaser(
     x: number, y: number, aim: number, tgt: Aim | null, wp: UnitWeapon, range = wp.range, big = true,
     fed = 1, span = range,
@@ -8201,6 +8572,12 @@ export class Sim {
       // (launchCrosser writes these two straight after the spawn)
       this.ucross[i] = -1;
       this.ucrossS[i] = 0;
+      // ...nor holds a post unless the mission gives it one (garrisonUnit
+      // and plantUnit write these four straight after the spawn)
+      this.ugar[i] = 0;
+      this.ugarx[i] = 0;
+      this.ugary[i] = 0;
+      this.ugarr[i] = 0;
       this.uid[i] = this.nextId++;
       this.ukind[i] = UNIT_ID[kind];
       this.ufly[i] = fly ? 1 : 0;
@@ -9192,6 +9569,13 @@ export class Sim {
     // DESTROYED when its last piece goes and it was not already booked as
     // leaked: a train that got across is not a train the board killed,
     // however much of it was left smoking on the road behind it.
+    // ...AND THE SIEGE'S IS KEPT HERE TOO, at the same door and for the
+    // same reason (levels.ts RazeMission): an emplacement can leave the
+    // board killed, devoured or taken apart by a cascade, and a count kept
+    // at the kill would miss two of the three. The sweep guard is the
+    // crossers' — a board jumped past rather than fought must not be
+    // handed the mission (skipToTime)
+    if (this.ukind[i] === UNIT_ID.railgun && !this.crossSweeping) this.razeKilled++;
     const cross = this.ucross[i];
     if (cross >= 0) {
       const worm = this.crossers[cross];
@@ -9295,6 +9679,13 @@ export class Sim {
     // somebody else's train, or a runt teleported onto a road
     this.ucross[i] = this.ucross[n];
     this.ucrossS[i] = this.ucrossS[n];
+    // ...and the post it was holding, for the same reason: a body that
+    // inherited a stale slot would be leashed to somebody else's circle,
+    // or an ordinary walker bolted to a patch of open ground
+    this.ugar[i] = this.ugar[n];
+    this.ugarx[i] = this.ugarx[n];
+    this.ugary[i] = this.ugary[n];
+    this.ugarr[i] = this.ugarr[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
     this.ufly[i] = this.ufly[n];
@@ -9712,7 +10103,34 @@ export class Sim {
       // it used to park on the water nearest it and fire from the shore,
       // which was the whole of what a hull could reach.
 
-      if (fly) {
+      if (this.ugar[i] !== 0) {
+        // A POSTED BODY DOES NOT READ THE FIELD (see ugar). Planted is the
+        // easy half — no heading at all, ever. Leashed is the whole idea:
+        // it walks at the thing it has picked inside its circle, and when
+        // it has nothing it walks back to the middle of the circle and
+        // stands there.
+        //
+        // THE WALK HOME IS WHAT MAKES THE LEASH A LEASH. Without it a
+        // guard that chased a target to the edge of its post would simply
+        // stop there and hold the wrong ground for the rest of the run;
+        // with it the post is a place the garrison returns to, which is
+        // what a player watching one fight and win expects to see. The
+        // dead zone is a fifth of the radius so a guard that is nearly
+        // home does not jitter on the spot.
+        const tgt = this.ugar[i] === 1 ? this.utgt[i] : null;
+        const gx = tgt ? tgt.x : this.ugarx[i];
+        const gy = tgt ? tgt.y : this.ugary[i];
+        const dx = gx - upx[i], dy = gy - upy[i];
+        const dl = Math.sqrt(dx * dx + dy * dy);
+        const home = !tgt && dl < this.ugarr[i] * 0.2;
+        if (this.ugar[i] === 2 || home || dl < 1) {
+          flowTmp.x = 0;
+          flowTmp.y = 0;
+        } else {
+          flowTmp.x = dx / dl;
+          flowTmp.y = dy / dl;
+        }
+      } else if (fly) {
         // flyers take the air field's route round the hills and HOLD over
         // the core's edge once there — Mindustry's FlyingAI circles what it
         // attacks; this one hovers, and its guns do the rest
@@ -9816,7 +10234,13 @@ export class Sim {
       // faster than it walks, exactly as in Mindustry — but it rides
       // through the same wall slide below, so pressure never pins anyone
       // into rock
-      const shx = ushx[i], shy = ushy[i];
+      // ...AND A PLANTED BODY TAKES NO SHOVE (see ugar). The physics pass
+      // still resolves everything that walks into an emplacement — the
+      // crowd goes round it — it is only this side of the pair that is
+      // refused, so a railgun cannot be walked off the spot the mission
+      // put it on by a wave filing past.
+      const planted = this.ugar[i] === 2;
+      const shx = planted ? 0 : ushx[i], shy = planted ? 0 : ushy[i];
       let fx = 0, fy = 0;
       // ...and the doorway jitter, kept apart from the rest of the steering
       // because the FACING below must not see it (see aimX)
@@ -12095,6 +12519,9 @@ export class Sim {
    * the same push all but stops an ironhide1 and barely leans on an ironhide3.
    */
   private impulse(i: number, wx: number, wy: number): void {
+    // ...AND A PLANTED BODY TAKES NONE OF IT (see ugar). The mission put
+    // the thing where it is; a repeater round is not allowed to move it.
+    if (this.ugar[i] === 2) return;
     const hitSize = (this.urad[i] * 2) / MU;
     const mass = hitSize * hitSize * Math.PI;
     // world units per tick -> px per second

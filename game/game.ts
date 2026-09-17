@@ -9,7 +9,7 @@ import {
   refreshMap,
   SPAWN_STYLE,
 } from "./maps";
-import { roadAt, roadsFor } from "./missions";
+import { postsFor, roadAt, roadsFor } from "./missions";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { towerBaseIcon, towerGhostIcon } from "./towerIcons";
 import {
@@ -233,6 +233,13 @@ export interface UiState {
   crossKilled: number;
   crossLeaked: number;
   crossLive: number;
+  /**
+   * THE RAZE MISSION'S LEDGER (levels.ts RazeMission): emplacements
+   * destroyed, and how many are still firing on the core. Both zero on
+   * every other mission.
+   */
+  razeKilled: number;
+  razeUp: number;
   /**
    * THE ESCORT MISSION'S LEDGER (levels.ts EscortMission): carts
    * delivered and lost, how far the one on the road has got (0 to 1), how
@@ -2418,6 +2425,8 @@ export class Game {
       crossKilled: w.crossKilled,
       crossLeaked: w.crossLeaked,
       crossLive: w.crossLive,
+      razeKilled: w.razeKilled,
+      razeUp: w.razeUp,
       convoyDone: w.convoyDone,
       convoyLost: w.convoyLost,
       convoyAt: w.convoyAt,
@@ -3914,6 +3923,101 @@ export class Game {
     c.restore();
   }
 
+  /**
+   * WHERE A SIEGE'S BATTERIES WILL STAND, on a map that carries posts
+   * (missions.ts POST_SPECS, levels.ts RazeMission) — drawMissionRoads'
+   * opposite number and drawn on exactly the same terms.
+   *
+   * THEY ARE ON THE BOARD FROM THE FIRST FRAME, and that is a rule and not
+   * a nicety. The archetype has no fog in it (docs/mission-design.md) — a
+   * mission whose twist is that the player did not know is not a mission —
+   * so every one of the four circles is drawn from wave one, empty, with
+   * the count of emplacements that will rise inside it and the minute they
+   * are due. What the player is being asked is "will you have paid for a
+   * position at the south-west by two minutes", and a player who cannot
+   * see where the south-west IS has not been asked anything.
+   *
+   * THE CIRCLE IS THE TRUTH AND NOT A DECORATION: it is exactly the leash
+   * the garrison is held to (missions.ts PostSpec.radius, Sim.garrison-
+   * Unit), so a turret placed outside the line is a turret the Wardens
+   * will never walk out to, and the player can see that before they spend.
+   *
+   * A RISEN SECTION GOES QUIET. Once the bodies are actually standing
+   * there the ring has nothing left to tell anybody — the emplacements are
+   * on screen, at full size, firing — so it drops to a hairline and the
+   * label comes off. The overlay is a PROMISE about the future, and it
+   * stops being one the moment the future arrives.
+   */
+  private drawMissionPosts(c: CanvasRenderingContext2D): void {
+    const level = this.world.level;
+    const m = level.mission;
+    if (m.kind !== "raze") return;
+    const posts = postsFor(level.map);
+    if (posts.length === 0) return;
+    const now = this.world.time;
+    c.save();
+    c.beginPath();
+    c.rect(0, 0, W, H);
+    c.clip();
+    for (let i = 0; i < m.sections.length; i++) {
+      const sec = m.sections[i];
+      const post = posts[sec.post];
+      if (!post) continue;
+      const due = m.first + i * m.every;
+      const up = now >= due;
+      c.strokeStyle = SPAWN_STYLE.css;
+      c.globalAlpha = up ? 0.12 : 0.3;
+      c.lineWidth = up ? 2 : 4;
+      c.setLineDash(up ? [] : [30, 20]);
+      c.beginPath();
+      c.arc(post.x, post.y, post.r, 0, Math.PI * 2);
+      c.stroke();
+      c.setLineDash([]);
+      if (up) continue;
+      // THE PROMISE, IN SHAPES AND NOT IN WORDS. Nothing else the board
+      // draws is text — the field is read at a glance and at any zoom, and
+      // a caption is a thing a player has to stop and parse — so the two
+      // facts a player needs about a post are drawn as what they are.
+      //
+      // HOW MANY RISE HERE: one diamond an emplacement, in a row across
+      // the middle of the circle, which is close enough to how they will
+      // actually be rung round it to be the same picture.
+      const pip = post.r * 0.11;
+      const span = (sec.guns - 1) * pip * 2.6;
+      c.fillStyle = SPAWN_STYLE.css;
+      c.globalAlpha = 0.4;
+      for (let g = 0; g < sec.guns; g++) {
+        const px = post.x - span / 2 + g * pip * 2.6;
+        c.beginPath();
+        c.moveTo(px, post.y - pip);
+        c.lineTo(px + pip, post.y);
+        c.lineTo(px, post.y + pip);
+        c.lineTo(px - pip, post.y);
+        c.closePath();
+        c.fill();
+      }
+      // ...AND HOW LONG THERE IS: a dial on the ring itself, filling
+      // clockwise from the top. It is the same clock the schedule runs on
+      // (levels.ts RazeMission — absolute moments off run time), so a
+      // player who has watched one section rise knows exactly what a
+      // half-full ring means without being told.
+      // ...each dial over ITS OWN approach and not over a shared window:
+      // the first battery's is the whole of `first` and every one after it
+      // is the gap since the last rose, so all four fill at the same rate
+      // and an empty ring always means "it has only just become due"
+      const window = i === 0 ? m.first : m.every;
+      const at = clamp(1 - Math.max(0, due - now) / Math.max(1, window), 0, 1);
+      if (at > 0) {
+        c.globalAlpha = 0.5;
+        c.lineWidth = 6;
+        c.beginPath();
+        c.arc(post.x, post.y, post.r, -Math.PI / 2, -Math.PI / 2 + at * Math.PI * 2);
+        c.stroke();
+      }
+    }
+    c.restore();
+  }
+
   private drawOverlay(view: SimView): void {
     const c = this.uictx;
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -3985,6 +4089,9 @@ export class Game {
     // mission. So it is drawn thin and dark under everything — a line on
     // the ground, not a marker over it.
     this.drawMissionRoads(c);
+    // ...and the siege's batteries, on the same layer and for the same
+    // reason: the mission's geometry belongs under the fight
+    this.drawMissionPosts(c);
 
     // ROUTES, under everything else so a selection ring still reads on top
     if (this.showRoutes) {

@@ -100,6 +100,18 @@ export const HDR = {
   CONVOY_AT: 27,
   CONVOY_HALTS: 28,
   CONVOY_HALTED: 29,
+  /**
+   * THE RAZE MISSION'S LEDGER (levels.ts RazeMission), beside the other
+   * two and for the same reason: emplacements destroyed, and how many are
+   * still firing on the core.
+   *
+   * The second one is not derivable from the first on this side of the
+   * seam. "Risen minus killed" needs the schedule AND the clock, and the
+   * panel has neither — what it has is a sentence to print, and the number
+   * in it changes every time a section rises or an emplacement falls.
+   */
+  RAZE_KILLED: 30,
+  RAZE_UP: 31,
 } as const;
 export const HEADER_LEN = 32;
 
@@ -131,6 +143,8 @@ export function writeHeader(sim: Sim): void {
   h[HDR.MISSION_PROGRESS] = sim.missionProgress();
   h[HDR.LOOP_CYCLE] = sim.loopCycle;
   h[HDR.SCRIPT_WAVES] = sim.scriptWaves;
+  h[HDR.RAZE_KILLED] = sim.razeKilled;
+  h[HDR.RAZE_UP] = sim.razeUp();
   h[HDR.CONVOY_DONE] = sim.convoyDone;
   h[HDR.CONVOY_LOST] = sim.convoyLost;
   {

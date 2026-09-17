@@ -6,7 +6,7 @@ import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // import must never become a value one or the two files form a cycle
 import type { MutationId } from "./mutation";
 
-export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail"] as const;
+export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail", "railgun", "bulwark", "lance"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -63,6 +63,12 @@ export const UNIT_ID: Record<UnitKind, number> = {
   wormhead: 46,
   wormcar: 47,
   wormtail: 48,
+  // THE SIEGE'S THREE (RAZE_NAME, WARDEN_NAMES): the emplacement a
+  // mission plants and the two bodies that stand over it. No family, no
+  // tier ladder, and never rolled into a wave
+  railgun: 49,
+  bulwark: 50,
+  lance: 51,
 };
 
 /**
@@ -132,6 +138,30 @@ export const BOSS_NAME = ANIMAL_ART ? "Sovereign" : "Boss";
  * (game/wormArt.ts). Nothing alive crosses Coldline.
  */
 export const WORM_NAME = "Borer";
+
+/**
+ * WHAT THE SIEGE'S BODIES ARE CALLED — the emplacement and its garrison,
+ * beside the boss's name and the crosser's for the reason they are all
+ * here: none of the three is in a family, so none of them has a
+ * `Body (rank)` to be built out of, and a name written in two files is a
+ * name that can disagree with itself.
+ *
+ * THE RAILGUN IS NAMED FOR WHAT IT IS AIMED AT. It is not a turret the
+ * player could ever own — it stands on ground the swarm holds, it has one
+ * target on the whole board (UnitStats.bombard), and the only thing a
+ * player ever does with it is take it down. "Railgun" and not a proper
+ * noun, because there are ten of them.
+ *
+ * THE WARDENS HAVE NO TIERS AND SO THEIR BODIES HAVE NAMES. Every other
+ * line on the roster is five rungs of one animal, so a body is its family
+ * and its rung and nothing else (UNIT_NAMES). This one is two machines
+ * that do two jobs — the Bulwark plants itself in front of the guns and
+ * the Lance shoots over it — and a rung word for a ladder with two
+ * unrelated steps on it would be a lie. They are named the way the
+ * Sovereign is: one word each.
+ */
+export const RAZE_NAME = "Railgun";
+export const WARDEN_NAME = "Wardens";
 
 /**
  * THE NAVAL TANKS RUN SLOWER THAN MINDUSTRY'S HULLS. A skate1's stock 1.1
@@ -653,6 +683,29 @@ export interface UnitStats {
    * shove sorts that out the way it does for everything else.
    */
   charge?: { range: number };
+  /**
+   * THE BOMBARDMENT — the siege's emplacement, and the one body on the
+   * roster that never looks at a turret: IT SHOOTS THE CORE, FROM WHEREVER
+   * IT STANDS, AND NOTHING ELSE EVER.
+   *
+   * Every other kind here attack-moves: it walks the field and fires at
+   * the nearest structure that comes inside its reach. A railgun does not
+   * walk (speed 0, and it is planted — Sim.plantUnit), does not search,
+   * and does not care what the player builds around it. Its target is
+   * resolved once, to the core, and its weapon's reach is the width of the
+   * board because the whole point of the thing is that it is out of
+   * everybody's range and shooting anyway.
+   *
+   * SO THE ONLY ANSWER TO IT IS TO GO AND KILL IT, which is the sentence
+   * the venture-and-destroy archetype is made of (docs/mission-design.md).
+   * A player who ignores one is not losing turrets — they are losing the
+   * core, slowly, on a clock nothing on the board can interrupt.
+   *
+   * It costs a branch in the target pick (Sim.updateUnitWeapons) and
+   * nothing else: a bombarding body skips the structure search entirely,
+   * so ten of them on a board are ten bodies that never walk a ring.
+   */
+  bombard?: boolean;
   /**
    * CLOAK — every `period` seconds the body vanishes for `duration`, and
    * it is drawn as a ghost of itself. `veil` is the flagship's: when it
@@ -2288,6 +2341,85 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 30,
     unslowable: true,
   },
+
+  // ── THE SIEGE: the railgun and the two Wardens over it ───────────────
+  //
+  // THE THREE BODIES A MISSION PLANTS (RazeMission, Sim.raiseSection).
+  // None of them is in a family, none has a tier ladder, and no wave can
+  // send one (OBJECTIVE_KINDS). They are put down at an authored place,
+  // they never walk to the core, and the run's whole business with them
+  // is going out to where they stand and taking them apart.
+  //
+  // `tier: 5` on all three is not a rung — there is no ladder here to be
+  // on. It is the weight class, written down so the audit and the
+  // mutators that read a tier (ARMORED_MAX_TIER) treat a Warden as the
+  // heavy body it is rather than as a runt.
+
+  // THE EMPLACEMENT. It does not move (speed 0) and it is PLANTED besides
+  // (Sim.plantUnit), so no crowd, no knockback and no beam drag can shift
+  // it off the spot the mission chose. Thirty thousand behind twenty-five
+  // armour is about a third of a Sovereign: heavy enough that a lone
+  // turret pointed at it is a decision and not an afterthought, light
+  // enough that four of them are a job a board can finish.
+  //
+  // ITS ONE TARGET IS THE CORE (bombard) and its reach is the whole
+  // board, which is the entire reason the mission exists: the thing
+  // cannot be answered where it is hurting you, only where it is
+  // standing.
+  railgun: {
+    hp: 30000,
+    speed: 0,
+    armor: 25,
+    radius: UR * 3.5,
+    tier: 5,
+    // nothing about it turns: the hull is bolted down and the barrel is
+    // drawn on the heading it fires on (Sim.updateUnitWeapons)
+    rotateSpeed: 30,
+    bombard: true,
+    // a douser on an emplacement buys nothing, for the same reason it
+    // buys nothing on a Borer: the mission is a promise about WHEN, and
+    // the railgun's clock must not be rewritable from outside its patch
+    unslowable: true,
+  },
+
+  // THE BULWARK — the Warden that stands in front. A Tusker apex's pool
+  // and a Tusker apex's plating on a body that is not going anywhere: it
+  // holds the ground between your guns and the emplacement, and it is the
+  // reason a battery cannot simply be walked into range.
+  //
+  // IT CHARGES like the elephants do and for the same reason — its reach
+  // is tusks — but it is LEASHED (Sim.garrisonUnit): it will cross its
+  // post to get at a turret standing in it and it will never follow one
+  // home. A melee guard that chased the board back to the base would be a
+  // wave, and the swarm already has one of those.
+  bulwark: {
+    hp: 25000,
+    speed: 2.6 * CELL,
+    armor: 104,
+    radius: UR * 4,
+    tier: 5,
+    rotateSpeed: 1.6,
+    charge: { range: 22 * CELL },
+  },
+
+  // THE LANCE — the Warden that shoots over it. The Starlight apex's pool
+  // and the Starlight apex's bite (weapons.ts), on the quickest heavy body
+  // in the game: five tiles a second, which is twice the Bulwark and
+  // faster than anything else this size.
+  //
+  // THE PAIR IS THE WHOLE FACTION. One of them is a wall you cannot get
+  // past and the other is a gun you cannot get away from, and neither of
+  // them will leave the patch it was posted to — so a section is answered
+  // by out-ranging it or by paying for enough gun to go through it, and
+  // never by pulling it apart.
+  lance: {
+    hp: 17000,
+    speed: 5 * CELL,
+    armor: 14,
+    radius: UR * 2.25,
+    tier: 5,
+    rotateSpeed: 4.5,
+  },
 };
 
 /**
@@ -2490,6 +2622,12 @@ export const UNIT_TREES = [
   // not read as tiers.
   { key: "boss", name: BOSS_NAME, kinds: ["boss"], objective: true },
   { key: "worm", name: WORM_NAME, kinds: ["wormhead", "wormcar", "wormtail"], objective: true },
+  // ...and the siege's three, on the same terms: the emplacement the raze
+  // mission plants and the two Wardens posted over it (RazeMission). The
+  // Wardens are one row and NOT one upgrade path — the family has no
+  // tiers at all, so the two slots are two jobs rather than two rungs
+  { key: "railgun", name: RAZE_NAME, kinds: ["railgun"], objective: true },
+  { key: "warden", name: WARDEN_NAME, kinds: ["bulwark", "lance"], objective: true },
 ] as const satisfies readonly {
   key: string;
   name: string;
@@ -3381,7 +3519,8 @@ export type Mission =
   | HoldMission
   | { kind: "survive"; minutes: number }
   | InterceptMission
-  | EscortMission;
+  | EscortMission
+  | RazeMission;
 
 /**
  * HOLD THE LINE for a stated number of waves.
@@ -3556,6 +3695,79 @@ export interface EscortMission {
   mend: number;
 }
 
+/**
+ * VENTURE AND DESTROY (docs/mission-design.md, archetype 1): a set number
+ * of static things stand away from the base, and the run is what goes out
+ * and takes them down.
+ *
+ * IT IS THE ARCHETYPE'S HARDEST PROBLEM, and the shape below is the answer
+ * to it. A thing that stands still and waits to be shot is not a mission —
+ * a player ignores it until the board is rich and then buys one battery.
+ * So this one does three things to the shape:
+ *
+ *   IT SHOOTS THE CORE. Every railgun bombards the base from where it
+ *   stands, forever, from the moment it rises (UnitStats.bombard). The
+ *   cost of ignoring it is not a worse position later; it is the stake
+ *   itself, draining. That is the "visible consequence for skipping it"
+ *   the archetype owes, and it is the only one that competes with a wave
+ *   clock that never stops.
+ *
+ *   IT RISES IN SECTIONS, ON A CLOCK. Not ten emplacements on the board at
+ *   wave one, which is a wall of health a run either can or cannot afford
+ *   and knows the answer to immediately — four sections, each heavier than
+ *   the last, each arriving whether or not the one before it is down. A
+ *   board that keeps up fights one section at a time; a board that falls
+ *   behind is fighting the fourth with the third still firing, and the
+ *   arithmetic of that is what the mission is asking about.
+ *
+ *   IT IS GUARDED. An emplacement alone is answered by one long gun
+ *   standing safely out of everything's way. The Wardens posted over it
+ *   (levels.ts `bulwark`, `lance`) do not walk to the core and never leave
+ *   their post (Sim.garrisonUnit) — they make the GROUND AROUND the
+ *   railgun expensive, which turns "buy a gun that reaches" into "buy a
+ *   position and hold it", which is the only question this game can ask.
+ *
+ * THE SCHEDULE AND THE ROSTER ARE AUTHORED HERE; WHERE THE SECTIONS STAND
+ * IS AUTHORED WITH THE TERRAIN (missions.ts POST_SPECS), exactly the way
+ * the intercept's launches are here and its roads are there. A post is a
+ * place on a map; a section is what a mission puts on one.
+ */
+export interface RazeMission {
+  kind: "raze";
+  /** seconds from the run's start to the first section rising */
+  first: number;
+  /** seconds between one section rising and the next. It does NOT wait for
+   *  the one before it to fall — that is the whole clock of the mission */
+  every: number;
+  /** the sections, in the order they rise */
+  sections: readonly RazeSection[];
+}
+
+/** one section: a post on the map, the emplacements that rise on it, and
+ *  the garrison that stands over them */
+export interface RazeSection {
+  /** which of the map's posts it rises on, by index into POST_SPECS
+   *  (missions.ts) — a place authored with the terrain */
+  post: number;
+  /** how many railguns rise here. The count is the ladder: 1, 2, 3, 4 */
+  guns: number;
+  /**
+   * WHAT STANDS OVER THEM, by kind and count — the same shape a wave is
+   * written in (WaveUnits), and deliberately not a list of Wardens: a
+   * garrison is a mission putting bodies on a post, and the day a mission
+   * wants to post a Tusker herd instead it should not need a new field.
+   *
+   * Every body named here is PLANTED ON THE POST rather than sent at the
+   * core (Sim.garrisonUnit), whatever kind it is.
+   */
+  guards: Partial<Record<UnitKind, number>>;
+}
+
+/** how many railguns the whole siege stands up — the count the mission is
+ *  measured in, and the number the panel counts down */
+export const razeGuns = (m: RazeMission): number =>
+  m.sections.reduce((n, s) => n + Math.max(0, Math.floor(s.guns)), 0);
+
 /** the mission as the deploy panel and the HUD say it: a headline and a clause */
 export function missionText(spec: LevelSpec): { title: string; detail: string } {
   const m = spec.mission;
@@ -3575,6 +3787,16 @@ export function missionText(spec: LevelSpec): { title: string; detail: string } 
         "Nothing comes looking for it and everything shoots it where it stands. " +
         `${m.losses === 0 ? "There is one, and it has to arrive." : `${m.losses} may be lost.`} The core must stand.`,
     };
+  if (m.kind === "raze") {
+    const guns = razeGuns(m);
+    return {
+      title: `Destroy ${guns} ${RAZE_NAME.toLowerCase()}s`,
+      detail:
+        `They ring you in ${m.sections.length} batteries and they shoot nothing but the core. ` +
+        "A battery rises every few minutes whether or not the last one is down, " +
+        "and every one of them is guarded. The core must stand.",
+    };
+  }
   if (m.kind === "intercept")
     return {
       title: `Destroy ${m.kills} ${WORM_NAME.toLowerCase()}s`,
@@ -3613,12 +3835,19 @@ export function missionProgress(
     crossKilled: number;
     convoyDone: number;
     convoyAt: number;
+    razeKilled: number;
   },
 ): number {
   const frac =
     mission.kind === "survive"
       ? state.time / Math.max(1, mission.minutes * 60)
-      : mission.kind === "intercept"
+      : // THE SIEGE'S BAR IS THE EMPLACEMENTS AND NOT THE SECTIONS. Four
+        // sections is a bar with five positions in it over twenty minutes;
+        // ten railguns is a bar that moves every time the board finishes a
+        // job, which is the thing a player watching this mission is doing
+        mission.kind === "raze"
+        ? state.razeKilled / Math.max(1, razeGuns(mission))
+        : mission.kind === "intercept"
         ? state.crossKilled / Math.max(1, mission.kills)
         : // THE ESCORT'S BAR IS THE JOURNEY, not the delivery count. A
           // count of one is a bar with two positions in it — empty and
@@ -3637,9 +3866,13 @@ export function missionProgress(
 export function missionCount(
   mission: Mission,
   target: number,
-  state: { wavesCleared: number; crossKilled: number; convoyDone: number },
+  state: { wavesCleared: number; crossKilled: number; convoyDone: number; razeKilled: number },
 ): { done: number; of: number; noun: string } {
   if (mission.kind === "survive") return { done: 0, of: 0, noun: "" };
+  if (mission.kind === "raze") {
+    const guns = razeGuns(mission);
+    return { done: Math.min(guns, state.razeKilled), of: guns, noun: "destroyed" };
+  }
   if (mission.kind === "intercept")
     return { done: Math.min(mission.kills, state.crossKilled), of: mission.kills, noun: "destroyed" };
   if (mission.kind === "escort")
@@ -3700,6 +3933,7 @@ export function missionLines(
     crossLeaked: number;
     convoyDone: number;
     convoyLost: number;
+    razeKilled: number;
   },
 ): MissionLine[] {
   const out: MissionLine[] = [];
@@ -3759,6 +3993,16 @@ export function missionLines(
         state.convoyLost,
         mission.losses,
       );
+  } else if (mission.kind === "raze") {
+    // ONE LINE, AND THE COUNT IS ALL OF IT. A siege has exactly one way to
+    // be met and one way to be failed, and the second of those is the core
+    // — which is already the last line of every mission. How many are
+    // firing RIGHT NOW is the other thing a player wants off this panel and
+    // it is deliberately NOT here: it is a fact about this second rather
+    // than a requirement, and it goes in the commentary under the rule
+    // (components/Animechs.tsx ObjectivePane) with the tide and the crossers
+    // on the board.
+    of(`Destroy ${many(razeGuns(mission), RAZE_NAME)}`, state.razeKilled, razeGuns(mission));
   } else {
     of(`Hold the line for ${target} waves`, state.wavesCleared, target);
   }
@@ -4135,10 +4379,22 @@ export const WORLDS: LevelSpec[] = [
     script: [],
   },
   {
+    // WORLD 6 AND WORLD 10 TRADED TERRAIN, and the reason is the whole
+    // argument of docs/mission-design.md's last section: a mission is
+    // authored in the ground before it is authored in code.
+    //
+    // This slot was Crater — the core dead centre of a basalt bowl — and
+    // that board is now the siege (world 10 below), because a siege is a
+    // RING and a ring wants a middle. What it holds instead is Sear: the
+    // caldera with its core hard against the east edge, which was drawn
+    // for a ladder of objectives running west and makes a perfectly good
+    // hold in the meantime. Nothing in the game moved — both were shelved
+    // holds on undressed ground (PLAYABLE_WORLD_IDS) — and the ids, which
+    // are the save keys, did not move either.
     id: "6",
-    name: "Crater",
-    map: "crater",
-    // THE CORE IN THE MIDDLE, in a basalt crater with six mouths, and six gates round the edge coming at it from every side. No funnel: the crater's rim is the defence
+    name: "Sear",
+    map: "sear",
+    // THE BASALT CALDERA: the core hard on the east edge behind the rim, and the long approaches from the west
     mission: { kind: "hold" },
     waveGap: WAVE_GAP_DEFAULT,
     script: [],
@@ -4176,22 +4432,79 @@ export const WORLDS: LevelSpec[] = [
   // graph editor drew. All eight play the campaign's own wave script like
   // every other world; what differs is what each ASKS on top of it.
   //
-  // ONE OF THE EIGHT IS BUILT. Coldline carries INTERCEPT THE CROSSER —
-  // seven Borers on two roads, and a run that lets two past is over (see
-  // its block below, InterceptMission, and game/missions.ts). The other
-  // seven are still sketches and still play `hold`, so for now what they
-  // are is the TERRAIN: boards that ask a run to spend in seven different
-  // shapes, waiting for the rule that spends it.
+  // THREE OF THE EIGHT ARE BUILT. Coldline carries INTERCEPT THE CROSSER
+  // — seven Borers on two roads, and a run that lets two past is over
+  // (InterceptMission, game/missions.ts); Thornway carries ESCORT THE
+  // CROSSER, which is the same shape turned round (EscortMission); and
+  // Crater carries VENTURE AND DESTROY — ten railguns in four batteries
+  // ringing the core, shooting it from where they stand (RazeMission).
+  // The other five are still sketches and still play `hold`, so for now
+  // what they are is the TERRAIN: boards that ask a run to spend in five
+  // different shapes, waiting for the rule that spends it.
   //
   // NOTHING PLACES THEM ON THE TRACK, so worldUnlockLevel answers 1 and
   // all eight are open from the start (game/track.ts). That is on purpose
   // while they are being looked at rather than played through.
   {
     id: "10",
-    name: "Sear",
-    map: "sear",
-    // VENTURE AND DESTROY — the basalt caldera, the core hard on the east edge, five objectives laddering west
-    mission: { kind: "hold" },
+    name: "Railgun Siege",
+    map: "crater",
+    // VENTURE AND DESTROY — ten railguns in four batteries ringing the
+    // core, and the third mission in the game (docs/mission-design.md).
+    //
+    // IT IS THE FIRST ONE THAT COMES TO YOU. Coldline's Borers ignore the
+    // base and Thornway's hauler leaves it; both missions are about a
+    // thing happening SOMEWHERE ELSE, and the base's own fight goes on
+    // underneath them unchanged. A railgun does not ignore the base — it
+    // is aimed at it, from a hundred and twenty tiles out, and it never
+    // stops. So the question this board asks is the one the archetype
+    // exists to ask and the other two cannot: how much of the line will
+    // you take apart to go and kill something, and how long can you put
+    // it off.
+    //
+    // WHY THE CRATER. The core is dead centre of a basalt bowl with six
+    // mouths and the swarm comes at it from every side, so there is open
+    // ground at the SAME DISTANCE from the base in all four quarters —
+    // which is what a ring needs and what no other board has. And the
+    // rim is the defence here rather than a funnel, so a board that
+    // strips a quarter of its line to reach a battery has visibly opened
+    // a mouth while it does it.
+    //
+    // THE HUNDRED AND TWENTY IS THE POWER GRID (missions.ts POST_SPECS).
+    // The core lights ninety, so every battery stands thirty cells past
+    // the ground a run starts with: the first one can be answered by the
+    // longest gun in the game from the edge of your own light, and
+    // everything after that is bought. Four of Crater's beacons reach the
+    // four posts, which is the archetype's "a beacon that reaches it" —
+    // the entry fee is how deep into the ladder the run has gone.
+    //
+    // THE CLOCK. First battery at two minutes, then one every four:
+    // 2:00, 6:00, 10:00, 14:00, and they do NOT wait for each other. One
+    // emplacement, then two, then three, then four — so a board that is
+    // keeping up always fights the newest section alone, and a board that
+    // is not ends up under six or ten at once. Ten health a second each
+    // against a 24,000 core (weapons.ts, the railgun row) is the whole
+    // arithmetic, and it lands exactly: a run that answers nothing at all
+    // is at zero core AT 14:00, the tick the fourth battery rises. Answer
+    // each section as it comes and the siege costs about half the base.
+    //
+    // THE GUARDS CLIMB WITH THE GUNS. Two Bulwarks and two Lances over
+    // the first, eight and eight over the last (levels.ts, the Wardens) —
+    // and not one of them will follow you home: they hold their post and
+    // nothing else (Sim.garrisonUnit). The section is a PLACE that has to
+    // be taken, which is the only way this game knows how to charge for
+    // ground.
+    mission: {
+      kind: "raze",
+      first: 120,
+      every: 240,
+      sections: [
+        { post: 0, guns: 1, guards: { bulwark: 2, lance: 2 } },
+        { post: 1, guns: 2, guards: { bulwark: 4, lance: 4 } },
+        { post: 2, guns: 3, guards: { bulwark: 6, lance: 6 } },
+        { post: 3, guns: 4, guards: { bulwark: 8, lance: 8 } },
+      ],
+    },
     waveGap: WAVE_GAP_DEFAULT,
     script: [],
   },
@@ -4392,12 +4705,12 @@ export function worldById(id: string): LevelSpec | null {
  *
  * IT IS A LIST OF WHAT IS IN RATHER THAN OF WHAT IS OUT, and it was the
  * other way round until the shelf got longer than the game. Seventeen
- * boards are drawn and TWO are in the game: the two that carry a built
- * mission — Coldline's intercept and Thornway's escort (docs/mission-
- * design.md). Everything else is terrain with a hold mission on it and no
- * reason yet to be played, so naming the fifteen would be writing the
- * catalog down twice and forgetting one of them the next time a board
- * lands.
+ * boards are drawn and THREE are in the game: the three that carry a
+ * built mission — Coldline's intercept, Thornway's escort and Crater's
+ * siege (docs/mission-design.md). Everything else is terrain with a hold
+ * mission on it and no reason yet to be played, so naming the fourteen
+ * would be writing the catalog down twice and forgetting one of them the
+ * next time a board lands.
  *
  * CONFLUENCE CAME OFF THE LIST with the rest of the holds. It is still the
  * board the campaign's numbers are tuned against, still world 1, still
@@ -4408,7 +4721,7 @@ export function worldById(id: string): LevelSpec | null {
  * player gets bored, offered in a picker that now names each row after the
  * thing it asks for. It comes back the day it is given one.
  */
-export const PLAYABLE_WORLD_IDS: readonly string[] = ["11", "12"];
+export const PLAYABLE_WORLD_IDS: readonly string[] = ["10", "11", "12"];
 
 /** is this world off the menu? — everything the list above does not name */
 export const worldHidden = (id: string): boolean => !PLAYABLE_WORLD_IDS.includes(id);
