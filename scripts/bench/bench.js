@@ -23,7 +23,7 @@
  * build the identical board from the identical code.
  */
 import { Game } from "/game/game.js";
-import { WORLDS, UNIT_KINDS, UNIT_STATS, loadLevelDocs } from "/game/levels.js";
+import { WORLDS, UNIT_KINDS, UNIT_STATS, loadLevelDocs, WAVE_GAP_OPENING, WAVE_RELEASE_SECONDS } from "/game/levels.js";
 import { loadOfficialMaps } from "/game/maps.js";
 import { specForTier, RUNG_COUNT } from "/game/ladder.js";
 import { techStateFor } from "/game/track.js";
@@ -91,6 +91,10 @@ await Promise.all([loadLevelDocs(), loadOfficialMaps()]);
 const world = WORLDS.find((w) => w.id === WORLD_ID) ?? WORLDS[0];
 /** the top of the ladder: the most the script ever sends, and the deepest health curve */
 const late = () => specForTier(world, RUNG_COUNT - 1);
+/** when wave n (1-based) of `spec` starts entering — Sim.waveStartTime, on the spec alone */
+const waveStartTime = (spec, n) =>
+  Math.min(WAVE_GAP_OPENING, Math.max(0, spec.waveGap)) +
+  (Math.max(1, n) - 1) * Math.max(1, spec.waveGap + WAVE_RELEASE_SECONDS);
 /** ...and the same world with nothing to send: the board alone */
 const still = () => ({ ...late(), script: [] });
 
@@ -210,7 +214,10 @@ const SCENES = {
     openBoard(g);
     h.scatterTowers(FIELDED_KINDS, Math.round(N * 0.6));
     h.setBench({ coreHp: IMMORTAL });
-    h.skipToWave(Math.max(1, late().script.length - 4));
+    // the run is a clock, not a wave cursor (Sim.skipToTime), so the wave
+    // wanted is turned into its start time the way the sim does
+    // (Sim.waveStartTime): the opening gap, then one cadence a wave
+    h.skipToTime(waveStartTime(late(), Math.max(1, late().script.length - 4)));
     await settle(g, 3000);
   },
 };
@@ -264,6 +271,13 @@ window.__bench = {
       shots: c ? c.shots + c.hostileShots : -1,
       fx: c ? c.fx : -1,
       simStep: p ? p.ms : -1,
+      // the last frame's quads by source, so a slow zoom says what filled it
+      quads: (() => {
+        const q = game.drawTally();
+        // the five effect kinds that drew the most quads, as [kind id, quads]
+        const top = [...q.fxKinds].map((v, k) => [k, v]).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        return { ...q, fxKinds: undefined, fxTop: top };
+      })(),
     };
   },
 };

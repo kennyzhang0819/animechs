@@ -10,6 +10,18 @@
  *   npm run bench -- --headed                      watch it
  *   npm run bench -- --json                        the table on stderr, one JSON
  *                                                  line on stdout (check.mjs reads it)
+ *   npm run bench -- --world 11                    THE GATE'S MAP (check.mjs passes the
+ *                                                  biggest playable world; the default
+ *                                                  here is WORLDS[0], which may be shelved)
+ *   npm run bench -- --profile draw.cpuprofile     a V8 CPU profile of the sampled
+ *                                                  frames, one file a scene and zoom
+ *
+ * EVERY ROW ENDS IN WHAT THE FRAME WAS MADE OF: quads drawn, split
+ * turrets/beams/bodies/shots/fx (Renderer.drawTally), the device px per
+ * world px the LOD floors were read against (ppw), how many bodies and
+ * shots took the LOD tier, and the five effect kinds that drew the most
+ * quads (FxKind ids, types.ts). A slow rung says WHAT filled it before
+ * anyone reaches for a profiler.
  *
  * WHAT IT MEASURES is the draw — Renderer.render, the HUD overlay, the
  * corner minimap and the handover from the sim (Game.frame's drawMs), per
@@ -83,6 +95,11 @@ const UPGRADES = Number(opt("--upgrades", 100));
 const WORLD = opt("--world", "");
 /** --software: SwiftShader from the start, rather than the GPU first */
 const SOFTWARE = flag("--software");
+/** --profile <file>: a V8 CPU profile of the page over every sampled frame,
+ *  written as a .cpuprofile (open in Chrome devtools, or summarise it by
+ *  self time the way a node --cpu-prof is) — the draw named by function
+ *  rather than one number a frame */
+const PROFILE = opt("--profile", "");
 /** --viewport WxH: the canvas, in CSS px at a device pixel ratio of 1 */
 const [VW, VH] = opt("--viewport", "1920x1080").split("x").map(Number);
 /** a frame slower than this is a software GPU's, and the sample is cut to
@@ -237,9 +254,19 @@ const findChromium = () => {
 /** a browser, on the GPU or on SwiftShader; null when there is none to launch */
 const launch = async (software) => {
   try {
+    const exe = findChromium();
     return await chromium.launch({
       headless: !HEADED,
-      executablePath: findChromium(),
+      // THE FULL BUILD, NEVER THE HEADLESS SHELL. Left to itself Playwright
+      // runs its "chromium headless shell", a cut-down binary with no GPU
+      // process at all: WebGL2 is there, so the check below passes, but it
+      // is SwiftShader — every frame drawn on the CPU, 1.6 seconds each on
+      // an M3 Pro, the whole ladder half an hour, and not one number about
+      // the machine's GPU. `channel: "chromium"` is the full Chromium build
+      // in new headless mode, which reaches the hardware (ANGLE Metal on a
+      // Mac). A binary named by BENCH_CHROMIUM or PLAYWRIGHT_BROWSERS_PATH
+      // still wins when there is one.
+      ...(exe ? { executablePath: exe } : { channel: "chromium" }),
       // --no-sandbox for a box with no user namespace; the rest is the
       // software GPU (desktop/test/smoke.mjs), or the hardware one unblocked
       args: [
@@ -296,6 +323,15 @@ try {
   await page.goto(`${origin}/?${params}`);
   await page.waitForFunction(() => window.__bench?.ready === true);
   const scenes = SCENES.length ? SCENES : await page.evaluate(() => window.__bench.scenes);
+  // the profile covers the SAMPLED FRAMES and nothing else — started and
+  // stopped around each rung of the ladder — so scene building (spawns,
+  // the terrain, the atlas) is not in it, and one zoom's frames are never
+  // mixed with another's. One file a scene and zoom
+  const cdp = PROFILE ? await ctx.newCDPSession(page) : null;
+  if (cdp) {
+    await cdp.send("Profiler.enable");
+    await cdp.send("Profiler.setSamplingInterval", { interval: 200 });
+  }
   // HOW LONG IS A FRAME HERE? Read off the empty page before any board is
   // up: a software GPU takes seconds to draw the terrain alone, and a
   // sample sized for sixty a second would run for hours. The draw is the
@@ -310,17 +346,24 @@ try {
     say(`a frame here is ${(gap / 1000).toFixed(1)}s (software GPU): ${frames} frames a cell after ${warm} warm, not ${FRAMES} after ${WARM}`);
   }
 
-  say(`${"scene".padEnd(9)} ${"zoom".padStart(6)}  ${"draw med/p95".padStart(14)}  ${"frame".padStart(7)}  ${"bodies".padStart(6)} ${"turrets".padStart(7)} ${"shots".padStart(6)} ${"fx".padStart(5)}`);
+  say(`${"scene".padEnd(9)} ${"zoom".padStart(6)}  ${"draw med/p95".padStart(14)}  ${"frame".padStart(7)}  ${"bodies".padStart(6)} ${"turrets".padStart(7)} ${"shots".padStart(6)} ${"fx".padStart(5)}  quads drawn (turrets/beams/bodies/shots/fx)`);
   for (const scene of scenes) {
     const t0 = Date.now();
     const built = await page.evaluate((s) => window.__bench.scene(s), scene);
     const { min, max } = await page.evaluate(() => window.__bench.zoomRange());
     const ladder = Array.from({ length: Math.max(2, ZOOMS) }, (_, i) => min * (max / min) ** (i / (Math.max(2, ZOOMS) - 1)));
     for (const z of ladder) {
+      if (cdp) await cdp.send("Profiler.start");
       const s = await page.evaluate(({ z, f, w }) => window.__bench.measure(z, f, w), { z, f: frames, w: warm });
+      if (cdp) {
+        const { profile } = await cdp.send("Profiler.stop");
+        const file = PROFILE.replace(/(\.cpuprofile)?$/, `.${scene}.z${s.zoom.toFixed(2)}$1`);
+        fs.writeFileSync(file, JSON.stringify(profile));
+        say(`  profile: ${file}`);
+      }
       const row = {
         scene, zoom: s.zoom, drawMed: median(s.draw), drawP95: p95(s.draw), gapMed: median(s.gap), simMed: median(s.sim),
-        bodies: s.bodies, towers: s.towers, shots: s.shots, fx: s.fx, simStep: s.simStep,
+        bodies: s.bodies, towers: s.towers, shots: s.shots, fx: s.fx, simStep: s.simStep, quads: s.quads,
       };
       row.ok = row.drawMed <= DRAW_GOAL_MS;
       if (!row.ok) failed = true;
@@ -329,7 +372,8 @@ try {
         `${(row.ok ? "" : "! ") + scene}`.padEnd(9) +
           ` ${row.zoom.toFixed(2).padStart(6)}  ${`${row.drawMed.toFixed(1)} / ${row.drawP95.toFixed(1)}`.padStart(14)}  ` +
           `${row.gapMed.toFixed(1).padStart(7)}  ${String(row.bodies).padStart(6)} ${String(row.towers).padStart(7)} ` +
-          `${String(row.shots).padStart(6)} ${String(row.fx).padStart(5)}`,
+          `${String(row.shots).padStart(6)} ${String(row.fx).padStart(5)}` +
+          (row.quads ? `  ${String(row.quads.total).padStart(7)} (${row.quads.towers}/${row.quads.beams}/${row.quads.bodies}/${row.quads.shots}/${row.quads.fx})  ppw ${row.quads.ppw.toFixed(3)} lod b${row.quads.lodBodies} s${row.quads.lodShots} grown ${row.quads.bigGrown} fx-top ${(row.quads.fxTop ?? []).map(([k, v]) => k + ":" + v).join(" ")}` : ""),
       );
     }
     say(`  ${scene}: ${built.bodies} bodies, ${built.towers} turrets, sim step ${built.simStep.toFixed(1)}ms on the worker, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
@@ -347,7 +391,7 @@ const worst = rows.filter((r) => !r.error).reduce((a, r) => (a && a.drawMed >= r
 say(
   `\n${failed ? "SLOW" : "fast"}: draw median against ${DRAW_GOAL_MS}ms at every zoom` +
     (worst ? ` — worst ${worst.scene} at zoom ${worst.zoom.toFixed(2)}, ${worst.drawMed.toFixed(1)}ms (p95 ${worst.drawP95.toFixed(1)})` : "") +
-    `\n(frame column is SwiftShader's, not a GPU's — read the draw)`,
+    (software ? `\n(frame column is SwiftShader's, not a GPU's — read the draw)` : ""),
 );
 if (JSON_OUT)
   process.stdout.write(
