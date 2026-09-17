@@ -263,9 +263,9 @@ const wider = (s: TowerStats, mul: number): TowerStats =>
 
 /** a flak shell's proximity fuse — how far off a body it goes off */
 const fusedAt = (s: TowerStats, mul: number): TowerStats =>
-  s.bullet.flak
-    ? withBullet(s, { flak: { ...s.bullet.flak, explodeRange: s.bullet.flak.explodeRange * mul } })
-    : s;
+  eachAmmo(s, (b) =>
+    b.flak ? { ...b, flak: { ...b.flak, explodeRange: b.flak.explodeRange * mul } } : b,
+  );
 
 /** PLATING, added flat — armour is a shave per hit and never a multiplier,
  *  so "+6 armour" means the same six on a tacker as on a repeater */

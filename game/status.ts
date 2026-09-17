@@ -1011,6 +1011,9 @@ function gunChips(picked: readonly Structure[]): StatusChip[] {
 function turretTraits(picked: readonly Structure[]): StatusChip[] {
   let n = 0;
   let nonbullet = true, ignites = true, soaks = true, electric = true;
+  // ...and whether every one of them lights what it hits on EVERY round: a
+  // gun whose fire rides a rolled second ammo (airburst) does not
+  let everyRound = true;
   for (const st of picked) {
     if (isCore(st)) return [];
     const t = st as Tower;
@@ -1025,6 +1028,7 @@ function turretTraits(picked: readonly Structure[]): StatusChip[] {
     // turrets, which is a different question.
     const ammo = [t.spec.bullet, ...(t.spec.bullet.alt ? [t.spec.bullet.alt] : [])];
     if (!ammo.some((b) => b.burn !== undefined)) ignites = false;
+    if (t.spec.altChance !== undefined && t.spec.bullet.burn === undefined) everyRound = false;
     if (!ammo.some((b) => b.wet !== undefined)) soaks = false;
     if (!ammo.some((b) => b.electric)) electric = false;
   }
@@ -1032,7 +1036,12 @@ function turretTraits(picked: readonly Structure[]): StatusChip[] {
   const out: StatusChip[] = [];
   if (nonbullet)
     out.push({ id: "nonbullet", n: null, note: "a cloaked hull does not stop it" });
-  if (ignites) out.push({ id: "ignites", n: null, note: "what it hits catches fire" });
+  if (ignites)
+    out.push({
+      id: "ignites",
+      n: null,
+      note: everyRound ? "what it hits catches fire" : "some of its shots set fire",
+    });
   if (soaks) out.push({ id: "soaks", n: null, note: "what it hits comes away wet" });
   if (electric)
     out.push({ id: "electric", n: null, note: `x${WET_SHOCK_MUL} on anything soaked` });

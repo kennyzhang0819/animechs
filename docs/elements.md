@@ -34,6 +34,26 @@ that stagger this is the most expensive thing in the status pass. The target is
 picked by reservoir sampling in a single pass, skipping bodies already at the
 stack cap and respecting `KIND_BURN_IMMUNE`.
 
+### Who carries it
+
+Four turrets, and each lights a different shape of board:
+
+| | how it lands | stacks |
+|---|---|---|
+| **torch** | a pierced line at 60px — the gun whose whole job is fire | 2 a hit |
+| **deluge** | its odd nozzle, one ball in two, over a 40px pool | 2 a burst |
+| **furnace** | everything under a held beam, re-timed every damage interval | 3 a tick |
+| **airburst** | **one flak shell in five** (`altChance`), over its burst | 1 a burst |
+
+Airburst is the odd one: its fire is a ROLL, not a property of the gun. It
+throws two shells a volley six times a second, and a blast carries its
+round's status (`Sim.splash`), so an always-incendiary flak would hold
+everything it could see at the stack cap — for 180 scrap, at tier 1, on both
+layers. The incendiary round is a whole second ammo
+(`BulletStats.alt`), drawn in pyratite's orange, so the player can see which
+shells are the ones that light. The dial to move is the chance: one stack is
+already the floor of `burn`, and doubling it doubles the whole gun's fire.
+
 ### Why fire is weak against one big hull
 
 There is **no tier check anywhere**. Fire does flat damage a second, and the
@@ -117,11 +137,14 @@ Two things to keep an eye on:
 - **Soak never expiring means it only ever goes up.** Every body that survives a
   douser is permanently closer to breaking down. The balance lever is the `soak`
   per hit on the ammo, not a duration.
-- **The deluge's two nozzles are two ammos.** The odd barrel loads `bullet.alt`
-  — fire, drawn as an orange orb; the even one water, drawn blue. That alt has
+- **A second ammo is a whole second bullet.** Deluge's odd barrel loads
+  `bullet.alt` — fire, drawn as an orange orb; the even one water, drawn blue.
+  Airburst rolls for its instead (`altChance`). Either way the alt has
   to be threaded through every `bulletFor(kind, frag, alt)` call or the shot is
   drawn *and read* as the main ammo; `Game.remakeView` dropped the argument once
-  and the fire nozzle spent that time throwing blue water balls.
+  and the fire nozzle spent that time throwing blue water balls. An upgrade
+  that moves a plain number has to move both (`eachAmmo` in `upgrades.ts`), or
+  a modded gun fires one upgraded round and one stock one.
 
 ## Cost
 

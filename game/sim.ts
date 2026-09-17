@@ -12309,16 +12309,19 @@ export class Sim {
       x += -Math.sin(t.angle) * off;
       y += Math.cos(t.angle) * off;
     }
-    // WHICH AMMO THIS BARREL IS LOADED WITH (BulletStats.alt — deluge's
-    // fire nozzle, and nothing else today). It is read off the BARREL
-    // INDEX and not off the shot count, so the ammo and the mount it
-    // leaves by are one decision and stay one on a gun with more than two
-    // nozzles: even mounts throw the turret's own bullet, odd mounts the
-    // second. A turret with no alt never asks (and one with no second
-    // barrel cannot have an alt at all — checked at import,
-    // constants.ts).
+    // WHICH AMMO THIS SHOT IS LOADED WITH (BulletStats.alt). A gun that
+    // rolls for its second round asks the roll (airburst's incendiary
+    // shell); every other one reads the BARREL INDEX and not the shot
+    // count, so the ammo and the mount it leaves by are one decision and
+    // stay one on a gun with more than two nozzles: even mounts throw the
+    // turret's own bullet, odd mounts the second. A turret with no alt
+    // never asks (and one with an alt has one or the other — checked at
+    // import, constants.ts).
     const alt =
-      st.bullet.alt !== undefined && (t.shotCount % (st.barrels?.count ?? 1)) % 2 === 1;
+      st.bullet.alt !== undefined &&
+      (st.altChance !== undefined
+        ? Math.random() < st.altChance
+        : (t.shotCount % (st.barrels?.count ?? 1)) % 2 === 1);
     const bul = alt ? st.bullet.alt! : st.bullet;
     t.shotCount++;
     // BulletType.shootEffect and smokeEffect, both fired at the muzzle

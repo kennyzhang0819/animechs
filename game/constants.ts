@@ -432,23 +432,22 @@ export interface BulletStats {
   // the child's own full speed. Whirl's plastanium flak is the one
   // that uses it: the burst is what makes a flak wall out of a single
   // turret
-  // THE SECOND AMMO IN THE MAGAZINE, and deluge is the only turret that
-  // loads one. A turret with `barrels` throws from its mounts in turn
-  // (ShootAlternate, Sim.fireShot), and where the ammo names an `alt` the
-  // ODD barrel loads it: the same volley leaves one nozzle as water and
-  // the other as fire. It is a WHOLE BulletStats and not a patch, because
-  // the two balls are two shots — their own burst radius, their own
-  // status, their own colour and effects — and a diff would have to name
-  // every field anyway.
+  // THE SECOND AMMO IN THE MAGAZINE. It is loaded one of two ways, and a
+  // turret that names an `alt` has to say which (checked at import below):
+  // BY BARREL, where a gun with `barrels` throws from its mounts in turn
+  // (ShootAlternate, Sim.fireShot) and the ODD mount loads it — deluge's
+  // volley leaves one nozzle as water and the other as fire; or BY ROLL
+  // (TowerStats.altChance), where every shot is a fresh chance at the
+  // second round — airburst's incendiary shell. It is a WHOLE BulletStats
+  // and not a patch, because the two rounds are two shots — their own
+  // burst radius, their own status, their own colour and effects — and a
+  // diff would have to name every field anyway.
   //
   // IT IS RESOLVED WHERE `frag` IS (bulletOf, Sim.bulletFor) and written
   // onto the projectile as one more flag (projs.ts PROJ_ALT), so a ball in
   // the air answers for its own stats and the renderer draws the ammo
   // that was actually fired. Alt first, then frag: a fragment of the
   // fire ball is the FIRE ball's child.
-  //
-  // An `alt` on an ammo whose turret has no second barrel is never
-  // loaded — checked at import below.
   alt?: BulletStats;
   frag?: {
     count: number;
@@ -660,6 +659,9 @@ export interface TowerStats {
   // ShootAlternate and ShootBarrel: successive shots leave side-by-side
   // barrels, `spread` px apart perpendicular to the facing
   barrels?: { count: number; spread: number };
+  // the odds that any one shot loads `bullet.alt` instead of the turret's
+  // own round, for a gun whose second ammo is a roll rather than a mount
+  altChance?: number;
   // Mindustry Turret.unitSort. Unset is UnitSorts.closest — every turret
   // bar one. `strongest` is railhead's: the HIGHEST CURRENT HEALTH in
   // range, ties broken by distance, because a 1350-damage shot spent on
@@ -823,6 +825,7 @@ export function normalizeTower(s: TowerStats): TowerStats {
     velocityRnd: s.velocityRnd,
     lifeScaleOffset: s.lifeScaleOffset,
     barrels: s.barrels,
+    altChance: s.altChance,
     sort: s.sort,
     heal: s.heal,
     bullet: normalizeBullet(s.bullet),
@@ -972,13 +975,15 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // Airburst, from mindustry/content/Blocks.java with lead ammo
   // (FlakBulletType(4.2, 3), splash 27*1.5 in a 15-unit radius).
   //
-  // The ONE deliberate break from upstream: our airburst is not anti-air
-  // only. Upstream's flak waits for flyers, and a turret that idles through
-  // every ground wave is a turret nobody buys — so its shells fuse over the
-  // ground swarm too. That doubles the board it covers, and the shell pays
+  // TWO deliberate breaks from upstream. The first: our airburst is not
+  // anti-air only. Upstream's flak waits for flyers, and a turret that idles
+  // through every ground wave is a turret nobody buys — so its shells fuse
+  // over the ground swarm too. That doubles the board it covers, and the shell pays
   // for it: the lead flak's 3/40.5 goes to 2/13.5, a third of the blast it
   // carried when it only ever saw the air. A tier-1 common at 180 scrap
   // should not out-damage a 900-scrap autocannon on both layers at once.
+  // The second is the incendiary shell it now rolls for — see the `alt`
+  // below, and docs/elements.md for what fire is worth.
   airburst: {
     name: "Airburst",
     size: 2,
@@ -1024,7 +1029,48 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       // which is hitBulletColor with its ramp fixed to Pal.lightOrange
       despawnFx: FxKind.BulletHit,
       fxColor: PAL.lightOrange,
+      // THE INCENDIARY SHELL (BulletStats.alt, rolled at `altChance`): the
+      // same lead flak wearing pyratite's colours, and the only number
+      // that differs is the fire. A blast carries a status (Sim.splash),
+      // so one shell lights the whole crowd it burst over — which is why
+      // it is a ROLL and not every round: at two shells a volley six
+      // times a second an always-incendiary airburst would hold anything
+      // it could see at the stack cap, for 180 scrap.
+      alt: {
+        speed: 4.2 * TICK * MU,
+        damage: 2,
+        lifetime: (220 + 2 + 10) / 4.2 / TICK,
+        splash: 27 * 0.5,
+        splashRadius: 15 * MU,
+        collidesAir: true,
+        collidesGround: true,
+        burn: 1,
+        flak: {
+          explodeRange: 30 * MU,
+          explodeDelay: 5 / TICK,
+          interval: 6 / TICK,
+        },
+        sprite: {
+          region: "shell",
+          across: 6 * MU,
+          along: 8 * MU,
+          shrinkX: 0,
+          shrinkY: 0.5,
+          back: PAL.lightOrange,
+          front: PAL.lighterOrange,
+        },
+        shootFx: FxKind.ShootSmall,
+        smokeFx: FxKind.SmokeSmall,
+        hitFx: FxKind.Flak,
+        hitFx2: FxKind.FlameHit,
+        despawnFx: FxKind.BulletHit,
+        fxColor: PAL.lightOrange,
+      },
     },
+    // one shell in five is the incendiary one: enough that a stream of
+    // flak keeps a crowd alight, short of torch's, which is the gun whose
+    // whole job is fire
+    altChance: 0.2,
   },
   // Cleaver, 1:1 from mindustry/content/Blocks.java with thorium ammo
   // (ShrapnelBulletType, damage 105): three instant piercing rays fired as
@@ -2091,18 +2137,22 @@ export const beaconPriceAt = (ladder: readonly number[], bought: number): number
 };
 
 /**
- * A SECOND AMMO NEEDS A SECOND BARREL TO LEAVE BY — checked at import.
+ * A SECOND AMMO NEEDS A WAY TO BE LOADED — checked at import.
  *
- * Sim.fireShot picks the alt off the same counter that steps the mount
- * point (ShootAlternate), so an `alt` on a turret with one barrel would
- * be thrown out of the same nozzle every other shot: the two ammos would
- * be invisible as two, which is the entire point of loading them. Author
- * the barrels with the ammo or don't author the ammo.
+ * Sim.fireShot picks the alt either off the counter that steps the mount
+ * point (ShootAlternate, so the second ammo leaves by a nozzle of its own)
+ * or off a per-shot roll (`altChance`, so it leaves as a round of its own).
+ * With neither, the alt would be thrown out of the same nozzle on every
+ * shot and be invisible as a second ammo, which is the entire point of
+ * loading it.
  */
 (() => {
-  for (const [kind, spec] of Object.entries(TOWERS))
-    if (spec.bullet.alt && (spec.barrels?.count ?? 1) < 2)
-      throw new Error(`"${kind}" loads a second ammo but has no second barrel to throw it from`);
+  for (const [kind, spec] of Object.entries(TOWERS)) {
+    if (spec.bullet.alt && (spec.barrels?.count ?? 1) < 2 && spec.altChance === undefined)
+      throw new Error(`"${kind}" loads a second ammo with neither a second barrel nor a chance`);
+    if (spec.altChance !== undefined && !spec.bullet.alt)
+      throw new Error(`"${kind}" rolls for a second ammo it does not load`);
+  }
 })();
 
 /**
@@ -2130,7 +2180,7 @@ export const beaconPriceAt = (ladder: readonly number[], bought: number): number
  */
 export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   tacker: "Shoots small bullets quickly.",
-  airburst: "Shoots flak shells that burst near enemies.",
+  airburst: "Shoots flak shells that burst near enemies, some of them incendiary.",
   coil: "Shoots lightning that jumps between enemies.",
   lobber: "Lobs shells that explode where they land.",
   torch: "Sprays fire at close range and sets enemies alight.",
