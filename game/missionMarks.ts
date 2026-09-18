@@ -8,7 +8,7 @@
  * that knows both, so adding a mission's furniture is one entry here
  * rather than an edit to the editor, the loader and the panel.
  */
-import type { Mission } from "./levels";
+import type { Mission, UnitKind } from "./levels";
 
 /**
  * WHAT SHAPE OF THING AN AUTHOR PLACES. A `point` is one footprint at
@@ -70,6 +70,21 @@ export interface MarkKind {
   size: number;
   /** the ink it is drawn in, in the editor and on the board overlay */
   color: string;
+  /**
+   * THE BODY THIS MARK PUTS DOWN, and therefore its FACE: the palette
+   * swatch and the block on the map both wear that unit's own portrait,
+   * carved off the atlas (atlas.ts unitIcon) exactly as the HUD's do.
+   *
+   * A mark used to draw as a coloured square under a stock power-node
+   * sprite, which meant four different pieces of mission furniture were
+   * four identical pylons — the one thing a picture is for, saying which
+   * is which, was the one thing it did not do.
+   */
+  unit: UnitKind;
+  /** the choice field, if any, whose value is the body that will actually
+   *  rise here — a buff tower is a Goad or a Bastion, and the block on the
+   *  map has to be whichever one the author picked */
+  unitField?: string;
   /** cells of metal decking laid round the footprint, if this kind wants
    *  its ground to look prepared (renderer.rebuildTerrain). 0 for none */
   pad: number;
@@ -121,6 +136,8 @@ const BUFF_TOWER: MarkKind = {
   geom: "point",
   size: 4,
   color: "#ff5c73",
+  unit: "goad",
+  unitField: "tower",
   pad: 2,
   fields: [
     {
@@ -163,6 +180,7 @@ const RAILGUN: MarkKind = {
   geom: "point",
   size: 4,
   color: "#ff8a3a",
+  unit: "railgun",
   pad: 2,
   fields: [{ key: "wave", label: "Rises in section", kind: "int", min: 1, max: 4, def: 1 }],
 };
@@ -195,6 +213,7 @@ const GARRISON: MarkKind = {
   geom: "point",
   size: 4,
   color: "#ffb44a",
+  unit: "bulwark",
   pad: 0,
   radiusField: "radius",
   fields: [
@@ -228,6 +247,10 @@ const ROAD: MarkKind = {
   geom: "path",
   size: 3,
   color: "#7fd0ff",
+  // the thing that crawls it — a convoy walks one of these too, but the
+  // Borer's head is what a player pictures when they see a line drawn
+  // across a map
+  unit: "wormhead",
   pad: 0,
   fields: [{ key: "name", label: "Name", kind: "text", def: "the line" }],
 };
@@ -269,6 +292,34 @@ export function forEachMarkPadCell(
 
 export const markKind = (id: string): MarkKind | null =>
   MARK_KINDS.find((k) => k.id === id) ?? null;
+
+/**
+ * WHOSE PORTRAIT THIS MARK WEARS. A kind's own body, unless the mark
+ * CHOSE one — a buff tower is a Goad or a Bastion and the block on the
+ * map has to be the one that will actually rise there, or an author is
+ * reading the palette instead of the board.
+ */
+export function markUnit(m: MapMark): UnitKind | null {
+  const k = markKind(m.kind);
+  if (!k) return null;
+  if (k.unitField) {
+    const f = k.fields.find((x) => x.key === k.unitField);
+    if (f?.kind === "choice") return markField(m.opts, f) as UnitKind;
+  }
+  return k.unit;
+}
+
+/** every face a mark may wear — what a panel carves up front */
+export const MARK_UNITS: readonly UnitKind[] = [
+  ...new Set(
+    MARK_KINDS.flatMap((k) => {
+      const f = k.unitField ? k.fields.find((x) => x.key === k.unitField) : null;
+      return f?.kind === "choice"
+        ? [k.unit, ...f.choices.map((c) => c.value as UnitKind)]
+        : [k.unit];
+    }),
+  ),
+];
 
 /** the mark kinds a map running these missions may carry */
 export const marksForMissions = (kinds: readonly Mission["kind"][]): readonly MarkKind[] =>

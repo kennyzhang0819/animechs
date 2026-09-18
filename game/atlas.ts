@@ -3054,6 +3054,28 @@ export async function unitQuad(
   return carveUnit(kind, accent, false);
 }
 
+/**
+ * ANY PACKED CELL AS A DATA URL — the beacon's block, a turret's plate,
+ * whatever else a panel wants a picture of. The cell is DRAWN into the
+ * sheet at pack time (see UV_BEACON), so this is the only honest source
+ * for one: the file it used to be loaded from is not what the board puts
+ * on the map any more.
+ */
+export async function cellIcon(uv: readonly [number, number, number, number]): Promise<string> {
+  const sheet = await buildAtlas();
+  const x = Math.round(uv[0] * ATLAS_W), y = Math.round(uv[1] * ATLAS_H);
+  const w = Math.round((uv[2] - uv[0]) * ATLAS_W);
+  const h = Math.round((uv[3] - uv[1]) * ATLAS_H);
+  const out = document.createElement("canvas");
+  out.width = w;
+  out.height = h;
+  const c = out.getContext("2d");
+  if (!c) throw new Error("2d context unavailable for a cell icon");
+  c.imageSmoothingEnabled = false;
+  c.drawImage(sheet, x, y, w, h, 0, 0, w, h);
+  return out.toDataURL();
+}
+
 async function carveUnit(
   kind: UnitKind,
   accent: readonly [number, number, number],

@@ -4,7 +4,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { ADMIN_ENABLED } from "@/game/env";
 import { useConfirm } from "./ConfirmDialog";
 import { MapEditor, PATH_WIDTHS, type BrushShape } from "@/game/editor";
-import { markKind } from "@/game/missionMarks";
+import { markKind, MARK_UNITS } from "@/game/missionMarks";
+import { useUnitIcons } from "./unitIcons";
+import { cellIcon, UV_BEACON } from "@/game/atlas";
 import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
 import {
   LEGACY_COLS,
@@ -210,6 +212,21 @@ export default function MapEditorView({
   const [setId, setSetId] = useState<string>(PALETTE[0].id);
   const [variant, setVariant] = useState(0);
   const [randomize, setRandomize] = useState(true);
+  // the portraits every mission mark wears, carved off the atlas once
+  // (unitIcons.ts) — the palette and the map both draw them
+  const markFace = useUnitIcons(MARK_UNITS);
+  // ...and the beacon's own block, which is drawn into the sheet at pack
+  // time and has no sprite file to point at (atlas.ts UV_BEACON)
+  const [beaconFace, setBeaconFace] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void cellIcon(UV_BEACON).then((url) => {
+      if (alive) setBeaconFace(url);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [brush, setBrush] = useState(1);
   const [brushShape, setBrushShape] = useState<BrushShape>("square");
   const [pathWidth, setPathWidth] = useState(1);
@@ -678,7 +695,17 @@ export default function MapEditorView({
                 <div className="flex flex-wrap gap-1">
                   {section.sets.flatMap((set) =>
                     (randomize && !set.noRandom ? set.icons.slice(0, 1) : set.icons).map(
-                      (icon, v) => {
+                      (stockIcon, v) => {
+                        // A MARK WEARS THE BODY IT PUTS DOWN, and the
+                        // beacon the block the board draws. Every one of
+                        // these used to be the same stock power node,
+                        // which told an author nothing about which was
+                        // which
+                        const face = set.mark ? markKind(set.mark)?.unit : null;
+                        const icon =
+                          (face && markFace(face)) ||
+                          (set.kind === "beacon" && beaconFace) ||
+                          stockIcon;
                         const active =
                           setId === set.id && ((randomize && !set.noRandom) || variant === v);
                         const spawn = set.kind === "spawn";

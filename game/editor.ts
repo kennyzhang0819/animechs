@@ -1,4 +1,4 @@
-import { buildAtlas, DECOR_TILES, FLOOR_SHALLOW_WATER, SHALLOW_FOR_DEEP } from "./atlas";
+import { buildAtlas, DECOR_TILES, FLOOR_SHALLOW_WATER, SHALLOW_FOR_DEEP, unitIcon } from "./atlas";
 import { fitZoom } from "./fit";
 import {
   CELL,
@@ -24,7 +24,11 @@ import {
 } from "./maps";
 import { ALL_LAYERS, Renderer, type TerrainLayers } from "./renderer";
 import { loadInvertZoom } from "./progress";
-import { MARK_KINDS, MAX_MARKS, markKind, markOpts, type MapMark, type MarkKind } from "./missionMarks";
+import {
+  MARK_KINDS, MARK_UNITS, MAX_MARKS, markKind, markOpts, markUnit,
+  type MapMark, type MarkKind,
+} from "./missionMarks";
+import { unitAccent } from "./levels";
 import { MIN_RUN, pathProblems } from "./missions";
 import { canHoldSpawn, isWaterFloor, rebuildReserved } from "./terrain";
 import { WALL_DEEP, WALL_PINE, type MapBeacon, type Prop, type Terrain } from "./terrain";
@@ -286,6 +290,7 @@ export class MapEditor {
 
     this.resize();
     this.renderer.rebuildTerrain(this, this.layers);
+    this.loadMarkArt();
 
     window.addEventListener("resize", this.onResize);
     window.addEventListener("keydown", this.onKeyDown);
@@ -706,6 +711,7 @@ export class MapEditor {
       }
     }
     const h = (k.size * CELL) / 2;
+    const face = this.markArt.get(k.unit);
     for (let j = 0; j < pts.length; j++) {
       c.fillStyle = k.color;
       c.fillRect(px(pts[j][0]) - h, px(pts[j][1]) - h, h * 2, h * 2);
@@ -713,6 +719,9 @@ export class MapEditor {
       c.lineWidth = 1.5 / s;
       c.strokeRect(px(pts[j][0]) - h, px(pts[j][1]) - h, h * 2, h * 2);
     }
+    // the ENTRY wears the face of what walks the line — one portrait a
+    // road and not one a corner, because a corner is a handle
+    if (face) c.drawImage(face, px(pts[0][0]) - h * 1.5, px(pts[0][1]) - h * 1.5, h * 3, h * 3);
     c.globalAlpha = 1;
     if (!on) return;
     const bad = pathProblems(pts);
@@ -815,6 +824,31 @@ export class MapEditor {
     }
     this.dirty = true;
     this.redraw();
+  }
+
+  /**
+   * EVERY FACE A MISSION MARK MAY WEAR, carved off the atlas once and kept
+   * (missionMarks.ts MARK_UNITS). They arrive late — the sheet has to be
+   * built and a cell composited per body — so the map draws the plain
+   * plate until each one lands and then redraws.
+   */
+  private readonly markArt = new Map<string, HTMLImageElement>();
+
+  private loadMarkArt(): void {
+    for (const kind of MARK_UNITS)
+      void unitIcon(kind, unitAccent(kind))
+        .then((url) => {
+          const img = new Image();
+          img.onload = () => {
+            this.markArt.set(kind, img);
+            this.redraw();
+          };
+          img.src = url;
+        })
+        .catch(() => {
+          // no portrait: the plate is the fallback and says the same thing
+          // in colour
+        });
   }
 
   /** the road being drawn, or -1 */
@@ -1270,10 +1304,17 @@ export class MapEditor {
             c.globalAlpha = 1;
           }
         }
+        // ITS OWN PORTRAIT ON A PLATE OF ITS OWN INK: the body this mark
+        // will put down, carved off the atlas exactly as the HUD's
+        // portraits are (markArt). The plate stays under it — it is the
+        // footprint, and the ink is how the kind is told apart at a zoom
+        // where the picture is eight pixels across
         c.fillStyle = k.color;
-        c.globalAlpha = 0.75;
+        c.globalAlpha = this.markArt.get(markUnit(m) ?? "") ? 0.35 : 0.75;
         c.fillRect(m.x * CELL, m.y * CELL, side, side);
         c.globalAlpha = 1;
+        const face = this.markArt.get(markUnit(m) ?? "");
+        if (face) c.drawImage(face, m.x * CELL, m.y * CELL, side, side);
         c.strokeStyle = i === this.picked ? "#ffffff" : "rgba(20,4,8,0.9)";
         c.lineWidth = (i === this.picked ? 3 : 1.5) / s;
         c.strokeRect(m.x * CELL, m.y * CELL, side, side);

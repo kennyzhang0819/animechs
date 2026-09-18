@@ -1225,8 +1225,9 @@ export class Game {
    *
    * So a bought card LIVES HERE until the ground takes it. Aiming it is a
    * separate state (buildKind/buildForm), which a right click drops and a
-   * click on the card picks back up. The only two things that spend a
-   * card are placing it and buying another.
+   * click on the card picks back up. The card is paid for at the press
+   * (buyTurretCard), so the only two things that can LOSE one are placing
+   * it and drawing another over the top of it.
    */
   private heldCard: { kind: TowerKind; form: FormationId; n: number } | null = null;
   /**
@@ -1763,10 +1764,11 @@ export class Game {
    * would — the roll was the game's, and the player should not lose the
    * card's price to it.
    *
-   * AND THIS IS WHERE THE MONEY GOES (buyTurretCard takes none). The whole
-   * card is charged the moment any of it lands: ground that takes part of
-   * the shape spends the card on the part, which is the player's call and
-   * the ghost showed them exactly which cells they were making it about.
+   * IT TAKES NO MONEY. The card was paid for at the press
+   * (buyTurretCard), so what lands here is a thing already owned: ground
+   * that takes part of the shape spends the card on the part, which is
+   * the player's call and the ghost showed them exactly which cells they
+   * were making it about.
    */
   private placeFormation(p: { x: number; y: number }): number {
     const kind = this.buildKind;
@@ -1783,12 +1785,6 @@ export class Game {
     // the same instant. If any cell will take it then at least one turret
     // lands, which is the whole of what the hand needs to know.
     if (!cells.some((c) => this.view.canPlace(c.gx, c.gy, kind))) return 0;
-    // ...and only once the ground has said yes does the purse move. The
-    // bank was checked at the draw too, but income is the only thing that
-    // moves it and the card may have been held across a placement
-    const price = this.heldPrice();
-    if (!this.world.spend(price)) return 0;
-    this.host.spend(price);
     this.host.placeFormation(cells, kind);
     return 1;
   }
@@ -1810,16 +1806,18 @@ export class Game {
    * the board before the finger has left the key. The flow is 1, click,
    * 1, click.
    *
-   * IT COSTS NOTHING UNTIL THE GROUND TAKES IT (placeFormation). Drawing
-   * is free and so is re-drawing, so 1, 2, 3, 4 is a way of ASKING what
-   * each tier would put down here — the ghost answers on the terrain the
-   * cursor is over, which is the only place the question can honestly be
-   * answered. Charging at the press made looking cost money, and a player
-   * who cannot afford to look ends up buying the tier they already know.
+   * THE PRESS PAYS. The whole price leaves the purse the moment the card
+   * is drawn, before the ghost is on the board and whatever the ground
+   * turns out to say about it — a card is a thing you have BOUGHT, and
+   * where to put it is the only question left.
    *
-   * The bank is still checked here: a card that cannot be paid for is a
-   * ghost that cannot be placed, and a hand holding one would be a lie the
-   * player only finds out about on the click.
+   * SO A SECOND PRESS THROWS THE FIRST CARD AWAY AND THE MONEY WITH IT
+   * (discardCard). Drawing was free for a while and re-drawing with it,
+   * which made 1, 2, 3, 4 a way of asking what each tier would put down
+   * here at no cost; that is a browse, not a purchase, and it took the
+   * decision out of the press. The prices are on the buttons and the
+   * shape is a standing setting, so nothing about a draw is a surprise
+   * that needs paying for twice.
    *
    * THE PRICE IS KNOWN BEFORE THE PRESS. The tier is chosen and the shape
    * is chosen; the only roll left is WHICH gun of the tier comes up, and
@@ -1834,7 +1832,9 @@ export class Game {
     if (this.world.lost || this.won() || this.menuOpen) return null;
     const kind = rollTurretOfTier(this.drawPool(), tier);
     if (!kind) return null;
-    if (this.world.scrap < this.cardPriceOf(tier)) return null;
+    const price = this.cardPriceOf(tier);
+    if (!this.world.spend(price)) return null;
+    this.host.spend(price);
     const form = this.buyShape;
     this.heldCard = { kind, form, n: 1 };
     this.buildKind = kind;
@@ -1843,14 +1843,6 @@ export class Game {
 
     this.host.clearStructSelection();
     return { kind, form, n: 1 };
-  }
-
-  /** what the card in hand will cost when the ground takes it — 0 on a
-   *  free board, and 0 with an empty hand */
-  private heldPrice(): number {
-    const c = this.heldCard;
-    if (!c || !this.dealing) return 0;
-    return cardPrice(TOWER_TIER[c.kind], formationCount(c.form, c.n));
   }
 
   /**
@@ -2044,8 +2036,9 @@ export class Game {
     return this.buyShape;
   }
 
-  /** throw the owned card away — what a second T does to the first one's
-   *  draw. Nothing comes back; a right click does NOT do this */
+  /** throw the owned card away — what a second draw does to the first
+   *  one's card. Nothing comes back, and the price does not either; a
+   *  right click does NOT do this */
   discardCard(): void {
     this.heldCard = null;
     this.buildKind = null;

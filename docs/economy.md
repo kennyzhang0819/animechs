@@ -135,21 +135,23 @@ only thing the deal turns over is which gun of the band came up, and every gun o
 same footprint and the same money. A press is a decision about ground and about how much of the
 bank to commit, and never a slot machine with a price on it.
 
-### Nothing is paid until the ground takes it
+### The press pays
 
-**Drawing a card is free, and so is re-drawing.** The purse moves in `Game.placeFormation` and
-nowhere else, so 1, 2, 3, 4 is a way of *asking* what each tier would put down here — the ghost
-answers on the terrain under the cursor, which is the only place the question can honestly be
-answered. Charging at the press made looking cost money, and a player who cannot afford to look
-ends up buying the tier they already know.
+**The whole price leaves the purse at the draw** (`Game.buyTurretCard`), before the ghost is on
+the board and whatever the ground turns out to say about it. A card is a thing you have *bought*,
+and where to put it is the only question left.
 
-The bank is still checked at the draw: a card that cannot be paid for is a ghost that cannot be
-placed, and a hand holding one would be a lie the player only finds out about on the click.
+**So a second press throws the first card away and the money with it.** Drawing was free for a
+while, and re-drawing with it, which made 1, 2, 3, 4 a way of asking what each tier would put
+down here at no cost — that is a browse, not a purchase, and it took the decision out of the
+press. The prices are on the buttons and the shape is a standing setting, so nothing about a draw
+is a surprise that needs paying for twice.
 
-**A card is charged in full the moment any of it lands.** Ground that takes none of the shape
-keeps the card in hand to try somewhere else; ground that takes part of it spends the card on
-the part, which is the player's call and the ghost showed them exactly which cells they were
-making it about.
+**Placing costs nothing**, because the card is already owned. Ground that takes none of the shape
+keeps the card in hand to try somewhere else; ground that takes part of it spends the card on the
+part, which is the player's call and the ghost showed them exactly which cells they were making
+it about. The right button puts the *ghost* away and leaves the card in its slot — that gesture
+has never spent anything and still does not.
 
 `STAGES` cuts the run at waves 1-14 / 15-28 / 29-40 / 41-50, one per tier.
 `ladder.ts stageAudit` and `STAGE_BOARDS` are the table the prices are authored against and the

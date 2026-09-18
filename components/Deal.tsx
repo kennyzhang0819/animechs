@@ -54,8 +54,10 @@ import { tile } from "./tile";
  *
  * OWNING A CARD AND AIMING IT ARE TWO DIFFERENT STATES. The right button
  * puts the GHOST away and leaves the card in its slot; clicking the slot
- * picks it back up. Nothing about that gesture spends anything. THE ONLY
- * TWO THINGS THAT SPEND A CARD ARE PLACING IT AND BUYING ANOTHER.
+ * picks it back up. Nothing about that gesture spends anything. THE PRESS
+ * IS WHAT SPENDS: the price leaves the purse when the card is drawn, so a
+ * card in the slot is money already gone and drawing over it loses that
+ * money.
  */
 
 /** one card, derived WHOLE from the run state — the deal keeps no state
