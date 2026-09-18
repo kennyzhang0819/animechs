@@ -33,6 +33,8 @@ import {
   UV_SHELL_BACK,
   UV_MISSILE,
   UV_MISSILE_BACK,
+  UV_CANISTER,
+  UV_CANISTER_BACK,
   UV_CIRCLE_BULLET,
   UV_CIRCLE_BULLET_BACK,
   UV_MINE_BULLET,
@@ -72,6 +74,10 @@ import {
   UV_REPEATER,
   UV_FURNACE,
   UV_RAILHEAD,
+  UV_DUSTER,
+  UV_BLIGHTER,
+  UV_DRIFTER,
+  UV_STINGER,
   UV_TETHER_LASER,
   UV_TETHER_LASER_END,
   UV_TRI,
@@ -189,6 +195,10 @@ const UV_TURRETS: Record<TowerKind, UVRect> = {
   repeater: UV_REPEATER,
   furnace: UV_FURNACE,
   railhead: UV_RAILHEAD,
+  duster: UV_DUSTER,
+  blighter: UV_BLIGHTER,
+  drifter: UV_DRIFTER,
+  stinger: UV_STINGER,
 };
 /**
  * The two regions BasicBulletType.draw lays on one rect: the longer `-back`
@@ -196,10 +206,11 @@ const UV_TURRETS: Record<TowerKind, UVRect> = {
  * (BulletSprite.region) — the colours are too, so one pair covers every
  * ammo type in the game.
  */
-const BULLET_REGIONS: Record<"bullet" | "shell" | "missile", readonly [UVRect, UVRect]> = {
+const BULLET_REGIONS: Record<"bullet" | "shell" | "missile" | "canister", readonly [UVRect, UVRect]> = {
   bullet: [UV_BULLET_BACK, UV_BULLET],
   shell: [UV_SHELL_BACK, UV_SHELL],
   missile: [UV_MISSILE_BACK, UV_MISSILE],
+  canister: [UV_CANISTER_BACK, UV_CANISTER],
 };
 /** px per Mindustry world unit — effect geometry is written in those units */
 const MU = CELL / 8;
@@ -3218,6 +3229,7 @@ export class Renderer {
     // no-shader drawing
     const buffered = this.ensureShieldTarget(this.canvas.width, this.canvas.height);
     this.drawForceFields(sim, buffered);
+    this.drawCloudFields(sim, buffered);
     this.drawFieldRings(sim, buffered);
     n0 = dyn.n;
     for (const t of sim.towers) {
@@ -3935,6 +3947,46 @@ export class Renderer {
    * threatens nothing yet, and drawing the ring then is what made it feel
    * constant.
    */
+  /**
+   * THE TOXIN LINE'S GAS, ON THE FORCE FIELDS' OWN PASS (constants.ts
+   * BulletStats.cloud, drifter): every cloud in the air is one disc filled
+   * into the shield buffer, so a field of poison is drawn by exactly the
+   * machinery a force projector's dome is — one flat wash inside a clean
+   * rim, merged where two of them overlap.
+   *
+   * THE SHIELDS' BUFFER AND NOT THE FIELD RINGS', which is a choice about
+   * what the shape MEANS. A field ring is a boundary with nothing inside
+   * it (FIELD_FILL); this is a volume of gas, and the volume is the point —
+   * the wash is what says which ground is being poisoned. The colour is
+   * the only thing keeping it off the swarm's red domes, which is the same
+   * separation every other green on the board lives by.
+   */
+  private drawCloudFields(sim: SimView, buffered: boolean): void {
+    const P = sim.projPacked, pn = sim.projN;
+    if (pn === 0) return;
+    const { vx0, vy0, vx1, vy1 } = this;
+    const b = this.shields;
+    const tbl = this.bulletTbl;
+    for (let i = 0; i < pn; i++) {
+      const o = i * PROJ_F;
+      const kid = P[o + 4], frag = P[o + 5] !== 0, alt = P[o + 9] !== 0;
+      const ti = (kid << 2) | (frag ? 1 : 0) | (alt ? 2 : 0);
+      let st = tbl[ti];
+      if (st === null) st = tbl[ti] = sim.bulletFor(TOWER_KINDS[kid], frag, alt);
+      const cl = st.cloud;
+      if (!cl) continue;
+      const px = P[o], py = P[o + 1], rad = cl.radius;
+      const bm = rad + 16;
+      if (px < vx0 - bm || px > vx1 + bm || py < vy0 - bm || py > vy1 + bm) continue;
+      const col = st.fxColor ?? PAL.white;
+      if (buffered) this.fillDisc(b, px, py, rad, col, SHIELD_PLAIN);
+      else {
+        this.fillDisc(b, px, py, rad, col, 0.12);
+        this.strokeCircle(b, px, py, rad, 1.5 * MU, col[0], col[1], col[2], 1);
+      }
+    }
+  }
+
   private drawFieldRings(sim: SimView, buffered: boolean): void {
     if (!HAS_FIELD) return;
     const { upx, upy, ukind, aiming, n } = sim;

@@ -121,6 +121,19 @@ export const PAL = {
   surge: pal(0xf3e979),
   /** Liquids.slag.color — what a dartback2 spits */
   slag: pal(0xffa166),
+  /**
+   * THE TOXIN LINE'S GREEN (turretArt.ts, the "toxin" accent): the gas,
+   * the cloud and every mote the four poison guns throw.
+   *
+   * IT IS NOT THE VENOM SPITTERS' ACID, and the distance is the point —
+   * the swarm's `venom` below is a chartreuse, this is a mid green with
+   * the yellow taken out of it. The family palette's rule is that no
+   * family wears a colour of the board's; the same rule read the other
+   * way is why this pair is not that one, on a field where both sides
+   * are now laying rot.
+   */
+  toxinFront: pal(0x7cd64a),
+  toxinBack: pal(0x3d7a2e),
   // ---- THE FAMILY PALETTE, this game's own ----------------------------
   //
   // ONE HUE A FAMILY, and it is worn everywhere the family shows: the
@@ -230,8 +243,10 @@ export const TEAM_SHARDED_RGB: RGB = pal(0xffd37f);
  */
 export interface BulletSprite {
   /** which pair of atlas regions: Mindustry's "bullet", "shell" or
-   *  "missile" — the sprite name a BasicBulletType is constructed with */
-  region: "bullet" | "shell" | "missile";
+   *  "missile" — the sprite name a BasicBulletType is constructed with —
+   *  or "canister", the toxin line's, which is ours and drawn at pack
+   *  time (atlas.ts canisterBullet) */
+  region: "bullet" | "shell" | "missile" | "canister";
   across: number; // BasicBulletType.width, px across the line of travel
   along: number; // BasicBulletType.height, px along it
   /** shrinkX/shrinkY: the fraction of each axis the shot gives up in flight */
@@ -478,6 +493,16 @@ export interface BulletStats {
     duration: number; // LaserTurret.shootDuration: s the turret holds it
     fade: number; // ContinuousLaserBulletType.fadeTime: s of tail after
     moveFract: number; // LaserTurret.firingMoveFract: turn rate while firing
+  };
+  // A DRIFTING CLOUD (Sim.updateProjectiles): the shot collides with
+  // nothing and never lands. It flies its whole lifetime and PULSES every
+  // `interval`, poisoning and chipping everything within `radius` of
+  // wherever it has got to — so what it covers is the line it walks
+  // rather than the point it dies on. Drifter's, and nothing else's
+  cloud?: {
+    radius: number; // px the pulse reaches
+    interval: number; // s between pulses
+    poison: number; // poison a second added to every body in one pulse
   };
   // BasicBulletType.draw: the shot itself. A bullet with no sprite draws
   // nothing at all — a laser, a bolt, a hitscan ray and torch's flame
@@ -787,6 +812,7 @@ export function normalizeBullet(b: BulletStats): BulletStats {
     frag: b.frag ? { ...b.frag, bullet: normalizeBullet(b.frag.bullet) } : undefined,
     rail: b.rail,
     continuous: b.continuous,
+    cloud: b.cloud,
     sprite: b.sprite,
     trail: b.trail,
     puff: b.puff,
@@ -950,7 +976,6 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     bullet: {
       speed: 4 * TICK * MU,
       damage: 28,
-      poison: 1.5, // venom rounds: the armour bypass this gun lacks
       lifetime: (190 + 9 + 10) / 4 / TICK, // limitRange() default margin 9
       splash: 0,
       splashRadius: 0,
@@ -1987,6 +2012,193 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.bulletYellowBack,
     },
   },
+
+  // THE TOXIN LINE — four authored guns, one a footprint, and the only
+  // turrets that poison. What each one is for, and the arithmetic behind
+  // these numbers, is docs/elements.md.
+  duster: {
+    name: "Duster",
+    size: 1,
+    health: 250, // common band floor — the longest reach on the board bar three
+    armor: 0,
+    range: 285 * MU,
+    reload: 85 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: (3 * Math.PI) / 180,
+    shootCone: (20 * Math.PI) / 180,
+    rotateSpeed: ((10 * Math.PI) / 180) * TICK,
+    targetAir: false,
+    targetGround: true,
+    bullet: {
+      speed: 2.2 * TICK * MU,
+      // every point is splash, as douser's ball and blighter's canister:
+      // the dart is a container, and what it carries is the burst
+      damage: 0,
+      poison: 1.2,
+      lifetime: (285 + 10) / 2.2 / TICK,
+      splash: 9,
+      splashRadius: 30 * 0.75 * MU,
+      collidesAir: false,
+      collidesGround: true,
+      hitRadius: 4 * MU,
+      sprite: {
+        region: "canister",
+        across: 8 * MU,
+        along: 11 * MU,
+        shrinkX: 0,
+        shrinkY: 0,
+        back: PAL.toxinBack,
+        front: PAL.toxinFront,
+      },
+      puff: { chance: 0.3 * TICK, size: 3 * MU },
+      shootFx: FxKind.ShootLiquid,
+      smokeFx: FxKind.SmokeSmall,
+      hitFx: FxKind.WaterBurst, // drawn at the radius it actually gassed
+      hitFx2: FxKind.HitLiquid,
+      despawnFx: FxKind.HitLiquid,
+      fxColor: PAL.toxinBack,
+    },
+  },
+  blighter: {
+    name: "Blighter",
+    size: 2,
+    health: 880, // uncommon band, a long lob
+    armor: 4,
+    range: 225 * MU,
+    minRange: 50 * MU,
+    reload: 95 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: (4 * Math.PI) / 180,
+    shootCone: (8 * Math.PI) / 180,
+    rotateSpeed: ((5 * Math.PI) / 180) * TICK,
+    targetAir: false,
+    targetGround: true,
+    bullet: {
+      speed: 2.8 * TICK * MU,
+      // every point is splash, as douser's ball: a canister that bursts
+      // short of its mark is worth what one bursting on its face is
+      damage: 0,
+      lifetime: 90 / TICK,
+      splash: 26,
+      splashRadius: 46 * 0.75 * MU, // the widest blast on the board
+      poison: 1.4,
+      collidesAir: false,
+      collidesGround: true,
+      artillery: true,
+      sprite: {
+        region: "canister",
+        across: 13 * MU,
+        along: 16 * MU,
+        shrinkX: 0.15,
+        shrinkY: 0.35,
+        slopeShrink: true,
+        back: PAL.toxinBack,
+        front: PAL.toxinFront,
+      },
+      trail: { size: 4 * MU, mult: 1 },
+      shootFx: FxKind.ShootBig,
+      smokeFx: FxKind.SmokeSmall,
+      hitFx: FxKind.WaterBurst, // drawn at the radius it actually gassed
+      hitFx2: FxKind.HitLiquid,
+      despawnFx: FxKind.HitLiquid,
+      fxColor: PAL.toxinBack,
+    },
+  },
+  drifter: {
+    name: "Drifter",
+    size: 3,
+    health: 2400, // rare band ceiling — it stands well back
+    armor: 9,
+    range: 260 * MU,
+    // ONE FIELD AT A TIME, AND BARELY THAT: sixteen seconds between
+    // canisters against a field that lives fourteen, so a drifter is a
+    // turret the board waits on rather than one it listens to
+    reload: 960 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: 0,
+    shootCone: (12 * Math.PI) / 180,
+    rotateSpeed: ((4 * Math.PI) / 180) * TICK,
+    targetAir: true,
+    targetGround: true,
+    bullet: {
+      // a walking pace: the canister crosses 450 units, over twice what
+      // the turret aims inside, and takes fourteen seconds doing it
+      speed: 0.53 * TICK * MU,
+      damage: 6, // per pulse, not per second
+      lifetime: 850 / TICK,
+      splash: 0,
+      splashRadius: 0,
+      collidesAir: true,
+      collidesGround: true,
+      cloud: { radius: 84 * MU, interval: 0.5, poison: 1 },
+      // the canister itself, tumbling in the middle of its own gas — the
+      // field is drawn by the shield pass (renderer.ts drawCloudFields)
+      sprite: {
+        region: "canister",
+        across: 11 * MU,
+        along: 14 * MU,
+        shrinkX: 0,
+        shrinkY: 0,
+        back: PAL.toxinBack,
+        front: PAL.toxinFront,
+      },
+      puff: { chance: 1.6 * TICK, size: 9 * MU },
+      shootFx: FxKind.ShootLiquid,
+      smokeFx: FxKind.SmokeBig,
+      hitFx: FxKind.HitLiquid, // fired at every pulse (Sim.updateProjectiles)
+      despawnFx: FxKind.SmokeCloud,
+      fxColor: PAL.toxinBack,
+    },
+  },
+  stinger: {
+    name: "Stinger",
+    size: 4,
+    health: 6400, // ultra band
+    armor: 15,
+    range: 215 * MU,
+    reload: 5 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: (4 * Math.PI) / 180,
+    shootCone: (20 * Math.PI) / 180,
+    rotateSpeed: ((5 * Math.PI) / 180) * TICK,
+    targetAir: true,
+    targetGround: true,
+    shootY: 4 * 4 * MU, // Turret's own default, as repeater's
+    barrels: { count: 2, spread: 7 * MU },
+    bullet: {
+      speed: 6 * TICK * MU,
+      damage: 30,
+      poison: 1.6,
+      lifetime: (215 + 9 + 10) / 6 / TICK,
+      splash: 0,
+      splashRadius: 0,
+      collidesAir: true,
+      collidesGround: true,
+      hitRadius: (5 / 2) * MU,
+      sprite: {
+        region: "bullet",
+        across: 7 * MU,
+        along: 13 * MU,
+        shrinkX: 0,
+        shrinkY: 0.5,
+        back: PAL.toxinBack,
+        front: PAL.toxinFront,
+      },
+      shootFx: FxKind.ShootSmall,
+      smokeFx: FxKind.SmokeSmall,
+      hitFx: FxKind.BulletHit,
+      despawnFx: FxKind.BulletHit,
+      fxColor: PAL.toxinBack,
+    },
+  },
 };
 
 /** every turret's stats under ONE hidden class each (normalizeTower) — the
@@ -2161,7 +2373,7 @@ export const beaconPriceAt = (ladder: readonly number[], bought: number): number
  *
  * The node itself can only ever say what BUYING it does — "+1 Tacker
  * placement" — which is the shopkeeper's half of the question and not the
- * player's. The player is choosing between seventeen guns they have never
+ * player's. The player is choosing between twenty-one guns they have never
  * fired, so the card has to say what the gun DOES: how it delivers damage,
  * and the one quirk that decides where it wants to stand.
  *
@@ -2199,6 +2411,11 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   repeater: "Shoots heavy bullets from two barrels without stopping.",
   furnace: "Holds a laser that sets everything in its path on fire.",
   railhead: "Shoots one huge railgun shot with a long reload.",
+  duster: "Spits gas over a long distance, poisoning what it hits.",
+  blighter: "Lobs a canister that bursts into a huge cloud of poison.",
+  drifter:
+    "Fires one slow cloud that drifts far past its target, poisoning everything it passes over. Very long reload.",
+  stinger: "Shoots poisoned needles without stopping, stacking the poison as fast as it fires.",
 };
 
 /**

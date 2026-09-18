@@ -17,7 +17,7 @@ rock shelf in the middle of a plain.
 A placement pattern makes the shelf itself an ingredient. Two consequences
 worth having:
 
-- **The same seventeen turrets play differently per map**, without a line of
+- **The same turrets play differently per map**, without a line of
   balance work. A map with a long thin ridge is a tacker map; a map with a
   four-wide seam over the choke is a repeater map. The author decides by
   drawing, not by writing a rule.
@@ -76,7 +76,7 @@ is a chore you perform before the wave. Four guards, all used below:
 2. **Vary the shape.** A run, a block, a shoreline, an *empty* neighbourhood —
    five turrets wanting five different shapes cannot all be satisfied at once
    on one shelf.
-3. **Two of the seventeen want solitude.** Airburst and railhead are worse
+3. **Two of them want solitude.** Airburst and railhead are worse
    when packed, which is the ISLANDERS lever and the only thing that makes a
    sprawling defence beat a dense one.
 4. **Orthogonal only, footprint-relative.** Diagonals double the neighbour

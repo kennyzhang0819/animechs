@@ -63,6 +63,10 @@ export const FOUNDRY_HEAD_URLS: Readonly<Partial<Record<TowerKind, string>>> = {
   repeater: `${F}/repeater.png`,
   furnace: `${F}/furnace.png`,
   railhead: `${F}/railhead.png`,
+  duster: `${F}/duster.png`,
+  blighter: `${F}/blighter.png`,
+  drifter: `${F}/drifter.png`,
+  stinger: `${F}/stinger.png`,
 };
 
 /** the head's file for a kind, or null where there is none */

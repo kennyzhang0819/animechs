@@ -765,6 +765,10 @@ export const UV_WHIRL = top("whirl", 96);
 export const UV_REPEATER = top("repeater", 128);
 export const UV_FURNACE = top("furnace", 128);
 export const UV_RAILHEAD = top("railhead", 128);
+export const UV_DUSTER = top("duster", 64);
+export const UV_BLIGHTER = top("blighter", 128);
+export const UV_DRIFTER = top("drifter", 96);
+export const UV_STINGER = top("stinger", 128);
 export const UV_TOWER_BASE4 = flat("tower-base-4", 128);
 /**
  * The blocks that never turn keep the heading they were drawn at: the
@@ -844,6 +848,17 @@ export const UV_SHELL_BACK = sprite("shell-back", 36, 36);
 // the third pair: hive's warhead. 36x36 like the shell, and the same rule
 export const UV_MISSILE = sprite("missile", 36, 36);
 export const UV_MISSILE_BACK = sprite("missile-back", 36, 36);
+/**
+ * THE FOURTH PAIR, AND THE ONE WITH NO MINDUSTRY FILE BEHIND IT: the
+ * toxin line's canister (canisterBullet), drawn here at pack time the way
+ * the beacon's mast is. One pair, three guns — duster's dart, blighter's
+ * lobbed drum and the cylinder tumbling in the middle of drifter's field
+ * are this shape at three sizes in one colour, exactly as tacker's pellet
+ * and repeater's slug are both `bullet`. Same rule as the three above:
+ * white, source size, facing +x.
+ */
+export const UV_CANISTER = sprite("canister", 36, 36);
+export const UV_CANISTER_BACK = sprite("canister-back", 36, 36);
 /**
  * THE SWARM'S OWN BULLET SPRITES, on the same rule — white, source size,
  * facing +x, the `-back` beside its front:
@@ -2417,6 +2432,10 @@ const SPRITES = {
   foundryRepeater: FOUNDRY_HEAD_URLS.repeater!,
   foundryFurnace: FOUNDRY_HEAD_URLS.furnace!,
   foundryRailhead: FOUNDRY_HEAD_URLS.railhead!,
+  foundryDuster: FOUNDRY_HEAD_URLS.duster!,
+  foundryBlighter: FOUNDRY_HEAD_URLS.blighter!,
+  foundryDrifter: FOUNDRY_HEAD_URLS.drifter!,
+  foundryStinger: FOUNDRY_HEAD_URLS.stinger!,
   spawnPad: `${ENV}/dark-panel-2.png`,
   markPad: `${ENV}/dark-metal1.png`,
   towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
@@ -2770,7 +2789,7 @@ function liquidTurret(
  *
  * SO THE DESIGN IS A SILHOUETTE AND ONE FEATURE:
  *
- *   A DIAMOND, corner to corner. Not one of the nineteen turret heads is a
+ *   A DIAMOND, corner to corner. Not one of the turret heads is a
  *   diamond — they are all snouts and drums — so the shape alone says
  *   "this is not a gun" from across the board, at any zoom, before a single
  *   interior detail resolves. The plate underneath says "this is a
@@ -2787,6 +2806,50 @@ function liquidTurret(
  *   says. It is also the lamp the vision ring is meant to be coming from
  *   (constants.ts BEACON_VISION_R), so it wants to look lit.
  */
+/**
+ * THE TOXIN LINE'S ROUND, drawn rather than loaded: a gas canister, nose
+ * up like every bullet source, white for the two tint passes that draw it
+ * (BasicBulletType.draw lays `back` under `front` on one rect).
+ *
+ * WHAT MAKES IT READ AS A CANISTER AND NOT A BULLET is the two things a
+ * bullet has not got: a nozzle standing off the nose, and a STRAP cut
+ * clean through the front shape at the waist, so the back colour shows
+ * through it as a dark band. A hole, not a second sprite — the pair is
+ * two regions and the rim between them is the whole of the shading.
+ */
+function canisterBullet(back: boolean): HTMLCanvasElement {
+  const S = 36;
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = S;
+  const c = cv.getContext("2d");
+  if (!c) throw new Error("2d context unavailable for the canister round");
+  c.imageSmoothingEnabled = false;
+  c.fillStyle = "#ffffff";
+  // the back silhouette is the longer of the two by three px all round,
+  // which is the rim Mindustry's own pairs show fore and aft
+  const b = back ? 3 : 0;
+  const rr = (x0: number, y0: number, x1: number, y1: number, r: number): void => {
+    c.beginPath();
+    c.moveTo(x0 + r, y0);
+    c.arcTo(x1, y0, x1, y1, r);
+    c.arcTo(x1, y1, x0, y1, r);
+    c.arcTo(x0, y1, x0, y0, r);
+    c.arcTo(x0, y0, x1, y0, r);
+    c.closePath();
+    c.fill();
+  };
+  rr(11 - b, 9 - b, 25 + b, 29 + b, 5 + b);   // the drum
+  c.fillRect(15 - b, 4 - b, 6 + b * 2, 8);    // the nozzle off its nose
+  c.fillRect(13 - b, 27, 10 + b * 2, 3 + b);  // the foot at the tail
+  if (!back) {
+    // the strap, cut through to the round's dark half
+    c.globalCompositeOperation = "destination-out";
+    c.fillRect(10, 17, 16, 3);
+    c.globalCompositeOperation = "source-over";
+  }
+  return cv;
+}
+
 function beaconBlock(): HTMLCanvasElement {
   const S = 96;
   const cv = document.createElement("canvas");
@@ -3677,6 +3740,8 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   draw(UV_SHELL_BACK, antialiased(img.shellBack));
   draw(UV_MISSILE, antialiased(img.missile));
   draw(UV_MISSILE_BACK, antialiased(img.missileBack));
+  draw(UV_CANISTER, antialiased(canisterBullet(false)));
+  draw(UV_CANISTER_BACK, antialiased(canisterBullet(true)));
   draw(UV_CIRCLE_BULLET, antialiased(img.circleBullet));
   draw(UV_CIRCLE_BULLET_BACK, antialiased(img.circleBulletBack));
   draw(UV_MINE_BULLET, antialiased(img.mineBullet));
@@ -3771,6 +3836,12 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   draw(UV_REPEATER, headArt("foundryRepeater", () => outlinedBlock(img.repeater)));
   draw(UV_FURNACE, headArt("foundryFurnace", () => outlinedBlock(img.furnace)));
   draw(UV_RAILHEAD, headArt("foundryRailhead", () => outlinedBlock(img.railhead)));
+  // the toxin line has no stock block behind it: with the flag off the four
+  // borrow the head their icon does (towerIcons.ts)
+  draw(UV_DUSTER, headArt("foundryDuster", () => outlinedBlock(img.torch)));
+  draw(UV_BLIGHTER, headArt("foundryBlighter", () => outlinedBlock(img.lobber)));
+  draw(UV_DRIFTER, headArt("foundryDrifter", () => outlinedBlock(img.deluge)));
+  draw(UV_STINGER, headArt("foundryStinger", () => outlinedBlock(img.autocannonPreview)));
   // the liquid turrets, composited flat (see liquidTurret)
   // (a Foundry tank carries its water window in the drawing)
   draw(UV_DOUSER, headArt("foundryDouser", () => antialiased(liquidTurret(img.douser, img.douserLiquid, img.douserTop))));

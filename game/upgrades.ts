@@ -1037,6 +1037,13 @@ export const TURRET_UPGRADES: Record<TowerKind, readonly TurretUpgradeDef[]> = {
   repeater: REPEATER,
   furnace: FURNACE,
   railhead: RAILHEAD,
+  // the toxin line has no branch yet: the rungs are off the track
+  // altogether (track.ts UPGRADES_ON_TRACK), so a gun without one is
+  // handed over exactly as complete as a gun with one
+  duster: [],
+  blighter: [],
+  drifter: [],
+  stinger: [],
 };
 
 /** every upgrade def, flat — what tech.ts turns into nodes */

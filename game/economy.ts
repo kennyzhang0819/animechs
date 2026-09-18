@@ -140,6 +140,7 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
   torch: 1,
   lobber: 1,
   coil: 1,
+  duster: 1,
   fixer: 1,
   autocannon: 2,
   airburst: 2,
@@ -147,14 +148,17 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
   douser: 2,
   tether: 2,
   hive: 2,
+  blighter: 2,
   restorer: 2,
   cleaver: 3,
   barrage: 3,
   deluge: 3,
   whirl: 3,
+  drifter: 3,
   repeater: 4,
   furnace: 4,
   railhead: 4,
+  stinger: 4,
 };
 
 /**

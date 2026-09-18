@@ -1,7 +1,7 @@
 /**
  * THE TURRET ART SWITCH.
  *
- * On, the seventeen turret heads draw as FOUNDRY (game/turretArt.ts): one
+ * On, the twenty-one turret heads draw as FOUNDRY (game/turretArt.ts): one
  * gunmetal plating, a silhouette a kind, an accent per ammo — generated
  * at load and packed over the stock cells (game/atlas.ts), with the
  * stock base plates darkened under them. The HUD's turret pictures and

@@ -34,6 +34,12 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   repeater: `${T}/spectre.png`,
   furnace: `${T}/meltdown.png`,
   railhead: `${T}/foreshadow.png`,
+  // the toxin line is authored art with no block behind it (turretArt.ts),
+  // so with the flag off these four borrow the nearest stock silhouette
+  duster: `${T}/scorch.png`,
+  blighter: `${T}/hail.png`,
+  drifter: `${T}/tsunami.png`,
+  stinger: `${T}/salvo/salvo-preview.png`,
 };
 
 export const structIcon = (kind: TowerKind): string => TOWER_ICONS[kind];

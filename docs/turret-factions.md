@@ -1,6 +1,6 @@
 # Foundry: the player's turret set
 
-The seventeen turrets started as Mindustry's, sprite for sprite
+Seventeen of the twenty-one turrets started as Mindustry's, sprite for sprite
 (`public/mindustry/README.md`: placeholder art, GPL, to be replaced). The
 swarm stopped being Mindustry's first (`docs/unit-art.md`), then the
 heads, and now the names: every kind says what the gun DOES — tacker,
@@ -77,7 +77,11 @@ assumed:
   tubes; barrage four ringed mouths; deluge the great tank with twin
   nozzles; whirl a rotary cluster on a banded drum; repeater long twin
   barrels with radiator rails; furnace one lens and three capacitor
-  banks; railhead a single rail with accelerator rings.
+  banks; railhead a single rail with accelerator rings. The toxin line
+  (`docs/elements.md`) vents rather than fires: duster one tall nozzle on a
+  gas tank; blighter a wide canister mouth over a hopper; drifter a vent out
+  over the shoulders of a blower drum; stinger a bank of four needles on a
+  flat breech.
 - **One metal, one accent per ammo.** The body is gunmetal
   (`#4d4e58 / #7b7b7b`, the barrage's and the repeater's), the barrels steel
   (`#c1c3d4 / #f4f4f4`, the piercer's), a bore `#2c2d38`. The accent is
@@ -88,15 +92,22 @@ assumed:
   | accent | pair | kinds |
   | --- | --- | --- |
   | copper, a bullet | `#8f665b / #c9a58f` | tacker, autocannon, repeater |
-  | brass, a shell | `#d99f6b / #f3e979` | lobber, barrage |
+  | brass, a shell | `#d99f6b / #f3e979` | lobber, barrage, railhead |
   | ember, flame | `#ec7458 / #ff9c5a` | torch, cleaver |
-  | blue, a beam | `#6974c4 / #8aa3f4` | coil, piercer, furnace, railhead |
+  | blue, a beam | `#6974c4 / #8aa3f4` | coil, piercer, furnace |
   | water | `#3f4c96 / #5c6dbb` | douser, deluge |
   | mint, a field | `#4fa88a / #8fe0b8` | tether |
   | salmon, a missile or flak | `#da6b68 / #feb380` | airburst, hive, whirl |
+  | green, gas | `#3d7a2e / #7cd64a` | duster, blighter, drifter, stinger |
 
-  A player learns seven colours and reads a formation's job across the
-  map.
+  Railhead is brass and not the beam blue it used to be: its rail is
+  drawn in `Pal.bulletYellowBack / bulletYellow`, the warm slug, and the
+  accent is the colour of the SHOT, not of the instant line it travels as.
+
+  A player learns eight colours and reads a formation's job across the
+  map. The green is the one accent with a colour of the SWARM's anywhere
+  near it — the Venom spitters' acid `#d4ff3a` — and the two are kept apart
+  by the yellow: the swarm's rot is a chartreuse, the line's a mid green.
 
 A NAME SAYS THE JOB, AND THE NAME IS THE KEY. `roster.json` used to
 carry a caption column of proposed names while the stock kind still ran
@@ -117,7 +128,7 @@ one head that lost its barrels: it throws shards a few tiles, and three
 gun tubes said sniper, so it is a drum with one blast face as wide as
 itself and a heat band where the face meets the drum. The hive, which
 had four round tubes and a rail, is a steel box of four missile cells.
-All eighteen render through the same run check with none flagged.
+All twenty-two render through the same run check with none flagged.
 
 ### The core
 
@@ -132,7 +143,7 @@ and it is square to the sprite's edge with no chamfer and no margin: a
 core is a slab of ground the player holds, not a turret standing on a
 plate. It is also the one drawing with metals of its own — slate
 `#343846 / #4e5464` and iron `#5a5f6e / #8b90a0`, a step either side of
-gunmetal — which is what keeps it from reading as a seventeenth head
+gunmetal — which is what keeps it from reading as one more head
 among the turrets parked around it; a head is still gunmetal, steel and a
 bore. While the flag is on the atlas packs it in place of the nucleus and
 its overlay; off, the stock composite comes back.
@@ -188,7 +199,7 @@ turrets byte for byte.
 
 `scripts/turret-concepts.mjs` imports the roster from the game module,
 so a re-render starts from the same parts the heads were built out of;
-`npm run gen:turrets` fills in any of the eighteen that is missing from
+`npm run gen:turrets` fills in any of the twenty-two that is missing from
 `docs/turret-concepts/` and reports any run under four pixels, and
 `FORCE=1 npm run gen:turrets` redraws the lot from the code, which is
 the normal way to put an edit to the heads on the sheet.

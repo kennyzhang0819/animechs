@@ -55,14 +55,17 @@ export const BUILD_COLS = 4;
 
 /**
  * THE KEYS, in the grid's reading order — row by row, dodging the digits
- * and WASD (the camera). Seventeen turrets need five rows of four.
+ * and WASD (the camera). Twenty-one turrets need six rows of four, and
+ * the letters ran out at twenty: the last row borrows the three keys to
+ * the right of L, whose printed label is not their code.
  */
-const GRID_KEYS: readonly string[] = [
+const GRID_KEYS: readonly (string | readonly [label: string, code: string])[] = [
   "Q", "E", "R", "T",
   "F", "G", "H", "J",
   "Z", "X", "C", "V",
   "Y", "U", "I", "O",
   "B", "N", "M", "P",
+  "K", "L", [";", "Semicolon"], [",", "Comma"],
 ];
 
 /**
@@ -74,6 +77,7 @@ export const MINDUSTRY_VALUE: Record<TowerKind, number> = {
   tacker: 17.5,
   torch: 34.5,
   lobber: 37,
+  duster: 52,
   coil: 60,
   airburst: 74,
   douser: 132.5,
@@ -83,13 +87,16 @@ export const MINDUSTRY_VALUE: Record<TowerKind, number> = {
   hive: 152.5,
   piercer: 157,
   autocannon: 180,
+  blighter: 200,
   barrage: 270,
   tether: 288,
   whirl: 329,
   cleaver: 447.5,
+  drifter: 600,
   deluge: 790,
   repeater: 1552.5,
   furnace: 1795,
+  stinger: 2000,
   railhead: 2500,
 };
 
@@ -101,9 +108,10 @@ export const BY_MINDUSTRY_VALUE: readonly TowerKind[] = [...FIELDED_KINDS].sort(
 );
 
 /** the grid: one slot per turret in roster order, the rest empty */
-export const BUILD_SLOTS: readonly (BuildSlot | null)[] = GRID_KEYS.map((key, i) => {
+export const BUILD_SLOTS: readonly (BuildSlot | null)[] = GRID_KEYS.map((k, i) => {
   const kind = BY_MINDUSTRY_VALUE[i];
-  return kind ? { kind, key, code: `Key${key}` } : null;
+  const [key, code] = typeof k === "string" ? [k, `Key${k}`] : k;
+  return kind ? { kind, key, code } : null;
 });
 
 /** the slot a physical key opens, or null — what the keyboard handler reads */

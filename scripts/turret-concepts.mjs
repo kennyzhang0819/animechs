@@ -54,7 +54,8 @@ export const ROSTER = {
   autocannon: [2, "bullet"], airburst: [2, "missile"], piercer: [2, "beam"], douser: [2, "water"],
   tether: [2, "field"], hive: [2, "missile"],
   cleaver: [3, "flame"], barrage: [3, "shell"], deluge: [3, "water"], whirl: [3, "missile"],
-  repeater: [4, "bullet"], furnace: [4, "beam"], railhead: [4, "beam"],
+  repeater: [4, "bullet"], furnace: [4, "beam"], railhead: [4, "shell"],
+  duster: [1, "toxin"], blighter: [2, "toxin"], drifter: [3, "toxin"], stinger: [4, "toxin"],
 };
 
 // ── render, and refuse a thin run ──────────────────────────────────────

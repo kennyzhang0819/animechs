@@ -258,30 +258,44 @@ export const STARTING_ROSTER: readonly TowerKind[] = [
  * decision and not an arithmetic on build cost. Index 0 is level 2.
  */
 const UNLOCKS: Readonly<Record<number, readonly TowerKind[]>> = {
-  // LEVEL 2 CARRIES TWO, and it is the only row that does. A first clear
-  // should widen more than one button: the torch widens tier 1 and the
+  // THE OPENING THREE ROWS CARRY TWO EACH, and they are the only ones that
+  // do. The first clears are where a save has the fewest faces behind each
+  // button, so they widen two at a time: the torch widens tier 1 and the
   // airburst widens tier 2, so the row after the opening changes what BOTH
   // of the affordable bands turn over. The two fixers that used to lead
   // this list are retired (types.ts RETIRED_KINDS) and no level hands one out
   2: ["torch", "airburst"],
-  3: ["lobber"],
-  4: ["coil"],
-  // ...then the rest of the 2x2s, the band a run spends most of its middle in
-  5: ["piercer"],
-  6: ["douser"],
-  7: ["hive"],
+  // ...and level 3 pairs the lobber with the CLEAVER, which is the one row
+  // that hands over a band a save cannot yet afford: a tier-4 block is
+  // 270,000, so what this widens is what the 4 button will turn over long
+  // before the bank can press it
+  3: ["lobber", "cleaver"],
+  // level 4 opens the 2x2s two at a time — the band a run spends most of
+  // its middle in, so it is the one worth having a choice in early
+  4: ["coil", "piercer"],
+  5: ["douser"],
+  6: ["hive"],
   // THE UPPER TWO ARE SPREAD AND INTERLEAVED. A save already owns one gun
   // of each of them (STARTING_ROSTER), so what these rows widen is WHICH
   // gun the button turns over — and a band that arrived all at once would
   // spend that whole question in two clears. The whirl leads because it is
-  // the tier-3 answer to air the barrage is not; the railhead closes the
-  // roster two levels before the phase ends
-  8: ["whirl"],
-  9: ["tether"],
-  10: ["cleaver"],
-  11: ["furnace"],
-  12: ["deluge"],
-  13: ["railhead"],
+  // the tier-3 answer to air the barrage is not; the railhead closes
+  // Serpulo's half of the roster
+  7: ["whirl"],
+  8: ["tether"],
+  9: ["furnace"],
+  10: ["deluge"],
+  11: ["railhead"],
+  // ...AND THEN THE TOXIN LINE, WHICH ARRIVES AS A LINE. Four guns that
+  // do one thing (docs/elements.md) and one of them in every band, so
+  // dealing them by footprint alongside the rest would scatter a set the
+  // player only understands held together. They close the phase instead,
+  // cheapest first: the 1x1 is a late gun in a band the save has owned
+  // since level 1, and what it widens is what the 1 button turns over
+  12: ["duster"],
+  13: ["blighter"],
+  14: ["drifter"],
+  15: ["stinger"],
 };
 
 
@@ -409,8 +423,8 @@ const TURRETS_DEALT = dealTurrets();
   }
   // ...AND THE ROWS ARE UNBROKEN FROM 2. One gun a level is the rule the
   // phase is dealt by, so a hole in the run is the failure to catch — the
-  // roster is allowed to finish before the phase does (it does, at 14), but
-  // it may not skip a row on the way there
+  // roster may finish before the phase does (it fills it exactly today),
+  // but it may not skip a row on the way there
   Object.keys(UNLOCKS)
     .map(Number)
     .sort((a, b) => a - b)

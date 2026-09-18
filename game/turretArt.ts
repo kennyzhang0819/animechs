@@ -57,7 +57,7 @@ export const rev = (m: Mat): Mat => [m[1], m[0]];
 export const GUN_R: Mat = rev(GUN);
 /** THE CORE'S TWO METALS, and nowhere else: the building the swarm walks
  *  at is not a turret, and a slab a step darker than gunmetal with a
- *  lighter course inside it is what separates it from the seventeen heads
+ *  lighter course inside it is what separates it from the twenty-one heads
  *  standing around it. A head is still gunmetal, steel and a bore */
 export const SLATE: Mat = ["#343846", "#4e5464"];
 export const IRON: Mat = ["#5a5f6e", "#8b90a0"];
@@ -68,7 +68,7 @@ export const IRON: Mat = ["#5a5f6e", "#8b90a0"];
  * player's own amber, the colour the core is drawn in and the colour every
  * selection ring and price on the HUD is written in. Nothing else in the
  * roster is that hue, which is the point: a mast should be findable on a
- * board of seventeen gunmetal heads at a glance.
+ * board of twenty-one gunmetal heads at a glance.
  */
 export const POWER: Mat = ["#f6a53a", "#ffd37f"];
 /**
@@ -80,7 +80,7 @@ export const POWER: Mat = ["#f6a53a", "#ffd37f"];
 export const MAST: Mat = ["#2f3442", "#48505f"];
 
 /** what a turret throws, and the colour it wears for it */
-export type AmmoGroup = "bullet" | "shell" | "flame" | "beam" | "water" | "field" | "missile";
+export type AmmoGroup = "bullet" | "shell" | "flame" | "beam" | "water" | "field" | "missile" | "toxin";
 export const ACCENT: Record<AmmoGroup, Mat> = {
   bullet: ["#8f665b", "#c9a58f"], // copper — the tacker's own body
   shell: ["#d99f6b", "#f3e979"], // brass — the whirl's and railhead's
@@ -89,6 +89,7 @@ export const ACCENT: Record<AmmoGroup, Mat> = {
   water: ["#3f4c96", "#5c6dbb"], // Liquids.water, darker than the beam
   field: ["#4fa88a", "#8fe0b8"], // mint, the one hue no stock turret uses
   missile: ["#da6b68", "#feb380"], // the barrage's and hive's salmon
+  toxin: ["#3d7a2e", "#7cd64a"], // the toxin line's green, and never the swarm's acid
 };
 
 /** every channel of the stock base plate times this: still grey, a step
@@ -196,10 +197,10 @@ export function bars(P: Pen, x0: number, x1: number, y: number, n: number, h: nu
 // ── the roster ─────────────────────────────────────────────────────────
 /** the kinds with a drawing: every turret but the retired fixers */
 export const TURRET_ART_KINDS = [
-  "tacker", "lobber", "torch", "coil",
-  "autocannon", "airburst", "piercer", "douser", "tether", "hive",
-  "cleaver", "barrage", "deluge", "whirl",
-  "repeater", "furnace", "railhead",
+  "tacker", "lobber", "torch", "coil", "duster",
+  "autocannon", "airburst", "piercer", "douser", "tether", "hive", "blighter",
+  "cleaver", "barrage", "deluge", "whirl", "drifter",
+  "repeater", "furnace", "railhead", "stinger",
 ] as const;
 export type TurretArtKind = (typeof TURRET_ART_KINDS)[number];
 /** size in cells, and what it throws */
@@ -208,7 +209,9 @@ export const ROSTER: Record<TurretArtKind, { size: 1 | 2 | 3 | 4; ammo: AmmoGrou
   autocannon: { size: 2, ammo: "bullet" }, airburst: { size: 2, ammo: "missile" }, piercer: { size: 2, ammo: "beam" }, douser: { size: 2, ammo: "water" },
   tether: { size: 2, ammo: "field" }, hive: { size: 2, ammo: "missile" },
   cleaver: { size: 3, ammo: "flame" }, barrage: { size: 3, ammo: "shell" }, deluge: { size: 3, ammo: "water" }, whirl: { size: 3, ammo: "missile" },
-  repeater: { size: 4, ammo: "bullet" }, furnace: { size: 4, ammo: "beam" }, railhead: { size: 4, ammo: "beam" },
+  repeater: { size: 4, ammo: "bullet" }, furnace: { size: 4, ammo: "beam" }, railhead: { size: 4, ammo: "shell" },
+  duster: { size: 1, ammo: "toxin" }, blighter: { size: 2, ammo: "toxin" },
+  drifter: { size: 3, ammo: "toxin" }, stinger: { size: 4, ammo: "toxin" },
 };
 export type HeadFn = (P: Pen, A: Mat) => void;
 
@@ -354,6 +357,35 @@ export const HEADS: Record<TurretArtKind, HeadFn> = {
     P.box(52, 84, 76, 112, A);                            // the breech
     P.box(58, 90, 70, 106, STEEL);
     P.box(4, 70, 20, 110, STEEL);                         // a stabiliser
+  },
+  // the toxin line: a vent, not a muzzle, on every one of the four
+  duster(P, A) {                                         // one tall nozzle over a gas tank
+    P.octa(4, 12, 28, 28, 4, GUN);                        // the tank
+    P.box(8, 16, 24, 24, A);                              // the gas in it
+    barrel(P, 12, 20, 4, 16, A, { cap: 4 });              // the nozzle, on the midline
+    P.box(4, 4, 8, 12, STEEL);                            // a feed pipe at the edge
+  },
+  blighter(P, A) {                                       // a wide canister mouth over a hopper
+    P.octa(8, 22, 56, 58, 12, GUN);
+    P.box(12, 8, 52, 26, STEEL);                          // the mouth
+    P.box(18, 8, 46, 16, A);                              // the canister in it
+    P.box(20, 30, 44, 46, A);                             // the hopper
+    P.box(6, 25, 16, 42, A);                              // a rack on the flank
+  },
+  drifter(P, A) {                                        // a wide vent over a blower drum
+    P.octa(6, 30, 90, 90, 18, GUN);                       // the drum
+    P.box(14, 4, 82, 30, STEEL);                          // the vent, out over its shoulders
+    P.box(20, 4, 76, 14, A);                              // the gas at its mouth
+    P.octa(30, 40, 66, 82, 10, A);                        // the blower
+    P.box(40, 52, 56, 70, STEEL);                         // its hub
+    P.box(6, 54, 22, 68, A);                              // a tank on the rim
+  },
+  stinger(P, A) {                                        // a bank of needles over a flat breech
+    P.octa(10, 62, 118, 122, 20, GUN);
+    P.box(20, 34, 108, 84, A);                            // the breech they stand on
+    barrel(P, 22, 34, 4, 34, A, { cap: 10 });             // the outer needle
+    barrel(P, 44, 56, 4, 34, A, { cap: 10 });             // and its pair
+    P.box(6, 62, 26, 98, STEEL);                          // a coolant pod, out past the rim
   },
 };
 

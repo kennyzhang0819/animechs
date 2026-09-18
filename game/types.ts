@@ -1,9 +1,10 @@
 /**
- * Every Serpulo turret the campaign will ever field, in tech-tree order.
+ * Every turret the campaign will ever field: Serpulo's, in tech-tree
+ * order, and then the four authored ones that poison.
  *
  * EVERY ONE OF THEM IS IMPLEMENTED — real stats, real ammo, drawn on the
  * field. Two of them, the fixers, are RETIRED for now and dealt to nobody
- * (RETIRED_KINDS below); the other seventeen are what the deal draws from
+ * (RETIRED_KINDS below); the other twenty-one are what the deal draws from
  * (rarity.ts) and what the track hands out. The late five were stubs
  * carrying a tacker's bullet until they were given their own: hive's
  * homing missiles, whirl's fragmenting flak, repeater's piercing twin
@@ -45,6 +46,13 @@ export const TOWER_KINDS = [
   "repeater",
   "furnace",
   "railhead",
+  // THE TOXIN LINE, one gun a footprint and the only turrets that poison
+  // (docs/elements.md). Nothing here is a Serpulo port: poison is a
+  // channel Mindustry's turrets never carried, so the four are authored
+  "duster",
+  "blighter",
+  "drifter",
+  "stinger",
 ] as const;
 export type TowerKind = (typeof TOWER_KINDS)[number];
 
