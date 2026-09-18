@@ -1,30 +1,28 @@
-# The skill tree
+# Upgrades — the global dials
 
-`game/skills.ts` is the tree, `game/progress.ts` holds what a save has bought, and
-`components/SkillTree.tsx` is the board — the **Tech** tab beside the track on the progress
-screen.
+The **Upgrades** tab, beside the track on the progress screen. `game/skills.ts` is the tree,
+`game/progress.ts` holds what a save has bought, and `components/SkillTree.tsx` is the board.
+
+The code says *skills* because `game/upgrades.ts` is something else — the shelved per-turret
+branches the level track used to deal. Upgrades is the word a player sees; skills is the word the
+files use, and the two never meet.
 
 ## The shape
 
-**Ten global dials, twenty ranks each.** A rank costs one point, and every rank of every node
+**Four global dials, twenty ranks each.** A rank costs one point, and every rank of every one
 applies to **every turret on the board** — there is no turret on this screen and no order to buy
-in. A point in Payload is a point every gun you will ever build gets.
+in. A point in Attack Damage is a point every gun you will ever build gets.
 
 | dial | a rank | maxed |
 | --- | --- | --- |
-| **Payload** | +2% damage, blast included | +40% |
-| **Cadence** | +2% attack speed | +40% |
-| **Reach** | +1.5% range, and the shot flies as far | +30% |
-| **Plating** | +1 armour — a flat shave off each hit | +20 |
-| **Hull** | +4% turret health | +80% |
-| **Blast Radius** | +2% splash radius | +40% |
-| **Stabilisers** | 2% less scatter | 40% less |
-| **Servos** | +3% traverse | +60% |
-| **Muzzle Velocity** | +2% shot speed, over the same ground | +40% |
-| **Penetrators** | a body punched through every four ranks | +5 bodies |
+| **Attack Damage** | +2% damage, blast included | +40% |
+| **Attack Speed** | +2% attack speed | +40% |
+| **Health** | +4% turret health | +80% |
+| **Range** | +1.5% range, and the shot flies as far | +30% |
 
-Penetrators is the one coarse dial, because pierce is a count of bodies and not a percentage: a
-rank cannot be a fifth of one, so four buy a body and the twentieth is the fifth of them.
+**Four, and they are the four a player already thinks in.** It was ten for a while — armour,
+blast radius, scatter, traverse, shot speed and pierce beside these — and the extra six were dials
+nobody had a plan for, which is a longer screen and not a bigger decision.
 
 **Nothing here regenerates.** A dial that put health back would be a different game — the answer
 to a chewed turret is the fixer and the restorer, which are cards a run buys.
@@ -42,8 +40,10 @@ the whole board is for, and nothing has to be explained.
 ## The points
 
 **One a level, levels 1 to 100** (`SKILL_POINT_LEVELS`, `economy.ts`), so a save holds at most
-100 and the tree wants 200. **It can never be filled**, which is the whole design: a hundred
-points over ten dials is a hand, not a checklist.
+100 and the tree wants **80** — four dials of twenty. A save fills it at level 81, and the
+nineteen levels above that pay a point with nothing left to spend it on. That is the standing
+consequence of cutting ten dials to four and it is a dial of its own: either `MAX_RANKS` goes up
+or `SKILL_POINT_LEVELS` comes down.
 
 The climb ramps to those hundred levels rather than charging a flat price for each —
 2,500 XP for the first and 500,000 for the hundredth, the whole of it about ninety-nine Nemesis

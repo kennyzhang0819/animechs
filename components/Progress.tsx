@@ -76,7 +76,7 @@ const CODEX_GLYPH =
 const TREE_GLYPH = "M11 21V11L6 8V4l5 3V2h2v9l5-3v4l-5 3v6z";
 const TABS = [
   { id: "track", label: "Progress", color: "#FFD37F", glyph: TRACK_GLYPH },
-  { id: "skills", label: "Tech", color: "#7BE58A", glyph: TREE_GLYPH },
+  { id: "skills", label: "Upgrades", color: "#7BE58A", glyph: TREE_GLYPH },
   { id: "codex", label: "Codex", color: MUT_LIT, glyph: CODEX_GLYPH },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];

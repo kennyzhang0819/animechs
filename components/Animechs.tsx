@@ -3037,7 +3037,7 @@ export default function Animechs() {
           // menu too, one step back
           onBack={techFrom === "game" ? backToMenu : leaveTech}
           backLabel={techFrom === "game" ? "Back to menu" : "Back"}
-          // the Tech tab spends and refunds points, which writes the save
+          // the Upgrades tab spends and refunds points, which writes the save
           onProgress={setProgress}
         />
       : null;
