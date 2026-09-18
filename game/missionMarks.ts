@@ -10,8 +10,13 @@
  */
 import type { Mission } from "./levels";
 
-/** what shape of thing an author places */
-export type MarkGeom = "point";
+/**
+ * WHAT SHAPE OF THING AN AUTHOR PLACES. A `point` is one footprint at
+ * `x`/`y`; a `path` is a polyline in `pts`, every leg of it on the
+ * eight-heading lattice (missions.ts, roadProblems) and `x`/`y` kept on
+ * the first corner so every reader that only wants a place has one.
+ */
+export type MarkGeom = "point" | "path";
 
 /**
  * ONE PLACED MARK, as the map document carries it (maps.ts MapData.marks).
@@ -23,6 +28,9 @@ export interface MapMark {
   kind: string;
   x: number;
   y: number;
+  /** a `path` mark's corners in cells, entry first and exit last. A road
+   *  runs off the rim at both ends, so these may lie off the board */
+  pts?: readonly (readonly [number, number])[];
   opts?: Record<string, string | number>;
 }
 
@@ -47,7 +55,9 @@ export type MarkField =
    *  "2-3,6". It is its own field kind rather than a free text box because
    *  a wave list is a real thing in this game and the parser belongs with
    *  it (parseWaves), not in whichever panel happens to render it. */
-  | { key: string; label: string; kind: "waves"; def: string };
+  | { key: string; label: string; kind: "waves"; def: string }
+  /** a short line of prose — what the objective panel calls this thing */
+  | { key: string; label: string; kind: "text"; def: string; max?: number };
 
 export interface MarkKind {
   id: string;
@@ -63,6 +73,10 @@ export interface MarkKind {
   /** cells of metal decking laid round the footprint, if this kind wants
    *  its ground to look prepared (renderer.rebuildTerrain). 0 for none */
   pad: number;
+  /** the int field, if any, that is a RADIUS IN CELLS round the mark: the
+   *  editor rings it, so a region an author sets as a number is a region
+   *  they can see the size of */
+  radiusField?: string;
   fields: readonly MarkField[];
 }
 
@@ -128,7 +142,89 @@ const BUFF_TOWER: MarkKind = {
   ],
 };
 
-export const MARK_KINDS: readonly MarkKind[] = [BUFF_TOWER];
+/**
+ * ONE RAILGUN EMPLACEMENT the siege stands up (levels.ts RazeMission) —
+ * the gun itself, on the cell an author put it on, pointing at the core.
+ *
+ * EVERY GUN IS PLACED, NOT RUNG. The region below used to carry a count
+ * and the sim spread that many guns round its radius; a ring is a shape,
+ * and where a gun stands is a decision about cover, approach and what a
+ * board has to walk past to reach it. So a gun is a mark, and how many
+ * rise is how many you drew.
+ *
+ * WHICH SECTION IT BELONGS TO is its `wave`, the same number a region
+ * carries: everything with that number rises together on the mission's
+ * clock (RazeMission.first/every).
+ */
+const RAILGUN: MarkKind = {
+  id: "railgun",
+  label: "Railgun",
+  missions: ["raze"],
+  geom: "point",
+  size: 4,
+  color: "#ff8a3a",
+  pad: 2,
+  fields: [{ key: "wave", label: "Rises in section", kind: "int", min: 1, max: 4, def: 1 }],
+};
+
+/**
+ * A GARRISON REGION over the guns (levels.ts RazeMission): the ground the
+ * Wardens hold, how far it reaches, and how many of each stand in it.
+ *
+ * IT STANDS NO GUNS ITSELF. The emplacements are their own marks
+ * (RAILGUN above); this is the circle round them that a board has to take
+ * to get at one — Sim.garrisonUnit leashes every body raised here to it,
+ * and the radius is both that leash and the ground they scatter over.
+ *
+ * SEVERAL MAY SHARE A SECTION, and everything with that `wave` rises
+ * together, so "two regions at once on the third" is two marks and not a
+ * new field.
+ */
+const BATTERY: MarkKind = {
+  id: "battery",
+  label: "Garrison region",
+  missions: ["raze"],
+  geom: "point",
+  size: 4,
+  color: "#ffb44a",
+  pad: 0,
+  radiusField: "radius",
+  fields: [
+    { key: "wave", label: "Rises in section", kind: "int", min: 1, max: 4, def: 1 },
+    { key: "radius", label: "Region radius", kind: "int", min: 8, max: 60, def: 26 },
+    { key: "bulwark", label: "Bulwarks", kind: "int", min: 0, max: 24, def: 2 },
+    { key: "lance", label: "Lances", kind: "int", min: 0, max: 24, def: 2 },
+  ],
+};
+
+/**
+ * A ROAD — the line a crosser walks (missions.ts): the Borers' lines on an
+ * intercept map, the convoy's on an escort one. The corners are the
+ * mark's `pts` and the map is where they live, so moving a road is a drag
+ * in the editor rather than an edit to a table of numbers.
+ *
+ * THE ORDER OF THE MARKS IS THE ORDER OF THE ROADS. A mission names a
+ * road by index (InterceptMission.pattern, EscortMission.pattern), so the
+ * first road mark on the document is road 0. Re-ordering them re-points
+ * the pattern, which is why the panel prints the index.
+ *
+ * EVERY LEG IS ON THE EIGHT-HEADING LATTICE and the editor snaps a
+ * dragged corner to it (editor.ts snapLattice) rather than letting one be
+ * drawn wrong and refused at load — see the note at the top of
+ * missions.ts for why the lattice is the rule.
+ */
+const ROAD: MarkKind = {
+  id: "road",
+  label: "Road",
+  missions: ["intercept", "escort"],
+  geom: "path",
+  size: 3,
+  color: "#7fd0ff",
+  pad: 0,
+  fields: [{ key: "name", label: "Name", kind: "text", def: "the line" }],
+};
+
+export const MARK_KINDS: readonly MarkKind[] = [BUFF_TOWER, RAILGUN, BATTERY, ROAD];
 
 /**
  * EVERY CELL OF METAL DECKING A MARK LAYS — its own footprint and the pad
@@ -149,7 +245,9 @@ export function forEachMarkPadCell(
   fn: (x: number, y: number) => void,
 ): void {
   const k = markKind(m.kind);
-  if (!k) return;
+  // a path lays no decking: a road is a line the board may build right up
+  // to, and `x`/`y` on one is its first corner rather than a footprint
+  if (!k || k.geom !== "point") return;
   const x0 = Math.max(0, m.x - k.pad), y0 = Math.max(0, m.y - k.pad);
   const x1 = Math.min(cols, m.x + k.size + k.pad);
   const y1 = Math.min(rows, m.y + k.size + k.pad);
@@ -182,6 +280,10 @@ export function markField(
   if (f.kind === "int") {
     const n = typeof had === "number" ? had : Number(had);
     return Number.isFinite(n) ? Math.max(f.min, Math.min(f.max, Math.round(n))) : f.def;
+  }
+  if (f.kind === "text") {
+    const t = typeof had === "string" ? had.trim() : "";
+    return t ? t.slice(0, f.max ?? 40) : f.def;
   }
   return typeof had === "string" && f.choices.some((c) => c.value === had) ? had : f.def;
 }

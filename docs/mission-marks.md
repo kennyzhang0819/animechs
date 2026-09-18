@@ -29,13 +29,19 @@ A mark in `public/maps/<id>.json`:
 
 ```jsonc
 "marks": [
-  { "kind": "buffTower", "x": 420, "y": 100, "opts": { "tower": "goad",    "waves": "2-7" } },
-  { "kind": "buffTower", "x":  83, "y": 338, "opts": { "tower": "bastion", "waves": "4-7" } }
+  { "kind": "buffTower", "x": 420, "y": 100, "opts": { "tower": "goad", "waves": "2-7" } },
+  { "kind": "railgun",   "x": 411, "y":  79, "opts": { "wave": 1 } },
+  { "kind": "road",      "x": -59, "y": 488, "pts": [[-59,488],[55,488],[216,327]],
+    "opts": { "name": "the south line" } }
 ]
 ```
 
 `x`/`y` are the **top-left cell** of the footprint, like a beacon's. `opts`
 is whatever that kind's fields say, and nothing else.
+
+A **path** kind carries `pts` as well — its corners, in cells, entry first
+and exit last — and keeps `x`/`y` on the first of them so every reader that
+only wants a place still has one.
 
 A `MarkKind` (`game/missionMarks.ts`) declares:
 
@@ -43,9 +49,11 @@ A `MarkKind` (`game/missionMarks.ts`) declares:
 |---|---|
 | `id` / `label` | what it is called, on disk and in the palette |
 | `missions` | which mission kinds understand it |
-| `size` | footprint in cells, square |
+| `geom` | `point` (one footprint at `x`/`y`) or `path` (a polyline in `pts`) |
+| `size` | footprint in cells, square — a path's is the size of the handle on each corner |
 | `color` | the ink it is drawn in, in the editor |
 | `pad` | cells of metal decking laid round it, so the ground reads as prepared |
+| `radiusField` | the int field, if any, that is a radius in cells: the editor rings it, so a region set as a number is one you can see the size of |
 | `fields` | the editable numbers and choices — **this is what builds the panel** |
 
 `fields` is the part that matters. The editor renders a control per field
@@ -143,12 +151,72 @@ Two marks may not overlap, and the save route refuses a document with an
 unknown kind or an off-board mark: the loader would drop it anyway, but a
 bad mark written into the repo file looks authored and quietly does nothing.
 
+## The kinds
+
+**`buffTower`** — the Goad and the Bastion the swarm plants on an intercept
+map. Which of the two, and every train wave the spot puts one up on.
+
+**`railgun`** — one emplacement on a raze map (`game/levels.ts`
+`RazeMission`), on the cell it was placed on, and which of the four
+sections it rises in. **Every gun is placed.** The ring the sim used to
+spread a count of guns round a post is gone: where a gun stands is a
+decision about cover and approach, so it is a mark, and how many rise is
+how many you drew.
+
+**`battery`** — a garrison region: which section it rises in, how far it
+reaches, and how many Bulwarks and Lances hold it. It stands no guns
+itself. The radius is the leash `Sim.garrisonUnit` holds every body raised
+there to, and the circle the overlay rings, so what an author sets is
+exactly what a player can see.
+
+**`road`** — the line a crosser walks (`game/missions.ts`): the Borers'
+lines on an intercept map, the convoy's on an escort one. Its corners are
+`pts` on the mark, and the marks' order is the roads' order, because a
+mission names a road by index (`InterceptMission.pattern`). See **Drawing a
+road** below.
+
+These are the kinds that supply a mission's geometry *and* its counts.
+`missions.ts siegeFromMarks` turns the raze marks into the emplacements,
+the regions and one section per rising, and `levelWithMarks` puts those
+sections on the level — on **both sides of the seam** (`Sim.reset` and
+`simreads.ts World`), because everything that counts the siege counts it
+off `level.mission` (`levels.ts razeGuns`) and the two halves must agree.
+`roadsFor` does the same for the lines. A map that carries none of them
+falls back to `POST_SPECS` / `ROAD_SPECS` and the sections written in the
+level — both of those tables are empty today.
+
+Several marks may name the **same section**: everything with that number
+rises together, on the same tick of the mission's clock, so "two regions
+and five guns on the third" is seven marks and not a new field. The clock
+itself — `first` and `every` — stays in the mission spec, because when a
+siege starts is not a fact about the ground.
+
+## Drawing a road
+
+Pick **Road** in the Mission group, then click the map. The first click
+starts a line; each one after it adds a corner; clicking the last corner
+again, or pressing **Enter**, or picking another brush, finishes it.
+
+- **Every leg is snapped to the eight-heading lattice** as you draw and as
+  you drag (`editor.ts snapLattice`): a corner in the middle of a line is
+  constrained from both sides, so the places it may stand are the
+  intersections of a ray out of the corner before it with one out of the
+  corner after — 64 pairs, less the parallel ones and the ones that meet on
+  a half cell. Dragging cannot produce a line the loader would refuse.
+- **Drag a corner** to move it. **Click a leg** to put a new corner in
+  there. The **eraser** takes a corner off, and takes the whole road off
+  once it is down to the two a line needs.
+- **A road runs off the rim at both ends** (`missions.ts`), so its end
+  corners are not clamped to the board — drag one past the edge and it
+  stays there. Only the corners in between have to be on the map.
+- The selected road prints its index and name at the entry, and anything
+  the lattice refuses in red under it.
+
 ## Where this goes next
 
-The two road missions' geometry is still in `game/missions.ts`: Coldline's
-Borer lines and Thornway's rail path and halts. They are the obvious next
-marks — a `road` kind with a polyline geom and the lattice rule as its
-validation, a `halt` kind carrying a fraction of a road — and the registry
-is shaped for them (`MarkGeom` is a union with one member today for exactly
-that reason). Moving them is a migration of two working missions and is
-deliberately not bundled with the towers.
+The escort's **halts** are still numbers in `game/levels.ts` — fractions of
+the road the cart stops at. They are the obvious next mark: a `halt` kind
+carrying a fraction, or a point snapped onto the road it belongs to, so the
+place a cart stands and the ground defending it are drawn together. The
+clocks stay in the mission spec either way: when a thing happens is not a
+fact about the ground.

@@ -556,12 +556,16 @@ export default function MapEditorView({
                         <option key={c.value} value={c.value}>{c.label}</option>
                       ))}
                     </select>
-                  ) : f.kind === "waves" ? (
+                  ) : f.kind === "waves" || f.kind === "text" ? (
                     <input
                       type="text"
                       value={String(picked.opts[f.key] ?? f.def)}
-                      placeholder="2-7"
-                      title={'Which train waves this spot raises a tower on: "2-7", "2,4,6", "2-3,6"'}
+                      placeholder={f.kind === "waves" ? "2-7" : f.def}
+                      title={
+                        f.kind === "waves"
+                          ? 'Which train waves this spot raises a tower on: "2-7", "2,4,6", "2-3,6"'
+                          : undefined
+                      }
                       onChange={(e) => editorRef.current?.setMarkOpt(f.key, e.target.value)}
                       className="w-24 rounded bg-[#1A1A1F] px-1.5 py-0.5 text-right text-[15px] text-[#EDEDEF]"
                     />

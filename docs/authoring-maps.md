@@ -92,7 +92,7 @@ common, and what the generator is built to reproduce:
 on this game's document shape:
 
 1. **Rock from noise.** A domain-warped three-octave value noise, cut at
-   a threshold, with the rim pushed up so the border is always rock.
+   a threshold, with the rim pushed up so the border reads as rock.
    `rock.threshold` sets how much of the board is wall before anything is
    carved (lower is more rock); `scale` sets the size of the pockets and
    `warp` how far the contour is pushed around.
@@ -116,18 +116,13 @@ on this game's document shape:
    running a ruled canal. Named `chokes` pinch the open cells near a
    point to an exact width; the choke at the funnel point is a straight
    strip from the core through the funnel, carved as well as kept, so
-   that it and the citadel's gate are the same nine cells.
+   the mouth is a lane rather than whatever the brush happened to leave.
 5. **Distort, bays, cells.** A light domain warp takes the tube out of the
    brushed corridors; rock within a few cells of open ground is opened
    where a fine noise says so (`bays`), which is what puts the alcoves on
    a room; two passes of the 4-5 cellular rule take out the specks. Small
    `lumps` of rock are dropped into the wide rooms.
-6. **The citadel.** Where a `funnel` is named, the core's clearing is
-   ringed with rock and the ring has one gate, a corridor of the choke's
-   width toward the funnel point. A noise map is open in too many places
-   for "wall the mouth and nothing reaches the core" to come true by
-   luck; the ring makes it true by construction.
-7. **The minimum gap.** The biggest walker (an ironhide5) is four cells across
+6. **The minimum gap.** The biggest walker (an ironhide5) is four cells across
    and the biggest hull (a skate5) seven, so every THROUGH gap is at least
    `GAP_GROUND` (5) on land and `GAP_WATER` (11) at sea: a morphological
    opening by that disc silts every thinner gap shut. The notches the
@@ -137,16 +132,15 @@ on this game's document shape:
    refused: a notch may deepen an edge as far as it likes and may never
    become the bridge the opening just removed. Then open ground the core
    cannot be walked to from is filled (Mindustry's `inverseFloodFill`),
-   the rim is sealed, and on a map with water zones any pond nearer the
+   and on a map with water zones any pond nearer the
    core than the sea is drained. That rule was written when the sim sent
    every hull to the water nearest the core, whichever puddle that was; it
    is kept because a pond beside the core is still a place the naval line
    can be dropped into and cannot drive far out of.
-8. **Holes.** Thin walls between two open places are punched where the
-   hole shortens nobody's walk to the core by more than 15% and the
-   funnel still holds. A hole is texture and a second way in, never a
-   short cut.
-9. **Paint.** Floor families from a slow noise cut at its own quantiles,
+7. **Holes.** Thin walls between two open places are punched where the
+   hole shortens nobody's walk to the core by more than 15%. A hole is
+   texture and a second way in, never a short cut.
+8. **Paint.** Floor families from a slow noise cut at its own quantiles,
    so a `weight` is the fraction of the board that family covers; the
    wall over a rock cell is its family's `wall`. A `beach` floor rings the
    water; a `flats` floor fills the cells of the big rooms furthest from
@@ -157,29 +151,33 @@ on this game's document shape:
    open ground surrounds them. Clutter is each family's own boulder and
    bush, thick along the rock, thin in the open, never in a drop zone and
    never round the core.
-10. **Checks**, then the document.
+9. **Checks**, then the document.
 
 ## The campaign maps
 
-Nine specs, nine themes. Every one is `scripts/maps/<id>.mjs`.
+Four specs, four themes. Every one is `scripts/maps/<id>.mjs`. Five more —
+Greenwood, Tundra, Crater, Riverlands and Estuary — were deleted: they were
+shelved holds on undressed ground and nothing played them.
 
 | map | world | the place | the layout |
 | --- | --- | --- | --- |
 | Confluence | 1 | desert: sand, darksand, stone, a salt basin, two lakes | four gates on three edges flow into one antechamber before a core on the east edge |
 | Maelstrom | 2 | storm coast: the sea along the north and east | three ground gates walk the coast; the hulls sail down it to a bay under the core |
 | Quagmire | 3 | spore swamp: tainted lakes, a spore river, spore pines | three gates on the east, every road fords the river, the core on the west edge behind one causeway |
-| Greenwood | 4 | earthy: dirt roads under dirt cliffs, grass, pine stands, two lakes | four gates on three edges, the core in the north-east corner |
-| Tundra | 5 | snowy: snow, ice round two frozen lakes, shale, snow pines | four gates on the south corners and the sides, the core on the north edge |
-| Crater | 6 | basalt and darksand, the core in a crater in the middle | six gates round the edge, six mouths in the crater's rim, no funnel |
 | Shoals | 7 | archipelago: two thirds sea, sand islands, salt flats | roads between islands are bars of shallow; hulls from the north and south seas; the core on the west island |
-| Riverlands | 8 | grass, dirt and sand banks; three rivers meet in a pool beside a core in the middle | five ground gates from the north and the corners ford the rivers; hulls sail the rivers in |
-| Estuary | 9 | the sea fills the south, a river from the north-east, two lakes | four gates inland, the core on the north shore where the river opens out |
 
-Two of the nine have no funnel. Crater and Riverlands put the core in
-the middle of the board and let it be attacked from every side; their
-chokes are the mouths round the core's clearing rather than one gate,
-and the funnel check is simply not run. The other seven put the core in
-a pocket of rock with one mouth.
+All four name a funnel: it is the mouth the ground routes cross, and the
+choke there is ruled straight from the core through it. A map that puts
+its core in the middle and takes the swarm from every side names none,
+and its chokes are the mouths round the core's clearing instead.
+
+THE CORE IS NO LONGER WALLED IN. A ring of rock with one gate used to be
+stamped round every core that named a funnel — the citadel — which made
+"wall the mouth and nothing reaches the core" true by construction and
+left a machine-drawn C on eleven maps. It is gone: the ground round a
+core is whatever the noise and the rooms left there, the funnel is only
+the choke's ruled line now, and the mouth is as tight as the choke an
+author sets and no tighter.
 
 ## The spec
 
@@ -228,8 +226,7 @@ broken map. Every one of these is printed on every run:
   at when it does not. A route exists is not the question.
 - **No gate is a short cut.** The walks to the core from every ground
   zone are within 50% of each other.
-- **The funnel holds.** Wall it and no ground zone reaches the core.
-- **Open == reachable.** No orphan pocket; the rim is sealed.
+- **Open == reachable.** No orphan pocket.
 - **Composition.** Open ground between 15% and 45% of the board, the
   floor families' shares, forest, water, holes, lumps, ruins, props.
 - **Room to build.** More than 8,000 rock cells and more than 200 4x4

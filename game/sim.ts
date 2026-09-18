@@ -140,6 +140,7 @@ import {
   missionProgress,
   missionTarget,
   razeGuns,
+  razeWave,
   type RazeSection,
   unitName,
   BASTION_CUT,
@@ -256,7 +257,10 @@ import {
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
 import { markKind, parseWaves } from "./missionMarks";
-import { postProblems, postsFor, roadAt, roadProblems, roadsFor, type Post, type Road } from "./missions";
+import {
+  levelWithMarks, postProblems, postsFor, roadAt, roadProblems, roadsFor, siegeFromMarks,
+  type MarkSiege, type Post, type Road,
+} from "./missions";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
 import { countSensitive } from "./upgrades";
 import {
@@ -386,7 +390,8 @@ const HOMING_REPICK = 6 / 60;
  *  disturb a removal still pending above (updateProjectiles) */
 const PROJ_DESC = (a: number, b: number): number => b - a;
 /** an ammo's shape as bits, one byte a table slot (updateProjectiles) */
-const BF_HOMING = 1, BF_PUFF = 2, BF_TRAIL = 4, BF_FLAK = 8, BF_ARTILLERY = 16, BF_SPLASH = 32, BF_FRAG = 64;
+const BF_HOMING = 1, BF_PUFF = 2, BF_TRAIL = 4, BF_FLAK = 8, BF_ARTILLERY = 16, BF_SPLASH = 32, BF_FRAG = 64,
+  BF_CLOUD = 128;
 /**
  * Footfall dust gets 140 of those and no more — a fixed slice, not a share,
  * so raising the budget above buys room for shots rather than for grit. It
@@ -1613,6 +1618,13 @@ export class Sim {
    * cascade, and a count kept at the kill would miss two of those.
    */
   private razeRisen = 0;
+  /**
+   * THE SIEGE THE MAP CARRIES, or null where it carries none and the
+   * mission's own sections are what rises (missions.ts siegeFromMarks).
+   * Every emplacement is a place an author put a gun and every garrison a
+   * region they drew round one, so neither is derived from the other.
+   */
+  private siege: MarkSiege | null = null;
   /** railguns destroyed — the mission's whole objective */
   razeKilled = 0;
   /** the posts this map carries (missions.ts), empty on every other map */
@@ -2583,23 +2595,65 @@ export class Sim {
     this.convoyEnd = mission.kind !== "escort";
     this.convoyBest = 0;
     // ...and a RAZE reads the map's POSTS the way the other two read its
-    // roads (missions.ts): the schedule is the mission's and the places
-    // are the terrain's, so a siege put on a map with nowhere to stand
-    // says so at load instead of quietly raising nothing
+    // roads — but off the terrain rather than off the id, so that block
+    // waits until the document is loaded, below
     this.razeRisen = 0;
     this.razeKilled = 0;
-    this.posts = mission.kind === "raze" ? postsFor(this.level.map) : [];
-    if (mission.kind === "raze") {
+    this.posts = [];
+    this.roads = [];
+    this.loopLevel = 0;
+    this.loopCycle = 0;
+    this.projs.clear();
+    // drop the fx pool: the count is the pool, but the bolt-path refs must
+    // actually go or the last run's arrays sit unreachable-but-held
+    this.fxPts.fill(null, 0, this.fxN);
+    this.fxN = 0;
+    this.towers.length = 0;
+    // a new board holds none of the last one's hand: no building picked,
+    // and no route drawn behind anybody
+    this.selStructs.clear();
+    // ...and a new core is about to be stood up under it (see below)
+    this.structBoxDirty = true;
+    this.cellTower.fill(null);
+    this.occupied.fill(0);
+    this.shots.length = 0;
+    this.exploded = 0;
+    this.refreshSpecs(); // an empty board is a tacker with no company
+    // the official map document IS the world: map-editor saves land in its
+    // JSON, and the next full page load plays them. The documents are
+    // fetched before the sim is built (see Game.create), never imported.
+    // A level may name its map; the first official map is the default
+    const doc = (this.level.map ? loadMap(this.level.map) : null) ?? OFFICIAL_MAPS[0];
+    if (!doc) throw new Error("official maps not loaded — await loadOfficialMaps() first");
+    this.terrain = terrainFromMap(doc);
+    // THE SIEGE THE MAP CARRIES, if it carries one (missions.ts
+    // siegeFromMarks). The batteries an author placed are the places AND
+    // the sections; a map with none falls back to POST_SPECS and the
+    // sections written in levels.ts. `this.level` is rebuilt rather than
+    // read around because everything that counts the siege counts it off
+    // level.mission (levels.ts razeGuns) — simreads.ts World does the
+    // same to the host's copy, off the same document
+    const raze = this.level.mission.kind === "raze" ? this.level.mission : null;
+    if (raze) {
+      const siege = siegeFromMarks(this.terrain.marks);
+      this.siege = siege;
+      this.level = levelWithMarks(this.level, this.terrain.marks);
+      this.posts = siege ? siege.posts : postsFor(this.level.map);
+      const sections = siege ? siege.sections : raze.sections;
       const bad: string[] = [];
-      if (mission.sections.length === 0) bad.push("a siege with no sections in it");
-      for (const sec of mission.sections)
-        if (!this.posts[sec.post])
-          bad.push(`a section names post ${sec.post} and the map has ${this.posts.length}`);
+      if (sections.length === 0) bad.push("a siege with no sections in it");
+      if (siege && siege.spots.length === 0) bad.push("a siege with no railguns placed on the map");
+      if (!siege)
+        for (const sec of sections)
+          if (!this.posts[sec.post])
+            bad.push(`a section names post ${sec.post} and the map has ${this.posts.length}`);
       for (const post of this.posts) bad.push(...postProblems(post));
       if (bad.length > 0) throw new Error(`${this.level.name}: ${bad.join("; ")}`);
     }
+    // ...and the ROADS, off the same document: a map's own `road` marks
+    // where it carries them, ROAD_SPECS where it does not (missions.ts)
     const onRoads = mission.kind === "intercept" || mission.kind === "escort";
-    this.roads = onRoads ? roadsFor(this.level.map) : [];
+    this.roads = onRoads ? roadsFor(this.level.map, this.terrain.marks) : [];
     if (onRoads) {
       // every road index the schedule names has to exist, and every road
       // the map carries has to stay on the board. Said once, at load,
@@ -2631,31 +2685,6 @@ export class Sim {
       if (bad.length > 0)
         throw new Error(`${this.level.name}: ${bad.join("; ")}`);
     }
-    this.loopLevel = 0;
-    this.loopCycle = 0;
-    this.projs.clear();
-    // drop the fx pool: the count is the pool, but the bolt-path refs must
-    // actually go or the last run's arrays sit unreachable-but-held
-    this.fxPts.fill(null, 0, this.fxN);
-    this.fxN = 0;
-    this.towers.length = 0;
-    // a new board holds none of the last one's hand: no building picked,
-    // and no route drawn behind anybody
-    this.selStructs.clear();
-    // ...and a new core is about to be stood up under it (see below)
-    this.structBoxDirty = true;
-    this.cellTower.fill(null);
-    this.occupied.fill(0);
-    this.shots.length = 0;
-    this.exploded = 0;
-    this.refreshSpecs(); // an empty board is a tacker with no company
-    // the official map document IS the world: map-editor saves land in its
-    // JSON, and the next full page load plays them. The documents are
-    // fetched before the sim is built (see Game.create), never imported.
-    // A level may name its map; the first official map is the default
-    const doc = (this.level.map ? loadMap(this.level.map) : null) ?? OFFICIAL_MAPS[0];
-    if (!doc) throw new Error("official maps not loaded — await loadOfficialMaps() first");
-    this.terrain = terrainFromMap(doc);
     // THE BUFF TOWERS AN AUTHOR PLACED, if this mission understands them
     // (missionMarks.ts). It is read HERE and not up with the rest of the
     // mission reset because the marks come off the terrain, and the board
@@ -2928,7 +2957,7 @@ export class Sim {
    * On a LATE NEMESIS board — a wave chewing through a line while the
    * player lays another — something changes every few tenths of a second,
    * and a solve is half a second of slices: every one of them was killed
-   * before it published, forever. Measured on Crater at rung four, with a
+   * before it published, forever. Measured on a campaign map at rung four, with a
    * board held at eight hundred turrets against the whole script: the
    * walkers' field last published at 10:42 of a 16:40 run and never again,
    * SIX MINUTES of the swarm steering by a board that had turned over
@@ -4998,7 +5027,9 @@ export class Sim {
     // not score either: removeUnit ran above under `crossSweeping`.
     if (m.kind === "raze") {
       const dueSec = Math.floor((want - m.first) / Math.max(1e-6, m.every)) + 1;
-      this.razeRisen = Math.min(m.sections.length, Math.max(this.razeRisen, dueSec - 1));
+      let past = 0;
+      while (past < m.sections.length && razeWave(m.sections[past], past) < dueSec) past++;
+      this.razeRisen = Math.max(this.razeRisen, past);
     }
 
     // WALK THE CURSOR RATHER THAN LEAPING IT, and stop ONE SHORT. A script
@@ -5234,9 +5265,24 @@ export class Sim {
     if (m.kind !== "raze") return;
     while (
       this.razeRisen < m.sections.length &&
-      this.time >= m.first + this.razeRisen * m.every
+      this.time >= m.first + (razeWave(m.sections[this.razeRisen], this.razeRisen) - 1) * m.every
     ) {
-      this.raiseSection(m.sections[this.razeRisen]);
+      const sec = m.sections[this.razeRisen];
+      // THE MAP'S OWN GUNS WHERE IT HAS THEM: every emplacement placed for
+      // this rising goes up on its own cell and every region drawn for it
+      // puts its garrison out. A map with no marks falls back to the
+      // mission's sections, which ring a post instead
+      if (this.siege) {
+        const wave = razeWave(sec, this.razeRisen);
+        for (const g of this.siege.spots) if (g.wave === wave) this.raiseGun(g.x, g.y);
+        for (const g of this.siege.garrisons) {
+          if (g.wave !== wave) continue;
+          const post = this.posts[g.post];
+          if (post) this.raiseGarrison(post, g.guards);
+        }
+      } else {
+        this.raiseSection(sec);
+      }
       this.razeRisen++;
     }
   }
@@ -5337,6 +5383,42 @@ export class Sim {
     return n > 0 ? (1 - BASTION_CUT) ** n : 1;
   }
 
+  /**
+   * ONE EMPLACEMENT UP, where it was put. `exact` means exact: a gun an
+   * author placed is not walked off its cell (raiseMarkTowers says why),
+   * and a gun the mission rang round a post is walked to open ground by
+   * the caller before it gets here.
+   */
+  private raiseGun(x: number, y: number): void {
+    if (!this.spawnUnit("railgun", { x, y, exact: true }, 0)) return;
+    const i = this.n - 1;
+    this.plantUnit(i);
+    // it is BUILT POINTING AT THE BASE. A planted body never turns
+    // (updateUnits leaves its facing alone, since it has no drive to aim
+    // off), so the heading it rises on is the heading it keeps — and the
+    // only heading a railgun ever wants is the one its beam goes down.
+    const a = Math.atan2(this.core.y - y, this.core.x - x);
+    this.urot[i] = a;
+    this.ubrot[i] = a;
+    this.uheldRot[i] = a;
+  }
+
+  /** the garrison of one region, scattered inside it and leashed to it */
+  private raiseGarrison(post: Post, guards: Partial<Record<UnitKind, number>>): void {
+    for (const [kind, n] of Object.entries(guards) as [UnitKind, number][]) {
+      for (let g = 0; g < Math.max(0, Math.floor(n)); g++) {
+        // anywhere inside the post, biased outward: sqrt of a uniform roll
+        // spreads them evenly over the AREA rather than piling them at the
+        // middle, which is where the railguns already are
+        const a = Math.random() * Math.PI * 2;
+        const d = Math.sqrt(Math.random()) * post.r * 0.85;
+        const spot = this.clearNear(post.x + Math.cos(a) * d, post.y + Math.sin(a) * d, HB_OUTER[UNIT_ID[kind]]);
+        if (!this.spawnUnit(kind, { x: spot.x, y: spot.y, exact: true }, 0)) return;
+        this.garrisonUnit(this.n - 1, post.x, post.y, post.r);
+      }
+    }
+  }
+
   private raiseSection(sec: RazeSection): void {
     const post = this.posts[sec.post];
     if (!post) return;
@@ -5350,18 +5432,7 @@ export class Sim {
       const wantX = guns === 1 ? post.x : post.x + Math.cos(ang) * ring;
       const wantY = guns === 1 ? post.y : post.y + Math.sin(ang) * ring;
       const spot = this.clearNear(wantX, wantY, HB_OUTER[UNIT_ID.railgun]);
-      if (!this.spawnUnit("railgun", { x: spot.x, y: spot.y, exact: true }, 0)) return;
-      const i = this.n - 1;
-      this.plantUnit(i);
-      // it is BUILT POINTING AT THE BASE. A planted body never turns
-      // (updateUnits leaves its facing alone, since it has no drive to
-      // aim off), so the heading it rises on is the heading it keeps —
-      // and the only heading a railgun ever wants is the one its beam
-      // goes down.
-      const ang2 = Math.atan2(this.core.y - spot.y, this.core.x - spot.x);
-      this.urot[i] = ang2;
-      this.ubrot[i] = ang2;
-      this.uheldRot[i] = ang2;
+      this.raiseGun(spot.x, spot.y);
     }
     for (const [kind, n] of Object.entries(sec.guards) as [UnitKind, number][]) {
       for (let g = 0; g < Math.max(0, Math.floor(n)); g++) {
@@ -13829,7 +13900,7 @@ export class Sim {
     // the next. So both are looked up the first time an ammo is met and
     // read back from a table for the rest, keyed by the kind index and
     // the two low flag bits (PROJ_FRAG, PROJ_ALT). Cleared every pass:
-    // seventy-six slots, and no version to keep honest
+    // four slots a kind, and no version to keep honest
     const tbl = this.bulletTbl, spt = this.bulletSp, bft = this.bulletFl, brt = this.bulletBrad;
     tbl.fill(null);
     // ...AND THE AMMO'S SHAPE AS ONE INTEGER (BF_*). The common tick asks
@@ -13865,7 +13936,8 @@ export class Sim {
           (b.flak ? BF_FLAK : 0) |
           (b.artillery ? BF_ARTILLERY : 0) |
           (b.splash > 0 ? BF_SPLASH : 0) |
-          (b.frag ? BF_FRAG : 0);
+          (b.frag ? BF_FRAG : 0) |
+          (b.cloud ? BF_CLOUD : 0);
       }
       const bf = bft[ti];
       // A SHOT OF THE SWARM'S (Conquest) runs its own, much shorter step:
@@ -13981,12 +14053,29 @@ export class Sim {
         if (P.primeT[p] <= 0) P.life[p] = 0;
       }
 
+      // A DRIFTING CLOUD (constants.ts BulletStats.cloud): it touches
+      // nothing and lands nowhere. Every `interval` of its flight it
+      // poisons whatever it is over, so the pulse rides the age lane
+      // rather than a clock of its own — a shot that is only ever a few
+      // in the air does not earn a lane on every one of them
+      if (bf & BF_CLOUD) {
+        const cl = b.cloud!;
+        if (((P.age[p] / cl.interval) | 0) !== (((P.age[p] - dt) / cl.interval) | 0)) {
+          this.splash(
+            px, py, cl.radius, b.damage, b.collidesAir, b.collidesGround,
+            undefined, undefined, TOWER_NATURE[TOWER_KINDS[K[p]]], cl.poison,
+          );
+          this.bulletFx(b.hitFx, px, py, 0, b.fxColor);
+        }
+      }
+
       // shots come from elevated towers and arc over terrain — they never
       // collide with rock, only with units or their range-capped life.
       // Artillery shells overfly units too: they only die on target, where
-      // the splash below is their whole damage
+      // the splash below is their whole damage — and a cloud never
+      // collides at all
       let dead = P.life[p] <= 0;
-      if (!dead && !(bf & BF_ARTILLERY)) {
+      if (!dead && !(bf & (BF_ARTILLERY | BF_CLOUD))) {
         const pier = PIER[p];
         const brad = brt[ti];
         const sp = spt[ti];
@@ -14054,7 +14143,10 @@ export class Sim {
               this.impulse(i, (dx / d) * mag, (dy / d) * mag);
             }
             if (uhp[i] > 0 && b.burn && !KIND_BURN_IMMUNE[this.ukind[i]]) this.applyBurn(i, b.burn);
-            if (uhp[i] > 0 && b.poison) this.applyPoison(i, b.poison);
+            // ...and a splash round's rot is the BLAST's, laid once on
+            // everything it reaches — applying it here as well would
+            // poison whatever the shot touched twice
+            if (uhp[i] > 0 && b.poison && b.splash <= 0) this.applyPoison(i, b.poison);
             if (uhp[i] > 0 && b.wet) this.applyWet(i, b.wet);
             // BulletType.hitEffect, at the bullet rather than the victim.
             // A splash shot skips it — the blast in the `dead` branch below
@@ -14142,6 +14234,7 @@ export class Sim {
             b.burn,
             b.wet,
             TOWER_NATURE[TOWER_KINDS[K[p]]],
+            b.poison,
           );
         }
         // BulletType.despawned, and only that: a shot spent on a direct
@@ -14219,6 +14312,10 @@ export class Sim {
      *  hull coming apart (Cascade) has no gun behind it and keeps the
      *  default, which is the behaviour it always had */
     nature = DMG_BULLET,
+    /** poison a second, flat across the blast rather than falling off with
+     *  it: the rot the toxin line lays is the same wherever in the cloud a
+     *  body was standing */
+    poison = 0,
   ): void {
     const { upx, upy, uhp, uarmor, urad, ukind, bStart, bUnits, splashHits } = this;
     splashHits.length = 0;
@@ -14278,6 +14375,7 @@ export class Sim {
       if (uhp[i] > 0) {
         if (burn && !KIND_BURN_IMMUNE[ukind[i]]) this.applyBurn(i, burn);
         if (wet) this.applyWet(i, wet);
+        if (poison > 0) this.applyPoison(i, poison);
       }
     }
     splashHits.sort((a, b) => b - a);

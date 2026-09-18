@@ -310,8 +310,7 @@ crossings, the ground a naval front makes you want — is the ground that costs 
 your damage to hold.
 
 **The same rule is a wall on two maps and a rounding error on four.** Share of buildable
-ground taxed: Shoals 66%, Quagmire 34%, Estuary 25%, Maelstrom 21%, Crater 13%, Greenwood
-12%, Tundra 8%, Riverlands 8%, Confluence 6%. It costs 20% of a run on Shoals and 1% on
+ground taxed: Shoals 66%, Quagmire 34%, Maelstrom 21%, Confluence 6%. It costs 20% of a run on Shoals and 1% on
 Confluence — the widest spread of any rule in the catalog, and the reason it is not priced
 for its best day.
 
@@ -325,7 +324,7 @@ the reload, not the volley**: shots still leave the barrel at the weapon's spaci
 stretches is how often a volley starts. A tractor turret has no reload and is untouched.
 
 **The obvious rework does not work** — measured, not guessed. If the swarm *routed* through
-water (the flow field charging less for a wet cell), crossings roughly double and Greenwood
+water (the flow field charging less for a wet cell), crossings roughly double and a dry map
 goes from 0.2 stacks to 1.2 — and the run gets **easier** anyway: a discount deep enough to
 pull a lane into the water is deep enough to buy a detour, and a detour is more seconds
 under the guns than the stacks are worth (+5.5% run life at a 0.45 discount, 0% at 0.8).

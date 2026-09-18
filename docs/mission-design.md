@@ -131,9 +131,9 @@ thing it added was a body the SWARM shoots rather than one the board does.
 | what happens | `Sim.runConvoys`, `launchConvoy`, `updateConvoys`, `damageConvoy`, and the branches in `nearestStructure`, `structureAt`, `inReach` and `damageTower` |
 | what keeps the swarm off it | `Sim.aimIsConvoy` — the cart is a target and never a destination |
 
-**Crater plays *venture and destroy*, and it is the first mission that
+**Sear plays *venture and destroy*, and it is the first mission that
 comes to you** — offered as **Railgun Siege**: ten enemy railguns in four
-batteries ringing the core at a hundred and twenty cells, rising one
+batteries round the core past its own light, rising one
 battery at a time on the clock (2:00, 6:00, 10:00, 14:00 — one gun, then
 two, then three, then four), each guarded, and every one of them firing at
 the base and at nothing else for as long as it stands. The run is over when
@@ -169,20 +169,25 @@ What the archetype turned out to need, and what each piece is answering:
   That last clause is the design, not the implementation — a guard that
   could be baited home would be a wave with extra steps, and this game
   already has a wave.
-- **THE RING IS THE POWER GRID AND NOT THE TERRAIN.** The core lights
-  ninety cells (`CORE_POWER_R`); the batteries stand at a hundred and
-  twenty. So every one of them is thirty cells past the ground a run starts
-  with: the first can be answered by the longest gun in the game
-  (railhead, sixty-two) from the edge of your own light, and everything
-  after that is bought. Four of Crater's beacons reach the four posts —
-  one of them placed there for this mission — which is the archetype's own
-  "a beacon that reaches it", said in the only currency the map has.
-- **WHY THIS BOARD.** Crater is the one map drawn with open ground at the
-  same distance from the core in every quarter, because its core is dead
-  centre of a bowl with six mouths and the swarm comes from all of them. A
-  siege is a ring and a ring wants a middle. World 6 and world 10 traded
-  terrain to make that true (`WORLDS`) — both were shelved holds, so
-  nothing in the game moved.
+- **THE DISTANCE IS THE POWER GRID AND NOT THE TERRAIN.** The core lights
+  ninety cells (`CORE_POWER_R`); every battery stands past it. So the
+  first can be answered by the longest gun in the game (railhead,
+  sixty-two) from the edge of your own light, and everything after that is
+  bought off a beacon — which is the archetype's own "a beacon that
+  reaches it", said in the only currency the map has.
+- **WHY THIS BOARD.** Sear's core is hard against the east edge of the
+  caldera and every approach is from the west, so the four batteries are
+  an ARC and not a ring: one due west, one north-east over the rim, and
+  two on the long shoulders. The sea takes the south, and a mission that
+  put an emplacement there would be putting one in the water.
+- **WHERE THEY STAND IS THE MAP'S, NOT THE CODE'S.** Every gun is a
+  `railgun` mark on the map document and every garrison a `battery` region
+  round them, placed in the map editor (`docs/mission-marks.md`): the
+  cells, the section each rises in and what holds the ground, all of it
+  editable while looking at the terrain. The mission spec keeps the clock
+  and nothing else. **The guns are placed, not rung** — the sim used to
+  spread a count of them round a post, and a ring is a shape where a
+  position is a decision about cover and approach.
 - **THE POSTS ARE ON SCREEN FROM WAVE ONE**, empty, with the number of
   emplacements that will rise in each and a dial on the ring counting down
   to the minute they do (`Game.drawMissionPosts`). No fog means no
@@ -192,8 +197,9 @@ What the archetype turned out to need, and what each piece is answering:
 
 | | |
 |---|---|
-| `RazeMission` / `RazeSection` | `game/levels.ts` — the type, and Crater's authored numbers: when the first battery rises, how far apart they come, and what stands on each |
-| the posts | `game/missions.ts` — `POST_SPECS`, the centres in cells and the radius, per map id. `radius` is the layout AND the garrison's leash, deliberately one number |
+| `RazeMission` / `RazeSection` | `game/levels.ts` — the type and the clock: when the first battery rises and how far apart they come. `RazeSection.wave` is which rising a section belongs to, so several may share one |
+| the emplacements | the map's `railgun` marks, one a gun (`game/missionMarks.ts`, `missions.ts siegeFromMarks`) |
+| the garrison regions | the map's `battery` marks, or `POST_SPECS` on a map with none. `radius` is the ring the overlay draws AND the garrison's leash, deliberately one number |
 | the railgun | `game/levels.ts` (`railgun`, `UnitStats.bombard`), `game/weapons.ts` (the bombard row) and `game/wardenArt.ts` (the drawing) |
 | the Wardens | `game/levels.ts` (`bulwark`, `lance` — no tiers, T5 weight) and `game/wardenArt.ts` |
 | a body that holds ground | `Sim.garrisonUnit`, `Sim.plantUnit`, and the `ugar` arrays — the general mechanism, of which this mission is the first customer |
@@ -213,7 +219,7 @@ board is allowed to be unfinished, which is what shelving it says.
 A map carries ONE of these. Two stacked reads as noise, and the player
 stops being able to tell which thing is asking for the money.
 
-### 1. Venture and destroy — BUILT, on Crater
+### 1. Venture and destroy — BUILT, on Sear
 
 Kill a set number of static things away from the base.
 
@@ -222,7 +228,7 @@ shield projectors denying your ground · railguns chipping the base from
 out of range · nests that spawn forever once woken · suppressors that
 darken your zones.
 
-Crater plays the railgun variant — see **What is built** above for what it
+Sear plays the railgun variant — see **What is built** above for what it
 does with it and what the shape needed. The other five variants are the
 same three pieces in different arrangements (a posted body, a schedule, and
 a reason it cannot be ignored), so none of them needs new machinery: a nest

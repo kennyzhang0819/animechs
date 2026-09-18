@@ -63,7 +63,7 @@ const RING_FROM = [200, 330];
  * THE COUNT IS THE COST NOW. Every beacon is priced off the map's ladder
  * in the order they are BOUGHT (constants.ts BEACON_LADDER), so how many a
  * board carries is exactly how many rungs a run can climb — thirteen
- * beacons on Crater and thirteen on Greenwood is what lets the campaign's
+ * beacons on a compact map and thirteen on a wide one is what lets the campaign's
  * progression be designed against one number instead of nine.
  *
  * What differs between maps is WHERE they stand, not what they cost.
@@ -172,10 +172,10 @@ for (const id of ids) {
   // total spread over whatever the terrain offered.
   //
   // The earlier pass shuffled the whole map together and stopped at a cap,
-  // which starved the outer ring on any compact map: Crater came out with
+  // which starved the outer ring on any compact map: a bowl came out with
   // nine beacons and NOT ONE in ring 3, so that board could not be opened
   // to its own edges at all. Every official map has legal rock in all
-  // three rings — Crater has 865 sites out to 360 cells — so a ring coming
+  // three rings — a compact board has hundreds of sites out to 360 cells — so a ring coming
   // up empty was the picker's doing, never the terrain's.
   //
   // WHAT STAYS IRREGULAR is where inside a ring they land: candidates are
@@ -190,7 +190,7 @@ for (const id of ids) {
       const j = (rnd() * (i + 1)) | 0;
       [pool[i], pool[j]] = [pool[j], pool[i]];
     }
-    // RELAX RATHER THAN GIVE UP. A tight ring on a tight map — Crater's
+    // RELAX RATHER THAN GIVE UP. A tight ring on a tight map — a bowl's
     // ring 3 is a thin crescent of rock — may not hold the full count at
     // the spacing the wide rings use, and a ring short of its quota is the
     // one outcome this must not produce. So it tries again at three

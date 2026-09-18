@@ -3861,6 +3861,14 @@ export interface RazeSection {
   /** which of the map's posts it rises on, by index into POST_SPECS
    *  (missions.ts) — a place authored with the terrain */
   post: number;
+  /**
+   * WHICH RISING IT BELONGS TO, 1-based. Sections sharing a number rise
+   * together on the same tick of the mission's clock; absent means "its
+   * own", i.e. position in the list. It is here for the batteries an
+   * author places on the map (missionMarks.ts BATTERY), where two in one
+   * section is two marks rather than a shape in the list.
+   */
+  wave?: number;
   /** how many railguns rise here. The count is the ladder: 1, 2, 3, 4 */
   guns: number;
   /**
@@ -3874,6 +3882,11 @@ export interface RazeSection {
    */
   guards: Partial<Record<UnitKind, number>>;
 }
+
+/** which rising a section belongs to, 1-based: its own number where it
+ *  has one, else its place in the list (RazeSection.wave) */
+export const razeWave = (s: RazeSection, i: number): number =>
+  s.wave != null && s.wave > 0 ? Math.floor(s.wave) : i + 1;
 
 /** how many railguns the whole siege stands up — the count the mission is
  *  measured in, and the number the panel counts down */
@@ -4473,67 +4486,10 @@ export const WORLDS: LevelSpec[] = [
     script: [],
   },
   {
-    id: "4",
-    name: "Greenwood",
-    map: "greenwood",
-    // THE EARTHY ONE: dirt roads under dirt cliffs, grass and pine stands, two lakes; four gates on the west, south and north, the core in the north-east corner behind one antechamber
-    mission: { kind: "hold" },
-    waveGap: WAVE_GAP_DEFAULT,
-    script: [],
-  },
-  {
-    id: "5",
-    name: "Tundra",
-    map: "tundra",
-    // THE SNOWY ONE: snow under snow walls, ice round two frozen lakes, shale outcrops, snow pines; four gates on the south corners and the east and west edges, the core on the north edge
-    mission: { kind: "hold" },
-    waveGap: WAVE_GAP_DEFAULT,
-    script: [],
-  },
-  {
-    // WORLD 6 AND WORLD 10 TRADED TERRAIN, and the reason is the whole
-    // argument of docs/mission-design.md's last section: a mission is
-    // authored in the ground before it is authored in code.
-    //
-    // This slot was Crater — the core dead centre of a basalt bowl — and
-    // that board is now the siege (world 10 below), because a siege is a
-    // RING and a ring wants a middle. What it holds instead is Sear: the
-    // caldera with its core hard against the east edge, which was drawn
-    // for a ladder of objectives running west and makes a perfectly good
-    // hold in the meantime. Nothing in the game moved — both were shelved
-    // holds on undressed ground (PLAYABLE_WORLD_IDS) — and the ids, which
-    // are the save keys, did not move either.
-    id: "6",
-    name: "Sear",
-    map: "sear",
-    // THE BASALT CALDERA: the core hard on the east edge behind the rim, and the long approaches from the west
-    mission: { kind: "hold" },
-    waveGap: WAVE_GAP_DEFAULT,
-    script: [],
-  },
-  {
     id: "7",
     name: "Shoals",
     map: "shoals",
     // THE ARCHIPELAGO: two thirds of the board is sea, every road between the sand islands is a bar of shallow the swarm wades, the hulls come from the north and south seas, the core on the west island behind one causeway
-    mission: { kind: "hold" },
-    waveGap: WAVE_GAP_DEFAULT,
-    script: [],
-  },
-  {
-    id: "8",
-    name: "Riverlands",
-    map: "riverlands",
-    // THE CORE IN THE MIDDLE WITH RIVERS RUNNING TO IT: the hulls sail in from the west, east and south edges to the pool beside the core, and five ground gates come from the north and the corners, fording the rivers on the way
-    mission: { kind: "hold" },
-    waveGap: WAVE_GAP_DEFAULT,
-    script: [],
-  },
-  {
-    id: "9",
-    name: "Estuary",
-    map: "estuary",
-    // THE ESTUARY: the sea fills the south of the board, a river comes down from the north-east to meet it, and the core stands on the north shore where the river opens out; four ground gates inland, the hulls from the sea and down the river
     mission: { kind: "hold" },
     waveGap: WAVE_GAP_DEFAULT,
     script: [],
@@ -4548,8 +4504,8 @@ export const WORLDS: LevelSpec[] = [
   // — seven Borers on two roads, and a run that lets two past is over
   // (InterceptMission, game/missions.ts); Thornway carries ESCORT THE
   // CROSSER, which is the same shape turned round (EscortMission); and
-  // Crater carries VENTURE AND DESTROY — ten railguns in four batteries
-  // ringing the core, shooting it from where they stand (RazeMission).
+  // Sear carries VENTURE AND DESTROY — ten railguns in four batteries
+  // round the core, shooting it from where they stand (RazeMission).
   // The other five are still sketches and still play `hold`, so for now
   // what they are is the TERRAIN: boards that ask a run to spend in five
   // different shapes, waiting for the rule that spends it.
@@ -4560,7 +4516,7 @@ export const WORLDS: LevelSpec[] = [
   {
     id: "10",
     name: "Railgun Siege",
-    map: "crater",
+    map: "sear",
     // VENTURE AND DESTROY — ten railguns in four batteries ringing the
     // core, and the third mission in the game (docs/mission-design.md).
     //
@@ -4574,21 +4530,25 @@ export const WORLDS: LevelSpec[] = [
     // you take apart to go and kill something, and how long can you put
     // it off.
     //
-    // WHY THE CRATER. The core is dead centre of a basalt bowl with six
-    // mouths and the swarm comes at it from every side, so there is open
-    // ground at the SAME DISTANCE from the base in all four quarters —
-    // which is what a ring needs and what no other board has. And the
-    // rim is the defence here rather than a funnel, so a board that
-    // strips a quarter of its line to reach a battery has visibly opened
-    // a mouth while it does it.
+    // WHY SEAR. The core stands hard against the east edge of the
+    // caldera and every approach is from the west, so the batteries are
+    // an ARC and not a ring — one due west, one out to the north-east
+    // over the rim, and two on the long north-west and south-west
+    // shoulders. The sea takes the south, which is the honest reading of
+    // this board: there is no standing ground there, and a mission that
+    // pretended otherwise would be putting an emplacement in the water.
     //
-    // THE HUNDRED AND TWENTY IS THE POWER GRID (missions.ts POST_SPECS).
-    // The core lights ninety, so every battery stands thirty cells past
-    // the ground a run starts with: the first one can be answered by the
-    // longest gun in the game from the edge of your own light, and
-    // everything after that is bought. Four of Crater's beacons reach the
-    // four posts, which is the archetype's "a beacon that reaches it" —
-    // the entry fee is how deep into the ladder the run has gone.
+    // WHERE THEY STAND IS THE MAP'S (missionMarks.ts BATTERY). The four
+    // are placed in the map editor as marks on the document, along with
+    // how many guns rise on each, which section it belongs to and what
+    // garrison holds it; `sections` below is the fallback for a map that
+    // carries none, and the clock is this spec's either way.
+    //
+    // THE DISTANCE IS THE POWER GRID. The core lights ninety cells, so a
+    // battery stands past it: the first can be answered by the longest
+    // gun in the game from the edge of your own light, and everything
+    // after that is bought off a beacon — which is the archetype's entry
+    // fee, and how deep into the ladder the run has gone.
     //
     // THE CLOCK. First battery at two minutes, then one every four:
     // 2:00, 6:00, 10:00, 14:00, and they do NOT wait for each other. One
@@ -4692,7 +4652,7 @@ export const WORLDS: LevelSpec[] = [
     // you failed to kill is a number on a panel, and a hauler you failed
     // to hold is gone.
     //
-    // WHAT IT COSTS. The road is twelve hundred cells long and the core
+    // WHAT IT COSTS. The road is thirteen hundred cells long and the core
     // lights ninety, so all but the first tenth of it is ground bought
     // with beacons (the map carries thirteen, 232,000 scrap to open it
     // all). And the cart is only ever in ONE place, which is the thing
@@ -4715,9 +4675,9 @@ export const WORLDS: LevelSpec[] = [
     // camera along, and price a battery against before it moves.
     //
     // Then it drives at 1.6 tiles a second (CONVOY_SPEED), so the driving
-    // is twelve and a half minutes; five halts of forty-five seconds put
-    // the arrival a little past sixteen. The four on the road are at 22,
-    // 40, 60 and 76 per cent, each chosen to land in a clearing the
+    // is fourteen minutes; five halts of forty-five seconds put the
+    // arrival a little past seventeen. The four on the road are at 15,
+    // 32, 55 and 79 per cent, each chosen to land in a clearing the
     // terrain already has — a stopped cart is the easiest target on the
     // board, and standing it in a corridor would be asking the player to
     // defend a place they cannot build in.
@@ -4733,7 +4693,7 @@ export const WORLDS: LevelSpec[] = [
       first: 0,
       every: 300,
       pattern: [0],
-      halts: [0, 0.22, 0.4, 0.6, 0.76],
+      halts: [0, 0.15, 0.32, 0.55, 0.79],
       haltSeconds: CONVOY_HALT,
       mend: CONVOY_MEND,
     },

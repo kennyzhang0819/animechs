@@ -611,9 +611,9 @@ report(
 
 // ---------- sim: does the loop still run ----------
 
-// The first board in the game (VISIBLE_WORLDS[0] — Coldline since
-// Confluence came off the list, and the test cares only that it is a board
-// somebody ships), the swarm let out, and a dozen tackers PUT IN ITS WAY:
+// The first board in the game (VISIBLE_WORLDS[0], and the test cares only
+// that it is a board somebody ships), the swarm let out, and a dozen
+// tackers PUT IN ITS WAY:
 // wait for
 // the first bodies, follow the flow field from one of them to the core,
 // and build on the earliest stretch of that path the game will allow
@@ -685,16 +685,19 @@ try {
 
   // 4. a round connects.
   //
-  //    THE HORIZON IS NINETY SECONDS AND IT USED TO BE TWENTY-FIVE. That
-  //    was margin on a thirteen-second answer, back when a turret could go
-  //    down anywhere and the check put its dozen right beside the drop
-  //    zone. It cannot any more: a run may only build where the base and
-  //    its bought beacons light the ground (Sim.rebuildPower), and on every
-  //    official map the spawn edge is further out than the last beacon — so
-  //    the earliest LEGAL stretch of the road is a long way down it, and
-  //    what this now waits for is a body to walk there.
+  //    THE HORIZON IS A HUNDRED AND FIFTY SECONDS AND IT USED TO BE
+  //    TWENTY-FIVE. That was margin on a thirteen-second answer, back when
+  //    a turret could go down anywhere and the check put its dozen right
+  //    beside the drop zone. It cannot any more: a run may only build
+  //    where the base and its bought beacons light the ground
+  //    (Sim.rebuildPower), and on every official map the spawn edge is
+  //    further out than the last beacon — so the earliest LEGAL stretch of
+  //    the road is a long way down it, and what this waits for is a body
+  //    to walk there. The board it waits on is whatever VISIBLE_WORLDS[0]
+  //    plays, and that map's drop zones decide the number: Sear's are wide
+  //    and its first hit lands at 102s, where Crater's landed at 4.
   let hitAt = null;
-  const until = sim.time + 90;
+  const until = sim.time + 150;
   while (hitAt === null && sim.time < until && !sim.lost() && !sim.won()) {
     half();
     scan();
@@ -707,7 +710,7 @@ try {
   if (nan) simProblems.push(nan);
   if (!Number.isFinite(sim.core.hp)) simProblems.push(`core hp is ${sim.core.hp}`);
   if (placed > 0 && hitAt === null)
-    simProblems.push(`${placed} turrets on the route hit nothing in ninety seconds`);
+    simProblems.push(`${placed} turrets on the route hit nothing in a hundred and fifty seconds`);
   simDetail =
     `bodies at ${spawnedAt}s, ${placed} turrets on the route, ` +
     `${hitAt === null ? "no hit" : `first hit ${hitAt}s`}, ${sim.kills} kills, ${Math.round(sim.time)}s simulated`;
@@ -998,7 +1001,7 @@ const SIEGE_OVER = 1 / 3;
  * THE BAR `scale` AND `maps` ARE HELD TO TODAY, in ms a step — and it is
  * NOT the budget. Measured with every fix to date in, the siege at nine
  * thousand turrets runs 15 to 20ms a step on five of the nine worlds
- * (Maelstrom, Quagmire, Crater, Confluence, Greenwood) and at the 9k rung
+ * (Maelstrom, Quagmire, Confluence, Sear, Coldline) and at the 9k rung
  * whenever a boss is alive, and in every case it is `projectiles`: 17 to
  * 31 thousand shots in flight, each sweeping the hash for bodies, at 70%
  * of the step. That is known and not yet fixed, so those two checks are

@@ -24,7 +24,7 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 - **Rock is most of the board.** Open ground 15% to 45% of it.
 - **Rooms and corridors of varying width.** On the authored 256 board: clearings 20 to 40 across; corridors 8 at a choke, 16 to 20 between — which the scaling makes 50 to 100, 27 and 48 to 60 on the grid. Bays and alcoves on every edge; small rocks standing in the open, each leaving a route's width on every side of itself.
 - **More than one way through**: links between rooms, holes in thin walls. Never a short cut: a hole may not shorten any walk to the core by more than 15%.
-- **One mouth to the core**, unless the map is one of the two with the core in the middle (Crater, Riverlands). Everywhere else the core's clearing sits in a ring of rock with a gate of the choke's width, the gate and the funnel choke are the same straight strip, and the funnel check walls it.
+- **A mouth to the core, not a wall round it.** Where a map names a `funnel` the ground routes cross it and the choke there is ruled straight from the core through it. Nothing rings the core: the ground round it is whatever the noise and the rooms left, and how tight the approach is, is how tight the author set the choke.
 - **The wall is the floor's wall.** Two to four floor families, the first dominant (55% to 80%); rock over a family wears that family's wall. Nothing outlines a road.
 - **Water has a shore.** Deep in the heart, shallow at the edge; a road across water is a ford. A naval map's sea is along an edge. Water is where the naval line is FAST, not the only place it can go: a naval tank crosses deep water and land alike, at half pace ashore.
 - **Forests, clutter, ruins.** Pines only on rock beside their floors; boulders and bushes by family, thick along the rock, never in a drop zone or round the core; ruins only where a route's width of open ground surrounds them.
@@ -34,15 +34,14 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 
 - Every THROUGH gap is at least `GAP_GROUND` (5) on land and `GAP_WATER` (11) at sea — an ironhide5 is four cells across, a skate5 seven. The opening enforces it; notches are kept as long as they bridge nothing.
 - Every route from a drop zone to its goal is at least 12 wide on land and 16 at sea (`ROUTE_MIN_GROUND`, `ROUTE_MIN_WATER`), measured as the widest way through — a lane two formations fight in, not one an ironhide5 threads. An authored ground brush of 8 is 24 on the grid; an authored water brush of 16 is 32.
-- Chokes are 9 wide as authored, 27 on the grid; the citadel's gate is the choke's width, and the funnel disc grows with it.
+- Chokes are 9 wide as authored, 27 on the grid; the funnel disc grows with the choke it sits on.
 
 ## Doors and the core
 
-- The map is sealed: every rim cell is rock. The swarm's only destination is the core.
+- The rim is rock because the noise is pushed up there, not because anything seals it — a corridor cut out to the edge (`scripts/maps/railbed.mjs`) leaves the board by an open gap, which is how a road mission's trains and carts come and go. The swarm's only destination is still the core.
 - The map paints ONE spawn layer, and a spawn tile is open ground. Each movement layer picks its own tiles out of it (`Sim.padMaskFor`): walkers and flyers take the dry ones, hulls take any and prefer the wet ones. A generator's per-layer circles are a spec convenience — they are unioned into that one layer on load.
 - Every ground zone reaches the core on foot; every water zone reaches the core over the naval mask (rock only), and no pond lies nearer the core than the sea.
 - No gate is a short cut: walks to the core within 50% of each other.
-- The funnel holds: wall it and no ground zone reaches the core.
 - Open == reachable from the core.
 - The core's 5x5 is open dry ground, off every drop zone, in a dry clearing.
 

@@ -153,7 +153,7 @@ finished look.
 #### Linocut on a real map, in four inks
 
 `linocut-<ink>.png` is the scene, `linocut-<ink>-crop.png` a 96x56
-crop of Greenwood at the game's own zoom (chosen for variety: rock about
+crop of a campaign map at the game's own zoom (chosen for variety: rock about
 half, a lake, a pine stand, two floor families, a few heads set on the
 rock beside the lane), and `linocut-<ink>-map.png` the whole 512 board
 at four pixels a tile with the samples averaged the way the mipmaps show
@@ -167,7 +167,7 @@ it. The carved hand is the same in every one; the ink
 | night | near-black with bone bands | deep and dark | ink blue |
 | bone | dark ink with white bands | pale bone | paper blue |
 
-What the map showed: at the game's zoom a Greenwood room is a big flat
+What the map showed: at the game's zoom a campaign room is a big flat
 field, and a carved hand has to live with that. The lit and shaded bands
 on the rock's edges carry the drawing (they went from four logical
 pixels to six for it), and the gouges have to stay rare. Zoomed out, the

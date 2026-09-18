@@ -59,12 +59,7 @@ const MENU_MAPS = [
   "confluence",
   "maelstrom",
   "quagmire",
-  "greenwood",
-  "tundra",
-  "crater",
   "shoals",
-  "riverlands",
-  "estuary",
 ] as const;
 
 /** seconds one framing is held, and the black it is changed through */

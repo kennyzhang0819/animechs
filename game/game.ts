@@ -9,7 +9,7 @@ import {
   refreshMap,
   SPAWN_STYLE,
 } from "./maps";
-import { postsFor, roadAt, roadsFor } from "./missions";
+import { postsFor, roadAt, roadsFor, siegeFor } from "./missions";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { towerBaseIcon, towerGhostIcon } from "./towerIcons";
 import {
@@ -37,6 +37,7 @@ import {
   loadLevelDocs,
   UNIT_ID,
   UNIT_KINDS,
+  razeWave,
   type LevelSpec,
   type Mission,
   type TowerKind,
@@ -4212,7 +4213,7 @@ export class Game {
     const level = this.world.level;
     const m = level.mission;
     if (m.kind !== "intercept" && m.kind !== "escort") return;
-    const roads = roadsFor(level.map);
+    const roads = roadsFor(level.map, this.world.terrain.marks);
     if (roads.length === 0) return;
     // WHOSE ROAD IS IT? A Borer's line is the swarm's and wears the
     // swarm's red; a hauler's is the player's own route and wears the
@@ -4312,18 +4313,42 @@ export class Game {
     const level = this.world.level;
     const m = level.mission;
     if (m.kind !== "raze") return;
-    const posts = postsFor(level.map);
-    if (posts.length === 0) return;
+    const posts = postsFor(level.map, this.world.terrain.marks);
+    const siege = siegeFor(this.world.terrain.marks);
+    if (posts.length === 0 && !siege) return;
     const now = this.world.time;
+    const dueAt = (wave: number): number => m.first + (wave - 1) * m.every;
     c.save();
     c.beginPath();
     c.rect(0, 0, W, H);
     c.clip();
-    for (let i = 0; i < m.sections.length; i++) {
-      const sec = m.sections[i];
-      const post = posts[sec.post];
+    // WHERE THE MAP PLACED THE GUNS, one diamond each on its own cell —
+    // the same promise the row of pips below makes, except that on a map
+    // that carries `railgun` marks the sim will put them exactly there, so
+    // the overlay can say exactly there too
+    if (siege) {
+      const pip = CELL * 1.6;
+      c.fillStyle = SPAWN_STYLE.css;
+      for (const g of siege.spots) {
+        if (now >= dueAt(g.wave)) continue;
+        c.globalAlpha = 0.4;
+        c.beginPath();
+        c.moveTo(g.x, g.y - pip);
+        c.lineTo(g.x + pip, g.y);
+        c.lineTo(g.x, g.y + pip);
+        c.lineTo(g.x - pip, g.y);
+        c.closePath();
+        c.fill();
+      }
+    }
+    const rings = siege
+      ? siege.garrisons.map((g) => ({ post: posts[g.post], wave: g.wave, guns: 0 }))
+      : m.sections.map((sec, i) => ({ post: posts[sec.post], wave: razeWave(sec, i), guns: sec.guns }));
+    for (const ring of rings) {
+      const post = ring.post;
       if (!post) continue;
-      const due = m.first + i * m.every;
+      const i = ring.wave - 1;
+      const due = dueAt(ring.wave);
       const up = now >= due;
       c.strokeStyle = SPAWN_STYLE.css;
       c.globalAlpha = up ? 0.12 : 0.3;
@@ -4339,14 +4364,15 @@ export class Game {
       // a caption is a thing a player has to stop and parse — so the two
       // facts a player needs about a post are drawn as what they are.
       //
-      // HOW MANY RISE HERE: one diamond an emplacement, in a row across
-      // the middle of the circle, which is close enough to how they will
-      // actually be rung round it to be the same picture.
+      // HOW MANY RISE HERE, where the mission rings them round the post
+      // itself: one diamond an emplacement, in a row across the middle of
+      // the circle. A map that places its own guns draws them on their
+      // cells instead (above) and this row is empty.
       const pip = post.r * 0.11;
-      const span = (sec.guns - 1) * pip * 2.6;
+      const span = (ring.guns - 1) * pip * 2.6;
       c.fillStyle = SPAWN_STYLE.css;
       c.globalAlpha = 0.4;
-      for (let g = 0; g < sec.guns; g++) {
+      for (let g = 0; g < ring.guns; g++) {
         const px = post.x - span / 2 + g * pip * 2.6;
         c.beginPath();
         c.moveTo(px, post.y - pip);

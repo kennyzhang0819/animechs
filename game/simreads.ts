@@ -28,6 +28,7 @@
 import { structStats, type BulletStats, type TowerStats } from "./constants";
 import type { LevelSpec } from "./levels";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
+import { levelWithMarks } from "./missions";
 import type { RelicId } from "./relics";
 import type { BoardBodies, BoardGrids } from "./board";
 import { emptySnapshot, type FlatWorld, type Snapshot } from "./snapshot";
@@ -95,10 +96,13 @@ export class World {
   specsSeen = -1;
 
   constructor(src: WorldSource) {
-    this.level = src.level;
     const doc = (src.level.map ? loadMap(src.level.map) : null) ?? OFFICIAL_MAPS[0];
     if (!doc) throw new Error("official maps not loaded — await loadOfficialMaps() first");
     this.terrain = terrainFromMap(doc);
+    // the same substitution the sim makes on its own copy (Sim.reset): a
+    // raze played on a map that carries batteries is played on THOSE, and
+    // the two sides have to agree about how many guns that is
+    this.level = levelWithMarks(src.level, this.terrain.marks);
     this.flat = src.flat;
     this.header = src.header;
     this.isGoal = src.isGoal;

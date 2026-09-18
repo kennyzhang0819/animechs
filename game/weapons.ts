@@ -1537,7 +1537,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // other row here. The core is 24,000 (constants.ts CORE_HP) and there
   // are TEN railguns: a Warden's 560 a shot would take the base down in
   // under a minute with the last section up. 120 every twelve seconds is
-  // ten health a second EACH, and on Crater's schedule (levels.ts world
+  // ten health a second EACH, and on the siege's schedule (levels.ts world
   // 10) that arithmetic lands on a number worth writing down: a siege
   // NOBODY ANSWERS takes the core to zero at 14:00, which is the exact
   // moment the fourth battery rises. Ignore the mission completely and

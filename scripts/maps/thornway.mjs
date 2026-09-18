@@ -9,22 +9,12 @@
  * from is scripts/maps/graphs/thornway.json — edit there and re-emit, or
  * edit the numbers here and the two drift apart.
  *
- * IT PAINTS NO SPAWN TILES AND NO BEACONS, and the document on disk now
- * has both. A graph says where the ground is and nothing about where the
- * swarm enters it or what a player may buy, so those were added
- * afterwards: two discs of open ground far from the base and from each
- * other (one at 40,100 and one at 462,300, r46, ten thousand tiles
- * between them), and thirteen beacons from scripts/seed-beacons.mjs.
- * RE-RUNNING THIS FILE OVERWRITES THE DOCUMENT AND TAKES BOTH WITH IT,
- * which on this board means the escort mission loses the ground it is
- * played on — every cell of its road but the first tenth is outside the
- * circle the core lights. The pipeline and every rule are in
- * mindustry.mjs; this file is the numbers.
- *
- * THE ROAD IS NOT IN HERE EITHER. Where the convoy walks is
- * game/missions.ts, in cells on this map's own grid, and it was fitted to
- * the document this spec generates — so a change to the numbers below is
- * a change the road has to be re-fitted to.
+ * IT PAINTS NO SPAWN TILES. A graph says where the ground is and nothing
+ * about where the swarm enters it, so the document this writes carries no
+ * drop zones and the tiles are painted onto it in the map editor
+ * afterwards. RE-RUNNING THIS FILE OVERWRITES THE DOCUMENT and takes them
+ * with it. The pipeline and every rule are in mindustry.mjs; this file is
+ * the numbers.
  */
 import {
   run, FLOOR_DIRT, FLOOR_GRASS, FLOOR_MOSS, WALL_DIRT, WALL_SPORE,
@@ -61,15 +51,15 @@ export const spec = {
     { x: 122, y: 28, r: 8 }, // 7
     { x: 193, y: 32, r: 10 }, // 8
     { x: 168, y: 18, r: 15 }, // 9 ground entry
-    { x: 161, y: 123, r: 15, water: true }, // 10 ground entry
-    { x: 243, y: 16, r: 30 }, // 11
-    { x: 180, y: 95, r: 22, water: true }, // 12
-    { x: 10, y: 45, r: 20 }, // 13
-    { x: 244, y: 123, r: 22 }, // 14
-    { x: 178, y: 247, r: 22, water: true }, // 15
-    { x: 164, y: 223, r: 6, water: true }, // 16
-    { x: 142, y: 86, r: 20, water: true }, // 17
-    { x: 78, y: 184, r: 12, water: true }, // 18
+    { x: 243, y: 16, r: 30 }, // 10
+    { x: 183, y: 84, r: 22, water: true }, // 11
+    { x: 10, y: 45, r: 20 }, // 12
+    { x: 244, y: 123, r: 22 }, // 13
+    { x: 178, y: 247, r: 22, water: true }, // 14
+    { x: 164, y: 223, r: 6, water: true }, // 15
+    { x: 142, y: 84, r: 24, water: true }, // 16
+    { x: 4, y: 129, r: 20, water: true }, // 17
+    { x: 222, y: 56, r: 12, water: true }, // 18
     { x: 30, y: 222, r: 9, wobble: 0.2 }, // 19 the core's own ground
   ],
   core: { x: 30, y: 222, r: 9 },
@@ -84,16 +74,15 @@ export const spec = {
     { rooms: [5, 6], width: [14, 18] },
     { rooms: [6, 7], width: [14, 18] },
     { rooms: [7, 8], width: [14, 18] },
-    { rooms: [8, 11], width: [8, 12] },
-    { rooms: [10, 12], width: [8, 12], layer: "water" },
-    { rooms: [13, 6], width: [8, 12] },
-    { rooms: [14, 3], width: [8, 12] },
-    { rooms: [17, 12], width: [8, 12], layer: "water" },
-    { rooms: [10, 18], width: [17, 21], layer: "water" },
+    { rooms: [8, 10], width: [8, 12] },
+    { rooms: [12, 6], width: [8, 12] },
+    { rooms: [13, 3], width: [8, 12] },
+    { rooms: [16, 11], width: [15, 21], layer: "water" },
+    { rooms: [11, 18], width: [13, 20], layer: "water" },
   ],
   chokes: [],
   funnel: { x: 44, y: 220, r: 8 },
-  holes: 2, lumps: 15, ruins: 1,
+  holes: 2, lumps: 3, ruins: 2,
 };
 
 run(spec);

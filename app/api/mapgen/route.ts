@@ -37,6 +37,10 @@ type Gen = {
   check: (spec: unknown, m: Generated) => string[];
   preview: (spec: unknown, m: Generated, sc?: number) => Uint8Array;
   scaleSpec: (spec: unknown) => unknown;
+  carryPainted: (
+    doc: Record<string, unknown>,
+    prev: Record<string, unknown> | null,
+  ) => Record<string, unknown>;
   SIZE: number;
   [k: string]: unknown;
 };
@@ -153,6 +157,7 @@ async function keep(file: string): Promise<void> {
 async function buildDocument(
   gen: Gen,
   spec: GraphSpec,
+  mapFile: string,
 ): Promise<{ doc: Record<string, unknown> } | { error: string; fails?: string[] }> {
   const quiet = console.log;
   console.log = () => {};
@@ -162,8 +167,17 @@ async function buildDocument(
     const fails = gen.check(scaled, m);
     if (fails.length)
       return { error: `${fails.length} check(s) failed — fix them before writing the map`, fails };
+    // WHAT THE AUTHOR PAINTED SURVIVES THE RE-EMIT (mindustry.mjs
+    // carryPainted). A graph edit rewrites the terrain; the spawn tiles,
+    // the beacons and the mission marks were never the graph's to rewrite
+    let prev: Record<string, unknown> | null = null;
+    try {
+      prev = JSON.parse(await readFile(mapFile, "utf8")) as Record<string, unknown>;
+    } catch {
+      // no map on disk yet: nothing to carry
+    }
     return {
-      doc: {
+      doc: gen.carryPainted({
         id: spec.id,
         name: spec.name,
         w: gen.SIZE,
@@ -179,7 +193,7 @@ async function buildDocument(
         ...(m.spawns.length ? { spawns: m.spawns } : {}),
         pines: m.pines,
         decor: m.decor,
-      },
+      }, prev),
     };
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };
@@ -258,7 +272,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     // leaving the document the game loads on the old terrain is a save
     // that did nothing a player can see, so an edit to a map that exists
     // updates that map rather than making a second thing to reconcile.
-    const doc = await buildDocument(gen, spec);
+    const mapFile = path.join(process.cwd(), "public", "maps", `${spec.id}.json`);
+    const doc = await buildDocument(gen, spec, mapFile);
     // A REFUSED MAP IS REPORTED, not swallowed. The spec still writes —
     // an author must be able to save work in progress — but a save that
     // left the map on the old terrain and said nothing is a save that
@@ -266,7 +281,6 @@ export async function POST(req: Request): Promise<NextResponse> {
     // the failing check lines.
     if ("error" in doc)
       return NextResponse.json({ ok: true, wrote, mapError: doc.error, mapFails: doc.fails ?? [] });
-    const mapFile = path.join(process.cwd(), "public", "maps", `${spec.id}.json`);
     let exists = true;
     try {
       await readFile(mapFile);
@@ -282,10 +296,10 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   if (action === "export") {
-    const built = await buildDocument(gen, spec);
+    const file = path.join(process.cwd(), "public", "maps", `${spec.id}.json`);
+    const built = await buildDocument(gen, spec, file);
     if ("error" in built)
       return NextResponse.json({ error: built.error, fails: built.fails }, { status: 400 });
-    const file = path.join(process.cwd(), "public", "maps", `${spec.id}.json`);
     await keep(file);
     await writeFile(file, JSON.stringify(built.doc));
     return NextResponse.json({ ok: true, wrote: [`public/maps/${spec.id}.json`] });

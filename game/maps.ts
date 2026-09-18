@@ -167,16 +167,9 @@ export const OFFICIAL_MAP_IDS: readonly string[] = [
   "maelstrom",
   // the spore archipelago — world 3, the front with no air line over it
   "quagmire",
-  // the second batch, worlds 4 to 9 — every one a spec over
-  // scripts/maps/mindustry.mjs: the earthy one, the snowy one, the two
-  // with the core in the middle of the board (Riverlands with rivers
-  // running to it), and the two that are mostly water
-  "greenwood",
-  "tundra",
-  "crater",
+  // the archipelago — two thirds of it sea, every road between the sand
+  // islands a bar of shallow the swarm wades
   "shoals",
-  "riverlands",
-  "estuary",
   // THE MISSION SKETCHES — one map per archetype in docs/mission-design.md,
   // drawn in the graph editor (/admin/mapgraph) rather than hand-typed.
   // They paint NO spawn tiles of their own: a graph says where the ground
@@ -724,7 +717,9 @@ export function mapFromTerrain(
     // repo file and quietly read as a default next load
     marks: t.marks.flatMap((r) => {
       const k = MARK_KINDS.find((mk) => mk.id === r.kind);
-      return k ? [{ x: r.x, y: r.y, kind: r.kind, opts: markOpts(k, r.opts) }] : [];
+      if (!k) return [];
+      const pts = k.geom === "path" ? { pts: (r.pts ?? []).map((p) => [p[0], p[1]] as [number, number]) } : {};
+      return [{ x: r.x, y: r.y, ...pts, kind: r.kind, opts: markOpts(k, r.opts) }];
     }),
     valleyY: Array.from(t.valleyY).map((v) => Math.round(v * 100) / 100),
   };
@@ -760,6 +755,19 @@ function marksOf(raw: readonly MapMark[] | undefined): MapMark[] {
   for (const m of raw ?? []) {
     const kind = MARK_KINDS.find((k) => k.id === m?.kind);
     if (!kind) continue;
+    if (kind.geom === "path") {
+      // A ROAD'S CORNERS ARE NOT CLAMPED TO THE BOARD. Both ends of one
+      // run off the rim on purpose (missions.ts), so only the absurd is
+      // refused; a path with fewer than two corners is not a line
+      const pts = (m.pts ?? [])
+        .map((p) => [Math.round(Number(p?.[0])), Math.round(Number(p?.[1]))] as [number, number])
+        .filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1])
+          && Math.abs(p[0]) < 4 * COLS && Math.abs(p[1]) < 4 * ROWS);
+      if (pts.length < 2) continue;
+      out.push({ kind: kind.id, x: pts[0][0], y: pts[0][1], pts, opts: markOpts(kind, m.opts) });
+      if (out.length >= MAX_MARKS) break;
+      continue;
+    }
     const x = Math.round(Number(m.x)), y = Math.round(Number(m.y));
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
     out.push({

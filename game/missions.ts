@@ -19,9 +19,14 @@
  * machine for both, because the thing a road IS (a line somebody drew, an
  * arc length along it, a heading at that point) is the same question
  * either way, and a second copy of it would be a second place for a corner
- * to be wrong. RAZE rings Crater's core with batteries and asks the board
- * to go and break them; that one wants no line at all, only four places
- * and how far each one reaches.
+ * to be wrong. RAZE stands railguns round Sear's core and asks the board
+ * to go and break them; that one wants no line at all, only places and how
+ * far each one reaches.
+ *
+ * ALL OF IT IS DRAWN ON THE MAP NOW. The roads, the emplacements and the
+ * garrison regions are marks on the document, placed in the map editor
+ * (missionMarks.ts, docs/mission-marks.md); the tables below are the
+ * fallback for a map that carries none, and both are empty.
  *
  * A ROAD IS AUTHORED, NOT PATHFOUND, and that is the whole point of both
  * archetypes. Everything else on the field reads the flow field and ends
@@ -44,8 +49,9 @@
  * and no other amount. `roadProblems` refuses a road that breaks either,
  * so this is an invariant of the file and not a habit of the numbers.
  *
- * THE REASON IS THE RAILS (game/railArt.ts). Where a line is drawn on the
- * ground, it is drawn as tiles, one per cell, and 0/45/90/135 are the only
+ * THE REASON IS THE RAILS (game/railArt.ts) — no road wears a bed today
+ * and the rule is kept because one may again. Where a line is drawn on
+ * the ground, it is drawn as tiles, one per cell, and 0/45/90/135 are the only
  * headings a square pixel grid draws exactly: a 45-degree line is one
  * pixel across for one pixel along, so a rail piece is painted once and
  * stamped with a quarter turn, never rotated and never resampled. A road
@@ -85,12 +91,14 @@
  * legal position, just a bad one.
  */
 import { CELL, COLS, ROWS } from "./constants";
+import type { LevelSpec, RazeSection, UnitKind } from "./levels";
+import { markKind, markOpts, type MapMark } from "./missionMarks";
 import { RAIL_DIRS, RAIL_PIECES, railStyleIndex, type RailStyleName } from "./railArt";
 
 /** the shortest straight run a road may carry, in cells: a bend's tile
  *  covers the three cells around its corner, so two corners closer than
  *  this would each paint over the other's */
-const MIN_RUN = 3;
+export const MIN_RUN = 3;
 
 /** one road, as authored: a name for the panel and a line in cells */
 export interface RoadSpec {
@@ -105,7 +113,8 @@ export interface RoadSpec {
    *
    * OMITTED IS A ROAD WITH NO BED AT ALL: the line is still walked and
    * still drawn by the overlay, but nothing is painted on the ground.
-   * Coldline's two are laid that way — see ROAD_SPECS.
+   * EVERY ROAD ON THE BOARD TODAY IS LAID THAT WAY — the railway art is
+   * kept (railArt.ts) and nothing uses it.
    */
   rail?: RailStyleName;
   /** the line, in map cells, entry first and exit last */
@@ -127,145 +136,25 @@ export interface Road {
 }
 
 /**
- * THE ROADS, BY MAP. A map with no entry here has no crossers and cannot
- * carry the mission — Sim.reset says so out loud rather than running a
- * mission with nowhere to walk.
+ * THE ROADS, BY MAP — EMPTY, AND KEPT. Every road on the board today is
+ * drawn on its map instead: a `road` mark on the document
+ * (missionMarks.ts, docs/mission-marks.md), placed and dragged in the map
+ * editor, which is where a line fitted to terrain belongs. This is the
+ * fallback for a map that carries none, and the reason RoadSpec is still
+ * a type. Coldline's two lines and Thornway's one lived here until the
+ * editor learned to draw them.
  *
- * COLDLINE is the intercept map (levels.ts world 11, scripts/maps/
- * coldline.mjs): two roads west to east with the core on its own ground
- * between them, far enough from each that one battery cannot cover both.
- *
- * NEITHER OF ITS LINES IS RAILED. They carry no `rail`, so nothing is
- * painted on the ground along them: the Borers still walk them and the
- * dashed overlay still shows where, but the plain reads as plain. The
- * corridor railbed.mjs cut through the rock is still there — the ground
- * the line needs is not the drawing on it.
- *
- * THE TERRAIN IS NOW FIT TO THEM, which is the reversal the lattice
- * bought. These lines used to be traced by hand through whatever gap the
- * generator happened to leave, which is why the south one once carried
- * eleven corners and a 77-degree hairpin. They are laid on the lattice
- * first now and the rock along them is cut back to a seven-cell corridor
- * afterwards (scripts/maps/railbed.mjs) — so the corridor is as wide as
- * the drawing needs everywhere instead of only where the noise was kind.
- *
- * FEWER CORNERS, EACH OF THEM BIGGER, and that trade is worth saying out
- * loud. The south line went from nine corners to six; the north kept its
- * eight. But every corner is a full 45 degrees where the old ones
- * averaged 17, so total turning went UP, from 153 degrees to 270 on the
- * south. The number that matters to a player is the COUNT: six places
- * the line changes its mind is easier to commit a battery against than
- * nine, and a train now kinks by the same amount at every one of them
- * instead of by an assortment between 8 and 37.
- *
- * WHAT THE SOUTH LINE STILL BUYS: it crosses the open plain at its
- * closest 71 cells from the core, which is INSIDE the core's own lit
- * ground (constants.ts CORE_POWER_R is 90). So one stretch of it can be
- * covered by guns bought on free power, where the rest of both roads
- * still costs a beacon. That was a deliberate trade on the hand-drawn
- * line and it was held through the refit on purpose; the north line stays
- * well outside it, at 136.
- *
- * SOUTH FIRST, and the order is the mission's: the pattern in levels.ts
- * names roads by index, and "bottom, top, both, bottom, both" is the
- * sequence read off the screen — where y grows DOWNWARD, so the south
- * road is the one along the bottom.
+ * THE ORDER IS THE MISSION'S EITHER WAY: the pattern in levels.ts names
+ * roads by index, so the first road on the document is road 0. On
+ * Coldline that is the south line — where y grows DOWNWARD, the south
+ * road is the one along the bottom, and "bottom, top, both" is the
+ * sequence read off the screen.
  */
-export const ROAD_SPECS: Record<string, readonly RoadSpec[]> = {
-  coldline: [
-    {
-      name: "the south line",
-      // 13,780 px rim to rim, in six corners. The first leg is the run-up
-      // — 114 cells due east, comfortably past the 74 of train — and the
-      // last runs off the east rim on the same heading it arrives at
-      cells: [
-        [-59, 488], [55, 488], [216, 327], [339, 327], [354, 342],
-        [391, 342], [483, 434], [519, 434],
-      ],
-    },
-    {
-      name: "the north line",
-      // 12,270 px rim to rim, and still the straighter of the two: four
-      // long east-west runs with a single diagonal step between each. The
-      // step at 314 is the one corner here that the TERRAIN put in rather
-      // than the shape — the lake at 322 is deep water, which railbed.mjs
-      // will not drain, so the line steps down early to keep the bed's
-      // shoulder off it
-      cells: [
-        [-70, 124], [93, 124], [101, 132], [199, 132], [217, 114],
-        [314, 114], [322, 122], [464, 122], [475, 133], [525, 133],
-      ],
-    },
-  ],
-  /**
-   * THORNWAY is the escort map (levels.ts world 12, scripts/maps/
-   * thornway.mjs), and it carries ONE road because the mission is one
-   * journey. The core stands in the bottom-left corner and the far post
-   * is the clearing in the top-right, and between them the map's own
-   * corridors make a long double S: out east along the bottom, up the
-   * right-hand side, back west across the middle, up the left-hand side,
-   * and east again along the top. Twelve hundred cells of it, which is
-   * two and a half times the width of the board.
-   *
-   * IT IS THE OPPOSITE ROAD FROM COLDLINE'S IN EVERY WAY THAT MATTERS.
-   * A Borer's line is straightened until it barely bends, because a
-   * seventy-tile train kinks at a corner and because the player has to
-   * be able to commit a battery to it a long way ahead. A convoy is ONE
-   * CART: it turns on the spot, and what the road is for is to take it
-   * as far from the core as the map allows and keep it there. So this one
-   * keeps NINETEEN corners where Coldline's south keeps six — every one
-   * of them a place the swarm crosses the line while the cart is still
-   * on it.
-   *
-   * THE LATTICE TOOK THE HAIRPIN AND NOTHING ELSE. The hand-drawn line
-   * turned 88 degrees at the top of the eastern climb; no corner here is
-   * anything but 45, which cost two corners and 150 degrees of total
-   * turning and left the shape — out east along the bottom, up the right,
-   * back west across the middle, up the left, east again along the top —
-   * exactly where it was. The halts moved by at most three cells, so
-   * their fractions below did not have to move at all.
-   *
-   * IT IS A DIFFERENT RAILWAY, not the same one in another colour. The
-   * Borer's is a heavy main line — a wide bed of cold crushed stone,
-   * steel sleepers set well apart, a broad gauge in bright steel. This is
-   * a works TRAMWAY: a narrow cinder formation, timber sleepers laid
-   * close, a light narrow gauge worn pale on top (railArt.ts
-   * RAIL_STYLES). Its sleepers are LIGHTER than its bed where the
-   * Borer's are darker, which is the thing a player actually reads at
-   * field zoom. The fiction it buys is worth the six extra cells on the
-   * sheet: the Hauler is drawn with TRACKS (convoyArt.ts), so a cart
-   * driving a disused line reads honestly where rolling stock on a live
-   * one would not.
-   *
-   * THE CART DOES NOT COLLIDE (Sim.updateConvoy), so the corridor cut for
-   * this line is about the PICTURE and not about fitting: seven cells of
-   * cleared ground under a five-tile cart is a lane, not a squeeze.
-   *
-   * NO RUN-UP AND NO RUN-OFF, which is the other difference. A Borer is
-   * laid down off the rim because it comes from somewhere; a convoy rolls
-   * out of the core's own ground and stops at the post, and both ends are
-   * places on the board the player can stand a gun next to.
-   */
-  thornway: [
-    {
-      name: "the long way round",
-      rail: "tramway",
-      // 23,970 px, core to post. The halts (levels.ts EscortMission) are
-      // fractions of it, chosen to land in the clearings at 22, 40, 60
-      // and 76 per cent
-      cells: [
-        [74, 448], [90, 448], [119, 419], [308, 419], [337, 390], [376, 390],
-        [415, 351], [415, 342], [372, 299], [315, 299], [302, 286], [236, 286],
-        [129, 179], [129, 133], [183, 79], [247, 79], [278, 48], [402, 48],
-        [414, 60], [458, 60], [486, 32],
-      ],
-    },
-  ],
-};
+export const ROAD_SPECS: Record<string, readonly RoadSpec[]> = {};
 
-/** built roads per map, made once and kept — the arithmetic is the same
- *  every run and a road is a few dozen floats */
 const BUILT = new Map<string, readonly Road[]>();
+/** roads built off a document's marks, kept per marks array (roadsFor) */
+const FROM_MARKS = new WeakMap<object, readonly Road[]>();
 
 /** the middle of a cell, in world px — where a road's corner sits */
 const px = (c: number): number => (c + 0.5) * CELL;
@@ -290,7 +179,20 @@ function build(spec: RoadSpec): Road {
  * public/maps — so a road list and the terrain it is drawn over cannot
  * drift apart without the id changing.
  */
-export function roadsFor(mapId: string | undefined): readonly Road[] {
+export function roadsFor(mapId: string | undefined, marks?: readonly MapMark[]): readonly Road[] {
+  // THE MAP'S OWN LINES FIRST. Cached on the marks array rather than on
+  // the id because that array is the document's, built once per load, and
+  // this is called every frame by the overlay (game.ts drawMissionRoads)
+  if (marks && marks.length > 0) {
+    const had = FROM_MARKS.get(marks);
+    if (had) return had;
+    const specs = roadSpecsFromMarks(marks);
+    if (specs.length > 0) {
+      const built = specs.map(build);
+      FROM_MARKS.set(marks, built);
+      return built;
+    }
+  }
   if (!mapId) return [];
   const had = BUILT.get(mapId);
   if (had) return had;
@@ -299,6 +201,39 @@ export function roadsFor(mapId: string | undefined): readonly Road[] {
   const built = spec.map(build);
   BUILT.set(mapId, built);
   return built;
+}
+
+/** the road marks on a document, in order, as the specs they stand for */
+export function roadSpecsFromMarks(marks: readonly MapMark[]): RoadSpec[] {
+  const kind = markKind("road");
+  if (!kind) return [];
+  const out: RoadSpec[] = [];
+  for (const m of marks) {
+    if (m.kind !== "road" || !m.pts || m.pts.length < 2) continue;
+    const o = markOpts(kind, m.opts);
+    out.push({ name: String(o.name), cells: m.pts.map((p) => [p[0], p[1]] as const) });
+  }
+  return out;
+}
+
+/**
+ * WHAT IS WRONG WITH A LINE, in cells — roadProblems' answer, asked of the
+ * corners rather than of a built Road, so the editor can say it while an
+ * author is still dragging. Empty means the lattice holds.
+ */
+export function pathProblems(cells: readonly (readonly [number, number])[]): string[] {
+  const out: string[] = [];
+  if (cells.length < 2) return ["a road needs two corners"];
+  for (let i = 1; i < cells.length; i++) {
+    const dx = cells[i][0] - cells[i - 1][0], dy = cells[i][1] - cells[i - 1][1];
+    const ax = Math.abs(dx), ay = Math.abs(dy);
+    if (!(ax === 0 || ay === 0 || ax === ay)) out.push(`leg ${i} runs ${dx},${dy} — off the lattice`);
+    else if (Math.max(ax, ay) < MIN_RUN) out.push(`leg ${i} is ${Math.max(ax, ay)} cells, under ${MIN_RUN}`);
+  }
+  for (let i = 1; i < cells.length - 1; i++)
+    if (cells[i][0] < 0 || cells[i][1] < 0 || cells[i][0] >= COLS || cells[i][1] >= ROWS)
+      out.push(`corner ${i} is off the board`);
+  return out;
 }
 
 /**
@@ -547,53 +482,18 @@ export interface Post {
 }
 
 /**
- * THE POSTS, BY MAP. A map with no entry here carries no posts and cannot
- * hold the raze mission — Sim.reset says so out loud rather than running a
- * siege with nowhere to stand it.
- *
- * CRATER is the siege map (levels.ts world 10, scripts/maps/crater.mjs):
- * the core dead centre of a basalt bowl with six mouths, and the one board
- * drawn with open ground on EVERY side of the base at the same distance
- * from it. That is what this mission needs and what nothing else has — a
- * siege is a ring, and a ring wants a middle.
- *
- * THE RADIUS OF THE RING IS A HUNDRED AND TWENTY CELLS, and the number
- * comes from the power grid rather than from the terrain: the core lights
- * ninety (constants.ts CORE_POWER_R), so a post at a hundred and twenty is
- * THIRTY CELLS PAST THE EDGE OF THE GROUND A RUN STARTS WITH. Only the
- * longest gun in the game reaches that far from the last cell a fresh
- * board may build on (railhead, sixty-two and a half cells), which is
- * exactly the pressure wanted: the first section can be answered with what
- * the board already owns IF the board owns the right gun, and everything
- * after it is bought.
- *
- * AND EVERY POST HAS A BEACON. Three of Crater's own stand inside sixty
- * cells of one — the disc a beacon lights — and the fourth was placed on
- * the rock beside the south-west post for this mission (public/maps/
- * crater.json). That is the archetype's own requirement: "a beacon that
- * reaches it", so the entry fee is how deep into the ladder a run has to
- * go rather than whether the map felt like helping.
- *
- * THE ORDER IS THE RISING ORDER and it climbs with the map's help. The
- * south-west is first and stands alone with one emplacement on it; the
- * north-west is last, has four, and sits inside the disc of the beacon a
- * long run will have bought by then.
+ * THE POSTS, BY MAP — EMPTY, AND KEPT. Every siege on the board today is
+ * authored on its map instead (missionMarks.ts BATTERY, siegeFromMarks
+ * below), which is where a place belongs; this is the fallback for a raze
+ * map that carries no battery marks, and the reason a mission spec's own
+ * `sections` still mean something. Crater's four lived here until the map
+ * was deleted.
  */
-export const POST_SPECS: Record<string, readonly PostSpec[]> = {
-  crater: [
-    // 0 — the south-west shelf. Open ground, no beacon closer than the one
-    // put there for it, and the section the board meets first
-    { name: "South-west battery", cell: [169, 339], radius: 26 },
-    // 1 — the south-east, under the disc of the beacon on the east rim
-    { name: "South-east battery", cell: [339, 339], radius: 26 },
-    // 2 — the north-east, inside the beacon above it
-    { name: "North-east battery", cell: [339, 169], radius: 28 },
-    // 3 — the north-west, the heaviest, and the one the map helps most with
-    { name: "North-west battery", cell: [169, 169], radius: 30 },
-  ],
-};
+export const POST_SPECS: Record<string, readonly PostSpec[]> = {};
 
 const POSTS = new Map<string, readonly Post[]>();
+/** posts built off a document's marks, kept per marks array (postsFor) */
+const POSTS_FROM_MARKS = new WeakMap<object, readonly Post[]>();
 
 /**
  * THE POSTS THIS MAP CARRIES, or an empty list — roadsFor's opposite
@@ -601,7 +501,17 @@ const POSTS = new Map<string, readonly Post[]>();
  * level's own `map` field, so a post list and the terrain it stands on
  * cannot drift apart without the id changing.
  */
-export function postsFor(mapId: string | undefined): readonly Post[] {
+export function postsFor(mapId: string | undefined, marks?: readonly MapMark[]): readonly Post[] {
+  // the map's own batteries first, the same way roadsFor takes its lines
+  if (marks && marks.length > 0) {
+    const had = POSTS_FROM_MARKS.get(marks);
+    if (had) return had;
+    const siege = siegeFromMarks(marks);
+    if (siege) {
+      POSTS_FROM_MARKS.set(marks, siege.posts);
+      return siege.posts;
+    }
+  }
   if (!mapId) return [];
   const had = POSTS.get(mapId);
   if (had) return had;
@@ -615,6 +525,105 @@ export function postsFor(mapId: string | undefined): readonly Post[] {
   }));
   POSTS.set(mapId, built);
   return built;
+}
+
+/**
+ * THE SIEGE AN AUTHOR PLACED, or null where the map carries neither a
+ * railgun nor a garrison region (missionMarks.ts, docs/mission-marks.md).
+ *
+ * THREE LISTS, BECAUSE THE MAP SAYS THREE THINGS. `spots` is every
+ * emplacement, on the cell it was put on; `posts` is every garrison
+ * region, which is also what the overlay rings and what leashes the
+ * Wardens (Sim.garrisonUnit); `sections` is one per RISING, and exists so
+ * that everything counting the siege off the mission spec still counts it
+ * right (levels.ts razeGuns, missionText, missionProgress).
+ *
+ * IT IS THE MAP'S ANSWER TO A QUESTION THE MISSION ASKS. RazeMission
+ * still owns the clock (first, every) and the marks own the places and
+ * the counts, which is the same split the intercept's roads and buff
+ * towers already run on.
+ */
+export interface MarkSiege {
+  posts: Post[];
+  sections: RazeSection[];
+  /** one emplacement, in world px, and the rising it belongs to */
+  spots: { x: number; y: number; wave: number }[];
+  /** which post each garrison stands in, and what it is made of */
+  garrisons: { post: number; wave: number; guards: Partial<Record<UnitKind, number>> }[];
+}
+
+/** the siege a document carries, worked out once per marks array — the
+ *  overlay asks every frame (game.ts drawMissionPosts) */
+const SIEGE = new WeakMap<object, MarkSiege | null>();
+export function siegeFor(marks: readonly MapMark[]): MarkSiege | null {
+  if (SIEGE.has(marks)) return SIEGE.get(marks) ?? null;
+  const built = siegeFromMarks(marks);
+  SIEGE.set(marks, built);
+  return built;
+}
+
+export function siegeFromMarks(marks: readonly MapMark[]): MarkSiege | null {
+  const gunKind = markKind("railgun"), regKind = markKind("battery");
+  if (!gunKind || !regKind) return null;
+  const spots: MarkSiege["spots"] = [];
+  const posts: Post[] = [];
+  const garrisons: MarkSiege["garrisons"] = [];
+  const gunHalf = (gunKind.size * CELL) / 2, regHalf = (regKind.size * CELL) / 2;
+  for (const m of marks) {
+    if (m.kind === "railgun") {
+      const o = markOpts(gunKind, m.opts);
+      spots.push({ x: m.x * CELL + gunHalf, y: m.y * CELL + gunHalf, wave: Number(o.wave) });
+    } else if (m.kind === "battery") {
+      const o = markOpts(regKind, m.opts);
+      posts.push({
+        name: `Battery ${posts.length + 1}`,
+        x: m.x * CELL + regHalf,
+        y: m.y * CELL + regHalf,
+        r: Number(o.radius) * CELL,
+      });
+      const guards: Partial<Record<UnitKind, number>> = {};
+      if (Number(o.bulwark) > 0) guards.bulwark = Number(o.bulwark);
+      if (Number(o.lance) > 0) guards.lance = Number(o.lance);
+      garrisons.push({ post: posts.length - 1, wave: Number(o.wave), guards });
+    }
+  }
+  if (spots.length === 0 && posts.length === 0) return null;
+  // ONE SECTION A RISING. A wave with three guns and two regions in it is
+  // one line on the panel and one tick of the clock, so the guards are
+  // summed and the post named is the first region of that wave — nothing
+  // reads either except the POST_SPECS fallback, which has no marks
+  const waves = [...new Set([...spots.map((g) => g.wave), ...garrisons.map((g) => g.wave)])].sort((a, b) => a - b);
+  const sections: RazeSection[] = waves.map((wave) => {
+    const guards: Partial<Record<UnitKind, number>> = {};
+    for (const g of garrisons) {
+      if (g.wave !== wave) continue;
+      for (const [k, n] of Object.entries(g.guards) as [UnitKind, number][])
+        guards[k] = (guards[k] ?? 0) + n;
+    }
+    return {
+      post: garrisons.find((g) => g.wave === wave)?.post ?? 0,
+      guns: spots.filter((g) => g.wave === wave).length,
+      wave,
+      guards,
+    };
+  });
+  return { posts, sections, spots, garrisons };
+}
+
+/**
+ * THE LEVEL AS THE MAP MAKES IT — a raze whose map carries batteries is
+ * played on those and not on the sections written in levels.ts.
+ *
+ * BOTH SIDES OF THE SEAM CALL IT, on the same document (Sim.reset and
+ * simreads.ts World), because everything that counts the siege counts it
+ * off `level.mission` (levels.ts razeGuns, missionText, missionProgress)
+ * and the two halves must not disagree about how many guns there are.
+ */
+export function levelWithMarks(level: LevelSpec, marks: readonly MapMark[]): LevelSpec {
+  if (level.mission.kind !== "raze") return level;
+  const siege = siegeFromMarks(marks);
+  if (!siege) return level;
+  return { ...level, mission: { ...level.mission, sections: siege.sections } };
 }
 
 /** Does this post stand on the board at all? The same cheapest-possible

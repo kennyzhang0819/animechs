@@ -30,7 +30,9 @@
  *      land and GAP_WATER at sea: an opening by that disc silts every
  *      thinner gap shut, and the notches it would also have filled are put
  *      back as long as they join nothing. Open ground the core cannot be
- *      walked to from is filled (Mindustry's inverseFloodFill).
+ *      walked to from is filled (Mindustry's inverseFloodFill). The rim
+ *      is noise like the rest — nothing seals the border afterwards, so a
+ *      corridor cut to it (railbed.mjs) leaves the board by an open gap.
  *   7. PAINT. Floors come from a slow noise cut by the spec's family
  *      weights, and THE WALL IS THE FLOOR'S WALL: dune over darksand, sand
  *      wall over sand, snow wall over snow. A beach floor rings the water,
@@ -111,8 +113,8 @@ export function scaleSpec(spec) {
     routes: spec.routes.map((r) => ({ ...r, width: width(r.width, r.layer) })),
     links: (spec.links ?? []).map((l) => ({ ...l, width: width(l.width, l.layer) })),
     chokes: (spec.chokes ?? []).map((c) => ({ ...pt(c), w: c.w * k * WIDEN, reach: c.reach * k })),
-    // the funnel disc has to wall a gate that is WIDEN wider, so its
-    // radius grows by the same factor as the choke it sits on
+    // the funnel names the mouth: the choke there is a straight strip
+    // ruled from the core, so its radius grows with the choke's width
     funnel: spec.funnel && { ...pt(spec.funnel), r: spec.funnel.r * k * WIDEN },
     holes: spec.holes == null ? spec.holes : Math.round(spec.holes * k),
     lumps: spec.lumps == null ? spec.lumps : Math.round(spec.lumps * k * k * 0.75),
@@ -453,8 +455,9 @@ export function build(spec) {
   const inb = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
   const edgeDist = (x, y) => Math.min(x, y, W - 1 - x, H - 1 - y);
 
-  // 1. rock from noise. The rim is pushed up so the border is always rock
-  //    and the map's own edge reads as a canyon wall, not a cut
+  // 1. rock from noise. The rim is pushed up so the border reads as a
+  //    canyon wall rather than a cut — a bias and not a seal: where a
+  //    corridor is cut out to the edge the board is open there
   const rockN = makeWarped(rnd, spec.rock.scale, spec.rock.warp);
   const rockBias = spec.rock.bias ?? (() => 0);
   for (let y = 0; y < H; y++)
@@ -561,9 +564,8 @@ export function build(spec) {
   // 4b. the named chokes: within `reach` of the point, only the cells
   //     within w/2 of a brushed centreline stay open
   //     THE FUNNEL'S CHOKE IS STRAIGHT: it pinches to the ruled line from
-  //     the core through the funnel point, which is the strip the citadel
-  //     gate (5c) keeps open, so the two agree. A choke laid along the
-  //     wandering centreline under a straight gate left only their overlap
+  //     the core through the funnel point rather than to the wandering
+  //     centreline the brush left, so the mouth is a lane and not a kink
   const f = spec.funnel;
   const gateAng = f ? Math.atan2(f.y - core.y, f.x - core.x) : 0;
   const offLine = (x, y) => Math.abs(-(x + 0.5 - core.x) * Math.sin(gateAng) + (y + 0.5 - core.y) * Math.cos(gateAng));
@@ -654,29 +656,6 @@ export function build(spec) {
     }
   }
 
-  // 5c. THE CITADEL. Where a funnel is named, the core's clearing is
-  //     ringed with rock and the ring has one gate, a corridor of the
-  //     funnel's width toward the funnel point. A noise map is open in
-  //     too many places for "wall the mouth and nothing reaches the core"
-  //     to come true by luck; the ring makes it true by construction, and
-  //     it is how Mindustry's own cores sit — in a pocket with a mouth.
-  //     Water in the ring deepens rather than walls, so a bay may lap it
-  if (f) {
-    const gateW = (spec.chokes?.find((c) => Math.hypot(c.x - f.x, c.y - f.y) < 4 * SCALE)?.w ?? 8 * SCALE * WIDEN) / 2;
-    const R = coreR + 7 * SCALE;
-    disc(W, H, core.x, core.y, R, (i, x, y) => {
-      const dx = x + 0.5 - core.x, dy = y + 0.5 - core.y;
-      const d = Math.hypot(dx, dy);
-      if (d <= coreR - 1) return;
-      // the gate: the strip along the ruled line from the core through the
-      // funnel point, the funnel choke's own width
-      const along = dx * Math.cos(gateAng) + dy * Math.sin(gateAng);
-      if (along > 0 && offLine(x, y) <= gateW) { if (kind[i] === WALL) kind[i] = OPEN; return; }
-      if (kind[i] === OPEN) kind[i] = WALL;
-      else if (kind[i] === SHALLOW) kind[i] = DEEP;
-    });
-  }
-
   // 6. the minimum gap, then nothing unreachable. The opening is done on
   //    the walkable mask for the walkers and on the wet mask for the hulls
   const walk0 = new Uint8Array(N);
@@ -704,9 +683,6 @@ export function build(spec) {
   const seenG = flood(W, H, [core.y * W + core.x], isWalk);
   let filled = 0;
   for (let i = 0; i < N; i++) if (isWalk(i) && !seenG[i]) { kind[i] = kind[i] === SHALLOW ? DEEP : WALL; filled++; }
-  // and the rim
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) if (edgeDist(x, y) === 0) kind[y * W + x] = WALL;
   say(`filled ${filled} unreachable cells, dropped ${lumps} lumps`);
 
   // 6a. THE HULLS' GOAL IS THE SEA. The sim sends every hull to the water
@@ -740,8 +716,8 @@ export function build(spec) {
   }
 
   // 6b. holes: a thin wall between two open places is punched where the
-  //     hole shortens nobody's walk to the core by more than 15% and the
-  //     funnel still holds. The rest is texture; this is a second way in
+  //     hole shortens nobody's walk to the core by more than 15%. The
+  //     rest is texture; this is a second way in
   const walkMask = () => { const m = new Uint8Array(N); for (let i = 0; i < N; i++) m[i] = isWalk(i) ? 1 : 0; return m; };
   const groundPads = (z) => { const out = []; disc(W, H, z.x, z.y, z.r, (i) => { if (isWalk(i)) out.push(i); }); return out; };
   const groundZones = spec.spawns.filter((z) => z.zone === "ground");
@@ -749,18 +725,6 @@ export function build(spec) {
   const walkFrom = () => {
     const d = distances(coreCells(), isWalk);
     return groundZones.map((z) => Math.min(...groundPads(z).map((i) => d[i])));
-  };
-  const funnelHolds = () => {
-    if (!spec.funnel) return true;
-    const cut = new Uint8Array(N);
-    disc(W, H, spec.funnel.x, spec.funnel.y, spec.funnel.r, (i) => (cut[i] = 1));
-    const pass = (i) => isWalk(i) && !cut[i];
-    const cc = coreCells();
-    for (const z of groundZones) {
-      const seen = flood(W, H, groundPads(z).filter(pass), pass);
-      if (cc.some((i) => seen[i])) return false;
-    }
-    return true;
   };
   let holes = 0;
   if (spec.holes) {
@@ -788,7 +752,7 @@ export function build(spec) {
       const saved = Uint8Array.from(kind);
       disc(W, H, x + 0.5, y + 0.5, GAP_GROUND / 2 + 0.6, (i) => { if (kind[i] === WALL) kind[i] = OPEN; });
       const after = walkFrom();
-      const ok = after.every((v, k) => v >= before[k] * 0.85) && funnelHolds();
+      const ok = after.every((v, k) => v >= before[k] * 0.85);
       if (!ok) { kind.set(saved); continue; }
       done.push([x, y]);
       holes++;
@@ -988,30 +952,11 @@ export function check(spec, m) {
     say(spread <= 0.5, `walks to the core: ${lens.map((l) => `(${l.z.x},${l.z.y}) ${l.len.toFixed(0)}`).join(", ")} — spread ${(spread * 100).toFixed(0)}%`);
   }
 
-  // the funnel holds
-  if (spec.funnel) {
-    const cut = new Uint8Array(N);
-    disc(W, H, spec.funnel.x, spec.funnel.y, spec.funnel.r, (i) => (cut[i] = 1));
-    const pass = (i) => walk(i) && !cut[i];
-    let leaks = 0;
-    for (const z of spawns) {
-      if (z.zone !== "ground") continue;
-      const seen = flood(W, H, pads(z, pass), pass);
-      if (coreCells.some((i) => seen[i])) leaks++;
-    }
-    say(leaks === 0, `funnel at (${spec.funnel.x},${spec.funnel.y}) r${spec.funnel.r}: ${leaks} zone(s) still reach the core when it is walled`);
-  }
-
   // open == reachable
   const seen = flood(W, H, coreCells, walk);
   let orphan = 0;
   for (let i = 0; i < N; i++) if (walk(i) && !seen[i]) orphan++;
   say(orphan === 0, `orphan open cells: ${orphan}`);
-
-  // the rim
-  let rim = 0;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if ((x === 0 || y === 0 || x === W - 1 || y === H - 1) && (!blocked[y * W + x] || wall[y * W + x] === WALL_DEEP)) rim++;
-  say(rim === 0, `open rim cells: ${rim}`);
 
   // composition, the way Mindustry's reads
   let rock = 0, pine = 0, open = 0, shallow = 0, deep = 0;
@@ -1091,6 +1036,23 @@ export function preview(spec, m, SC = 2) {
 // ---------- run ----------
 
 
+/**
+ * THE LAYERS AN AUTHOR PAINTED, carried across a regeneration. The
+ * generator writes terrain and nothing else; the spawn tiles, the
+ * beacons, the mission marks and the valley line are put on afterwards in
+ * the map editor, and a re-emit used to take them with it — which is a
+ * map that typechecks, loads, and has no way in. They are copied onto the
+ * new document unchecked: a tile that now falls on rock is dropped on
+ * load (maps.ts spawnTilesOf) and a beacon that does is an author's to
+ * move, and both are better than none at all.
+ */
+export function carryPainted(doc, prev) {
+  if (!prev) return doc;
+  for (const k of ["spawnTiles", "beacons", "marks", "valleyY"])
+    if (prev[k] !== undefined) doc[k] = prev[k];
+  return doc;
+}
+
 export function run(authored, argv = process.argv.slice(2)) {
   const spec = scaleSpec(authored);
   const out = argv[0] ?? new URL(`../../public/maps/${spec.id}.json`, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
@@ -1102,12 +1064,15 @@ export function run(authored, argv = process.argv.slice(2)) {
     console.log(`\nREFUSING TO WRITE: ${fails.length} check(s) failed (FORCE=1 to write anyway)`);
     process.exit(1);
   }
-  const doc = {
+  let prev = null;
+  try { prev = JSON.parse(readFileSync(out, "utf8")); } catch { /* a new map, or none on disk */ }
+  const doc = carryPainted({
     id: spec.id, name: spec.name, w: W, base: m.base,
     floor: Array.from(m.floor), wall: Array.from(m.wall), blocked: Array.from(m.blocked),
     spawns: m.spawns, pines: m.pines, decor: m.decor,
-  };
+  }, prev);
   writeFileSync(out, JSON.stringify(doc));
-  console.log(`  wrote ${out}`);
+  const carried = ["spawnTiles", "beacons", "marks"].filter((k) => doc[k]?.length).map((k) => `${doc[k].length} ${k}`);
+  console.log(`  wrote ${out}${carried.length ? ` — kept ${carried.join(", ")}` : ""}`);
   return m;
 }

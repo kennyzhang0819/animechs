@@ -25,6 +25,7 @@ import {
 import { ALL_LAYERS, Renderer, type TerrainLayers } from "./renderer";
 import { loadInvertZoom } from "./progress";
 import { MARK_KINDS, MAX_MARKS, markKind, markOpts, type MapMark, type MarkKind } from "./missionMarks";
+import { MIN_RUN, pathProblems } from "./missions";
 import { canHoldSpawn, isWaterFloor, rebuildReserved } from "./terrain";
 import { WALL_DEEP, WALL_PINE, type MapBeacon, type Prop, type Terrain } from "./terrain";
 
@@ -98,6 +99,78 @@ function pathNoise(x: number, y: number): number {
  */
 /** how a brush covers its area: the full box, or a disc inside it */
 export type BrushShape = "square" | "round";
+
+/** the eight headings a leg may run on — the lattice (missions.ts) */
+const LATTICE: readonly (readonly [number, number])[] = [
+  [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1],
+];
+
+/**
+ * THE NEAREST CELL TO `want` THAT KEEPS ITS LEGS ON THE LATTICE, or null
+ * where there is no such cell.
+ *
+ * A corner in the middle of a road is constrained from BOTH sides, so the
+ * places it may stand are the intersections of one of the eight rays out
+ * of its neighbour before it with one out of the neighbour after — 64
+ * pairs, of which the parallel ones and the ones that meet on a half cell
+ * are dropped. An end corner has one neighbour and therefore eight rays.
+ *
+ * SNAPPING RATHER THAN REFUSING is the whole point: the lattice is a rule
+ * about what can be DRAWN (missions.ts, roadProblems), and a rule a
+ * person has to satisfy by hand with a mouse is a rule they will fight.
+ * Dragging a corner here cannot produce an illegal road.
+ */
+export function snapLattice(
+  want: readonly [number, number],
+  prev: readonly [number, number] | null,
+  next: readonly [number, number] | null,
+): [number, number] | null {
+  const out: [number, number][] = [];
+  const ray = (a: readonly [number, number], d: readonly [number, number]): [number, number] | null => {
+    const len = d[0] * d[0] + d[1] * d[1];
+    const t = Math.round(((want[0] - a[0]) * d[0] + (want[1] - a[1]) * d[1]) / len);
+    if (t < MIN_RUN) return null;
+    return [a[0] + d[0] * t, a[1] + d[1] * t];
+  };
+  if (prev && next) {
+    for (const d1 of LATTICE)
+      for (const d2 of LATTICE) {
+        const den = d1[0] * d2[1] - d1[1] * d2[0];
+        if (den === 0) continue;
+        const rx = next[0] - prev[0], ry = next[1] - prev[1];
+        const t1 = (rx * d2[1] - ry * d2[0]) / den;
+        if (!Number.isInteger(t1) || t1 < MIN_RUN) continue;
+        const p: [number, number] = [prev[0] + d1[0] * t1, prev[1] + d1[1] * t1];
+        const back = Math.max(Math.abs(p[0] - next[0]), Math.abs(p[1] - next[1]));
+        if (back < MIN_RUN) continue;
+        out.push(p);
+      }
+  } else {
+    const a = prev ?? next;
+    if (!a) return [Math.round(want[0]), Math.round(want[1])];
+    for (const d of LATTICE) {
+      const p = ray(a, d);
+      if (p) out.push(p);
+    }
+  }
+  let best: [number, number] | null = null, bestD = Infinity;
+  for (const p of out) {
+    const d = (p[0] - want[0]) ** 2 + (p[1] - want[1]) ** 2;
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+
+/** how far (in cells) a cell is from the segment a-b */
+function distToLeg(
+  gx: number, gy: number,
+  a: readonly [number, number], b: readonly [number, number],
+): number {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const len = dx * dx + dy * dy;
+  const t = len === 0 ? 0 : Math.max(0, Math.min(1, ((gx - a[0]) * dx + (gy - a[1]) * dy) / len));
+  return Math.hypot(a[0] + dx * t - gx, a[1] + dy * t - gy);
+}
 
 export class MapEditor {
   terrain: Terrain;
@@ -249,6 +322,9 @@ export class MapEditor {
   // ---------- tool state (driven by the React overlay) ----------
 
   setTool(set: PaletteSet, variant = 0): void {
+    // picking another brush ends a line half drawn, so a road cannot be
+    // left with one corner in it waiting for a click that never comes
+    if (set.id !== this.set.id) this.endPath();
     this.set = set;
     this.variant = variant;
   }
@@ -299,7 +375,7 @@ export class MapEditor {
       pines: this.terrain.pines.map((p) => ({ ...p })),
       decor: this.terrain.decor.map((p) => ({ ...p })),
       beacons: this.terrain.beacons.map((r) => ({ ...r })),
-      marks: this.terrain.marks.map((r) => ({ ...r, opts: { ...r.opts } })),
+      marks: this.terrain.marks.map((r) => ({ ...r, pts: r.pts?.map((p) => [p[0], p[1]] as [number, number]), opts: { ...r.opts } })),
       base: { ...this.terrain.base },
     });
     if (this.undoStack.length > UNDO_CAP) this.undoStack.shift();
@@ -560,19 +636,206 @@ export class MapEditor {
     this.dirty = true;
   }
 
-  /** the mark whose footprint covers this cell, or -1 */
+  /** the mark whose footprint — or, for a road, whose corner or leg —
+   *  covers this cell, or -1 */
   private markAt(gx: number, gy: number): number {
     return this.terrain.marks.findIndex((m) => {
       const k = markKind(m.kind);
-      return !!k && gx >= m.x && gx < m.x + k.size && gy >= m.y && gy < m.y + k.size;
+      if (!k) return false;
+      if (k.geom === "path") return this.pathHit(m, gx, gy) !== null;
+      return gx >= m.x && gx < m.x + k.size && gy >= m.y && gy < m.y + k.size;
     });
   }
+
+  /**
+   * WHAT OF A ROAD IS UNDER THIS CELL: one of its corners (the handle an
+   * author drags), a leg (where a click puts a new corner in), or
+   * nothing. A corner wins over the leg it sits on, because a corner is
+   * the smaller target and the one being aimed at.
+   */
+  private pathHit(m: MapMark, gx: number, gy: number): { corner: number } | { leg: number } | null {
+    const pts = m.pts ?? [];
+    const grab = markKind(m.kind)?.size ?? 3;
+    let best = -1, bestD = grab;
+    for (let i = 0; i < pts.length; i++) {
+      const d = Math.hypot(pts[i][0] - gx, pts[i][1] - gy);
+      if (d <= bestD) { bestD = d; best = i; }
+    }
+    if (best >= 0) return { corner: best };
+    for (let i = 1; i < pts.length; i++)
+      if (distToLeg(gx, gy, pts[i - 1], pts[i]) <= 2) return { leg: i };
+    return null;
+  }
+
+  /**
+   * A ROAD, DRAWN AS THE LINE IT IS: the legs, a handle on every corner,
+   * the selected road brighter with its name at the entry, and anything
+   * the lattice refuses said in red under it (missions.ts pathProblems).
+   * The line an author is still drawing dashes from its last corner to
+   * the cursor, snapped, so what the next click will do is visible before
+   * it happens.
+   */
+  private drawPathMark(
+    c: CanvasRenderingContext2D,
+    m: MapMark,
+    k: MarkKind,
+    i: number,
+    s: number,
+  ): void {
+    const pts = m.pts ?? [];
+    if (pts.length === 0) return;
+    const on = i === this.picked;
+    const px = (v: number): number => (v + 0.5) * CELL;
+    c.strokeStyle = k.color;
+    c.globalAlpha = on ? 1 : 0.55;
+    c.lineWidth = (on ? 3 : 2) / s;
+    c.beginPath();
+    c.moveTo(px(pts[0][0]), px(pts[0][1]));
+    for (let j = 1; j < pts.length; j++) c.lineTo(px(pts[j][0]), px(pts[j][1]));
+    c.stroke();
+    // where the next click would put a corner, while one is being drawn
+    if (i === this.drawing && this.hoverGx >= 0) {
+      const at = snapLattice([this.hoverGx, this.hoverGy], pts[pts.length - 1], null);
+      if (at) {
+        c.setLineDash([6 / s, 4 / s]);
+        c.beginPath();
+        c.moveTo(px(pts[pts.length - 1][0]), px(pts[pts.length - 1][1]));
+        c.lineTo(px(at[0]), px(at[1]));
+        c.stroke();
+        c.setLineDash([]);
+      }
+    }
+    const h = (k.size * CELL) / 2;
+    for (let j = 0; j < pts.length; j++) {
+      c.fillStyle = k.color;
+      c.fillRect(px(pts[j][0]) - h, px(pts[j][1]) - h, h * 2, h * 2);
+      c.strokeStyle = "rgba(10,10,14,0.9)";
+      c.lineWidth = 1.5 / s;
+      c.strokeRect(px(pts[j][0]) - h, px(pts[j][1]) - h, h * 2, h * 2);
+    }
+    c.globalAlpha = 1;
+    if (!on) return;
+    const bad = pathProblems(pts);
+    c.font = `${Math.round(CELL * 1.6)}px monospace`;
+    c.textAlign = "left";
+    const lines = [`${i}: ${m.opts?.name ?? k.label}`, ...bad];
+    let ty = px(pts[0][1]) + CELL * 3;
+    for (const [n, line] of lines.entries()) {
+      c.fillStyle = n === 0 ? "#ffffff" : "#ff6b6b";
+      c.strokeStyle = "rgba(10,10,14,0.9)";
+      c.lineWidth = 4 / s;
+      c.strokeText(line, px(pts[0][0]) + CELL * 2, ty);
+      c.fillText(line, px(pts[0][0]) + CELL * 2, ty);
+      ty += CELL * 2;
+    }
+    c.textAlign = "center";
+  }
+
+  /**
+   * A CLICK WITH THE ROAD BRUSH IN HAND. Returns true when it was this
+   * tool's to answer, so the ordinary paint stroke never runs under it.
+   *
+   *   on a corner       select the road and take hold of that corner
+   *   on a leg          put a new corner in there and take hold of it
+   *   while drawing     add the next corner, snapped off the last one
+   *   anywhere else     start a new road there
+   *
+   * Clicking the corner a road is being drawn from FINISHES it, which is
+   * the gesture every polyline tool has; so does Enter, and so does
+   * picking another brush.
+   */
+  private pathClick(gx: number, gy: number): boolean {
+    const kind = markKind(this.set.mark ?? "");
+    if (!kind || kind.geom !== "path" || !this.layers.mark) return false;
+    // drawing: the next corner, or the end of the line
+    const drawn = this.drawing >= 0 ? this.terrain.marks[this.drawing] : null;
+    if (drawn?.pts) {
+      const last = drawn.pts[drawn.pts.length - 1];
+      if (Math.hypot(last[0] - gx, last[1] - gy) <= kind.size) { this.endPath(); return true; }
+      const at = snapLattice([gx, gy], last, null);
+      if (at) this.setPts(this.drawing, [...drawn.pts, at]);
+      return true;
+    }
+    for (let i = 0; i < this.terrain.marks.length; i++) {
+      const m = this.terrain.marks[i];
+      if (markKind(m.kind)?.geom !== "path") continue;
+      const hit = this.pathHit(m, gx, gy);
+      if (!hit) continue;
+      this.picked = i;
+      if ("corner" in hit) { this.pathDrag = { mark: i, corner: hit.corner }; return true; }
+      const pts = [...(m.pts ?? [])];
+      const at = snapLattice([gx, gy], pts[hit.leg - 1], pts[hit.leg]) ?? [gx, gy];
+      pts.splice(hit.leg, 0, at);
+      this.setPts(i, pts);
+      this.pathDrag = { mark: i, corner: hit.leg };
+      return true;
+    }
+    if (this.terrain.marks.length >= MAX_MARKS) return true;
+    this.terrain.marks.push({ kind: kind.id, x: gx, y: gy, pts: [[gx, gy]], opts: markOpts(kind, undefined) });
+    this.picked = this.terrain.marks.length - 1;
+    this.drawing = this.picked;
+    this.dirty = true;
+    this.redraw();
+    return true;
+  }
+
+  /** move the corner being dragged, if the lattice allows it there */
+  private pathDragTo(gx: number, gy: number): void {
+    const d = this.pathDrag;
+    if (!d) return;
+    const m = this.terrain.marks[d.mark];
+    const pts = m?.pts;
+    if (!pts) return;
+    const at = snapLattice([gx, gy], pts[d.corner - 1] ?? null, pts[d.corner + 1] ?? null);
+    if (!at || (at[0] === pts[d.corner][0] && at[1] === pts[d.corner][1])) return;
+    const next = [...pts];
+    next[d.corner] = at;
+    this.setPts(d.mark, next);
+  }
+
+  /** a road's corners, replaced whole — `x`/`y` follow the first one so
+   *  every reader that only wants a place still has one */
+  private setPts(i: number, pts: readonly (readonly [number, number])[]): void {
+    const m = this.terrain.marks[i];
+    if (!m) return;
+    this.terrain.marks[i] = { ...m, x: pts[0][0], y: pts[0][1], pts };
+    this.dirty = true;
+    this.redraw();
+  }
+
+  /** stop drawing — and throw away a line of one corner, which is nothing */
+  endPath(): void {
+    const i = this.drawing;
+    this.drawing = -1;
+    if (i < 0) return;
+    const m = this.terrain.marks[i];
+    if (m && (m.pts?.length ?? 0) < 2) {
+      this.terrain.marks.splice(i, 1);
+      if (this.picked === i) this.picked = -1;
+    }
+    this.dirty = true;
+    this.redraw();
+  }
+
+  /** the road being drawn, or -1 */
+  private drawing = -1;
+  private pathDrag: { mark: number; corner: number } | null = null;
 
   /** take the mark on this cell off, if there is one — what the eraser
    *  calls, and the only way one comes off */
   private removeMarkAt(gx: number, gy: number): boolean {
     const hit = this.markAt(gx, gy);
     if (hit < 0) return false;
+    // A ROAD LOSES THE CORNER UNDER THE ERASER, not the whole line —
+    // until it is down to the two a line needs, and then it goes
+    const m = this.terrain.marks[hit];
+    if (markKind(m.kind)?.geom === "path" && m.pts && m.pts.length > 2) {
+      const at = this.pathHit(m, gx, gy);
+      if (at && "corner" in at) {
+        this.setPts(hit, m.pts.filter((_, i) => i !== at.corner));
+        return true;
+      }
+    }
     this.terrain.marks.splice(hit, 1);
     if (this.picked === hit) this.picked = -1;
     else if (this.picked > hit) this.picked--;
@@ -687,6 +950,10 @@ export class MapEditor {
       return;
     }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.code === "Enter" || e.code === "NumpadEnter") {
+      this.endPath();
+      return;
+    }
     if (!PAN_KEYS[e.code]) return;
     e.preventDefault();
     this.keysDown.add(e.code);
@@ -735,6 +1002,11 @@ export class MapEditor {
     if (e.button === 0 && !this.panning) {
       const p = this.mouseWorld(e);
       this.snapshot();
+      // A ROAD IS NOT PAINTED. Its corners are dragged and its legs are
+      // clicked, so the road tool takes the click before the brush does —
+      // and a road runs off the rim at both ends, so its cells are NOT
+      // clamped to the board the way a brush's are
+      if (this.pathClick(Math.round(p.x / CELL - 0.5), Math.round(p.y / CELL - 0.5))) return;
       this.painting = true;
       this.lastCell = { x: -1, y: -1 };
       this.paintStroke(clamp((p.x / CELL) | 0, 0, COLS - 1), clamp((p.y / CELL) | 0, 0, ROWS - 1));
@@ -749,6 +1021,7 @@ export class MapEditor {
   private readonly onMouseUp = (): void => {
     this.panning = false;
     this.painting = false;
+    this.pathDrag = null;
   };
 
 
@@ -768,6 +1041,12 @@ export class MapEditor {
     const gx = (p.x / CELL) | 0;
     const gy = (p.y / CELL) | 0;
     const inside = gx >= 0 && gy >= 0 && gx < this.terrain.cols && gy < this.rows;
+    if (this.pathDrag && !this.panning) {
+      this.pathDragTo(Math.round(p.x / CELL - 0.5), Math.round(p.y / CELL - 0.5));
+      this.hoverGx = inside ? gx : -1;
+      this.hoverGy = inside ? gy : -1;
+      return;
+    }
     if (this.painting && !this.panning && inside) this.paintStroke(gx, gy);
     this.hoverGx = inside ? gx : -1;
     this.hoverGy = inside ? gy : -1;
@@ -778,6 +1057,7 @@ export class MapEditor {
     this.hoverGy = -1;
     this.panning = false;
     this.painting = false;
+    this.pathDrag = null;
   };
 
   private readonly onContext = (e: Event): void => e.preventDefault();
@@ -973,7 +1253,23 @@ export class MapEditor {
         const m = this.terrain.marks[i];
         const k = markKind(m.kind);
         if (!k) continue;
+        if (k.geom === "path") { this.drawPathMark(c, m, k, i, s); continue; }
         const side = k.size * CELL;
+        // the region a kind measures in cells, drawn as the circle it is
+        // (missionMarks.ts radiusField): a garrison's ground is a number
+        // on a panel and an author has to see how much board it covers
+        if (k.radiusField) {
+          const r = Number(m.opts?.[k.radiusField] ?? 0) * CELL;
+          if (r > 0) {
+            c.strokeStyle = k.color;
+            c.globalAlpha = 0.5;
+            c.lineWidth = 2 / s;
+            c.beginPath();
+            c.arc(m.x * CELL + side / 2, m.y * CELL + side / 2, r, 0, Math.PI * 2);
+            c.stroke();
+            c.globalAlpha = 1;
+          }
+        }
         c.fillStyle = k.color;
         c.globalAlpha = 0.75;
         c.fillRect(m.x * CELL, m.y * CELL, side, side);

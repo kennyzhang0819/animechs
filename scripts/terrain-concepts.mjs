@@ -11,7 +11,7 @@
 // shadow the renderer adds, as the baseline; the rest are the directions
 // in docs/terrain-directions.md, and `families.png` is every direction on
 // every floor family. The `linocut-*` renders take that direction onto a
-// real map — a crop of Greenwood round its core at full detail, and the
+// real map — a crop of Quagmire round its core at full detail, and the
 // whole 512 board zoomed out — in four palettes. Nothing here is wired
 // into the game.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -544,11 +544,11 @@ if (wants("families")) {
 }
 
 // ── linocut on a real map ──────────────────────────────────────────────
-// Greenwood (public/maps/greenwood.json): a crop round the core at full
+// Quagmire (public/maps/quagmire.json): a crop round the core at full
 // detail with a few heads set on the rock beside the lane, and the whole
 // 512 board zoomed out, in every palette
 {
-  const doc = JSON.parse(readFileSync("public/maps/greenwood.json", "utf8"));
+  const doc = JSON.parse(readFileSync("public/maps/quagmire.json", "utf8"));
   const MW = doc.w, MH = doc.floor.length / doc.w;
   const WALL_PINE = 4, WALL_DEEP = 7;
   const cellAt = (x, y) => {
