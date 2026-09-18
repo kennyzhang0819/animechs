@@ -63,9 +63,9 @@ export function dropForUnit(hp: number, boss = false): Drop {
   };
 }
 
-/** every run opens with this much in the bank — three tier-1 blocks and
+/** every run opens with this much in the bank — five tier-1 blocks and
  *  change, which is the opening decision and not a board */
-export const SCRAP_START = 4000;
+export const SCRAP_START = 6000;
 
 /**
  * THE CORE'S INCOME — the whole of a run's money, and a function of the
@@ -73,16 +73,16 @@ export const SCRAP_START = 4000;
  * the seconds it takes that rate to double; the rate stops climbing at
  * CORE_INCOME_RAMP so the tide cannot be banked out of.
  *
- * The doubling is the one knob that matters: 230s against the 22.5s wave
- * cadence is about 7% a wave. It was 190s and 130 a second, which put 98%
+ * The doubling is the one knob that matters: 255s against the 22.5s wave
+ * cadence is about 6% a wave. It was 190s and 130 a second, which put 98%
  * of a run's money after wave twenty and starved the opening — a tier-2
  * block cost one and a half waves of TOTAL income at wave eight, so the
  * only way to reach the band was to stop building for two waves while the
  * swarm grew. A doubling that long is a curve that only pays the player
  * who already survived it.
  */
-export const CORE_INCOME_RATE = 240;
-export const CORE_INCOME_DOUBLING = 230;
+export const CORE_INCOME_RATE = 330;
+export const CORE_INCOME_DOUBLING = 255;
 /** the shipped campaign's own length, 3 + 50 x 22.5 (levels.ts) */
 export const CORE_INCOME_RAMP = 1125;
 

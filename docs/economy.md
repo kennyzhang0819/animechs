@@ -30,30 +30,39 @@ rate(t) = CORE_INCOME_RATE x 2 ^ (min(t, CORE_INCOME_RAMP) / CORE_INCOME_DOUBLIN
 
 | | |
 |---|---|
-| `CORE_INCOME_RATE` | 240 scrap a second, at t = 0 |
-| `CORE_INCOME_DOUBLING` | 230 seconds |
+| `CORE_INCOME_RATE` | 330 scrap a second, at t = 0 |
+| `CORE_INCOME_DOUBLING` | 255 seconds |
 | `CORE_INCOME_RAMP` | 1,125 — the shipped campaign's own length |
-| `SCRAP_START` | 4,000 |
+| `SCRAP_START` | 6,000 |
 
-**The doubling is the one knob.** 230 seconds against the 22.5-second wave cadence
-(`docs/authoring-waves.md`) is about **7% a wave**, so the run's wealth spreads about 27x from
+**The doubling is the one knob.** 255 seconds against the 22.5-second wave cadence
+(`docs/authoring-waves.md`) is about **6% a wave**, so the run's wealth spreads about 20x from
 the first wave to the fiftieth. `CORE_INCOME_RATE` moves the whole run's wealth and nothing
 else.
 
 | wave | second | rate/s | banked by then |
 |---|---|---|---|
-| 1 | 26 | 259 | 10,361 |
-| 10 | 228 | 477 | 82,680 |
-| 20 | 453 | 940 | 236,261 |
-| 30 | 678 | 1,852 | 538,829 |
-| 40 | 903 | 3,648 | 1,134,916 |
-| 50 | 1,128 | 7,123 | 2,309,162 |
+| 1 | 3 | 333 | 6,994 |
+| 10 | 206 | 577 | 96,835 |
+| 20 | 431 | 1,063 | 275,833 |
+| 30 | 656 | 1,960 | 605,792 |
+| 40 | 881 | 3,614 | 1,214,033 |
+| 50 | 1,106 | 6,661 | 2,335,253 |
 
 **It was 130 a second doubling every 190s, and that starved the opening.** A 190-second
 doubling puts 98% of a run's money after wave twenty; playtested, the first three minutes could
 not reach tier 2 at all. A curve that steep only pays the player who already survived it, which
 is the opposite of what a defence economy is for. The fix was half here and half in the prices
 below — see the tier-2 note.
+
+**The rate and the doubling move together, and that is how the opening gets paid.** 240 a
+second over 230s still read as tight through the first ten waves in play, which is the same
+complaint as the 190s curve in a milder form. Raising the rate alone inflates the whole run;
+lengthening the doubling alone makes the late game poorer against a tide that keeps doubling.
+Moving both — 330 a second over 255s — lifts the first ten waves by about a third and leaves
+the rate past wave forty where it was, so the generosity lands where the board has no coverage
+yet and nowhere else. The opening bank went 4,000 to 6,000 in the same pass: it is the only
+number that is purely the opening, and it buys five tier-1 cards instead of three.
 
 **It stops climbing at the ramp.** Past `CORE_INCOME_RAMP` the rate is flat while the tide
 keeps doubling the swarm's health every cycle (`docs/mission-design.md`), so no map can be
@@ -86,28 +95,29 @@ four rarities ARE the four tiers, which is where the card's border colour comes 
 
 | tier | per turret | 3x3 (9) | 5x5 (25) | 7x7 (49) | ground at 3x3 | at 7x7 |
 |---|---|---|---|---|---|---|
-| 1 | 150 | 1,350 | 3,750 | 7,350 | 3x3 tiles | 7x7 |
-| 2 | 1,000 | 9,000 | 25,000 | 49,000 | 6x6 | 14x14 |
-| 3 | 6,000 | 54,000 | 150,000 | 294,000 | 9x9 | 21x21 |
-| 4 | 30,000 | 270,000 | 750,000 | 1,470,000 | 12x12 | 28x28 |
+| 1 | 120 | 1,080 | 3,000 | 5,880 | 3x3 tiles | 7x7 |
+| 2 | 700 | 6,300 | 17,500 | 34,300 | 6x6 | 14x14 |
+| 3 | 4,000 | 36,000 | 100,000 | 196,000 | 9x9 | 21x21 |
+| 4 | 40,000 | 360,000 | 1,000,000 | 1,960,000 | 12x12 | 28x28 |
 
-**The gaps are about six times a step and two hundred end to end**, which is far steeper than
-the per-kind prices this replaced (110 to 9,500 was 86x). Per TILE it is 150 / 250 / 667 /
-1,875 — a 12.5x spread, which is exactly the ratio a tacker and a railhead already carried. So
-the steepening is in the per-turret price and not in what a square of board is worth: a tier-4
-gun is expensive because it is sixteen tiles of gun, and then expensive again on top of that
-because reach and splash are worth more than raw damage.
+**The gaps are about six times a step through the middle and ten into tier 4**, 333x end to
+end, which is far steeper than the per-kind prices this replaced (110 to 9,500 was 86x). Per
+TILE it is 120 / 175 / 444 / 2,500 — a 20.8x spread. The steepening is at the top, where it
+buys something: a gap at the bottom gates nothing except whether the run gets started, so the
+thing worth gating is the 4x4. A tier-4 gun is expensive because it is sixteen tiles of gun,
+and then expensive again on top of that because reach and splash are worth more than raw
+damage.
 
 **The price is the tier's, flat, for every gun in it.** It has to be: the gun is rolled and the
 price is printed on the button before the press. `TOWER_PRICE` is derived from the tier and the
 admin dashboard can still bend one kind (`setScrapPrice`).
 
 **What the numbers buy**, measured as SECONDS OF INCOME at the rate in force — which is the
-number that decides whether a band is reachable, not the raw price. A tier-2 block is under a
-wave's income from wave one (24s at wave 1, 15s at wave 8). A tier-3 block is about 1.7 waves
+number that decides whether a band is reachable, not the raw price. A tier-2 block is well
+under a wave's income from wave one (19s at wave 1, 12s at wave 8). A tier-3 block is about 1.5 waves
 at wave 20, a real save-up. A tier-4 block is about 4.4 waves at wave 40, a genuine commitment.
-Saving every coin, the earliest a bank covers a 3x3 is wave 1 / wave 1 / wave 5 / **wave 25**,
-and a run actually holding a line reaches those much later. A whole run banks about 2.31M.
+Saving every coin, the earliest a bank covers a 3x3 is wave 1 / wave 1 / wave 5 / **wave 24**,
+and a run actually holding a line reaches those much later. A whole run banks about 2.34M.
 
 ### The shape
 
