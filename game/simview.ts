@@ -33,6 +33,7 @@
  * simply has these members, and the day it is on the other side of a thread
  * something else will have them instead.
  */
+import type { BoardMove } from "./board";
 import type { BulletStats } from "./constants";
 import type { Terrain } from "./terrain";
 import type { RGB, Structure, Team, TowerKind } from "./types";
@@ -346,6 +347,14 @@ export interface ShotsView {
  */
 export interface BoardView {
   canPlace(gx: number, gy: number, kind: TowerKind, size?: number): boolean;
+  /** would this group of standing buildings fit dgx/dgy cells away (board.ts
+   *  canMoveOn) — `into` takes the per-building answer the ghost tints with */
+  canMove(
+    moves: readonly BoardMove[],
+    dgx: number,
+    dgy: number,
+    into?: boolean[] | null,
+  ): boolean;
   isWaterlogged(gx: number, gy: number, kind: TowerKind, size?: number): boolean;
   rulerCells(x0: number, y0: number, x1: number, y1: number, kind: TowerKind): {
     gx: number;

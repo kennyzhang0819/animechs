@@ -96,12 +96,21 @@ export interface SimHost {
   placeLine(x0: number, y0: number, x1: number, y1: number, kind: TowerKind): void;
   placeRuler(x0: number, y0: number, x1: number, y1: number, kind: TowerKind): void;
 
+  // ---- moving what is already up ----
+  /** the selection, shifted by whole cells (Sim.moveSelected) — all of it
+   *  or none of it, and the board mirror already said which (board.ts
+   *  canMoveOn), so nothing here is a prediction */
+  moveSelected(dgx: number, dgy: number): void;
+
   // ---- unbuilding ----
   sellTowerAt(x: number, y: number): void;
   sellLine(x0: number, y0: number, x1: number, y1: number): void;
   sellSelected(): void;
 
   // ---- what is picked ----
+  /** the BUILDING under a point, picked alone (Sim.selectStructAt) — what a
+   *  drag that starts on an unpicked turret selects before it moves it */
+  selectStructAt(x: number, y: number): void;
   structsInRect(x0: number, y0: number, x1: number, y1: number, add: boolean): void;
   clearStructSelection(): void;
   /** one left click on the board, whatever it means (Sim.click) */
@@ -210,6 +219,9 @@ export class LocalHost implements SimHost {
   placeRuler(x0: number, y0: number, x1: number, y1: number, kind: TowerKind): void {
     this.sim.placeRuler(x0, y0, x1, y1, kind);
   }
+  moveSelected(dgx: number, dgy: number): void {
+    this.sim.moveSelected(dgx, dgy);
+  }
   sellTowerAt(x: number, y: number): void {
     this.sim.sellTowerAt(x, y);
   }
@@ -218,6 +230,9 @@ export class LocalHost implements SimHost {
   }
   sellSelected(): void {
     this.sim.sellSelected();
+  }
+  selectStructAt(x: number, y: number): void {
+    this.sim.selectStructAt(x, y);
   }
   structsInRect(x0: number, y0: number, x1: number, y1: number, add: boolean): void {
     this.sim.structsInRect(x0, y0, x1, y1, add);

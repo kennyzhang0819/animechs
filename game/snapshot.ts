@@ -40,12 +40,14 @@ import * as shared from "./shared";
 import { EXTRA_LOOKS, UNIT_WEAPONS, type ShotLook } from "./weapons";
 import type { Terrain } from "./terrain";
 import {
+  canMoveOn,
   canPlaceOn,
   rulerCells,
   waterloggedUnder,
   type BoardBodies,
   type BoardDome,
   type BoardGrids,
+  type BoardMove,
 } from "./board";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { structStatusMask } from "./status";
@@ -985,6 +987,15 @@ export class DrawView implements SimView {
       kind,
       size,
     );
+  }
+
+  canMove(
+    moves: readonly BoardMove[],
+    dgx: number,
+    dgy: number,
+    into?: boolean[] | null,
+  ): boolean {
+    return canMoveOn(this.grids, this.bodies, this.domes(), SHIELD_TOWER_SIZE, moves, dgx, dgy, into);
   }
 
   isWaterlogged(gx: number, gy: number, kind: TowerKind, size?: number): boolean {
