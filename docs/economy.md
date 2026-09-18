@@ -176,26 +176,39 @@ to play, and a run that pays a quarter more for it makes every deliberate map ch
 tax on knowing what you want. The only thing that moves what a run pays is the difficulty it is
 played at.
 
-## The level climb — flat, 500,000 a level
+## The level climb — a ramp to 500,000
 
-`XP_PER_LEVEL` is 500,000 and it is **the whole curve**: level 1 to 2 costs it, level 812 to 813
-costs it, and nothing in between is a lookup. A Nemesis clear pays 100,000, so **a level is five
-clears, everywhere**. That is the number a player can hold in their head, which is the entire
-argument for a flat ladder.
+`XP_PER_LEVEL` (500,000) is **the top of the curve, not the whole of it**: it is what the
+hundredth level costs and what every level past it costs. Below that the climb ramps, from
+**2,500** for level 1 to 2 up to the full 500,000 for 100 to 101.
+
+The shape is **StarCraft II's mastery table** — ninety steps, resampled over a hundred and
+multiplied until the last of them is `XP_PER_LEVEL`, rounded to the nearest five hundred. That
+curve is the reference this game's progression is cut from, and the table is kept verbatim in
+`economy.ts` so the derivation can be read rather than trusted.
+
+| level | that level costs | total banked |
+| --- | --- | --- |
+| 1 → 2 | 2,500 | 0 |
+| 10 → 11 | 11,500 | 85,000 |
+| 25 → 26 | 25,500 | 332,000 |
+| 50 → 51 | 69,000 | 1,500,000 |
+| 75 → 76 | 134,500 | 3,915,000 |
+| 100 → 101 | 500,000 | 9,400,000 |
+| 400 → 401 | 500,000 | — |
+
+A Nemesis clear pays 100,000, so **level 101 is ninety-nine clears** and the first twenty levels
+are two and a half. That front-loading is the point: a new save is levelling while it is still
+learning the board, and the grind arrives only once there is something to grind for.
 
 - **Levels 1 to `SKILL_POINT_LEVELS`** (100) each pay **one skill point** — a save that reaches
-  100 has 100 to spend across the 210 nodes of the skill tree (`docs/skills.md`). This is the
-  climb that is actually *for* something.
-- **Levels 100 to `LEVEL_CAP`** cost exactly the same and hand over nothing. The number still
+  100 has 100 to spend over the 200 ranks of the skill tree (`docs/skills.md`). This is the climb
+  that is actually *for* something, and it is also exactly the ramp.
+- **Levels 100 to `LEVEL_CAP`** cost `XP_PER_LEVEL` each and hand over nothing. The number still
   moves, and that is all it does.
 
-**It was StarCraft II's mastery table, transcribed and scaled by 1.5**, and it was dropped rather
-than retuned. Its shape was 5,000 for the first level and 1,552,500 for the ninetieth — a grind
-whose *rate* changed under the player as they climbed, so "how far is the next point" had a
-different answer at 20 than at 80 and the only way to know was to look it up. A ladder is a farm,
-a farm has to have a **known** rate, and the only honest shape for one is a line.
-
-**Reaching 100 is 500 Nemesis clears** — close to what the scaled SC2 table cost (484), so the
-total grind is where it was; what changed is that it is now evenly spread rather than free at the
-bottom and brutal at the top. The early levels are the ones that got dearer, and they are also the
-ones that hand over the roster, which is the right way round: the toolkit should cost something.
+**A flat climb was tried and it was wrong at both ends.** Every level at 500,000 meant the first
+level cost five clears — a save that has seen one map paying the hundredth level's price — and it
+meant the curve said nothing about where a player stood. The argument for it was that a known rate
+is easier to hold in your head; the answer is that the rate is still one sentence ("it ramps to
+five clears a level at 100"), and that a ladder nobody can get onto is not a ladder.

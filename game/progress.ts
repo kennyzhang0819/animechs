@@ -4,10 +4,11 @@ import { tierXpBonus, TOP_TIER } from "./ladder";
 import { ADMIN_ENABLED } from "./env";
 import { levelForXp, missionXp, skillPointsAt, SKILL_POINT_LEVELS } from "./economy";
 import {
+  MAX_RANKS,
   NO_SKILLS,
-  RUNGS_PER_TURRET,
   NODE_COST,
-  rungsOn,
+  ranksOn,
+  SKILL_NODES,
   spentSkillPoints,
   type SkillPoints,
 } from "./skills";
@@ -257,21 +258,21 @@ const DEV_UNLOCK_ALL = true;
 const devUnlocking = (p?: { devGrantOff?: boolean }): boolean =>
   DEV_UNLOCK_ALL && ADMIN_ENABLED && !p?.devGrantOff;
 
-/** the stored spend, clamped: a line longer than the tree's, a turret this
- *  build has never heard of, or a spend past what 100 levels can pay all
- *  degrade rather than crash */
+/** the stored spend, clamped: a node past its cap, a node this build has
+ *  never heard of (the tree that was one line a turret wrote those), or a
+ *  spend past what 100 levels can pay all degrade rather than crash */
 function readSkills(v: unknown): SkillPoints {
   if (!v || typeof v !== "object" || Array.isArray(v)) return {};
   const raw = v as Record<string, unknown>;
   const out: SkillPoints = {};
   let budget = SKILL_POINT_LEVELS;
-  for (const kind of TOWER_KINDS) {
-    const n = raw[kind];
+  for (const node of SKILL_NODES) {
+    const n = raw[node.id];
     if (typeof n !== "number" || !(n > 0)) continue;
-    const rungs = Math.min(RUNGS_PER_TURRET, Math.floor(n), Math.floor(budget / NODE_COST));
-    if (rungs <= 0) continue;
-    out[kind] = rungs;
-    budget -= rungs * NODE_COST;
+    const ranks = Math.min(MAX_RANKS, Math.floor(n), Math.floor(budget / NODE_COST));
+    if (ranks <= 0) continue;
+    out[node.id] = ranks;
+    budget -= ranks * NODE_COST;
   }
   return out;
 }
@@ -579,36 +580,37 @@ export const skillPointsLeft = (p: Progress): number =>
   Math.max(0, skillPointsOf(p) - spentSkillPoints(p.skills));
 
 /**
- * BUY THE NEXT RUNG of one turret's line, or hand one back — the tree's
- * only two moves, and the one place their rules live: a line is bought in
- * order, no line goes past its length, and nothing is bought without a
- * point in hand. Returns the save as it now stands; the caller re-reads
- * it (both write through).
+ * BUY RANKS OF ONE NODE, or hand them back — the tree's only two moves,
+ * and the one place their rules live: no node goes past MAX_RANKS, and
+ * nothing is bought without a point in hand. A buy that cannot be paid
+ * for in full takes what it can afford rather than refusing, so the board
+ * never has to explain a price. Returns the save as it now stands; the
+ * caller re-reads it (both write through).
  */
-export function buySkill(kind: TowerKind, count = 1): Progress {
+export function buySkill(id: string, count = 1): Progress {
   const p = loadProgress();
-  const have = rungsOn(p.skills, kind);
-  const room = Math.min(count, RUNGS_PER_TURRET - have, Math.floor(skillPointsLeft(p) / NODE_COST));
+  const have = ranksOn(p.skills, id);
+  const room = Math.min(count, MAX_RANKS - have, Math.floor(skillPointsLeft(p) / NODE_COST));
   if (room <= 0) return p;
-  const next: Progress = { ...p, skills: { ...p.skills, [kind]: have + room } };
+  const next: Progress = { ...p, skills: { ...p.skills, [id]: have + room } };
   saveProgress(next);
   return next;
 }
 
-export function refundSkill(kind: TowerKind, count = 1): Progress {
+export function refundSkill(id: string, count = 1): Progress {
   const p = loadProgress();
-  const have = rungsOn(p.skills, kind);
+  const have = ranksOn(p.skills, id);
   const back = Math.min(count, have);
   if (back <= 0) return p;
   const skills = { ...p.skills };
-  if (have - back <= 0) delete skills[kind];
-  else skills[kind] = have - back;
+  if (have - back <= 0) delete skills[id];
+  else skills[id] = have - back;
   const next: Progress = { ...p, skills };
   saveProgress(next);
   return next;
 }
 
-/** hand the whole tree back — every point, every line */
+/** hand the whole tree back — every point, every node */
 export function refundAllSkills(): Progress {
   const p = loadProgress();
   const next: Progress = { ...p, skills: {} };

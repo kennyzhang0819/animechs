@@ -1,12 +1,24 @@
 import { TOWERS, type BulletStats, type TowerStats } from "./constants";
 import { armored, faster, piercing, reaching, stronger } from "./upgrades";
-import { FIELDED_KINDS, TOWER_KINDS, type TowerKind } from "./types";
+import type { TowerKind } from "./types";
 
 /**
- * THE SKILL TREE — one LINE a turret, ten nodes long, bought with the
- * points the level track pays (economy.ts SKILL_POINT_LEVELS). A node
- * costs one point, belongs to exactly one turret, and improves every
- * turret of that kind on the board. See docs/skills.md.
+ * THE SKILL TREE — a short list of GLOBAL dials, each bought up to twenty
+ * times with the points the level track pays (economy.ts
+ * SKILL_POINT_LEVELS). A rank costs one point and every rank of every
+ * node applies to EVERY TURRET ON THE BOARD. See docs/skills.md.
+ *
+ * IT USED TO BE ONE LINE A TURRET, ten nodes long, and that was the wrong
+ * shape twice over. A line was a bet on a gun rather than on a way of
+ * playing — and the roster is twenty-three guns, so a hundred points
+ * spread over it bought a tenth of the tree and nothing a player could
+ * feel. These are stackable instead: a point in Payload is a point every
+ * gun you will ever build gets, and twenty of them is a decision about
+ * what your whole board is.
+ *
+ * NOTHING HERE REGENERATES. A dial that put health back would be a
+ * different game — the answer to a chewed turret is the fixer and the
+ * restorer, which are cards a run buys.
  *
  * It is not upgrades.ts. Those branches are a different, shelved tree
  * dealt BY the track; nothing about them is read here.
@@ -14,36 +26,35 @@ import { FIELDED_KINDS, TOWER_KINDS, type TowerKind } from "./types";
 
 /** the chip face a node wears — its effect, in three or four letters */
 export type SkillTag =
-  | "RATE"
   | "DMG"
+  | "RATE"
   | "RNG"
-  | "BLAST"
   | "ARM"
-  | "PIERCE"
+  | "HULL"
+  | "BLAST"
   | "AIM"
   | "TURN"
-  | "HEAL"
-  | "ULT";
+  | "VEL"
+  | "PIERCE";
+
+/** how many times one node may be bought */
+export const MAX_RANKS = 20;
+
+/** what one rank costs, in points */
+export const NODE_COST = 1;
 
 export interface SkillNode {
   id: string;
-  turret: TowerKind;
-  /** 1..RUNGS_PER_TURRET — its place in the chain, and its only gate */
-  rung: number;
   name: string;
-  blurb: string;
   tag: SkillTag;
-  apply: (s: TowerStats) => TowerStats;
+  /** one line, with the rank's own number in it */
+  blurb: (ranks: number) => string;
+  /** every rank folded in at once — never called with 0 */
+  apply: (s: TowerStats, ranks: number) => TowerStats;
 }
 
-/** how long every line is, and the one number the board's row sizes to */
-export const RUNGS_PER_TURRET = 10;
-
-/** what one node costs, in points */
-export const NODE_COST = 1;
-
 // ---------------------------------------------------------------------------
-// the stat surgery — the composed helpers live in upgrades.ts and are shared
+// the stat surgery the composed helpers in upgrades.ts do not cover
 // ---------------------------------------------------------------------------
 
 const eachAmmo = (s: TowerStats, f: (b: BulletStats) => BulletStats): TowerStats => {
@@ -66,266 +77,142 @@ const swifter = (s: TowerStats, mul: number): TowerStats => ({
   shootCone: s.shootCone * mul,
 });
 
-const mending = (s: TowerStats, mul: number): TowerStats =>
-  s.heal ? { ...s, heal: { ...s.heal, percent: s.heal.percent * mul } } : s;
+const tougher = (s: TowerStats, mul: number): TowerStats => ({
+  ...s,
+  health: s.health * mul,
+});
+
+/**
+ * A ROUND THAT LEAVES THE BARREL FASTER, and covers the same ground doing
+ * it: speed alone would cut the distance a shot crosses before its
+ * lifetime runs out, which is a range nerf wearing a buff's name.
+ */
+const quicker = (s: TowerStats, mul: number): TowerStats =>
+  eachAmmo(s, (b) => ({ ...b, speed: b.speed * mul, lifetime: b.lifetime / mul }));
 
 // ---------------------------------------------------------------------------
-// the node builders — a line is written as ten of these
+// THE NODES. Every one is a per-rank step and a cap of MAX_RANKS.
 // ---------------------------------------------------------------------------
 
-type Spec = Omit<SkillNode, "id" | "turret" | "rung">;
+const pct = (n: number): string => (Math.round(n * 10) / 10).toString();
 
-const rate = (pct: number): Spec => ({
-  name: "Rate of Fire",
-  blurb: `+${pct}% attack speed.`,
-  tag: "RATE",
-  apply: (s) => faster(s, 1 + pct / 100),
-});
+export const SKILL_NODES: readonly SkillNode[] = [
+  {
+    id: "payload",
+    name: "Payload",
+    tag: "DMG",
+    blurb: (r) => `+${pct(r * 2)}% damage on every turret, blast included.`,
+    apply: (s, r) => stronger(s, 1 + (r * 2) / 100),
+  },
+  {
+    id: "cadence",
+    name: "Cadence",
+    tag: "RATE",
+    blurb: (r) => `+${pct(r * 2)}% attack speed on every turret.`,
+    apply: (s, r) => faster(s, 1 + (r * 2) / 100),
+  },
+  {
+    id: "reach",
+    name: "Reach",
+    tag: "RNG",
+    blurb: (r) => `+${pct(r * 1.5)}% range, and the shot flies as far.`,
+    apply: (s, r) => reaching(s, 1 + (r * 1.5) / 100),
+  },
+  {
+    id: "plating",
+    name: "Plating",
+    tag: "ARM",
+    blurb: (r) => `+${r} armour on every turret — a flat shave off each hit.`,
+    apply: (s, r) => armored(s, r),
+  },
+  {
+    id: "hull",
+    name: "Hull",
+    tag: "HULL",
+    blurb: (r) => `+${pct(r * 4)}% turret health.`,
+    apply: (s, r) => tougher(s, 1 + (r * 4) / 100),
+  },
+  {
+    id: "blast",
+    name: "Blast Radius",
+    tag: "BLAST",
+    blurb: (r) => `+${pct(r * 2)}% splash radius, wherever a shot has one.`,
+    apply: (s, r) => wider(s, 1 + (r * 2) / 100),
+  },
+  {
+    id: "stabilisers",
+    name: "Stabilisers",
+    tag: "AIM",
+    blurb: (r) => `${pct(r * 2)}% less scatter on every shot.`,
+    apply: (s, r) => steadier(s, 1 - (r * 2) / 100),
+  },
+  {
+    id: "servos",
+    name: "Servos",
+    tag: "TURN",
+    blurb: (r) => `+${pct(r * 3)}% traverse — barrels come onto a target sooner.`,
+    apply: (s, r) => swifter(s, 1 + (r * 3) / 100),
+  },
+  {
+    id: "velocity",
+    name: "Muzzle Velocity",
+    tag: "VEL",
+    blurb: (r) => `+${pct(r * 2)}% shot speed, over the same ground.`,
+    apply: (s, r) => quicker(s, 1 + (r * 2) / 100),
+  },
+  {
+    // THE ONE COARSE DIAL. Pierce is a count of bodies and not a
+    // percentage, so a rank of it cannot be a fifth of one — four ranks
+    // buy a body, and the twentieth is the fifth of them.
+    id: "penetrators",
+    name: "Penetrators",
+    tag: "PIERCE",
+    blurb: (r) =>
+      `Shots punch through ${Math.floor(r / 4)} more ${Math.floor(r / 4) === 1 ? "body" : "bodies"}` +
+      (r % 4 === 0 ? "." : ` — ${4 - (r % 4)} more rank${4 - (r % 4) === 1 ? "" : "s"} for the next.`),
+    apply: (s, r) => (r >= 4 ? piercing(s, Math.floor(r / 4)) : s),
+  },
+];
 
-const dmg = (pct: number): Spec => ({
-  name: "Payload",
-  blurb: `+${pct}% damage, blast included.`,
-  tag: "DMG",
-  apply: (s) => stronger(s, 1 + pct / 100),
-});
+/** every point the tree could ever take — twice what 100 levels pay, on
+ *  purpose: a hundred points over ten dials is a hand, not a checklist */
+export const TREE_COST = SKILL_NODES.length * MAX_RANKS * NODE_COST;
 
-const rng = (pct: number): Spec => ({
-  name: "Reach",
-  blurb: `+${pct}% range, and the shot flies as far.`,
-  tag: "RNG",
-  apply: (s) => reaching(s, 1 + pct / 100),
-});
-
-const blast = (pct: number): Spec => ({
-  name: "Blast Radius",
-  blurb: `+${pct}% splash radius.`,
-  tag: "BLAST",
-  apply: (s) => wider(s, 1 + pct / 100),
-});
-
-const plate = (add: number): Spec => ({
-  name: "Plating",
-  blurb: `+${add} armour on every turret of this kind.`,
-  tag: "ARM",
-  apply: (s) => armored(s, add),
-});
-
-const pierce = (extra: number): Spec => ({
-  name: "Pierce",
-  blurb: `Shots punch through ${extra} more ${extra === 1 ? "body" : "bodies"}.`,
-  tag: "PIERCE",
-  apply: (s) => piercing(s, extra),
-});
-
-const aim = (pct: number): Spec => ({
-  name: "Stabilisers",
-  blurb: `${pct}% less scatter on every shot.`,
-  tag: "AIM",
-  apply: (s) => steadier(s, 1 - pct / 100),
-});
-
-const turn = (pct: number): Spec => ({
-  name: "Servos",
-  blurb: `+${pct}% traverse — the barrel comes onto a target sooner.`,
-  tag: "TURN",
-  apply: (s) => swifter(s, 1 + pct / 100),
-});
-
-const heal = (pct: number): Spec => ({
-  name: "Pulse Output",
-  blurb: `+${pct}% healing a pulse.`,
-  tag: "HEAL",
-  apply: (s) => mending(s, 1 + pct / 100),
-});
-
-/** the tenth rung: authored per turret, and the only one with a name of
- *  its own */
-const ult = (name: string, blurb: string, apply: (s: TowerStats) => TowerStats): Spec => ({
-  name,
-  blurb,
-  tag: "ULT",
-  apply,
-});
-
-// ---------------------------------------------------------------------------
-// THE LINES — ten a turret, in the order they are bought
-// ---------------------------------------------------------------------------
-
-const LINES: Record<TowerKind, readonly Spec[]> = {
-  tacker: [
-    rate(20), dmg(20), pierce(1), rng(10), rate(25), plate(2), dmg(25), aim(30), rate(30),
-    ult("Swarm Fire", "+60% attack speed and shots punch through two more bodies.",
-      (s) => piercing(faster(s, 1.6), 2)),
-  ],
-  lobber: [
-    dmg(20), blast(15), rng(12), rate(20), dmg(25), plate(3), blast(20), rate(25), rng(15),
-    ult("Saturation Shell", "+60% damage over a blast half again as wide.",
-      (s) => wider(stronger(s, 1.6), 1.5)),
-  ],
-  autocannon: [
-    rate(20), dmg(20), pierce(1), aim(25), rate(25), plate(3), dmg(25), rng(12), rate(25),
-    ult("Belt Feed", "+70% attack speed, and the barrel swings half again as fast.",
-      (s) => swifter(faster(s, 1.7), 1.5)),
-  ],
-  airburst: [
-    dmg(20), blast(20), rate(20), rng(12), dmg(25), plate(3), blast(20), rate(25), aim(30),
-    ult("Proximity Curtain", "+50% damage over a blast 60% wider.",
-      (s) => wider(stronger(s, 1.5), 1.6)),
-  ],
-  cleaver: [
-    dmg(20), rng(12), rate(20), pierce(1), dmg(25), plate(4), rate(25), rng(15), turn(25),
-    ult("Whetted Edge", "+70% damage and the beam reaches 25% further.",
-      (s) => reaching(stronger(s, 1.7), 1.25)),
-  ],
-  torch: [
-    rate(20), dmg(25), rng(10), plate(3), rate(25), dmg(25), turn(30), rng(12), plate(4),
-    ult("Pyratite Feed", "+80% damage and half again the reach.",
-      (s) => reaching(stronger(s, 1.8), 1.5)),
-  ],
-  coil: [
-    dmg(20), rng(12), rate(20), pierce(1), dmg(25), plate(3), rate(25), rng(15), aim(30),
-    ult("Cascade", "+70% damage and shots arc through three more bodies.",
-      (s) => piercing(stronger(s, 1.7), 3)),
-  ],
-  piercer: [
-    dmg(25), rng(15), rate(15), pierce(1), dmg(25), plate(4), rng(15), rate(20), aim(30),
-    ult("Focused Optics", "+80% damage and a third more range.",
-      (s) => reaching(stronger(s, 1.8), 1.33)),
-  ],
-  barrage: [
-    dmg(20), blast(15), rate(20), rng(12), dmg(25), plate(4), blast(20), rate(25), aim(25),
-    ult("Plastanium Rounds", "+60% damage and a blast 60% wider.",
-      (s) => wider(stronger(s, 1.6), 1.6)),
-  ],
-  douser: [
-    rate(20), dmg(20), rng(12), plate(3), rate(25), dmg(25), turn(25), rng(15), plate(4),
-    ult("Cryofluid", "+70% damage and a third more reach.",
-      (s) => reaching(stronger(s, 1.7), 1.33)),
-  ],
-  tether: [
-    rng(15), dmg(20), rate(20), plate(3), rng(15), dmg(25), aim(30), rate(25), plate(4),
-    ult("Phase Aperture", "+70% damage and half again the reach.",
-      (s) => reaching(stronger(s, 1.7), 1.5)),
-  ],
-  deluge: [
-    rate(20), dmg(20), rng(12), blast(15), rate(25), plate(4), dmg(25), rng(15), turn(25),
-    ult("Flood Chamber", "+60% attack speed and +40% damage.",
-      (s) => stronger(faster(s, 1.6), 1.4)),
-  ],
-  fixer: [
-    heal(20), rng(15), rate(20), plate(3), heal(20), rng(15), rate(20), plate(4), heal(25),
-    ult("Overdrive Coils", "+60% healing a pulse, delivered 40% faster.",
-      (s) => mending(faster(s, 1.4), 1.6)),
-  ],
-  restorer: [
-    heal(20), rng(15), rate(20), plate(3), heal(20), rng(15), rate(20), plate(4), heal(25),
-    ult("Phase Weave", "+70% healing a pulse over a third more ground.",
-      (s) => reaching(mending(s, 1.7), 1.33)),
-  ],
-  hive: [
-    dmg(20), rate(20), rng(12), blast(15), dmg(25), plate(4), rate(25), rng(15), blast(20),
-    ult("Warhead Racks", "+60% damage and a blast half again as wide.",
-      (s) => wider(stronger(s, 1.6), 1.5)),
-  ],
-  whirl: [
-    rate(20), dmg(20), blast(15), rng(12), rate(25), plate(4), dmg(25), aim(30), blast(20),
-    ult("Surge Belt", "+70% attack speed and +40% damage.",
-      (s) => stronger(faster(s, 1.7), 1.4)),
-  ],
-  repeater: [
-    rate(20), dmg(20), pierce(1), rng(12), rate(25), plate(5), dmg(25), aim(25), turn(25),
-    ult("Surge Bases", "+70% attack speed and shots punch through two more bodies.",
-      (s) => piercing(faster(s, 1.7), 2)),
-  ],
-  furnace: [
-    dmg(25), rate(15), rng(12), blast(15), dmg(25), plate(5), rate(20), rng(15), blast(20),
-    ult("Phase Loop", "+80% damage over a blast 60% wider.",
-      (s) => wider(stronger(s, 1.8), 1.6)),
-  ],
-  railhead: [
-    dmg(25), rng(15), rate(15), pierce(1), dmg(25), plate(5), rng(15), rate(20), aim(30),
-    ult("Surge Capacitors", "+90% damage and shots pass through three more bodies.",
-      (s) => piercing(stronger(s, 1.9), 3)),
-  ],
-  duster: [
-    rate(20), dmg(20), rng(12), blast(15), rate(25), plate(2), dmg(25), aim(25), rng(15),
-    ult("Saturated Dust", "+60% damage over a blast half again as wide.",
-      (s) => wider(stronger(s, 1.6), 1.5)),
-  ],
-  blighter: [
-    dmg(20), rate(20), blast(15), rng(12), dmg(25), plate(3), rate(25), blast(20), rng(15),
-    ult("Virulence", "+70% damage and a blast 60% wider.",
-      (s) => wider(stronger(s, 1.7), 1.6)),
-  ],
-  drifter: [
-    dmg(20), rng(15), rate(20), blast(15), dmg(25), plate(4), rng(15), rate(25), aim(25),
-    ult("Drift Bloom", "+60% damage and half again the reach.",
-      (s) => reaching(stronger(s, 1.6), 1.5)),
-  ],
-  stinger: [
-    dmg(25), rate(15), rng(15), pierce(1), dmg(25), plate(5), rate(20), rng(15), aim(30),
-    ult("Envenomed Core", "+80% damage and shots punch through two more bodies.",
-      (s) => piercing(stronger(s, 1.8), 2)),
-  ],
-};
-
-/** one turret's chain, in buy order */
-export const SKILL_LINES: Record<TowerKind, readonly SkillNode[]> = (() => {
-  const out = {} as Record<TowerKind, readonly SkillNode[]>;
-  for (const kind of TOWER_KINDS)
-    out[kind] = LINES[kind].map((spec, i) => ({
-      ...spec,
-      id: `${kind}-${i + 1}`,
-      turret: kind,
-      rung: i + 1,
-    }));
-  return out;
-})();
-
-/** THE LINES ARE A FIXED LENGTH — the board draws ten cells a row */
-(() => {
-  for (const kind of TOWER_KINDS)
-    if (SKILL_LINES[kind].length !== RUNGS_PER_TURRET)
-      throw new Error(`${kind}'s skill line has ${SKILL_LINES[kind].length} nodes, not ${RUNGS_PER_TURRET}`);
-})();
-
-/** how many points a line can ever take */
-export const LINE_COST = RUNGS_PER_TURRET * NODE_COST;
-
-/** the rows the board draws, in the roster's own order */
-export const SKILL_TURRETS: readonly TowerKind[] = FIELDED_KINDS;
-
-/** how many rungs a save has bought on every line, keyed by turret */
-export type SkillPoints = Partial<Record<TowerKind, number>>;
+/** how many ranks a save has bought of each node, keyed by node id */
+export type SkillPoints = Partial<Record<string, number>>;
 
 export const NO_SKILLS: SkillPoints = {};
 
-/** the rungs bought on one line, clamped into the line */
-export const rungsOn = (skills: SkillPoints | undefined, kind: TowerKind): number =>
-  Math.max(0, Math.min(RUNGS_PER_TURRET, Math.floor(skills?.[kind] ?? 0)));
+/** the ranks bought of one node, clamped into it */
+export const ranksOn = (skills: SkillPoints | undefined, id: string): number =>
+  Math.max(0, Math.min(MAX_RANKS, Math.floor(skills?.[id] ?? 0)));
 
 /** every point a spread has spent */
 export function spentSkillPoints(skills: SkillPoints | undefined): number {
   let total = 0;
-  for (const kind of TOWER_KINDS) total += rungsOn(skills, kind) * NODE_COST;
+  for (const n of SKILL_NODES) total += ranksOn(skills, n.id) * NODE_COST;
   return total;
 }
 
 /**
- * The turret with its bought rungs folded in, applied over whatever the
- * rest of the tech (upgrades.ts) already composed. Returns `base`
- * untouched when the line is unbought, so an unspent save pays nothing.
+ * A TURRET WITH THE WHOLE TREE FOLDED IN, applied over whatever the rest
+ * of the tech (upgrades.ts) already composed. Returns `base` untouched
+ * when nothing is bought, so an unspent save pays nothing.
+ *
+ * THE ORDER IS THE LIST'S and it has to be fixed: these compose by
+ * multiplication and addition both, and a board that applied them in
+ * another order would price the same save differently.
  */
-export function skilledTower(kind: TowerKind, rungs: number, base: TowerStats): TowerStats {
-  const n = Math.max(0, Math.min(RUNGS_PER_TURRET, Math.floor(rungs)));
-  if (n === 0) return base;
-  const line = SKILL_LINES[kind];
+export function skilledTower(skills: SkillPoints | undefined, base: TowerStats): TowerStats {
+  if (!skills) return base;
   let s = base;
-  for (let i = 0; i < n; i++) s = line[i].apply(s);
+  for (const n of SKILL_NODES) {
+    const r = ranksOn(skills, n.id);
+    if (r > 0) s = n.apply(s, r);
+  }
   return s;
 }
 
-/** the stats one line's first `rungs` nodes make of the stock turret —
- *  what the board prints beside a row */
-export const skilledStock = (kind: TowerKind, rungs: number): TowerStats =>
-  skilledTower(kind, rungs, TOWERS[kind]);
+/** the stats the tree makes of one stock turret — what a card would print */
+export const skilledStock = (kind: TowerKind, skills: SkillPoints | undefined): TowerStats =>
+  skilledTower(skills, TOWERS[kind]);

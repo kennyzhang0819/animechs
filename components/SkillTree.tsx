@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { POINT_COLOR } from "@/game/economy";
 import {
   buySkill,
@@ -6,123 +5,124 @@ import {
   refundSkill,
   skillPointsLeft,
   skillPointsOf,
-  techOf,
   type Progress,
 } from "@/game/progress";
 import {
-  RUNGS_PER_TURRET,
-  rungsOn,
-  SKILL_LINES,
-  SKILL_TURRETS,
+  MAX_RANKS,
+  ranksOn,
+  SKILL_NODES,
   spentSkillPoints,
   type SkillNode,
 } from "@/game/skills";
-import { TOWERS } from "@/game/constants";
-import { rarityDef } from "@/game/rarity";
-import type { TowerKind } from "@/game/types";
 import { HoverCard, useHoverCard } from "./HoverCard";
-import { useTowerIcon } from "./towerIcons";
 import { tile } from "./tile";
 
 /**
- * THE SKILL TREE, as a board: one ROW a turret, its ten nodes to the
- * right of it, bought left to right. Left click spends a point, right
- * click hands one back, and a row the track has not opened is shown shut
- * rather than hidden — the line is what the turret is FOR later.
+ * THE SKILL TREE, as a board: one ROW a dial, twenty pips beside it,
+ * filled left to right. Left click buys a rank, right click hands one
+ * back, shift buys or refunds five.
  *
- * Everything it can say about cost, order and balance is asked of
- * progress.ts (buySkill, refundSkill), so the board never decides what is
- * affordable.
+ * EVERY DIAL IS GLOBAL. There is no turret on this screen and no order to
+ * buy in: a rank of Payload is a rank every gun on every board gets, so
+ * what the player is deciding is what their whole line is FOR, not which
+ * of twenty-three guns to bet on.
+ *
+ * Everything it can say about cost and headroom is asked of progress.ts
+ * (buySkill, refundSkill), so the board never decides what is affordable —
+ * a buy it cannot pay for in full simply takes what is left, which is why
+ * nothing here ever has to explain a price.
  */
 
-function TurretFace({ kind }: { kind: TowerKind }) {
-  const src = useTowerIcon(kind);
-  return <img src={src} alt="" className="h-7 w-7 object-contain [image-rendering:pixelated]" />;
-}
+const ROW_COLOR = "#6E7A8C";
 
-function Node({
-  node,
-  state,
-  color,
+function Pip({
+  on,
+  next,
   onBuy,
   onRefund,
 }: {
-  node: SkillNode;
-  state: "bought" | "next" | "locked";
-  color: string;
-  onBuy: () => void;
-  onRefund: () => void;
+  on: boolean;
+  next: boolean;
+  onBuy: (e: React.MouseEvent) => void;
+  onRefund: (e: React.MouseEvent) => void;
 }) {
-  const tip = useHoverCard("auto");
-  const bought = state === "bought";
   return (
-    <>
-      <button
-        ref={tip.ref as React.RefObject<HTMLButtonElement>}
-        {...tip.anchorProps}
-        onClick={onBuy}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          onRefund();
-        }}
-        aria-label={`${TOWERS[node.turret].name} ${node.rung}: ${node.name}. ${node.blurb}`}
-        className={`ms-tile flex h-11 w-11 shrink-0 flex-col items-center justify-center leading-none ${
-          bought ? "" : state === "next" ? "opacity-80" : "opacity-35"
-        }`}
-        style={tile(bought ? color : "#4A4A52")}
-      >
-        <span className="text-[10px] font-bold tracking-wide" style={{ color: bought ? POINT_COLOR : "#9A9AA4" }}>
-          {node.tag}
-        </span>
-        <span className="text-[9px] text-[#8A8A94]">{node.rung}</span>
-      </button>
-      <HoverCard tip={tip} title={node.name} tag={`Rung ${node.rung} · 1 point`} color={color}>
-        {node.blurb}
-      </HoverCard>
-    </>
+    <button
+      onClick={onBuy}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onRefund(e);
+      }}
+      className={`h-6 w-3.5 shrink-0 rounded-[2px] ${on ? "" : next ? "opacity-70" : "opacity-30"}`}
+      style={{ background: on ? POINT_COLOR : "#3A3A44" }}
+      aria-hidden
+      tabIndex={-1}
+    />
   );
 }
 
 function Row({
-  kind,
-  bought,
-  open,
+  node,
+  ranks,
   onBuy,
   onRefund,
 }: {
-  kind: TowerKind;
-  bought: number;
-  open: boolean;
-  onBuy: (kind: TowerKind, rung: number) => void;
-  onRefund: (kind: TowerKind, rung: number) => void;
+  node: SkillNode;
+  ranks: number;
+  onBuy: (id: string, n: number) => void;
+  onRefund: (id: string, n: number) => void;
 }) {
-  const color = rarityDef(kind).color;
+  const tip = useHoverCard("auto");
+  const step = (e: React.MouseEvent) => (e.shiftKey ? 5 : 1);
   return (
-    <div className={`ms-pane flex items-center gap-3 px-3 py-2 ${open ? "" : "border-[#252525]"}`}>
-      <div className={`flex w-40 shrink-0 items-center gap-2 ${open ? "" : "opacity-45"}`}>
-        <span className="ms-tile flex h-9 w-9 items-center justify-center" style={tile(color)}>
-          <TurretFace kind={kind} />
-        </span>
-        <span className="min-w-0">
-          <span className="block truncate text-[14px] font-bold">{TOWERS[kind].name}</span>
-          <span className="block text-[12px]" style={{ color: bought > 0 ? POINT_COLOR : "#71717C" }}>
-            {open ? `${bought} / ${RUNGS_PER_TURRET}` : "Locked"}
+    <>
+      <div
+        ref={tip.ref as React.RefObject<HTMLDivElement>}
+        {...tip.anchorProps}
+        className="ms-pane flex items-center gap-3 px-3 py-2"
+      >
+        <button
+          onClick={(e) => onBuy(node.id, step(e))}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            onRefund(node.id, step(e));
+          }}
+          aria-label={`${node.name}: ${node.blurb(Math.max(1, ranks))}`}
+          className="ms-tile flex h-9 w-9 shrink-0 items-center justify-center text-[10px] font-bold tracking-wide"
+          style={{ ...tile(ROW_COLOR), color: ranks > 0 ? POINT_COLOR : "#9A9AA4" }}
+        >
+          {node.tag}
+        </button>
+        <span className="w-40 shrink-0 min-w-0">
+          <span className="block truncate text-[14px] font-bold">{node.name}</span>
+          <span
+            className="block text-[12px]"
+            style={{ color: ranks > 0 ? POINT_COLOR : "#71717C" }}
+          >
+            {ranks} / {MAX_RANKS}
           </span>
         </span>
+        <div className="flex flex-wrap gap-1">
+          {Array.from({ length: MAX_RANKS }, (_, i) => (
+            <Pip
+              key={i}
+              on={i < ranks}
+              next={i === ranks}
+              onBuy={() => onBuy(node.id, i + 1 - ranks)}
+              onRefund={() => onRefund(node.id, ranks - i)}
+            />
+          ))}
+        </div>
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        {SKILL_LINES[kind].map((n) => (
-          <Node
-            key={n.id}
-            node={n}
-            color={color}
-            state={n.rung <= bought ? "bought" : open && n.rung === bought + 1 ? "next" : "locked"}
-            onBuy={() => open && onBuy(kind, n.rung)}
-            onRefund={() => open && onRefund(kind, n.rung)}
-          />
-        ))}
-      </div>
-    </div>
+      <HoverCard
+        tip={tip}
+        title={node.name}
+        tag={`${ranks} of ${MAX_RANKS} · 1 point a rank`}
+        color={ROW_COLOR}
+      >
+        {node.blurb(Math.max(1, ranks))}
+      </HoverCard>
+    </>
   );
 }
 
@@ -133,29 +133,14 @@ export default function SkillTree({
   progress: Progress;
   onProgress: (p: Progress) => void;
 }) {
-  const [note, setNote] = useState<string | null>(null);
   const total = skillPointsOf(progress);
   const left = skillPointsLeft(progress);
-  const unlocked = techOf(progress).unlocked;
 
-  // a node further up the line takes every rung under it with it, and a
-  // refund hands back every rung above the one clicked — the chain is
-  // never bought with a hole in it
-  const buy = (kind: TowerKind, rung: number) => {
-    const want = rung - rungsOn(progress.skills, kind);
-    if (want <= 0) return;
-    if (want > left) {
-      setNote(`That needs ${want} points and you have ${left}.`);
-      return;
-    }
-    setNote(null);
-    onProgress(buySkill(kind, want));
+  const buy = (id: string, n: number) => {
+    if (n > 0) onProgress(buySkill(id, n));
   };
-  const refund = (kind: TowerKind, rung: number) => {
-    const back = rungsOn(progress.skills, kind) - rung + 1;
-    if (back <= 0) return;
-    setNote(null);
-    onProgress(refundSkill(kind, back));
+  const refund = (id: string, n: number) => {
+    if (n > 0) onProgress(refundSkill(id, n));
   };
 
   return (
@@ -167,31 +152,30 @@ export default function SkillTree({
           </span>
           <span className="text-[#A6A6AF]">
             {" "}
-            of {total} points unspent — one a level to 100, one a node
+            of {total} points unspent — one a level to 100, one a rank, and every rank is on
+            every turret
           </span>
         </span>
         <button
-          onClick={() => {
-            setNote(null);
-            onProgress(refundAllSkills());
-          }}
+          onClick={() => onProgress(refundAllSkills())}
           disabled={spentSkillPoints(progress.skills) === 0}
           className="ms-btn px-3 py-1.5 text-[14px] disabled:opacity-40"
         >
           Refund all
         </button>
       </div>
-      {note && <div className="px-1 text-[13px] text-[#FF9A62]">{note}</div>}
-      {SKILL_TURRETS.map((kind) => (
+      {SKILL_NODES.map((node) => (
         <Row
-          key={kind}
-          kind={kind}
-          bought={rungsOn(progress.skills, kind)}
-          open={unlocked.has(kind)}
+          key={node.id}
+          node={node}
+          ranks={ranksOn(progress.skills, node.id)}
           onBuy={buy}
           onRefund={refund}
         />
       ))}
+      <div className="px-1 pt-1 text-[13px] text-[#71717C]">
+        Click a pip or the chip to buy, right click to hand one back — hold shift for five.
+      </div>
     </div>
   );
 }

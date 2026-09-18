@@ -28,7 +28,7 @@ export interface TechState {
   relics: ReadonlySet<RelicId>;
   /** each turret's upgrade rungs, as the sim folds them (upgradedTower) */
   upgrades: Record<TowerKind, UpgradePoints>;
-  /** the SKILL TREE's rungs (skills.ts) — bought with the points a level
+  /** the SKILL TREE's ranks (skills.ts) — bought with the points a level
    *  pays, and folded on top of the upgrades above */
   skills: SkillPoints;
 }

@@ -285,27 +285,83 @@ export function missionXp(cleared: number, waves: number): number {
 }
 
 /**
- * THE CLIMB IS FLAT: every level costs the same, from 1 -> 2 to the cap.
+ * THE CLIMB RAMPS, and it ramps to the number at the top of it: a level
+ * near the start is a few minutes and the hundredth is five Nemesis
+ * clears. See docs/economy.md.
  *
- * It was StarCraft II's mastery table, transcribed and scaled — a curve
- * that got dearer every rung. What that bought was a grind whose rate the
- * player could not hold in their head: "how far is the next point" had a
- * different answer at 20 than at 80, and the answer was a lookup. One
- * number instead. A level is five Nemesis clears, everywhere on the
- * ladder, and the only thing that changes with height is that there is
- * nothing left to buy past SKILL_POINT_LEVELS. See docs/economy.md.
+ * IT IS STARCRAFT II'S MASTERY TABLE, resampled and scaled. That curve is
+ * the reference this game's progression is cut from, and what it buys is
+ * a first hour that moves: the first level costs a fortieth of the
+ * hundredth, so a new save is levelling while it is still learning the
+ * board, and the grind arrives only once there is something to grind for.
+ *
+ * A FLAT CLIMB WAS TRIED AND IT WAS WRONG AT BOTH ENDS. Every level at
+ * XP_PER_LEVEL meant the first level cost five clears — a save that has
+ * seen one map paying the hundredth level's price — and it meant the
+ * curve said nothing about where a player was. The flat number is the
+ * TOP of the ramp now, not the whole of it, and past SKILL_POINT_LEVELS
+ * (where the last point is paid) it is all there is.
  */
 
-/** WHAT EVERY LEVEL COSTS — the one knob on the whole grind */
+/** SC2's mastery levels: 0 -> 1 up to 89 -> 90, verbatim */
+const SC2_MASTERY: readonly number[] = [
+  5_000, 20_000, 20_500, 21_000, 21_500, 22_000, 22_500, 23_000, 24_000, 25_000, 26_000, 27_000,
+  28_000, 30_000, 32_000, 34_000, 36_000, 38_000, 41_000, 44_000, 47_000, 50_000, 54_000, 58_000,
+  62_000, 66_000, 71_000, 76_000, 81_000, 86_000, 89_000, 92_000, 95_000, 99_000, 103_000, 107_000,
+  111_000, 115_000, 119_000, 123_000, 127_000, 131_000, 135_000, 139_000, 143_000, 147_000, 151_000,
+  155_000, 160_000, 165_000, 170_000, 175_000, 180_000, 185_000, 191_000, 197_000, 203_000, 209_000,
+  215_000, 222_000, 229_000, 236_000, 243_000, 250_000, 258_000, 266_000, 274_000, 282_000, 290_000,
+  299_000, 308_000, 317_000, 326_000, 335_000, 345_000, 355_000, 365_000, 375_000, 385_000, 395_000,
+  415_000, 445_000, 485_000, 535_000, 595_000, 665_000, 745_000, 835_000, 935_000, 1_035_000,
+];
+
+/** WHAT THE HUNDREDTH LEVEL COSTS, and every level past it — the one knob
+ *  the whole climb is scaled against */
 export const XP_PER_LEVEL = 500_000;
 
 /**
  * THE LAST LEVEL THAT PAYS A SKILL POINT, and therefore how many points a
  * save can ever hold: one for level 1 and one for every level after it to
- * here. Past it the climb costs the same and hands over nothing — see
+ * here. It is also where the ramp ends and the flat climb starts — see
  * docs/skills.md.
  */
 export const SKILL_POINT_LEVELS = 100;
+
+/**
+ * THE RAMP, one step a level from 1 -> 2 up to SKILL_POINT_LEVELS ->
+ * next: SC2's ninety steps stretched over a hundred and multiplied until
+ * the last of them IS XP_PER_LEVEL. Rounded to the nearest five hundred,
+ * because a level's price is a number a player reads.
+ */
+const STEPS: readonly number[] = (() => {
+  const n = SKILL_POINT_LEVELS;
+  const raw: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const p = (i * (SC2_MASTERY.length - 1)) / (n - 1);
+    const a = Math.floor(p);
+    const b = Math.min(SC2_MASTERY.length - 1, a + 1);
+    raw.push(SC2_MASTERY[a] + (SC2_MASTERY[b] - SC2_MASTERY[a]) * (p - a));
+  }
+  const k = XP_PER_LEVEL / raw[n - 1];
+  return raw.map((v) => Math.round((v * k) / 500) * 500);
+})();
+
+/** the XP standing at the front of each level, so a lookup is not a sum */
+const AT: readonly number[] = (() => {
+  const out = [0];
+  for (const step of STEPS) out.push(out[out.length - 1] + step);
+  return out;
+})();
+
+/** THE TABLE IS DERIVED, SO THE SHAPE IS CHECKED AT IMPORT */
+(() => {
+  if (STEPS.length !== SKILL_POINT_LEVELS)
+    throw new Error(`the climb authors ${STEPS.length} steps, not ${SKILL_POINT_LEVELS}`);
+  if (STEPS[STEPS.length - 1] !== XP_PER_LEVEL)
+    throw new Error(`the last step is ${STEPS[STEPS.length - 1]}, not XP_PER_LEVEL`);
+  for (let i = 1; i < STEPS.length; i++)
+    if (STEPS[i] < STEPS[i - 1]) throw new Error(`the climb falls at level ${i + 1}`);
+})();
 
 /** the points a save standing at `level` has been paid, spent or not */
 export const skillPointsAt = (level: number): number =>
@@ -314,19 +370,34 @@ export const skillPointsAt = (level: number): number =>
 /** the highest level a save can stand at; XP past it banks and does nothing */
 export const LEVEL_CAP = 1000;
 
-/** XP needed to climb from `level` to `level + 1` — the same everywhere */
-export function xpToNext(_level: number): number {
-  return XP_PER_LEVEL;
+/** XP needed to climb from `level` to `level + 1` */
+export function xpToNext(level: number): number {
+  const l = Math.max(1, Math.floor(level));
+  return l <= STEPS.length ? STEPS[l - 1] : XP_PER_LEVEL;
 }
 
 /** total XP at which `level` is reached — level 1 is zero */
 export function xpAtLevel(level: number): number {
-  return Math.max(0, Math.min(level, LEVEL_CAP) - 1) * XP_PER_LEVEL;
+  const l = Math.max(1, Math.min(Math.floor(level), LEVEL_CAP));
+  if (l <= AT.length) return AT[l - 1];
+  return AT[AT.length - 1] + (l - AT.length) * XP_PER_LEVEL;
 }
 
 export function levelForXp(xp: number): number {
-  const left = Math.max(0, Math.floor(xp));
-  return Math.min(LEVEL_CAP, 1 + Math.floor(left / XP_PER_LEVEL));
+  const total = Math.max(0, Math.floor(xp));
+  // the ramp first, by walking the prefix; the flat climb past it is
+  // arithmetic
+  if (total < AT[AT.length - 1]) {
+    let lo = 1, hi = AT.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (AT[mid - 1] <= total) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  }
+  const over = total - AT[AT.length - 1];
+  return Math.min(LEVEL_CAP, AT.length + Math.floor(over / XP_PER_LEVEL));
 }
 
 /** how far into the current level a total is: xp earned since it, and the

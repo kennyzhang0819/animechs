@@ -262,7 +262,7 @@ import {
   siegeFromMarks, type MarkGarrison, type MarkSiege, type Post, type Road,
 } from "./missions";
 import { NO_UPGRADES, skilledTower, upgradedTower, type TechState } from "./tech";
-import { rungsOn } from "./skills";
+
 import { countSensitive } from "./upgrades";
 import {
   applyTurretMods,
@@ -3527,7 +3527,7 @@ export class Sim {
       const base = up && counts
         ? upgradedTower(kind, up[kind] ?? NO_UPGRADES, { count: counts[kind] })
         : TOWERS[kind];
-      const spec = applyRelics(skilledTower(kind, rungsOn(skills, kind), base), this.relics);
+      const spec = applyRelics(skilledTower(skills, base), this.relics);
       if (spec !== TOWERS[kind]) this.specs.set(kind, spec);
     }
     // ...and every STANDING turret re-composed on top of that, because its
@@ -3599,7 +3599,7 @@ export class Sim {
         mine.length = 0;
         for (const t of this.towers) if (t.team === "player" && t.kind === kind) mine.push(t);
         const spec = applyRelics(
-          skilledTower(kind, rungsOn(this.tech?.skills, kind), upgradedTower(kind, points, { count: mine.length })),
+          skilledTower(this.tech?.skills, upgradedTower(kind, points, { count: mine.length })),
           this.relics,
         );
         if (spec === TOWERS[kind]) this.specs.delete(kind);
