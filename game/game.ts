@@ -9,7 +9,7 @@ import {
   refreshMap,
   SPAWN_STYLE,
 } from "./maps";
-import { postsFor, roadAt, roadsFor, siegeFor } from "./missions";
+import { garrisonsFor, postsFor, roadAt, roadsFor, siegeFor } from "./missions";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { towerBaseIcon, towerGhostIcon } from "./towerIcons";
 import {
@@ -4309,11 +4309,61 @@ export class Game {
    * label comes off. The overlay is a PROMISE about the future, and it
    * stops being one the moment the future arrives.
    */
+  /**
+   * THE GROUND THE SWARM HOLDS (missionMarks.ts GARRISON), ringed on every
+   * board that draws one, whatever the mission.
+   *
+   * THE CIRCLE IS THE TRUTH AND NOT A DECORATION: it is exactly the leash
+   * the bodies in it are held to (Sim.garrisonUnit), so a turret placed
+   * outside the line is a turret they will never walk out to, and a player
+   * can see that before they spend.
+   *
+   * A HELD ONE GOES QUIET. While something is standing in it the ring has
+   * nothing left to tell anybody — the bodies are on screen, firing — so
+   * it drops to a hairline. Empty, it dashes: that is ground the swarm
+   * will come back and take on its next wave.
+   */
+  private drawGarrisons(view: SimView, c: CanvasRenderingContext2D): void {
+    const rings = garrisonsFor(this.world.terrain.marks);
+    if (rings.length === 0) return;
+    // HELD IS READ OFF THE BOARD AND NOT OFF A CLOCK, and it is read by
+    // KIND: a wave walking through a circle is not holding it. What a
+    // garrison is made of never walks at the core (levels.ts — the
+    // Wardens are objective trees no wave may send), so a live one of
+    // those inside the ring is the whole test, which is the same one the
+    // sim asks before it mans a garrison again
+    const held = rings.map(() => false);
+    for (let i = 0; i < view.n; i++) {
+      if (view.uhp[i] <= 0) continue;
+      for (let r = 0; r < rings.length; r++) {
+        if (held[r]) continue;
+        const g = rings[r];
+        if (!g.kinds.some((k) => UNIT_ID[k] === view.ukind[i])) continue;
+        if (Math.hypot(view.upx[i] - g.post.x, view.upy[i] - g.post.y) <= g.post.r) held[r] = true;
+      }
+    }
+    c.save();
+    c.beginPath();
+    c.rect(0, 0, W, H);
+    c.clip();
+    for (const [n, g] of rings.entries()) {
+      c.strokeStyle = SPAWN_STYLE.css;
+      c.globalAlpha = held[n] ? 0.12 : 0.3;
+      c.lineWidth = held[n] ? 2 : 4;
+      c.setLineDash(held[n] ? [] : [30, 20]);
+      c.beginPath();
+      c.arc(g.post.x, g.post.y, g.post.r, 0, Math.PI * 2);
+      c.stroke();
+      c.setLineDash([]);
+    }
+    c.restore();
+  }
+
   private drawMissionPosts(c: CanvasRenderingContext2D): void {
     const level = this.world.level;
     const m = level.mission;
     if (m.kind !== "raze") return;
-    const posts = postsFor(level.map, this.world.terrain.marks);
+    const posts = postsFor(level.map);
     const siege = siegeFor(this.world.terrain.marks);
     if (posts.length === 0 && !siege) return;
     const now = this.world.time;
@@ -4341,8 +4391,11 @@ export class Game {
         c.fill();
       }
     }
+    // the rings are the FALLBACK's: a map that places its own guns draws
+    // them on their cells above, and what holds the ground round them is a
+    // garrison and not this mission's (drawGarrisons)
     const rings = siege
-      ? siege.garrisons.map((g) => ({ post: posts[g.post], wave: g.wave, guns: 0 }))
+      ? []
       : m.sections.map((sec, i) => ({ post: posts[sec.post], wave: razeWave(sec, i), guns: sec.guns }));
     for (const ring of rings) {
       const post = ring.post;
@@ -4478,6 +4531,8 @@ export class Game {
     // ...and the siege's batteries, on the same layer and for the same
     // reason: the mission's geometry belongs under the fight
     this.drawMissionPosts(c);
+    // ...and the ground the swarm holds, which is not a mission's at all
+    this.drawGarrisons(view, c);
 
     // ROUTES, under everything else so a selection ring still reads on top
     if (this.showRoutes) {

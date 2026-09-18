@@ -163,11 +163,21 @@ spread a count of guns round a post is gone: where a gun stands is a
 decision about cover and approach, so it is a mark, and how many rise is
 how many you drew.
 
-**`battery`** — a garrison region: which section it rises in, how far it
-reaches, and how many Bulwarks and Lances hold it. It stands no guns
-itself. The radius is the leash `Sim.garrisonUnit` holds every body raised
-there to, and the circle the overlay rings, so what an author sets is
-exactly what a player can see.
+**`garrison`** — a circle of ground the swarm holds, and what holds it:
+the waves it is manned on, how far it reaches, and how many Bulwarks and
+Lances stand in it. **It belongs to no mission.** This began as the guard
+over a railgun battery and is not that any more — a garrison is a fact
+about a PLACE, there is a force dug in here and it will not follow you
+home, and every board has places worth denying. So it is offered on every
+map whatever the mission is playing, and the emplacements it used to be
+bolted to are their own marks.
+
+The radius is the leash `Sim.garrisonUnit` holds every body raised there
+to, and the circle the board rings, so what an author sets is exactly what
+a player can see. Like a buff tower it is **a spot, not a rise**: a
+garrison still standing does nothing on its later waves, and one that has
+been cleared is manned again on the next wave it names — so `1` is ground
+you take once and `1-40` is ground the swarm keeps coming back for.
 
 **`road`** — the line a crosser walks (`game/missions.ts`): the Borers'
 lines on an intercept map, the convoy's on an escort one. Its corners are
@@ -176,20 +186,22 @@ mission names a road by index (`InterceptMission.pattern`). See **Drawing a
 road** below.
 
 These are the kinds that supply a mission's geometry *and* its counts.
-`missions.ts siegeFromMarks` turns the raze marks into the emplacements,
-the regions and one section per rising, and `levelWithMarks` puts those
-sections on the level — on **both sides of the seam** (`Sim.reset` and
+`missions.ts siegeFromMarks` turns the railgun marks into the emplacements
+and one section per rising, and `levelWithMarks` puts those sections on
+the level — on **both sides of the seam** (`Sim.reset` and
 `simreads.ts World`), because everything that counts the siege counts it
 off `level.mission` (`levels.ts razeGuns`) and the two halves must agree.
 `roadsFor` does the same for the lines. A map that carries none of them
 falls back to `POST_SPECS` / `ROAD_SPECS` and the sections written in the
 level — both of those tables are empty today.
 
-Several marks may name the **same section**: everything with that number
-rises together, on the same tick of the mission's clock, so "two regions
-and five guns on the third" is seven marks and not a new field. The clock
-itself — `first` and `every` — stays in the mission spec, because when a
-siege starts is not a fact about the ground.
+Several railguns may name the **same section**: everything with that
+number rises together, on the same tick of the mission's clock, so "five
+guns on the third" is five marks and not a new field. The clock itself —
+`first` and `every` — stays in the mission spec, because when a siege
+starts is not a fact about the ground. A garrison is not on that clock at
+all: it mans on WAVES, like a buff tower, because the waves are the one
+schedule every map has.
 
 ## Drawing a road
 

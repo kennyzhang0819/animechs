@@ -181,13 +181,16 @@ What the archetype turned out to need, and what each piece is answering:
   two on the long shoulders. The sea takes the south, and a mission that
   put an emplacement there would be putting one in the water.
 - **WHERE THEY STAND IS THE MAP'S, NOT THE CODE'S.** Every gun is a
-  `railgun` mark on the map document and every garrison a `battery` region
-  round them, placed in the map editor (`docs/mission-marks.md`): the
-  cells, the section each rises in and what holds the ground, all of it
-  editable while looking at the terrain. The mission spec keeps the clock
-  and nothing else. **The guns are placed, not rung** — the sim used to
-  spread a count of them round a post, and a ring is a shape where a
-  position is a decision about cover and approach.
+  `railgun` mark on the map document, placed in the map editor
+  (`docs/mission-marks.md`): the cell, and the section it rises in. The
+  mission spec keeps the clock and nothing else. **The guns are placed,
+  not rung** — the sim used to spread a count of them round a post, and a
+  ring is a shape where a position is a decision about cover and approach.
+- **AND THE GARRISON IS NOT THE MISSION'S.** What holds the ground round
+  them is a `garrison` mark, which any map may draw under any mission: a
+  circle, the waves it is manned on, and what stands in it. The siege no
+  longer owns it, which is why a board with no railguns on it at all can
+  still have ground the swarm is dug into.
 - **THE POSTS ARE ON SCREEN FROM WAVE ONE**, empty, with the number of
   emplacements that will rise in each and a dial on the ring counting down
   to the minute they do (`Game.drawMissionPosts`). No fog means no
@@ -199,7 +202,7 @@ What the archetype turned out to need, and what each piece is answering:
 |---|---|
 | `RazeMission` / `RazeSection` | `game/levels.ts` — the type and the clock: when the first battery rises and how far apart they come. `RazeSection.wave` is which rising a section belongs to, so several may share one |
 | the emplacements | the map's `railgun` marks, one a gun (`game/missionMarks.ts`, `missions.ts siegeFromMarks`) |
-| the garrison regions | the map's `battery` marks, or `POST_SPECS` on a map with none. `radius` is the ring the overlay draws AND the garrison's leash, deliberately one number |
+| the garrison regions | the map's `garrison` marks — no longer the mission's at all (`missions.ts garrisonsFor`, `Sim.manGarrisons`). `radius` is the ring the board draws AND the leash, deliberately one number |
 | the railgun | `game/levels.ts` (`railgun`, `UnitStats.bombard`), `game/weapons.ts` (the bombard row) and `game/wardenArt.ts` (the drawing) |
 | the Wardens | `game/levels.ts` (`bulwark`, `lance` — no tiers, T5 weight) and `game/wardenArt.ts` |
 | a body that holds ground | `Sim.garrisonUnit`, `Sim.plantUnit`, and the `ugar` arrays — the general mechanism, of which this mission is the first customer |

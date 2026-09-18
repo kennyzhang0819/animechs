@@ -611,9 +611,8 @@ report(
 
 // ---------- sim: does the loop still run ----------
 
-// The first board in the game (VISIBLE_WORLDS[0], and the test cares only
-// that it is a board somebody ships), the swarm let out, and a dozen
-// tackers PUT IN ITS WAY:
+// A board the game ships and a run could build on (see `fixture` below),
+// the swarm let out, and a dozen tackers PUT IN ITS WAY:
 // wait for
 // the first bodies, follow the flow field from one of them to the core,
 // and build on the earliest stretch of that path the game will allow
@@ -629,7 +628,17 @@ const simProblems = [];
 let simDetail = "";
 try {
   reseed(7);
-  const sim = new Sim(LA.specForTier(L.VISIBLE_WORLDS[0], 0));
+  // THE BOARD IT RUNS ON HAS TO BE ONE A RUN CAN BUILD ON. This asks
+  // whether a round connects, and where a turret may legally stand is the
+  // POWER GRID's business: on a map with no beacons the only lit ground is
+  // the core's own circle, so the dozen tackers go down beside the base
+  // and the check becomes a test of how long a body takes to walk the
+  // whole map. So it takes the first playable world whose map carries
+  // beacons, and falls back to the first playable world when none does.
+  const fixture =
+    L.VISIBLE_WORLDS.find((w) => (M.OFFICIAL_MAPS.find((d) => d.id === w.map)?.beacons ?? []).length > 0) ??
+    L.VISIBLE_WORLDS[0];
+  const sim = new Sim(LA.specForTier(fixture, 0));
   // the field solves whole, so a re-route cannot depend on how loaded the
   // machine is — see FIELD_BUDGET_MS in sim.ts
   sim.setFieldBudget(Infinity);
@@ -693,9 +702,9 @@ try {
   //    (Sim.rebuildPower), and on every official map the spawn edge is
   //    further out than the last beacon — so the earliest LEGAL stretch of
   //    the road is a long way down it, and what this waits for is a body
-  //    to walk there. The board it waits on is whatever VISIBLE_WORLDS[0]
-  //    plays, and that map's drop zones decide the number: Sear's are wide
-  //    and its first hit lands at 102s, where Crater's landed at 4.
+  //    to walk there. How far that is, is the fixture map's own geometry,
+  //    so the horizon is generous rather than tuned: Coldline answers in
+  //    the twenties and a wider board may take twice that.
   let hitAt = null;
   const until = sim.time + 150;
   while (hitAt === null && sim.time < until && !sim.lost() && !sim.won()) {
@@ -712,7 +721,7 @@ try {
   if (placed > 0 && hitAt === null)
     simProblems.push(`${placed} turrets on the route hit nothing in a hundred and fifty seconds`);
   simDetail =
-    `bodies at ${spawnedAt}s, ${placed} turrets on the route, ` +
+    `on ${fixture.map}: bodies at ${spawnedAt}s, ${placed} turrets on the route, ` +
     `${hitAt === null ? "no hit" : `first hit ${hitAt}s`}, ${sim.kills} kills, ${Math.round(sim.time)}s simulated`;
 } catch (e) {
   simProblems.push(e.stack?.split("\n").slice(0, 3).join(" / ") ?? e.message);

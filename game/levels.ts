@@ -4560,16 +4560,20 @@ export const WORLDS: LevelSpec[] = [
     // is at zero core AT 14:00, the tick the fourth battery rises. Answer
     // each section as it comes and the siege costs about half the base.
     //
-    // THE GUARDS CLIMB WITH THE GUNS. Two Bulwarks and two Lances over
-    // the first, eight and eight over the last (levels.ts, the Wardens) —
-    // and not one of them will follow you home: they hold their post and
-    // nothing else (Sim.garrisonUnit). The section is a PLACE that has to
-    // be taken, which is the only way this game knows how to charge for
-    // ground.
+    // THE GUARDS ARE NOT THE SIEGE'S ANY MORE. What holds the ground round
+    // an emplacement is a `garrison` mark on the map (missionMarks.ts),
+    // drawn where an author wants it and manned on the waves they name —
+    // and not one of those bodies will follow you home: they hold their
+    // circle and nothing else (Sim.garrisonUnit). The ground is a PLACE
+    // that has to be taken, which is the only way this game knows how to
+    // charge for it, and it is a fact about the board rather than about
+    // this mission. `sections` below is the clock and the gun count.
     mission: {
       kind: "raze",
       first: 120,
       every: 240,
+      // the fallback, for a raze map that places no railguns of its own:
+      // four posts out of POST_SPECS with the guns rung round them
       sections: [
         { post: 0, guns: 1, guards: { bulwark: 2, lance: 2 } },
         { post: 1, guns: 2, guards: { bulwark: 4, lance: 4 } },

@@ -168,30 +168,38 @@ const RAILGUN: MarkKind = {
 };
 
 /**
- * A GARRISON REGION over the guns (levels.ts RazeMission): the ground the
- * Wardens hold, how far it reaches, and how many of each stand in it.
+ * A GARRISON — a circle of ground the swarm HOLDS, and what holds it.
  *
- * IT STANDS NO GUNS ITSELF. The emplacements are their own marks
- * (RAILGUN above); this is the circle round them that a board has to take
- * to get at one — Sim.garrisonUnit leashes every body raised here to it,
- * and the radius is both that leash and the ground they scatter over.
+ * IT BELONGS TO NO MISSION. This started as the guard over a railgun
+ * battery and is not that any more: a garrison is a fact about a PLACE —
+ * there is a force dug in here and it will not follow you home — and
+ * every board has places worth denying. So it is offered on every map,
+ * whatever the mission, and the emplacements it used to be bolted to are
+ * their own marks now (RAILGUN above).
  *
- * SEVERAL MAY SHARE A SECTION, and everything with that `wave` rises
- * together, so "two regions at once on the third" is two marks and not a
- * new field.
+ * THE RANGE IS THE LEASH AND THE PICTURE. `radius` is exactly the circle
+ * Sim.garrisonUnit holds every body raised here to — they fight what
+ * comes into it and cannot be drawn out — and exactly the ring the board
+ * draws. One number, so what an author sets is what a player sees.
+ *
+ * A SPOT, NOT A RISE, on the buff tower's terms (BUFF_TOWER above): every
+ * wave named here is a wave this ground is manned on, and one whose
+ * garrison is still standing does nothing. So "1-40" is a place the swarm
+ * keeps re-taking, and what a board buys by clearing it is the waves
+ * until the next one.
  */
-const BATTERY: MarkKind = {
-  id: "battery",
-  label: "Garrison region",
-  missions: ["raze"],
+const GARRISON: MarkKind = {
+  id: "garrison",
+  label: "Garrison",
+  missions: ["hold", "survive", "intercept", "escort", "raze"],
   geom: "point",
   size: 4,
   color: "#ffb44a",
   pad: 0,
   radiusField: "radius",
   fields: [
-    { key: "wave", label: "Rises in section", kind: "int", min: 1, max: 4, def: 1 },
-    { key: "radius", label: "Region radius", kind: "int", min: 8, max: 60, def: 26 },
+    { key: "waves", label: "Mans on waves", kind: "waves", def: "1" },
+    { key: "radius", label: "Range", kind: "int", min: 8, max: 60, def: 26 },
     { key: "bulwark", label: "Bulwarks", kind: "int", min: 0, max: 24, def: 2 },
     { key: "lance", label: "Lances", kind: "int", min: 0, max: 24, def: 2 },
   ],
@@ -224,7 +232,7 @@ const ROAD: MarkKind = {
   fields: [{ key: "name", label: "Name", kind: "text", def: "the line" }],
 };
 
-export const MARK_KINDS: readonly MarkKind[] = [BUFF_TOWER, RAILGUN, BATTERY, ROAD];
+export const MARK_KINDS: readonly MarkKind[] = [BUFF_TOWER, RAILGUN, GARRISON, ROAD];
 
 /**
  * EVERY CELL OF METAL DECKING A MARK LAYS — its own footprint and the pad

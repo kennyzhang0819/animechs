@@ -92,7 +92,7 @@
  */
 import { CELL, COLS, ROWS } from "./constants";
 import type { LevelSpec, RazeSection, UnitKind } from "./levels";
-import { markKind, markOpts, type MapMark } from "./missionMarks";
+import { markKind, markOpts, parseWaves, type MapMark } from "./missionMarks";
 import { RAIL_DIRS, RAIL_PIECES, railStyleIndex, type RailStyleName } from "./railArt";
 
 /** the shortest straight run a road may carry, in cells: a bend's tile
@@ -492,8 +492,6 @@ export interface Post {
 export const POST_SPECS: Record<string, readonly PostSpec[]> = {};
 
 const POSTS = new Map<string, readonly Post[]>();
-/** posts built off a document's marks, kept per marks array (postsFor) */
-const POSTS_FROM_MARKS = new WeakMap<object, readonly Post[]>();
 
 /**
  * THE POSTS THIS MAP CARRIES, or an empty list — roadsFor's opposite
@@ -501,17 +499,7 @@ const POSTS_FROM_MARKS = new WeakMap<object, readonly Post[]>();
  * level's own `map` field, so a post list and the terrain it stands on
  * cannot drift apart without the id changing.
  */
-export function postsFor(mapId: string | undefined, marks?: readonly MapMark[]): readonly Post[] {
-  // the map's own batteries first, the same way roadsFor takes its lines
-  if (marks && marks.length > 0) {
-    const had = POSTS_FROM_MARKS.get(marks);
-    if (had) return had;
-    const siege = siegeFromMarks(marks);
-    if (siege) {
-      POSTS_FROM_MARKS.set(marks, siege.posts);
-      return siege.posts;
-    }
-  }
+export function postsFor(mapId: string | undefined): readonly Post[] {
   if (!mapId) return [];
   const had = POSTS.get(mapId);
   if (had) return had;
@@ -528,15 +516,17 @@ export function postsFor(mapId: string | undefined, marks?: readonly MapMark[]):
 }
 
 /**
- * THE SIEGE AN AUTHOR PLACED, or null where the map carries neither a
- * railgun nor a garrison region (missionMarks.ts, docs/mission-marks.md).
+ * THE SIEGE AN AUTHOR PLACED, or null where the map carries no railguns
+ * (missionMarks.ts RAILGUN, docs/mission-marks.md).
  *
- * THREE LISTS, BECAUSE THE MAP SAYS THREE THINGS. `spots` is every
- * emplacement, on the cell it was put on; `posts` is every garrison
- * region, which is also what the overlay rings and what leashes the
- * Wardens (Sim.garrisonUnit); `sections` is one per RISING, and exists so
- * that everything counting the siege off the mission spec still counts it
- * right (levels.ts razeGuns, missionText, missionProgress).
+ * TWO LISTS, BECAUSE THE MAP SAYS TWO THINGS. `spots` is every
+ * emplacement, on the cell it was put on; `sections` is one per RISING,
+ * and exists so that everything counting the siege off the mission spec
+ * still counts it right (levels.ts razeGuns, missionText, missionProgress).
+ *
+ * THE GARRISONS ARE NOT IN HERE. A garrison is a fact about a place and
+ * not about this mission (garrisonsFrom below), so a siege no longer owns
+ * the ground round its guns — an author draws that separately, on any map.
  *
  * IT IS THE MAP'S ANSWER TO A QUESTION THE MISSION ASKS. RazeMission
  * still owns the clock (first, every) and the marks own the places and
@@ -544,12 +534,9 @@ export function postsFor(mapId: string | undefined, marks?: readonly MapMark[]):
  * towers already run on.
  */
 export interface MarkSiege {
-  posts: Post[];
   sections: RazeSection[];
   /** one emplacement, in world px, and the rising it belongs to */
   spots: { x: number; y: number; wave: number }[];
-  /** which post each garrison stands in, and what it is made of */
-  garrisons: { post: number; wave: number; guards: Partial<Record<UnitKind, number>> }[];
 }
 
 /** the siege a document carries, worked out once per marks array — the
@@ -563,51 +550,73 @@ export function siegeFor(marks: readonly MapMark[]): MarkSiege | null {
 }
 
 export function siegeFromMarks(marks: readonly MapMark[]): MarkSiege | null {
-  const gunKind = markKind("railgun"), regKind = markKind("battery");
-  if (!gunKind || !regKind) return null;
+  const gunKind = markKind("railgun");
+  if (!gunKind) return null;
   const spots: MarkSiege["spots"] = [];
-  const posts: Post[] = [];
-  const garrisons: MarkSiege["garrisons"] = [];
-  const gunHalf = (gunKind.size * CELL) / 2, regHalf = (regKind.size * CELL) / 2;
+  const half = (gunKind.size * CELL) / 2;
   for (const m of marks) {
-    if (m.kind === "railgun") {
-      const o = markOpts(gunKind, m.opts);
-      spots.push({ x: m.x * CELL + gunHalf, y: m.y * CELL + gunHalf, wave: Number(o.wave) });
-    } else if (m.kind === "battery") {
-      const o = markOpts(regKind, m.opts);
-      posts.push({
-        name: `Battery ${posts.length + 1}`,
-        x: m.x * CELL + regHalf,
-        y: m.y * CELL + regHalf,
-        r: Number(o.radius) * CELL,
-      });
-      const guards: Partial<Record<UnitKind, number>> = {};
-      if (Number(o.bulwark) > 0) guards.bulwark = Number(o.bulwark);
-      if (Number(o.lance) > 0) guards.lance = Number(o.lance);
-      garrisons.push({ post: posts.length - 1, wave: Number(o.wave), guards });
-    }
+    if (m.kind !== "railgun") continue;
+    const o = markOpts(gunKind, m.opts);
+    spots.push({ x: m.x * CELL + half, y: m.y * CELL + half, wave: Number(o.wave) });
   }
-  if (spots.length === 0 && posts.length === 0) return null;
-  // ONE SECTION A RISING. A wave with three guns and two regions in it is
-  // one line on the panel and one tick of the clock, so the guards are
-  // summed and the post named is the first region of that wave — nothing
-  // reads either except the POST_SPECS fallback, which has no marks
-  const waves = [...new Set([...spots.map((g) => g.wave), ...garrisons.map((g) => g.wave)])].sort((a, b) => a - b);
-  const sections: RazeSection[] = waves.map((wave) => {
+  if (spots.length === 0) return null;
+  // ONE SECTION A RISING: a wave with three guns in it is one line on the
+  // panel and one tick of the clock. `post` is meaningless here and named
+  // 0 — nothing reads it except the POST_SPECS fallback, which has no marks
+  const waves = [...new Set(spots.map((g) => g.wave))].sort((a, b) => a - b);
+  const sections: RazeSection[] = waves.map((wave) => ({
+    post: 0,
+    guns: spots.filter((g) => g.wave === wave).length,
+    wave,
+    guards: {},
+  }));
+  return { sections, spots };
+}
+
+/**
+ * THE GARRISONS A DOCUMENT CARRIES — a circle of ground, the waves it is
+ * manned on, and what mans it (missionMarks.ts GARRISON). Every mission
+ * reads these and so does a map under no mission at all: what they say is
+ * "there is a force dug in here", which is a fact about the board.
+ */
+export interface MarkGarrison {
+  post: Post;
+  waves: number[];
+  guards: Partial<Record<UnitKind, number>>;
+  /** the kinds in `guards`, which is what says whether one still HOLDS its
+   *  ground: a wave walking through the circle is not holding it */
+  kinds: UnitKind[];
+}
+const GARRISONS = new WeakMap<object, readonly MarkGarrison[]>();
+export function garrisonsFor(marks: readonly MapMark[] | undefined): readonly MarkGarrison[] {
+  if (!marks || marks.length === 0) return [];
+  const had = GARRISONS.get(marks);
+  if (had) return had;
+  const kind = markKind("garrison");
+  const out: MarkGarrison[] = [];
+  const half = kind ? (kind.size * CELL) / 2 : 0;
+  for (const m of marks) {
+    if (!kind || m.kind !== "garrison") continue;
+    const o = markOpts(kind, m.opts);
+    const waves = parseWaves(o.waves as string);
     const guards: Partial<Record<UnitKind, number>> = {};
-    for (const g of garrisons) {
-      if (g.wave !== wave) continue;
-      for (const [k, n] of Object.entries(g.guards) as [UnitKind, number][])
-        guards[k] = (guards[k] ?? 0) + n;
-    }
-    return {
-      post: garrisons.find((g) => g.wave === wave)?.post ?? 0,
-      guns: spots.filter((g) => g.wave === wave).length,
-      wave,
+    if (Number(o.bulwark) > 0) guards.bulwark = Number(o.bulwark);
+    if (Number(o.lance) > 0) guards.lance = Number(o.lance);
+    if (waves.length === 0 || Object.keys(guards).length === 0) continue;
+    out.push({
+      post: {
+        name: `Garrison ${out.length + 1}`,
+        x: m.x * CELL + half,
+        y: m.y * CELL + half,
+        r: Number(o.radius) * CELL,
+      },
+      waves,
       guards,
-    };
-  });
-  return { posts, sections, spots, garrisons };
+      kinds: Object.keys(guards) as UnitKind[],
+    });
+  }
+  GARRISONS.set(marks, out);
+  return out;
 }
 
 /**

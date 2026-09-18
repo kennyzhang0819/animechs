@@ -258,8 +258,8 @@ import {
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
 import { markKind, parseWaves } from "./missionMarks";
 import {
-  levelWithMarks, postProblems, postsFor, roadAt, roadProblems, roadsFor, siegeFromMarks,
-  type MarkSiege, type Post, type Road,
+  garrisonsFor, levelWithMarks, postProblems, postsFor, roadAt, roadProblems, roadsFor,
+  siegeFromMarks, type MarkGarrison, type MarkSiege, type Post, type Road,
 } from "./missions";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
 import { countSensitive } from "./upgrades";
@@ -1621,10 +1621,18 @@ export class Sim {
   /**
    * THE SIEGE THE MAP CARRIES, or null where it carries none and the
    * mission's own sections are what rises (missions.ts siegeFromMarks).
-   * Every emplacement is a place an author put a gun and every garrison a
-   * region they drew round one, so neither is derived from the other.
+   * Every emplacement is a place an author put a gun.
    */
   private siege: MarkSiege | null = null;
+  /**
+   * THE GROUND THE SWARM HOLDS, on every map and under every mission
+   * (missions.ts garrisonsFor, missionMarks.ts GARRISON). Read once at
+   * reset and never spent: a garrison whose bodies are still standing does
+   * nothing on its later waves, and one that has been cleared is manned
+   * again on the next one it names — so what an author draws is a place
+   * the swarm keeps re-taking.
+   */
+  private garrisons: readonly MarkGarrison[] = [];
   /** railguns destroyed — the mission's whole objective */
   razeKilled = 0;
   /** the posts this map carries (missions.ts), empty on every other map */
@@ -2634,20 +2642,27 @@ export class Sim {
     // level.mission (levels.ts razeGuns) — simreads.ts World does the
     // same to the host's copy, off the same document
     const raze = this.level.mission.kind === "raze" ? this.level.mission : null;
+    // THE GROUND THE SWARM HOLDS, whatever the mission: a map may draw a
+    // garrison on any board, and the waves each one names are when it is
+    // manned (runGarrisons)
+    this.garrisons = garrisonsFor(this.terrain.marks);
     if (raze) {
       const siege = siegeFromMarks(this.terrain.marks);
       this.siege = siege;
       this.level = levelWithMarks(this.level, this.terrain.marks);
-      this.posts = siege ? siege.posts : postsFor(this.level.map);
+      this.posts = siege ? [] : postsFor(this.level.map);
       const sections = siege ? siege.sections : raze.sections;
       const bad: string[] = [];
       if (sections.length === 0) bad.push("a siege with no sections in it");
-      if (siege && siege.spots.length === 0) bad.push("a siege with no railguns placed on the map");
       if (!siege)
         for (const sec of sections)
           if (!this.posts[sec.post])
             bad.push(`a section names post ${sec.post} and the map has ${this.posts.length}`);
       for (const post of this.posts) bad.push(...postProblems(post));
+      if (bad.length > 0) throw new Error(`${this.level.name}: ${bad.join("; ")}`);
+    }
+    for (const g of this.garrisons) {
+      const bad = postProblems(g.post);
       if (bad.length > 0) throw new Error(`${this.level.name}: ${bad.join("; ")}`);
     }
     // ...and the ROADS, off the same document: a map's own `road` marks
@@ -4881,6 +4896,7 @@ export class Sim {
       // ...and staging it pays NOTHING. It used to pay a bonus here; every
       // scrap comes off the swarm now (economy.ts)
       this.live.push({ wave: this.wavesStarted, entries, rate: waveSpawnRate(total), acc: 0 });
+      this.manGarrisons(this.wavesStarted);
       return true;
     }
     // THE SCRIPT IS SPENT, AND THE TIDE TURNS (see TIDE_LEVELS at the top
@@ -5269,17 +5285,12 @@ export class Sim {
     ) {
       const sec = m.sections[this.razeRisen];
       // THE MAP'S OWN GUNS WHERE IT HAS THEM: every emplacement placed for
-      // this rising goes up on its own cell and every region drawn for it
-      // puts its garrison out. A map with no marks falls back to the
-      // mission's sections, which ring a post instead
+      // this rising goes up on its own cell. What holds the ground round
+      // them is not this mission's (runGarrisons). A map with no marks
+      // falls back to the mission's sections, which ring a post instead
       if (this.siege) {
         const wave = razeWave(sec, this.razeRisen);
         for (const g of this.siege.spots) if (g.wave === wave) this.raiseGun(g.x, g.y);
-        for (const g of this.siege.garrisons) {
-          if (g.wave !== wave) continue;
-          const post = this.posts[g.post];
-          if (post) this.raiseGarrison(post, g.guards);
-        }
       } else {
         this.raiseSection(sec);
       }
@@ -5401,6 +5412,33 @@ export class Sim {
     this.urot[i] = a;
     this.ubrot[i] = a;
     this.uheldRot[i] = a;
+  }
+
+  /**
+   * EVERY GARRISON DUE ON THIS WAVE, MANNED (missions.ts garrisonsFor).
+   *
+   * A GARRISON WITH ITS BODIES STILL STANDING DOES NOTHING — not a second
+   * force stacked on the first, and not a top-up of the one holding. The
+   * board's reward for clearing a garrison is the waves before the next,
+   * and refilling it would take that away without showing the player why.
+   * It is the buff towers' rule (raiseMarkTowers) and it is the same rule
+   * because it answers the same question.
+   */
+  private manGarrisons(wave: number): void {
+    for (const g of this.garrisons) {
+      if (!g.waves.includes(wave)) continue;
+      if (this.garrisonHeld(g.post)) continue;
+      this.raiseGarrison(g.post, g.guards);
+    }
+  }
+
+  /** is anything still holding this ground? — a live body leashed to it */
+  private garrisonHeld(post: Post): boolean {
+    for (let i = 0; i < this.n; i++) {
+      if (this.ugar[i] !== 1 || this.uhp[i] <= 0) continue;
+      if (this.ugarx[i] === post.x && this.ugary[i] === post.y) return true;
+    }
+    return false;
   }
 
   /** the garrison of one region, scattered inside it and leashed to it */
