@@ -98,11 +98,11 @@ four rarities ARE the four tiers, which is where the card's border colour comes 
 | 1 | 120 | 1,080 | 3,000 | 5,880 | 3x3 tiles | 7x7 |
 | 2 | 700 | 6,300 | 17,500 | 34,300 | 6x6 | 14x14 |
 | 3 | 4,000 | 36,000 | 100,000 | 196,000 | 9x9 | 21x21 |
-| 4 | 40,000 | 360,000 | 1,000,000 | 1,960,000 | 12x12 | 28x28 |
+| 4 | 32,000 | 288,000 | 800,000 | 1,568,000 | 12x12 | 28x28 |
 
-**The gaps are about six times a step through the middle and ten into tier 4**, 333x end to
+**The gaps are about six times a step through the middle and eight into tier 4**, 267x end to
 end, which is far steeper than the per-kind prices this replaced (110 to 9,500 was 86x). Per
-TILE it is 120 / 175 / 444 / 2,500 — a 20.8x spread. The steepening is at the top, where it
+TILE it is 120 / 175 / 444 / 2,000 — a 16.7x spread. The steepening is at the top, where it
 buys something: a gap at the bottom gates nothing except whether the run gets started, so the
 thing worth gating is the 4x4. A tier-4 gun is expensive because it is sixteen tiles of gun,
 and then expensive again on top of that because reach and splash are worth more than raw
@@ -114,9 +114,9 @@ admin dashboard can still bend one kind (`setScrapPrice`).
 
 **What the numbers buy**, measured as SECONDS OF INCOME at the rate in force — which is the
 number that decides whether a band is reachable, not the raw price. A tier-2 block is well
-under a wave's income from wave one (19s at wave 1, 12s at wave 8). A tier-3 block is about 1.5 waves
-at wave 20, a real save-up. A tier-4 block is about 4.4 waves at wave 40, a genuine commitment.
-Saving every coin, the earliest a bank covers a 3x3 is wave 1 / wave 1 / wave 5 / **wave 24**,
+under a wave's income from wave one (19s at wave 1, 12s at wave 8). A tier-3 block is about
+1.5 waves at wave 20, a real save-up. A tier-4 block is about 3.5 waves at wave 40, a genuine commitment.
+Saving every coin, the earliest a bank covers a 3x3 is wave 1 / wave 1 / wave 5 / **wave 21**,
 and a run actually holding a line reaches those much later. A whole run banks about 2.34M.
 
 ### The shape

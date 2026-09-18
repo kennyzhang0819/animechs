@@ -159,11 +159,11 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
 
 /**
  * WHAT ONE TURRET OF A TIER COSTS. A card is this times the shape's cell
- * count (cardPrice), so the smallest tier-4 card is 360,000 and no opening
+ * count (cardPrice), so the smallest tier-4 card is 288,000 and no opening
  * bank comes near one.
  *
  * THE STEEPNESS IS AT THE TOP, WHERE IT BUYS SOMETHING. About six times a
- * step through the middle and TEN into tier 4 — 333x end to end — because
+ * step through the middle and EIGHT into tier 4 — 267x end to end — because
  * the thing worth gating is the 4x4, and a gap at the bottom gates nothing
  * except whether the run gets started. Tier 2 was 1,000 and it walled the
  * band off for the whole opening: the minimum card is nine turrets, so a
@@ -171,13 +171,13 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
  * can make, and the bank at wave eight could not clear it without giving
  * up two waves of building.
  *
- * Per tile that is 120 / 175 / 444 / 2,500. docs/economy.md.
+ * Per tile that is 120 / 175 / 444 / 2,000. docs/economy.md.
  */
 export const TIER_PRICE: Record<TowerTier, number> = {
   1: 120,
   2: 700,
   3: 4000,
-  4: 40000,
+  4: 32000,
 };
 
 /** every turret of one tier, in roster order */
