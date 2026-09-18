@@ -168,22 +168,32 @@ export const WARDEN_NAME = "Wardens";
 /** the two buff towers a mission plants over its road (docs/mission-marks.md) */
 export const PYLON_NAME = "Pylons";
 /**
- * WHAT ONE PYLON IS WORTH, and both are deliberately small enough that the
- * interesting number is HOW MANY an author placed rather than how big one
- * is (Sim.goadMul, Sim.bastionCut — they stack by multiplying).
- *
- * A Goad at 1.25 takes a Borer's four-and-a-quarter minute crossing down
- * to three and a half, which is most of a minute of firing taken off a
- * board that paid for a position; a Bastion at 0.25 makes the same board
- * need a third again the guns on it. Either alone is a tax. Three of them
- * over one road is the mission saying that road is now the hard one.
+ * WHAT ONE PYLON IS WORTH (Sim.goadMul, Sim.bastionCut — they stack by
+ * multiplying). A Goad doubles a Borer's pace, halving the firing a board
+ * gets on it; a Bastion halves what reaches it. Either alone is a tax;
+ * the wave 6 hand — a Goad and two Bastions — is the mission saying the
+ * road is now the hard one.
  *
  * MARKED ON THE MAP, NOT IN A WAVE: no script may send one (UNIT_TREES,
- * objective), so these two numbers are only ever spent by an author
- * placing towers in the editor (docs/mission-marks.md).
+ * objective). An author places the SPOTS and the schedule below rolls
+ * which of them are used (docs/mission-marks.md).
  */
-export const GOAD_SPEED_MUL = 1.5;
+export const GOAD_SPEED_MUL = 2;
 export const BASTION_CUT = 0.5;
+
+/**
+ * THE PYLONS DUE ON TRAIN WAVE `w` — the hand the mission rolls into the
+ * spots an author placed (Sim.raiseMarkTowers). It is the SCHEDULE and
+ * not the map's, so every intercept escalates the same way and a map is
+ * only asked where the towers may stand. The spare counts as the wave
+ * after the pattern's last, so it draws the top hand.
+ */
+export function pylonsDue(wave: number): readonly UnitKind[] {
+  if (wave < 2) return [];
+  if (wave <= 3) return ["goad"];
+  if (wave <= 5) return ["goad", "bastion"];
+  return ["goad", "bastion", "bastion"];
+}
 
 /**
  * WHAT A TOWER RISING ON TRAIN WAVE `w` IS MADE OF — its health times this.

@@ -55,35 +55,37 @@ export const spec = {
     { x: 186, y: 128, r: 17 }, // 5
     { x: 214, y: 59, r: 22 }, // 6
     { x: 39, y: 55, r: 20 }, // 7
-    { x: 168, y: 190, r: 9, water: true }, // 8
+    { x: 172, y: 202, r: 9, water: true }, // 8
     { x: 22, y: 90, r: 15 }, // 9 ground entry
     { x: 38, y: 220, r: 25 }, // 10 ground entry
     { x: 70, y: 28, r: 15 }, // 11 ground entry
     { x: 82, y: 226, r: 26 }, // 12 ground entry
-    { x: 196, y: 244, r: 12, water: true }, // 13 water entry
-    { x: 228, y: 128, r: 16, wobble: 0.2 }, // 14 the core's own ground
+    { x: 199, y: 226, r: 22, water: true }, // 13 water entry
+    { x: 57, y: 126, r: 20, water: true }, // 14
+    { x: 48, y: 146, r: 17, water: true }, // 15
+    { x: 228, y: 128, r: 16, wobble: 0.2 }, // 16 the core's own ground
   ],
   core: { x: 228, y: 128, r: 16 },
   spawns: [],
   routes: [],
   links: [
-    { rooms: [13, 8], width: [17, 23], layer: "water" },
+    { rooms: [13, 8], width: [21, 28], layer: "water" },
     { rooms: [9, 1], width: [8, 16] },
     { rooms: [1, 0], width: [8, 16] },
     { rooms: [0, 5], width: [8, 16] },
-    { rooms: [5, 14], width: [8, 16] },
+    { rooms: [5, 16], width: [8, 16] },
     { rooms: [10, 2], width: [8, 15] },
     { rooms: [2, 0], width: [8, 15] },
     { rooms: [0, 5], width: [8, 15] },
-    { rooms: [5, 14], width: [8, 15] },
+    { rooms: [5, 16], width: [8, 15] },
     { rooms: [11, 3], width: [8, 15] },
     { rooms: [3, 0], width: [8, 15] },
     { rooms: [0, 5], width: [8, 15] },
-    { rooms: [5, 14], width: [8, 15] },
+    { rooms: [5, 16], width: [8, 15] },
     { rooms: [12, 4], width: [8, 15] },
     { rooms: [4, 0], width: [8, 15] },
     { rooms: [0, 5], width: [8, 15] },
-    { rooms: [5, 14], width: [8, 15] },
+    { rooms: [5, 16], width: [8, 15] },
     { rooms: [5, 6], width: [4, 16] },
     { rooms: [1, 7], width: [4, 5] },
     { rooms: [1, 3], width: [7, 10] },

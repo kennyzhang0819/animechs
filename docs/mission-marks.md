@@ -29,7 +29,7 @@ A mark in `public/maps/<id>.json`:
 
 ```jsonc
 "marks": [
-  { "kind": "buffTower", "x": 420, "y": 100, "opts": { "tower": "goad", "waves": "2-7" } },
+  { "kind": "buffTower", "x": 420, "y": 100 },
   { "kind": "railgun",   "x": 411, "y":  79, "opts": { "wave": 1 } },
   { "kind": "road",      "x": -59, "y": 488, "pts": [[-59,488],[55,488],[216,327]],
     "opts": { "name": "the south line" } }
@@ -66,8 +66,8 @@ does not know what a buff tower is.
 1. Add a `MarkKind` to `MARK_KINDS`. It appears in the editor's **Mission**
    palette group and gets a field panel, with no other edit.
 2. Read it in the sim where that mission's clock runs. `Sim.reset` copies
-   `terrain.marks` into whatever the mission needs; `Sim.runCrossers` spends
-   the buff towers' list as trains go out.
+   `terrain.marks` into whatever the mission needs; `Sim.runCrossers` rolls
+   the buff tower schedule into the spots as trains go out.
 3. Add what an author can get wrong to the `worlds` stage of
    `scripts/check.mjs` — the editor cannot see the mission spec, so "this
    tower rises on a train that never comes" is caught there and nowhere else.
@@ -84,17 +84,30 @@ send one (`UNIT_TREES`, `objective: true`) — and both are bolted down
 
 | | | |
 |---|---|---|
-| **Goad** | `goad` | the train runs **1.5x** faster (`GOAD_SPEED_MUL`) |
+| **Goad** | `goad` | the train runs **2x** faster (`GOAD_SPEED_MUL`) |
 | **Bastion** | `bastion` | the train takes **50% less** damage (`BASTION_CUT`) |
 
 Neither has a health pool to give away and neither shoots.
 
-**A MARK IS A SPOT, NOT A RISE.** `waves` names every train wave that spot
-puts a tower up on — `"2-7"`, `"2,4,6"`, `"2-3,6"`. A spot whose tower is
-**still standing does nothing**; a spot whose tower the board knocked down
-raises a fresh one on its next wave. So what an author places is a piece of
-ground the swarm keeps re-taking, and what the board buys by killing a tower
-is the waves until the next one. It is never topped up and never stacked.
+**A MARK IS GROUND, NOT A TOWER.** It carries no fields: it says only that a
+tower may stand here. Which towers rise and when is the game's, one schedule
+for every intercept (`levels.ts pylonsDue`):
+
+| train wave | the hand |
+|---|---|
+| 1 | — |
+| 2-3 | one Goad |
+| 4-5 | a Goad and a Bastion |
+| 6-7, and the spare | a Goad and two Bastions |
+
+**The hand is rolled into the free spots.** Each wave shuffles the spots
+that are not already holding a tower and fills the hand out of them, so no
+two runs of the same map put the same tower in the same place. A spot whose
+tower is **still standing is out of the draw**; one the board knocked down
+is back in it. So what an author places is ground the swarm keeps re-taking,
+and what the board buys by killing a tower is the waves until that ground
+comes up again. Nothing is ever topped up or stacked, and a hand bigger than
+the free spots left simply places what fits.
 
 **Every tower rising on one wave is the same tower** (`pylonRamp`): health
 rides the wave it rose on, so wave 6's are tougher than wave 4's and a
@@ -106,11 +119,10 @@ Borer is one body shot for four minutes and a tower has to be knocked down
 
 **They rise on a train wave, not on a clock.** Every other schedule in the
 game is absolute seconds; this one is the launch index of
-`InterceptMission.pattern`, because that is what an author is actually
-thinking about — *the second train comes in under a Goad*. The spare counts
-as the wave after the pattern's last, so `"2-7"` covers it without naming
-it. A jump (`skipToTime`) walks the same loop, so a rise the jump passed
-over happens at once, like every launch it passed over.
+`InterceptMission.pattern` — *the second train comes in under a Goad*. The
+spare counts as the wave after the pattern's last, so it draws the top hand.
+A jump (`skipToTime`) walks the same loop, so a rise the jump passed over
+happens at once, like every launch it passed over.
 
 **They stack by multiplying** (`Sim.goadMul`, `Sim.bastionCut`). Two
 Bastions at half off each leave a quarter of the damage getting through, and
@@ -134,14 +146,15 @@ A tower in rock is an authoring mistake, and `npm run check` says so.
 ## Authoring them
 
 `/admin` → the map → the **Mission** group in the palette. A click stamps
-one; a click on a standing one selects it and its fields appear in the left
-panel; the eraser takes one off. `waves` is a text field: type `2-7`.
+one; the eraser takes one off. There is nothing to set — the only decision
+is where, and how many.
 
-Coldline ships three spots, which is the whole of its starting config —
-one holding from train 2, a second joining at 4, a third at 6 (the spare).
-That is one Goad up for trains 2-3, two towers for 4-5, and three from 6 on,
-provided the board leaves them standing. The **Mission marks** layer hides them and
-puts them out of reach of every tool, like the beacons.
+**Place more spots than the top hand wants.** The hand is three from train 6
+on, so three spots is a map that plays the same every run; Coldline ships
+seven, which is what makes the roll worth anything. `npm run check` says so
+if a map carries fewer spots than its last train's hand. The **Mission
+marks** layer hides them and puts them out of reach of every tool, like the
+beacons.
 
 Each block is drawn in its kind's ink with its fields printed under it, so
 "goad, train 2" is readable off the map without clicking every square —
@@ -153,8 +166,8 @@ bad mark written into the repo file looks authored and quietly does nothing.
 
 ## The kinds
 
-**`buffTower`** — the Goad and the Bastion the swarm plants on an intercept
-map. Which of the two, and every train wave the spot puts one up on.
+**`buffTower`** — a piece of ground a Goad or a Bastion may stand on, on an
+intercept map. No fields: the schedule rolls its hand into the free spots.
 
 **`railgun`** — one emplacement on a raze map (`game/levels.ts`
 `RazeMission`), on the cell it was placed on, and which of the four

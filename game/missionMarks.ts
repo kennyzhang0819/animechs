@@ -118,45 +118,27 @@ export function parseWaves(raw: string | number | undefined): number[] {
 export const WAVE_CEIL = 40;
 
 /**
- * THE BUFF TOWERS the swarm plants on an intercept map (levels.ts `goad`
- * and `bastion`): where one stands, which of the two it is, and WHICH
- * TRAIN WAVE IT RISES ON.
+ * ONE PIECE OF GROUND a buff tower may stand on, on an intercept map
+ * (levels.ts `goad` and `bastion`). A PLACE AND NOTHING ELSE: which of
+ * the two rises and on which train wave is the mission's schedule
+ * (levels.ts pylonsDue), rolled into whichever placed spots are free
+ * (Sim.raiseMarkTowers).
  *
- * The wave rides the mark rather than the mission because the mission
- * spec is code and the map document is the only thing an author can
- * write from the editor — and because it is an attribute OF this tower,
- * the way a beacon's cell is an attribute of that beacon. What a "train
- * wave" IS stays the mission's: it is the launch index of
- * InterceptMission.pattern (Sim.runCrossers).
+ * It carried both as fields once. That made every intercept's escalation
+ * an authoring decision re-made per map, when it is one curve the game
+ * owns — so the map keeps the only part of it a person looking at the
+ * board can judge, which is where a tower is worth standing.
  */
 const BUFF_TOWER: MarkKind = {
   id: "buffTower",
-  label: "Buff tower",
+  label: "Buff tower spot",
   missions: ["intercept"],
   geom: "point",
   size: 4,
   color: "#ff5c73",
   unit: "goad",
-  unitField: "tower",
   pad: 2,
-  fields: [
-    {
-      key: "tower",
-      label: "Tower",
-      kind: "choice",
-      choices: [
-        { value: "goad", label: "Goad — speed" },
-        { value: "bastion", label: "Bastion — resistance" },
-      ],
-      def: "goad",
-    },
-    // A SPOT, NOT A RISE. Every wave named here is a wave this spot puts a
-    // tower up on — and one whose tower is still standing does nothing
-    // (Sim.raiseMarkTowers). So "2-7" is "hold this ground from the second
-    // train on", which is what an author means, and the board's answer is
-    // to keep knocking it down.
-    { key: "waves", label: "Rises on waves", kind: "waves", def: "1" },
-  ],
+  fields: [],
 };
 
 /**

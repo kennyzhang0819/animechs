@@ -147,6 +147,7 @@ import {
   BASTION_CUT,
   GOAD_SPEED_MUL,
   pylonRamp,
+  pylonsDue,
   UNIT_ID,
   UNIT_KINDS as UNIT_KINDS_IMPORT,
   UNIT_STATS,
@@ -257,7 +258,7 @@ import {
   VOLATILE_RADIUS,
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
-import { markKind, parseWaves } from "./missionMarks";
+import { markKind } from "./missionMarks";
 import {
   garrisonsFor, levelWithMarks, postProblems, postsFor, roadAt, roadProblems, roadsFor,
   siegeFromMarks, type MarkGarrison, type MarkSiege, type Post, type Road,
@@ -1530,16 +1531,17 @@ export class Sim {
   private crossLaunched = 0;
   /**
    * THE BUFF TOWER SPOTS THIS MAP CARRIES (missionMarks.ts MapMark,
-   * docs/mission-marks.md): a kind, a place, and every train wave that
-   * place is due to put one up on.
+   * docs/mission-marks.md) — GROUND ONLY. Which tower rises and when is
+   * the schedule's (levels.ts pylonsDue); the map says where one MAY
+   * stand, and each train wave rolls its hand into the spots still free.
    *
    * A SPOT IS NOT A RISE. The list is read once at reset and never spent —
-   * a spot whose tower was knocked down raises another on its next wave,
-   * and one whose tower is still standing does nothing. So what an author
-   * places is a piece of ground the swarm keeps re-taking, and what the
-   * board buys by killing a tower is the waves until the next one.
+   * a spot whose tower was knocked down is back in the draw, and one
+   * whose tower is still standing is skipped. So what an author places is
+   * ground the swarm keeps re-taking, and what the board buys by killing
+   * a tower is the waves until that spot comes up again.
    */
-  private towerSpots: { kind: UnitKind; x: number; y: number; waves: number[] }[] = [];
+  private towerSpots: { x: number; y: number }[] = [];
   /**
    * IS THE MISSION'S SECOND CLOCK DISARMED? — true once there is nothing
    * left to launch, ever (runCrossers).
@@ -2711,14 +2713,10 @@ export class Sim {
     if (this.level.mission.kind === "intercept")
       for (const mk of this.terrain.marks) {
         if (mk.kind !== "buffTower") continue;
-        const kind = String(mk.opts?.tower ?? "") as UnitKind;
-        if (kind !== "goad" && kind !== "bastion") continue;
-        const waves = parseWaves(mk.opts?.waves);
-        if (waves.length === 0) continue;
         // the mark's top-left cell is a footprint corner; a body stands at
         // the middle of the square an author drew
         const half = (MARK_TOWER_SIZE * CELL) / 2;
-        this.towerSpots.push({ kind, x: mk.x * CELL + half, y: mk.y * CELL + half, waves });
+        this.towerSpots.push({ x: mk.x * CELL + half, y: mk.y * CELL + half });
       }
     // the Hydrophobic mask needs the terrain, so it is built here rather
     // than up with the other rules — and only where the rule is in force
@@ -5323,10 +5321,15 @@ export class Sim {
    * reported nowhere.
    */
   /**
-   * THE TOWERS DUE ON THIS TRAIN WAVE, put down where the author placed
-   * them (missionMarks.ts). Bolted to the ground like an emplacement is
-   * (plantUnit) and pointing at the core, which is the only heading a body
-   * that never turns can be given.
+   * THE TOWERS DUE ON THIS TRAIN WAVE (levels.ts pylonsDue), ROLLED into
+   * the spots an author placed (missionMarks.ts). Bolted to the ground
+   * like an emplacement is (plantUnit) and pointing at the core, which is
+   * the only heading a body that never turns can be given.
+   *
+   * FREE GROUND FIRST, and only free ground: a spot still holding a tower
+   * is out of the draw, so the board's reward for killing one is that the
+   * ground it held can come up again. A hand with more towers in it than
+   * there are free spots simply places what fits.
    *
    * IT DOES NOT clearNear. A raze section is rung round a post by the sim
    * and may land its geometry on a boulder, so it walks for open ground; a
@@ -5336,14 +5339,17 @@ export class Sim {
    * an authoring mistake and the editor is where it is caught.
    */
   private raiseMarkTowers(wave: number): void {
-    for (const t of this.towerSpots) {
-      if (!t.waves.includes(wave)) continue;
-      // A SPOT WITH ITS TOWER STILL ON IT DOES NOTHING. Not a second tower
-      // stacked on the first, and not a refresh of the one standing: the
-      // board's reward for killing one is the waves before the next, and
-      // topping it up would take that away without showing the player why
-      if (this.towerStanding(t.x, t.y)) continue;
-      if (!this.spawnUnit(t.kind, { x: t.x, y: t.y, exact: true }, 0)) continue;
+    const due = pylonsDue(wave);
+    if (due.length === 0) return;
+    const free = this.towerSpots.filter((t) => !this.towerStanding(t.x, t.y));
+    for (let k = free.length - 1; k > 0; k--) {
+      const j = (Math.random() * (k + 1)) | 0;
+      [free[k], free[j]] = [free[j], free[k]];
+    }
+    for (const kind of due) {
+      const t = free.pop();
+      if (!t) return;
+      if (!this.spawnUnit(kind, { x: t.x, y: t.y, exact: true }, 0)) continue;
       const i = this.n - 1;
       this.plantUnit(i);
       // ...AND IT IS MADE OF THE WAVE IT ROSE ON (levels.ts pylonRamp), so
