@@ -53,6 +53,7 @@ game/railArt.ts        the rail beds those roads are painted as — two railways
 game/flowfield.ts      pathing; everything routes to the core
 game/economy.ts track.ts progress.ts        scrap, XP, the level track, saves
 game/weapons.ts status.ts upgrades.ts       shots, statuses, stat dials
+game/skills.ts         the skill tree — ten nodes a turret, one point a level to 100
 game/projs.ts          the player's shots in flight, as lanes — read its header before touching the shot loop
 game/terrain.ts maps.ts board.ts tiles.ts   the ground
 game/*Art.ts + atlas.ts                     art is CODE, drawn into an atlas at runtime

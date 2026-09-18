@@ -30,6 +30,7 @@ import { BackButton, BoardTabs } from "./Board";
 import { HoverCard, useHoverCard } from "./HoverCard";
 import { itemCount } from "./Items";
 import Codex from "./Codex";
+import SkillTree from "./SkillTree";
 import { bandFor, MutationFace, MUT_LIT } from "./mutationFace";
 import { Glyph } from "./Relics";
 import { RARITY, rarityDef } from "@/game/rarity";
@@ -71,8 +72,11 @@ const TRACK_GLYPH = "M3 19h18v2H3zM3 6l5 4 4-7 4 7 5-4-2 11H5z";
  *  board about what is SHUT — the one thing this board never shows */
 const CODEX_GLYPH =
   "M2 5c3-1 6-1 9 1v13c-3-2-6-2-9-1V5zm20 0c-3-1-6-1-9 1v13c3-2 6-2 9-1V5z";
+/** the tree's own mark: a trunk with two branches off it */
+const TREE_GLYPH = "M11 21V11L6 8V4l5 3V2h2v9l5-3v4l-5 3v6z";
 const TABS = [
   { id: "track", label: "Progress", color: "#FFD37F", glyph: TRACK_GLYPH },
+  { id: "skills", label: "Tech", color: "#7BE58A", glyph: TREE_GLYPH },
   { id: "codex", label: "Codex", color: MUT_LIT, glyph: CODEX_GLYPH },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
@@ -344,10 +348,13 @@ export default function ProgressView({
   progress,
   onBack,
   backLabel = "Back",
+  onProgress,
 }: {
   progress: Progress;
   onBack: () => void;
   backLabel?: string;
+  /** the skill tree writes to the save — the shell re-reads it through this */
+  onProgress?: (p: Progress) => void;
 }) {
   const [tab, setTab] = useState<TabId>("track");
   const here = useRef<HTMLDivElement | null>(null);
@@ -372,6 +379,27 @@ export default function ProgressView({
   useLayoutEffect(() => {
     if (tab === "track") here.current?.scrollIntoView({ block: "center", behavior: "instant" });
   }, [tab, level]);
+
+  /** back, the tabs and the dev-door note — the same corner on every tab */
+  const chrome = (
+    <div className="ui-zoom absolute left-[1rem] top-[1rem] z-10 flex items-center gap-2">
+      <BackButton label={backLabel} onClick={onBack} />
+      {tabStrip}
+      {door && (
+        <span className="ml-2 text-[14px] uppercase tracking-widest text-[#7BE58A]">
+          Full unlock is on — every row reads as reached
+        </span>
+      )}
+    </div>
+  );
+
+  if (tab === "skills")
+    return (
+      <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#0B0B0D] text-[#EDEDEF]">
+        {chrome}
+        <SkillTree progress={progress} onProgress={onProgress ?? (() => {})} />
+      </div>
+    );
 
   if (tab === "codex")
     return (
@@ -409,15 +437,7 @@ export default function ProgressView({
           the chrome and the track opt into the UI-size knob (ui-zoom):
           this screen is read, not played, and a HUD set to 150% for a TV
           wants its progress list at 150% too */}
-      <div className="ui-zoom absolute left-[1rem] top-[1rem] z-10 flex items-center gap-2">
-        <BackButton label={backLabel} onClick={onBack} />
-        {tabStrip}
-        {door && (
-          <span className="ml-2 text-[14px] uppercase tracking-widest text-[#7BE58A]">
-            Full unlock is on — every row reads as reached
-          </span>
-        )}
-      </div>
+      {chrome}
 
       {/* THE WHOLE TRACK, IN ONE SCROLLER. It used to be three boxes — the
           climbed half, the current row, the half ahead — pinned so that

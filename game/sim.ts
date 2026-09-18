@@ -261,7 +261,8 @@ import {
   garrisonsFor, levelWithMarks, postProblems, postsFor, roadAt, roadProblems, roadsFor,
   siegeFromMarks, type MarkGarrison, type MarkSiege, type Post, type Road,
 } from "./missions";
-import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
+import { NO_UPGRADES, skilledTower, upgradedTower, type TechState } from "./tech";
+import { rungsOn } from "./skills";
 import { countSensitive } from "./upgrades";
 import {
   applyTurretMods,
@@ -3518,6 +3519,7 @@ export class Sim {
     this.specs.clear();
     this.countsOwed.clear(); // a full refresh reads every count anyway
     const up = this.tech?.upgrades;
+    const skills = this.tech?.skills;
     const counts = up ? this.towerCounts() : null;
     for (const kind of TOWER_KINDS) {
       // the tech tree's rungs first (the save's), then the run's relics on
@@ -3525,7 +3527,7 @@ export class Sim {
       const base = up && counts
         ? upgradedTower(kind, up[kind] ?? NO_UPGRADES, { count: counts[kind] })
         : TOWERS[kind];
-      const spec = applyRelics(base, this.relics);
+      const spec = applyRelics(skilledTower(kind, rungsOn(skills, kind), base), this.relics);
       if (spec !== TOWERS[kind]) this.specs.set(kind, spec);
     }
     // ...and every STANDING turret re-composed on top of that, because its
@@ -3596,7 +3598,10 @@ export class Sim {
         // one pass for the census and the turrets it applies to, together
         mine.length = 0;
         for (const t of this.towers) if (t.team === "player" && t.kind === kind) mine.push(t);
-        const spec = applyRelics(upgradedTower(kind, points, { count: mine.length }), this.relics);
+        const spec = applyRelics(
+          skilledTower(kind, rungsOn(this.tech?.skills, kind), upgradedTower(kind, points, { count: mine.length })),
+          this.relics,
+        );
         if (spec === TOWERS[kind]) this.specs.delete(kind);
         else this.specs.set(kind, spec);
         for (let i = 0; i < mine.length; i++) this.resolveTower(mine[i]);

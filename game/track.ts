@@ -4,6 +4,7 @@ import { MODS, modBlurb, modDef, modName, type ModId } from "./mods";
 import { RELICS, relicDef, type RelicId } from "./relics";
 import { MUTATIONS, mutationById, mutationCostOf, type MutationId } from "./mutation";
 import { RARITIES, rarityDef } from "./rarity";
+import { NO_SKILLS } from "./skills";
 import { BY_MINDUSTRY_VALUE, type TechState } from "./tech";
 import {
   FIELDED_KINDS,
@@ -809,5 +810,8 @@ export function techStateFor(level: number): TechState {
     mods: modsAt(level),
     relics: relicsAt(level),
     upgrades: upgradesAt(level),
+    // the skill tree is the SAVE's, not the track's — progress.ts techOf
+    // puts the bought rungs in
+    skills: NO_SKILLS,
   };
 }

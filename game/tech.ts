@@ -5,6 +5,7 @@ import {
   type UpgradePoints,
 } from "./upgrades";
 import type { ModId } from "./mods";
+import { NO_SKILLS, skilledTower, type SkillPoints } from "./skills";
 import type { RelicId } from "./relics";
 import { FIELDED_KINDS, type TowerKind } from "./types";
 
@@ -27,9 +28,13 @@ export interface TechState {
   relics: ReadonlySet<RelicId>;
   /** each turret's upgrade rungs, as the sim folds them (upgradedTower) */
   upgrades: Record<TowerKind, UpgradePoints>;
+  /** the SKILL TREE's rungs (skills.ts) — bought with the points a level
+   *  pays, and folded on top of the upgrades above */
+  skills: SkillPoints;
 }
 
 export { upgradedTower, NO_UPGRADES, type UpgradeContext, type UpgradePoints };
+export { NO_SKILLS, skilledTower, type SkillPoints };
 
 /**
  * THE COMMAND CARD — a fixed grid in the bottom-right corner, one turret a

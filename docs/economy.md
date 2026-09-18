@@ -183,13 +183,14 @@ to it. **This is the one knob** — every number on the ladder is SC2's times th
 moves the whole grind and nothing else, and the table is all multiples of 500 so any sane factor
 lands on whole XP. The shape is checked at import because it was transcribed by hand.
 
-- **The mastery ladder**, levels 1 to `ASCENSION_FROM` — 90 of them, their mastery 0 being our
-  level 1. Theirs pays a mastery point a level; ours pays one too, and **there is nothing to
-  spend it on yet**. The points bank against a system that is not written, which is fine: the
-  ladder already pays in the track, which deals the whole toolkit over the first 15 levels and
-  then a rule a level to the cap.
+- **The climb**, levels 1 to `ASCENSION_FROM` — 100 of them. The first 90 are SC2's mastery
+  table, their mastery 0 being our level 1; the last ten continue its tail at the +100,000 a
+  level it had settled into, because the climb ends where the SKILL POINTS do and not where
+  Blizzard's table stopped. Every one of them pays **one skill point**, so a save that reaches
+  100 has 100 to spend — see `docs/skills.md`.
 - **The ascension wall**, `ASCENSION_FROM` to `LEVEL_CAP`: `XP_LEVEL_FLAT` a level, forever.
-  Nothing is handed over up here in their game or ours. A farm has to have a **known** rate, and
+  Nothing is handed over up here in their game or ours — no point, no reward, and the levels
+  themselves are the only thing still moving. A farm has to have a **known** rate, and
   a wall is the only honest shape for one — a cost that kept climbing past the last reward is a
   curve quietly leaving the player behind.
 
@@ -203,4 +204,4 @@ clears, and the long climb is the rules and the points, not the guns.
 clear pays us 100,000, which is 2.27× that — so their numbers left alone would already cost us
 56% fewer clears than a co-op player. Scaling by 1.5 hands a third of that discount back and keeps
 the rest: about **a third fewer clears** than SC2 for the same rank. Their mastery 90 is 420
-Brutal clears and ours is 277; their ascension level is 4.55 clears and ours is 3.
+Brutal clears and ours is 277 (our hundredth level is 484); their ascension level is 4.55 clears and ours is 3.

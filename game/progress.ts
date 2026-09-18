@@ -2,11 +2,19 @@ import { cleanFamilies, VISIBLE_WORLDS, WORLD, WORLDS, type FamilyKey } from "./
 import { cleanMutations, type MutationId } from "./mutation";
 import { tierXpBonus, TOP_TIER } from "./ladder";
 import { ADMIN_ENABLED } from "./env";
-import { levelForXp, missionXp } from "./economy";
+import { levelForXp, missionXp, skillPointsAt, SKILL_POINT_LEVELS } from "./economy";
+import {
+  NO_SKILLS,
+  RUNGS_PER_TURRET,
+  NODE_COST,
+  rungsOn,
+  spentSkillPoints,
+  type SkillPoints,
+} from "./skills";
 import { MAX_LEVEL, techStateFor, worldUnlockLevel } from "./track";
 import { type TechState } from "./tech";
 import { clearSave, readSave, writeSave } from "./storage";
-import { type TowerKind } from "./types";
+import { TOWER_KINDS, type TowerKind } from "./types";
 
 /**
  * WHEN A BODY WEARS ITS HEALTH — the Interface tab's two knobs, one for
@@ -209,6 +217,13 @@ export interface Progress {
    * load.
    */
   devGrantOff?: boolean;
+  /**
+   * THE SKILL TREE'S SPEND (skills.ts): how many rungs of each turret's
+   * line the save has bought. A turret absent from the record has an
+   * unbought line, and the points NOT here are the ones still in hand —
+   * nothing stores the balance, which is level minus this.
+   */
+  skills?: SkillPoints;
 }
 
 /** one emplacement, as the game reports the board: what, and which cell */
@@ -241,6 +256,25 @@ const DEV_UNLOCK_ALL = true;
 
 const devUnlocking = (p?: { devGrantOff?: boolean }): boolean =>
   DEV_UNLOCK_ALL && ADMIN_ENABLED && !p?.devGrantOff;
+
+/** the stored spend, clamped: a line longer than the tree's, a turret this
+ *  build has never heard of, or a spend past what 100 levels can pay all
+ *  degrade rather than crash */
+function readSkills(v: unknown): SkillPoints {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+  const raw = v as Record<string, unknown>;
+  const out: SkillPoints = {};
+  let budget = SKILL_POINT_LEVELS;
+  for (const kind of TOWER_KINDS) {
+    const n = raw[kind];
+    if (typeof n !== "number" || !(n > 0)) continue;
+    const rungs = Math.min(RUNGS_PER_TURRET, Math.floor(n), Math.floor(budget / NODE_COST));
+    if (rungs <= 0) continue;
+    out[kind] = rungs;
+    budget -= rungs * NODE_COST;
+  }
+  return out;
+}
 
 function readClearedByMap(p: { clearedByMap?: unknown; cleared?: unknown }): Record<string, number> {
   const out: Record<string, number> = {};
@@ -331,6 +365,7 @@ export function loadProgress(): Progress {
       allyBars: readBars(p.allyBars),
       enemyBars: readBars(p.enemyBars),
       statusMarks: readStatusMode(p.statusMarks),
+      skills: readSkills(p.skills),
       ...(p.devGrantOff === true ? { devGrantOff: true } : null),
     };
     // a migrated save is rewritten here rather than re-converted on every
@@ -523,9 +558,62 @@ export const levelOf = (p: Progress): number => levelForXp(p.xp);
 export const effectiveLevel = (p: Progress): number =>
   devUnlocking(p) ? MAX_LEVEL : levelOf(p);
 
-/** what the run may do, as the sim and the bar want it — the track at the save's level */
+/** what the run may do, as the sim and the bar want it — the track at the
+ *  save's level, with the save's own skill tree folded in */
 export function techOf(p: Progress): TechState {
-  return techStateFor(effectiveLevel(p));
+  return { ...techStateFor(effectiveLevel(p)), skills: p.skills ?? NO_SKILLS };
+}
+
+// ---------- the skill tree ----------
+
+/**
+ * THE POINTS THIS SAVE HAS BEEN PAID — one a level to
+ * SKILL_POINT_LEVELS, and the dev door pays the lot (the same door that
+ * plays every save at the top of the track).
+ */
+export const skillPointsOf = (p: Progress): number =>
+  devUnlocking(p) ? SKILL_POINT_LEVELS : skillPointsAt(levelOf(p));
+
+/** ...and the ones still in hand */
+export const skillPointsLeft = (p: Progress): number =>
+  Math.max(0, skillPointsOf(p) - spentSkillPoints(p.skills));
+
+/**
+ * BUY THE NEXT RUNG of one turret's line, or hand one back — the tree's
+ * only two moves, and the one place their rules live: a line is bought in
+ * order, no line goes past its length, and nothing is bought without a
+ * point in hand. Returns the save as it now stands; the caller re-reads
+ * it (both write through).
+ */
+export function buySkill(kind: TowerKind, count = 1): Progress {
+  const p = loadProgress();
+  const have = rungsOn(p.skills, kind);
+  const room = Math.min(count, RUNGS_PER_TURRET - have, Math.floor(skillPointsLeft(p) / NODE_COST));
+  if (room <= 0) return p;
+  const next: Progress = { ...p, skills: { ...p.skills, [kind]: have + room } };
+  saveProgress(next);
+  return next;
+}
+
+export function refundSkill(kind: TowerKind, count = 1): Progress {
+  const p = loadProgress();
+  const have = rungsOn(p.skills, kind);
+  const back = Math.min(count, have);
+  if (back <= 0) return p;
+  const skills = { ...p.skills };
+  if (have - back <= 0) delete skills[kind];
+  else skills[kind] = have - back;
+  const next: Progress = { ...p, skills };
+  saveProgress(next);
+  return next;
+}
+
+/** hand the whole tree back — every point, every line */
+export function refundAllSkills(): Progress {
+  const p = loadProgress();
+  const next: Progress = { ...p, skills: {} };
+  saveProgress(next);
+  return next;
 }
 
 // ---------- the record ----------
