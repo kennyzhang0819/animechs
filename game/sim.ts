@@ -12586,7 +12586,7 @@ export class Sim {
         clamp(((1 + off) * Math.hypot(t.aimX - x, t.aimY - y)) / reach, lo, st.range / reach);
     }
     // lifeScaleRandMin/Max and velocityRnd: the two rolls that turn a
-    // barrage's four shells from one hole into a pattern down the lane
+    // barrage's six shells from one hole into a pattern down the lane
     const lr = bul.lifeScaleRand;
     if (lr) life *= lr[0] + Math.random() * (lr[1] - lr[0]);
     const vr = st.velocityRnd ?? 0;

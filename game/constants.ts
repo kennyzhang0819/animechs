@@ -1269,13 +1269,18 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.piercerLaser,
     },
   },
-  // Barrage, 1:1 from mindustry/content/Blocks.java with graphite ammo
-  // (ArtilleryBulletType(3, 40), 70 splash in a 22.5-unit radius): four
-  // shells every two seconds over 290 units — outreached only by
-  // tether's 300 and railhead's 500.
+  // Barrage, from mindustry/content/Blocks.java with graphite ammo
+  // (ArtilleryBulletType(3, 40), 70 splash): SIX shells every two seconds
+  // over 290 units — outreached only by tether's 300 and railhead's 500.
   // The volley scatters on purpose — 11 degrees of inaccuracy, a velocity
   // roll in [0.8, 1] and a lifetime roll in [0.95, 1.08] — so it lands as a
-  // pattern across the lane rather than four shells in one hole.
+  // pattern across the lane rather than six shells in one hole.
+  //
+  // THE VOLLEY AND THE BLAST ARE OURS, NOT UPSTREAM'S. Four shells in a
+  // 22.5-unit radius is what Mindustry throws; a 3x3 that costs a tier-3
+  // card wants to answer a lane rather than a file, so it throws two more
+  // and each one opens a third wider (30 units). The scatter is what
+  // makes that a wall of ground rather than a bigger hole.
   barrage: {
     name: "Barrage",
     size: 3,
@@ -1284,7 +1289,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     range: 290 * MU,
     minRange: 50 * MU,
     reload: 120 / TICK,
-    shots: 4,
+    shots: 6,
     shotDelay: 0, // ShootPattern.shots with no delay — the volley leaves together
     spread: 0,
     inaccuracy: (11 * Math.PI) / 180,
@@ -1299,7 +1304,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       damage: 40, // never lands directly — an artillery shell arcs over
       lifetime: 80 / TICK,
       splash: 70,
-      splashRadius: 30 * 0.75 * MU,
+      splashRadius: 40 * 0.75 * MU, // 30 units, over upstream's 22.5
       collidesAir: false,
       collidesGround: true,
       artillery: true,
@@ -2399,7 +2404,7 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   autocannon: "Shoots four shells at once, then reloads slowly.",
   douser: "Lobs a ball of water that bursts, soaking everything nearby and chipping at it.",
   piercer: "Charges up, then fires a beam through a line of enemies.",
-  barrage: "Lobs four shells at once over a long distance.",
+  barrage: "Lobs six shells at once over a long distance.",
   tether: "Fires one huge armour-piercing lance at the toughest enemy in range, then reloads slowly.",
   cleaver: "Shoots three heavy rays at very close range.",
   hive: "Shoots homing missiles that explode on contact.",
