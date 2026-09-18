@@ -285,91 +285,48 @@ export function missionXp(cleared: number, waves: number): number {
 }
 
 /**
- * THE CLIMB IS STARCRAFT II'S MASTERY LADDER, CUT BY A THIRD. The table
- * below is Blizzard's own, transcribed; SC2_SCALE is the only thing done
- * to it and THE ONE KNOB — moving it moves the whole grind and nothing
- * else. What the two phases are, why their commander levels are not here
- * and what the factor is worth in clears: docs/economy.md.
+ * THE CLIMB IS FLAT: every level costs the same, from 1 -> 2 to the cap.
+ *
+ * It was StarCraft II's mastery table, transcribed and scaled — a curve
+ * that got dearer every rung. What that bought was a grind whose rate the
+ * player could not hold in their head: "how far is the next point" had a
+ * different answer at 20 than at 80, and the answer was a lookup. One
+ * number instead. A level is five Nemesis clears, everywhere on the
+ * ladder, and the only thing that changes with height is that there is
+ * nothing left to buy past SKILL_POINT_LEVELS. See docs/economy.md.
  */
 
-/** what our clear is worth against a Brutal one — every SC2 number below is
- *  multiplied by this, and nothing else is done to any of them */
-export const SC2_SCALE = 1.5;
-
-/**
- * THE CLIMB, one step a level from 1 -> 2 up to 99 -> 100. The first
- * ninety are SC2's mastery table verbatim; the last ten continue its tail
- * at the +100,000 a level it had settled into, because the climb ends
- * where the SKILL POINTS do (SKILL_POINT_LEVELS) and not where Blizzard's
- * table happened to stop.
- */
-const SC2_MASTERY: readonly number[] = [
-  5_000, 20_000, 20_500, 21_000, 21_500, 22_000, 22_500, 23_000, 24_000, 25_000, 26_000, 27_000,
-  28_000, 30_000, 32_000, 34_000, 36_000, 38_000, 41_000, 44_000, 47_000, 50_000, 54_000, 58_000,
-  62_000, 66_000, 71_000, 76_000, 81_000, 86_000, 89_000, 92_000, 95_000, 99_000, 103_000, 107_000,
-  111_000, 115_000, 119_000, 123_000, 127_000, 131_000, 135_000, 139_000, 143_000, 147_000, 151_000,
-  155_000, 160_000, 165_000, 170_000, 175_000, 180_000, 185_000, 191_000, 197_000, 203_000, 209_000,
-  215_000, 222_000, 229_000, 236_000, 243_000, 250_000, 258_000, 266_000, 274_000, 282_000, 290_000,
-  299_000, 308_000, 317_000, 326_000, 335_000, 345_000, 355_000, 365_000, 375_000, 385_000, 395_000,
-  415_000, 445_000, 485_000, 535_000, 595_000, 665_000, 745_000, 835_000, 935_000, 1_035_000,
-  1_135_000, 1_235_000, 1_335_000, 1_435_000, 1_535_000, 1_635_000, 1_735_000, 1_835_000,
-  1_935_000, 2_035_000,
-];
-
-/** how many levels the climb authors; each one is a skill point (skills.ts) */
-export const MASTERY_LEVELS = SC2_MASTERY.length;
+/** WHAT EVERY LEVEL COSTS — the one knob on the whole grind */
+export const XP_PER_LEVEL = 500_000;
 
 /**
  * THE LAST LEVEL THAT PAYS A SKILL POINT, and therefore how many points a
  * save can ever hold: one for level 1 and one for every level after it to
- * here. Past it the curve is the flat wall (XP_LEVEL_FLAT) and a level
- * hands over nothing — see docs/skills.md.
+ * here. Past it the climb costs the same and hands over nothing — see
+ * docs/skills.md.
  */
-export const SKILL_POINT_LEVELS = MASTERY_LEVELS;
+export const SKILL_POINT_LEVELS = 100;
 
 /** the points a save standing at `level` has been paid, spent or not */
 export const skillPointsAt = (level: number): number =>
   Math.max(0, Math.min(SKILL_POINT_LEVELS, Math.floor(level)));
-/** the first level of the wall, where the last mastery point has been paid */
-export const ASCENSION_FROM = MASTERY_LEVELS + 1;
-/** what every level from the wall up costs (SC2's ascension level, scaled) */
-export const XP_LEVEL_FLAT = 200_000 * SC2_SCALE;
+
 /** the highest level a save can stand at; XP past it banks and does nothing */
 export const LEVEL_CAP = 1000;
 
-/** every step the curve authors, level 1 -> 2 first; past it, the wall */
-const STEPS: readonly number[] = SC2_MASTERY.map((x) => Math.round(x * SC2_SCALE));
-
-/** THE TABLE IS TRANSCRIBED BY HAND, SO THE SHAPE IS CHECKED AT IMPORT */
-(() => {
-  if (MASTERY_LEVELS !== 100) throw new Error(`the climb has ${MASTERY_LEVELS} levels, not 100`);
-  if (STEPS.length !== ASCENSION_FROM - 1)
-    throw new Error(`the curve authors ${STEPS.length} steps, not ${ASCENSION_FROM - 1}`);
-})();
-
-/** XP needed to climb from `level` to `level + 1` */
-export function xpToNext(level: number): number {
-  const l = Math.max(1, Math.floor(level));
-  return l <= STEPS.length ? STEPS[l - 1] : XP_LEVEL_FLAT;
+/** XP needed to climb from `level` to `level + 1` — the same everywhere */
+export function xpToNext(_level: number): number {
+  return XP_PER_LEVEL;
 }
 
 /** total XP at which `level` is reached — level 1 is zero */
 export function xpAtLevel(level: number): number {
-  let total = 0;
-  for (let l = 1; l < Math.min(level, LEVEL_CAP); l++) total += xpToNext(l);
-  return total;
+  return Math.max(0, Math.min(level, LEVEL_CAP) - 1) * XP_PER_LEVEL;
 }
 
 export function levelForXp(xp: number): number {
-  let level = 1;
-  let left = Math.max(0, Math.floor(xp));
-  while (level < LEVEL_CAP) {
-    const need = xpToNext(level);
-    if (left < need) return level;
-    left -= need;
-    level++;
-  }
-  return LEVEL_CAP;
+  const left = Math.max(0, Math.floor(xp));
+  return Math.min(LEVEL_CAP, 1 + Math.floor(left / XP_PER_LEVEL));
 }
 
 /** how far into the current level a total is: xp earned since it, and the

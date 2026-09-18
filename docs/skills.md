@@ -22,8 +22,9 @@ is authored per turret and is worth roughly three of them.
 
 ## The points
 
-**One a level, levels 1 to 100** (`SKILL_POINT_LEVELS`, `economy.ts`), so a save holds at most
-100 and the twenty-one lines together want 210. **The tree can never be filled**, which is the
+**One a level, levels 1 to 100** (`SKILL_POINT_LEVELS`, `economy.ts`) — a level being a flat
+500,000 XP, or five Nemesis clears — so a save holds at most 100 and the twenty-one lines
+together want 210. **The tree can never be filled**, which is the
 whole design: a hundred points across the roster is a hand, not a checklist.
 
 Nothing stores a balance. What a save has is its level; what it has spent is the record in
@@ -31,7 +32,7 @@ Nothing stores a balance. What a save has is its level; what it has spent is the
 unlimited — this is a loadout, not a purchase, and a player who cannot re-spend it will simply
 never spend it.
 
-Past level 100 the XP curve is the flat wall and a level pays nothing.
+Past level 100 a level costs the same and pays nothing.
 
 ## Where it meets the sim
 

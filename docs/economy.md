@@ -176,32 +176,26 @@ to play, and a run that pays a quarter more for it makes every deliberate map ch
 tax on knowing what you want. The only thing that moves what a run pays is the difficulty it is
 played at.
 
-## The level climb — SC2's mastery ladder, cut by a third
+## The level climb — flat, 500,000 a level
 
-`SC2_MASTERY` is Blizzard's own table, transcribed, and `SC2_SCALE` (1.5) is the only thing done
-to it. **This is the one knob** — every number on the ladder is SC2's times this, so moving it
-moves the whole grind and nothing else, and the table is all multiples of 500 so any sane factor
-lands on whole XP. The shape is checked at import because it was transcribed by hand.
+`XP_PER_LEVEL` is 500,000 and it is **the whole curve**: level 1 to 2 costs it, level 812 to 813
+costs it, and nothing in between is a lookup. A Nemesis clear pays 100,000, so **a level is five
+clears, everywhere**. That is the number a player can hold in their head, which is the entire
+argument for a flat ladder.
 
-- **The climb**, levels 1 to `ASCENSION_FROM` — 100 of them. The first 90 are SC2's mastery
-  table, their mastery 0 being our level 1; the last ten continue its tail at the +100,000 a
-  level it had settled into, because the climb ends where the SKILL POINTS do and not where
-  Blizzard's table stopped. Every one of them pays **one skill point**, so a save that reaches
-  100 has 100 to spend — see `docs/skills.md`.
-- **The ascension wall**, `ASCENSION_FROM` to `LEVEL_CAP`: `XP_LEVEL_FLAT` a level, forever.
-  Nothing is handed over up here in their game or ours — no point, no reward, and the levels
-  themselves are the only thing still moving. A farm has to have a **known** rate, and
-  a wall is the only honest shape for one — a cost that kept climbing past the last reward is a
-  curve quietly leaving the player behind.
+- **Levels 1 to `SKILL_POINT_LEVELS`** (100) each pay **one skill point** — a save that reaches
+  100 has 100 to spend across the 210 nodes of the skill tree (`docs/skills.md`). This is the
+  climb that is actually *for* something.
+- **Levels 100 to `LEVEL_CAP`** cost exactly the same and hand over nothing. The number still
+  moves, and that is all it does.
 
-**Their commander levels are deliberately not here.** SC2 runs 15 commander levels *before*
-mastery opens, and those are the reason its mastery table is allowed to start at 5,000 — a player
-reaching mastery 0 has already paid 1,045,000 for the privilege. Dropping that phase is what
-makes this ladder cheap early **on purpose**: the toolkit is handed over inside the first five
-clears, and the long climb is the rules and the points, not the guns.
+**It was StarCraft II's mastery table, transcribed and scaled by 1.5**, and it was dropped rather
+than retuned. Its shape was 5,000 for the first level and 1,552,500 for the ninetieth — a grind
+whose *rate* changed under the player as they climbed, so "how far is the next point" had a
+different answer at 20 than at 80 and the only way to know was to look it up. A ladder is a farm,
+a farm has to have a **known** rate, and the only honest shape for one is a line.
 
-**The scale makes it easier than theirs, twice over.** A Brutal clear pays them 44,000; a Nemesis
-clear pays us 100,000, which is 2.27× that — so their numbers left alone would already cost us
-56% fewer clears than a co-op player. Scaling by 1.5 hands a third of that discount back and keeps
-the rest: about **a third fewer clears** than SC2 for the same rank. Their mastery 90 is 420
-Brutal clears and ours is 277 (our hundredth level is 484); their ascension level is 4.55 clears and ours is 3.
+**Reaching 100 is 500 Nemesis clears** — close to what the scaled SC2 table cost (484), so the
+total grind is where it was; what changed is that it is now evenly spread rather than free at the
+bottom and brutal at the top. The early levels are the ones that got dearer, and they are also the
+ones that hand over the roster, which is the right way round: the toolkit should cost something.

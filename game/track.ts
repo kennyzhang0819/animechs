@@ -34,19 +34,19 @@ import {
  * OF THE BUILD PHASE.
  *
  *   THE BUILD PHASE, levels 1 to ROSTER_TOP. Everything a player builds
- *   WITH is dealt here, and all of it is dealt by the top: the turrets —
- *   and therefore the cards in the DRAW POOL, since the deal (rarity.ts)
- *   rolls over exactly what the track has handed out — the mods that ride
- *   them, and the maps to take the lot to. A fresh save opens with
- *   STARTING_ROSTER and STARTING_MODS; a save that reaches ROSTER_TOP owns
- *   the game's whole toolkit and will never be handed another piece of it.
+ *   WITH is dealt here: the turrets — and therefore the cards in the DRAW
+ *   POOL, since the deal (rarity.ts) rolls over exactly what the track has
+ *   handed out — the mods that ride them, and the maps to take the lot to.
+ *   A fresh save opens with STARTING_ROSTER and STARTING_MODS.
  *
  *   THE MUTATOR PHASE, MUTATORS_FROM to MAX_LEVEL. What a level hands out
- *   here is a RULE and never anything else, added to the deck the deploy
- *   roll draws from (MUTATOR_UNLOCKS). Nothing new to build with: the
- *   reward for climbing past the seam is that the game is ALLOWED TO BE
- *   HARDER, which is the reward a tower defence player is actually
- *   climbing for.
+ *   here is a RULE, added to the deck the deploy roll draws from
+ *   (MUTATOR_UNLOCKS): the reward for climbing past the seam is that the
+ *   game is ALLOWED TO BE HARDER, which is the reward a tower defence
+ *   player is actually climbing for. THE ROSTER SPILLS INTO ITS FIRST
+ *   THREE ROWS and nothing else does — one gun a level (UNLOCKS) runs the
+ *   seventeen to level ROSTER_LAST, and a row carrying a rule and a gun
+ *   together is a better row than one carrying two guns.
  *
  * THE TWO PHASES USED TO OVERLAP, AND ON PURPOSE. The roster ran to 20 and
  * the modules to 30, threaded between the rules so that every level of a
@@ -75,15 +75,13 @@ import {
  */
 
 /**
- * THE LAST LEVEL OF THE BUILD PHASE. Every turret, every mod and every map
- * is dealt at or below this, and nothing but rules is dealt above it.
+ * THE LAST LEVEL OF THE BUILD PHASE — every map is dealt at or below it.
  *
- * IT IS THE PHASE'S TOP, NOT THE ROSTER'S, though it is still named for the
- * roster. Every row from 2 up hands over one gun and one module, so the
- * tables empty at the rate the CATALOGS run out rather than on a level
- * chosen for them: the bag is spent at 12, the roster at 14, and 15 is the
- * ninth map on its own. What fixes this number is the seam below it — move
- * it and MUTATORS_FROM moves, which is the one gate on the ladder.
+ * IT IS THE PHASE'S TOP, NOT THE ROSTER'S, though it is still named for
+ * the roster: one gun a level runs the seventeen three rows past it
+ * (ROSTER_LAST). What fixes this number is the ninth and last map standing
+ * on it, and the seam above it — move it and MUTATORS_FROM moves, which is
+ * the one gate on the ladder.
  */
 export const ROSTER_TOP = 15;
 
@@ -256,48 +254,60 @@ export const STARTING_ROSTER: readonly TowerKind[] = [
 /**
  * THE ROSTER IS WRITTEN, THE REST IS PLACED. A hand-authored order because
  * the shape of the opening — which gun answers which wave — is a design
- * decision and not an arithmetic on build cost. Index 0 is level 2.
+ * decision and not an arithmetic on build cost.
+ *
+ * ONE GUN A LEVEL AND NEVER TWO, from 2 to the last of them. A row that
+ * handed over two put both of them in the same glance and made the second
+ * one furniture; a row is a gun now, so every one of the seventeen gets
+ * its own arrival. That runs the roster PAST the build phase's top
+ * (ROSTER_TOP) and into the mutator phase's opening rows, which is
+ * allowed: those rows carry a rule and a gun together rather than a rule
+ * alone.
+ *
+ * The order is the one the pairs used to be read in, left before right.
  */
 const UNLOCKS: Readonly<Record<number, readonly TowerKind[]>> = {
-  // THE OPENING THREE ROWS CARRY TWO EACH, and they are the only ones that
-  // do. The first clears are where a save has the fewest faces behind each
-  // button, so they widen two at a time: the torch widens tier 1 and the
-  // airburst widens tier 2, so the row after the opening changes what BOTH
-  // of the affordable bands turn over. The two fixers that used to lead
-  // this list are retired (types.ts RETIRED_KINDS) and no level hands one out
-  2: ["torch", "airburst"],
-  // ...and level 3 pairs the lobber with the CLEAVER, which is the one row
-  // that hands over a band a save cannot yet afford: a tier-4 block is
-  // 270,000, so what this widens is what the 4 button will turn over long
-  // before the bank can press it
-  3: ["lobber", "cleaver"],
-  // level 4 opens the 2x2s two at a time — the band a run spends most of
-  // its middle in, so it is the one worth having a choice in early
-  4: ["coil", "piercer"],
-  5: ["douser"],
-  6: ["hive"],
+  // THE OPENING WIDENS ONE BAND AT A TIME. The torch widens tier 1 and the
+  // airburst tier 2, so the first two clears each change what one of the
+  // affordable buttons turns over. The two fixers that used to lead this
+  // list are retired (types.ts RETIRED_KINDS) and no level hands one out
+  2: ["torch"],
+  3: ["airburst"],
+  4: ["lobber"],
+  // the CLEAVER is the one row that hands over a band a save cannot yet
+  // afford: a tier-4 block is 270,000, so what it widens is what the 4
+  // button will turn over long before the bank can press it
+  5: ["cleaver"],
+  // the 2x2s, the band a run spends most of its middle in
+  6: ["coil"],
+  7: ["piercer"],
+  8: ["douser"],
+  9: ["hive"],
   // THE UPPER TWO ARE SPREAD AND INTERLEAVED. A save already owns one gun
   // of each of them (STARTING_ROSTER), so what these rows widen is WHICH
-  // gun the button turns over — and a band that arrived all at once would
-  // spend that whole question in two clears. The whirl leads because it is
-  // the tier-3 answer to air the barrage is not; the railhead closes
-  // Serpulo's half of the roster
-  7: ["whirl"],
-  8: ["tether"],
-  9: ["furnace"],
-  10: ["deluge"],
-  11: ["railhead"],
+  // gun the button turns over. The whirl leads because it is the tier-3
+  // answer to air the barrage is not; the railhead closes Serpulo's half
+  // of the roster
+  10: ["whirl"],
+  11: ["tether"],
+  12: ["furnace"],
+  13: ["deluge"],
+  14: ["railhead"],
   // ...AND THEN THE TOXIN LINE, WHICH ARRIVES AS A LINE. Four guns that
   // do one thing (docs/elements.md) and one of them in every band, so
   // dealing them by footprint alongside the rest would scatter a set the
-  // player only understands held together. They close the phase instead,
-  // cheapest first: the 1x1 is a late gun in a band the save has owned
-  // since level 1, and what it widens is what the 1 button turns over
-  12: ["duster"],
-  13: ["blighter"],
-  14: ["drifter"],
-  15: ["stinger"],
+  // player only understands held together. They close the roster instead,
+  // cheapest first — and the last two land on the mutator phase's first
+  // rows, beside the rules those rows open
+  15: ["duster"],
+  16: ["blighter"],
+  17: ["drifter"],
+  18: ["stinger"],
 };
+
+/** the last level that hands over a gun — past the build phase's top, and
+ *  what the roster's own invariant is checked against */
+const ROSTER_LAST = 18;
 
 
 /**
@@ -418,10 +428,13 @@ const TURRETS_DEALT = dealTurrets();
   for (const k of FIELDED_KINDS)
     if (!seen.has(k)) throw new Error(`the track never opens "${k}" — no level hands it out`);
   for (const [level, kinds] of Object.entries(UNLOCKS)) {
-    if (kinds.length === 0) throw new Error(`level ${level} opens no turret`);
-    if (+level < 2 || +level > ROSTER_TOP)
-      throw new Error(`the track opens a turret on level ${level}, outside the roster phase`);
+    if (kinds.length !== 1)
+      throw new Error(`level ${level} opens ${kinds.length} turrets — a row is one gun`);
+    if (+level < 2 || +level > ROSTER_LAST)
+      throw new Error(`the track opens a turret on level ${level}, outside the roster`);
   }
+  if (ROSTER_LAST > MAX_LEVEL)
+    throw new Error(`the roster runs to level ${ROSTER_LAST}, past the top of the track`);
   // ...AND THE ROWS ARE UNBROKEN FROM 2. One gun a level is the rule the
   // phase is dealt by, so a hole in the run is the failure to catch — the
   // roster may finish before the phase does (it fills it exactly today),
