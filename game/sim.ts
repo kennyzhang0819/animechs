@@ -320,7 +320,6 @@ import {
   type RGB,
   type Core,
   isCore,
-  isEnemyOnly,
   type Structure,
   type Tower,
   type TowerKind,
@@ -752,11 +751,6 @@ const DMG_NEITHER = 0;
  * list (constants.ts) and the electric bit is read off the ammo, because
  * `electric` on a bullet IS what makes that bullet electric.
  */
-/** was this building BORN the swarm's (types.ts ENEMY_ONLY_KINDS, an
- *  author's emplacement) rather than taken from the player? The two are
- *  targeted on different terms — see the pick in updateTowers */
-const builtEnemy = (s: Structure): boolean => !isCore(s) && isEnemyOnly(s.kind);
-
 const TOWER_NATURE: Record<TowerKind, number> = Object.fromEntries(
   TOWER_KINDS.map((k) => [
     k,
@@ -11397,9 +11391,8 @@ export class Sim {
     );
   }
 
-  /** the nearest live shield tower within reach — what an IDLE turret spends its
-   *  reload on, and only an idle one (see fireTowers) */
-  private idleShieldTowerFor(t: Tower, r2t: number): number {
+  /** the nearest live shield tower within reach, by centre distance */
+  private nearestShieldTowerFor(t: Tower, r2t: number): number {
     let best = -1, bd = r2t;
     for (let i = 0; i < this.shieldTowers.length; i++) {
       const s = this.shieldTowers[i];
@@ -12382,41 +12375,42 @@ export class Sim {
           t.targetT = TARGET_INTERVAL;
           t.target = best >= 0 ? this.uid[best] : -1;
         }
-        // IDLE HANDS CHEW THE MAP'S SHIELD TOWERS: only a turret with nothing
-        // else in range spends its reload on one unforced, so clearing a
-        // shield tower idly costs time between waves and never mid-wave DPS
-        if (best < 0 && st.targetGround && this.shieldTowers.length > 0) {
-          const si = this.idleShieldTowerFor(t, r2t);
-          if (si >= 0) shr = this.shieldTowers[si];
-        }
-        // ...AND THE SWARM'S TURRETS. There are two kinds of those and
-        // they are not the same question.
-        //
-        // A CONQUERED TURRET IS IDLE WORK (Conquest): it was the player's
-        // a moment ago, taking it back is the board undoing a loss, and
-        // only a gun with nothing else in range spends its reload on one
-        // — so that costs time between waves and never mid-wave DPS.
-        //
-        // AN AUTHOR'S EMPLACEMENT IS A TARGET LIKE A BODY (missionMarks.ts
-        // EMPLACEMENT). It is the thing the run came over here to take
-        // down, and a gun that refused to fire on it for as long as any
-        // wave was on the field would be a gun the player watched stand
-        // idle in front of the objective. So it is picked BEFORE the idle
-        // gate and beside the bodies, losing only to a body actually
-        // found this tick.
-        const heldT = t.aimTower;
-        if (st.targetGround && this.enemyTowers > 0) {
-          const idleOnly = best >= 0 || shr;
-          if (heldT && teamOf(heldT) === "enemy" && this.inReach(heldT, t.x, t.y, st.range)) {
-            if (!idleOnly || builtEnemy(heldT)) aimT = heldT;
-          } else if (scan) {
-            const found = this.nearestStructure(t.x, t.y, st.range, false, "enemy");
-            if (found && (!idleOnly || builtEnemy(found))) aimT = found;
+        // A DOME AND A BUILDING OF THE SWARM'S ARE TARGETS BESIDE THE
+        // BODIES, and the nearest of the three wins: no kind outranks
+        // another and none of them is idle work. Each is held between
+        // scans and re-picked on the target clock, like the body scan
+        // above, so the walks cost what a scan costs and not a tick.
+        if (st.targetGround && this.shieldTowers.length > 0) {
+          const heldS = t.aimShieldTower >= 0 ? this.shieldTowers[t.aimShieldTower] : null;
+          if (heldS && heldS.hp > 0 && (heldS.x - t.x) ** 2 + (heldS.y - t.y) ** 2 < r2t)
+            shr = heldS;
+          else if (scan) {
+            const si = this.nearestShieldTowerFor(t, r2t);
+            if (si >= 0) shr = this.shieldTowers[si];
           }
         }
-        // a body found this tick beats a turret the swarm merely TOOK,
-        // and never beats one it was built with
-        if ((best >= 0 || shr) && aimT && !builtEnemy(aimT)) aimT = null;
+        if (st.targetGround && this.enemyTowers > 0) {
+          const heldT = t.aimTower;
+          if (heldT && teamOf(heldT) === "enemy" && this.inReach(heldT, t.x, t.y, st.range))
+            aimT = heldT;
+          else if (scan) aimT = this.nearestStructure(t.x, t.y, st.range, false, "enemy");
+        }
+        // distances on each one's own terms — a body from its centre, as
+        // its range test counts it, a building from its edge — and only
+        // the winner survives, because fireShot hands an instant weapon's
+        // damage to a dome AND a building if it is left holding both
+        if (shr || aimT) {
+          const dU = best >= 0
+            ? Math.sqrt((upx[best] - t.x) ** 2 + (upy[best] - t.y) ** 2)
+            : Infinity;
+          const dS = shr ? Math.sqrt((shr.x - t.x) ** 2 + (shr.y - t.y) ** 2) : Infinity;
+          const dT = aimT
+            ? Math.sqrt((aimT.x - t.x) ** 2 + (aimT.y - t.y) ** 2) - (this.sizeOf(aimT) * CELL) / 2
+            : Infinity;
+          if (dU <= dS && dU <= dT) { shr = null; aimT = null; }
+          else if (dS <= dT) aimT = null;
+          else shr = null;
+        }
       }
       t.targetIdx = best;
       t.aimShieldTower = shr ? this.shieldTowers.indexOf(shr) : -1;
@@ -13515,6 +13509,7 @@ export class Sim {
     // staring at an empty lane pays for the walk at most five times a
     // second
     t.targetT -= dt;
+    let picked = false;
     if (best < 0 && t.targetT <= 0) {
       const hasTargets =
         (st.targetAir && this.nAliveAir > 0) || (st.targetGround && this.nAliveGround > 0);
@@ -13525,6 +13520,7 @@ export class Sim {
           )
         : -1;
       t.targetT = TARGET_INTERVAL;
+      picked = true;
     }
     // a live lock leaves the clock ARMED, so the frame the lock breaks —
     // the body died, or walked out — re-scans on the spot rather than
@@ -13533,14 +13529,20 @@ export class Sim {
     t.targetIdx = best;
     t.target = best >= 0 ? this.uid[best] : -1;
 
-    // IDLE HANDS CHEW THE MAP'S SHIELD TOWERS (see the volley path): a
-    // beam with nothing else in range spends the lull on a dome, and the
-    // spool it builds there is a real one — it just never survives the
-    // switch to the body that walks in next
+    // a dome is a target beside the bodies and the nearest wins, as it
+    // does on the volley path — but a LOCK NEVER TRADES UP (see above), so
+    // the two are weighed only where a lock is made, and a dome is then
+    // held exactly as a body is
     let shr: ShieldTower | null = null;
-    if (best < 0 && st.targetGround && this.shieldTowers.length > 0) {
-      const si = this.idleShieldTowerFor(t, r2);
-      if (si >= 0) shr = this.shieldTowers[si];
+    if (st.targetGround && this.shieldTowers.length > 0) {
+      const heldS = t.aimShieldTower >= 0 ? this.shieldTowers[t.aimShieldTower] : null;
+      if (heldS && heldS.hp > 0 && (heldS.x - t.x) ** 2 + (heldS.y - t.y) ** 2 < r2) shr = heldS;
+      else if (best < 0 || picked) {
+        const si = this.nearestShieldTowerFor(t, r2);
+        const s = si >= 0 ? this.shieldTowers[si] : null;
+        const dU = best >= 0 ? (upx[best] - t.x) ** 2 + (upy[best] - t.y) ** 2 : Infinity;
+        if (s && (s.x - t.x) ** 2 + (s.y - t.y) ** 2 < dU) shr = s;
+      }
     }
     t.aimShieldTower = shr ? this.shieldTowers.indexOf(shr) : -1;
 

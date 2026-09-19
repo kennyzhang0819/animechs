@@ -448,9 +448,10 @@ and a board with no free ground raises nothing that period. It used to *entomb* 
 landed on; that is gone, and with it the one way this rule could undo a decision already
 paid for.
 
-**Turrets chew shield towers only when idle** — a turret with nothing else in range spends
-its reload on one, so clearing a dome costs time between waves and never mid-wave DPS. A
-dome comes down in the gaps, or it does not come down.
+**A dome is a target like any other** — a turret takes the nearest thing in range, body or
+building, so a dome standing closer than the wave is what the guns around it are shooting.
+It used to be idle work only, which meant a dome inside a defended pocket never came down
+while anything was on the field.
 
 **The dome reforms whole, not by degrees, and is not interruptible.**
 `SHIELD_TOWER_SHIELD_DELAY` (10s) starts when the dome *breaks* and nothing restarts it. It

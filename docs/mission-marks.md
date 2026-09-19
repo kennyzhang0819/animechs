@@ -286,11 +286,10 @@ under (`Sim.conquerTower` says why): its own bodies will not shoot it, so
 a wall they cannot pass and will not break is a wall they would stand at
 forever — and a map is exactly where that would get authored by accident.
 
-**Your guns shoot it mid-wave.** A *conquered* turret is idle work — only
-a gun with nothing else in range spends its reload taking one back, so
-that never costs mid-wave damage. An authored emplacement is the thing the
-run came over to destroy, so it is picked beside the bodies and loses only
-to a body found that same tick (`Sim.updateTowers`, `builtEnemy`).
+**Your guns shoot it mid-wave.** A turret takes the nearest thing in its
+range and does not care what kind of thing it is — a body, a dome, a gun
+of the swarm's. So a line standing over an emplacement fights it, and a
+line with the wave closer fights the wave (`Sim.updateTowers`).
 
 **`road`** — the line a crosser walks (`game/missions.ts`): the Borers'
 lines on an intercept map, the convoy's on an escort one. Its corners are
