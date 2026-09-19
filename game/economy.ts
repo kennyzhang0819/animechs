@@ -81,7 +81,7 @@ export const SCRAP_START = 6000;
  * swarm grew. A doubling that long is a curve that only pays the player
  * who already survived it.
  */
-export const CORE_INCOME_RATE = 330;
+export const CORE_INCOME_RATE = 600;
 export const CORE_INCOME_DOUBLING = 255;
 /** the shipped campaign's own length, 3 + 50 x 22.5 (levels.ts) */
 export const CORE_INCOME_RAMP = 1125;

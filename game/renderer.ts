@@ -4370,8 +4370,7 @@ export class Renderer {
   /**
    * Fx.plasticExplosion, 1:1: whirl's. The same three passes again, in
    * plastanium yellow-green and wider still — a 24-unit ring over seven
-   * ticks and seven cinders rather than five. The six fragments thrown by
-   * the same blast are real bullets, not part of this.
+   * ticks and seven cinders rather than five.
    */
   private drawPlasticExplosion(dyn: Batch, e: Effect, t: number): void {
     const fout = 1 - t;

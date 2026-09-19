@@ -852,12 +852,12 @@ const WHIRL: readonly TurretUpgradeDef[] = [
     tier: 3,
     name: "Surge Rounds",
     blurb:
-      "Surge alloy casings: +30% direct damage, +50% splash damage, and 10 fragments a shell instead of 6.",
+      "Surge alloy casings: +30% direct damage, +50% splash damage, +25% blast radius.",
     glyph: "splash",
     apply: (s) =>
       withBullet(stronger(s, 1.3), {
         splash: s.bullet.splash * 1.5,
-        ...(s.bullet.frag ? { frag: { ...s.bullet.frag, count: 10 } } : null),
+        splashRadius: s.bullet.splashRadius * 1.25,
       }),
   },
 ];

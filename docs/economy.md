@@ -30,7 +30,7 @@ rate(t) = CORE_INCOME_RATE x 2 ^ (min(t, CORE_INCOME_RAMP) / CORE_INCOME_DOUBLIN
 
 | | |
 |---|---|
-| `CORE_INCOME_RATE` | 330 scrap a second, at t = 0 |
+| `CORE_INCOME_RATE` | 600 scrap a second, at t = 0 |
 | `CORE_INCOME_DOUBLING` | 255 seconds |
 | `CORE_INCOME_RAMP` | 1,125 — the shipped campaign's own length |
 | `SCRAP_START` | 6,000 |
@@ -42,12 +42,12 @@ else.
 
 | wave | second | rate/s | banked by then |
 |---|---|---|---|
-| 1 | 3 | 333 | 6,994 |
-| 10 | 206 | 577 | 96,835 |
-| 20 | 431 | 1,063 | 275,833 |
-| 30 | 656 | 1,960 | 605,792 |
-| 40 | 881 | 3,614 | 1,214,033 |
-| 50 | 1,106 | 6,661 | 2,335,253 |
+| 1 | 3 | 605 | 7,808 |
+| 10 | 206 | 1,050 | 171,680 |
+| 20 | 431 | 1,937 | 497,861 |
+| 30 | 656 | 3,568 | 1,097,821 |
+| 40 | 881 | 6,576 | 2,204,212 |
+| 50 | 1,106 | 12,119 | 4,243,076 |
 
 **It was 130 a second doubling every 190s, and that starved the opening.** A 190-second
 doubling puts 98% of a run's money after wave twenty; playtested, the first three minutes could
@@ -59,9 +59,9 @@ below — see the tier-2 note.
 second over 230s still read as tight through the first ten waves in play, which is the same
 complaint as the 190s curve in a milder form. Raising the rate alone inflates the whole run;
 lengthening the doubling alone makes the late game poorer against a tide that keeps doubling.
-Moving both — 330 a second over 255s — lifts the first ten waves by about a third and leaves
+Moving both — 330 a second over 255s — lifted the first ten waves by about a third and leaves
 the rate past wave forty where it was, so the generosity lands where the board has no coverage
-yet and nowhere else. The opening bank went 4,000 to 6,000 in the same pass: it is the only
+yet and nowhere else. The rate is now 600, a flat 1.8x of that curve at every second. The opening bank went 4,000 to 6,000 in the same pass: it is the only
 number that is purely the opening, and it buys five tier-1 cards instead of three.
 
 **It stops climbing at the ramp.** Past `CORE_INCOME_RAMP` the rate is flat while the tide

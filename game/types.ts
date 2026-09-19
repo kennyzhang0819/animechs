@@ -7,7 +7,7 @@
  * (RETIRED_KINDS below); the other twenty-one are what the deal draws from
  * (rarity.ts) and what the track hands out. The late five were stubs
  * carrying a tacker's bullet until they were given their own: hive's
- * homing missiles, whirl's fragmenting flak, repeater's piercing twin
+ * homing missiles, whirl's proximity flak, repeater's piercing twin
  * cannon, furnace's held beam and railhead's rail shot.
  *
  * Douser and deluge are the liquid turrets, and they are the roster's

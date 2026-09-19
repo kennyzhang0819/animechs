@@ -12727,8 +12727,8 @@ export class Sim {
    * throws `count` children, each on a bearing drawn uniformly from the
    * full `spread` cone around the parent's heading, at a random fraction
    * of the CHILD's own speed and starting a random offset out from the
-   * blast. Whirl's six plastanium fragments are the only user, and they
-   * are what turns one shell into a wall.
+   * blast. No ammo names `frag` today — whirl, the one that did, carries a
+   * wider blast instead.
    */
   private createFrags(p: number, spec: NonNullable<BulletStats["frag"]>): void {
     const P = this.projs;

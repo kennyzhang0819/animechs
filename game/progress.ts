@@ -6,7 +6,6 @@ import { levelForXp, missionXp, skillPointsAt, SKILL_POINT_LEVELS } from "./econ
 import {
   MAX_RANKS,
   NO_SKILLS,
-  NODE_COST,
   ranksOn,
   SKILL_NODES,
   spentSkillPoints,
@@ -258,7 +257,7 @@ const DEV_UNLOCK_ALL = true;
 const devUnlocking = (p?: { devGrantOff?: boolean }): boolean =>
   DEV_UNLOCK_ALL && ADMIN_ENABLED && !p?.devGrantOff;
 
-/** the stored spend, clamped: a node past its cap, a node this build has
+/** the stored spend, clamped: a node past MAX_RANKS, a node this build has
  *  never heard of (the tree that was one line a turret wrote those), or a
  *  spend past what 100 levels can pay all degrade rather than crash */
 function readSkills(v: unknown): SkillPoints {
@@ -269,10 +268,10 @@ function readSkills(v: unknown): SkillPoints {
   for (const node of SKILL_NODES) {
     const n = raw[node.id];
     if (typeof n !== "number" || !(n > 0)) continue;
-    const ranks = Math.min(MAX_RANKS, Math.floor(n), Math.floor(budget / NODE_COST));
+    const ranks = Math.min(MAX_RANKS, Math.floor(n), budget);
     if (ranks <= 0) continue;
     out[node.id] = ranks;
-    budget -= ranks * NODE_COST;
+    budget -= ranks;
   }
   return out;
 }
@@ -575,22 +574,22 @@ export function techOf(p: Progress): TechState {
 export const skillPointsOf = (p: Progress): number =>
   devUnlocking(p) ? SKILL_POINT_LEVELS : skillPointsAt(levelOf(p));
 
-/** ...and the ones still in hand */
+/** ...and the ones still in hand — the one number the board prints */
 export const skillPointsLeft = (p: Progress): number =>
   Math.max(0, skillPointsOf(p) - spentSkillPoints(p.skills));
 
 /**
- * BUY RANKS OF ONE NODE, or hand them back — the tree's only two moves,
- * and the one place their rules live: no node goes past MAX_RANKS, and
- * nothing is bought without a point in hand. A buy that cannot be paid
- * for in full takes what it can afford rather than refusing, so the board
- * never has to explain a price. Returns the save as it now stands; the
- * caller re-reads it (both write through).
+ * RAISE ONE DIAL, or lower it — the tree's only two moves, and the one
+ * place their rules live: a rank costs a point, and NO DIAL HAS A CEILING
+ * a player can reach, so the whole pool may go into one of the four.
+ * MAX_RANKS is only a runaway guard. A buy that cannot be paid for in
+ * full takes what it can afford rather than refusing. Returns the save as
+ * it now stands; the caller re-reads it (both write through).
  */
 export function buySkill(id: string, count = 1): Progress {
   const p = loadProgress();
   const have = ranksOn(p.skills, id);
-  const room = Math.min(count, MAX_RANKS - have, Math.floor(skillPointsLeft(p) / NODE_COST));
+  const room = Math.min(count, MAX_RANKS - have, skillPointsLeft(p));
   if (room <= 0) return p;
   const next: Progress = { ...p, skills: { ...p.skills, [id]: have + room } };
   saveProgress(next);
@@ -610,7 +609,7 @@ export function refundSkill(id: string, count = 1): Progress {
   return next;
 }
 
-/** hand the whole tree back — every point, every node */
+/** hand the whole tree back — every rank, every dial */
 export function refundAllSkills(): Progress {
   const p = loadProgress();
   const next: Progress = { ...p, skills: {} };

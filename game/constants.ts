@@ -444,9 +444,8 @@ export interface BulletStats {
   // Mindustry fragBullet/fragBullets (BulletType.createFrags): where this
   // shot dies it throws `count` children, each on a random bearing within
   // half of `spread` of the parent's heading and at a random fraction of
-  // the child's own full speed. Whirl's plastanium flak is the one
-  // that uses it: the burst is what makes a flak wall out of a single
-  // turret
+  // the child's own full speed. No ammo in the game names it today —
+  // whirl, the one that did, carries a wider blast instead
   // THE SECOND AMMO IN THE MAGAZINE. It is loaded one of two ways, and a
   // turret that names an `alt` has to say which (checked at import below):
   // BY BARREL, where a gun with `barrels` throws from its mounts in turn
@@ -753,12 +752,12 @@ export const TOWER_ARMOR_BY_SIZE: readonly number[] = [0, 0, 4, 9, 15];
  *
  * WHY. V8 gives an object literal a hidden class from the keys it was
  * written with, and every ammo below is written with a different set of
- * optional keys — hive has `homing`, whirl has `flak` and `frag`, torch
+ * optional keys — hive has `homing`, whirl has `flak`, torch
  * has none of the sprite fields. A property read like `b.splash` in the
  * sim's hot loops is fast while it has met at most four classes; past that
  * it is a hash lookup on every read. Measured on the turret clocks
  * (scripts/check.mjs, ten thousand of one kind): the whirl pass cost 10ms
- * with only whirl's two ammos seen, and 13.8ms in a process that had
+ * with only whirl's own ammo seen, and 13.8ms in a process that had
  * stepped a mixed board first — the same code, the same shots, a third
  * slower because the stats reads had gone megamorphic. A real board is
  * always the mixed one.
@@ -1425,7 +1424,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // drawn across the map every frame it was alive: two tethers on a board
   // and the lane disappeared under white cable that never stopped moving.
   //
-  // So the beam is now a SHOT. One mint lance, every 3.5 seconds, at the
+  // So the beam is now a SHOT. One mint lance, every 4.5 seconds, at the
   // highest-health body in reach — and between shots the turret draws
   // nothing at all but the dish tracking its mark.
   //
@@ -1437,27 +1436,27 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   //  - `sort: "strongest"`, railhead's pick for railhead's reason: a gun
   //    that fires this rarely cannot spend a shot on whichever dartback1
   //    wandered nearest.
-  //  - `pierceCap: 1` and 550 damage on a 3.5-second clock. Against a
-  //    crowd that is ONE dead chaff body every 3.5 seconds and five
+  //  - `pierceCap: 1` and 550 damage on a 4.5-second clock. Against a
+  //    crowd that is ONE dead chaff body every 4.5 seconds and five
   //    hundred points thrown into the dirt — the overkill IS the
-  //    anti-chaff rule, and it needs no code. Against a heavy it is 157
+  //    anti-chaff rule, and it needs no code. Against a heavy it is 122
   //    damage a second through armour, which is what the turret is for.
   //
   // IT IS NOT A RAILHEAD AND MUST NEVER READ AS ONE, and the numbers are
   // picked to keep the two apart at a glance. Railhead spends 1,755 on a
   // QUEUE every 3.3 seconds — 527 a second, through as many bodies as the
   // budget reaches, from 200 units further out. Tether spends 550 on ONE
-  // body every 3.5 — 157 a second, and the second body in the line is
+  // body every 4.5 — 122 a second, and the second body in the line is
   // untouched. It is SLOWER than the railhead as well as smaller, which is
-  // the point: under a third of the rate at an eighth of the price, and
+  // the point: under a quarter of the rate at an eighth of the price, and
   // that is the whole of the tier-2 bargain.
   //
   // THE RELOAD IS THE COST AND IT IS MEANT TO HURT, and it is the one
   // number on this turret that has been deliberately walked the WRONG way.
-  // 210 ticks with a 4-degree cone and a 4-degree-a-tick yoke: the turret
+  // 270 ticks with a 4-degree cone and a 4-degree-a-tick yoke: the turret
   // commits to a mark, swings slowly onto it, and a body that dies
   // mid-swing costs the player the whole cycle. At 165 the gun fired often
-  // enough to feel like a gun; at 210 every shot is a decision, which is
+  // enough to feel like a gun; at 270 every shot is a decision, which is
   // what a siege weapon is supposed to be. Nothing here may be shortened
   // without taking the reload back to where it stops being one.
   tether: {
@@ -1466,7 +1465,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     health: 750, // uncommon band floor — 94 tiles
     armor: 4,
     range: 300 * MU,
-    reload: 210 / TICK, // 3.5 s — SLOWER than railhead's 3.3, on purpose
+    reload: 270 / TICK, // 4.5 s — SLOWER than railhead's 3.3, on purpose
     shots: 1,
     shotDelay: 0,
     spread: 0,
@@ -1742,15 +1741,14 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.blastAmmoBack,
     },
   },
-  // Whirl, 1:1 from mindustry/content/Blocks.java with plastanium ammo
+  // Whirl, after mindustry/content/Blocks.java with plastanium ammo
   // (FlakBulletType(4, 8)): a shell every ten ticks out of three barrels,
-  // proximity-fused at 20 units, 37.5 splash across forty.
+  // proximity-fused at 20 units.
   //
-  // AND THEN IT FRAGMENTS. Every blast throws six more bullets on random
-  // bearings, each 12 damage — so one whirl shell is a burst, not a
-  // point, and a turret firing six a second lays a wall of them. That is
-  // the whole reason to own it, and the reason its ammo is plastanium
-  // rather than the surge that hits harder in a straight line.
+  // Upstream's shell shatters into six fragments on random bearings; this
+  // one does not. The whole burst is folded into the blast instead — 60
+  // splash across fifty-two — so six shells a second is a rolling wall of
+  // overlapping circles rather than a scatter that may or may not connect.
   //
   // Unlike airburst, plastanium sets collidesGround: whirl answers both
   // layers.
@@ -1775,8 +1773,8 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       speed: 4 * TICK * MU,
       damage: 8,
       lifetime: (200 + 9 + 10) / 4 / TICK, // limitRange() default margin 9
-      splash: 37.5,
-      splashRadius: 40 * 0.75 * MU,
+      splash: 60,
+      splashRadius: 52 * 0.75 * MU,
       collidesAir: true,
       collidesGround: true,
       flak: {
@@ -1792,35 +1790,6 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
         shrinkY: 0.5,
         back: PAL.plastaniumBack,
         front: PAL.plastaniumFront,
-      },
-      frag: {
-        count: 6,
-        spread: 2 * Math.PI, // fragRandomSpread 360: the burst is a circle
-        velMin: 0.2,
-        velMax: 1,
-        offsetMin: 1 * MU,
-        offsetMax: 7 * MU,
-        bullet: {
-          speed: 2.5 * TICK * MU,
-          damage: 12,
-          lifetime: 15 / TICK,
-          splash: 0,
-          splashRadius: 0,
-          collidesAir: true,
-          collidesGround: true,
-          sprite: {
-            region: "bullet",
-            across: 10 * MU,
-            along: 12 * MU,
-            shrinkX: 0,
-            shrinkY: 1, // the whole length: a fragment burns out to nothing
-            back: PAL.plastaniumBack,
-            front: PAL.plastaniumFront,
-          },
-          hitFx: FxKind.BulletHit,
-          // despawnEffect = Fx.none: a fragment that hits nothing just ends
-          fxColor: PAL.plastaniumBack,
-        },
       },
       shootFx: FxKind.ShootBig,
       smokeFx: FxKind.SmokeSmall,
@@ -2408,7 +2377,7 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   tether: "Fires one huge armour-piercing lance at the toughest enemy in range, then reloads slowly.",
   cleaver: "Shoots three heavy rays at very close range.",
   hive: "Shoots homing missiles that explode on contact.",
-  whirl: "Shoots a fast stream of shells that burst into fragments.",
+  whirl: "Shoots a fast stream of shells that burst in a wide blast.",
   deluge:
     "Throws balls of water and fire together. Each bursts into a large cloud: the water soaks and slows, the fire burns through plating.",
   fixer: "Repairs nearby buildings every few seconds.",

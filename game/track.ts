@@ -280,9 +280,9 @@ const UNLOCKS: Readonly<Record<number, readonly TowerKind[]>> = {
   5: ["cleaver"],
   // the 2x2s, the band a run spends most of its middle in
   6: ["coil"],
-  7: ["piercer"],
+  7: ["hive"],
   8: ["douser"],
-  9: ["hive"],
+  9: ["piercer"],
   // THE UPPER TWO ARE SPREAD AND INTERLEAVED. A save already owns one gun
   // of each of them (STARTING_ROSTER), so what these rows widen is WHICH
   // gun the button turns over. The whirl leads because it is the tier-3
