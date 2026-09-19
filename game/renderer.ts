@@ -1,3 +1,4 @@
+import type { Fog } from "./fog";
 import { forEachMarkPadCell, MARK_KINDS } from "./missionMarks";
 import { RAIL_SPAN } from "./railArt";
 import { FLOOR_STYLE, WATER_VARIANTS, WATER_WAVE_VARIANT, type FloorKind } from "./tiles";
@@ -1369,6 +1370,16 @@ export class Renderer {
   private readonly shadowTex: WebGLTexture;
   /** the darkness buffer: one texel a cell, linear, see DARK_RADIUS */
   private readonly darkTex: WebGLTexture;
+  /** the map-covering quad that draws fogTex (see drawFog) */
+  private readonly fogQuad: Batch;
+  /** the fog buffer: one texel a cell, linear, exactly like the darkness
+   *  it is drawn over — but rewritten while the game runs (see syncFog) */
+  private readonly fogTex: WebGLTexture;
+  private fog: Fog | null = null;
+  /** the fog's alpha widened to RGBA for the upload, kept whole so a
+   *  partial write can use UNPACK_ROW_LENGTH over it (see syncFog) */
+  private fogRGBA: Uint8Array | null = null;
+  private fogReady = false;
   private readonly dyn: Batch;
   /**
    * the force-field fills for this frame. They never reach the screen
@@ -1538,6 +1549,7 @@ export class Renderer {
     this.walls = this.makeBatch(NCELLS * 2 + 2048, false);
     this.shadow = this.makeBatch(4, false);
     this.dark = this.makeBatch(4);
+    this.fogQuad = this.makeBatch(4);
     // a swarm budget, not a worst case: 12 quads is a walking mech with one
     // mirrored gun drawn twice (silhouette rim under, art over), which is
     // what MAX_UNITS of anything is ever actually made of, and the 13th is
@@ -1604,6 +1616,15 @@ export class Renderer {
     if (!dtex) throw new Error("darkness texture alloc failed");
     this.darkTex = dtex;
     gl.bindTexture(gl.TEXTURE_2D, dtex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    const ftex = gl.createTexture();
+    if (!ftex) throw new Error("fog texture alloc failed");
+    this.fogTex = ftex;
+    gl.bindTexture(gl.TEXTURE_2D, ftex);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -2462,7 +2483,7 @@ export class Renderer {
    * per-building rather than per-map — the old stamps are wiped back to
    * whatever the terrain had under them, the new ones are stamped, and
    * only the rectangle that moved is sent to the texture (the fog's own
-   * unpack trick, see drawFog). Nothing at all happens on a frame where
+   * unpack trick, see syncFog). Nothing at all happens on a frame where
    * nothing was built or wrecked, which is nearly all of them.
    *
    * A SHELL CASTS ITS SHADOW WHOLE, as Mindustry's ConstructBlock does:
@@ -3175,6 +3196,88 @@ export class Renderer {
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
   }
 
+  /**
+   * WHOSE FOG THIS IS, or none at all. The map editor and the level
+   * editor pass nothing and draw no fog: the whole point of those screens
+   * is to see the map, and a board half in shadow is a board an author
+   * cannot read. A new level hands over a new Fog (game.ts remakeView),
+   * which is also how the memory of the last one is thrown away.
+   */
+  setFog(fog: Fog | null): void {
+    this.fog = fog;
+    this.fogReady = false;
+  }
+
+  /**
+   * THE FOG ONTO THE CARD, and only the part of it that moved.
+   *
+   * The mask is a cell a texel like the darkness, but unlike the darkness
+   * it is rewritten while the game runs — a beacon lighting up moves a
+   * hundred and twenty cells a side and a hauler moves forty. Sending the
+   * whole quarter-megapixel for that would be most of the frame's upload
+   * for none of the frame's news, so UNPACK_ROW_LENGTH lets the driver
+   * read the changed rectangle straight out of the full-size buffer and
+   * nothing else crosses. The row length is put back afterwards, because
+   * it is global state and the atlas is uploaded through the same store.
+   */
+  private syncFog(): void {
+    const fog = this.fog;
+    if (!fog) return;
+    const gl = this.gl;
+    const rgba = this.fogRGBA ?? (this.fogRGBA = new Uint8Array(COLS * ROWS * 4));
+    gl.bindTexture(gl.TEXTURE_2D, this.fogTex);
+    if (!this.fogReady) {
+      this.fogReady = true;
+      fog.takeDirty();
+      const a = fog.alpha;
+      for (let i = 0; i < a.length; i++) rgba[i * 4 + 3] = a[i];
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+      gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      return;
+    }
+    const d = fog.takeDirty();
+    if (!d || d.x1 < d.x0 || d.y1 < d.y0) {
+      gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      return;
+    }
+    const a = fog.alpha;
+    for (let y = d.y0; y <= d.y1; y++) {
+      const row = y * COLS;
+      for (let x = d.x0; x <= d.x1; x++) rgba[(row + x) * 4 + 3] = a[row + x];
+    }
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, COLS);
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, d.x0);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, d.y0);
+    gl.texSubImage2D(
+      gl.TEXTURE_2D, 0, d.x0, d.y0, d.x1 - d.x0 + 1, d.y1 - d.y0 + 1,
+      gl.RGBA, gl.UNSIGNED_BYTE, rgba,
+    );
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+  }
+
+  /**
+   * THE FOG, LAST OF EVERYTHING (docs/fog.md). Over the hills' own
+   * darkness, over the crowd, over the flyers and over the shots — a fog
+   * that a bomber flew out of at full brightness would not be one. The
+   * overlay canvas is still above it and stays clear, which is the line:
+   * the FIELD is what the fog dims, and what the player has been told
+   * about the field is not.
+   */
+  private drawFog(): void {
+    if (!this.fog) return;
+    const gl = this.gl;
+    const q = this.fogQuad;
+    q.n = 0;
+    this.push(q, W / 2, H / 2, W, H, 0, [0, 0, 1, 1], 0, 0, 0, 1);
+    gl.useProgram(this.prog);
+    gl.bindTexture(gl.TEXTURE_2D, this.fogTex);
+    this.draw(q, true);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+  }
+
 
   /**
    * zoom is world→view scale; (offX, offY) = -cameraTopLeft * zoom; kPx is
@@ -3208,6 +3311,7 @@ export class Renderer {
     // before anything is drawn: whatever has been built or wrecked since
     // the last frame goes into the shadow mask the ground is drawn with
     this.syncBuildShadow(sim);
+    this.syncFog();
     this.begin(zoom, offX, offY, kPx);
     this.drawWorld();
 
@@ -3830,6 +3934,7 @@ export class Renderer {
     tl.shots += dyn.n - n0;
     tl.total += dyn.n;
     this.draw(dyn, true);
+    this.drawFog();
   }
 
   /**

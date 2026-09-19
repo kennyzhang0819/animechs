@@ -63,9 +63,12 @@ Three consequences, and every archetype below is shaped by them:
   (`SELL_REFUND`), so a gun bought for an objective is gone from the
   defence for the rest of the run. That is the price, and it is the only
   price that scales — scrap income does not gate anything by wave 20.
-- **NO FOG MEANS NO SURPRISES.** The objective is on screen from the
-  first wave. Its pressure is affordability and timing, never discovery.
-  A mission whose twist is that the player did not know is not a mission.
+- **NO SURPRISES.** The objective is on screen from the first wave. Its
+  pressure is affordability and timing, never discovery. A mission whose
+  twist is that the player did not know is not a mission. The fog
+  (`docs/fog.md`) is held to this: a mission's geometry is painted SEEN at
+  the level's birth, so a road, a post and a garrison are all on the map
+  before anything has walked near one.
 - **A MISSION MUST COMPETE WITH THE WAVE CLOCK.** "Kill it eventually"
   is not an objective. The objective needs a deadline, a window, or a
   cost that climbs while it is ignored — and the clock it is competing
@@ -193,8 +196,8 @@ What the archetype turned out to need, and what each piece is answering:
   railguns on it at all can still have ground the swarm is dug into.
 - **THE POSTS ARE ON SCREEN FROM WAVE ONE**, empty, with the number of
   emplacements that will rise in each and a dial on the ring counting down
-  to the minute they do (`Game.drawMissionPosts`). No fog means no
-  surprises, and the question being asked is "will you have paid for a
+  to the minute they do (`Game.drawMissionPosts`). A mission has no
+  surprises in it, and the question being asked is "will you have paid for a
   position at the south-west by two minutes" — which is not a question you
   can ask a player who cannot see where the south-west is.
 
@@ -291,10 +294,10 @@ What Coldline does with it, and what the shape turned out to need:
   or amber and the ground should not contradict it: Coldline's is the
   swarm's heavy main line, cold and broad-gauge; Thornway's is a works
   tramway, narrow and timber-sleepered, which the Hauler drives rather
-  than runs on. A mission with no fog
-  in it has no discovery in it either (see above), so a road a player
-  found out about by watching something walk down it would be a different
-  and worse mission.
+  than runs on. A mission has no discovery in it (see above) — which is
+  why `Game.seedFog` reveals the whole corridor — so a road a player found
+  out about by watching something walk down it would be a different and
+  worse mission.
 - **The line is on an eight-heading lattice and every corner is 45
   degrees**, checked at load by `roadProblems`. That is what makes the bed
   drawable: 0/45/90/135 are the only headings a square pixel grid draws

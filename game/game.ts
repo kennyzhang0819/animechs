@@ -9,6 +9,8 @@ import {
   refreshMap,
   SPAWN_STYLE,
 } from "./maps";
+import { Fog, FOG_MISSION_R } from "./fog";
+import { markKind } from "./missionMarks";
 import { garrisonsFor, postsFor, roadAt, roadsFor, siegeFor } from "./missions";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { towerBaseIcon, towerGhostIcon } from "./towerIcons";
@@ -824,6 +826,9 @@ const MM_LE = (() => {
 })();
 const mmColor = (r: number, g: number, b: number): number =>
   (MM_LE ? 0xff000000 | (b << 16) | (g << 8) | r : (r << 24) | (g << 16) | (b << 8) | 0xff) >>> 0;
+/** black at a given alpha, for the fog layer — the one minimap colour
+ *  that is not opaque (see drawMinimap) */
+const mmFogPx = (a: number): number => ((MM_LE ? a << 24 : a) >>> 0);
 /** the swarm's red and everything of ours in white — see drawMinimap */
 const MM_RED = mmColor(0xf2, 0x55, 0x55);
 const MM_WHITE = mmColor(0xff, 0xff, 0xff);
@@ -1141,6 +1146,9 @@ export class Game {
    * a player who wants a field clear of green still wants to see the fire.
    */
   private statusMarks: StatusMode = STATUS_MARKS_DEFAULT;
+  /** THE FOG (fog.ts, docs/fog.md) — the drawing side's memory of where
+   *  the board has had eyes, reset with the level and never by a wave */
+  private readonly fog = new Fog();
   // THE MINIMAP (attachMinimap, drawMinimap): the whole map at a glance,
   // the field on it and the viewport's frame; a press or
   // a drag on it puts that place in view
@@ -1167,6 +1175,12 @@ export class Game {
   private mmMarkLayer: HTMLCanvasElement | null = null;
   private mmMarkPixels: ImageData | null = null;
   private mmMarkPx32: Uint32Array | null = null;
+  /** the fog over the corner map (fog.ts), repainted only when the mask
+   *  itself has moved — which on most frames it has not */
+  private mmFogLayer: HTMLCanvasElement | null = null;
+  private mmFogPixels: ImageData | null = null;
+  private mmFogPx32: Uint32Array | null = null;
+  private mmFogVer = -1;
   /** the minimap's CSS width in px and the countdown to measuring it
    *  again (MM_CSS_EVERY) — what a dilated mark's size is worked out from */
   /**
@@ -2258,6 +2272,7 @@ export class Game {
    */
   private warmup(): void {
     this.publish();
+    this.fog.update(this.view);
     this.renderer.render(
       this.view,
       this.zoom,
@@ -2772,6 +2787,36 @@ export class Game {
       w.beaconOn,
     );
     this.publish();
+    this.fog.reset();
+    this.seedFog();
+    this.renderer.setFog(this.fog);
+  }
+
+  /**
+   * WHAT THE MISSION IS OWED, BEFORE ANYTHING HAS WALKED IT.
+   *
+   * A mission has no surprises in it (docs/mission-design.md) and the fog
+   * does not get to put any back: the road a crosser takes, the road the
+   * hauler is pushed up, the circles a siege will rise in and every piece
+   * of furniture a map stands on the board are painted SEEN here, once,
+   * at the level's birth. They are not lit — nothing is watching them —
+   * so they read as ground the player has been shown and is not looking
+   * at, which is exactly what they are.
+   */
+  private seedFog(): void {
+    const T = this.world.terrain;
+    const mapId = this.world.level.map;
+    for (const road of roadsFor(mapId, T.marks)) this.fog.revealLine(road.pts, FOG_MISSION_R);
+    for (const p of postsFor(mapId)) this.fog.reveal(p.x, p.y, p.r);
+    for (const g of garrisonsFor(T.marks)) this.fog.reveal(g.post.x, g.post.y, g.post.r);
+    const siege = siegeFor(T.marks);
+    if (siege) for (const g of siege.spots) this.fog.reveal(g.x, g.y, FOG_MISSION_R);
+    for (const m of T.marks) {
+      const k = markKind(m.kind);
+      if (!k || k.geom !== "point") continue;
+      const half = (k.size * CELL) / 2;
+      this.fog.reveal(m.x * CELL + half, m.y * CELL + half, FOG_MISSION_R);
+    }
   }
 
   /**
@@ -3008,6 +3053,7 @@ export class Game {
       this.tlx = (this.worldW - this.glCanvas.width / k) / 2;
       this.tly = (this.worldH - this.glCanvas.height / k) / 2;
     }
+    this.fog.update(this.view);
     this.renderer.render(
       this.view,
       this.zoom,
@@ -3439,8 +3485,8 @@ export class Game {
    *   the PLAYER'S EVERYTHING white — the core, every turret and wall
    *   (a shell still going up in a dimmer white) and every body of
    *   theirs, wherever it is;
-   *   the ENEMY red — every body in sight (and none out of it: the
-   *   minimap keeps the fog's promise), and the map's shield towers
+   *   the ENEMY red — every body on the board, under the same fog the
+   *   field wears (paintMinimapFog), and the map's shield towers
    *   wherever they have once been seen, a building being a thing that
    *   stays put;
    *   the OBJECTIVES over all of it as amber PINS, a scowl for theirs
@@ -3757,8 +3803,45 @@ export class Game {
       for (const id of this.mmPing.keys()) if (!this.mmPingSeen.has(id)) this.mmPing.delete(id);
     lc.putImageData(img, 0, 0);
     mlc.putImageData(mimg, 0, 0);
+    this.paintMinimapFog(cols, rows);
 
     this.compositeMinimap(c, cols, rows, w, h);
+  }
+
+  /**
+   * THE FOG ONTO THE CORNER MAP, at the field's own three levels. The
+   * corner is the one place a player looks to ask "what is out there",
+   * and a lit minimap beside a fogged field answers the question the
+   * field is refusing to — so the same mask is on both, and the
+   * OBJECTIVE PINS are the only thing drawn over it (compositeMinimap),
+   * because a pin is something the player has been told rather than
+   * something they can see.
+   *
+   * The mask is a cell a texel and the layer is a cell a pixel, so this
+   * is a copy and not a resample — but it is a quarter of a million
+   * pixels, so it runs only when the fog has actually moved.
+   */
+  private paintMinimapFog(cols: number, rows: number): void {
+    if (this.mmFogVer === this.fog.version) return;
+    const lay = this.mmFogLayer ?? (this.mmFogLayer = document.createElement("canvas"));
+    if (lay.width !== cols || lay.height !== rows) {
+      lay.width = cols;
+      lay.height = rows;
+    }
+    const fc = lay.getContext("2d");
+    if (!fc) return;
+    let fimg = this.mmFogPixels;
+    if (!fimg || fimg.width !== cols || fimg.height !== rows || !this.mmFogPx32) {
+      fimg = this.mmFogPixels = fc.createImageData(cols, rows);
+      this.mmFogPx32 = new Uint32Array(fimg.data.buffer);
+    }
+    this.mmFogVer = this.fog.version;
+    const fpx = this.mmFogPx32, a = this.fog.alpha;
+    for (let y = 0; y < rows; y++) {
+      const src = y * COLS, dst = y * cols;
+      for (let x = 0; x < cols; x++) fpx[dst + x] = mmFogPx(a[src + x]);
+    }
+    fc.putImageData(fimg, 0, 0);
   }
 
   /** the minimap as shown: the ground, the marks layer as last painted, and
@@ -3771,6 +3854,7 @@ export class Game {
     c.drawImage(this.mmBase, 0, 0, cols, rows, 0, 0, w, h);
     c.drawImage(this.mmLayer, 0, 0, cols, rows, 0, 0, w, h);
     c.drawImage(this.mmTowerLayer, 0, 0, cols, rows, 0, 0, w, h);
+    if (this.mmFogLayer) c.drawImage(this.mmFogLayer, 0, 0, cols, rows, 0, 0, w, h);
     c.drawImage(this.mmMarkLayer, 0, 0, cols, rows, 0, 0, w, h);
     // THE VIEWPORT'S FRAME: where on the whole map the screen is looking.
     // Kept inside the minimap (a view run out into the void past the map
@@ -4244,8 +4328,9 @@ export class Game {
     // them BEFORE the cart is anywhere near one — a halt discovered when
     // the hauler stops in it is a halt there is no longer time to defend.
     // Drawn as a ring on the ground rather than a mark over it, for the
-    // reason the buildable region is an edge and not a wash: there is no
-    // fog in this game and an overlay must not invent one.
+    // reason the buildable region is an edge and not a wash: the fog is
+    // the one thing on this board allowed to dim ground (docs/fog.md),
+    // and an overlay must not invent a second one.
     if (halts) {
       c.lineWidth = 4;
       c.globalAlpha = 0.45;
@@ -4283,8 +4368,10 @@ export class Game {
    * opposite number and drawn on exactly the same terms.
    *
    * THEY ARE ON THE BOARD FROM THE FIRST FRAME, and that is a rule and not
-   * a nicety. The archetype has no fog in it (docs/mission-design.md) — a
-   * mission whose twist is that the player did not know is not a mission —
+   * a nicety. The archetype has no discovery in it
+   * (docs/mission-design.md) — a mission whose twist is that the player
+   * did not know is not a mission, which is why the fog is seeded with
+   * every one of these circles (seedFog) —
    * so every one of the four circles is drawn from wave one, empty, with
    * the count of emplacements that will rise inside it and the minute they
    * are due. What the player is being asked is "will you have paid for a
@@ -4458,11 +4545,11 @@ export class Game {
     // veil over the unbuildable ground once, and a veil is a fog: it made
     // two thirds of the board dimmer than the rest, so a player reading a
     // wave coming in across it was reading it through a filter that exists
-    // for a different question entirely. THERE IS NO FOG IN THIS GAME —
-    // every acre of the field is lit the same and always has been, and
-    // "may I build here" must not be the thing that changes that. So the
-    // answer is drawn as the shape it actually is, an edge, and the ground
-    // on both sides of it is left alone.
+    // for a different question entirely. THERE IS ONE FOG ON THIS BOARD
+    // (docs/fog.md) and it answers one question, "how current is what I
+    // know about this ground" — "may I build here" is not that question
+    // and must not dim anything. So the answer is drawn as the shape it
+    // actually is, an edge, and the ground on both sides is left alone.
     //
     // THE GAIN RING GOES FIRST, because it is drawn by ERASING (see
     // drawBeaconGain) and the only safe moment to erase on this canvas is
@@ -4506,9 +4593,10 @@ export class Game {
     // THE CROSSERS' ROADS (missions.ts), on the maps that have them and
     // ALWAYS — not behind the routes key like the drop zones are.
     //
-    // A mission has no surprises in it (docs/mission-design.md): there is
-    // no fog, the objective is on screen from the first wave, and its
-    // whole pressure is affordability and timing. A road a player had to
+    // A mission has no surprises in it (docs/mission-design.md): the fog
+    // is seeded along every road (seedFog), the objective is on screen
+    // from the first wave, and its whole pressure is affordability and
+    // timing. A road a player had to
     // press a key to see would be a road they discovered the first time
     // something walked down it, which is a different and much worse
     // mission. So it is drawn thin and dark under everything — a line on
