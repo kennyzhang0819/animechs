@@ -22,7 +22,9 @@ const OUT = "public/foundry";
 const art = readdirSync(SRC).filter((f) => f.endsWith(".png") && (f.startsWith("mill-") || f.startsWith("base-")));
 const heads = art.filter((f) => f.startsWith("mill-"));
 if (!heads.length) throw new Error(`no mill-*.png in ${SRC}`);
-for (const n of [1, 2, 3, 4]) {
+// the footprints there are plates for (game/turretArt.ts PLATE_SIZES) —
+// written out rather than imported, because this runs on plain node
+for (const n of [1, 2, 3, 4, 6]) {
   if (!art.includes(`base-${n}.png`)) throw new Error(`no base-${n}.png in ${SRC}`);
 }
 

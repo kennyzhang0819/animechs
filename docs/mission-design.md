@@ -203,7 +203,7 @@ What the archetype turned out to need, and what each piece is answering:
 | `RazeMission` / `RazeSection` | `game/levels.ts` — the type and the clock: when the first battery rises and how far apart they come. `RazeSection.wave` is which rising a section belongs to, so several may share one |
 | the emplacements | the map's `railgun` marks, one a gun (`game/missionMarks.ts`, `missions.ts siegeFromMarks`) |
 | the garrison regions | the map's `garrison` marks — no longer the mission's at all (`missions.ts garrisonsFor`, `Sim.manGarrisons`). `radius` is the ring the board draws AND the leash, deliberately one number |
-| the railgun | `game/levels.ts` (`railgun`, `UnitStats.bombard`), `game/weapons.ts` (the bombard row) and `game/wardenArt.ts` (the drawing) |
+| the railgun | `game/levels.ts` (`railgun`, `UnitStats.bombard`), `game/weapons.ts` (the bombard row) and `game/wardenArt.ts` (the drawing). It is **six tiles square** — the hitbox, the grid it is drawn on and the turret plate under it are one number (`RAZE_PLATE_TILES`), so an emplacement reads as the enemy turret it is |
 | the Wardens | not bodies — they are TURRETS an author stands on a cell (`game/types.ts` `ENEMY_ONLY_KINDS`, `constants.ts TOWERS`, the `emplacement` mark). See `docs/mission-marks.md` |
 | a body that holds ground | `Sim.garrisonUnit`, `Sim.plantUnit`, and the `ugar` arrays — the general mechanism, of which this mission is the first customer |
 | what happens | `Sim.runSections`, `raiseSection`, `clearNear`, `fireBombard`, and the lines in `won()` and `removeUnit` |

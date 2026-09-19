@@ -96,6 +96,35 @@ export const ACCENT: Record<AmmoGroup, Mat> = {
  *  darker, so a head reads as standing on something */
 export const BASE_DARK = 0.65;
 
+/** the plate a head stands on (docs/turret-factions.md). It is the one
+ *  drawing here that skips the mirror-and-shade finish: a plate is lit off
+ *  its own DIAGONAL, not the midline, so its greys are laid as colours —
+ *  already through BASE_DARK, so nothing darkens a render of it again */
+const PLATE_FACE = "#63646b";
+const PLATE_LIT = "#72797d";
+const PLATE_SHADE = "#484953";
+/** the face's inset and corner cut, by footprint in tiles */
+const PLATE_CUT: Readonly<Record<number, readonly [number, number]>> = {
+  1: [4, 3], 2: [4, 4], 3: [8, 3], 4: [11, 11], 6: [16, 16],
+};
+/** every footprint there is a plate for, in tiles */
+export const PLATE_SIZES: readonly number[] = Object.keys(PLATE_CUT).map(Number);
+/** the plate for a footprint this many tiles on a side, at 32 px a tile */
+export function basePlate(size: number): Art {
+  const cut = PLATE_CUT[size];
+  if (!cut) throw new Error(`no turret plate for a ${size}x${size} footprint`);
+  const [i, c] = cut;
+  const n = size * 32;
+  const px: Art["px"] = new Array<string | null>(n * n);
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) {
+      const dx = Math.min(x - i, n - 1 - i - x), dy = Math.min(y - i, n - 1 - i - y);
+      const face = dx >= 0 && dy >= 0 && dx + dy >= c;
+      px[y * n + x] = face || y === x ? PLATE_FACE : y < x ? PLATE_LIT : PLATE_SHADE;
+    }
+  return { n, px };
+}
+
 // ── the engine: shapes in pixel coordinates, materials shaded after ────
 type Cell = Mat | null;
 /** the pen, in pixels on an n grid; a box is [x0, x1) by [y0, y1) */
@@ -429,6 +458,16 @@ export function draw(n: number, fn: (P: Pen) => void, mirror = true): Art {
   const g = grid(n);
   fn(g.pen);
   return finish(g.mat, n, mirror);
+}
+/** a drawing centred in a bigger square grid: what a body drawn at its
+ *  own size needs before it can be laid on a plate wider than it */
+export function pad(a: Art, n: number): Art {
+  if (a.n === n) return a;
+  const o = (n - a.n) >> 1;
+  const px: Art["px"] = new Array<string | null>(n * n).fill(null);
+  for (let y = 0; y < a.n; y++)
+    for (let x = 0; x < a.n; x++) px[(y + o) * n + x + o] = a.px[y * a.n + x];
+  return { n, px };
 }
 /** a drawing and its accent mask together: the body, and the team cell
  *  that is every pixel laid in `accent` (the animals' bodies, whose cell

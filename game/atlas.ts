@@ -1228,10 +1228,10 @@ export const SF5_CELLS = sfMechCells(5, GRAPNEL_TIERS[4].n, 256);
  * Six cells a body, like every other thing on the mech rig: the body, the
  * base plate and one side's legs, each with its silhouette beside it. The
  * cell is the smallest 64-multiple that holds the hitbox in native px
- * (128 for all three — see WardenTier), so the world px per native px is
- * the same 0.625 the rest of the sheet has. The sprite size stays a
- * parameter down at MECH_ART because a cell that is not 128 carries a
- * different quad.
+ * (192 for the railgun and 128 for the two Pylons — see WardenTier), so
+ * the world px per native px is the same 0.625 the rest of the sheet has.
+ * The sprite size stays a parameter down at MECH_ART because a cell that
+ * is not 128 carries a different quad.
  *
  * THESE ARE DRAWN WITH ANIMAL_ART OFF TOO, and they are the only
  * bodies on the sheet that are. The flag's promise is that turning it off
@@ -1253,7 +1253,9 @@ const wardenCells = (name: string, n: number, cell: number) => ({
     leg: sprite(`${name}-leg-sil`, cell, n),
   },
 });
-const RAZE_CELLS = wardenCells("railgun", RAZE_TIER.n, 128);
+/** the railgun on a 192 cell: six tiles of turret plate (wardenArt.ts
+ *  RAZE_PLATE_TILES) does not fit a 128 */
+const RAZE_CELLS = wardenCells("railgun", RAZE_TIER.n, 192);
 /** the two buff towers (pylonArt.ts), on the same six-cell mech rig — 128
  *  native px is four tiles, so a 128 cell holds them at the sheet's scale */
 const GOAD_CELLS = wardenCells("goad", GOAD_TIER.n, 128);
@@ -1399,10 +1401,10 @@ const WORM_CELLS = {
 // per-kind unit art: atlas cell + world quad size. Both ride at true
 // Mindustry scale — ironhide1 48px art = 1.5 tiles, ironhide2 64px art = 2 tiles
 export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
-  // the siege's three, on cells nobody else owns (see THE SIEGE'S CELLS):
-  // 128 cells at the sheet's own px scale, so a railgun is drawn at the
-  // seven tiles its hitbox says it is
-  railgun: { uv: RAZE_CELLS.body, sprite: UNIT_SPRITE * 2 },
+  // the siege's three, on cells nobody else owns (see THE SIEGE'S CELLS),
+  // at the sheet's own px scale: a railgun is drawn at the six tiles its
+  // hitbox says it is, the two pylons at four
+  railgun: { uv: RAZE_CELLS.body, sprite: UNIT_SPRITE * 3 },
   goad: { uv: GOAD_CELLS.body, sprite: UNIT_SPRITE * 2 },
   bastion: { uv: BASTION_CELLS.body, sprite: UNIT_SPRITE * 2 },
   ironhide1: { uv: UV_IRONHIDE1_BODY, sprite: UNIT_SPRITE },
@@ -1547,6 +1549,9 @@ export interface MechArt {
    */
   guns: readonly LegGun[];
   stride: number; // leg swing amplitude px — the walk cycle is 4 strides
+  /** the base quad drawn square to the grid instead of on the hull's
+   *  heading: a chassis rides the body, a TURRET PLATE never turns */
+  flatBase?: boolean;
   /**
    * HOW MUCH THE SWINGING SIDE SHORTENS, as a fraction of the part's own
    * quad (default LEG_LIFT). Mindustry's mech lifts the swinging leg and
@@ -2306,7 +2311,9 @@ if (ANIMAL_ART) {
     sprite: (UNIT_SPRITE * cell) / 64,
     sil: { leg: c.sil.leg, base: c.sil.base, body: c.sil.body },
   });
-  MECH_ART.railgun = wardenMechArt(RAZE_CELLS, RAZE_TIER);
+  // the plate under it is a turret's and is laid square to the grid, not
+  // on the gun's heading (MechArt.flatBase)
+  MECH_ART.railgun = { ...wardenMechArt(RAZE_CELLS, RAZE_TIER, 192), flatBase: true };
   MECH_ART.goad = wardenMechArt(GOAD_CELLS, GOAD_TIER);
   MECH_ART.bastion = wardenMechArt(BASTION_CELLS, BASTION_TIER);
 }

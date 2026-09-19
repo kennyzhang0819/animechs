@@ -19,8 +19,8 @@
  * side's legs that the renderer rows fore and aft against their mirror
  * image. Every material is a dark/light PAIR split at the midline, the
  * left half is drawn and mirrored, nothing is under four pixels, and each
- * body is laid out AT ITS HITBOX on 32 native px a tile — 112, 128, 72,
- * 160 and 256, which is UR x 3.5 / 4 / 2.25 / 5 / 8 (levels.ts
+ * body is laid out AT ITS HITBOX on 32 native px a tile — 192, 128, 72,
+ * 160 and 256, which is UR x 6 / 4 / 2.25 / 5 / 8 (levels.ts
  * UNIT_STATS).
  *
  * THE ACCENT IS THE SWARM'S CRUX, not a family colour, because none of
@@ -33,10 +33,11 @@
  *
  *   RAILGUN   a gun that is not aimed at you. One barrel up the middle,
  *             longer than anything else on the board, between two rails,
- *             on a bed with four anchors driven into the ground. It never
- *             turns and it never walks (speed 0, Sim.plantUnit), so the
- *             drawing is allowed to be symmetrical and static in a way no
- *             walking body is: it is a BUILDING that happens to be a body.
+ *             on the six-tile turret plate with four anchors driven
+ *             through it. It never turns and it never walks (speed 0,
+ *             Sim.plantUnit), so the drawing is allowed to be symmetrical
+ *             and static in a way no walking body is: it is a BUILDING
+ *             that happens to be a body.
  *   BULWARK   a wall with a prow. Wider than it is long, a notch bitten
  *             out of the front between two ram wedges, treads down both
  *             flanks. Nothing on it points forward except the two wedges,
@@ -57,7 +58,7 @@
  */
 import type { MechParts } from "./animalArt";
 import { scaler } from "./ironhideArt";
-import { BORE, GUN, STEEL, bars, draw, drawWithCell, rev, type Mat, type Pen } from "./turretArt";
+import { BORE, GUN, STEEL, bars, basePlate, draw, drawWithCell, pad, rev, type Mat, type Pen } from "./turretArt";
 
 /**
  * THE GARRISON'S PLATE, and a third metal on a board that already has two:
@@ -82,8 +83,12 @@ export interface WardenTier {
   n: number;
   stride: number;
 }
+/** the railgun's footprint: its turret plate, its grid and its hitbox
+ *  (levels.ts railgun) are one number, because an emplacement is an enemy
+ *  turret that happens to be a body */
+export const RAZE_PLATE_TILES = 6;
 /** the five, in the order the mission puts them down */
-export const RAZE_TIER: WardenTier = { n: 112, stride: 0 };
+export const RAZE_TIER: WardenTier = { n: RAZE_PLATE_TILES * 32, stride: 0 };
 export const BULWARK_TIER: WardenTier = { n: 128, stride: 9 };
 export const LANCE_TIER: WardenTier = { n: 72, stride: 6 };
 export const HALBERD_TIER: WardenTier = { n: 160, stride: 10 };
@@ -135,16 +140,7 @@ function razeBody(P: Pen, T: WardenTier): void {
   P.octa(q(8), n - q(8), n - q(8), n - q(2), w(3), GUN);
   bars(P, q(11), n - q(11), n - q(7), 2, w(3), w(2));
 }
-/** the bed the whole thing stands on: a plate under the breech and no
- *  further, so an emplacement reads as poured rather than parked — and so
- *  that the barrel is standing OVER open ground rather than over a skirt */
-function razeBase(P: Pen, T: WardenTier): void {
-  const { n } = T;
-  const { q, w } = scaler(n);
-  P.octa(q(2), q(15), n - q(2), n - q(1), w(7), GUN);
-  P.octa(q(6), q(19), n - q(6), n - q(4), w(5), rev(GUN));
-}
-/** the anchors: two driven feet a side, at the corners of the bed. They
+/** the anchors: two driven feet a side, at the corners of the plate. They
  *  are the rig's "legs" and they never swing (stride 0) — a railgun is
  *  bolted to the ground it was put on */
 function razeFeet(P: Pen, T: WardenTier): void {
@@ -155,13 +151,17 @@ function razeFeet(P: Pen, T: WardenTier): void {
     P.box(q(1), y + w(6) - w(3), q(1) + w(6), y + w(6), BORE);
   }
 }
+/** the grid the MACHINE is drawn on: the plate's FACE (basePlate insets a
+ *  6x6 by 16), so no part of the gun is laid over the bevel it is lit by */
+const razeInner = (T: WardenTier): WardenTier => ({ ...T, n: T.n - 32 });
 export function razeMech(T: WardenTier = RAZE_TIER): MechParts {
-  const { art, cell } = drawWithCell(T.n, (P) => razeBody(P, T), CRUX);
+  const I = razeInner(T);
+  const { art, cell } = drawWithCell(I.n, (P) => razeBody(P, I), CRUX);
   return {
-    body: art,
-    base: draw(T.n, (P) => razeBase(P, T)),
-    leg: draw(T.n, (P) => razeFeet(P, T), false),
-    cell,
+    body: pad(art, T.n),
+    base: basePlate(RAZE_PLATE_TILES),
+    leg: pad(draw(I.n, (P) => razeFeet(P, I), false), T.n),
+    cell: pad(cell, T.n),
     stride: T.stride,
   };
 }

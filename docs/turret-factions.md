@@ -150,12 +150,28 @@ its overlay; off, the stock composite comes back.
 
 ### The plate
 
-The heads sit on Mindustry's block plates with every channel at 0.65
-(`base-N.png`, written by `scripts/turret-concepts.mjs`): still grey, a
-step darker, so a head reads as standing on something. In the game that
-is one multiply on the base draw in `renderer.ts` (the plate already
-takes the hp tint as an RGB, so a constant 0.65 folds into it) and the
-same on `towerBaseIcon`'s PNGs for the placement ghost.
+A plate is a face and an edge and nothing else: a chamfered octagon of
+`#63646b` inset in its cell, and outside it the cell lit off its own
+diagonal — `#72797d` above the line, `#484953` below. The middle course
+the stock plates carried (the diamond, the hatched well, the ring of
+bars) is gone. A head stands on top of it and covers most of it, so what
+showed was pattern round the edges competing with the head for the eye;
+what a plate has to say is only "there is prepared ground under this",
+and an edge says it.
+
+The greys are Mindustry's block plates with every channel at 0.65 — still
+grey, a step darker — and they are baked into `base-N.png`, so nothing
+darkens a plate a second time at pack time, at draw, or on
+`towerBaseIcon`'s PNGs for the placement ghost.
+
+`basePlate` in `game/turretArt.ts` is the drawing, and its inset/chamfer
+table is the whole of it; `scripts/turret-concepts.mjs` writes one
+`base-N.png` a footprint. The footprints are **1, 2, 3, 4 and 6**
+(`PLATE_SIZES`, which `game/foundryArt.ts` reads) — not `1..n`, so
+nothing may take a size off an index. The 6x6 is the siege's: the railgun
+stands on it (`game/wardenArt.ts` `RAZE_PLATE_TILES`), and the machine is
+drawn inside the plate's FACE so no part of the gun is laid over the
+bevel it is lit by.
 
 ### Against the swarm
 

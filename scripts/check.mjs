@@ -329,7 +329,7 @@ const drawingFor = (url) => {
 const artWanted = [
   ...Object.entries(FA.FOUNDRY_HEAD_URLS),
   ["core", FA.FOUNDRY_CORE_URL],
-  ...FA.FOUNDRY_BASE_URLS.map((url, i) => [`base-${i + 1}`, url]),
+  ...FA.FOUNDRY_BASE_URLS.map((url, i) => [`base-${FA.FOUNDRY_BASE_SIZES[i]}`, url]),
 ];
 const artMissing = artWanted
   .filter(([, url]) => !existsSync(drawingFor(url)))

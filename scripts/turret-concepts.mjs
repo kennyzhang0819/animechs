@@ -1,7 +1,7 @@
 // FOUNDRY, THE TURRET CONCEPT SHEETS: every head of the roster drawn at
 // native size (32 px a tile: 32, 64, 96, 128 for a 1x1 to a 4x4) into
-// docs/turret-concepts/, and every render checked against the house
-// rules: no run of one material under four pixels along a row or a
+// docs/turret-concepts/, the plate each one stands on beside it, and
+// every render checked against the house rules: no run of one material under four pixels along a row or a
 // column, and none under eight where it straddles the midline the shade
 // splits (game/turretArt.ts thinRuns).
 //
@@ -22,7 +22,7 @@
 // docs/turret-factions.md.
 import { deflateSync } from "node:zlib";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { ACCENT, CORE_N, HEADS, coreHead, drawCore, drawHead, layout, thinRuns } from "../game/turretArt.ts";
+import { ACCENT, CORE_N, HEADS, PLATE_SIZES, basePlate, coreHead, drawCore, drawHead, layout, thinRuns } from "../game/turretArt.ts";
 
 // ── PNG, by hand ───────────────────────────────────────────────────────
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -82,6 +82,13 @@ for (const [name, make, laid] of jobs) {
   thin = Math.max(thin, bad.length);
   writeFileSync(file, png(px, n));
 }
+// the plates a head stands on, one a footprint (game/turretArt.ts
+// basePlate). They are drawn from the code every run, never by hand, so
+// they are not under the FORCE rule the heads are
+for (const size of PLATE_SIZES) {
+  const { n, px } = basePlate(size);
+  writeFileSync(`${OUT}/base-${size}.png`, png(px, n));
+}
 writeFileSync(`${OUT}/roster.json`, JSON.stringify({ roster: ROSTER, accent: ACCENT }, null, 2));
-console.log(`wrote ${jobs.length - kept} drawings to ${OUT}/, ${thin} thin runs`);
+console.log(`wrote ${jobs.length - kept} drawings and ${PLATE_SIZES.length} plates to ${OUT}/, ${thin} thin runs`);
 if (kept) console.log(`kept ${kept} already on disk — FORCE=1 to re-render them from the code`);

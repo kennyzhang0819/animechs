@@ -2498,7 +2498,10 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     hp: 30000,
     speed: 0,
     armor: 25,
-    radius: UR * 3.5,
+    // SIX TILES, which is the turret plate it stands on (wardenArt.ts
+    // RAZE_PLATE_TILES) and the grid it is drawn on — one footprint, not
+    // three numbers to keep in step
+    radius: UR * 6,
     tier: 5,
     // nothing about it turns: the hull is bolted down and the barrel is
     // drawn on the heading it fires on (Sim.updateUnitWeapons)

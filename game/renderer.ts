@@ -1752,7 +1752,7 @@ export class Renderer {
         dk,
       );
     }
-    part(m.base, m.sil.base, x, y, s, s, brot, 1);
+    part(m.base, m.sil.base, x, y, s, s, m.flatBase ? 0 : brot, 1);
     const gunParts = (top: boolean): void => {
       for (const g of m.guns) {
         if (g.top !== top) continue;
