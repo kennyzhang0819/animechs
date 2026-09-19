@@ -14,7 +14,6 @@ import {
 // the placement rule lives over grids so that the drawing side can ask it
 // too, without waiting on this thread (board.ts)
 import {
-  canMoveOn,
   canPlaceOn,
   domesClear,
   groundClear,
@@ -8756,45 +8755,6 @@ export class Sim {
         k++;
       }
       return k;
-    });
-  }
-
-  /**
-   * THE GATHERED ROW, PICKED UP AND SET DOWN dgx/dgy CELLS AWAY. All of it
-   * or none: a group that only half fits is a formation nobody drew.
-   *
-   * IT IS THE SAME BUILDINGS, not copies — a sale and a rebuild would
-   * reroll their attributes and hand back a full pool. The core is skipped
-   * rather than refused: it does not move, and a marquee that caught it
-   * should still move the turrets around it.
-   */
-  moveSelected(dgx: number, dgy: number): number {
-    const moving: Tower[] = [];
-    for (const st of this.selStructs) {
-      if (isCore(st) || st.team !== "player" || this.isConvoy(st)) continue;
-      // one that came down since the drag began is not ours to move
-      if (this.cellTower[st.gy * COLS + st.gx] !== st) continue;
-      moving.push(st);
-    }
-    if (moving.length === 0) return 0;
-    if (!canMoveOn(this.boardGrids(), this, this.shieldTowers, SHIELD_TOWER_SIZE, moving, dgx, dgy))
-      return 0;
-    return this.batchPlacement(() => {
-      // every footprint is let go of before any is claimed: claimGround
-      // files a building in the aim index at the position it reads off it,
-      // so a row sliding over its own cells would unfile itself
-      for (const t of moving) this.claimGround(t, false);
-      for (const t of moving) {
-        t.gx += dgx;
-        t.gy += dgy;
-        t.x = (t.gx + t.size / 2) * CELL;
-        t.y = (t.gy + t.size / 2) * CELL;
-        // Hydrophobic is a fact about the ground it stands on, so a turret
-        // that moved off the shore is dry and one that moved onto it is not
-        t.fireRate = this.isWaterlogged(t.gx, t.gy, t.kind, t.size) ? HYDROPHOBIC_RATE : 1;
-        this.claimGround(t, true);
-      }
-      return moving.length;
     });
   }
 

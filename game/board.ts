@@ -181,20 +181,12 @@ export function bodiesClear(b: BoardBodies, gx: number, gy: number, sz: number):
  * included), never on a spawn tile. Shallow water is ground, as it is in
  * Mindustry: a naval map's shallows are most of the floor it has.
  */
-export function groundClear(
-  g: BoardGrids,
-  gx: number,
-  gy: number,
-  sz: number,
-  /** cells a move is about to vacate, which are not occupied to it (canMoveOn) */
-  leaving?: ReadonlySet<number> | null,
-): boolean {
+export function groundClear(g: BoardGrids, gx: number, gy: number, sz: number): boolean {
   if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
   for (let y = gy; y < gy + sz; y++)
     for (let x = gx; x < gx + sz; x++) {
       const i = y * COLS + x;
-      if (g.blocked[i] || g.isGoal[i] || g.spawn[i] || g.reserved[i]) return false;
-      if (g.occupied[i] && !(leaving && leaving.has(i))) return false;
+      if (g.blocked[i] || g.isGoal[i] || g.spawn[i] || g.occupied[i] || g.reserved[i]) return false;
     }
   return true;
 }
@@ -352,60 +344,6 @@ export function canPlaceOn(
   if (!poweredClear(g.powered, gx, gy, sz)) return false;
   if (!domesClear(domes, domeSize, gx, gy, sz)) return false;
   return bodiesClear(b, gx, gy, sz);
-}
-
-/** a building a drag is carrying: where it stands now, and how big it is */
-export interface BoardMove {
-  readonly gx: number;
-  readonly gy: number;
-  readonly size: number;
-  readonly kind: TowerKind;
-}
-
-/**
- * CAN THIS GROUP OF BUILDINGS SHIFT BY (dgx, dgy) CELLS? The placement rule
- * again, with the one difference that makes a move a move: the ground the
- * movers are standing on is theirs to leave, so their own cells do not
- * count as occupied — a turret may step one cell sideways, and a block of
- * them may slide over itself.
- *
- * ALL OR NOTHING. A group that half fits is a formation the player did not
- * draw, so the answer for the group is the AND of the answers for its
- * buildings; `into`, when given, is filled with those per-building answers
- * so the ghost can say which one is in the way.
- *
- * The tech gate is not asked: every one of these is already standing.
- */
-export function canMoveOn(
-  g: BoardGrids,
-  b: BoardBodies,
-  domes: readonly BoardDome[],
-  domeSize: number,
-  moves: readonly BoardMove[],
-  dgx: number,
-  dgy: number,
-  into?: boolean[] | null,
-): boolean {
-  const leaving = new Set<number>();
-  for (const m of moves)
-    for (let y = m.gy; y < m.gy + m.size; y++)
-      for (let x = m.gx; x < m.gx + m.size; x++) leaving.add(y * COLS + x);
-  let all = moves.length > 0 && (dgx !== 0 || dgy !== 0);
-  for (let i = 0; i < moves.length; i++) {
-    const m = moves[i];
-    const gx = m.gx + dgx, gy = m.gy + dgy;
-    const fits =
-      groundClear(g, gx, gy, m.size, leaving) &&
-      poweredClear(g.powered, gx, gy, m.size) &&
-      domesClear(domes, domeSize, gx, gy, m.size) &&
-      bodiesClear(b, gx, gy, m.size);
-    if (into) into[i] = fits;
-    if (!fits) {
-      all = false;
-      if (!into) break;
-    }
-  }
-  return all;
 }
 
 /** does any cell of this footprint fall on the Hydrophobic mask? */

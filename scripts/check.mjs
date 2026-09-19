@@ -38,9 +38,6 @@
  *            construct (PLAYABLE_WORLD_IDS in game/levels.ts)
  *   sim      thirty sim-seconds of world 1 with turrets on the spawn —
  *            bodies spawn, walk, get shot and die, and nothing goes NaN
- *   move     a selected pair of turrets picked up and set down: the same
- *            buildings arrive, the ground changes hands, and a move that
- *            does not fit moves nothing
  *
  * ...and with --full:
  *
@@ -747,70 +744,6 @@ try {
   simProblems.push(e.stack?.split("\n").slice(0, 3).join(" / ") ?? e.message);
 }
 report("sim", simProblems, simDetail);
-
-// ---------- move: a standing turret, picked up and set down ----------
-
-/**
- * THE DRAG THAT MOVES WHAT IS ALREADY BUILT (Sim.moveSelected). It is a
- * crash gate like everything else here and asks the three things that have
- * a right answer: the SAME buildings arrive (not copies of them), the
- * ground they left is free and the ground they took is theirs, and a move
- * that does not fit moves NOTHING — the half-landed row is the failure
- * this feature can have.
- */
-const moveProblems = [];
-let moveDetail = "";
-try {
-  const fixture = L.VISIBLE_WORLDS[0];
-  const sim = openBoard(new Sim(LA.specForTier(fixture, 0)));
-  sim.setFieldBudget(Infinity);
-  sim.setTech(TR.techStateFor(15));
-  // a stretch of lit ground four tacker footprints wide, wherever the map has one
-  let spot = null;
-  for (let gy = 0; gy < ROWS && !spot; gy++)
-    for (let gx = 0; gx < COLS - 4 && !spot; gx++)
-      if ([0, 1, 2, 3].every((k) => sim.canPlace(gx + k, gy, "tacker"))) spot = { gx, gy };
-  if (!spot) moveProblems.push("nowhere on the fixture map takes four turrets in a row");
-  else {
-    const { gx, gy } = spot;
-    const cell = (x, y) => y * COLS + x;
-    sim.placeTower(gx, gy, "tacker");
-    sim.placeTower(gx + 1, gy, "tacker");
-    const [a, b] = sim.towers.slice(-2);
-    sim.structsInRect(gx * CELL, gy * CELL, (gx + 2) * CELL, (gy + 1) * CELL);
-    if (sim.selectedStructN !== 2) moveProblems.push(`the marquee took ${sim.selectedStructN} of 2 turrets`);
-
-    // one cell right: the pair slides over its own ground, which is the
-    // case a plain placement test gets wrong
-    const n = sim.moveSelected(1, 0);
-    if (n !== 2) moveProblems.push(`a legal move of two turrets moved ${n}`);
-    if (sim.towers.at(-1) !== b || sim.towers.at(-2) !== a)
-      moveProblems.push("the move replaced the buildings instead of moving them");
-    if (a.gx !== gx + 1 || b.gx !== gx + 2) moveProblems.push("a moved turret is not where it was put");
-    if (sim.cellTower[cell(gx, gy)] || sim.occupied[cell(gx, gy)])
-      moveProblems.push("the ground a turret left is still held");
-    if (sim.cellTower[cell(gx + 2, gy)] !== b || !sim.occupied[cell(gx + 2, gy)])
-      moveProblems.push("the ground a turret took is not held by it");
-    if (!sim.canPlace(gx, gy, "tacker")) moveProblems.push("the vacated cell will not take a turret");
-    // ...and the swarm's side of the same fact: the wall moved with the turret
-    if (sim.field.walk[cell(gx, gy)] && !sim.terrain.blocked[cell(gx, gy)])
-      moveProblems.push("the route still walls off the ground a turret left");
-    if (!sim.field.walk[cell(gx + 2, gy)])
-      moveProblems.push("the route does not wall off the ground a turret took");
-
-    // ...and back onto ground something else now stands on: refused whole
-    sim.placeTower(gx, gy, "tacker");
-    const back = sim.moveSelected(-1, 0);
-    if (back !== 0) moveProblems.push(`a blocked move moved ${back} turrets`);
-    if (a.gx !== gx + 1 || b.gx !== gx + 2) moveProblems.push("a refused move moved something anyway");
-    // ...as is one that would walk off the board
-    if (sim.moveSelected(-COLS, 0) !== 0) moveProblems.push("a move off the board was taken");
-    moveDetail = `on ${fixture.map}: two turrets at ${gx},${gy} slid a cell and back`;
-  }
-} catch (e) {
-  moveProblems.push(e.stack?.split("\n").slice(0, 3).join(" / ") ?? e.message);
-}
-report("move", moveProblems, moveDetail);
 
 // ---------- frames: does a late wave still fit in a frame ----------
 

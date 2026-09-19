@@ -240,9 +240,6 @@ export class WorkerHost implements SimHost {
   placeRuler(x0: number, y0: number, x1: number, y1: number, kind: TowerKind): void {
     this.cmd("placeRuler", x0, y0, x1, y1, kind);
   }
-  moveSelected(dgx: number, dgy: number): void {
-    this.cmd("moveSelected", dgx, dgy);
-  }
   sellTowerAt(x: number, y: number): void {
     this.cmd("sellTowerAt", x, y);
   }
@@ -251,9 +248,6 @@ export class WorkerHost implements SimHost {
   }
   sellSelected(): void {
     this.cmd("sellSelected");
-  }
-  selectStructAt(x: number, y: number): void {
-    this.cmd("selectStructAt", x, y);
   }
   structsInRect(x0: number, y0: number, x1: number, y1: number, add: boolean): void {
     this.cmd("structsInRect", x0, y0, x1, y1, add);

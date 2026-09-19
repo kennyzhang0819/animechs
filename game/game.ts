@@ -30,7 +30,7 @@ import {
 } from "./constants";
 // the lit circles, the SAME list the sim paints its mask from — see the
 // header of board.ts for why there is only one of it
-import { powerDiscsOf, beaconCentre, type BoardMove, type PowerDisc } from "./board";
+import { powerDiscsOf, beaconCentre, type PowerDisc } from "./board";
 import { loadBalanceDoc } from "./balance";
 import {
   CONVOY_SIZE,
@@ -924,9 +924,6 @@ const MM_LAYER_EVERY = 4;
  */
 /** how far the hand must travel for a press to be a marquee, in screen px */
 const SEL_DRAG_PX = 5;
-/** up to this many carried buildings the move ghost re-tests every frame, so
- *  that a body walking under it turns the footprint red as it arrives */
-const MOVE_FIT_LIVE = 64;
 /**
  * WHAT COUNTS AS A DOUBLE CLICK, in ms and in screen px between the two
  * presses. The browser's own count (MouseEvent.detail) cannot be used: the
@@ -1275,18 +1272,6 @@ export class Game {
    *  bodies or buildings, whichever it landed on (gatherLike) */
   private selAdd = false;
   private selLike = false;
-  /** what a press picked up, or null when the drag is an ordinary marquee.
-   *  A copy of where they stand: the sim's buildings cannot cross a thread,
-   *  so what is sent on release is the OFFSET (Sim.moveSelected) */
-  private moveGroup: BoardMove[] | null = null;
-  /** was the pressed building already picked? If not, the release selects it
-   *  before it moves it */
-  private moveHeld = false;
-  /** the fit test and the offset it was asked at: a row bigger than
-   *  MOVE_FIT_LIVE is re-asked when the cell changes rather than every
-   *  frame, since a marquee can gather thousands of buildings */
-  private moveFits: boolean[] = [];
-  private moveFitsAt = "";
   /**
    * THE PICKED BEACON, indexed into terrain.beacons, or -1 for none.
    *
@@ -1562,12 +1547,6 @@ export class Game {
         // ...and a press anywhere else puts the picked beacon down, for the
         // same reason: what happens next is about the field
         this.selBeacon = -1;
-        // A PRESS ON ONE OF OUR OWN BUILDINGS PICKS IT UP — settled on
-        // release like marquee-or-click, so a press that does not travel is
-        // still the click that selects. A modifier is the SELECTION's, so
-        // with one down this is the marquee it always was
-        this.moveGroup = e.shiftKey || e.ctrlKey || e.metaKey ? null : this.grabAt(p);
-        this.moveFitsAt = "";
         // normal cursor: a press starts a marquee and decides nothing.
         // What it meant is settled on release (onMouseUp)
         this.selecting = true;
@@ -1632,23 +1611,9 @@ export class Game {
     // A DRAG IS A REGION, a click is a point. The threshold is in screen
     // px so it means the same thing at every zoom
     if (this.selDragPx > SEL_DRAG_PX) {
-      const carried = this.moveGroup;
-      this.moveGroup = null;
-      if (carried) {
-        const { dgx, dgy } = this.moveDelta(p);
-        // the board answers, not the sim — the same test over the same
-        // grids, this instant (placeFormation says why)
-        if (!this.view.canMove(carried, dgx, dgy)) return;
-        // a drag off something UNPICKED moves that one thing: the press
-        // point selects it, and the two commands arrive in order
-        if (!this.moveHeld) this.host.selectStructAt(this.selFrom.x, this.selFrom.y);
-        this.host.moveSelected(dgx, dgy);
-        return;
-      }
       this.host.structsInRect(this.selFrom.x, this.selFrom.y, p.x, p.y, this.selAdd);
       return;
     }
-    this.moveGroup = null;
     // ctrl, or the second click of a double: everything like the thing under
     // the cursor, within reach of it — BODIES FIRST and then BUILDINGS, in
     // the same order and for the same reason a plain click asks (pickAt).
@@ -1698,9 +1663,8 @@ export class Game {
     this.building = false;
     this.selling = false;
     // a marquee whose release happened off the canvas is abandoned rather
-    // than applied to wherever the cursor left, and so is a move
+    // than applied to wherever the cursor left
     this.selecting = false;
-    this.moveGroup = null;
   };
   private readonly onContext = (e: Event): void => e.preventDefault();
 
@@ -1731,39 +1695,6 @@ export class Game {
       this.placeOne(p);
     }
     this.buildFrom = p;
-  }
-
-  /**
-   * WHAT A PRESS HERE WOULD PICK UP: the whole gathered row when it lands on
-   * a building already picked, that one building when it does not, null on
-   * anything else. The core is not in it — it does not move — so a press on
-   * it is the marquee it has always been.
-   */
-  private grabAt(p: { x: number; y: number }): BoardMove[] | null {
-    this.moveHeld = false;
-    const gx = Math.floor(p.x / CELL), gy = Math.floor(p.y / CELL);
-    const hit = this.view.towers.find(
-      (t) =>
-        t.team === "player" &&
-        gx >= t.gx &&
-        gx < t.gx + t.size &&
-        gy >= t.gy &&
-        gy < t.gy + t.size,
-    );
-    if (!hit) return null;
-    this.moveHeld = hit.selected;
-    const held = hit.selected
-      ? this.view.towers.filter((t) => t.team === "player" && t.selected)
-      : [hit];
-    return held.map((t) => ({ gx: t.gx, gy: t.gy, size: t.size, kind: t.kind }));
-  }
-
-  /** how far the drag has carried what it picked up, in whole cells */
-  private moveDelta(to: { x: number; y: number }): { dgx: number; dgy: number } {
-    return {
-      dgx: Math.round((to.x - this.selFrom.x) / CELL),
-      dgy: Math.round((to.y - this.selFrom.y) / CELL),
-    };
   }
 
   /** the building in hand, dropped under this point */
@@ -3869,7 +3800,7 @@ export class Game {
    * left here belongs to the HAND rather than to the board.
    */
   private drawSelection(c: CanvasRenderingContext2D): void {
-    if (this.selecting && !this.moveGroup && this.selDragPx > SEL_DRAG_PX) {
+    if (this.selecting && this.selDragPx > SEL_DRAG_PX) {
       const x = Math.min(this.selFrom.x, this.selTo.x), y = Math.min(this.selFrom.y, this.selTo.y);
       const w = Math.abs(this.selTo.x - this.selFrom.x), h = Math.abs(this.selTo.y - this.selFrom.y);
       c.fillStyle = "rgba(255,211,127,0.09)";
@@ -4688,9 +4619,6 @@ export class Game {
     // ...and the rectangle being dragged over the board right now
     this.drawSelection(c);
 
-    // ...and the row being CARRIED, where it would land
-    this.drawMoveGhosts(view, c);
-
     if (this.buildKind && this.hoverGx >= 0 && !this.panning) {
       // ONE GHOST, OR THE WHOLE RULER LINE. A shift-drag is aiming a run of
       // buildings that will land all at once on release, so all of it is
@@ -4702,44 +4630,6 @@ export class Game {
           : this.heldCells({ x: this.hoverX, y: this.hoverY });
       this.drawGhosts(view, c, cells, this.buildKind);
     }
-  }
-
-  /**
-   * WHERE THE CARRIED ROW WOULD LAND. A move is all or nothing, so one red
-   * footprint is the whole gesture refused — it is drawn per building
-   * anyway, because the next question is which one is in the way.
-   */
-  private drawMoveGhosts(view: SimView, c: CanvasRenderingContext2D): void {
-    const group = this.moveGroup;
-    if (!group || !this.selecting || this.selDragPx <= SEL_DRAG_PX) return;
-    const { dgx, dgy } = this.moveDelta(this.selTo);
-    if (dgx === 0 && dgy === 0) return;
-    const at = `${dgx},${dgy}`;
-    if (at !== this.moveFitsAt || group.length <= MOVE_FIT_LIVE) {
-      view.canMove(group, dgx, dgy, this.moveFits);
-      this.moveFitsAt = at;
-    }
-    const fits = this.moveFits;
-    c.imageSmoothingEnabled = false;
-    for (let i = 0; i < group.length; i++) {
-      const m = group[i];
-      const x = (m.gx + dgx) * CELL, y = (m.gy + dgy) * CELL, px = m.size * CELL;
-      const img = this.ghostArt(m.kind);
-      if (img) {
-        c.globalAlpha = GHOST_ALPHA;
-        c.drawImage(img, x, y, px, px);
-        c.globalAlpha = 1;
-      }
-      const wash = fits[i] ? null : GHOST_WASH[0];
-      if (wash) {
-        c.fillStyle = wash;
-        c.fillRect(x, y, px, px);
-      }
-      c.strokeStyle = SELECT_RING;
-      c.lineWidth = 1.5;
-      c.strokeRect(x + 1, y + 1, px - 2, px - 2);
-    }
-    c.imageSmoothingEnabled = true;
   }
 
   /**
