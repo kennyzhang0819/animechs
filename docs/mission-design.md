@@ -30,7 +30,7 @@ Three consequences for everything below:
   `game/levels.ts`, one number the sim publishes and every panel draws).
   A bar drawn off the wave number would fill to the brim and start again.
 - **The objective bodies belong to missions, not waves.** The Sovereign,
-  the Borer, the Railgun and the two Wardens are `OBJECTIVE_KINDS`
+  the Borer and the Railgun are `OBJECTIVE_KINDS`
   (`game/levels.ts`): things the run has to go and deal with, which is the
   shape an objective has. A wave cannot send one — `waveGroups` strips them
   — and the two that are EVENTS wear a **health bar** at the top of the
@@ -164,8 +164,8 @@ What the archetype turned out to need, and what each piece is answering:
 - **A GARRISON IS A DIFFERENT KIND OF BODY, and it had to be built first.**
   An emplacement on its own is answered by one long gun standing where
   nothing can reach it; the mission only becomes about GROUND if the ground
-  around it is contested. So `Sim.garrisonUnit` (above): the Wardens hold
-  their circle, fight what you build in it, and cannot be pulled out of it.
+  around it is contested. So `Sim.garrisonUnit` (above): the garrison holds
+  its circle, fights what you build in it, and cannot be pulled out of it.
   That last clause is the design, not the implementation — a guard that
   could be baited home would be a wave with extra steps, and this game
   already has a wave.
@@ -204,7 +204,7 @@ What the archetype turned out to need, and what each piece is answering:
 | the emplacements | the map's `railgun` marks, one a gun (`game/missionMarks.ts`, `missions.ts siegeFromMarks`) |
 | the garrison regions | the map's `garrison` marks — no longer the mission's at all (`missions.ts garrisonsFor`, `Sim.manGarrisons`). `radius` is the ring the board draws AND the leash, deliberately one number |
 | the railgun | `game/levels.ts` (`railgun`, `UnitStats.bombard`), `game/weapons.ts` (the bombard row) and `game/wardenArt.ts` (the drawing) |
-| the Wardens | `game/levels.ts` (`bulwark`, `lance` — no tiers, T5 weight) and `game/wardenArt.ts` |
+| the Wardens | not bodies — they are TURRETS an author stands on a cell (`game/types.ts` `ENEMY_ONLY_KINDS`, `constants.ts TOWERS`, the `emplacement` mark). See `docs/mission-marks.md` |
 | a body that holds ground | `Sim.garrisonUnit`, `Sim.plantUnit`, and the `ugar` arrays — the general mechanism, of which this mission is the first customer |
 | what happens | `Sim.runSections`, `raiseSection`, `clearNear`, `fireBombard`, and the lines in `won()` and `removeUnit` |
 | what the player sees | the objective pane in `components/Animechs.tsx`, and the post overlay in `Game.drawMissionPosts` |

@@ -878,9 +878,9 @@ const MM_CROSS_EDGE = mmColor(0x00, 0x00, 0x00);
  *
  * THE TRAIN IS ITS HEAD AND NOTHING ELSE. Twenty cars would be twenty
  * pins, which is a corner map made of pins; the head is the end a player
- * is trying to get in front of. The two Wardens are off it for the same
- * reason — a siege stands sixteen of them, and they are the emplacement's
- * fence rather than the thing behind it.
+ * is trying to get in front of. A garrison is off it for the same reason
+ * — a siege digs crowds in around its guns, and they are the
+ * emplacement's fence rather than the thing behind it.
  */
 const MM_PIN_FOE = Uint8Array.from(UNIT_KINDS, (k) =>
   k === "wormhead" || k === "railgun" || k === "goad" || k === "bastion" || k === "boss" ? 1 : 0,
@@ -4362,7 +4362,7 @@ export class Game {
    *
    * THE CIRCLE IS THE TRUTH AND NOT A DECORATION: it is exactly the leash
    * the garrison is held to (missions.ts PostSpec.radius, Sim.garrison-
-   * Unit), so a turret placed outside the line is a turret the Wardens
+   * Unit), so a turret placed outside the line is a turret the garrison
    * will never walk out to, and the player can see that before they spend.
    *
    * A RISEN SECTION GOES QUIET. Once the bodies are actually standing
@@ -4394,8 +4394,8 @@ export class Game {
     // see one — so it comes across as a bitmask (simreport.ts
     // GARRISON_HELD). It used to be worked out here by KIND, which held
     // only while a garrison was made of bodies no wave could send; a
-    // circle manned with ordinary swarm (MarkGarrison.tiers) would be lit
-    // by the first wave that walked through it
+    // circle manned with ordinary swarm (levels.ts GARRISON_LEVELS) would
+    // be lit by the first wave that walked through it
     const mask = this.world.garrisonHeld;
     const held = rings.map((_, r) => (mask & (1 << r)) !== 0);
     c.save();

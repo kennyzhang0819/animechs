@@ -228,10 +228,10 @@ const RAILGUN: MarkKind = {
  * watched it come back for reasons the board never showed them.
  *
  * WHAT STANDS IN IT IS ONE NUMBER (levels.ts GARRISON_LEVELS). A rung
- * from 1 to 5 names a fixed mix of Wardens and ordinary swarm, and the
- * mix is a table rather than ten fields on the mark: what placing a
- * garrison is a decision about is WHERE and HOW HARD, and every level 3
- * on every map should be the same fight.
+ * from 1 to 5 names a fixed count of swarm per tier, and the mix is a
+ * table rather than ten fields on the mark: what placing a garrison is a
+ * decision about is WHERE and HOW HARD, and every level 3 on every map
+ * should be the same fight.
  *
  * THE SWARM HALF IS NOT AUTHORED EITHER. The tier counts are filled from
  * whichever family the circle rolled at reset (Sim.garrisonFamilies) —

@@ -2470,18 +2470,18 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     unslowable: true,
   },
 
-  // ── THE SIEGE: the railgun and the two Wardens over it ───────────────
+  // ── THE SIEGE: the railgun ───────────────────────────────────────────
   //
-  // THE THREE BODIES A MISSION PLANTS (RazeMission, Sim.raiseSection).
-  // None of them is in a family, none has a tier ladder, and no wave can
-  // send one (OBJECTIVE_KINDS). They are put down at an authored place,
-  // they never walk to the core, and the run's whole business with them
-  // is going out to where they stand and taking them apart.
+  // THE ONE BODY A MISSION PLANTS (RazeMission, Sim.raiseSection). It is
+  // in no family, has no tier ladder, and no wave can send it
+  // (OBJECTIVE_KINDS). It is put down at an authored place, it never walks
+  // at the core, and the run's whole business with it is going out to
+  // where it stands and taking it apart.
   //
-  // `tier: 5` on all three is not a rung — there is no ladder here to be
-  // on. It is the weight class, written down so the audit and the
-  // mutators that read a tier (ARMORED_MAX_TIER) treat a Warden as the
-  // heavy body it is rather than as a runt.
+  // `tier: 5` is not a rung — there is no ladder here to be on. It is the
+  // weight class, written down so the audit and the mutators that read a
+  // tier (ARMORED_MAX_TIER) treat it as the heavy body it is rather than
+  // as a runt.
 
   // THE EMPLACEMENT. It does not move (speed 0) and it is PLANTED besides
   // (Sim.plantUnit), so no crowd, no knockback and no beam drag can shift
@@ -2726,14 +2726,13 @@ export const UNIT_TREES = [
   // not read as tiers.
   { key: "boss", name: BOSS_NAME, kinds: ["boss"], objective: true },
   { key: "worm", name: WORM_NAME, kinds: ["wormhead", "wormcar", "wormtail"], objective: true },
-  // ...and the siege's three, on the same terms: the emplacement the raze
-  // mission plants and the two Wardens posted over it (RazeMission). The
-  // Wardens are one row and NOT one upgrade path — the family has no
-  // tiers at all, so the four slots are four jobs rather than four rungs
+  // ...and the siege's, on the same terms: the emplacement the raze
+  // mission plants (RazeMission). One row and no upgrade path — there are
+  // ten railguns on a map and they are one job, not ten rungs
   { key: "railgun", name: RAZE_NAME, kinds: ["railgun"], objective: true },
   // THE PYLONS — the two buff towers an intercept plants over its road
   // (missionMarks.ts, Sim.raiseMarkTowers). One row and not an upgrade
-  // path: the two are two jobs, like the Wardens, and neither is a rung
+  // path: the two are two jobs and neither is a rung
   { key: "pylon", name: PYLON_NAME, kinds: ["goad", "bastion"], objective: true },
 ] as const satisfies readonly {
   key: string;
@@ -3828,11 +3827,12 @@ export interface EscortMission {
  *   arithmetic of that is what the mission is asking about.
  *
  *   IT IS GUARDED. An emplacement alone is answered by one long gun
- *   standing safely out of everything's way. The Wardens posted over it
- *   (levels.ts `bulwark`, `lance`) do not walk to the core and never leave
- *   their post (Sim.garrisonUnit) — they make the GROUND AROUND the
- *   railgun expensive, which turns "buy a gun that reaches" into "buy a
- *   position and hold it", which is the only question this game can ask.
+ *   standing safely out of everything's way. Every railgun stands inside
+ *   a garrison circle an author drew over it (missionMarks.ts GARRISON):
+ *   that crowd never walks at the core and never leaves the circle
+ *   (Sim.garrisonUnit), so it makes the GROUND AROUND the railgun
+ *   expensive, which turns "buy a gun that reaches" into "buy a position
+ *   and hold it", which is the only question this game can ask.
  *
  * THE SCHEDULE AND THE ROSTER ARE AUTHORED HERE; WHERE THE SECTIONS STAND
  * IS AUTHORED WITH THE TERRAIN (missions.ts POST_SPECS), exactly the way
@@ -3868,9 +3868,11 @@ export interface RazeSection {
   guns: number;
   /**
    * WHAT STANDS OVER THEM, by kind and count — the same shape a wave is
-   * written in (WaveUnits), and deliberately not a list of Wardens: a
-   * garrison is a mission putting bodies on a post, and the day a mission
-   * wants to post a Tusker herd instead it should not need a new field.
+   * written in (WaveUnits), and deliberately not a list of one special
+   * kind: a garrison is a mission putting bodies on a post, and the day a
+   * mission wants to post a Tusker herd it should not need a new field.
+   * The shipped siege leaves this empty and guards its posts with
+   * GARRISON marks on the map instead.
    *
    * Every body named here is PLANTED ON THE POST rather than sent at the
    * core (Sim.garrisonUnit), whatever kind it is.

@@ -457,7 +457,7 @@ export function roadProblems(road: Road): string[] {
  * `radius` IS TWO THINGS AT ONCE and that is deliberate. It is how wide
  * the section is laid out — the emplacements are rung around the centre
  * inside it, and the garrison inside them — and it is the LEASH the
- * garrison is held to (Sim.garrisonUnit): a Warden posted here will cross
+ * garrison is held to (Sim.garrisonUnit): a body posted here will cross
  * the circle to get at a turret standing in it and will never take a step
  * outside. One number, so what the player sees drawn on the board is
  * exactly the ground the guards contest, and there is no second radius to

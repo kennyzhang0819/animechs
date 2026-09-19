@@ -1490,9 +1490,8 @@ export class Sim {
    *      physics could walk off its own footprint is an emplacement that
    *      ends up somewhere the mission did not author.
    *
-   * IT IS DELIBERATELY NOT A PROPERTY OF THE KIND. The Wardens are the
-   * first bodies to use it and they are not the point — the point is that
-   * ANY kind can be posted, so the next mission that wants a Tusker herd
+   * IT IS DELIBERATELY NOT A PROPERTY OF THE KIND. The point is that ANY
+   * kind can be posted, so the next mission that wants a Tusker herd
    * camped on a hill writes a roster (levels.ts RazeSection.guards) rather
    * than a new unit.
    */
@@ -1640,8 +1639,8 @@ export class Sim {
    */
   private garrisons: readonly MarkGarrison[] = [];
   /**
-   * WHICH FAMILY EACH GARRISON'S TIER COUNTS ARE MADE OF (MarkGarrison
-   * tiers) — one key per circle, rolled at reset out of the hand this
+   * WHICH FAMILY EACH GARRISON'S TIER COUNTS ARE MADE OF (levels.ts
+   * GARRISON_LEVELS) — one key per circle, rolled at reset out of the hand this
    * deploy was dealt (LevelSpec.families) and kept for the whole run.
    *
    * ONE FAMILY A CIRCLE, AND THE SAME ONE EVERY TIME IT IS RE-MANNED. A
@@ -5577,8 +5576,8 @@ export class Sim {
    * IT IS READ OFF THE LEASH AND NOT OFF THE KIND. The board used to test
    * "is a Warden standing in there", which worked only while a garrison
    * was made of bodies no wave could send; a circle manned with ordinary
-   * swarm (MarkGarrison.tiers) would be lit by the first wave that walked
-   * through it.
+   * swarm (levels.ts GARRISON_LEVELS) would be lit by the first wave that
+   * walked through it.
    */
   garrisonHeldMask(): number {
     let mask = 0;

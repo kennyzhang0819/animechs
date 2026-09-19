@@ -34,8 +34,8 @@ wearing the only shape it can. A mission puts down **one** body whatever the dif
 a quarter of one boss is not a body, and `scaleWave` floors a nonzero count at one on
 purpose — so every `OBJECTIVE_KINDS` body pays the tier's count share in **hit points**
 instead (`tierObjectiveHpScale`, applied in `unitHpOnRung`). That is the Sovereign, the
-Borer's whole train, the railgun emplacement and both Wardens: a quarter of their health
-at Incursion, three quarters at Scourge, all of it from Nemesis up.
+Borer's whole train and the railgun emplacement: a quarter of their health at Incursion,
+three quarters at Scourge, all of it from Nemesis up.
 
 Nothing else about them moves: armour, speed, hitbox and drop are what `UNIT_STATS` says at
 every tier — drops in particular, for the same reason the level curve leaves drops alone.

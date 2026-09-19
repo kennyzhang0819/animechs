@@ -1526,7 +1526,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   wormcar: [],
   wormtail: [],
 
-  // ---- THE SIEGE: the railgun, and the two Wardens over it -----------
+  // ---- THE SIEGE: the railgun ----------------------------------------
   //
   // THE RAILGUN'S REACH IS THE BOARD. Two hundred tiles is not a number
   // anything else on this table comes near, and it is not meant to be
@@ -1537,7 +1537,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   //
   // WHAT IT DOES TO THE CORE, and why it is a small number beside every
   // other row here. The core is 24,000 (constants.ts CORE_HP) and there
-  // are TEN railguns: a Warden's 560 a shot would take the base down in
+  // are TEN railguns: a Lance's 560 a shot would take the base down in
   // under a minute with the last section up. 120 every twelve seconds is
   // ten health a second EACH, and on the siege's schedule (levels.ts world
   // 10) that arithmetic lands on a number worth writing down: a siege

@@ -1220,17 +1220,18 @@ export const SF4_CELLS = sfMechCells(4, GRAPNEL_TIERS[3].n, 128);
 export const SF5_CELLS = sfMechCells(5, GRAPNEL_TIERS[4].n, 256);
 
 /**
- * THE SIEGE'S CELLS — the railgun and the two Wardens (wardenArt.ts), and
- * the fourth set on the sheet to ask the packer for room of its own rather
- * than draw over a Mindustry tree.
+ * THE SIEGE'S CELLS — the railgun (wardenArt.ts), and the fourth set on
+ * the sheet to ask the packer for room of its own rather than draw over a
+ * Mindustry tree. The two Pylons below share the rig; the four Wardens are
+ * turrets now and are packed as heads instead (packAtlas).
  *
  * Six cells a body, like every other thing on the mech rig: the body, the
  * base plate and one side's legs, each with its silhouette beside it. The
  * cell is the smallest 64-multiple that holds the hitbox in native px
- * (112, 128, 72, 160 and 256 — see WardenTier), so the world px per native
- * px is the same 0.625 the rest of the sheet has. A 256 cell carries four
- * times the quad a 128 one does, which is why the sprite size is a
- * parameter down at MECH_ART rather than a constant.
+ * (128 for all three — see WardenTier), so the world px per native px is
+ * the same 0.625 the rest of the sheet has. The sprite size stays a
+ * parameter down at MECH_ART because a cell that is not 128 carries a
+ * different quad.
  *
  * THESE ARE DRAWN WITH ANIMAL_ART OFF TOO, and they are the only
  * bodies on the sheet that are. The flag's promise is that turning it off
@@ -2289,7 +2290,7 @@ if (ANIMAL_ART) {
   MECH_ART.grapnel4 = sfMechArt(SF4_CELLS, GRAPNEL_TIERS[3], 2);
   MECH_ART.grapnel5 = sfMechArt(SF5_CELLS, GRAPNEL_TIERS[4], 4);
 
-  // ---- the siege: the railgun and the two Wardens ----
+  // ---- the siege: the railgun, and the two Pylons on its rig ----
   // the mech rig again, and the RAILGUN'S STRIDE IS ZERO (wardenArt.ts
   // WardenTier): the rig draws its anchors where the legs go and the
   // renderer swings them by nothing, which is what a machine bolted to the
@@ -3383,10 +3384,10 @@ function packAnimalArt(
     sil: { body: c.bodySil, base: c.baseSil, leg: c.legSil },
   }));
   sfCellSets.forEach((cells, i) => packMech(cells, grapnelMech(GRAPNEL_TIERS[i]), GRAPNEL_TIERS[i].n));
-  // ---- the siege: three machines on the mech rig, into cells nobody
-  // else owns (see THE SIEGE'S CELLS) ----
+  // ---- the siege: the railgun on the mech rig, into cells nobody else
+  // owns (see THE SIEGE'S CELLS) ----
   packMech(RAZE_CELLS, razeMech(RAZE_TIER), RAZE_TIER.n);
-  // ...and the same four bodies AS TURRET HEADS (types.ts ENEMY_ONLY_KINDS):
+  // ...and the four Wardens AS TURRET HEADS (types.ts ENEMY_ONLY_KINDS):
   // the body alone, with no base plate and no legs, because a turret's
   // plate is the one the renderer already lays under every head
   for (const [uv, parts] of [

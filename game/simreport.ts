@@ -119,8 +119,9 @@ export const HDR = {
    *
    * It is a slot rather than something the overlay works out for itself
    * because the only honest test is the LEASH, and the leash does not
-   * cross the seam: a circle manned with ordinary swarm (MarkGarrison
-   * tiers) is indistinguishable from a wave standing in it by kind alone.
+   * cross the seam: a circle manned with ordinary swarm (levels.ts
+   * GARRISON_LEVELS) is indistinguishable from a wave standing in it by
+   * kind alone.
    */
   GARRISON_HELD: 32,
 } as const;
