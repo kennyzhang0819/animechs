@@ -169,9 +169,8 @@ table is the whole of it; `scripts/turret-concepts.mjs` writes one
 `base-N.png` a footprint. The footprints are **1, 2, 3, 4 and 6**
 (`PLATE_SIZES`, which `game/foundryArt.ts` reads) — not `1..n`, so
 nothing may take a size off an index. The 6x6 is the siege's: the railgun
-stands on it (`game/wardenArt.ts` `RAZE_PLATE_TILES`), and the machine is
-drawn inside the plate's FACE so no part of the gun is laid over the
-bevel it is lit by.
+stands on it (`game/wardenArt.ts` `RAZE_PLATE_TILES`), drawn on a grid one
+stock head's margin inside the plate's so the plate shows round it.
 
 ### Against the swarm
 

@@ -32,9 +32,9 @@
  * WHAT EACH ONE HAS TO SAY IN ONE GLANCE:
  *
  *   RAILGUN   a gun that is not aimed at you. One barrel up the middle,
- *             longer than anything else on the board, between two rails,
- *             on the six-tile turret plate with four anchors driven
- *             through it. It never turns and it never walks (speed 0,
+ *             longer than anything else on the board, stood off by two
+ *             rails, on a breech as wide as the six-tile turret plate it
+ *             is bolted to. It never turns and it never walks (speed 0,
  *             Sim.plantUnit), so the drawing is allowed to be symmetrical
  *             and static in a way no walking body is: it is a BUILDING
  *             that happens to be a body.
@@ -76,8 +76,8 @@ const ARMOUR_R = rev(ARMOUR);
 /**
  * ONE MACHINE'S NUMBERS. `n` is the grid, which is the hitbox in native
  * px; `stride` is the mech rig's leg swing, and it is ZERO on the railgun
- * because the railgun does not walk — the rig still draws its legs, they
- * simply never move (atlas.ts MechArt.stride).
+ * because the railgun does not walk — and it draws no legs either, see
+ * razeMech (atlas.ts MechArt.stride).
  */
 export interface WardenTier {
   n: number;
@@ -116,51 +116,47 @@ function razeBody(P: Pen, T: WardenTier): void {
   const { n } = T;
   const { q, w } = scaler(n);
   const c = n / 2;
-  // the breech: a deep chamfered block over the back third
-  P.octa(q(4), q(18), n - q(4), n - q(1), w(6), ARMOUR);
+  // the breech: a deep chamfered block over the back third, out to the
+  // margin. THE WIDTH IS ALL HERE and the front is the gun alone, which is
+  // what keeps a six-tile machine a T aimed somewhere rather than a crate
+  P.octa(q(2), q(18), n - q(2), n - q(2), w(6), ARMOUR);
   // the hip fold, in the reversed pair
-  P.box(q(5), n - q(9), n - q(5), n - q(9) + w(4), ARMOUR_R);
-  // the two rails: gunmetal runs either side of the shaft, from the
-  // trunnion to a couple of units short of the muzzle
-  P.box(c - w(7), q(3), c - w(7) + w(3), q(19), GUN);
+  P.box(q(3), n - q(9), n - q(3), n - q(9) + w(4), ARMOUR_R);
+  // the two rails: gunmetal beams stood well off the shaft, each with its
+  // channel cut down the outside, so the front reads as three prongs with
+  // daylight between them and not as one slab in three shades
+  P.box(c - w(10), q(3), c - w(10) + w(4), q(19), GUN);
+  P.box(c - w(10), q(3), c - w(10) + w(1), q(19), BORE);
   // the barrel: a steel shaft two thirds of the body long, with a gunmetal
-  // muzzle cap and the bore in it
-  P.box(c - w(2), 0, c + w(2), q(21), STEEL);
-  P.box(c - w(2), 0, c + w(2), w(5), GUN);
+  // brake wider than the shaft at the muzzle and the bore in it
+  P.box(c - w(3), 0, c + w(3), q(21), STEEL);
+  P.box(c - w(5), 0, c + w(5), w(5), GUN);
   P.box(c - w(1), 0, c + w(1), w(5), BORE);
   // the trunnion: the steel bar the shaft pivots in, across the front of
   // the breech and wider than it
-  P.box(q(6), q(16), n - q(6), q(16) + w(5), STEEL);
-  P.box(q(6), q(16), n - q(6), q(16) + w(2), GUN);
+  P.box(q(3), q(16), n - q(3), q(16) + w(5), STEEL);
+  P.box(q(3), q(16), n - q(3), q(16) + w(2), GUN);
   // THE CAPACITOR: the crimson band across the breech
   P.box(q(7), q(22), n - q(7), q(22) + w(5), CRUX);
   P.box(q(7), q(22), n - q(7), q(22) + w(2), rev(CRUX));
   // the loading bed at the back, in gunmetal so the tail is not another
-  // slab of the same plate, with three vents across it
-  P.octa(q(8), n - q(8), n - q(8), n - q(2), w(3), GUN);
-  bars(P, q(11), n - q(11), n - q(7), 2, w(3), w(2));
+  // slab of the same plate, with the breech slot cut across it
+  P.octa(q(8), n - q(9), n - q(8), n - q(3), w(3), GUN);
+  P.box(q(11), n - q(7), n - q(11), n - q(7) + w(3), BORE);
 }
-/** the anchors: two driven feet a side, at the corners of the plate. They
- *  are the rig's "legs" and they never swing (stride 0) — a railgun is
- *  bolted to the ground it was put on */
-function razeFeet(P: Pen, T: WardenTier): void {
-  const { n } = T;
-  const { q, w } = scaler(n);
-  for (const y of [q(17), n - q(11)]) {
-    P.box(q(1), y, q(1) + w(6), y + w(6), STEEL);
-    P.box(q(1), y + w(6) - w(3), q(1) + w(6), y + w(6), BORE);
-  }
-}
-/** the grid the MACHINE is drawn on: the plate's FACE (basePlate insets a
- *  6x6 by 16), so no part of the gun is laid over the bevel it is lit by */
-const razeInner = (T: WardenTier): WardenTier => ({ ...T, n: T.n - 32 });
+/** the grid the MACHINE is drawn on inside the plate's: the stock head's
+ *  margin (8 px on this grid), so the plate shows round it */
+const razeInner = (T: WardenTier): WardenTier => ({ ...T, n: T.n - 16 });
 export function razeMech(T: WardenTier = RAZE_TIER): MechParts {
   const I = razeInner(T);
   const { art, cell } = drawWithCell(I.n, (P) => razeBody(P, I), CRUX);
   return {
     body: pad(art, T.n),
     base: basePlate(RAZE_PLATE_TILES),
-    leg: pad(draw(I.n, (P) => razeFeet(P, I), false), T.n),
+    // NOTHING ON THE LEG LAYER. The rig lays its legs UNDER the base
+    // (renderer.ts pushMech), and the base is a turret plate covering the
+    // whole grid now, so anything drawn here is drawn where nobody sees it
+    leg: { n: T.n, px: new Array<string | null>(T.n * T.n).fill(null) },
     cell: pad(cell, T.n),
     stride: T.stride,
   };
