@@ -238,17 +238,18 @@ const PLACED: readonly { level: number; reward: Reward }[] = [
  * four bands. That is a better thing for the opening to teach than a
  * half-lit row of buttons.
  *
- * THE FOUR ARE THEIR BANDS' GENERALISTS: the tacker and the autocannon
- * both answer air and ground, the barrage is the crowd artillery the
- * script mostly asks for (it is the one gun here that cannot hit air —
- * tier 1 and 2 cover that until the whirl lands on level 9), and the
- * repeater is the big all-round gun. The repeater used to be in this hand,
+ * THE FOUR ARE THEIR BANDS' GENERALISTS, and ALL FOUR ANSWER AIR: the
+ * tacker, the autocannon, the whirl and the repeater. The whirl holds
+ * tier 3 rather than the barrage, which is the crowd artillery the script
+ * mostly asks for but cannot hit a flyer — so the opening hand no longer
+ * has a band a flight walks straight over, and the barrage arrives on the
+ * track instead. The repeater used to be in this hand,
  * came out because an ultra in the pool from wave one made the
  * one-in-a-hundred border meaningless, and comes back now that the border
  * is a price band the player names rather than a draw frequency.
  */
 export const STARTING_ROSTER: readonly TowerKind[] = [
-  "tacker", "autocannon", "barrage", "repeater",
+  "tacker", "autocannon", "whirl", "repeater",
 ];
 
 /**
@@ -281,26 +282,30 @@ const UNLOCKS: Readonly<Record<number, readonly TowerKind[]>> = {
   // the 2x2s, the band a run spends most of its middle in
   6: ["coil"],
   7: ["hive"],
-  8: ["douser"],
+  // the BARRAGE breaks the 2x2 run: it is the crowd artillery the script
+  // asks for from the first waves, and the opening hand no longer holds one
+  8: ["barrage"],
   9: ["piercer"],
-  // THE UPPER TWO ARE SPREAD AND INTERLEAVED. A save already owns one gun
-  // of each of them (STARTING_ROSTER), so what these rows widen is WHICH
-  // gun the button turns over. The whirl leads because it is the tier-3
-  // answer to air the barrage is not; the railhead closes Serpulo's half
-  // of the roster
-  10: ["whirl"],
+  // the douser closes the 2x2s — it traded rows with the barrage, which
+  // the early script asks for far sooner than a board asks for a slow
+  10: ["douser"],
+  // and the rest are spread and interleaved: a save already owns one gun
+  // of every band (STARTING_ROSTER), so what these rows widen is WHICH gun
+  // the button turns over
   11: ["tether"],
   12: ["furnace"],
   13: ["deluge"],
-  14: ["railhead"],
-  // ...AND THEN THE TOXIN LINE, WHICH ARRIVES AS A LINE. Four guns that
-  // do one thing (docs/elements.md) and one of them in every band, so
-  // dealing them by footprint alongside the rest would scatter a set the
-  // player only understands held together. They close the roster instead,
-  // cheapest first — and the last two land on the mutator phase's first
-  // rows, beside the rules those rows open
-  15: ["duster"],
-  16: ["blighter"],
+  // ...AND THEN THE TOXIN LINE. Four guns that do one thing
+  // (docs/elements.md) and one of them in every band, so dealing them by
+  // footprint alongside the rest would scatter a set the player only
+  // understands held together. They close the roster, cheapest first —
+  // and the RAILHEAD SITS INSIDE THEM at 16, which is the one row that
+  // breaks the set: it is the last of Serpulo's half of the roster and it
+  // lands on the mutator phase's opening rows, beside the rules those
+  // rows open
+  14: ["duster"],
+  15: ["blighter"],
+  16: ["railhead"],
   17: ["drifter"],
   18: ["stinger"],
 };

@@ -29,7 +29,7 @@ A mark in `public/maps/<id>.json`:
 
 ```jsonc
 "marks": [
-  { "kind": "buffTower", "x": 420, "y": 100 },
+  { "kind": "buffTower", "x": 420, "y": 100, "opts": { "unit": "goad", "wave": 2 } },
   { "kind": "railgun",   "x": 411, "y":  79, "opts": { "wave": 1 } },
   { "kind": "road",      "x": -59, "y": 488, "pts": [[-59,488],[55,488],[216,327]],
     "opts": { "name": "the south line" } }
@@ -89,29 +89,41 @@ send one (`UNIT_TREES`, `objective: true`) — and both are bolted down
 
 Neither has a health pool to give away and neither shoots.
 
-**A MARK IS GROUND, NOT A TOWER.** It carries no fields: it says only that a
-tower may stand here. Which towers rise and when is the game's, one schedule
-for every intercept (`levels.ts pylonsDue`):
+**A MARK IS A TOWER.** It names which of the two it is and which train it
+rises on, and **nothing about it is rolled** — train 3 comes in under
+exactly the towers drawn for train 3, every run. An author who wants two
+Bastions up for the last train draws two Bastions for the last train.
 
-| train wave | the hand |
-|---|---|
-| 1 | — |
-| 2-3 | one Goad |
-| 4-5 | a Goad and a Bastion |
-| 6-7, and the spare | a Goad and two Bastions |
+This replaces a die roll that shuffled a fixed hand into whichever spots
+were free. The roll threw away the one thing the map was for: a tower's
+**buff is global** (`Sim.goadMul`, `Sim.bastionCut` read the alive census,
+so a Goad anywhere speeds every train), and what its *position* decides is
+how far a run has to travel, and past what, to take it down. Two runs of
+one map asked for different trips for no reason a player could see.
 
-**The hand is rolled into the free spots.** Each wave shuffles the spots
-that are not already holding a tower and fills the hand out of them, so no
-two runs of the same map put the same tower in the same place. A spot whose
-tower is **still standing is out of the draw**; one the board knocked down
-is back in it. So what an author places is ground the swarm keeps re-taking,
-and what the board buys by killing a tower is the waves until that ground
-comes up again. Nothing is ever topped up or stacked, and a hand bigger than
-the free spots left simply places what fits.
+**They accumulate.** A tower is up from its train until the board kills it,
+and the two buffs **stack by multiplying** — so a run that answers none of
+them meets the last train under all of them. That is the mission: clearing
+the road is not a side errand the intercept offers, it is the bill. An
+author sizing a map counts the **standing total at the last train**, not
+the towers on any one of them. Coldline's seven, as authored:
+
+| train | rises | standing, if the board kills none |
+|---|---|---|
+| 2 | Goad | 1 Goad — trains run 2x |
+| 3 | Goad | 2 Goads — 4x |
+| 4 | Bastion | 2G 1B — 4x, half the damage lands |
+| 5 | Goad | 3G 1B — 8x |
+| 6 (the spare) | Goad, 2 Bastions | 4G 3B — 16x, an eighth of the damage lands |
+
+The marks are ordered by how far each stands from the nearest road, so the
+early trains bring towers a board can answer cheaply and the last one
+brings the trip.
 
 **Every tower rising on one wave is the same tower** (`pylonRamp`): health
 rides the wave it rose on, so wave 6's are tougher than wave 4's and a
-player reads the difficulty off the wave number. The curve is 1.28 a wave —
+player reads the difficulty off the wave number. It is the one thing about
+a buff tower the map does not decide. The curve is 1.28 a wave —
 deliberately gentler than the train's own `WORM_RAMP_GROWTH`, because a
 Borer is one body shot for four minutes and a tower has to be knocked down
 *again* between trains; a curve that steep goes from "kill it each time" to
@@ -120,9 +132,11 @@ Borer is one body shot for four minutes and a tower has to be knocked down
 **They rise on a train wave, not on a clock.** Every other schedule in the
 game is absolute seconds; this one is the launch index of
 `InterceptMission.pattern` — *the second train comes in under a Goad*. The
-spare counts as the wave after the pattern's last, so it draws the top hand.
-A jump (`skipToTime`) walks the same loop, so a rise the jump passed over
-happens at once, like every launch it passed over.
+spare counts as the train after the pattern's last, so a mark drawn for it
+names that number. `npm run check` says so if a tower is drawn for a train
+the pattern never launches. A jump (`skipToTime`) walks the same loop, so a
+rise the jump passed over happens at once, like every launch it passed
+over.
 
 **They stack by multiplying** (`Sim.goadMul`, `Sim.bastionCut`). Two
 Bastions at half off each leave a quarter of the damage getting through, and
@@ -146,15 +160,15 @@ A tower in rock is an authoring mistake, and `npm run check` says so.
 ## Authoring them
 
 `/admin` → the map → the **Mission** group in the palette. A click stamps
-one; the eraser takes one off. There is nothing to set — the only decision
-is where, and how many.
+one; the eraser takes one off. There is nothing to set on a buff tower —
+the only decision is where, and how many. A garrison has two dials, its
+range and its level, and both are printed on the map.
 
-**Place more spots than the top hand wants.** The hand is three from train 6
-on, so three spots is a map that plays the same every run; Coldline ships
-seven, which is what makes the roll worth anything. `npm run check` says so
-if a map carries fewer spots than its last train's hand. The **Mission
-marks** layer hides them and puts them out of reach of every tool, like the
-beacons.
+**Count the standing total, not the hand.** There is no hand any more —
+every mark is a tower that comes up and stays up — so what sizes a map is
+how many are on the board at the last train and what a run has to do to
+thin them. The **Mission marks** layer hides them and puts them out of
+reach of every tool, like the beacons.
 
 Each block is drawn in its kind's ink with its fields printed under it, so
 "goad, train 2" is readable off the map without clicking every square —
@@ -166,8 +180,8 @@ bad mark written into the repo file looks authored and quietly does nothing.
 
 ## The kinds
 
-**`buffTower`** — a piece of ground a Goad or a Bastion may stand on, on an
-intercept map. No fields: the schedule rolls its hand into the free spots.
+**`buffTower`** — one Goad or one Bastion on an intercept map: which of
+the two, where it stands, and which train it is up for. Nothing rolled.
 
 **`railgun`** — one emplacement on a raze map (`game/levels.ts`
 `RazeMission`), on the cell it was placed on, and which of the four
@@ -176,21 +190,107 @@ spread a count of guns round a post is gone: where a gun stands is a
 decision about cover and approach, so it is a mark, and how many rise is
 how many you drew.
 
-**`garrison`** — a circle of ground the swarm holds, and what holds it:
-the waves it is manned on, how far it reaches, and how many Bulwarks and
-Lances stand in it. **It belongs to no mission.** This began as the guard
+**`garrison`** — a circle of ground the swarm holds, how far it reaches,
+and one number saying how hard (**What mans one**, above). Its default
+range is 44 cells, and it lays **no decking**: a garrison is a circle, and
+the square of prepared ground it used to wear promised that something
+would stand on exactly those four by four cells when nothing ever does
+(`MarkKind.pad` 0 now means none, which is what the field always said). **It belongs to no mission.** This began as the guard
 over a railgun battery and is not that any more — a garrison is a fact
 about a PLACE, there is a force dug in here and it will not follow you
 home, and every board has places worth denying. So it is offered on every
 map whatever the mission is playing, and the emplacements it used to be
 bolted to are their own marks.
 
+**Every garrison is standing at mission start, and none of them is ever
+manned again** (`Sim.manGarrisons`, called from `Sim.reset`). There is no
+schedule on the mark and no wave list to set. A garrison is not something
+that arrives — it is ground the swarm already holds when the run opens —
+so **clearing one is permanent**, and what a board pays to take a post it
+pays once. The mark carried a wave list until this; it made a dug-in
+force into a respawn, and a player who had paid for a post watched it come
+back on a countdown the board never showed them.
+
 The radius is the leash `Sim.garrisonUnit` holds every body raised there
-to, and the circle the board rings, so what an author sets is exactly what
-a player can see. Like a buff tower it is **a spot, not a rise**: a
-garrison still standing does nothing on its later waves, and one that has
-been cleared is manned again on the next wave it names — so `1` is ground
-you take once and `1-40` is ground the swarm keeps coming back for.
+to, and the circle the board rings while anything is still holding it, so
+what an author sets is exactly what a player can see. Once a circle is
+cleared the board stops drawing it: an empty ring would be a promise about
+something that is never coming.
+
+### What mans one
+
+**One number does** — `Level`, 1 to 5 (`levels.ts GARRISON_LEVELS`). A
+rung names a fixed count of ordinary swarm, and it is a table rather than
+five fields on the mark because a roster is numbers an author has to
+balance against each other every time they place one, and the answer is
+the same every time. What placing a garrison is a decision about is
+**where** and **how hard**.
+
+| level | what stands there |
+|---|---|
+| **1** | 10 T2, 5 T3 |
+| **2** | 20 T3 |
+| **3** | 20 T3, 10 T4 |
+| **4** | 20 T4, 5 T5 |
+| **5** | 10 T4, 20 T5 |
+
+Every rung is strictly heavier than the one under it, on both terms —
+weight and tier. 1 and 2 are a mass of the family's light bodies, 3 is
+where its T4 arrives, 5 is twenty apexes behind a T4 screen.
+
+**It is ordinary swarm and nothing else.** The Wardens used to be the
+spine of every rung and they are **enemy turrets** now (see `emplacement`
+below) — a thing an author stands on a cell, not a thing that comes with
+a circle. An author who wants a gun over that ground puts a gun over it.
+
+**Which family fills the tiers is not authored and cannot be**: the run
+rolls **one family per circle** out of the hand this deploy was dealt
+(`LevelSpec.families`, `Sim.garrisonFamilies`), at reset, and keeps it for
+the whole run. So a level 3 is a Tusker post one run and a Kettle post the
+next, and a board with three garrisons on it is three different problems.
+One family a circle: a circle never mixes.
+
+A garrison body is spawned **outside the wave count**: it belongs to no
+wave, it never walks at the core, and clearing it never clears a wave. It
+does carry the run's own enemy level — a T3 dug in on a Nemesis board is
+a Nemesis T3.
+
+**Held is read off the leash, not off the kind.** A circle is ringed while
+something posted to it is still alive (`Sim.garrisonHeldMask`, across the
+seam as one bit per mark). A kind test would be lit by the first wave that
+walked through.
+
+**`emplacement`** — one of the swarm's own turrets, standing where you put
+it. It belongs to no mission, it is up from mission start, and it never
+moves. Pick which of the four:
+
+| | pool | plating | what it does |
+|---|---|---|---|
+| **Lance** | 17,000 | 14 | 2x2. One crimson beam down 24 tiles every 2.2s. No pierce |
+| **Bulwark** | 25,000 | 104 | 3x3. A ram at five tiles — 800 twice a swing with splash. The turret you can only answer up close |
+| **Halberd** | 55,000 | 115 | 3x3. A shell from 40 tiles out that bursts over 13 and throws a bolt on landing |
+| **Juggernaut** | 200,000 | 150 | 4x4. A fan of five shells across 19 tiles, and a pool nothing chips down by accident |
+
+These four were the **Wardens** — the bodies a garrison used to be manned
+with. They were already turrets in everything but bookkeeping, so they are
+turrets: same drawings, same pools, same plating, same weapons, standing
+still. Their stats live in `constants.ts TOWERS` with every other turret's
+and they are `ENEMY_ONLY_KINDS` (`game/types.ts`), which keeps them out of
+`FIELDED_KINDS` — nothing deals one, the build card never offers one, and
+no run can buy one.
+
+**It owns its cells but not the path.** Nothing may be built over one and
+shots collide with it, but the swarm's routes run straight through the
+square it stands on. That is the rule every building of the swarm's is
+under (`Sim.conquerTower` says why): its own bodies will not shoot it, so
+a wall they cannot pass and will not break is a wall they would stand at
+forever — and a map is exactly where that would get authored by accident.
+
+**Your guns shoot it mid-wave.** A *conquered* turret is idle work — only
+a gun with nothing else in range spends its reload taking one back, so
+that never costs mid-wave damage. An authored emplacement is the thing the
+run came over to destroy, so it is picked beside the bodies and loses only
+to a body found that same tick (`Sim.updateTowers`, `builtEnemy`).
 
 **`road`** — the line a crosser walks (`game/missions.ts`): the Borers'
 lines on an intercept map, the convoy's on an escort one. Its corners are
@@ -212,9 +312,8 @@ Several railguns may name the **same section**: everything with that
 number rises together, on the same tick of the mission's clock, so "five
 guns on the third" is five marks and not a new field. The clock itself —
 `first` and `every` — stays in the mission spec, because when a siege
-starts is not a fact about the ground. A garrison is not on that clock at
-all: it mans on WAVES, like a buff tower, because the waves are the one
-schedule every map has.
+starts is not a fact about the ground. A garrison is on no clock at
+all: every one a map carries is standing before the first frame.
 
 ## Drawing a road
 

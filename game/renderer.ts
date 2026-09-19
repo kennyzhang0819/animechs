@@ -78,6 +78,10 @@ import {
   UV_BLIGHTER,
   UV_DRIFTER,
   UV_STINGER,
+  UV_BULWARK_TOP,
+  UV_LANCE_TOP,
+  UV_HALBERD_TOP,
+  UV_JUGGERNAUT_TOP,
   UV_TETHER_LASER,
   UV_TETHER_LASER_END,
   UV_TRI,
@@ -199,6 +203,12 @@ const UV_TURRETS: Record<TowerKind, UVRect> = {
   blighter: UV_BLIGHTER,
   drifter: UV_DRIFTER,
   stinger: UV_STINGER,
+  // the garrison's own (types.ts ENEMY_ONLY_KINDS), drawn at pack time
+  // out of the bodies they used to be (atlas.ts, wardenArt.ts)
+  bulwark: UV_BULWARK_TOP,
+  lance: UV_LANCE_TOP,
+  halberd: UV_HALBERD_TOP,
+  juggernaut: UV_JUGGERNAUT_TOP,
 };
 /**
  * The two regions BasicBulletType.draw lays on one rect: the longer `-back`

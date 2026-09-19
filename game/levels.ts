@@ -6,7 +6,7 @@ import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // import must never become a value one or the two files form a cycle
 import type { MutationId } from "./mutation";
 
-export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail", "railgun", "bulwark", "lance", "goad", "bastion"] as const;
+export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail", "railgun", "goad", "bastion"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -63,15 +63,12 @@ export const UNIT_ID: Record<UnitKind, number> = {
   wormhead: 46,
   wormcar: 47,
   wormtail: 48,
-  // THE SIEGE'S THREE (RAZE_NAME, WARDEN_NAMES): the emplacement a
-  // mission plants and the two bodies that stand over it. No family, no
-  // tier ladder, and never rolled into a wave
+  // THE EMPLACEMENT A RAZE MISSION PLANTS (RAZE_NAME). No family, no tier
+  // ladder, and never rolled into a wave
   railgun: 49,
-  bulwark: 50,
-  lance: 51,
   // ...and the two buff towers an intercept plants (PYLON_NAME)
-  goad: 52,
-  bastion: 53,
+  goad: 50,
+  bastion: 51,
 };
 
 /**
@@ -155,16 +152,53 @@ export const WORM_NAME = "Borer";
  * player ever does with it is take it down. "Railgun" and not a proper
  * noun, because there are ten of them.
  *
- * THE WARDENS HAVE NO TIERS AND SO THEIR BODIES HAVE NAMES. Every other
- * line on the roster is five rungs of one animal, so a body is its family
- * and its rung and nothing else (UNIT_NAMES). This one is two machines
- * that do two jobs — the Bulwark plants itself in front of the guns and
- * the Lance shoots over it — and a rung word for a ladder with two
- * unrelated steps on it would be a lie. They are named the way the
- * Sovereign is: one word each.
+ * THE WARDENS ARE NOT BODIES ANY MORE. The four machines a garrison used
+ * to be manned with are TURRETS (types.ts ENEMY_ONLY_KINDS, constants.ts
+ * TOWERS): an author stands one on a cell and it is up from mission
+ * start. They were already a turret in everything but bookkeeping — they
+ * held a circle, never walked at the core, and the whole of what a run
+ * did with one was go over and take it down — so their names live in the
+ * turret table now and a garrison is ordinary swarm (GARRISON_LEVELS).
  */
 export const RAZE_NAME = "Railgun";
-export const WARDEN_NAME = "Wardens";
+/**
+ * HOW HARD ONE PIECE OF HELD GROUND IS — five presets, and the ONLY dial
+ * a map sets on a garrison besides where it is and how far it reaches
+ * (missionMarks.ts GARRISON, Sim.garrisonRoster).
+ *
+ * IT IS A PRESET AND NOT A ROSTER because a roster is ten numbers an
+ * author has to balance against each other on every mark they place, and
+ * the answer is the same every time. What placing a garrison is actually
+ * a decision about is WHERE and HOW HARD; the mix that makes a 3 a 3 is
+ * one table, here, so every level 3 on every map is the same fight and a
+ * player learns it once.
+ *
+ * IT IS ORDINARY SWARM AND NOTHING ELSE. The Wardens used to be the
+ * spine of every rung and they are ENEMY TURRETS now (missionMarks.ts
+ * EMPLACEMENT) — a thing an author stands on a cell, not a thing that
+ * comes with a circle. So a garrison is a CROWD dug in, its faces are
+ * whichever family the circle rolled (Sim.garrisonFamilies), and an
+ * author who wants a gun over that ground puts a gun over it.
+ *
+ * THE LADDER CLIMBS ON BOTH TERMS, weight and tier: 1 and 2 are a mass of
+ * the family's light bodies, 3 is where its T4 arrives, and 5 is twenty
+ * apexes with a T4 screen. Every rung is strictly heavier than the one
+ * under it — a rung that was not would make the number a label rather
+ * than a dial.
+ *
+ * `tiers` is T1 to T5 in order. See docs/mission-marks.md.
+ */
+export interface GarrisonLevel {
+  tiers: readonly [number, number, number, number, number];
+}
+export const GARRISON_LEVELS: readonly GarrisonLevel[] = [
+  { tiers: [0, 10, 5, 0, 0] },
+  { tiers: [0, 0, 20, 0, 0] },
+  { tiers: [0, 0, 20, 10, 0] },
+  { tiers: [0, 0, 0, 20, 5] },
+  { tiers: [0, 0, 0, 10, 20] },
+];
+
 /** the two buff towers a mission plants over its road (docs/mission-marks.md) */
 export const PYLON_NAME = "Pylons";
 /**
@@ -175,25 +209,12 @@ export const PYLON_NAME = "Pylons";
  * road is now the hard one.
  *
  * MARKED ON THE MAP, NOT IN A WAVE: no script may send one (UNIT_TREES,
- * objective). An author places the SPOTS and the schedule below rolls
- * which of them are used (docs/mission-marks.md).
+ * objective). An author draws each tower where it stands and names the
+ * train it is up for, and nothing about that is rolled — the escalation
+ * IS the marks (missionMarks.ts BUFF_TOWER, docs/mission-marks.md).
  */
 export const GOAD_SPEED_MUL = 2;
 export const BASTION_CUT = 0.5;
-
-/**
- * THE PYLONS DUE ON TRAIN WAVE `w` — the hand the mission rolls into the
- * spots an author placed (Sim.raiseMarkTowers). It is the SCHEDULE and
- * not the map's, so every intercept escalates the same way and a map is
- * only asked where the towers may stand. The spare counts as the wave
- * after the pattern's last, so it draws the top hand.
- */
-export function pylonsDue(wave: number): readonly UnitKind[] {
-  if (wave < 2) return [];
-  if (wave <= 3) return ["goad"];
-  if (wave <= 5) return ["goad", "bastion"];
-  return ["goad", "bastion", "bastion"];
-}
 
 /**
  * WHAT A TOWER RISING ON TRAIN WAVE `w` IS MADE OF — its health times this.
@@ -201,14 +222,17 @@ export function pylonsDue(wave: number): readonly UnitKind[] {
  * EVERY TOWER THAT RISES ON ONE WAVE IS THE SAME TOWER, and the next wave's
  * are tougher. That is the whole rule: a board that has answered the pair
  * on wave 4 is not told it has answered wave 6's, and a player reads the
- * difficulty off the wave number rather than off a health bar.
+ * difficulty off the wave number rather than off a health bar. It is the
+ * ONE thing about a buff tower the map does not decide — where and which
+ * and when are all on the mark now, and this is what stops "when" from
+ * being a free choice.
  *
  * IT IS GENTLER THAN THE TRAIN'S (WORM_RAMP_GROWTH, 1.35 compounding on
  * itself). A Borer is ONE body the whole board shoots for four minutes; a
- * tower is a thing that has to be knocked down again between trains, and a
- * curve that steep would go from "kill it each time" to "never kill it
- * again" inside two waves. 1.28 a wave puts wave 6 at a shade over three
- * times wave 1, which is a board keeping up, not a board locked out.
+ * tower is a thing the board has to go and knock down, and a curve that
+ * steep would go from "kill it" to "never kill it" inside two waves. 1.28
+ * a wave puts wave 6 at a shade over three times wave 1, which is a board
+ * keeping up, not a board locked out.
  */
 export const PYLON_RAMP_GROWTH = 1.28;
 export const pylonRamp = (wave: number): number =>
@@ -2486,44 +2510,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     unslowable: true,
   },
 
-  // THE BULWARK — the Warden that stands in front. A Tusker apex's pool
-  // and a Tusker apex's plating on a body that is not going anywhere: it
-  // holds the ground between your guns and the emplacement, and it is the
-  // reason a battery cannot simply be walked into range.
-  //
-  // IT CHARGES like the elephants do and for the same reason — its reach
-  // is tusks — but it is LEASHED (Sim.garrisonUnit): it will cross its
-  // post to get at a turret standing in it and it will never follow one
-  // home. A melee guard that chased the board back to the base would be a
-  // wave, and the swarm already has one of those.
-  bulwark: {
-    hp: 25000,
-    speed: 2.6 * CELL,
-    armor: 104,
-    radius: UR * 4,
-    tier: 5,
-    rotateSpeed: 1.6,
-    charge: { range: 22 * CELL },
-  },
-
-  // THE LANCE — the Warden that shoots over it. The Starlight apex's pool
-  // and the Starlight apex's bite (weapons.ts), on the quickest heavy body
-  // in the game: five tiles a second, which is twice the Bulwark and
-  // faster than anything else this size.
-  //
-  // THE PAIR IS THE WHOLE FACTION. One of them is a wall you cannot get
-  // past and the other is a gun you cannot get away from, and neither of
-  // them will leave the patch it was posted to — so a section is answered
-  // by out-ranging it or by paying for enough gun to go through it, and
-  // never by pulling it apart.
-  lance: {
-    hp: 17000,
-    speed: 5 * CELL,
-    armor: 14,
-    radius: UR * 2.25,
-    tier: 5,
-    rotateSpeed: 4.5,
-  },
 };
 
 /**
@@ -2743,9 +2729,8 @@ export const UNIT_TREES = [
   // ...and the siege's three, on the same terms: the emplacement the raze
   // mission plants and the two Wardens posted over it (RazeMission). The
   // Wardens are one row and NOT one upgrade path — the family has no
-  // tiers at all, so the two slots are two jobs rather than two rungs
+  // tiers at all, so the four slots are four jobs rather than four rungs
   { key: "railgun", name: RAZE_NAME, kinds: ["railgun"], objective: true },
-  { key: "warden", name: WARDEN_NAME, kinds: ["bulwark", "lance"], objective: true },
   // THE PYLONS — the two buff towers an intercept plants over its road
   // (missionMarks.ts, Sim.raiseMarkTowers). One row and not an upgrade
   // path: the two are two jobs, like the Wardens, and neither is a rung
@@ -2934,8 +2919,8 @@ export const FAMILIES = [
   { key: "air", name: FAMILY_NAMES.air.name, layer: "air", icon: "stoop1",
     kinds: ["stoop1", "stoop2", "stoop3", "stoop4", "stoop5"] },
   // THE SNIPERS: the whales — skate1, skate2, skate3, skate4, skate5 — and every
-  // gun on them is a HARPOON RAIL from beyond the board's reach (forty to
-  // eighty tiles). They crawl ashore (NAVAL_PACE, NAVAL_LAND_SPEED), the
+  // gun on them is a HARPOON RAIL from beyond most of the board's reach
+  // (forty-five to sixty-two tiles — the top of it level with a railhead). They crawl ashore (NAVAL_PACE, NAVAL_LAND_SPEED), the
   // skate3 is the spotter (the fleet reaches half again as far round it),
   // and the skate5's rail goes through everything on its line. What a hull
   // hits for is its row in weapons.ts, fixed: the fleet used to grow the
@@ -4294,42 +4279,42 @@ export interface LevelDoc {
 
 
 /**
- * THE RUN'S CLOCK, as authored: a wave every nineteen seconds, fifty of
- * them, each stronger than the last. The document
- * (public/levels/campaign.json) sets the gap; this is what a missing
- * document or a missing field plays.
+ * THE RUN'S CLOCK, as authored: TEN waves, one every 112.5 seconds. The
+ * document (public/levels/campaign.json) sets the gap; this is what a
+ * missing document or a missing field plays.
  *
- * NINETEEN IS A RUN LENGTH, not a feel. The cadence a run keeps is this
- * gap plus WAVE_RELEASE_SECONDS, and it is now the schedule ITSELF rather
- * than an average — wave n lands at WAVE_GAP_OPENING + (n-1) x cadence and
- * nothing about the board can move it (Sim.waveStartTime). So the script's
- * own clock is exactly WAVE_GAP_OPENING + 49 x 22.5 = 1,105s: at fifteen
- * that was 913s, a shade over fifteen minutes, and with the last wave's
- * walk and die on the end a mission came in around sixteen. A mission is
- * meant to be A TWENTY-MINUTE SITTING; nineteen puts the script at about
- * eighteen and a half minutes and the clear on the end of it at twenty.
+ * IT USED TO BE FIFTY WAVES EVERY 22.5s, and the change is a COMPRESSION
+ * and not a cut: five of those waves are summed into one of these, so the
+ * script still sends the same 50,000 bodies over the same ~1,125s of
+ * schedule. The 50-wave document it was folded from is kept verbatim at
+ * public/levels/legacy/campaign-50.json.
  *
- * THAT ARITHMETIC USED TO BE A LOWER BOUND. Waves were loaded one at a
- * time and the next one waited for the last to finish spawning, so a map
- * whose drop zones could not pass wave forty in 3.5 seconds ran LONGER
- * than the number above — by minutes, on a tight board at a high rung, and
- * with nothing on screen saying so.
+ * 109 IS A RUN LENGTH, not a feel. The cadence a run keeps is this gap
+ * plus WAVE_RELEASE_SECONDS, and it is the schedule ITSELF rather than an
+ * average — wave n lands at WAVE_GAP_OPENING + (n-1) x cadence and nothing
+ * about the board can move it (Sim.waveStartTime). So the script's own
+ * clock is exactly 112.5 + 9 x 112.5 = 1,125s, and with the last wave's
+ * walk and die on the end a mission comes in around twenty minutes, which
+ * is the sitting one is meant to be.
  *
- * IT IS ALSO THE DIFFICULTY DIAL NOBODY CALLS ONE. The gap is what decides
- * how much of a wave the board gets to itself before the next one lands,
- * so lengthening it hands every wave a quarter more uncontested fire and
- * thins the overlap the tide is made of. That softening is priced in here
- * on purpose — the alternative levers (a longer release, or more waves)
- * buy the same minutes and the counts are authored against this one.
+ * WHAT THE COMPRESSION ACTUALLY CHANGES IS THE SHAPE OF THE FIELD. A wave
+ * is five waves' worth of bodies released at count / WAVE_RELEASE_SECONDS,
+ * so it arrives as a PULSE the doors cannot pass in one breath — several
+ * waves' worth still releasing while the board fights the front of it
+ * (Sim.live) — and then the map empties before the next one. The tide used
+ * to be a steady overlap; it is a swell and a trough now, and the counts
+ * below are authored against that.
  */
-export const WAVE_GAP_DEFAULT = 19;
+export const WAVE_GAP_DEFAULT = 109;
 
 /**
- * The OPENING gap only, in seconds. Every later wave waits WAVE_GAP_DEFAULT
- * (or whatever the document sets); the first one lands almost at once, so a
- * run starts playing instead of watching an empty map count down.
+ * The OPENING gap only, in seconds — one full cadence, so wave 1 lands at
+ * 112.5s like every wave after it and the run opens on an even beat. It is
+ * a LONG opening: a board buys its first cards off the run clock
+ * (economy.ts) with nothing to shoot, and the first thing it meets is five
+ * waves at once.
  */
-export const WAVE_GAP_OPENING = 3;
+export const WAVE_GAP_OPENING = 112.5;
 
 /**
  * The documents as last loaded or saved, by world id — the raw counts the
@@ -4340,8 +4325,8 @@ export const WAVE_GAP_OPENING = 3;
 const docs = new Map<string, LevelDoc>();
 
 /**
- * THE ONE SCRIPT. Every map plays the same fifty waves — the document
- * under this id in public/levels — and then plays the last eleven of them
+ * THE ONE SCRIPT. Every map plays the same ten waves — the document
+ * under this id in public/levels — and then plays the last two of them
  * again, and again, heavier each time (Sim.loadStep). What makes one map
  * different from the next is its ground, its doors, the family roll the
  * deploy makes (rollFamilies) and, above all, its MISSION: the script is
@@ -4441,10 +4426,10 @@ export const WORLDS: LevelSpec[] = [
     // waves. Nothing is finished that way now, so it is an OBJECTIVE
     // instead (OBJECTIVE_KINDS) and a wave cannot send one at all.
     //
-    // FIFTY IS THE DOCUMENT'S LENGTH AND NOT THE RUN'S. The script does
-    // not end: past the fiftieth wave the last eleven go again, one
+    // TEN IS THE DOCUMENT'S LENGTH AND NOT THE RUN'S. The script does not
+    // end: past the tenth wave the last TIDE_CYCLE_WAVES go again, one
     // doubling of enemy health a cycle, forever (Sim.loadStep — the tide,
-    // LEVELS_PER_DOUBLING in ladder.ts). So THE LAST ELEVEN WAVES ARE THE
+    // LEVELS_PER_DOUBLING in ladder.ts). So THE LAST TWO WAVES ARE THE
     // ONES THAT GET PLAYED FOREVER — author that stretch as something that
     // stands repeating, because the endgame of every long run is it.
     //
@@ -4572,7 +4557,7 @@ export const WORLDS: LevelSpec[] = [
     //
     // THE GUARDS ARE NOT THE SIEGE'S ANY MORE. What holds the ground round
     // an emplacement is a `garrison` mark on the map (missionMarks.ts),
-    // drawn where an author wants it and manned on the waves they name —
+    // drawn where an author wants it and standing before the run opens —
     // and not one of those bodies will follow you home: they hold their
     // circle and nothing else (Sim.garrisonUnit). The ground is a PLACE
     // that has to be taken, which is the only way this game knows how to
@@ -4585,10 +4570,10 @@ export const WORLDS: LevelSpec[] = [
       // the fallback, for a raze map that places no railguns of its own:
       // four posts out of POST_SPECS with the guns rung round them
       sections: [
-        { post: 0, guns: 1, guards: { bulwark: 2, lance: 2 } },
-        { post: 1, guns: 2, guards: { bulwark: 4, lance: 4 } },
-        { post: 2, guns: 3, guards: { bulwark: 6, lance: 6 } },
-        { post: 3, guns: 4, guards: { bulwark: 8, lance: 8 } },
+        { post: 0, guns: 1, guards: {} },
+        { post: 1, guns: 2, guards: {} },
+        { post: 2, guns: 3, guards: {} },
+        { post: 3, guns: 4, guards: {} },
       ],
     },
     waveGap: WAVE_GAP_DEFAULT,

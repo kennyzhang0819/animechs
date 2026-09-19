@@ -138,6 +138,10 @@ import {
 } from "./hitbox";
 import {
   WORLDS,
+  ACTIVE_FAMILIES,
+  FAMILIES,
+  GARRISON_LEVELS,
+  type FamilyKey,
   missionProgress,
   missionTarget,
   razeGuns,
@@ -147,7 +151,6 @@ import {
   BASTION_CUT,
   GOAD_SPEED_MUL,
   pylonRamp,
-  pylonsDue,
   UNIT_ID,
   UNIT_KINDS as UNIT_KINDS_IMPORT,
   UNIT_STATS,
@@ -186,13 +189,14 @@ import { LEVELS_PER_DOUBLING, unitHpOnRung } from "./ladder";
  * so the script had to stop being able to run out underneath one. When the
  * cursor reaches the end and the mission is still open, THE LAST
  * TIDE_CYCLE_WAVES GO AGAIN, at TIDE_LEVELS more enemy level than the
- * cycle before: waves 40 to 50 of a fifty-wave script, then 40 to 50 at
+ * cycle before: waves 9 and 10 of a ten-wave script, then 9 and 10 at
  * double health, then at quadruple, then at eight times, with no ceiling.
  *
- * ELEVEN WAVES, NOT ONE. The tail of a script is its shape — a lull, a
- * spike, a boss — and a finale sent on a loop is a metronome. Replaying
+ * MORE THAN ONE WAVE, ON PURPOSE. The tail of a script is its shape — a
+ * lull, a spike — and a finale sent on a loop is a metronome. Replaying
  * the last stretch keeps the rhythm the author wrote, so the climb reads
- * as the same fight getting heavier rather than as a different game.
+ * as the same fight getting heavier rather than as a different game. Two
+ * is the same FIFTH of the document eleven was of the fifty-wave one.
  *
  * ONE DOUBLING A CYCLE (LEVELS_PER_DOUBLING) because the step has to be
  * felt. Three levels — about +19% — was the old survive-only ramp, and a
@@ -208,7 +212,7 @@ import { LEVELS_PER_DOUBLING, unitHpOnRung } from "./ladder";
  * changed is how long it takes to kill.
  */
 const TIDE_LEVELS = LEVELS_PER_DOUBLING;
-const TIDE_CYCLE_WAVES = 11;
+const TIDE_CYCLE_WAVES = 2;
 import {
   ARMORED_ARMOR,
   ARMORED_MAX_TIER,
@@ -258,7 +262,7 @@ import {
   VOLATILE_RADIUS,
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
-import { markKind } from "./missionMarks";
+import { markKind, markOpts, markTower } from "./missionMarks";
 import {
   garrisonsFor, levelWithMarks, postProblems, postsFor, roadAt, roadProblems, roadsFor,
   siegeFromMarks, type MarkGarrison, type MarkSiege, type Post, type Road,
@@ -316,6 +320,7 @@ import {
   type RGB,
   type Core,
   isCore,
+  isEnemyOnly,
   type Structure,
   type Tower,
   type TowerKind,
@@ -747,6 +752,11 @@ const DMG_NEITHER = 0;
  * list (constants.ts) and the electric bit is read off the ammo, because
  * `electric` on a bullet IS what makes that bullet electric.
  */
+/** was this building BORN the swarm's (types.ts ENEMY_ONLY_KINDS, an
+ *  author's emplacement) rather than taken from the player? The two are
+ *  targeted on different terms — see the pick in updateTowers */
+const builtEnemy = (s: Structure): boolean => !isCore(s) && isEnemyOnly(s.kind);
+
 const TOWER_NATURE: Record<TowerKind, number> = Object.fromEntries(
   TOWER_KINDS.map((k) => [
     k,
@@ -1530,18 +1540,16 @@ export class Sim {
   /** launches made, counting into the pattern and then the spare */
   private crossLaunched = 0;
   /**
-   * THE BUFF TOWER SPOTS THIS MAP CARRIES (missionMarks.ts MapMark,
-   * docs/mission-marks.md) — GROUND ONLY. Which tower rises and when is
-   * the schedule's (levels.ts pylonsDue); the map says where one MAY
-   * stand, and each train wave rolls its hand into the spots still free.
+   * THE BUFF TOWERS THIS MAP CARRIES (missionMarks.ts BUFF_TOWER,
+   * docs/mission-marks.md) — one entry a mark, carrying WHICH tower,
+   * WHERE, and WHICH TRAIN it is up for. Nothing here is rolled: train 3
+   * comes in under exactly the marks drawn for train 3.
    *
-   * A SPOT IS NOT A RISE. The list is read once at reset and never spent —
-   * a spot whose tower was knocked down is back in the draw, and one
-   * whose tower is still standing is skipped. So what an author places is
-   * ground the swarm keeps re-taking, and what the board buys by killing
-   * a tower is the waves until that spot comes up again.
+   * EACH ONE RISES ONCE. The list is read at reset and a mark is spent
+   * when its train comes round; a tower the board knocks down does not
+   * come back, so what a run pays to clear a leg of road it pays once.
    */
-  private towerSpots: { x: number; y: number }[] = [];
+  private towerSpots: { x: number; y: number; kind: UnitKind; wave: number }[] = [];
   /**
    * IS THE MISSION'S SECOND CLOCK DISARMED? — true once there is nothing
    * left to launch, ever (runCrossers).
@@ -1637,6 +1645,19 @@ export class Sim {
    * the swarm keeps re-taking.
    */
   private garrisons: readonly MarkGarrison[] = [];
+  /**
+   * WHICH FAMILY EACH GARRISON'S TIER COUNTS ARE MADE OF (MarkGarrison
+   * tiers) — one key per circle, rolled at reset out of the hand this
+   * deploy was dealt (LevelSpec.families) and kept for the whole run.
+   *
+   * ONE FAMILY A CIRCLE, AND THE SAME ONE EVERY TIME IT IS RE-MANNED. A
+   * garrison is a place with a force dug into it, and a force that came
+   * back as a different faction every few waves would be a respawn rather
+   * than a garrison — the player would have nothing to learn from taking
+   * it once. Rolled per CIRCLE and not per map so a board with three of
+   * them is three different problems.
+   */
+  private garrisonFamilies: FamilyKey[] = [];
   /** railguns destroyed — the mission's whole objective */
   razeKilled = 0;
   /** the posts this map carries (missions.ts), empty on every other map */
@@ -2647,9 +2668,13 @@ export class Sim {
     // same to the host's copy, off the same document
     const raze = this.level.mission.kind === "raze" ? this.level.mission : null;
     // THE GROUND THE SWARM HOLDS, whatever the mission: a map may draw a
-    // garrison on any board, and the waves each one names are when it is
-    // manned (runGarrisons)
+    // garrison on any board, and every one it draws is manned at the foot
+    // of this method (manGarrisons), once
     this.garrisons = garrisonsFor(this.terrain.marks);
+    {
+      const hand = this.level.families?.length ? this.level.families : ACTIVE_FAMILIES;
+      this.garrisonFamilies = this.garrisons.map(() => hand[(Math.random() * hand.length) | 0]);
+    }
     if (raze) {
       const siege = siegeFromMarks(this.terrain.marks);
       this.siege = siege;
@@ -2707,16 +2732,23 @@ export class Sim {
     // THE BUFF TOWERS AN AUTHOR PLACED, if this mission understands them
     // (missionMarks.ts). It is read HERE and not up with the rest of the
     // mission reset because the marks come off the terrain, and the board
-    // is not loaded until this line. Where each one stands is the map's and
-    // WHEN it rises is the number on that mark; nothing is put down yet —
-    // runCrossers spends the list as the trains go out
-    if (this.level.mission.kind === "intercept")
+    // is not loaded until this line. Which tower, where and on which train
+    // are all on the mark; nothing is put down yet — runCrossers spends
+    // the list as the trains go out
+    const towerKind = markKind("buffTower");
+    if (this.level.mission.kind === "intercept" && towerKind)
       for (const mk of this.terrain.marks) {
         if (mk.kind !== "buffTower") continue;
+        const o = markOpts(towerKind, mk.opts);
         // the mark's top-left cell is a footprint corner; a body stands at
         // the middle of the square an author drew
         const half = (MARK_TOWER_SIZE * CELL) / 2;
-        this.towerSpots.push({ x: mk.x * CELL + half, y: mk.y * CELL + half });
+        this.towerSpots.push({
+          x: mk.x * CELL + half,
+          y: mk.y * CELL + half,
+          kind: o.unit as UnitKind,
+          wave: Number(o.wave),
+        });
       }
     // the Hydrophobic mask needs the terrain, so it is built here rather
     // than up with the other rules — and only where the rule is in force
@@ -2836,6 +2868,85 @@ export class Sim {
         );
     this.stageScript();
     this.aliveByKind.fill(0);
+    // ...AND THE GROUND THE SWARM ALREADY HOLDS, last, because the bodies
+    // it puts down are real bodies: the census above has to be zeroed
+    // before they are counted, and clearNear needs the field solved a few
+    // lines up
+    this.manGarrisons();
+    this.raiseEmplacements();
+  }
+
+  /**
+   * THE SWARM'S TURRETS, WHERE AN AUTHOR PUT THEM (missionMarks.ts
+   * EMPLACEMENT) — up before the run starts and never put up again, the
+   * same terms a garrison is on.
+   *
+   * IT IS A PLACEMENT LIKE ANY OTHER, on the swarm's side: the record goes
+   * in `towers`, it claims its cells (claimGround), and then it is handed
+   * the team — so everything that already knows what an enemy turret is
+   * (Conquest, Sim.conquerTower) knows what these are, and nothing needed
+   * a second kind of building to be invented for them.
+   *
+   * A MARK IN ROCK OR OVER THE CORE IS SKIPPED, not walked clear: where a
+   * gun stands is a decision an author made looking at the map, and the
+   * editor is where a bad one is caught (npm run check says so).
+   */
+  private raiseEmplacements(): void {
+    for (const mk of this.terrain.marks) {
+      if (mk.kind !== "emplacement") continue;
+      const kind = markTower(mk);
+      if (!kind) continue;
+      const sz = structStats(kind).size;
+      // the mark's square is four cells and a turret's footprint is its
+      // own, so it stands in the MIDDLE of what the author drew
+      const size = markKind("emplacement")?.size ?? sz;
+      const gx = mk.x + ((size - sz) >> 1), gy = mk.y + ((size - sz) >> 1);
+      // NOT canPlace: that is the PLAYER's question and it asks about
+      // power, tech and spawn tiles, none of which the swarm is under.
+      // What is left is the ground itself — on the board, not rock, and
+      // not already somebody's
+      if (gx < 0 || gy < 0 || gx + sz > COLS || gy + sz > ROWS) continue;
+      let free = true;
+      for (let y = gy; y < gy + sz && free; y++)
+        for (let x = gx; x < gx + sz && free; x++) {
+          const i = y * COLS + x;
+          if (this.terrain.blocked[i] || this.occupied[i]) free = false;
+        }
+      if (!free) continue;
+      this.addTower(gx, gy, kind, sz, 0);
+      this.enemyTower(this.towers[this.towers.length - 1]);
+    }
+  }
+
+  /**
+   * HAND A BUILDING TO THE SWARM at birth (raiseEmplacements). Conquest
+   * does the same thing to a turret it takes (conquerTower) and this is
+   * the half of it that is about SIDES rather than about a turret
+   * changing hands: no health cut, no rate cut, no revives handed back,
+   * because none of that is what an author placing a gun asked for.
+   *
+   * IT GIVES THE GROUND BACK TO THE PATH, exactly as a conquest does and
+   * for exactly the same reason: the swarm will not shoot its own, so a
+   * building of theirs that blocked a route is a route nothing ever walks
+   * again. It keeps its cells in the structure grid — shots collide with
+   * it and nothing may be built over it — and loses only the wall.
+   */
+  private enemyTower(t: Tower): void {
+    t.team = "enemy";
+    this.enemyTowers++;
+    t.angle = Math.atan2(this.core.y - t.y, this.core.x - t.x);
+    const { blocked } = this.terrain;
+    for (let y = t.gy; y < t.gy + t.size; y++)
+      for (let x = t.gx; x < t.gx + t.size; x++) {
+        const i = y * COLS + x;
+        if (blocked[i]) continue;
+        this.field.walk[i] = 0;
+        this.field.soft[i] = 0;
+        this.navalField.walk[i] = 0;
+        this.navalField.soft[i] = 0;
+      }
+    this.fieldDirty = true;
+    this.navalDirty = true;
   }
 
   loadLevel(spec: LevelSpec): void {
@@ -4835,13 +4946,15 @@ export class Sim {
    * it — which wave is current, how long until the next, where a skip
    * lands, when the tide turns.
    *
-   * The opening is the one irregular gap: WAVE_GAP_OPENING rather than the
-   * full one, so a run does not open on an empty map for twenty seconds.
-   * (Capped by the level's own gap, so a level authored with a short gap
-   * does not get a LONGER opening than its cadence.)
+   * The opening may be its own gap (WAVE_GAP_OPENING), capped by the
+   * CADENCE so a level authored with a short gap never gets a longer
+   * opening than the beat it then keeps. The cap used to be the level's
+   * bare `waveGap`, which is the same number minus a release and silently
+   * disagreed with ladder.ts waveEndsAt whenever the opening was a full
+   * cadence.
    */
   waveStartTime(n: number): number {
-    const open = Math.min(WAVE_GAP_OPENING, Math.max(0, this.level.waveGap));
+    const open = Math.min(WAVE_GAP_OPENING, this.waveCadence);
     return open + (Math.max(1, n) - 1) * this.waveCadence;
   }
 
@@ -4900,7 +5013,6 @@ export class Sim {
       // ...and staging it pays NOTHING. It used to pay a bonus here; every
       // scrap comes off the swarm now (economy.ts)
       this.live.push({ wave: this.wavesStarted, entries, rate: waveSpawnRate(total), acc: 0 });
-      this.manGarrisons(this.wavesStarted);
       return true;
     }
     // THE SCRIPT IS SPENT, AND THE TIDE TURNS (see TIDE_LEVELS at the top
@@ -5321,15 +5433,21 @@ export class Sim {
    * reported nowhere.
    */
   /**
-   * THE TOWERS DUE ON THIS TRAIN WAVE (levels.ts pylonsDue), ROLLED into
-   * the spots an author placed (missionMarks.ts). Bolted to the ground
-   * like an emplacement is (plantUnit) and pointing at the core, which is
-   * the only heading a body that never turns can be given.
+   * THE TOWERS DRAWN FOR THIS TRAIN WAVE, PUT UP (missionMarks.ts
+   * BUFF_TOWER). Bolted to the ground like an emplacement is (plantUnit)
+   * and pointing at the core, which is the only heading a body that never
+   * turns can be given.
    *
-   * FREE GROUND FIRST, and only free ground: a spot still holding a tower
-   * is out of the draw, so the board's reward for killing one is that the
-   * ground it held can come up again. A hand with more towers in it than
-   * there are free spots simply places what fits.
+   * NOTHING IS ROLLED. Every mark names its tower and its train, so the
+   * same map plays the same way every run and an author can say "the
+   * third train comes in under two Bastions on the north leg" and have it
+   * be true. It used to shuffle a hand from a schedule into whichever
+   * spots were free, which meant the one thing a player could have
+   * learned from a run — where the tax is — was re-rolled behind them.
+   *
+   * THE GUARD IS FOR OVERLAPPING MARKS and nothing else: two towers on
+   * one cell would stack invisibly, and a mark already holding a live
+   * body is skipped.
    *
    * IT DOES NOT clearNear. A raze section is rung round a post by the sim
    * and may land its geometry on a boulder, so it walks for open ground; a
@@ -5339,17 +5457,9 @@ export class Sim {
    * an authoring mistake and the editor is where it is caught.
    */
   private raiseMarkTowers(wave: number): void {
-    const due = pylonsDue(wave);
-    if (due.length === 0) return;
-    const free = this.towerSpots.filter((t) => !this.towerStanding(t.x, t.y));
-    for (let k = free.length - 1; k > 0; k--) {
-      const j = (Math.random() * (k + 1)) | 0;
-      [free[k], free[j]] = [free[j], free[k]];
-    }
-    for (const kind of due) {
-      const t = free.pop();
-      if (!t) return;
-      if (!this.spawnUnit(kind, { x: t.x, y: t.y, exact: true }, 0)) continue;
+    for (const t of this.towerSpots) {
+      if (t.wave !== wave || this.towerStanding(t.x, t.y)) continue;
+      if (!this.spawnUnit(t.kind, { x: t.x, y: t.y, exact: true }, 0)) continue;
       const i = this.n - 1;
       this.plantUnit(i);
       // ...AND IT IS MADE OF THE WAVE IT ROSE ON (levels.ts pylonRamp), so
@@ -5427,30 +5537,65 @@ export class Sim {
   }
 
   /**
-   * EVERY GARRISON DUE ON THIS WAVE, MANNED (missions.ts garrisonsFor).
+   * EVERY GARRISON THE MAP CARRIES, MANNED, ONCE (missions.ts
+   * garrisonsFor) — at reset, before the clock starts.
    *
-   * A GARRISON WITH ITS BODIES STILL STANDING DOES NOTHING — not a second
-   * force stacked on the first, and not a top-up of the one holding. The
-   * board's reward for clearing a garrison is the waves before the next,
-   * and refilling it would take that away without showing the player why.
-   * It is the buff towers' rule (raiseMarkTowers) and it is the same rule
-   * because it answers the same question.
+   * THEY ARE ALREADY THERE. A garrison is not a thing that arrives: it is
+   * ground the swarm HOLDS when the run opens, which is why the board
+   * rings it from the first frame and why nothing about it is on a
+   * schedule. It used to man on a wave list and refill on the next wave
+   * it named, and that made a dug-in force into a respawn — a board that
+   * had paid to take a post watched it come back, and the reward for the
+   * work was a countdown nobody could see.
+   *
+   * SO CLEARING ONE IS PERMANENT, and that is the whole of the trade:
+   * what the ground costs is paid once and what it buys is kept.
    */
-  private manGarrisons(wave: number): void {
-    for (const g of this.garrisons) {
-      if (!g.waves.includes(wave)) continue;
-      if (this.garrisonHeld(g.post)) continue;
-      this.raiseGarrison(g.post, g.guards);
-    }
+  private manGarrisons(): void {
+    for (const [i, g] of this.garrisons.entries())
+      this.raiseGarrison(g.post, this.garrisonRoster(i));
   }
 
-  /** is anything still holding this ground? — a live body leashed to it */
-  private garrisonHeld(post: Post): boolean {
+  /**
+   * ONE GARRISON'S WHOLE ROSTER: its rung's tier counts (levels.ts
+   * GARRISON_LEVELS) cast into the family this circle rolled
+   * (garrisonFamilies). Ordinary swarm and nothing else — a gun over the
+   * ground is an emplacement an author placed, not part of the circle.
+   */
+  private garrisonRoster(i: number): Partial<Record<UnitKind, number>> {
+    const rung = GARRISON_LEVELS[clamp(this.garrisons[i].level, 1, GARRISON_LEVELS.length) - 1];
+    const out: Partial<Record<UnitKind, number>> = {};
+    const fam = FAMILIES.find((f) => f.key === this.garrisonFamilies[i]);
+    if (fam)
+      for (let t = 0; t < rung.tiers.length; t++) {
+        const kind = fam.kinds[t];
+        if (!kind || rung.tiers[t] <= 0) continue;
+        out[kind] = (out[kind] ?? 0) + rung.tiers[t];
+      }
+    return out;
+  }
+
+  /**
+   * WHICH CIRCLES ARE STILL HELD, as one bit each (simreport.ts
+   * GARRISON_HELD) — the same question manGarrisons asks, answered for
+   * the overlay that rings them.
+   *
+   * IT IS READ OFF THE LEASH AND NOT OFF THE KIND. The board used to test
+   * "is a Warden standing in there", which worked only while a garrison
+   * was made of bodies no wave could send; a circle manned with ordinary
+   * swarm (MarkGarrison.tiers) would be lit by the first wave that walked
+   * through it.
+   */
+  garrisonHeldMask(): number {
+    let mask = 0;
     for (let i = 0; i < this.n; i++) {
       if (this.ugar[i] !== 1 || this.uhp[i] <= 0) continue;
-      if (this.ugarx[i] === post.x && this.ugary[i] === post.y) return true;
+      for (let r = 0; r < this.garrisons.length && r < 30; r++) {
+        const post = this.garrisons[r].post;
+        if (this.ugarx[i] === post.x && this.ugary[i] === post.y) mask |= 1 << r;
+      }
     }
-    return false;
+    return mask;
   }
 
   /** the garrison of one region, scattered inside it and leashed to it */
@@ -11143,7 +11288,7 @@ export class Sim {
 
       // the spot holds — raise it. BOTH POOLS ARE SET BY THE WAVE IT RISES
       // ON and fixed there for the rest of the run (shieldTowerWaveScale:
-      // ten per cent a wave, compounding), then multiplied by the run's
+      // compounding a wave), then multiplied by the run's
       // shield multiplier, so a shield tower rolled alongside Overshields
       // is the five-times obstacle that rule promises everywhere else.
       // Nothing re-reads the wave afterwards — an old shield tower left
@@ -12244,20 +12389,34 @@ export class Sim {
           const si = this.idleShieldTowerFor(t, r2t);
           if (si >= 0) shr = this.shieldTowers[si];
         }
-        // ...AND THE SWARM'S CONQUERED TURRETS THE SAME WAY (Conquest):
-        // only a turret with nothing else in range spends its reload on
-        // one unforced, so taking a lost emplacement back down costs time
-        // between waves and never mid-wave DPS. The held building is kept
-        // between scans for the same reason the swarm's gun keeps its:
-        // finding one is a ring walk over the board
-        if (best < 0 && !shr && st.targetGround && this.enemyTowers > 0) {
-          const heldT = t.aimTower;
-          if (heldT && teamOf(heldT) === "enemy" && this.inReach(heldT, t.x, t.y, st.range))
-            aimT = heldT;
-          else if (scan) aimT = this.nearestStructure(t.x, t.y, st.range, false, "enemy");
+        // ...AND THE SWARM'S TURRETS. There are two kinds of those and
+        // they are not the same question.
+        //
+        // A CONQUERED TURRET IS IDLE WORK (Conquest): it was the player's
+        // a moment ago, taking it back is the board undoing a loss, and
+        // only a gun with nothing else in range spends its reload on one
+        // — so that costs time between waves and never mid-wave DPS.
+        //
+        // AN AUTHOR'S EMPLACEMENT IS A TARGET LIKE A BODY (missionMarks.ts
+        // EMPLACEMENT). It is the thing the run came over here to take
+        // down, and a gun that refused to fire on it for as long as any
+        // wave was on the field would be a gun the player watched stand
+        // idle in front of the objective. So it is picked BEFORE the idle
+        // gate and beside the bodies, losing only to a body actually
+        // found this tick.
+        const heldT = t.aimTower;
+        if (st.targetGround && this.enemyTowers > 0) {
+          const idleOnly = best >= 0 || shr;
+          if (heldT && teamOf(heldT) === "enemy" && this.inReach(heldT, t.x, t.y, st.range)) {
+            if (!idleOnly || builtEnemy(heldT)) aimT = heldT;
+          } else if (scan) {
+            const found = this.nearestStructure(t.x, t.y, st.range, false, "enemy");
+            if (found && (!idleOnly || builtEnemy(found))) aimT = found;
+          }
         }
-        // whatever was held loses to a body or a dome found this tick
-        if (best >= 0 || shr) aimT = null;
+        // a body found this tick beats a turret the swarm merely TOOK,
+        // and never beats one it was built with
+        if ((best >= 0 || shr) && aimT && !builtEnemy(aimT)) aimT = null;
       }
       t.targetIdx = best;
       t.aimShieldTower = shr ? this.shieldTowers.indexOf(shr) : -1;

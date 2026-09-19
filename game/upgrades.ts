@@ -1044,6 +1044,13 @@ export const TURRET_UPGRADES: Record<TowerKind, readonly TurretUpgradeDef[]> = {
   blighter: [],
   drifter: [],
   stinger: [],
+  // THE GARRISON'S GUNS TAKE NO RUNGS (types.ts ENEMY_ONLY_KINDS): an
+  // upgrade is something a run buys for a turret it owns, and no run owns
+  // one of these
+  bulwark: [],
+  lance: [],
+  halberd: [],
+  juggernaut: [],
 };
 
 /** every upgrade def, flat — what tech.ts turns into nodes */

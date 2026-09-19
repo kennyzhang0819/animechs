@@ -40,6 +40,13 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   blighter: `${T}/hail.png`,
   drifter: `${T}/tsunami.png`,
   stinger: `${T}/salvo/salvo-preview.png`,
+  // the garrison's four are DRAWN (wardenArt.ts) and have no upstream
+  // block behind them, so with the art flag off they borrow a face the
+  // way the toxin line does
+  bulwark: `${T}/fuse.png`,
+  lance: `${T}/lancer.png`,
+  halberd: `${T}/hail.png`,
+  juggernaut: `${T}/spectre.png`,
 };
 
 export const structIcon = (kind: TowerKind): string => TOWER_ICONS[kind];

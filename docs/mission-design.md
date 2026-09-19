@@ -188,9 +188,9 @@ What the archetype turned out to need, and what each piece is answering:
   ring is a shape where a position is a decision about cover and approach.
 - **AND THE GARRISON IS NOT THE MISSION'S.** What holds the ground round
   them is a `garrison` mark, which any map may draw under any mission: a
-  circle, the waves it is manned on, and what stands in it. The siege no
-  longer owns it, which is why a board with no railguns on it at all can
-  still have ground the swarm is dug into.
+  circle and what stands in it, up from the first frame and never manned
+  again. The siege no longer owns it, which is why a board with no
+  railguns on it at all can still have ground the swarm is dug into.
 - **THE POSTS ARE ON SCREEN FROM WAVE ONE**, empty, with the number of
   emplacements that will rise in each and a dial on the ring counting down
   to the minute they do (`Game.drawMissionPosts`). No fog means no

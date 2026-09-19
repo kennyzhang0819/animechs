@@ -1,10 +1,11 @@
 /**
- * THE SIEGE'S THREE MACHINES — the railgun and the two Wardens posted over
- * it (levels.ts `railgun`, `bulwark`, `lance`; RazeMission).
+ * THE SIEGE'S MACHINES — the railgun and the four Wardens a garrison is
+ * manned with (levels.ts `railgun`, `bulwark`, `lance`, `halberd`,
+ * `juggernaut`; missionMarks.ts GARRISON).
  *
  * THEY ARE NOT ANIMALS, AND THAT IS THE POINT. Nine of the roster's lines
  * are a herd of something with five sizes of it, drawn under the animal
- * flag (animalFlag.ts); these three are MACHINERY, like the Borer and like
+ * flag (animalFlag.ts); these are MACHINERY, like the Borer and like
  * the turrets the player buys. A body that walks at your core is alive
  * here, and a body that was BUILT and left standing on a patch of ground
  * is not — a player should be able to tell a garrison from a wave at field
@@ -18,11 +19,12 @@
  * side's legs that the renderer rows fore and aft against their mirror
  * image. Every material is a dark/light PAIR split at the midline, the
  * left half is drawn and mirrored, nothing is under four pixels, and each
- * body is laid out AT ITS HITBOX on 32 native px a tile — 112, 128 and 72,
- * which is UR x 3.5 / 4 / 2.25 (levels.ts UNIT_STATS).
+ * body is laid out AT ITS HITBOX on 32 native px a tile — 112, 128, 72,
+ * 160 and 256, which is UR x 3.5 / 4 / 2.25 / 5 / 8 (levels.ts
+ * UNIT_STATS).
  *
- * THE ACCENT IS THE SWARM'S CRUX, not a family colour, because none of the
- * three is in a family: the garrison wears the red the Sovereign wears
+ * THE ACCENT IS THE SWARM'S CRUX, not a family colour, because none of
+ * them is in a family: the garrison wears the red the Sovereign wears
  * (levels.ts FAMILY_ACCENT names nine families and these are in none of
  * them), and the `cell` each drawing returns is the mask of exactly that
  * material, which is what the renderer tints per team.
@@ -44,6 +46,14 @@
  *             swept fins behind. It should read as the SMALL FAST ONE at
  *             any zoom, which on this grid means long and thin against the
  *             other two's squares.
+ *   HALBERD   a mortar deck. A squat hull with ONE short fat bore up the
+ *             middle and an arc pod out on each shoulder, so the two
+ *             things it does are both on the silhouette. Wide and stubby
+ *             where the Lance is long and thin.
+ *   JUGGERNAUT a block. The biggest thing the garrison stands up and the
+ *             only one whose outline is meant to be boring: a slab with a
+ *             barbette on it, treads down both flanks and a prow. Nothing
+ *             about it is quick, and the drawing says so by being square.
  */
 import type { MechParts } from "./animalArt";
 import { scaler } from "./ironhideArt";
@@ -72,10 +82,12 @@ export interface WardenTier {
   n: number;
   stride: number;
 }
-/** the three, in the order the mission puts them down */
+/** the five, in the order the mission puts them down */
 export const RAZE_TIER: WardenTier = { n: 112, stride: 0 };
 export const BULWARK_TIER: WardenTier = { n: 128, stride: 9 };
 export const LANCE_TIER: WardenTier = { n: 72, stride: 6 };
+export const HALBERD_TIER: WardenTier = { n: 160, stride: 10 };
+export const JUGGERNAUT_TIER: WardenTier = { n: 256, stride: 13 };
 
 // ── the railgun ────────────────────────────────────────────────────────
 //
@@ -273,6 +285,141 @@ export function lanceMech(T: WardenTier = LANCE_TIER): MechParts {
     body: art,
     base: draw(T.n, (P) => lanceBase(P, T)),
     leg: draw(T.n, (P) => lanceSkids(P, T), false),
+    cell,
+    stride: T.stride,
+  };
+}
+
+// ── the Halberd ────────────────────────────────────────────────────────
+//
+// A MORTAR DECK, and the first body in the garrison that does two things.
+// Both of them are on the silhouette on purpose: one short fat bore up
+// the middle for the shell, an arc pod out on each shoulder for the
+// discharge — so a player who has watched it once can tell from the
+// outline which of the two is about to happen to them.
+//
+// THE BORE IS WIDE AND SHORT, which is the whole distance between this
+// and the Lance. A long thin tube is a thing that shoots ACROSS; a stubby
+// mouth with a thick collar is a thing that lobs, and the shell goes over
+// the Bulwark standing in front of it.
+function halberdBody(P: Pen, T: WardenTier): void {
+  const { n } = T;
+  const { q, w } = scaler(n);
+  const c = n / 2;
+  P.octa(q(3), q(9), n - q(3), n - q(2), w(7), ARMOUR);
+  P.octa(q(9), q(2), n - q(9), q(14), w(5), ARMOUR);
+  P.box(q(4), q(17), n - q(4), q(17) + w(5), ARMOUR_R);
+  P.box(q(5), n - q(10), n - q(5), n - q(10) + w(4), ARMOUR_R);
+  // the spine is GUNMETAL ALL THE WAY. A steel rib up the middle joined
+  // the mouth into one pale stripe and the body read as a long emitter,
+  // which is the Lance's silhouette and the one this must not have
+  P.box(c - w(5), q(11), c + w(5), q(24), GUN);
+  // THE MOUTH: a short fat bore in a gunmetal collar, and the only pale
+  // thing on the body
+  P.box(c - w(7), q(2), c + w(7), q(11), GUN);
+  P.box(c - w(5), q(3), c + w(5), q(9), STEEL);
+  P.box(c - w(4), q(3), c + w(4), q(7), BORE);
+  // the arc pods, out past the hull, each with a crimson coil across it
+  P.box(q(1), q(14), q(1) + w(7), q(23), GUN);
+  P.box(q(1), q(16), q(1) + w(7), q(16) + w(4), CRUX);
+  P.box(q(1), q(16), q(1) + w(7), q(16) + w(2), rev(CRUX));
+  P.octa(q(8), n - q(9), n - q(8), n - q(3), w(4), GUN);
+  bars(P, q(11), n - q(11), n - q(8), 3, w(3), w(2));
+}
+function halberdBase(P: Pen, T: WardenTier): void {
+  const { n } = T;
+  const { q, w } = scaler(n);
+  P.octa(q(2), q(8), n - q(2), n - q(1), w(7), GUN);
+}
+/** the jacks: two short outriggers down the near flank, which is what a
+ *  body that plants itself to fire walks on */
+function halberdJacks(P: Pen, T: WardenTier): void {
+  const { n } = T;
+  const { q, w } = scaler(n);
+  for (const y of [q(12), q(22)]) {
+    P.box(0, y, w(8), y + w(7), ARMOUR);
+    P.box(0, y + w(7) - w(3), w(8), y + w(7), BORE);
+  }
+}
+export function halberdMech(T: WardenTier = HALBERD_TIER): MechParts {
+  const { art, cell } = drawWithCell(T.n, (P) => halberdBody(P, T), CRUX);
+  return {
+    body: art,
+    base: draw(T.n, (P) => halberdBase(P, T)),
+    leg: draw(T.n, (P) => halberdJacks(P, T), false),
+    cell,
+    stride: T.stride,
+  };
+}
+
+// ── the Juggernaut ─────────────────────────────────────────────────────
+//
+// A BLOCK, and the only drawing in the game whose outline is meant to be
+// boring. Everything else on the sheet is shaped so it can be told apart
+// at field zoom from the things near it; this one is told apart by being
+// TWICE THE SIZE OF ANYTHING STANDING WITH IT, and any cleverness in the
+// silhouette would only cost it that.
+//
+// THE PROW IS ONE SPIKE AND NOT TWO. The Bulwark's note says why — pale
+// blocks at the corners of a dark slab are eyes — and a body this wide
+// would wear that mistake at any zoom. So the nose is a bar of bore with
+// a single steel ram out of the middle of it.
+function juggernautBody(P: Pen, T: WardenTier): void {
+  const { n } = T;
+  const { q, w } = scaler(n);
+  const c = n / 2;
+  // the hull: a LONG slab and not a round one. It is narrower than the
+  // grid on purpose — the treads have the flanks, and a body this size
+  // drawn out to the corners is a hexagon rather than a tank
+  P.octa(c - w(11), q(7), c + w(11), n - q(1), w(7), ARMOUR);
+  // the casemate the gun sits in, in front of the hull
+  P.octa(c - w(8), q(3), c + w(8), q(15), w(5), ARMOUR);
+  P.box(c - w(11), q(18), c + w(11), q(18) + w(4), ARMOUR_R);
+  P.box(c - w(11), n - q(10), c + w(11), n - q(10) + w(4), ARMOUR_R);
+  // THE MOUTH — one fat barrel up the middle, and the whole reason the
+  // nose is not a flat edge. ONE and not two: a pair of pale stubs at the
+  // front of a dark slab this wide is a face at any zoom (see the
+  // Bulwark's ram), and one wide muzzle is what throws a fan anyway
+  P.box(c - w(6), 0, c + w(6), q(10), STEEL);
+  P.box(c - w(6), 0, c + w(6), w(4), GUN);
+  P.box(c - w(4), 0, c + w(4), w(4), BORE);
+  // the mantlet it runs back into, and the spine down the deck behind it
+  P.box(c - w(7), q(9), c + w(7), q(9) + w(3), GUN);
+  P.box(c - w(2), q(13), c + w(2), q(24), GUN);
+  // THE FURNACE: the crimson band across the deck, low and well off the
+  // nose, where the eye lands second. It is NARROW — a bright band as
+  // wide as a body this size is a mouth, whatever it was drawn as
+  P.box(c - w(5), q(22), c + w(5), q(22) + w(3), CRUX);
+  P.box(c - w(5), q(22), c + w(5), q(22) + w(2), rev(CRUX));
+  // the sponsons: a gunmetal rail down each flank, banded
+  P.box(q(4), q(15), q(4) + w(3), n - q(8), GUN);
+  bars(P, q(4), q(4) + w(3), q(17), 5, w(2), w(3));
+  P.octa(c - w(8), n - q(8), c + w(8), n - q(3), w(4), GUN);
+  bars(P, c - w(6), c + w(6), n - q(7), 2, w(2), w(2));
+}
+function juggernautBase(P: Pen, T: WardenTier): void {
+  const { n } = T;
+  const { q, w } = scaler(n);
+  const c = n / 2;
+  // pulled in to the hull's own width, not the grid's: the hull is narrow
+  // for its box (juggernautBody) and a plate out to the corners would put
+  // a pale rim round a body whose whole read is a dark slab
+  P.octa(c - w(12), q(6), c + w(12), n - q(1), w(8), GUN);
+}
+/** the treads: the Bulwark's, run the whole length of a much longer body
+ *  and banded twice as often, so the walk still reads at this size */
+function juggernautTreads(P: Pen, T: WardenTier): void {
+  const { n } = T;
+  const { q, w } = scaler(n);
+  P.box(0, q(6), w(8), n - q(2), ARMOUR);
+  bars(P, 0, w(8), q(8), 6, w(2), w(2), BORE);
+}
+export function juggernautMech(T: WardenTier = JUGGERNAUT_TIER): MechParts {
+  const { art, cell } = drawWithCell(T.n, (P) => juggernautBody(P, T), CRUX);
+  return {
+    body: art,
+    base: draw(T.n, (P) => juggernautBase(P, T)),
+    leg: draw(T.n, (P) => juggernautTreads(P, T), false),
     cell,
     stride: T.stride,
   };

@@ -6,7 +6,7 @@ The rules a high tier is played under are `docs/mutators.md`; what a run earns i
 
 ## What a tier is
 
-**Every tier plays the whole authored script** — all fifty waves, the same fifty every
+**Every tier plays the whole authored script** — all ten waves, the same ten every
 time, and **every body at the same health but one**. What changes is how many come and
 what rules they come under.
 

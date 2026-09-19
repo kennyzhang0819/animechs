@@ -1257,13 +1257,15 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // "rail") — an instant line the length of its reach, in the fleet's
   // teal (railColor), that hits what it was aimed at and nothing
   // else, except the skate5's, which PIERCES everything on the line. And
-  // every tier has INSANE REACH: a skate1 harpoons from FIFTY tiles, past
-  // every gun on the board but the railhead (sixty-two), and a skate5
-  // from NINETY, past that too. The line used to be copper, flak,
-  // missiles and artillery at the walkers' reaches; it is the SNIPER
-  // family now — and the reach has to clear the long guns, or it is a
-  // slow family standing inside a barrage's range for its whole crawl in
-  // (the first cut, at forty tiles, was a walkover for the headless bot).
+  // every tier still opens first: a skate1 harpoons from FORTY-FIVE tiles,
+  // past every gun on the board but the railhead, and the line tops out at
+  // SIXTY-TWO — dead level with the railhead rather than past it. The line
+  // used to be copper, flak, missiles and artillery at the walkers'
+  // reaches; it is the SNIPER family now — and the reach has to clear the
+  // long guns, or it is a slow family standing inside a barrage's range
+  // for its whole crawl in (the first cut, at forty tiles FLAT, was a
+  // walkover for the headless bot). What the ramp may no longer do is put
+  // the apex beyond every answer on the board.
   //
   // WHAT IT POSES: it opens fire long before anything can answer, from a
   // hull that crawls ashore (levels.ts NAVAL_PACE, NAVAL_LAND_SPEED). The
@@ -1288,29 +1290,29 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // best, hulls reaching the x3 cap — went from 14,996 damage to 7,278;
   // against a board that actually shoots back the two are far closer.
   skate1: [
-    { name: "skate1-harpoon", reload: t(90), mounts: 1, damage: 13, range: u(400), speed: 0, fx: "rail", railColor: PAL.harpoon },
+    { name: "skate1-harpoon", reload: t(90), mounts: 1, damage: 13, range: u(360), speed: 0, fx: "rail", railColor: PAL.harpoon },
   ],
   skate2: [
-    { name: "skate2-harpoon", reload: t(75), mounts: 2, damage: 24, range: u(440), speed: 0, fx: "rail", railColor: PAL.harpoon },
+    { name: "skate2-harpoon", reload: t(75), mounts: 2, damage: 24, range: u(390), speed: 0, fx: "rail", railColor: PAL.harpoon },
   ],
   // THE SPOTTER (levels.ts spotterField) — its own harpoon is the
   // middling one; what it does is make every hull round it reach half
   // again as far
   skate3: [
-    { name: "skate3-harpoon", reload: t(75), mounts: 1, damage: 60, range: u(480), speed: 0, fx: "rail", railColor: PAL.harpoon },
+    { name: "skate3-harpoon", reload: t(75), mounts: 1, damage: 60, range: u(420), speed: 0, fx: "rail", railColor: PAL.harpoon },
   ],
   // THE HEAVIEST OF THE FOUR SMALL RAILS, and the fleet's only other
   // two-mount gun. It was the DRILL (levels.ts drillField) — the hulls
   // round it aged two and a half times as fast — and that went out with
   // the veterancy it ran
   skate4: [
-    { name: "skate4-harpoon", reload: t(60), mounts: 2, damage: 107, range: u(560), speed: 0, fx: "rail", railColor: PAL.harpoon },
+    { name: "skate4-harpoon", reload: t(60), mounts: 2, damage: 107, range: u(460), speed: 0, fx: "rail", railColor: PAL.harpoon },
   ],
   // skate5-cannon, as upstream has it: RailBulletType, and it goes THROUGH
   // — every structure on its eighty-tile line takes the hit
   // (UnitWeapon.pierce). upstream damage 1250, length 500
   skate5: [
-    { name: "skate5-cannon", reload: t(120), mounts: 1, damage: 600, range: u(720), speed: 0, fx: "rail", pierce: true, railColor: PAL.harpoon },
+    { name: "skate5-cannon", reload: t(120), mounts: 1, damage: 600, range: u(500), speed: 0, fx: "rail", pierce: true, railColor: PAL.harpoon },
   ],
 
   // ---- THE WRAITH FLEET -----------------------------------------------
@@ -1555,35 +1557,6 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
       name: "railgun-bombard", reload: t(720), mounts: 1, damage: 120,
       range: u(1600), speed: 0, fx: "laser", laser: RAZE_LASER, charge: t(120),
       shoot: FxKind.HitPiercer,
-    },
-  ],
-  // THE BULWARK'S TUSKS are the Tusker apex's, number for number
-  // (tusker5 above): 800 a swing off a mirrored pair, 280 of splash over
-  // four and a half tiles, and the rend that eats a building's armour.
-  // It is meant to be recognised — "this is a T5 melee body, standing
-  // still" is the entire brief — so copying the row rather than inventing
-  // one is the honest way to say it.
-  bulwark: [
-    {
-      name: "bulwark-tusks", reload: t(40), mounts: 2, damage: 800, splash: 280, splashRadius: u(36),
-      range: u(38), speed: 0, fx: "melee", rend: 0.012,
-    },
-  ],
-  // THE LANCE'S BEAM is the Starlight apex's bite on a third of its
-  // cycle and a third of its reach, and it does NOT pierce.
-  //
-  // THAT TRADE IS THE BODY. A starhart5 charges for a second and a third,
-  // fires 560 down fifty-seven tiles of nine-cell corridor, and then
-  // spends five and a half seconds doing nothing — a siege weapon, once a
-  // volley. This one carries the same 560 into a twenty-four-tile line
-  // every two and a sixth seconds, at one target, which over a minute is
-  // more than twice the damage from a third the distance. A guard's job
-  // is to make the ground in front of an emplacement expensive to stand
-  // in, and expensive means CONSTANT, not enormous.
-  lance: [
-    {
-      name: "lance-beam", reload: t(130), mounts: 1, damage: 560, range: u(190), speed: 0,
-      fx: "laser", laser: LANCE_LASER, charge: t(20), shoot: FxKind.HitPiercer,
     },
   ],
   // THE PYLONS CARRY NOTHING (levels.ts goad, bastion). A buff tower does

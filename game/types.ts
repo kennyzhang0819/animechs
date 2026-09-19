@@ -53,6 +53,12 @@ export const TOWER_KINDS = [
   "blighter",
   "drifter",
   "stinger",
+  // THE GARRISON'S GUNS — the swarm's own, and the only turrets in the
+  // game the player never owns (ENEMY_ONLY_KINDS below)
+  "bulwark",
+  "lance",
+  "halberd",
+  "juggernaut",
 ] as const;
 export type TowerKind = (typeof TOWER_KINDS)[number];
 
@@ -76,9 +82,29 @@ const RETIRED = new Set<TowerKind>(RETIRED_KINDS);
 /** is this kind off the field for now? */
 export const isRetired = (kind: TowerKind): boolean => RETIRED.has(kind);
 
+/**
+ * THE SWARM'S OWN GUNS — turrets that exist, are drawn, are priced and are
+ * never the player's. An author stands one on a map (missionMarks.ts
+ * EMPLACEMENT) and it comes up on the enemy team; nothing deals one, the
+ * build card never offers one, and no run can buy one.
+ *
+ * They are TOWER_KINDS rather than a second kind of thing because they
+ * are the same thing: a footprint that owns its cells, holds a target and
+ * fires on a clock. Conquest already put the swarm's name on a turret
+ * (Sim.conquerTower) — these are simply born with it.
+ */
+export const ENEMY_ONLY_KINDS: readonly TowerKind[] = ["bulwark", "lance", "halberd", "juggernaut"];
+
+const ENEMY_ONLY = new Set<TowerKind>(ENEMY_ONLY_KINDS);
+
+/** is this a turret only the swarm ever stands up? */
+export const isEnemyOnly = (kind: TowerKind): boolean => ENEMY_ONLY.has(kind);
+
 /** every turret the game actually fields — the roster the track deals from,
  *  the deal draws from and the build card is built out of */
-export const FIELDED_KINDS: readonly TowerKind[] = TOWER_KINDS.filter((k) => !RETIRED.has(k));
+export const FIELDED_KINDS: readonly TowerKind[] = TOWER_KINDS.filter(
+  (k) => !RETIRED.has(k) && !ENEMY_ONLY.has(k),
+);
 
 
 /**

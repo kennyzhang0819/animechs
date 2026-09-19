@@ -112,8 +112,19 @@ export const HDR = {
    */
   RAZE_KILLED: 30,
   RAZE_UP: 31,
+  /**
+   * WHICH GARRISON CIRCLES ARE STILL HELD, one bit per mark in document
+   * order (Sim.garrisonHeldMask) — what the board's rings are drawn from.
+   * Thirty of them, which is more than a map has ever carried.
+   *
+   * It is a slot rather than something the overlay works out for itself
+   * because the only honest test is the LEASH, and the leash does not
+   * cross the seam: a circle manned with ordinary swarm (MarkGarrison
+   * tiers) is indistinguishable from a wave standing in it by kind alone.
+   */
+  GARRISON_HELD: 32,
 } as const;
-export const HEADER_LEN = 32;
+export const HEADER_LEN = 33;
 
 /** the sim's scalars, into its own header — after every step, and on reset */
 export function writeHeader(sim: Sim): void {
@@ -145,6 +156,7 @@ export function writeHeader(sim: Sim): void {
   h[HDR.SCRIPT_WAVES] = sim.scriptWaves;
   h[HDR.RAZE_KILLED] = sim.razeKilled;
   h[HDR.RAZE_UP] = sim.razeUp();
+  h[HDR.GARRISON_HELD] = sim.garrisonHeldMask();
   h[HDR.CONVOY_DONE] = sim.convoyDone;
   h[HDR.CONVOY_LOST] = sim.convoyLost;
   {

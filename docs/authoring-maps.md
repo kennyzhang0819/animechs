@@ -366,7 +366,7 @@ neither where a beacon stands nor which map it is on changes its price:
 | scrap | 3,000 | 5,000 | 8,000 | 12,000 | 18,000 | 26,000 | 36,000 | 50,000 | 68,000 | 90,000 |
 
 Cumulatively that is 8,000 for two, 46,000 for five and 316,000 for ten,
-against the ~1.32M a full fifty-wave hold earns. **A whole map is meant to be
+against the ~1.32M a full ten-wave hold earns. **A whole map is meant to be
 unaffordable**: the ground a run opens should be a shape it chose, not a box
 it ticked. Past the last rung the last price repeats, so a board carrying
 more beacons than the ladder has rungs has a ceiling rather than a bug.

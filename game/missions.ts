@@ -92,7 +92,7 @@
  */
 import { CELL, COLS, ROWS } from "./constants";
 import type { LevelSpec, RazeSection, UnitKind } from "./levels";
-import { markKind, markOpts, parseWaves, type MapMark } from "./missionMarks";
+import { markKind, markOpts, type MapMark } from "./missionMarks";
 import { RAIL_DIRS, RAIL_PIECES, railStyleIndex, type RailStyleName } from "./railArt";
 
 /** the shortest straight run a road may carry, in cells: a bend's tile
@@ -574,18 +574,19 @@ export function siegeFromMarks(marks: readonly MapMark[]): MarkSiege | null {
 }
 
 /**
- * THE GARRISONS A DOCUMENT CARRIES — a circle of ground, the waves it is
- * manned on, and what mans it (missionMarks.ts GARRISON). Every mission
- * reads these and so does a map under no mission at all: what they say is
- * "there is a force dug in here", which is a fact about the board.
+ * THE GARRISONS A DOCUMENT CARRIES — a circle of ground and what mans it
+ * (missionMarks.ts GARRISON). Every mission reads these and so does a map
+ * under no mission at all: what they say is "there is a force dug in
+ * here", which is a fact about the board.
+ *
+ * THERE IS NO SCHEDULE ON ONE. All of them are standing from mission
+ * start (Sim.reset) and none of them is ever manned again.
  */
 export interface MarkGarrison {
   post: Post;
-  waves: number[];
-  guards: Partial<Record<UnitKind, number>>;
-  /** the kinds in `guards`, which is what says whether one still HOLDS its
-   *  ground: a wave walking through the circle is not holding it */
-  kinds: UnitKind[];
+  /** which rung of levels.ts GARRISON_LEVELS mans it, 1-based. The roster
+   *  is not on the mark: it is that table, read by Sim.garrisonRoster */
+  level: number;
 }
 const GARRISONS = new WeakMap<object, readonly MarkGarrison[]>();
 export function garrisonsFor(marks: readonly MapMark[] | undefined): readonly MarkGarrison[] {
@@ -598,11 +599,6 @@ export function garrisonsFor(marks: readonly MapMark[] | undefined): readonly Ma
   for (const m of marks) {
     if (!kind || m.kind !== "garrison") continue;
     const o = markOpts(kind, m.opts);
-    const waves = parseWaves(o.waves as string);
-    const guards: Partial<Record<UnitKind, number>> = {};
-    if (Number(o.bulwark) > 0) guards.bulwark = Number(o.bulwark);
-    if (Number(o.lance) > 0) guards.lance = Number(o.lance);
-    if (waves.length === 0 || Object.keys(guards).length === 0) continue;
     out.push({
       post: {
         name: `Garrison ${out.length + 1}`,
@@ -610,9 +606,7 @@ export function garrisonsFor(marks: readonly MapMark[] | undefined): readonly Ma
         y: m.y * CELL + half,
         r: Number(o.radius) * CELL,
       },
-      waves,
-      guards,
-      kinds: Object.keys(guards) as UnitKind[],
+      level: Number(o.level),
     });
   }
   GARRISONS.set(marks, out);

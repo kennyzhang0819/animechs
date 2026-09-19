@@ -9,6 +9,7 @@
  * rather than an edit to the editor, the loader and the panel.
  */
 import type { Mission, UnitKind } from "./levels";
+import type { TowerKind } from "./types";
 
 /**
  * WHAT SHAPE OF THING AN AUTHOR PLACES. A `point` is one footprint at
@@ -55,6 +56,10 @@ export type MarkField =
    *  "2-3,6". It is its own field kind rather than a free text box because
    *  a wave list is a real thing in this game and the parser belongs with
    *  it (parseWaves), not in whichever panel happens to render it. */
+  // NOTHING DECLARES ONE TODAY — the garrison lost its wave list when
+  // garrisons became a thing that is simply already there (GARRISON
+  // below). The kind stays wired end to end for the next mark that wants
+  // a schedule on it
   | { key: string; label: string; kind: "waves"; def: string }
   /** a short line of prose — what the objective panel calls this thing */
   | { key: string; label: string; kind: "text"; def: string; max?: number };
@@ -85,6 +90,12 @@ export interface MarkKind {
    *  rise here — a buff tower is a Goad or a Bastion, and the block on the
    *  map has to be whichever one the author picked */
   unitField?: string;
+  /** ...and the same for a mark that stands a TURRET up rather than a body
+   *  (EMPLACEMENT): its choice field names a TowerKind, and the block
+   *  wears that turret's head instead of a unit portrait */
+  towerField?: string;
+  /** the turret this mark stands up, and therefore its face (markTower) */
+  tower?: TowerKind;
   /** cells of metal decking laid round the footprint, if this kind wants
    *  its ground to look prepared (renderer.rebuildTerrain). 0 for none */
   pad: number;
@@ -118,27 +129,53 @@ export function parseWaves(raw: string | number | undefined): number[] {
 export const WAVE_CEIL = 40;
 
 /**
- * ONE PIECE OF GROUND a buff tower may stand on, on an intercept map
- * (levels.ts `goad` and `bastion`). A PLACE AND NOTHING ELSE: which of
- * the two rises and on which train wave is the mission's schedule
- * (levels.ts pylonsDue), rolled into whichever placed spots are free
- * (Sim.raiseMarkTowers).
+ * ONE BUFF TOWER on an intercept map (levels.ts `goad` and `bastion`):
+ * WHICH of the two, WHERE it stands, and WHICH TRAIN it is up for. All
+ * three are the author's, and none of them is rolled.
  *
- * It carried both as fields once. That made every intercept's escalation
- * an authoring decision re-made per map, when it is one curve the game
- * owns — so the map keeps the only part of it a person looking at the
- * board can judge, which is where a tower is worth standing.
+ * IT WAS A SPOT AND A DIE ROLL ONCE, and the roll was the wrong idea. A
+ * tower's BUFF IS GLOBAL — Sim.goadMul and Sim.bastionCut read the alive
+ * census, so a Goad anywhere on the board speeds every train — and what
+ * its POSITION decides is how far a run has to travel, and past what, to
+ * take it down. That is a thing an author looks at the map to judge, and
+ * a shuffle threw it away: two runs of one map asked for different trips
+ * for no reason a player could see, so nothing a run taught them was
+ * worth carrying.
+ *
+ * SO A MARK IS A TOWER AND NOT A SPOT. Train 3 comes in under exactly
+ * the towers drawn for train 3, every run, and the escalation is the
+ * marks an author laid rather than a curve the game owns.
+ *
+ * THEY ACCUMULATE. A tower is up from its train until the board kills
+ * it, and the two buffs STACK BY MULTIPLYING, so a run that answers none
+ * of them meets the last train under all of them. That is the mission:
+ * clearing the road is not a side errand the intercept offers, it is the
+ * bill, and an author sizing a map has to count the standing total at
+ * the last train rather than the towers on any one of them.
  */
 const BUFF_TOWER: MarkKind = {
   id: "buffTower",
-  label: "Buff tower spot",
+  label: "Buff tower",
   missions: ["intercept"],
   geom: "point",
   size: 4,
   color: "#ff5c73",
   unit: "goad",
+  unitField: "unit",
   pad: 2,
-  fields: [],
+  fields: [
+    {
+      key: "unit",
+      label: "Tower",
+      kind: "choice",
+      choices: [
+        { value: "goad", label: "Goad" },
+        { value: "bastion", label: "Bastion" },
+      ],
+      def: "goad",
+    },
+    { key: "wave", label: "Rises on train", kind: "int", min: 1, max: WAVE_CEIL, def: 2 },
+  ],
 };
 
 /**
@@ -182,11 +219,24 @@ const RAILGUN: MarkKind = {
  * comes into it and cannot be drawn out — and exactly the ring the board
  * draws. One number, so what an author sets is what a player sees.
  *
- * A SPOT, NOT A RISE, on the buff tower's terms (BUFF_TOWER above): every
- * wave named here is a wave this ground is manned on, and one whose
- * garrison is still standing does nothing. So "1-40" is a place the swarm
- * keeps re-taking, and what a board buys by clearing it is the waves
- * until the next one.
+ * IT IS STANDING BEFORE THE RUN STARTS, and there is no schedule on it.
+ * Every garrison a map carries is manned at mission start (Sim.reset) and
+ * never manned again — a garrison is ground the swarm ALREADY HOLDS, not
+ * a thing that arrives, and a board that has taken one has taken it. The
+ * mark carried a wave list once and the list was the wrong question: it
+ * made a dug-in force into a respawn, and a player who cleared a post
+ * watched it come back for reasons the board never showed them.
+ *
+ * WHAT STANDS IN IT IS ONE NUMBER (levels.ts GARRISON_LEVELS). A rung
+ * from 1 to 5 names a fixed mix of Wardens and ordinary swarm, and the
+ * mix is a table rather than ten fields on the mark: what placing a
+ * garrison is a decision about is WHERE and HOW HARD, and every level 3
+ * on every map should be the same fight.
+ *
+ * THE SWARM HALF IS NOT AUTHORED EITHER. The tier counts are filled from
+ * whichever family the circle rolled at reset (Sim.garrisonFamilies) —
+ * one family a circle, kept for the whole run — so the same rung is a
+ * different board every deploy.
  */
 const GARRISON: MarkKind = {
   id: "garrison",
@@ -195,14 +245,12 @@ const GARRISON: MarkKind = {
   geom: "point",
   size: 4,
   color: "#ffb44a",
-  unit: "bulwark",
+  unit: "ironhide3",
   pad: 0,
   radiusField: "radius",
   fields: [
-    { key: "waves", label: "Mans on waves", kind: "waves", def: "1" },
-    { key: "radius", label: "Range", kind: "int", min: 8, max: 60, def: 26 },
-    { key: "bulwark", label: "Bulwarks", kind: "int", min: 0, max: 24, def: 2 },
-    { key: "lance", label: "Lances", kind: "int", min: 0, max: 24, def: 2 },
+    { key: "radius", label: "Range", kind: "int", min: 8, max: 90, def: 44 },
+    { key: "level", label: "Level", kind: "int", min: 1, max: 5, def: 1 },
   ],
 };
 
@@ -237,7 +285,73 @@ const ROAD: MarkKind = {
   fields: [{ key: "name", label: "Name", kind: "text", def: "the line" }],
 };
 
-export const MARK_KINDS: readonly MarkKind[] = [BUFF_TOWER, RAILGUN, GARRISON, ROAD];
+/**
+ * ONE OF THE SWARM'S TURRETS, standing where an author put it (types.ts
+ * ENEMY_ONLY_KINDS, constants.ts TOWERS). It is up from mission start and
+ * it never moves, and it belongs to no mission: a gun dug in on a piece
+ * of ground is a fact about the board, the same way a garrison is.
+ *
+ * THE FOUR USED TO BE BODIES — the Wardens a garrison was manned with.
+ * What they were was already a turret in everything but bookkeeping: they
+ * held a circle, they never walked at the core, and the whole of what a
+ * run did with one was go over there and take it down. So they are
+ * turrets, with the pools, the plating and the weapons they had, and a
+ * garrison is ordinary swarm again (levels.ts GARRISON_LEVELS).
+ *
+ * IT OWNS ITS CELLS AND NOT THE PATH. Nothing may be built over one
+ * (Sim.cellTower) and shots collide with it, but the swarm's routes run
+ * straight through the square it stands on — the rule every building of
+ * the swarm's is under (Sim.conquerTower says why): its own bodies will
+ * not shoot it, so a wall they cannot pass and will not break is a wall
+ * they would stand at forever.
+ */
+const EMPLACEMENT: MarkKind = {
+  id: "emplacement",
+  label: "Enemy turret",
+  missions: ["hold", "survive", "intercept", "escort", "raze"],
+  geom: "point",
+  size: 4,
+  color: "#ff5c73",
+  unit: "railgun",
+  tower: "bulwark",
+  towerField: "tower",
+  pad: 1,
+  fields: [
+    {
+      key: "tower",
+      label: "Turret",
+      kind: "choice",
+      choices: [
+        { value: "lance", label: "Lance" },
+        { value: "bulwark", label: "Bulwark" },
+        { value: "halberd", label: "Halberd" },
+        { value: "juggernaut", label: "Juggernaut" },
+      ],
+      def: "bulwark",
+    },
+  ],
+};
+
+export const MARK_KINDS: readonly MarkKind[] = [BUFF_TOWER, RAILGUN, GARRISON, EMPLACEMENT, ROAD];
+
+/** the turret a mark stands up, where it stands one — the TowerKind twin
+ *  of markUnit (EMPLACEMENT) */
+export function markTower(m: MapMark): TowerKind | null {
+  const k = markKind(m.kind);
+  if (!k?.towerField) return null;
+  const f = k.fields.find((x) => x.key === k.towerField);
+  return f?.kind === "choice" ? (markField(m.opts, f) as TowerKind) : (k.tower ?? null);
+}
+
+/** every turret face a mark may wear — what a panel carves up front */
+export const MARK_TOWERS: readonly TowerKind[] = [
+  ...new Set(
+    MARK_KINDS.flatMap((k) => {
+      const f = k.towerField ? k.fields.find((x) => x.key === k.towerField) : null;
+      return f?.kind === "choice" ? f.choices.map((c) => c.value as TowerKind) : [];
+    }),
+  ),
+];
 
 /**
  * EVERY CELL OF METAL DECKING A MARK LAYS — its own footprint and the pad
@@ -261,6 +375,12 @@ export function forEachMarkPadCell(
   // a path lays no decking: a road is a line the board may build right up
   // to, and `x`/`y` on one is its first corner rather than a footprint
   if (!k || k.geom !== "point") return;
+  // ...and NEITHER DOES pad 0, which is what the field has always said it
+  // meant. It was decking the footprint anyway, so a garrison wore a four
+  // by four plate on the board — furniture under a mark whose whole
+  // picture is its circle, and a square of prepared ground promising
+  // something would stand exactly there when nothing ever does
+  if (k.pad <= 0) return;
   const x0 = Math.max(0, m.x - k.pad), y0 = Math.max(0, m.y - k.pad);
   const x1 = Math.min(cols, m.x + k.size + k.pad);
   const y1 = Math.min(rows, m.y + k.size + k.pad);

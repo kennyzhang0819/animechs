@@ -159,6 +159,13 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
   furnace: 4,
   railhead: 4,
   stinger: 4,
+  // THE GARRISON'S GUNS (types.ts ENEMY_ONLY_KINDS). No run ever buys one
+  // — the band is here because every kind needs a price to be a kind, and
+  // the footprints are what it reads
+  lance: 2,
+  bulwark: 3,
+  halberd: 3,
+  juggernaut: 4,
 };
 
 /**

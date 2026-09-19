@@ -83,7 +83,7 @@ is not a harder wave, it is a different fight.
 
 **Conquest is the one number to distrust**, and it is priced with that said out loud.
 The instrument's board is four hundred turrets in a blob that is dying anyway, and what
-Conquest costs a player is the *line* — a thin one, held for fifty waves, where every gun
+Conquest costs a player is the *line* — a thin one, held for ten waves, where every gun
 lost is a gun shooting back. It measured −2% and was authored at six on a hunch; four is
 the compromise. The honest thing is to measure it on a real board.
 
@@ -351,8 +351,9 @@ door. That is also why it is not the damage-over-time nerf it looks like: a burn
 already worth a fraction of the cap.
 
 **A late-run rule, which is most of why it is three.** The script's first tier five walks
-in on wave 36 of fifty, and tier fives are 2% of bodies in the ten waves after — so for
-seventy per cent of a run this is an empty slot the deploy panel has already charged for.
+in on wave 8 of ten, and tier fives are 1.4% of bodies over the three waves they appear in
+— so for seventy per cent of a run this is an empty slot the deploy panel has already
+charged for.
 Where it applies it is savage: the ceiling deletes 87% of a mixed line's damage — 0% off a
 tacker, 11% off a coil, 35% off a torch, 61% off an autocannon, 71% off a barrage, 90% off
 a repeater, cleaver or piercer.
@@ -464,8 +465,9 @@ inside one window never gives the trade a chance to happen. A long body is what 
 shield tower into an objective you have to commit to.
 
 **The wave curve.** Both pools are set by the wave the tower rises on and compound at
-`SHIELD_TOWER_WAVE_GROWTH` (1.1) — ~2.4× by wave ten, ~6.1× by twenty, ~25× by thirty-five,
-~107× by fifty. A flat 15,000 was an obstacle for twenty waves and then scenery: a late
+`SHIELD_TOWER_WAVE_GROWTH` (1.1⁵ ≈ 1.61, a wave being five of the old script's) — ~2.6× by
+wave three, ~6.7× by five, ~26× by eight, ~107× by ten. A flat 15,000 was an obstacle for
+most of a run and then scenery: a late
 board focuses thousands of damage a second onto one point. The pools grow the way the
 player's damage does, by a percentage a wave. It is **fixed at spawn**, never re-read,
 which is what makes clearing them promptly worth anything.

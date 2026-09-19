@@ -54,7 +54,8 @@ import { CONVOY_N, hauler } from "./convoyArt";
 import { RAIL_CELL, RAIL_INSET, RAIL_PIECES, RAIL_STYLES, railCanvas } from "./railArt";
 import { GRAPNEL_TIERS, grapnelMech } from "./grapnelArt";
 import {
-  BULWARK_TIER, LANCE_TIER, RAZE_TIER, bulwarkMech, lanceMech, razeMech,
+  BULWARK_TIER, HALBERD_TIER, JUGGERNAUT_TIER, LANCE_TIER, RAZE_TIER,
+  bulwarkMech, halberdMech, juggernautMech, lanceMech, razeMech,
   type WardenTier,
 } from "./wardenArt";
 import { KETTLE_TIERS, kettle, kettleGeom } from "./kettleArt";
@@ -771,6 +772,24 @@ export const UV_DRIFTER = top("drifter", 96);
 export const UV_STINGER = top("stinger", 128);
 export const UV_TOWER_BASE4 = flat("tower-base-4", 128);
 /**
+ * THE GARRISON'S FOUR HEADS (types.ts ENEMY_ONLY_KINDS, wardenArt.ts).
+ *
+ * They are TOPS like every other turret's and they are DRAWN at pack time
+ * rather than loaded, which is the beacon's case (UV_BEACON): there is no
+ * Mindustry block under any of them, and the drawing already exists as
+ * the body each one used to be. Nothing about the art changed when they
+ * stopped walking — what changed is that the base plate under them is
+ * the turret plate now and the legs are gone.
+ *
+ * A `top` cell turns its art a quarter turn on the way in (see reserve),
+ * so the bodies go in facing up exactly as they are drawn and come out
+ * facing +x with every other turret head.
+ */
+export const UV_BULWARK_TOP = top("bulwark-top", 128);
+export const UV_LANCE_TOP = top("lance-top", 128);
+export const UV_HALBERD_TOP = top("halberd-top", 128);
+export const UV_JUGGERNAUT_TOP = top("juggernaut-top", 128);
+/**
  * The blocks that never turn keep the heading they were drawn at: the
  * shield tower (the Shield Towers mutator, Mindustry's force projector,
  * 96px of 3x3 block art) and the support pair, the fixer a 32px source
@@ -1208,10 +1227,12 @@ export const SF5_CELLS = sfMechCells(5, GRAPNEL_TIERS[4].n, 256);
  * Six cells a body, like every other thing on the mech rig: the body, the
  * base plate and one side's legs, each with its silhouette beside it. The
  * cell is the smallest 64-multiple that holds the hitbox in native px
- * (112, 128 and 72 — see WardenTier), so the world px per native px is the
- * same 0.625 the rest of the sheet has.
+ * (112, 128, 72, 160 and 256 — see WardenTier), so the world px per native
+ * px is the same 0.625 the rest of the sheet has. A 256 cell carries four
+ * times the quad a 128 one does, which is why the sprite size is a
+ * parameter down at MECH_ART rather than a constant.
  *
- * THESE THREE ARE DRAWN WITH ANIMAL_ART OFF TOO, and they are the only
+ * THESE ARE DRAWN WITH ANIMAL_ART OFF TOO, and they are the only
  * bodies on the sheet that are. The flag's promise is that turning it off
  * gives back the six Mindustry trees byte for byte — it says nothing about
  * the things that were never Mindustry's. The Borer is already drawn
@@ -1232,8 +1253,6 @@ const wardenCells = (name: string, n: number, cell: number) => ({
   },
 });
 const RAZE_CELLS = wardenCells("railgun", RAZE_TIER.n, 128);
-const BULWARK_CELLS = wardenCells("bulwark", BULWARK_TIER.n, 128);
-const LANCE_CELLS = wardenCells("lance", LANCE_TIER.n, 128);
 /** the two buff towers (pylonArt.ts), on the same six-cell mech rig — 128
  *  native px is four tiles, so a 128 cell holds them at the sheet's scale */
 const GOAD_CELLS = wardenCells("goad", GOAD_TIER.n, 128);
@@ -1385,8 +1404,6 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   railgun: { uv: RAZE_CELLS.body, sprite: UNIT_SPRITE * 2 },
   goad: { uv: GOAD_CELLS.body, sprite: UNIT_SPRITE * 2 },
   bastion: { uv: BASTION_CELLS.body, sprite: UNIT_SPRITE * 2 },
-  bulwark: { uv: BULWARK_CELLS.body, sprite: UNIT_SPRITE * 2 },
-  lance: { uv: LANCE_CELLS.body, sprite: UNIT_SPRITE * 2 },
   ironhide1: { uv: UV_IRONHIDE1_BODY, sprite: UNIT_SPRITE },
   ironhide2: { uv: UV_IRONHIDE2_BODY, sprite: UNIT_SPRITE },
   ironhide3: { uv: UV_IRONHIDE3_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
@@ -2279,20 +2296,18 @@ if (ANIMAL_ART) {
   // ground looks like from above. Nothing here carries a gun sprite — the
   // barrel and the emitter are part of the body, because neither of them
   // is on a mount that turns independently of the hull
-  const wardenMechArt = (c: typeof RAZE_CELLS, T: WardenTier): MechArt => ({
+  const wardenMechArt = (c: typeof RAZE_CELLS, T: WardenTier, cell = 128): MechArt => ({
     leg: c.leg,
     base: c.base,
     body: c.body,
     guns: [],
     stride: T.stride * PX,
-    sprite: UNIT_SPRITE * 2,
+    sprite: (UNIT_SPRITE * cell) / 64,
     sil: { leg: c.sil.leg, base: c.sil.base, body: c.sil.body },
   });
   MECH_ART.railgun = wardenMechArt(RAZE_CELLS, RAZE_TIER);
   MECH_ART.goad = wardenMechArt(GOAD_CELLS, GOAD_TIER);
   MECH_ART.bastion = wardenMechArt(BASTION_CELLS, BASTION_TIER);
-  MECH_ART.bulwark = wardenMechArt(BULWARK_CELLS, BULWARK_TIER);
-  MECH_ART.lance = wardenMechArt(LANCE_CELLS, LANCE_TIER);
 }
 
 const ENV = "/mindustry/sprites/blocks/environment";
@@ -3371,8 +3386,16 @@ function packAnimalArt(
   // ---- the siege: three machines on the mech rig, into cells nobody
   // else owns (see THE SIEGE'S CELLS) ----
   packMech(RAZE_CELLS, razeMech(RAZE_TIER), RAZE_TIER.n);
-  packMech(BULWARK_CELLS, bulwarkMech(BULWARK_TIER), BULWARK_TIER.n);
-  packMech(LANCE_CELLS, lanceMech(LANCE_TIER), LANCE_TIER.n);
+  // ...and the same four bodies AS TURRET HEADS (types.ts ENEMY_ONLY_KINDS):
+  // the body alone, with no base plate and no legs, because a turret's
+  // plate is the one the renderer already lays under every head
+  for (const [uv, parts] of [
+    [UV_BULWARK_TOP, bulwarkMech(BULWARK_TIER)],
+    [UV_LANCE_TOP, lanceMech(LANCE_TIER)],
+    [UV_HALBERD_TOP, halberdMech(HALBERD_TIER)],
+    [UV_JUGGERNAUT_TOP, juggernautMech(JUGGERNAUT_TIER)],
+  ] as const)
+    part(uv, toCanvas(parts.body));
   // ...and the two buff towers, on the same rig (pylonArt.ts)
   packMech(GOAD_CELLS, goadMech(GOAD_TIER), GOAD_TIER.n);
   packMech(BASTION_CELLS, bastionMech(BASTION_TIER), BASTION_TIER.n);

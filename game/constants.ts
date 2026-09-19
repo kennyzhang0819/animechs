@@ -36,10 +36,10 @@ export const HN = HCOLS * HROWS;
 export const INF = 1e9;
 
 /**
- * THE MOST BODIES THE FIELD HOLDS AT ONCE. The late script sends waves in
- * the thousands and a swarm mutator (Mitosis) multiplies them, so the
- * ceiling is where the fifty-wave campaign wants it: every per-unit array
- * and the renderer's dynamic batch are sized by it.
+ * THE MOST BODIES THE FIELD HOLDS AT ONCE. The script sends waves of
+ * several thousand — its heaviest is 7,500 — and a swarm mutator (Mitosis)
+ * multiplies them, so the ceiling is where the campaign wants it: every
+ * per-unit array and the renderer's dynamic batch are sized by it.
  */
 export const MAX_UNITS = 22000;
 // Ironhide1 at true Mindustry scale: 1-tile hitbox, art overhanging 1.5x
@@ -1278,8 +1278,17 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // THE VOLLEY AND THE BLAST ARE OURS, NOT UPSTREAM'S. Four shells in a
   // 22.5-unit radius is what Mindustry throws; a 3x3 that costs a tier-3
   // card wants to answer a lane rather than a file, so it throws two more
-  // and each one opens a third wider (30 units). The scatter is what
-  // makes that a wall of ground rather than a bigger hole.
+  // and each one opens nearly twice as wide (40 units). The scatter is
+  // what makes that a wall of ground rather than a bigger hole.
+  //
+  // AND THE SHELLS ARE SLOW — half upstream's muzzle velocity, so a volley
+  // at full reach is better than three seconds in the air. The lifetime
+  // is not touched: scaleLife (Sim.fireShot) stretches it against the
+  // bullet's own reach, so a slower shell simply flies longer to the same
+  // aim point. What the flight time buys is the weight at the other end,
+  // 115 splash a shell: the gun is a commitment to where the lane WILL be
+  // rather than an answer to where it is, and a board that reads the lane
+  // early is paid for it.
   barrage: {
     name: "Barrage",
     size: 3,
@@ -1299,11 +1308,11 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     velocityRnd: 0.2,
     lifeScaleOffset: 1 / 9,
     bullet: {
-      speed: 3 * TICK * MU,
+      speed: 1.5 * TICK * MU, // half upstream's 3 — the shells are slow
       damage: 40, // never lands directly — an artillery shell arcs over
       lifetime: 80 / TICK,
-      splash: 70,
-      splashRadius: 40 * 0.75 * MU, // 30 units, over upstream's 22.5
+      splash: 115,
+      splashRadius: 53 * 0.75 * MU, // ~40 units, over upstream's 22.5
       collidesAir: false,
       collidesGround: true,
       artillery: true,
@@ -1639,7 +1648,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // it, so a healer that ticks at upstream's rate would be a block that
   // did nothing a player could see. The clocks and the ranges are
   // Mindustry's own; the PERCENTAGES are set to what makes the block worth
-  // its price on a fifty-wave hold — a tenth of a pool a pulse, a fifth for
+  // its price on a full hold — a tenth of a pool a pulse, a fifth for
   // the big one.
   fixer: {
     name: "Fixer",
@@ -2173,6 +2182,181 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.toxinBack,
     },
   },
+
+  // ---- THE GARRISON'S GUNS (types.ts ENEMY_ONLY_KINDS) ----
+  //
+  // FOUR TURRETS THE PLAYER NEVER OWNS. They are the swarm's, an author
+  // stands them on a map (missionMarks.ts EMPLACEMENT), and every number
+  // here is the body each of them used to be: the pools, the plating and
+  // the weapons are carried over rather than re-invented, because the
+  // whole point of turning them into turrets was that they stop walking,
+  // not that they stop being the Bulwark and the Lance.
+  //
+  // THE POOLS ARE THE POOLS THEY HAD AS BODIES, and they are written here
+  // DIVIDED BY TOWER_HP_SCALE because every turret's table health is
+  // multiplied by it (resolveTower). A Bulwark stood on 25,000 and stands
+  // on 25,000: `health: 2500` is how you say that in this table.
+  //
+  // THEY STILL DWARF EVERY ROW ABOVE. A railhead is a few thousand on the
+  // board; a Juggernaut is two hundred thousand behind a hundred and
+  // fifty armour. That is deliberate and it is the same reason it was
+  // deliberate when they were bodies: these are OBJECTIVES, a trip the
+  // run makes on purpose, not traffic.
+  //
+  // NONE OF THEM TARGETS AIR. A garrison gun answers the board in front
+  // of it, and the board is buildings.
+
+  // THE BULWARK — the ram, as a gun with no reach. Five tiles is arm's
+  // length: it is the turret you can stand next to and not the turret you
+  // can stand away from, which is what the charging body was.
+  bulwark: {
+    name: "Bulwark",
+    size: 3,
+    health: 2500,
+    armor: 104,
+    range: 40 * MU,
+    reload: 40 / TICK,
+    shots: 2,
+    shotDelay: 6 / TICK,
+    spread: 0,
+    inaccuracy: 0,
+    shootCone: (20 * Math.PI) / 180,
+    rotateSpeed: ((6 * Math.PI) / 180) * TICK,
+    targetAir: false,
+    targetGround: true,
+    bullet: {
+      speed: 0,
+      damage: 800,
+      lifetime: 10 / TICK,
+      splash: 280,
+      splashRadius: 36 * MU,
+      collidesAir: false,
+      collidesGround: true,
+      shootFx: FxKind.ShootBig,
+      hitFx: FxKind.BlastExplosion,
+      fxColor: TEAM_CRUX_RGB,
+    },
+  },
+  // THE LANCE — the needle, unchanged: one crimson beam every two and a
+  // sixth seconds, twenty-four tiles, and it does NOT pierce
+  lance: {
+    name: "Lance",
+    size: 2,
+    health: 1700,
+    armor: 14,
+    range: 190 * MU,
+    reload: 130 / TICK,
+    chargeTime: 20 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: 0,
+    shootCone: (8 * Math.PI) / 180,
+    rotateSpeed: ((90 * Math.PI) / 180) * TICK,
+    targetAir: false,
+    targetGround: true,
+    bullet: {
+      speed: 0,
+      damage: 560,
+      lifetime: 14 / TICK,
+      splash: 0,
+      splashRadius: 0,
+      collidesAir: false,
+      collidesGround: true,
+      laser: { length: 195 * MU, pierceCap: 1, width: 7 * MU },
+      shootFx: FxKind.PiercerShoot,
+      chargeFx: FxKind.PiercerCharge,
+      hitFx: FxKind.HitPiercer,
+      fxColor: TEAM_CRUX_RGB,
+    },
+  },
+  // THE HALBERD — the mortar. The shell is the body's, number for number,
+  // and the arc it carried as a second weapon is a BOLT off the same
+  // shell (BulletStats.lightning): a turret fires one thing, so the two
+  // halves are one round that bursts and then jumps.
+  halberd: {
+    name: "Halberd",
+    size: 3,
+    health: 5500,
+    armor: 115,
+    range: 319 * MU,
+    reload: 200 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: (1 * Math.PI) / 180,
+    shootCone: (10 * Math.PI) / 180,
+    rotateSpeed: ((5 * Math.PI) / 180) * TICK,
+    targetAir: false,
+    targetGround: true,
+    bullet: {
+      speed: 4.2 * TICK * MU,
+      damage: 220,
+      lifetime: (319 + 10) / 4.2 / TICK,
+      splash: 820,
+      splashRadius: 104 * MU,
+      collidesAir: false,
+      collidesGround: true,
+      artillery: true,
+      lightning: { length: 32 * MU },
+      sprite: {
+        region: "shell",
+        across: 13 * MU,
+        along: 20 * MU,
+        shrinkX: 0,
+        shrinkY: 0.2,
+        slopeShrink: true,
+        back: TEAM_CRUX_RGB,
+        front: PAL.lighterOrange,
+      },
+      trail: { size: 3.4 * MU, mult: 1 },
+      shootFx: FxKind.ShootBig,
+      hitFx: FxKind.BlastExplosion,
+      fxColor: TEAM_CRUX_RGB,
+    },
+  },
+  // THE JUGGERNAUT — the flak fan. The body swept an eighty-degree wedge
+  // and took eight things at once; a turret has one barrel, so the wedge
+  // is FIVE SHELLS IN A SPREAD and the sweep is what lands rather than
+  // what is drawn. Its force field and its plating aura do not come over:
+  // a turret is not a body and has no crowd to hand anything to.
+  juggernaut: {
+    name: "Juggernaut",
+    size: 4,
+    health: 20000,
+    armor: 150,
+    range: 150 * MU,
+    reload: 120 / TICK,
+    shots: 5,
+    shotDelay: 3 / TICK,
+    spread: (10 * Math.PI) / 180,
+    inaccuracy: (3 * Math.PI) / 180,
+    shootCone: (40 * Math.PI) / 180,
+    rotateSpeed: ((4 * Math.PI) / 180) * TICK,
+    targetAir: false,
+    targetGround: true,
+    bullet: {
+      speed: 5 * TICK * MU,
+      damage: 180,
+      lifetime: (150 + 10) / 5 / TICK,
+      splash: 240,
+      splashRadius: 30 * MU,
+      collidesAir: false,
+      collidesGround: true,
+      sprite: {
+        region: "shell",
+        across: 10 * MU,
+        along: 14 * MU,
+        shrinkX: 0,
+        shrinkY: 0.4,
+        back: TEAM_CRUX_RGB,
+        front: PAL.lighterOrange,
+      },
+      shootFx: FxKind.ShootBig,
+      hitFx: FxKind.BlastExplosion,
+      fxColor: TEAM_CRUX_RGB,
+    },
+  },
 };
 
 /** every turret's stats under ONE hidden class each (normalizeTower) — the
@@ -2278,7 +2462,7 @@ export const MAX_BEACONS = 64;
  * is the next acre worth more than the guns it would buy. Where that acre
  * is, is the player's business.
  *
- * THE NUMBERS, read against what a run earns. A fifty-wave run banks about
+ * THE NUMBERS, read against what a run earns. A full run banks about
  * 2.05 million scrap off the core (economy.ts) and the unit of mid-run
  * spending is the 1,350-scrap tier-1 block. So the first beacon is about
  * two blocks — an opening purchase nobody agonises over — and by the fifth
@@ -2365,6 +2549,12 @@ export const beaconPriceAt = (ladder: readonly number[], bought: number): number
  * moves it for free.
  */
 export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
+  // the garrison's four (types.ts ENEMY_ONLY_KINDS): never dealt and never
+  // bought, but the codex and the inspector print a line for every kind
+  bulwark: "The swarm's wall. Hits like a ram, and only what is next to it.",
+  lance: "The swarm's needle. One armour-cutting beam down a long line, slowly.",
+  halberd: "The swarm's mortar. Lobs a shell that bursts wide and throws a bolt.",
+  juggernaut: "The swarm's fortress. Sweeps a fan of shells and will not die.",
   tacker: "Shoots small bullets quickly.",
   airburst: "Shoots flak shells that burst near enemies, some of them incendiary.",
   coil: "Shoots lightning that jumps between enemies.",
@@ -2617,14 +2807,14 @@ export const SHRAPNEL = {
 
 /**
  * THE CORE'S HEALTH: Mindustry's core nucleus, 6,000 (Blocks.java), times
- * a dial OF ITS OWN — the number the fifty-wave script was tuned against.
+ * a dial OF ITS OWN — the number the campaign script was tuned against.
  * It is the run: the swarm exists to knock it down, and the moment it does
  * the run is over (Sim.lost).
  *
  * It used to read TOWER_HP_SCALE, and it stopped the day that dial was
  * doubled for the deal — it has moved again since, and this has not.
  * Raising the turrets is a statement about how long a LINE holds; raising
- * the core would be a statement about how long the whole fifty waves take
+ * the core would be a statement about how long the whole script takes
  * to lose, which is every map's pacing at once and is not a change
  * anybody asked for. Four, where it has always been.
  */

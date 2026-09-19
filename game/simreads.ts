@@ -210,6 +210,11 @@ export class World {
   get razeUp(): number {
     return this.header[HDR.RAZE_UP];
   }
+  /** WHICH GARRISON CIRCLES ARE STILL HELD, one bit per mark in document
+   *  order (Sim.garrisonHeldMask) */
+  get garrisonHeld(): number {
+    return this.header[HDR.GARRISON_HELD];
+  }
   /** THE ESCORT MISSION'S LEDGER (levels.ts EscortMission) — carts
    *  delivered and lost, how far the one on the road has got, how many
    *  halts it still has to make, and whether it is standing at one. Zero

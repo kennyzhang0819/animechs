@@ -592,11 +592,14 @@ export const SHIELD_TOWER_MAX_ALIVE = 20;
 // AT SPAWN, never re-read, which is what makes clearing them promptly
 // worth anything.
 
-/** what each wave multiplies the previous wave's pools by */
-export const SHIELD_TOWER_WAVE_GROWTH = 1.1;
+/** what each wave multiplies the previous wave's pools by. It is 1.1 ** 5:
+ *  the curve was authored a wave at a time against a fifty-wave script and
+ *  a wave is five of those now (levels.ts), so the growth compounds five
+ *  times over to keep the same shape end to end */
+export const SHIELD_TOWER_WAVE_GROWTH = 1.1 ** 5;
 
 /** the multiplier on both pools for a tower rising on `wave` — 1.00 on
- *  wave one, ~6.1 by twenty, ~107 by fifty. The run's shield multiplier
+ *  wave one, ~6.7 by five, ~107 by ten. The run's shield multiplier
  *  (Overshields, or 1) rides on top */
 export const shieldTowerWaveScale = (wave: number): number =>
   Math.pow(SHIELD_TOWER_WAVE_GROWTH, Math.max(0, wave - 1));
@@ -607,8 +610,9 @@ export const shieldTowerWaveScale = (wave: number): number =>
 // not pools. It used to multiply the pools by five as well, which put a
 // cliff in the middle of a curve meant to be smooth.
 
-/** the wave from which every new shield tower rises as a mega shield tower */
-export const SHIELD_TOWER_MEGA_WAVE = 6;
+/** the wave from which every new shield tower rises as a mega shield tower —
+ *  wave 6 of the old fifty-wave script, folded five into one */
+export const SHIELD_TOWER_MEGA_WAVE = 2;
 /** its dome, in px (16 cells) — four times the ordinary dome's area */
 export const SHIELD_TOWER_MEGA_DOME_R = 320;
 

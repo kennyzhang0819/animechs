@@ -248,7 +248,7 @@ Math.random = () => {
 
 const R = (m) => require(path.join(DIST, m));
 const L = R("levels.js"), M = R("maps.js"), LA = R("ladder.js"), C = R("constants.js");
-const TR = R("track.js"), FA = R("foundryArt.js"), T = R("types.js");
+const TR = R("track.js"), FA = R("foundryArt.js"), T = R("types.js"), MK = R("missionMarks.js");
 /** the most turrets the frames check will stand up. Every world we ship runs
  *  out of legal ground long before this, so it is a stop against a future
  *  map that does not, never a target. */
@@ -398,7 +398,7 @@ report("atlas", atlasProblems, atlasDetail);
 // gets caught, every time — it is the tier whose ornament is cut last.
 const cellFamilies = (() => {
   const IA = R("ironhideArt.js"), FAM = R("familyArt.js"), TA = R("tuskerArt.js"), SA = R("grapnelArt.js");
-  const KA = R("kingArt.js"), KE = R("kettleArt.js"), PY = R("pylonArt.js");
+  const KA = R("kingArt.js"), KE = R("kettleArt.js"), PY = R("pylonArt.js"), WA = R("wardenArt.js");
   // a ground family's tier is a mech tier or a legged one; the Grapnels
   // ride the mech rig at every tier with no stride at all, so the rig is
   // named per family rather than read off the stride
@@ -420,6 +420,11 @@ const cellFamilies = (() => {
     // each, and a cell the atlas refuses at load if it is empty
     ["goad", [PY.GOAD_TIER], PY.goadMech],
     ["bastion", [PY.BASTION_TIER], PY.bastionMech],
+    // ...and the raze emplacement, which is also on the rig and also
+    // refused at load if the crux it wears comes out empty. The other four
+    // drawings in wardenArt.ts are TURRET HEADS now (types.ts
+    // ENEMY_ONLY_KINDS) and pack no team cell at all
+    ["railgun", [WA.RAZE_TIER], WA.razeMech],
   ];
 })();
 const cellProblems = [];
@@ -538,27 +543,27 @@ for (const w of L.WORLDS) {
       say(`the pattern sends ${sent} crossers and the mission asks for ${m.kills}`);
     if (m.leaks > 0 && m.spare.length === 0)
       say(`${m.leaks} leaks allowed and no spare launch to make them back`);
-    // ...and the buff tower spots an author placed on this map (game/
-    // missionMarks.ts). The schedule rolls its hand into the free ones
-    // (game/levels.ts pylonsDue), so a map with fewer spots than the top
-    // hand wants is a map that quietly never stands the hand up
-    let spots = 0;
+    // ...and the buff towers an author placed on this map (game/
+    // missionMarks.ts BUFF_TOWER). Each one names the train it rises on,
+    // so the thing to check is that the train exists: a tower drawn for a
+    // train the pattern never launches is a tower that never comes up,
+    // and nothing else on the board would ever say so
+    const lastTrain = m.pattern.length + (m.spare.length > 0 ? 1 : 0);
+    const towerKind = MK.markKind("buffTower");
     for (const mk of sim.terrain.marks) {
       if (mk.kind !== "buffTower") continue;
-      spots++;
+      const wave = Number(MK.markOpts(towerKind, mk.opts).wave);
+      if (wave > lastTrain)
+        say(`a buff tower at ${mk.x},${mk.y} rises on train ${wave} and the pattern launches ${lastTrain}`);
       // a tower dropped in rock is a tower nothing can see to shoot
       // (Sim.canSee) — and unlike a raze section it is never walked clear
-      const size = 4;
+      const size = towerKind.size;
       let rock = 0;
       for (let y = mk.y; y < mk.y + size; y++)
         for (let x = mk.x; x < mk.x + size; x++)
           if (sim.terrain.blocked[y * COLS + x]) rock++;
-      if (rock > 0) say(`a buff tower spot at ${mk.x},${mk.y} stands on ${rock} cells of rock`);
+      if (rock > 0) say(`a buff tower at ${mk.x},${mk.y} stands on ${rock} cells of rock`);
     }
-    const last = m.pattern.length + (m.spare.length > 0 ? 1 : 0);
-    const want = L.pylonsDue(last).length;
-    if (spots > 0 && spots < want)
-      say(`${spots} buff tower spots and train ${last} rolls a hand of ${want}`);
   } else if (m.kind === "escort") {
     // the same shape of arithmetic pointed the other way: enough carts to
     // meet the count, and a halt has to be a fraction of a road (Sim.reset
@@ -667,15 +672,30 @@ try {
         nan = `a body went NaN at ${Math.round(sim.time)}s`;
   };
 
-  // 1. the script sends something
-  while (sim.n === 0 && sim.time < 20) { half(); scan(); }
+  // 1. the script sends something.
+  //
+  //    A WALKER, AND NOT ANY BODY. Every garrison a map carries is
+  //    standing before the first frame (Sim.manGarrisons), so on a map
+  //    with one `sim.n` is nonzero at t = 0 and this stage would pass
+  //    without the script ever having been asked for anything. What it
+  //    wants is a body that is walking at the core.
+  const walker = () => {
+    for (let i = 0; i < sim.n; i++) if (sim.ugar[i] === 0) return i;
+    return -1;
+  };
+  // WAVE_GAP_OPENING is a full cadence now (levels.ts), so the first wave
+  // is most of two minutes in — the window has to clear it
+  const FIRST_WAVE_BY = L.WAVE_GAP_OPENING + L.WAVE_RELEASE_SECONDS + 10;
+  while (walker() < 0 && sim.time < FIRST_WAVE_BY) { half(); scan(); }
   const spawnedAt = Math.round(sim.time);
-  if (sim.n === 0) simProblems.push("the script sent nothing in twenty seconds");
+  const first = walker();
+  if (first < 0)
+    simProblems.push(`the script sent nothing in ${Math.round(FIRST_WAVE_BY)} seconds`);
 
   // 2. the road one of them is on, cell by cell, down the gradient
   let placed = 0;
-  if (sim.n > 0) {
-    const from = Math.round(sim.upy[0] / CELL) * COLS + Math.round(sim.upx[0] / CELL);
+  if (first >= 0) {
+    const from = Math.round(sim.upy[first] / CELL) * COLS + Math.round(sim.upx[first] / CELL);
     const route = roadToCore(sim, from);
     if (route.length < 2) simProblems.push("no route from a live body to the core");
 
@@ -713,7 +733,7 @@ try {
     if (sim.kills > 0) hitAt = Math.round(sim.time);
     else
       for (let i = 0; i < sim.n; i++)
-        if (sim.uhp[i] < sim.uhpmax[i]) { hitAt = Math.round(sim.time); break; }
+        if (sim.ugar[i] === 0 && sim.uhp[i] < sim.uhpmax[i]) { hitAt = Math.round(sim.time); break; }
   }
 
   if (nan) simProblems.push(nan);
@@ -866,8 +886,10 @@ const FRAME_MS = 1000 / 60;
 const DRAW_MS = 5;
 const SIM_BUDGET_MS = FRAME_MS - DRAW_MS;
 
-/** the stretch of the script to load the field with, 1-based and inclusive */
-const LOAD_WAVES = [34, 36];
+/** the stretch of the script to load the field with, 1-based and inclusive —
+ *  wave 5 is the heaviest of the ten-wave script (7.5k bodies), where the
+ *  old fifty-wave window [34, 36] was 5.7k */
+const LOAD_WAVES = [5, 5];
 /** how far either side of the road the board is built out, in cells */
 const BELT_REACH = 30;
 /** seconds the swarm walks before the clock starts — long enough that it is

@@ -103,6 +103,12 @@ export const MINDUSTRY_VALUE: Record<TowerKind, number> = {
   furnace: 1795,
   stinger: 2000,
   railhead: 2500,
+  // the garrison's four, last: nothing deals them, so this only keeps the
+  // table total (types.ts ENEMY_ONLY_KINDS)
+  lance: 1000,
+  bulwark: 1001,
+  halberd: 1002,
+  juggernaut: 1003,
 };
 
 /** the roster, cheapest first — the one order every list of turrets uses.

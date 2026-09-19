@@ -4380,43 +4380,36 @@ export class Game {
    * outside the line is a turret they will never walk out to, and a player
    * can see that before they spend.
    *
-   * A HELD ONE GOES QUIET. While something is standing in it the ring has
-   * nothing left to tell anybody — the bodies are on screen, firing — so
-   * it drops to a hairline. Empty, it dashes: that is ground the swarm
-   * will come back and take on its next wave.
+   * A CLEARED ONE IS NOT DRAWN AT ALL. Every garrison is standing from
+   * the first frame and none is ever manned again (Sim.manGarrisons), so
+   * an empty circle is not a promise about anything — it is ground that
+   * has been taken, and a ring left on it would say the opposite. While
+   * one IS held the line is the only thing the overlay has to add, since
+   * the bodies are already on screen, so it is drawn as a hairline.
    */
-  private drawGarrisons(view: SimView, c: CanvasRenderingContext2D): void {
+  private drawGarrisons(c: CanvasRenderingContext2D): void {
     const rings = garrisonsFor(this.world.terrain.marks);
     if (rings.length === 0) return;
-    // HELD IS READ OFF THE BOARD AND NOT OFF A CLOCK, and it is read by
-    // KIND: a wave walking through a circle is not holding it. What a
-    // garrison is made of never walks at the core (levels.ts — the
-    // Wardens are objective trees no wave may send), so a live one of
-    // those inside the ring is the whole test, which is the same one the
-    // sim asks before it mans a garrison again
-    const held = rings.map(() => false);
-    for (let i = 0; i < view.n; i++) {
-      if (view.uhp[i] <= 0) continue;
-      for (let r = 0; r < rings.length; r++) {
-        if (held[r]) continue;
-        const g = rings[r];
-        if (!g.kinds.some((k) => UNIT_ID[k] === view.ukind[i])) continue;
-        if (Math.hypot(view.upx[i] - g.post.x, view.upy[i] - g.post.y) <= g.post.r) held[r] = true;
-      }
-    }
+    // HELD IS READ OFF THE LEASH, and the sim is the only side that can
+    // see one — so it comes across as a bitmask (simreport.ts
+    // GARRISON_HELD). It used to be worked out here by KIND, which held
+    // only while a garrison was made of bodies no wave could send; a
+    // circle manned with ordinary swarm (MarkGarrison.tiers) would be lit
+    // by the first wave that walked through it
+    const mask = this.world.garrisonHeld;
+    const held = rings.map((_, r) => (mask & (1 << r)) !== 0);
     c.save();
     c.beginPath();
     c.rect(0, 0, W, H);
     c.clip();
+    c.strokeStyle = SPAWN_STYLE.css;
+    c.globalAlpha = 0.16;
+    c.lineWidth = 2;
     for (const [n, g] of rings.entries()) {
-      c.strokeStyle = SPAWN_STYLE.css;
-      c.globalAlpha = held[n] ? 0.12 : 0.3;
-      c.lineWidth = held[n] ? 2 : 4;
-      c.setLineDash(held[n] ? [] : [30, 20]);
+      if (!held[n]) continue;
       c.beginPath();
       c.arc(g.post.x, g.post.y, g.post.r, 0, Math.PI * 2);
       c.stroke();
-      c.setLineDash([]);
     }
     c.restore();
   }
@@ -4594,7 +4587,7 @@ export class Game {
     // reason: the mission's geometry belongs under the fight
     this.drawMissionPosts(c);
     // ...and the ground the swarm holds, which is not a mission's at all
-    this.drawGarrisons(view, c);
+    this.drawGarrisons(c);
 
     // ROUTES, under everything else so a selection ring still reads on top
     if (this.showRoutes) {

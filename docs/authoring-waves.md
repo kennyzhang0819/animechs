@@ -7,7 +7,7 @@ PRESSURE UNDERNEATH it: an engine that puts bodies on the field on a
 clock and never runs out. Author it as a difficulty curve, not as a
 finish line.
 
-Every map plays the same fifty waves, and then the same fifty again. What
+Every map plays the same ten waves, and then the last two of them again. What
 makes one map's campaign different from another's is its ground and its
 doors, and the **family roll** the deploy makes: the script is authored in three unit families
 (ground, ground support, air) and those are its three **slots**, but a
@@ -26,7 +26,7 @@ The run's families are a **ring**. Wave 1 starts at the first of them and
 every wave after it turns the ring one notch, so the roles are re-let
 each wave: wave 1's line is the first family, wave 2's is the second, and
 over a handful of waves all four have had a turn at everything. The deal
-is deterministic — the same script and the same roll give the same fifty
+is deterministic — the same script and the same roll give the same ten
 waves, which is what the balance audit and the headless playtest need —
 and it spreads the families evenly by construction, which a per-wave
 re-roll would not.
@@ -44,7 +44,7 @@ Two rules keep a wave readable:
   and their counts add, so nothing authored is dropped.
 
 **Custom mode names the hand instead of rolling it**, and a named hand is
-the whole list: one family named is a fifty-wave run of that one family,
+the whole list: one family named is a ten-wave run of that one family,
 and `FAMILIES_MAX` (ten, or the roster, whichever bites first) is the
 ceiling. `FAMILIES_PER_RUN` is only what the *die* deals when nobody
 names anything — it is not a floor under what a player may ask for.
@@ -67,11 +67,11 @@ one answer at a time, and air is fair.
 
 `public/levels/campaign.json` is the script every map plays — a
 `LevelDoc`, `{ id, waveGap, script }`, of raw per-kind counts per wave.
-`waveGap` is the seconds held between waves (19 as authored — the clock
-starts when the previous wave has finished ENTERING, not when it dies, so
-the waves overlap and the field is a tide). Fifty waves, a few dozen bodies
-on wave 1 and thousands by the end, at Mindustry's own unit numbers.
-`index.json` beside it lists the documents. Fifty is the document's length
+`waveGap` is the seconds held between waves (109 as authored — the clock
+starts when the previous wave has finished ENTERING, not when it dies).
+**Ten waves**, 583 bodies on wave 1 and thousands from wave 3 on, at
+Mindustry's own unit numbers. `index.json` beside it lists the documents;
+`legacy/` is not listed and is not loaded. Ten is the document's length
 and not the run's — past it the tide takes over (below). Edit a script in the admin
 level editor (**Edit level** on the map's card in `/admin`) or by hand in
 the JSON; the dev save API (`/api/levels`) writes the campaign document and
@@ -86,9 +86,10 @@ at every rung up to the count.
 
 **Wave n lands at `WAVE_GAP_OPENING + (n-1) x (waveGap + WAVE_RELEASE_SECONDS)`
 seconds of run time, and nothing about the board can move it**
-(`Sim.waveStartTime`). At the shipped 19-second gap that is a wave every
-**22.5s**, so the fifty-wave script is 1,105s of schedule whatever map it is
-played on and whatever difficulty it is played at.
+(`Sim.waveStartTime`). At the shipped 109-second gap that is a wave every
+**112.5s**, and the opening is a full cadence too — so the ten-wave script is
+1,125s of schedule whatever map it is played on and whatever difficulty it is
+played at, wave 1 at 112.5s and wave 10 at 1,125s.
 
 It used to be a lower bound rather than a schedule. One wave was loaded at a
 time and the next waited for the last to finish spawning, so a map whose drop
@@ -107,16 +108,43 @@ What that means when you author:
 - **A wave's SIZE decides how hard it arrives, never how long it takes.**
   Author a wave the doors cannot pass in 3.5s and you are authoring an
   overlap on purpose: two waves on the field together, which is a real and
-  usable difficulty lever. It just no longer buys you extra minutes.
+  usable difficulty lever. It just no longer buys you extra minutes. **Every
+  wave of the shipped script is now such a wave** — see the swell below.
 - **Everything else in the run reads the same clock** — a survive's
   deadline, an intercept's launches (`Sim.runCrossers`), the tide's cycles,
   and the sandbox's jump (`Sim.skipToTime`, `time M:SS` in the console).
+
+## The swell and the trough
+
+The script is a **compression** of the fifty-wave one it grew out of, kept at
+`public/levels/legacy/campaign-50.json`: five of those waves summed into one of
+these, five times the gap between them, the same 50,000 bodies over the same
+schedule. Nothing was cut.
+
+What that changes is the SHAPE of the field, and it is the thing to author
+against. A wave releases at `count / WAVE_RELEASE_SECONDS`, so a 7,500-body wave
+is asking the doors for 2,100 bodies a second and will not get it: the wave keeps
+releasing for as long as the doors take (`Sim.live`), the board fights the front
+of a queue, and then the map **empties** before the next one is called. The old
+script was a steady overlap; this one is a swell and a trough. A board that
+survives the swell gets a real lull to rebuild in, and a board that does not is
+overrun inside one wave rather than ground down over five.
+
+Two authoring consequences:
+
+- **A wave is a whole fight, not a beat.** There are ten of them in a run, so
+  each one is a tenth of the difficulty curve. A count changed here is felt.
+- **The trough is real income.** The core pays on the run clock
+  (`docs/economy.md`), so the empty stretch after a wave is banked scrap with
+  nothing shooting at you — which is the compensation for meeting five waves at
+  once, and it is why the opening gap is a full cadence rather than three
+  seconds.
 
 ## The tide: the script is infinite
 
 A script is a finite document and a run is not. **When the cursor reaches
 the last wave and the mission is still open, the last `TIDE_CYCLE_WAVES`
-(eleven — waves 40 to 50 of a fifty-wave script) go again**, and every
+(two — waves 9 and 10 of the ten-wave script) go again**, and every
 cycle adds `TIDE_LEVELS` to the enemy level every body spawns at
 (`Sim.loadStep`). `TIDE_LEVELS` is `LEVELS_PER_DOUBLING` in
 `game/ladder.ts`, so the climb is **x2 health, then x4, then x8**, with no
@@ -128,9 +156,9 @@ Three things about it that are load-bearing when you author:
   same armour, same drop, same silhouette. The swarm that comes back is
   the swarm the player just beat, and the only question it asks is
   whether the guns bought so far still cut it. That is why levels are the
-  knob and counts are not — a count ramp past wave 50 would change the
+  knob and counts are not — a count ramp past wave 10 would change the
   picture on screen and the cost of the frame with it.
-- **Eleven waves, not one.** The tail of a script is its shape — a lull, a
+- **More than one wave.** The tail of a script is its shape — a lull, a
   spike, a boss — and a finale sent on a loop is a metronome. The cycle
   keeps the rhythm you wrote, so **the last eleven waves are the ones that
   get played forever**: author them as a stretch that stands repeating.
@@ -187,7 +215,7 @@ Rules of thumb for the counts:
   three pieces are `OBJECTIVE_KINDS` (`game/levels.ts`): a mission puts
   them on the board and nothing else can, so `waveGroups` strips them from
   a wave whatever the document says and the level editor does not offer
-  their rows. The boss used to be typed into wave 50 as the campaign's
+  their rows. The boss used to be typed into the last wave as the campaign's
   curtain; a script that loops forever has no curtain to be, and a boss on
   a lap counter is ordinary traffic at double health. The bodies are not
   retired — every line of them is live, and they are waiting on the

@@ -1,4 +1,4 @@
-import { buildAtlas, DECOR_TILES, FLOOR_SHALLOW_WATER, SHALLOW_FOR_DEEP, unitIcon } from "./atlas";
+import { buildAtlas, DECOR_TILES, FLOOR_SHALLOW_WATER, SHALLOW_FOR_DEEP, towerIcon, unitIcon } from "./atlas";
 import { fitZoom } from "./fit";
 import {
   CELL,
@@ -25,7 +25,7 @@ import {
 import { ALL_LAYERS, Renderer, type TerrainLayers } from "./renderer";
 import { loadInvertZoom } from "./progress";
 import {
-  MARK_KINDS, MARK_UNITS, MAX_MARKS, markKind, markOpts, markUnit,
+  MARK_KINDS, MARK_TOWERS, MARK_UNITS, MAX_MARKS, markKind, markOpts, markTower, markUnit,
   type MapMark, type MarkKind,
 } from "./missionMarks";
 import { unitAccent } from "./levels";
@@ -711,7 +711,7 @@ export class MapEditor {
       }
     }
     const h = (k.size * CELL) / 2;
-    const face = this.markArt.get(k.unit);
+    const face = this.markArt.get(k.tower ?? k.unit);
     for (let j = 0; j < pts.length; j++) {
       c.fillStyle = k.color;
       c.fillRect(px(pts[j][0]) - h, px(pts[j][1]) - h, h * 2, h * 2);
@@ -835,6 +835,19 @@ export class MapEditor {
   private readonly markArt = new Map<string, HTMLImageElement>();
 
   private loadMarkArt(): void {
+    // a mark that stands a TURRET up wears that turret's head instead of a
+    // body's portrait (missionMarks.ts markTower)
+    for (const kind of MARK_TOWERS)
+      void towerIcon(kind)
+        .then((url) => {
+          const img = new Image();
+          img.onload = () => {
+            this.markArt.set(kind, img);
+            this.redraw();
+          };
+          img.src = url;
+        })
+        .catch(() => {});
     for (const kind of MARK_UNITS)
       void unitIcon(kind, unitAccent(kind))
         .then((url) => {
@@ -1310,10 +1323,11 @@ export class MapEditor {
         // footprint, and the ink is how the kind is told apart at a zoom
         // where the picture is eight pixels across
         c.fillStyle = k.color;
-        c.globalAlpha = this.markArt.get(markUnit(m) ?? "") ? 0.35 : 0.75;
+        const faceKey = markTower(m) ?? markUnit(m) ?? "";
+        c.globalAlpha = this.markArt.get(faceKey) ? 0.35 : 0.75;
         c.fillRect(m.x * CELL, m.y * CELL, side, side);
         c.globalAlpha = 1;
-        const face = this.markArt.get(markUnit(m) ?? "");
+        const face = this.markArt.get(faceKey);
         if (face) c.drawImage(face, m.x * CELL, m.y * CELL, side, side);
         c.strokeStyle = i === this.picked ? "#ffffff" : "rgba(20,4,8,0.9)";
         c.lineWidth = (i === this.picked ? 3 : 1.5) / s;
