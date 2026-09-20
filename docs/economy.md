@@ -103,15 +103,18 @@ four rarities ARE the four tiers, which is where the card's border colour comes 
 | 1 | 120 | 1,920 | 7,680 | 30,720 | 3x3 tiles | 6x6 |
 | 2 | 700 | 11,200 | 44,800 | 179,200 | 6x6 | 12x12 |
 | 3 | 4,000 | 64,000 | 256,000 | 1,024,000 | 9x9 | 18x18 |
-| 4 | 32,000 | 512,000 | 2,048,000 | 8,192,000 | 12x12 | 24x24 |
+| 4 | 24,000 | 384,000 | 1,536,000 | 6,144,000 | 12x12 | 24x24 |
 
-**The gaps are about six times a step through the middle and eight into tier 4**, 267x end to
-end, which is far steeper than the per-kind prices this replaced (110 to 9,500 was 86x). Per
-TILE it is 120 / 175 / 444 / 2,000 — a 16.7x spread. The steepening is at the top, where it
-buys something: a gap at the bottom gates nothing except whether the run gets started, so the
-thing worth gating is the 4x4. A tier-4 gun is expensive because it is sixteen tiles of gun,
-and then expensive again on top of that because reach and splash are worth more than raw
-damage.
+**One step, about six times, all the way up** — 5.8x, 5.7x, 6.0x — **200x end to end**, which is
+still far steeper than the per-kind prices this replaced (110 to 9,500 was 86x). Per TILE it is
+120 / 175 / 444 / 1,500, a 12.5x spread: a tier-4 gun is dearer per tile as well as bigger,
+because reach and splash are worth more than raw damage.
+
+**Tier 4 used to steepen to eight**, on the argument that the 4x4 is the thing worth gating and
+a gap at the bottom gates nothing except whether the run gets started. The gate is the run
+clock now (`TIER_UNLOCK`), and a band already shut until fifteen minutes does not need to be
+the dearest step on the ladder as well. At 512,000 a press a run could afford two before the
+script ended, which made tier 4 a thing you bought once rather than a thing you built with.
 
 **The price is the tier's, flat, for every gun in it and whatever shape rolls.** It has to be:
 the gun and the shape are both rolled, and the price is printed on the button before the press.
@@ -124,11 +127,10 @@ shape under the shipped odds (40/30/20/10 over those four averages 17), rounded 
 square so "the price of a 4x4" is a thing a player can hold in their head. Draw badly and you
 paid over the odds; draw well and you got a 6x6 for the price of a 4x4.
 
-**What the numbers buy**, measured as SECONDS OF INCOME at the rate in force. A tier-1 press is
-under six seconds of income from the first frame. A tier-2 press is about twenty seconds at the
-minute it opens. A tier-3 press is about a minute, and a tier-4 press is about two and a half —
-a genuine commitment, and one a run can make twice before the script ends. A whole run banks
-about 2.33M.
+**What the numbers buy**, measured as SECONDS OF INCOME at the rate in force *when the band
+opens*. Tier 1 is six seconds from the first frame; tier 2 about fifteen at 5:00; tier 3 about
+forty at 10:00; tier 4 about a hundred at 15:00. Counted as presses the bank can already cover
+on the minute the band opens, that is 3 / 14 / 7 / 3. A whole run banks about 2.33M.
 
 ### The shape is the roll
 
@@ -144,7 +146,7 @@ tackers in a block", and the question it asks is where nine of anything can go.
 **X is the AMOUNT, not the shape.** It cycles **1 / 4 / 9 / 16** as a standing setting and
 multiplies all four prices flat, **with no bulk discount**. What it buys is the rolled shape
 TILED that many times (`fleetLayout`) — one gun, one roll, that much more ground — and every
-amount is a square so the copies butt with no gap. A x16 of a 6x6 at tier 4 is 8.2M, which no
+amount is a square so the copies butt with no gap. A x16 at tier 4 is 6.1M, which no
 run banks; the top of the ladder is a ceiling rather than an offer.
 
 ### The bands open on the clock

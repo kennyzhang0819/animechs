@@ -163,25 +163,29 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
 
 /**
  * WHAT ONE TURRET OF A TIER IS PRICED AT. A press costs this times
- * CARD_CELLS (cardPrice), so a tier-4 press is 512,000 and no opening
+ * CARD_CELLS (cardPrice), so a tier-4 press is 384,000 and no opening
  * bank comes near one.
  *
- * THE STEEPNESS IS AT THE TOP, WHERE IT BUYS SOMETHING. About six times a
- * step through the middle and EIGHT into tier 4 — 267x end to end — because
- * the thing worth gating is the 4x4, and a gap at the bottom gates nothing
- * except whether the run gets started. Tier 2 was 1,000 and it walled the
- * band off for the whole opening: the minimum card is nine turrets, so a
- * 6.7x per-turret step is a 6.7x step in the smallest purchase that band
- * can make, and the bank at wave eight could not clear it without giving
- * up two waves of building.
+ * ONE STEP, ABOUT SIX TIMES, ALL THE WAY UP — 200x end to end. It used to
+ * steepen into tier 4 at EIGHT on the argument that the 4x4 is the thing
+ * worth gating; the gate is the run clock now (TIER_UNLOCK), and a band
+ * that is already shut until fifteen minutes does not also need to be the
+ * dearest step on the ladder. A run reaching it at 512,000 a press could
+ * afford two before the script ended, which made the band a thing you
+ * bought once rather than a thing you built with.
  *
- * Per tile that is 120 / 175 / 444 / 2,000. docs/economy.md.
+ * Tier 2 was 1,000 once and it walled the band off for the whole opening:
+ * a press is sixteen turrets, so a 6.7x per-turret step is a 6.7x step in
+ * the smallest purchase that band can make, and the bank at wave eight
+ * could not clear it without giving up two waves of building.
+ *
+ * Per tile that is 120 / 175 / 444 / 1,500. docs/economy.md.
  */
 export const TIER_PRICE: Record<TowerTier, number> = {
   1: 120,
   2: 700,
   3: 4000,
-  4: 32000,
+  4: 24000,
 };
 
 /** every turret of one tier, in roster order */
