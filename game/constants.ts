@@ -463,7 +463,9 @@ export interface BulletStats {
   // (ShootAlternate, Sim.fireShot) and the ODD mount loads it — deluge's
   // volley leaves one nozzle as water and the other as fire; or BY ROLL
   // (TowerStats.altChance), where every shot is a fresh chance at the
-  // second round — airburst's incendiary shell. It is a WHOLE BulletStats
+  // second round. NOTHING LOADS BY ROLL TODAY — airburst's incendiary
+  // shell was the one and every shell is incendiary now — and the branch
+  // stays wired for the next gun that wants one. It is a WHOLE BulletStats
   // and not a patch, because the two rounds are two shots — their own
   // burst radius, their own status, their own colour and effects — and a
   // diff would have to name every field anyway.
@@ -1047,65 +1049,33 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
         explodeDelay: 5 / TICK,
         interval: 6 / TICK,
       },
+      // EVERY SHELL IS THE INCENDIARY ONE. It was pyratite on a roll at
+      // one in five, with lead the rest of the time; the two ammos were
+      // the same flak and the same numbers with one line between them, so
+      // the roll bought a colour change and a status a player could not
+      // plan around. A blast carries a status (Sim.splash), so a shell
+      // lights the whole crowd it burst over — at two a volley this holds
+      // anything in reach near the stack cap (Sim.applyBurn,
+      // FIRE_MAX_STACKS), which is what the gun is for now.
+      burn: 1,
       sprite: {
         region: "shell",
         across: 6 * MU,
         along: 8 * MU,
         shrinkX: 0,
         shrinkY: 0.5,
-        // lead ammo overrides no colour, so the shell keeps the stock pair
-        back: PAL.bulletYellowBack,
-        front: PAL.bulletYellow,
+        back: PAL.lightOrange,
+        front: PAL.lighterOrange,
       },
       shootFx: FxKind.ShootSmall,
       smokeFx: FxKind.SmokeSmall,
       hitFx: FxKind.Flak,
-      // lead sets no despawnEffect either, so it keeps Fx.hitBulletSmall —
-      // which is hitBulletColor with its ramp fixed to Pal.lightOrange
+      hitFx2: FxKind.FlameHit,
+      // lead set no despawnEffect, so it keeps Fx.hitBulletSmall — which
+      // is hitBulletColor with its ramp fixed to Pal.lightOrange
       despawnFx: FxKind.BulletHit,
       fxColor: PAL.lightOrange,
-      // THE INCENDIARY SHELL (BulletStats.alt, rolled at `altChance`): the
-      // same lead flak wearing pyratite's colours, and the only number
-      // that differs is the fire. A blast carries a status (Sim.splash),
-      // so one shell lights the whole crowd it burst over — which is why
-      // it is a ROLL and not every round: at two shells a volley six
-      // times a second an always-incendiary airburst would hold anything
-      // it could see at the stack cap, for 180 scrap.
-      alt: {
-        speed: 4.2 * TICK * MU,
-        damage: 2,
-        lifetime: (220 + 2 + 10) / 4.2 / TICK,
-        splash: 27 * 0.5,
-        splashRadius: 15 * MU,
-        collidesAir: true,
-        collidesGround: true,
-        burn: 1,
-        flak: {
-          explodeRange: 30 * MU,
-          explodeDelay: 5 / TICK,
-          interval: 6 / TICK,
-        },
-        sprite: {
-          region: "shell",
-          across: 6 * MU,
-          along: 8 * MU,
-          shrinkX: 0,
-          shrinkY: 0.5,
-          back: PAL.lightOrange,
-          front: PAL.lighterOrange,
-        },
-        shootFx: FxKind.ShootSmall,
-        smokeFx: FxKind.SmokeSmall,
-        hitFx: FxKind.Flak,
-        hitFx2: FxKind.FlameHit,
-        despawnFx: FxKind.BulletHit,
-        fxColor: PAL.lightOrange,
-      },
     },
-    // one shell in five is the incendiary one: enough that a stream of
-    // flak keeps a crowd alight, short of torch's, which is the gun whose
-    // whole job is fire
-    altChance: 0.2,
   },
   // Cleaver, 1:1 from mindustry/content/Blocks.java with thorium ammo
   // (ShrapnelBulletType, damage 105): three instant piercing rays fired as
@@ -2246,7 +2216,7 @@ export const TOWERS: Record<TowerKind, TowerStats> = Object.fromEntries(
  */
 export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   tacker: "Shoots small bullets quickly.",
-  airburst: "Shoots flak shells that burst near enemies, some of them incendiary.",
+  airburst: "Shoots flak shells that burst near enemies and set them alight.",
   coil: "Shoots lightning that jumps between enemies.",
   lobber: "Lobs shells that explode where they land.",
   torch: "Sprays fire at close range and sets enemies alight.",

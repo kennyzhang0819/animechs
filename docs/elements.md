@@ -43,16 +43,21 @@ Four turrets, and each lights a different shape of board:
 | **torch** | a pierced line at 60px — the gun whose whole job is fire | 2 a hit |
 | **deluge** | its odd nozzle, one ball in two, over a 40px pool | 2 a burst |
 | **furnace** | everything under a held beam, re-timed every damage interval | 3 a tick |
-| **airburst** | **one flak shell in five** (`altChance`), over its burst | 1 a burst |
+| **airburst** | **every flak shell**, over its burst | 1 a burst |
 
-Airburst is the odd one: its fire is a ROLL, not a property of the gun. It
-throws two shells a volley six times a second, and a blast carries its
-round's status (`Sim.splash`), so an always-incendiary flak would hold
-everything it could see at the stack cap — for 180 scrap, at tier 1, on both
-layers. The incendiary round is a whole second ammo
-(`BulletStats.alt`), drawn in pyratite's orange, so the player can see which
-shells are the ones that light. The dial to move is the chance: one stack is
-already the floor of `burn`, and doubling it doubles the whole gun's fire.
+Airburst is the WIDEST of the four. It throws two shells a volley six times a
+second and a blast carries its round's status (`Sim.splash`), so every burst
+lights the whole crowd it opened over — which on a thick lane holds
+everything in reach near the stack cap, for 180 scrap, at tier 1, on both
+layers.
+
+**It used to be a roll**: one shell in five was a second ammo (`BulletStats.alt`)
+in pyratite's orange and the rest were lead, on the argument that an
+always-incendiary flak is too much fire for the price. The two ammos were
+the same flak with one line between them, so what the roll actually bought
+was a colour change and a status the player could not plan around. There is
+one ammo now and it burns. The dial to move is `burn` itself, which is at
+its floor of 1 — the next step up doubles the whole gun's fire.
 
 ### Why fire is weak against one big hull
 
@@ -179,7 +184,8 @@ Two things to keep an eye on:
   per hit on the ammo, not a duration.
 - **A second ammo is a whole second bullet.** Deluge's odd barrel loads
   `bullet.alt` — fire, drawn as an orange orb; the even one water, drawn blue.
-  Airburst rolls for its instead (`altChance`). Either way the alt has
+  Nothing loads by roll (`altChance`) today, though the branch is still wired.
+  Either way the alt has
   to be threaded through every `bulletFor(kind, frag, alt)` call or the shot is
   drawn *and read* as the main ammo; `Game.remakeView` dropped the argument once
   and the fire nozzle spent that time throwing blue water balls. An upgrade
