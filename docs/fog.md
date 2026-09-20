@@ -1,81 +1,136 @@
 # The fog
 
-Three layers of dark over the ground, and **nothing hidden by any of them**.
+Mindustry's fog of war, ported whole from `mindustry.game.FogControl` and
+`mindustry.graphics.FogRenderer` — `game/fog.ts` for the bits, the `drawFog`
+pass in `game/renderer.ts` for the picture, `Game.updateFog` to drive it.
 
-The fog is a picture, not a rule. It lives entirely on the drawing side
-(`game/fog.ts`, drawn by `Renderer.drawFog` and `Game.paintMinimapFog`) and the
-sim never reads it: a turret shoots what it always shot, a body walks where it
-always walked, and every count on the HUD is the count it always was. What the
-fog changes is how much of the board the eye is being asked to read at once.
+## Two sets of bits, three layers on screen
 
-## The three layers
+Upstream keeps two independent sets per team, and so does this:
+
+| set | what it is |
+| --- | --- |
+| `discovered` | every cell an eye has EVER stood within reach of. It only ever grows; nothing but a new map clears it. |
+| `visible` | the cells an eye covers RIGHT NOW. Rebuilt from nothing twenty-five times a second. |
+
+What the frame draws is two washes over the map — the dynamic buffer at
+`FOG_DYNAMIC_ALPHA` and the static one over it at `FOG_STATIC_ALPHA` — which
+lands as three layers:
 
 | layer | when | how dark |
 | --- | --- | --- |
 | **active** | something of yours is looking at it right now | clear |
-| **seen** | it has been looked at, and is not now | semi dark |
-| **never seen** | nothing has ever looked at it | semi dark, and darker |
+| **seen** | it has been looked at, and is not now | half black |
+| **never seen** | nothing has ever looked at it | about seven tenths |
 
-**NEVER SEEN IS NOT BLACK, AND THAT IS THE WHOLE SHAPE OF THIS FOG.** It used
-to be: pitch black, then semi dark, then clear — a board two thirds of which
-was a hole with a map somewhere inside it. A player could not plan a defence on
-ground they could not see the shape of, so the first minutes of every run were
-spent buying the map back rather than deciding anything about it. Every layer
-shows the terrain now. The rock, the water, the moss and the spore all read at
-every level, and what the layers say is how *current* your knowledge of a place
-is — not whether you have any.
+**NEVER SEEN IS NOT BLACK, AND THAT IS THE ONE NUMBER HERE THAT IS NOT
+MINDUSTRY'S.** Upstream's `staticColor` alpha is 1 and undiscovered ground is a
+hole with a map somewhere inside it. This board is three quarters undiscovered
+for the first minutes of a run, and a player cannot plan a defence on ground
+they cannot see the shape of — so the run opened with the player buying the map
+back rather than deciding anything about it. At 0.4 over the half-black below
+it, the rock, the water and the moss all still read. What the two dark layers
+say is how *current* your knowledge of a place is, not whether you have any.
 
-The two dark layers are close together on purpose. Both are semi dark; unseen
-is the deeper of the two and the gap between them is small. It is enough to
-read where you have been and nowhere near enough to make the rest a wall.
+The gap between the two is small on purpose: enough to read where you have
+been, nowhere near enough to make the rest a wall.
+
+**THE HILLS ARE STILL SHADED UNDER IT.** They were not, while never-seen ground
+was flat black: a dark hill core inside a lit range read as fog that had never
+been lifted, so the fog switched the hill darkness off and was the only black a
+run wore. Now that every layer is a wash, a hill's own shading is the only thing
+left saying which of that visible terrain is *height*. The two stack, and a
+range under the fog is simply the darkest ground on the map — which is what it
+is.
+
+## What is hidden
+
+**A BODY IN THE FOG IS NOT THERE.** Every body on this board is the swarm's, and
+one of theirs is drawn only where something of the player's is looking right
+now — not the body, not its shadow, not its wake, not its shot, not the puff
+where it was hit, and not its health bar. The wash alone would leave a body
+half-visible in the grey, and a body in the grey is a body the player was
+promised they cannot see. The minimap keeps the same promise.
+
+**A BUILDING IS DRAWN ONCE IT HAS BEEN SEEN** and stays drawn after, the way a
+remembered structure does in StarCraft: the swarm's turrets and the map's shield
+towers sit under the grey where you last looked at them. Never seen, never
+drawn.
+
+**NOTHING IS HIDDEN FROM THE SIM.** The fog is a picture and not a rule — a
+turret shoots what it always shot, a body walks where it always walked, and a
+placement is refused for the reasons it always was. It was a rule once, when it
+lived in `Sim`; it is not one now.
 
 ## What lights it
 
-Everything that lights the board is something of the player's, and all of it is
-still except the last:
+Everything that lights the board is the player's, and all of it is still except
+the last:
 
-- **the core**, twenty-six cells.
-- **every turret you own**, out to *its own reach* (the live one — an upgrade
-  that lengthens a gun lengthens what it sees), with a floor of nine cells so a
-  short-range gun is not blind.
-- **a beacon you have bought**, over its whole power disc
-  (`BEACON_POWER_R`) — the ground it opens to building is the ground it lights.
-- **a beacon you have not**, over the small ring it has always carried
-  (`BEACON_VISION_R`). A lamp on a mast lights its own hill whoever owns it, and
-  a beacon nobody can find is a beacon nobody can decide to buy.
-- **the escort's hauler**, thirteen cells, which is the one light that moves.
+- **the core**, 34 tiles (`CORE_VISION_CELLS`).
+- **every turret you own**, out to the whole of its LIVE range
+  (`VISION_OF_RANGE` is 1, Mindustry's own `fogRadiusMultiplier`), with a floor
+  of `VISION_BUILT_CELLS` so a short gun is not blind. An upgrade that lengthens
+  a gun lengthens what it sees.
+- **a beacon you have bought**, over the whole disc it opens to building
+  (`BEACON_POWER_R`): ground a player may spend on is ground they are owed a
+  look at.
+- **a beacon you have not**, over the small ring it has always carried on the
+  field (`BEACON_VISION_R`). A lamp on a mast lights its own hill whoever owns
+  it, and a beacon nobody can find is a beacon nobody can decide to buy.
+- **the escort's hauler**, 16 tiles (`CONVOY_VISION_CELLS`) — the one eye on
+  this board that moves, and deliberately shorter than a turret's: a cart that
+  lit its whole route as it went would be scouting the map for free.
 
-Every source falls off over five cells past its reach rather than ending at a
-rim, for the reason `BEACON_VISION_R` gives: a hard edge on a soft gradient
-reads as a rendering fault.
+Nothing stops sight. There is no line of sight and no shadowing, exactly as
+upstream: a fog radius is a radius.
 
 ## What the mission is owed
 
 **A MISSION HAS NO SURPRISES IN IT** (`docs/mission-design.md`), and the fog does
-not get to put any back. At the level's birth `Game.seedFog` paints every piece
-of a mission's geometry **seen** — not lit, because nothing is watching it, but
-never unknown:
+not get to put any back. At the level's birth `Game.seedFog` stamps the STATIC
+set — and only the static set — along every piece of a mission's geometry:
 
 - the roads a crosser is sent down and the road the hauler is pushed up, as a
-  corridor eight cells wide along the line;
+  corridor `MISSION_ROAD_CELLS` either side of the line;
 - the circles a siege will rise in, and each emplacement the map places;
 - the ground a garrison holds;
-- every mark a map stands on the board.
+- every point mark a map stands on the board, at `MISSION_INTEL_CELLS`.
 
-So the question a mission asks — *will you have paid for a position at the
-south-west by two minutes* — is a question the player can still answer on the
-first frame. A player who cannot see where the south-west IS has not been asked
-anything.
+Stamping the static set and nothing else is what makes this read as
+INTELLIGENCE rather than as sight: the ground is drawn in the grey of remembered
+ground from the first frame, and whatever is standing on it is not drawn at all
+until something of the player's actually looks. The briefing says **where**,
+never **what**.
 
-## What it costs
+## How it is cheap
 
-The light is kept in two halves because one of them moves and the other does
-not. Turrets, the core and the beacons are stamped into a buffer that is rebuilt
-only when one of them is built, sold, upgraded, destroyed or switched on — and
-then at most once every few frames, so a wave chewing through a big board
-coalesces its changes instead of paying for each one. The hauler is laid over
-the finished mask afterwards, which is a disc forty cells across and costs
-nothing. On an idle frame the whole thing is two hashes and a comparison.
+**THE STATIC SET IS EVENT-DRIVEN, never rebuilt.** Every eye that appears or
+moves onto a new tile pushes one event — a circle stamped into `discovered` and
+handed to the renderer for its own accumulating buffer. That is what makes a
+fast-moving eye leave an unbroken trail rather than a row of dots at the
+rebuild's own rate, and what makes a standing board free. `Game.updateFog` is
+the TileChangeEvent and the `Unit.lastFogPos` check in one: an eye whose tile
+and reach it has seen before costs a set lookup and nothing else.
 
-The mask reaches the screen as a cell-per-texel texture under the same linear
-filter the hill darkness uses, and only the rectangle that moved is uploaded.
+**THE DYNAMIC SET IS REBUILT AT MOST 25 TIMES A SECOND**
+(`FOG_DYNAMIC_INTERVAL`), and only when something has actually moved. It is
+measured on the SIM's clock rather than the wall's, so a run that is paused,
+fast-forwarded or replayed headless sees the same fog either way.
+
+**THE RASTER IS A MIDPOINT CIRCLE**, span for span the one `FogControl` uses, so
+a cell either side of the rim falls on the same side of it here as it does
+upstream. The picture is not that raster: it is a twenty-sided polygon drawn at
+the eye's TRUE floating position into a texel-a-tile buffer, magnified
+bilinearly and quantized into bands by `FOG_FS`. The look is those three
+together — give the buffer more texels and the bands narrow into a hard circle;
+drop the quantization and the ramp reads as a blur.
+
+The rules are deliberately the more generous of the two: the dynamic raster is
+stamped one tile wider than the polygon is drawn ("always +1 to keep up with
+visuals"), so nothing is ever shown that the rules say is hidden.
+
+**A DRIVER THAT REFUSES THE FRAMEBUFFERS** falls back to `drawFogCells`, which
+uploads the bits straight as a cell-a-texel texture and sends only the rectangle
+that changed. It is a worse-looking fog and it is not optional: a frame with no
+fog on it shows the player the whole map.

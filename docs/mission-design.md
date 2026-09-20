@@ -66,9 +66,12 @@ Three consequences, and every archetype below is shaped by them:
 - **NO SURPRISES.** The objective is on screen from the first wave. Its
   pressure is affordability and timing, never discovery. A mission whose
   twist is that the player did not know is not a mission. The fog
-  (`docs/fog.md`) is held to this: a mission's geometry is painted SEEN at
-  the level's birth, so a road, a post and a garrison are all on the map
-  before anything has walked near one.
+  (`docs/fog.md`) is held to this: a mission's geometry is DISCOVERED at
+  the level's birth — the road, the posts and the garrisons are all on
+  the map, in the grey of remembered ground, before anything has walked
+  near one. What is STANDING on that ground is another matter, and is not
+  drawn until something of the player's looks: the briefing says where,
+  never what.
 - **A MISSION MUST COMPETE WITH THE WAVE CLOCK.** "Kill it eventually"
   is not an objective. The objective needs a deadline, a window, or a
   cost that climbs while it is ignored — and the clock it is competing
@@ -295,7 +298,7 @@ What Coldline does with it, and what the shape turned out to need:
   swarm's heavy main line, cold and broad-gauge; Thornway's is a works
   tramway, narrow and timber-sleepered, which the Hauler drives rather
   than runs on. A mission has no discovery in it (see above) — which is
-  why `Game.seedFog` reveals the whole corridor — so a road a player found
+  why `Game.seedFog` discovers the whole corridor — so a road a player found
   out about by watching something walk down it would be a different and
   worse mission.
 - **The line is on an eight-heading lattice and every corner is 45

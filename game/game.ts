@@ -9,7 +9,18 @@ import {
   refreshMap,
   SPAWN_STYLE,
 } from "./maps";
-import { Fog, FOG_MISSION_R } from "./fog";
+import {
+  CONVOY_VISION_CELLS,
+  CORE_VISION_CELLS,
+  FOG_DYNAMIC_ALPHA,
+  FOG_STATIC_ALPHA,
+  Fog,
+  MISSION_INTEL_CELLS,
+  MISSION_ROAD_CELLS,
+  VISION_BUILT_CELLS,
+  VISION_OF_RANGE,
+  type VisionSource,
+} from "./fog";
 import { markKind } from "./missionMarks";
 import { garrisonsFor, postsFor, roadAt, roadsFor, siegeFor } from "./missions";
 import { SHIELD_TOWER_SIZE } from "./mutation";
@@ -21,6 +32,7 @@ import {
   H,
   BEACON_LADDER,
   BEACON_POWER_R,
+  BEACON_VISION_R,
   BEACON_SIZE,
   beaconPriceAt,
   ROWS,
@@ -826,9 +838,13 @@ const MM_LE = (() => {
 })();
 const mmColor = (r: number, g: number, b: number): number =>
   (MM_LE ? 0xff000000 | (b << 16) | (g << 8) | r : (r << 24) | (g << 16) | (b << 8) | 0xff) >>> 0;
-/** black at a given alpha, for the fog layer — the one minimap colour
- *  that is not opaque (see drawMinimap) */
+/** the fog's two washes as minimap pixels: black at the alpha the field
+ *  draws each layer at (fog.ts), the never-seen one over the other */
 const mmFogPx = (a: number): number => ((MM_LE ? a << 24 : a) >>> 0);
+const MM_FOG_SEEN = mmFogPx(Math.round(FOG_DYNAMIC_ALPHA * 255));
+const MM_FOG_UNSEEN = mmFogPx(
+  Math.round((1 - (1 - FOG_DYNAMIC_ALPHA) * (1 - FOG_STATIC_ALPHA)) * 255),
+);
 /** the swarm's red and everything of ours in white — see drawMinimap */
 const MM_RED = mmColor(0xf2, 0x55, 0x55);
 const MM_WHITE = mmColor(0xff, 0xff, 0xff);
@@ -1146,9 +1162,29 @@ export class Game {
    * a player who wants a field clear of green still wants to see the fire.
    */
   private statusMarks: StatusMode = STATUS_MARKS_DEFAULT;
-  /** THE FOG (fog.ts, docs/fog.md) — the drawing side's memory of where
-   *  the board has had eyes, reset with the level and never by a wave */
+  /**
+   * THE FOG OF WAR (fog.ts, docs/fog.md) — Mindustry's FogControl, and
+   * the drawing side's.
+   *
+   * IT USED TO BE THE SIM'S, back when it was a RULE as well as a
+   * picture: a body in it could not be shot and a structure could not be
+   * built on ground out of sight. It is the picture alone now, so it
+   * lives where the picture is — which is also the only place it CAN
+   * live, the sim being free to step on a worker (workerhost.ts) that two
+   * quarter-megapixel sets cannot follow it onto.
+   */
   private readonly fog = new Fog();
+  /**
+   * EVERY EYE THAT HAS ALREADY STAMPED THE STATIC SET, by tile and reach
+   * — FogControl hangs that off TileChangeEvent and Unit.lastFogPos, and
+   * this is the drawing side's version of both: an eye that appears or
+   * moves onto a new tile is one this has not seen before, and an eye
+   * that has not moved costs a set lookup and nothing else.
+   */
+  private readonly fogStamped = new Set<number>();
+  /** how many eyes the last tick found — one fewer is an eye that has
+   *  GONE, which is FogControl's TilePreChangeEvent */
+  private fogEyeCount = -1;
   // THE MINIMAP (attachMinimap, drawMinimap): the whole map at a glance,
   // the field on it and the viewport's frame; a press or
   // a drag on it puts that place in view
@@ -1175,12 +1211,13 @@ export class Game {
   private mmMarkLayer: HTMLCanvasElement | null = null;
   private mmMarkPixels: ImageData | null = null;
   private mmMarkPx32: Uint32Array | null = null;
-  /** the fog over the corner map (fog.ts), repainted only when the mask
-   *  itself has moved — which on most frames it has not */
+  /** the fog's two washes over the corner map (drawMinimap), repainted on
+   *  the marks layer's own cadence rather than on the fog's — the fog
+   *  resettles twenty-five times a second and nobody reads a corner map
+   *  that fast */
   private mmFogLayer: HTMLCanvasElement | null = null;
   private mmFogPixels: ImageData | null = null;
   private mmFogPx32: Uint32Array | null = null;
-  private mmFogVer = -1;
   /** the minimap's CSS width in px and the countdown to measuring it
    *  again (MM_CSS_EVERY) — what a dilated mark's size is worked out from */
   /**
@@ -2272,7 +2309,7 @@ export class Game {
    */
   private warmup(): void {
     this.publish();
-    this.fog.update(this.view);
+    this.updateFog();
     this.renderer.render(
       this.view,
       this.zoom,
@@ -2787,36 +2824,131 @@ export class Game {
       w.beaconOn,
     );
     this.publish();
-    this.fog.reset();
+    this.fog.reset(true);
+    this.fogStamped.clear();
     this.seedFog();
-    this.renderer.setFog(this.fog);
+    this.renderer.setFog(this.fog, this.visionSources);
   }
 
   /**
-   * WHAT THE MISSION IS OWED, BEFORE ANYTHING HAS WALKED IT.
+   * EVERY EYE ON THE FIELD — FogControl's own list, for a board whose
+   * eyes are all buildings.
    *
-   * A mission has no surprises in it (docs/mission-design.md) and the fog
-   * does not get to put any back: the road a crosser takes, the road the
-   * hauler is pushed up, the circles a siege will rise in and every piece
-   * of furniture a map stands on the board are painted SEEN here, once,
-   * at the level's birth. They are not lit — nothing is watching them —
-   * so they read as ground the player has been shown and is not looking
-   * at, which is exactly what they are.
+   * The core, every turret of the player's out to the whole of its LIVE
+   * range (VISION_OF_RANGE), every beacon, and the escort's hauler, which
+   * is the one of them that moves. The swarm looks for nobody: it has the
+   * whole map and always did.
+   *
+   * A BEACON SEES WHETHER OR NOT IT IS BOUGHT. Lit, it sees the disc it
+   * opens to building (BEACON_POWER_R) — the ground a player may spend on
+   * is ground they are owed a look at. Unlit, it keeps the small ring it
+   * has always carried on the field (BEACON_VISION_R): a lamp on a mast
+   * lights its own hill whoever owns it, and a beacon nobody can find is
+   * a beacon nobody can decide to buy.
+   */
+  private readonly visionSources = (): VisionSource[] => {
+    const v = this.view;
+    const out: VisionSource[] = [
+      { x: v.core.x, y: v.core.y, r: CORE_VISION_CELLS * CELL, tiles: CORE_VISION_CELLS },
+    ];
+    for (const t of v.towers) {
+      if (t.team !== "player") continue;
+      const built = VISION_BUILT_CELLS * CELL;
+      const r = t.spec.range > 0 ? Math.max(built, t.spec.range * VISION_OF_RANGE) : built;
+      out.push({ x: t.x, y: t.y, r, tiles: Math.round(r / CELL) });
+    }
+    const beacons = v.terrain.beacons;
+    for (let i = 0; i < beacons.length; i++) {
+      const c = beaconCentre(beacons[i]);
+      const r = v.beaconOn[i] ? BEACON_POWER_R : BEACON_VISION_R;
+      out.push({ x: c.x, y: c.y, r, tiles: Math.round(r / CELL) });
+    }
+    const cv = v.convoy;
+    if (cv.live) out.push({ x: cv.x, y: cv.y, r: CONVOY_VISION_CELLS * CELL, tiles: CONVOY_VISION_CELLS });
+    return out;
+  };
+
+  /**
+   * THE BRIEFING (MISSION_INTEL_CELLS, MISSION_ROAD_CELLS): the mission's
+   * own geometry, DISCOVERED before the run starts — the roads a crosser
+   * is sent down and the one the hauler is pushed up, the circles a siege
+   * will rise in, the ground a garrison holds and every mark the map
+   * stands on the board.
+   *
+   * STAMPING THE STATIC SET AND NOTHING ELSE is what makes this read as
+   * INTELLIGENCE rather than as sight: the ground is drawn in the grey of
+   * remembered ground from the first frame, and whatever is standing on
+   * it is not drawn at all until something of the player's actually
+   * looks. A mission has no surprises in it (docs/mission-design.md) and
+   * the fog does not get to put any back.
+   *
+   * The eyes themselves are not seeded here — updateFog stamps each the
+   * first frame it sees it, which is also the first frame of the run.
    */
   private seedFog(): void {
     const T = this.world.terrain;
     const mapId = this.world.level.map;
-    for (const road of roadsFor(mapId, T.marks)) this.fog.revealLine(road.pts, FOG_MISSION_R);
-    for (const p of postsFor(mapId)) this.fog.reveal(p.x, p.y, p.r);
-    for (const g of garrisonsFor(T.marks)) this.fog.reveal(g.post.x, g.post.y, g.post.r);
+    const intel = (x: number, y: number, tiles: number): void =>
+      this.fog.add({ x, y, r: tiles * CELL, tiles });
+    for (const road of roadsFor(mapId, T.marks)) {
+      const p = road.pts;
+      // a stamp every few tiles along the line, close enough that the
+      // discs overlap into an unbroken corridor
+      const step = MISSION_ROAD_CELLS * CELL;
+      for (let k = 2; k < p.length; k += 2) {
+        const ax = p[k - 2], ay = p[k - 1], bx = p[k], by = p[k + 1];
+        const m = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / step));
+        for (let q = 0; q <= m; q++)
+          intel(ax + ((bx - ax) * q) / m, ay + ((by - ay) * q) / m, MISSION_ROAD_CELLS);
+      }
+    }
+    for (const post of postsFor(mapId)) intel(post.x, post.y, Math.round(post.r / CELL));
+    for (const g of garrisonsFor(T.marks)) intel(g.post.x, g.post.y, Math.round(g.post.r / CELL));
     const siege = siegeFor(T.marks);
-    if (siege) for (const g of siege.spots) this.fog.reveal(g.x, g.y, FOG_MISSION_R);
+    if (siege) for (const g of siege.spots) intel(g.x, g.y, MISSION_INTEL_CELLS);
     for (const m of T.marks) {
       const k = markKind(m.kind);
       if (!k || k.geom !== "point") continue;
       const half = (k.size * CELL) / 2;
-      this.fog.reveal(m.x * CELL + half, m.y * CELL + half, FOG_MISSION_R);
+      intel(m.x * CELL + half, m.y * CELL + half, MISSION_INTEL_CELLS);
     }
+  }
+
+  /**
+   * FogControl.update, once a frame.
+   *
+   * THE STATIC SET IS EVENT-DRIVEN and the dynamic one is not: every eye
+   * that is NEW — a turret just placed, a beacon just bought, the hauler
+   * onto the tile it has just reached — stamps `discovered` once, here,
+   * and is never stamped again. That is what makes a fast-moving eye
+   * leave an unbroken trail rather than a row of dots at the rebuild's
+   * own twenty-five hertz, and what makes a standing board free.
+   *
+   * The DYNAMIC set is the fog's own business: it re-reads the list below
+   * when it decides enough time has passed (Fog.update).
+   */
+  private updateFog(): void {
+    if (!this.fog.enabled) return;
+    const eyes = this.visionSources();
+    const stamped = this.fogStamped;
+    for (const e of eyes) {
+      const gx = clamp(Math.floor(e.x / CELL), 0, COLS - 1);
+      const gy = clamp(Math.floor(e.y / CELL), 0, ROWS - 1);
+      const key = (gy * COLS + gx) * 128 + Math.min(127, e.tiles);
+      if (stamped.has(key)) continue;
+      stamped.add(key);
+      this.fog.add(e);
+    }
+    // ...and an eye that has GONE — a turret sold or wrecked, the hauler
+    // arrived — leaves its discovery behind and the live set rebuilt
+    // without it (FogControl's TilePreChangeEvent). The count is enough
+    // to notice by: nothing on this board moves except the hauler, and
+    // the hauler's every step is already a new eye above
+    if (eyes.length !== this.fogEyeCount) {
+      this.fogEyeCount = eyes.length;
+      this.fog.invalidate();
+    }
+    this.fog.update(() => eyes, this.world.time);
   }
 
   /**
@@ -3053,7 +3185,7 @@ export class Game {
       this.tlx = (this.worldW - this.glCanvas.width / k) / 2;
       this.tly = (this.worldH - this.glCanvas.height / k) / 2;
     }
-    this.fog.update(this.view);
+    this.updateFog();
     this.renderer.render(
       this.view,
       this.zoom,
@@ -3485,8 +3617,12 @@ export class Game {
    *   the PLAYER'S EVERYTHING white — the core, every turret and wall
    *   (a shell still going up in a dimmer white) and every body of
    *   theirs, wherever it is;
-   *   the ENEMY red — every body on the board, under the same fog the
-   *   field wears (paintMinimapFog), and the map's shield towers
+   *   the FOG (fog.ts) as the same two washes the field wears: the
+   *   never-seen layer over everything, a lighter one over ground that
+   *   has been looked at and is not being looked at now, and nothing at
+   *   all where something is watching;
+   *   the ENEMY red — every body in sight (and none out of it: the
+   *   minimap keeps the fog's promise), and the map's shield towers
    *   wherever they have once been seen, a building being a thing that
    *   stays put;
    *   the OBJECTIVES over all of it as amber PINS, a scowl for theirs
@@ -3675,8 +3811,14 @@ export class Game {
     // instead of asking for three colours to be told apart at a pixel each
     const { upx, upy, ukind, uid, n } = view;
     const uoff = (unitSz - 1) >> 1;
+    const vis = this.fog.visible;
+    const fogOn = this.fog.enabled;
     for (let i = 0; i < n; i++) {
       const gx = (upx[i] / CELL) | 0, gy = (upy[i] / CELL) | 0;
+      // IN SIGHT ONLY: the corner map keeps the same promise the field
+      // does, or it is the map the fog was hiding
+      if (fogOn && (gx < 0 || gy < 0 || gx >= cols || gy >= rows || vis[gy * COLS + gx] === 0))
+        continue;
       box(gx - uoff, gy - uoff, unitSz, MM_RED);
     }
     // the map's shield towers, wherever they have been seen
@@ -3688,15 +3830,23 @@ export class Game {
     // with whether each stands. The MARKS (below) are the other way round
     // — a handful, and animated — so they get a layer of their own too,
     // over the buildings, where "over the line itself" puts them
+    // ...and how many of THEIRS have been seen, which is the other thing
+    // that moves this layer. Discovery only ever grows, so a count of it
+    // changes exactly on the frame one more comes onto the map
+    let foeSeen = 0;
+    for (const s of view.shieldTowers) if (s.hp > 0 && this.fog.seenAt(s.x, s.y)) foeSeen++;
+    for (const t of view.towers) if (t.team !== "player" && this.fog.seenAt(t.x, t.y)) foeSeen++;
     let key = (view.towers.length * 31 + structSz) | 0;
     for (const t of view.towers)
       key = (key * 31 + ((t.gy * COLS + t.gx) << 5) + t.size + (t.team === "player" ? 0 : 16)) | 0;
     for (const s of view.shieldTowers) key = (key * 31 + ((s.gy * COLS + s.gx) << 1) + (s.hp > 0 ? 1 : 0)) | 0;
+    key = (key * 31 + foeSeen) | 0;
     if (key !== this.mmTowerKey) {
       this.mmTowerKey = key;
       tpx.fill(0);
       for (const s of view.shieldTowers) {
         if (s.hp <= 0) continue;
+        if (!this.fog.seenAt(s.x, s.y)) continue;
         struct(s.gx, s.gy, SHIELD_TOWER_SIZE, MM_RED);
       }
       // ...and the player's, over everything: the line is what the map is read
@@ -3704,7 +3854,7 @@ export class Game {
       // so a lost emplacement is visible on the minimap as a hole in the line
       for (const t of view.towers)
         if (t.team === "player") struct(t.gx, t.gy, t.size, MM_WHITE);
-        else struct(t.gx, t.gy, t.size, MM_RED);
+        else if (this.fog.seenAt(t.x, t.y)) struct(t.gx, t.gy, t.size, MM_RED);
       struct(T.base.x, T.base.y, T.base.size, MM_WHITE);
       tlc.putImageData(timg, 0, 0);
     }
@@ -3809,20 +3959,17 @@ export class Game {
   }
 
   /**
-   * THE FOG ONTO THE CORNER MAP, at the field's own three levels. The
-   * corner is the one place a player looks to ask "what is out there",
-   * and a lit minimap beside a fogged field answers the question the
-   * field is refusing to — so the same mask is on both, and the
-   * OBJECTIVE PINS are the only thing drawn over it (compositeMinimap),
-   * because a pin is something the player has been told rather than
-   * something they can see.
+   * THE FOG'S TWO WASHES ONTO THE CORNER MAP, at the field's own levels
+   * and in the field's own order: the half black where something once
+   * looked and nothing does now, and the deeper one where nothing ever
+   * has. The two sets are independent (fog.ts), so they are asked in that
+   * order rather than nested.
    *
-   * The mask is a cell a texel and the layer is a cell a pixel, so this
-   * is a copy and not a resample — but it is a quarter of a million
-   * pixels, so it runs only when the fog has actually moved.
+   * IT GOES OVER THE GROUND, THE BODIES AND THE LINE, AND UNDER THE PINS
+   * (compositeMinimap): a pin is something the player has been TOLD, and
+   * the briefing is not dimmed by the weather.
    */
   private paintMinimapFog(cols: number, rows: number): void {
-    if (this.mmFogVer === this.fog.version) return;
     const lay = this.mmFogLayer ?? (this.mmFogLayer = document.createElement("canvas"));
     if (lay.width !== cols || lay.height !== rows) {
       lay.width = cols;
@@ -3835,11 +3982,17 @@ export class Game {
       fimg = this.mmFogPixels = fc.createImageData(cols, rows);
       this.mmFogPx32 = new Uint32Array(fimg.data.buffer);
     }
-    this.mmFogVer = this.fog.version;
-    const fpx = this.mmFogPx32, a = this.fog.alpha;
-    for (let y = 0; y < rows; y++) {
-      const src = y * COLS, dst = y * cols;
-      for (let x = 0; x < cols; x++) fpx[dst + x] = mmFogPx(a[src + x]);
+    const fpx = this.mmFogPx32;
+    if (!this.fog.enabled) fpx.fill(0);
+    else {
+      const vis = this.fog.visible, disc = this.fog.discovered;
+      for (let y = 0; y < rows; y++) {
+        const src = y * COLS, dst = y * cols;
+        for (let x = 0; x < cols; x++) {
+          const i = src + x;
+          fpx[dst + x] = disc[i] === 0 ? MM_FOG_UNSEEN : vis[i] === 0 ? MM_FOG_SEEN : 0;
+        }
+      }
     }
     fc.putImageData(fimg, 0, 0);
   }
@@ -4115,6 +4268,10 @@ export class Game {
       if (uhp[i] <= 0) continue;
       const bx = upx[i], by = upy[i];
       if (bx < x0 || bx > x1 || by < y0 || by > y1) continue;
+      // A BODY IN THE FOG WEARS NOTHING — it is not on screen, and a bar
+      // floating over empty ground says exactly what the fog is there to
+      // keep back (fog.ts, Renderer.vis)
+      if (!this.fog.visibleAt(bx, by)) continue;
       bars.length = 0;
       if (!noBars) {
         const f = clamp(uhp[i] / Math.max(1, uhpmax[i]), 0, 1);
@@ -4368,10 +4525,10 @@ export class Game {
    * opposite number and drawn on exactly the same terms.
    *
    * THEY ARE ON THE BOARD FROM THE FIRST FRAME, and that is a rule and not
-   * a nicety. The archetype has no discovery in it
+   * a nicety. The archetype has no DISCOVERY in it
    * (docs/mission-design.md) — a mission whose twist is that the player
-   * did not know is not a mission, which is why the fog is seeded with
-   * every one of these circles (seedFog) —
+   * did not know is not a mission, which is why the fog opens with every
+   * one of these circles already discovered (seedFog) —
    * so every one of the four circles is drawn from wave one, empty, with
    * the count of emplacements that will rise inside it and the minute they
    * are due. What the player is being asked is "will you have paid for a
@@ -4546,10 +4703,11 @@ export class Game {
     // two thirds of the board dimmer than the rest, so a player reading a
     // wave coming in across it was reading it through a filter that exists
     // for a different question entirely. THERE IS ONE FOG ON THIS BOARD
-    // (docs/fog.md) and it answers one question, "how current is what I
-    // know about this ground" — "may I build here" is not that question
-    // and must not dim anything. So the answer is drawn as the shape it
-    // actually is, an edge, and the ground on both sides is left alone.
+    // (fog.ts, docs/fog.md) and it answers one question — how current is
+    // what I know about this ground. "May I build here" is not that
+    // question and must not dim anything. So the answer is drawn as the
+    // shape it actually is, an edge, and the ground on both sides of it
+    // is left alone.
     //
     // THE GAIN RING GOES FIRST, because it is drawn by ERASING (see
     // drawBeaconGain) and the only safe moment to erase on this canvas is
@@ -4594,9 +4752,9 @@ export class Game {
     // ALWAYS — not behind the routes key like the drop zones are.
     //
     // A mission has no surprises in it (docs/mission-design.md): the fog
-    // is seeded along every road (seedFog), the objective is on screen
-    // from the first wave, and its whole pressure is affordability and
-    // timing. A road a player had to
+    // opens with the whole corridor discovered (seedFog), the objective
+    // is on screen from the first wave, and its whole pressure is
+    // affordability and timing. A road a player had to
     // press a key to see would be a road they discovered the first time
     // something walked down it, which is a different and much worse
     // mission. So it is drawn thin and dark under everything — a line on
