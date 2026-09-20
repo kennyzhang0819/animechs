@@ -182,7 +182,12 @@ export class MapEditor {
   private readonly uictx: CanvasRenderingContext2D;
 
   // active tool
-  private set: PaletteSet = PALETTE[0];
+  private set: PaletteSet =
+    PALETTE.find((p) => p.kind === "select") ?? PALETTE[0];
+  /** the point mark being dragged whole, and where in its footprint it was
+   *  grabbed — so it moves under the cursor rather than snapping its
+   *  corner to it (see selectClick) */
+  private markDrag: { mark: number; dx: number; dy: number } | null = null;
   private variant = 0; // index into set.variants, used when randomize is off
   randomize = true;
   brush = 1; // painted area is (2*brush - 1) cells across
@@ -797,6 +802,82 @@ export class MapEditor {
     return true;
   }
 
+  /**
+   * A CLICK WITH THE SELECT TOOL IN HAND (maps.ts PaintKind "select").
+   * It paints nothing, ever — it answers every click the tool gets:
+   *
+   *   on a road corner   take hold of it and drag it
+   *   on a road leg      put a new corner in there and take hold of it
+   *   on a point mark    select it, and drag it whole while held
+   *   bare ground        clear the selection
+   *
+   * THE ROAD HANDLES USED TO NEED THE ROAD BRUSH. Dragging a corner was
+   * only possible with the tool that also DRAWS roads in hand, so a miss
+   * by one cell started a new road across the map instead of moving the
+   * node the author was reaching for. The handles belong to the tool for
+   * touching what is already there.
+   */
+  private selectClick(gx: number, gy: number): boolean {
+    if (this.set.kind !== "select") return false;
+    if (!this.layers.mark) { this.picked = -1; this.redraw(); return true; }
+    for (let i = 0; i < this.terrain.marks.length; i++) {
+      const m = this.terrain.marks[i];
+      const k = markKind(m.kind);
+      if (!k) continue;
+      if (k.geom === "path") {
+        const hit = this.pathHit(m, gx, gy);
+        if (!hit) continue;
+        this.picked = i;
+        if ("corner" in hit) this.pathDrag = { mark: i, corner: hit.corner };
+        else {
+          // a leg gets a corner put in it where it was clicked, which is
+          // the only way to add one to a road already drawn
+          const pts = [...(m.pts ?? [])];
+          const at = snapLattice([gx, gy], pts[hit.leg - 1], pts[hit.leg]) ?? [gx, gy];
+          pts.splice(hit.leg, 0, at);
+          this.setPts(i, pts);
+          this.pathDrag = { mark: i, corner: hit.leg };
+        }
+        this.redraw();
+        return true;
+      }
+      if (gx >= m.x && gx < m.x + k.size && gy >= m.y && gy < m.y + k.size) {
+        this.picked = i;
+        this.markDrag = { mark: i, dx: gx - m.x, dy: gy - m.y };
+        this.redraw();
+        return true;
+      }
+    }
+    this.picked = -1;
+    this.redraw();
+    return true;
+  }
+
+  /** move the mark being dragged, if the ground under it is free */
+  private markDragTo(gx: number, gy: number): void {
+    const d = this.markDrag;
+    if (!d) return;
+    const m = this.terrain.marks[d.mark];
+    const k = m ? markKind(m.kind) : null;
+    if (!m || !k) return;
+    const x0 = clamp(gx - d.dx, 0, COLS - k.size);
+    const y0 = clamp(gy - d.dy, 0, ROWS - k.size);
+    if (x0 === m.x && y0 === m.y) return;
+    // the same rule a stamp is under: two marks in one place is an author
+    // who cannot click the one underneath
+    for (const [i, o] of this.terrain.marks.entries()) {
+      if (i === d.mark) continue;
+      const ok = markKind(o.kind);
+      if (!ok || ok.geom === "path") continue;
+      if (x0 < o.x + ok.size && x0 + k.size > o.x && y0 < o.y + ok.size && y0 + k.size > o.y) return;
+    }
+    m.x = x0;
+    m.y = y0;
+    rebuildReserved(this.terrain);
+    this.dirty = true;
+    this.redraw();
+  }
+
   /** move the corner being dragged, if the lattice allows it there */
   private pathDragTo(gx: number, gy: number): void {
     const d = this.pathDrag;
@@ -949,6 +1030,9 @@ export class MapEditor {
 
 
   private paintAt(gx: number, gy: number): void {
+    // the select tool never paints: onMouseDown has already answered the
+    // click (selectClick) and a drag of it is a drag of what was grabbed
+    if (this.set.kind === "select") return;
     if (this.set.kind === "base") {
       this.placeBase(gx, gy);
       return;
@@ -1062,7 +1146,9 @@ export class MapEditor {
       // clicked, so the road tool takes the click before the brush does —
       // and a road runs off the rim at both ends, so its cells are NOT
       // clamped to the board the way a brush's are
-      if (this.pathClick(Math.round(p.x / CELL - 0.5), Math.round(p.y / CELL - 0.5))) return;
+      const cx = Math.round(p.x / CELL - 0.5), cy = Math.round(p.y / CELL - 0.5);
+      if (this.selectClick(cx, cy)) return;
+      if (this.pathClick(cx, cy)) return;
       this.painting = true;
       this.lastCell = { x: -1, y: -1 };
       this.paintStroke(clamp((p.x / CELL) | 0, 0, COLS - 1), clamp((p.y / CELL) | 0, 0, ROWS - 1));
@@ -1078,6 +1164,7 @@ export class MapEditor {
     this.panning = false;
     this.painting = false;
     this.pathDrag = null;
+    this.markDrag = null;
   };
 
 
@@ -1099,6 +1186,12 @@ export class MapEditor {
     const inside = gx >= 0 && gy >= 0 && gx < this.terrain.cols && gy < this.rows;
     if (this.pathDrag && !this.panning) {
       this.pathDragTo(Math.round(p.x / CELL - 0.5), Math.round(p.y / CELL - 0.5));
+      this.hoverGx = inside ? gx : -1;
+      this.hoverGy = inside ? gy : -1;
+      return;
+    }
+    if (this.markDrag && !this.panning) {
+      this.markDragTo(gx, gy);
       this.hoverGx = inside ? gx : -1;
       this.hoverGy = inside ? gy : -1;
       return;
@@ -1365,6 +1458,11 @@ export class MapEditor {
     // terrain pass draws them (Renderer.rebuildTerrain) and the overlay is
     // back to being nothing but the cursor.
     if (this.hoverGx < 0) return;
+
+    // THE SELECT TOOL HAS NO GHOST. Every other brush draws what it is
+    // about to lay down; this one lays nothing, and a square following the
+    // cursor would be a promise it never keeps
+    if (this.set.kind === "select") return;
 
     // THE FORMATION GHOST: the whole outpost under the cursor, turned the
     // way the rotate key has it, so what you see is what lands

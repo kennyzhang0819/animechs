@@ -617,7 +617,7 @@ export default function MapEditorView({
                 </label>
               ))}
               <div className="text-[14px] leading-tight text-[#71717C]">
-                Click a mark to select it. The eraser takes one off.
+                Select (the arrow in Tools) picks a mark up: click one to edit it here, drag it to move it, and drag a road's corner to bend the line. Clicking bare ground clears the selection. The eraser takes a mark off.
               </div>
             </div>
           )}

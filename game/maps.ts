@@ -238,6 +238,19 @@ export async function refreshMap(id: string): Promise<MapData | null> {
 // ---------- palette ----------
 
 export type PaintKind =
+  /**
+   * THE ONE TOOL THAT PAINTS NOTHING. It selects what is already on the
+   * map — a mark to edit its fields, a road corner to drag, a mark to
+   * drag whole — and a click on bare ground clears the selection.
+   *
+   * IT IS THE DEFAULT, and it is the default because the editor had no
+   * way to look at a thing without also doing something to it: a brush
+   * was always in hand, so every click painted, and the only way to reach
+   * a mark's fields was to hold the brush that places that kind of mark
+   * and click the one already there. Moving a road corner was worse — it
+   * needed the Road brush in hand, and a miss started a new road.
+   */
+  | "select"
   | "floor"
   | "wall"
   | "pine"
@@ -343,6 +356,15 @@ export const SPAWN_STYLE = {
 } as const;
 
 const ENV = "/mindustry/sprites/blocks/environment";
+
+/** the Select swatch's arrow — written here so the tool needs no file */
+const CURSOR_ICON =
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
+      '<path d="M7 3 L7 25 L13 19 L17 28 L21 26 L17 18 L25 18 Z" ' +
+      'fill="#e6e6ee" stroke="#14141c" stroke-width="2" stroke-linejoin="round"/></svg>',
+  );
 
 export const PALETTE: readonly PaletteSet[] = [
   // the land floors are the game's own tiles (game/tiles.ts): two
@@ -502,6 +524,10 @@ export const PALETTE: readonly PaletteSet[] = [
     };
   }),
   { id: "erase", label: "Erase", kind: "erase", variants: [0], icons: [`${ENV}/clear-editor.png`] },
+  // THE SELECT TOOL'S OWN PICTURE, inline rather than a file: it is editor
+  // chrome and not board art, and every other swatch in the tray points at
+  // something the game draws
+  { id: "select", label: "Select", kind: "select", variants: [0], noRandom: true, icons: [CURSOR_ICON] },
 ];
 
 
@@ -537,7 +563,7 @@ export const PALETTE_SECTIONS: readonly { label: string; ids: readonly string[] 
   // ...and the mission's own, which is the group that grows as the mission
   // list does (missionMarks.ts)
   { label: "Mission", ids: MARK_KINDS.map((k) => `mark-${k.id}`) },
-  { label: "Tools", ids: ["erase"] },
+  { label: "Tools", ids: ["select", "erase"] },
 ];
 
 /**
