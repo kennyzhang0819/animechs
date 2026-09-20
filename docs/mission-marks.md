@@ -264,35 +264,45 @@ walked through.
 it. It belongs to no mission, it is up from mission start, and it never
 moves. Pick which of the four:
 
-| | footprint | pool | plating | what it does |
-|---|---|---|---|---|
-| **Lance** | 3x3 | 17,000 | 14 | An armour-cutting beam down 24 tiles, three times every two seconds |
-| **Bulwark** | 3x3 | 25,000 | 104 | A ram at five tiles — 1,500 twice a swing, with splash. The turret you can only answer up close |
-| **Halberd** | 4x4 | 55,000 | 115 | A shell from 40 tiles out that bursts over 13 and throws a bolt, every 1.2s — **behind a 9,000-point force field** that has to come down first |
-| **Juggernaut** | 6x6 | 200,000 | 150 | Five shells in a spread twice a second, on the railgun's own six-tile plate. Nothing chips it down by accident |
+| | footprint | pool | plating | reach | what it does |
+|---|---|---|---|---|---|
+| **Lance** | 3x3 | 17,000 | 14 | 70t | One armour-cutting beam, every 0.75s |
+| **Bulwark** | 3x3 | 25,000 | 104 | 27t | A ram — 1,500 twice a swing with splash, three times every second |
+| **Halberd** | 4x4 | 55,000 | 115 | 75t | **Four beams at once**, every 0.9s, from behind a 9,000-point force field |
+| **Juggernaut** | 6x6 | 200,000 | 150 | 60t | **Six homing missiles a volley out of the sponsons down both flanks**, three volleys a second |
 
-**They hit hard and they hit often.** Every cycle is under two seconds and
-the damage is a multiple of what the bodies carried. These are objectives —
-a trip the run makes on purpose — so the thing they must never be is a gun
-you can stand in front of and out-heal.
+**They out-reach your line, and that is the point.** The longest turret a
+run can buy is the railhead at 62 tiles; every garrison gun but the
+Bulwark beats it. A gun you can answer from outside its reach is not an
+objective, it is a slow-moving pile of scrap — the trip out to one has to
+be a trip you take under fire.
+
+**They hit hard and they hit often.** Every cycle is under a second and the
+damage is a multiple of what the bodies carried.
 
 **Everything they throw is red and black** (`GARRISON_SHOT`): one palette
 across four guns, so a round in the air over your line is the garrison's
-before you have worked out which of them fired it. It is the swarm's
-crimson over the bore's near-black — the pair the machines themselves are
-drawn in.
+before you have worked out which of them fired it.
 
-**The Halberd carries a force field** (`TowerStats.field`, `Sim.towerField`)
-and it is the only turret in the game that does. It is a hard gate, not a
-share: while there is any shield left nothing reaches the building, and the
-hit that breaks it is spent on the shield rather than carried through. Seven
-seconds after it breaks it is back whole. So the gun is answered in two
-stages and a board cannot chip past it with volume.
+**The Halberd carries a force field** — the same one the swarm's bodies
+carry, drawn by the same pass (`Renderer.drawForceFields`), and the only
+turret in the game with one. It is a hard gate and not a share: while any
+shield is left nothing reaches the building, and the hit that breaks it is
+spent on the shield rather than carried through. Seven seconds after it
+breaks it is back whole. So the gun is answered in two stages and a board
+cannot chip past it with volume.
+
+**The Juggernaut fires out of its flanks.** `barrels` walks the muzzle
+across six points down the sponsons, so a volley leaves the sides of the
+hull rather than one hole up the middle — which is what the drawing has
+and what six tiles of machine should look like firing.
 
 **They wear no accent.** The railgun carries the swarm's crimson because it
 is a body a mission plants and you have to pick it out of a crowd; these
-four are turrets standing on turret plates, and a turret is read by its
-silhouette and its plate like every other building on the board.
+four are turrets standing on turret plates, read by silhouette and plate
+like every other building. Nothing tints them either — `renderer.ts` skips
+the crux multiply for `ENEMY_ONLY_KINDS`, and `status.ts` never flags one
+as **Taken**, because nothing was.
 
 These four were the **Wardens** — the bodies a garrison used to be manned
 with. They were already turrets in everything but bookkeeping, so they are

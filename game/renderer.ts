@@ -3901,6 +3901,30 @@ export class Renderer {
         this.strokeCircle(b, upx[i], upy[i], rad, 1.5 * MU, col[0], col[1], col[2], 1);
       }
     }
+    // ...AND THE BUBBLES ON BUILDINGS (constants.ts TowerStats.field, the
+    // garrison's Halberd). Same pass, same shader, same circle and the
+    // same red: a force field is a force field whether the thing under it
+    // walks or is bolted down, and a player who has learned to break one
+    // has learned to break all of them
+    for (const t of sim.towers) {
+      if (t.shieldMax <= 0 || t.shield <= 0 || t.hp <= 0) continue;
+      const rad = t.shieldR;
+      if (rad < 1) continue;
+      const bm = rad + 16;
+      if (t.x < vx0 - bm || t.x > vx1 + bm || t.y < vy0 - bm || t.y > vy1 + bm) continue;
+      const w = Math.min(1, t.shieldAlpha);
+      const sc = SHIELD_FOE;
+      const col: RGB = [
+        sc[0] + (1 - sc[0]) * w,
+        sc[1] + (1 - sc[1]) * w,
+        sc[2] + (1 - sc[2]) * w,
+      ];
+      if (buffered) this.fillDisc(b, t.x, t.y, rad, col, SHIELD_PLAIN);
+      else {
+        this.fillDisc(b, t.x, t.y, rad, col, 0.09 + 0.08 * w);
+        this.strokeCircle(b, t.x, t.y, rad, 1.5 * MU, col[0], col[1], col[2], 1);
+      }
+    }
     // THE SHIELD TOWERS' DOMES (the Shield Towers mutator): same pass, same
     // shader, same circle, and the SAME red as every other thing the swarm
     // puts up (SHIELD_FOE)
