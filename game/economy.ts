@@ -34,9 +34,9 @@ export function addDrop(into: Drop, d: Drop, n = 1): void {
 export const isEmptyDrop = (d: Drop): boolean => d.scrap === 0;
 
 /** what a kill pays per point of health, anchored on the ironhide1: 150
- *  health at a fifteenth is the ten scrap it has always paid. It reads the
- *  AUTHORED pool, never the level-scaled one (docs/economy.md) */
-export const SCRAP_PER_HP = 1 / 15;
+ *  health at a hundred-and-fiftieth is one scrap. It reads the AUTHORED
+ *  pool, never the level-scaled one (docs/economy.md) */
+export const SCRAP_PER_HP = 1 / 150;
 
 /** ...and the rate bends at the heavy end: health under the knee pays
  *  full and health above it pays a shrinking rate, because the unit trees
@@ -54,7 +54,7 @@ export function payableHp(hp: number): number {
 }
 
 /** a boss is an event as well as a body: it pays this ON TOP of its health */
-export const BOSS_SCRAP = 5000;
+export const BOSS_SCRAP = 500;
 
 /** the drop for one unit: scrap off its health pool, a boss its lump on top */
 export function dropForUnit(hp: number, boss = false): Drop {
@@ -63,9 +63,9 @@ export function dropForUnit(hp: number, boss = false): Drop {
   };
 }
 
-/** every run opens with this much in the bank — five tier-1 blocks and
+/** every run opens with this much in the bank — six tier-1 presses and
  *  change, which is the opening decision and not a board */
-export const SCRAP_START = 6000;
+export const SCRAP_START = 1200;
 
 /**
  * THE CORE'S INCOME — the whole of a run's money, and a function of the
@@ -73,16 +73,17 @@ export const SCRAP_START = 6000;
  * the seconds it takes that rate to double; the rate stops climbing at
  * CORE_INCOME_RAMP so the tide cannot be banked out of.
  *
- * The doubling is the one knob that matters: 255s against the 22.5s wave
- * cadence is about 6% a wave. It was 190s and 130 a second, which put 98%
- * of a run's money after wave twenty and starved the opening — a tier-2
- * block cost one and a half waves of TOTAL income at wave eight, so the
- * only way to reach the band was to stop building for two waves while the
+ * The doubling is the one knob that matters: 205s against the 22.5s wave
+ * cadence is about 7.9% a wave, so the rate at the ramp is forty times
+ * the opening one. A much longer doubling was tried and it put 98% of a
+ * run's money after wave twenty and starved the opening — a tier-2 press
+ * cost one and a half waves of TOTAL income at wave eight, so the only
+ * way to reach the band was to stop building for two waves while the
  * swarm grew. A doubling that long is a curve that only pays the player
  * who already survived it.
  */
-export const CORE_INCOME_RATE = 330;
-export const CORE_INCOME_DOUBLING = 255;
+export const CORE_INCOME_RATE = 52;
+export const CORE_INCOME_DOUBLING = 205;
 /** the shipped campaign's own length, 3 + 50 x 22.5 (levels.ts) */
 export const CORE_INCOME_RAMP = 1125;
 
@@ -105,14 +106,14 @@ export function coreIncomeBy(t: number): number {
 
 /** the admin view's bottomless purse — past any price or bulk-buy check
  *  and still a number the HUD can render. The spending is a no-op */
-export const RICH_SCRAP = 99_999_999;
+export const RICH_SCRAP = 9_999_999;
 
 /** what one mod costs. THE MODULE BUTTONS ARE OFF THE CORNER (mods.ts,
  *  relics.ts are still here, and the track deals neither) — the prices
  *  stay against the day either category comes back */
-export const MOD_ROLL_PRICE = 5000;
+export const MOD_ROLL_PRICE = 500;
 export const MOD_CHOICES = 3;
-export const RELIC_ROLL_PRICE = 150000;
+export const RELIC_ROLL_PRICE = 15000;
 
 /** a placement is spent: selling returns this fraction of the price */
 export const SELL_REFUND = 0;
@@ -163,29 +164,27 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
 
 /**
  * WHAT ONE TURRET OF A TIER IS PRICED AT. A press costs this times
- * CARD_CELLS (cardPrice), so a tier-4 press is 384,000 and no opening
+ * CARD_CELLS (cardPrice), so a tier-4 press is 38,400 and no opening
  * bank comes near one.
  *
  * ONE STEP, ABOUT SIX TIMES, ALL THE WAY UP — 200x end to end. It used to
- * steepen into tier 4 at EIGHT on the argument that the 4x4 is the thing
- * worth gating; the gate is the run clock now (TIER_UNLOCK), and a band
- * that is already shut until fifteen minutes does not also need to be the
- * dearest step on the ladder. A run reaching it at 512,000 a press could
- * afford two before the script ended, which made the band a thing you
- * bought once rather than a thing you built with.
+ * steepen into tier 4 on the argument that the 4x4 is the thing worth
+ * gating; the gate is the run clock now (TIER_UNLOCK), and a band that is
+ * already shut until fifteen minutes does not also need to be the dearest
+ * step on the ladder. A steeper tier 4 bought two presses in a whole run,
+ * which made the band a thing you bought once rather than built with.
  *
- * Tier 2 was 1,000 once and it walled the band off for the whole opening:
- * a press is sixteen turrets, so a 6.7x per-turret step is a 6.7x step in
- * the smallest purchase that band can make, and the bank at wave eight
- * could not clear it without giving up two waves of building.
+ * A steeper tier 2 walled its band off for the whole opening: a press is
+ * sixteen turrets, so a step in the per-turret price is the same step in
+ * the smallest purchase that band can make.
  *
- * Per tile that is 120 / 175 / 444 / 1,500. docs/economy.md.
+ * Per tile that is 12 / 17.5 / 44.4 / 150. docs/economy.md.
  */
 export const TIER_PRICE: Record<TowerTier, number> = {
-  1: 120,
-  2: 700,
-  3: 4000,
-  4: 24000,
+  1: 12,
+  2: 70,
+  3: 400,
+  4: 2400,
 };
 
 /** every turret of one tier, in roster order */

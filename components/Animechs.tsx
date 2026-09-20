@@ -151,6 +151,7 @@ import { HoverCard, useHoverCard } from "./HoverCard";
 import MenuBackground from "./MenuBackground";
 import { useEscapeBack } from "./Board";
 import { DealCorner, useDeal } from "./Deal";
+import TouchControls, { useCoarsePointer } from "./TouchControls";
 import { Inspector } from "./Inspector";
 import { BLANK_ICON, carveUnitIcon, unitIconOf } from "./unitIcons";
 import { RelicShelf } from "./Relics";
@@ -2497,6 +2498,7 @@ export default function Animechs() {
    * command card, where a turret is picked by name.
    */
   const deal = useDeal(gameRef, hud, refresh);
+  const coarse = useCoarsePointer();
 
   const pickTower = (kind: TowerKind): void => {
     const g = gameRef.current;
@@ -3381,13 +3383,16 @@ export default function Animechs() {
           ref={glRef}
           width={2560}
           height={1440}
-          className="block h-full w-full"
+          className="block h-full w-full touch-none"
         />
+        {/* touch-none is load-bearing on a tablet: without it Safari keeps
+            the pan and the pinch for the page and the board never sees a
+            gesture at all (game.ts touchDown) */}
         <canvas
           ref={uiRef}
           width={2560}
           height={1440}
-          className={`absolute inset-0 h-full w-full ${
+          className={`absolute inset-0 h-full w-full touch-none [-webkit-touch-callout:none] ${
             hud?.buildKind ? "cursor-crosshair" : "cursor-default"
           }`}
         />
@@ -3398,6 +3403,7 @@ export default function Animechs() {
             out={loadUi.out}
           />
         )}
+
         {/* ONE THIN BAR PER OBJECTIVE BODY ON THE FIELD — a Sovereign, a
             Borer train, or the escort's own hauler (Sim.objectiveBars) —
             stacked top-centre, newest DOWNWARD, and keyed by an id that
@@ -3605,6 +3611,22 @@ export default function Animechs() {
                 )}
               </div>
             )}
+            {coarse && !hud.lost && !hud.won && !hud.menuOpen && (
+              <TouchControls
+                hud={hud}
+                onPause={() => {
+                  gameRef.current?.togglePause();
+                  refresh();
+                }}
+                onTurn={deal.rotate}
+                onSell={() => {
+                  const g = gameRef.current;
+                  if (!g) return;
+                  g.setSellMode(!g.ui().sellMode);
+                  refresh();
+                }}
+              />
+            )}
             {!hud.lost && !hud.won && !hud.menuOpen && (
               /* the same menu esc raises — a pointer needs a way in too */
               <button
@@ -3696,7 +3718,7 @@ export default function Animechs() {
               <canvas
                 ref={attachMinimap}
                 aria-label="minimap"
-                className="block h-auto w-[13rem] cursor-pointer [image-rendering:pixelated]"
+                className="block h-auto w-[13rem] cursor-pointer touch-none [image-rendering:pixelated]"
               />
             </div>
           </div>

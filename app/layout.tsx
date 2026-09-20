@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Jersey_20, Silkscreen } from "next/font/google";
 import AdminShortcut from "@/components/AdminShortcut";
 import CrashGuard from "@/components/CrashGuard";
+import OfflineReady from "@/components/OfflineReady";
 import { BUILD } from "@/game/version";
 import "./globals.css";
 
@@ -31,12 +32,22 @@ export const metadata: Metadata = {
   title: "Animechs",
   description:
     "Incremental swarm defense: every run banks resources toward a tech tree of towers and placements, across a campaign of worlds — thousands of units on a WebGL flow field.",
+  manifest: "/manifest.webmanifest",
+  // what makes the home-screen launch a standalone app rather than a tab,
+  // and what takes it out of Safari's 7-day storage sweep
+  appleWebApp: { capable: true, title: "Animechs", statusBarStyle: "black-translucent" },
+  icons: { icon: "/icon-192.png", apple: "/apple-touch-icon.png" },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: "#0B0B0D",
+  // the canvas owns every gesture on a touch screen: a page that pinched
+  // or double-tap-zoomed under the player would fight the game's own zoom
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -48,6 +59,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             reaches a React boundary — this catches both and puts the fault
             screen over the whole app (components/CrashGuard.tsx) */}
         <CrashGuard />
+        <OfflineReady />
         {children}
         {/* the build stamp: the only proof of WHICH build this browser is
             running — see game/version.ts, and bump it every change */}

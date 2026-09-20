@@ -106,13 +106,13 @@ import { armored, faster, piercing, reaching, stronger } from "./upgrades";
  *
  * AND THEN THE WHOLE CATALOG WAS MULTIPLIED BY TWO AND A HALF, which is
  * the number every step in this file now carries and the only balance
- * fact worth holding: a mod costs FIVE THOUSAND rather than two
+ * fact worth holding: a mod costs two and a half times what it did
  * (economy.ts MOD_ROLL_PRICE), and every step went up by exactly the
  * same ratio, so the same bank still buys the same total. WHAT CHANGED
- * IS THE NUMBER OF PRESSES, not the arithmetic at the end of a run. Two
- * thousand made the M button a thing a comfortable run tapped twenty
+ * IS THE NUMBER OF PRESSES, not the arithmetic at the end of a run. The
+ * old price made the M button a thing a comfortable run tapped twenty
  * times between waves, each tap worth a number too small to notice, and
- * a click count is not a decision. At five thousand a press happens
+ * a click count is not a decision. At this one a press happens
  * rarely enough to be an event, and the press now OFFERS THREE AND
  * TAKES ONE (game.ts modOffer), which is the decision the twenty taps
  * never were.

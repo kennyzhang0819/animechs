@@ -30,44 +30,52 @@ rate(t) = CORE_INCOME_RATE x 2 ^ (min(t, CORE_INCOME_RAMP) / CORE_INCOME_DOUBLIN
 
 | | |
 |---|---|
-| `CORE_INCOME_RATE` | 330 scrap a second, at t = 0 |
-| `CORE_INCOME_DOUBLING` | 255 seconds |
+| `CORE_INCOME_RATE` | 52 scrap a second, at t = 0 |
+| `CORE_INCOME_DOUBLING` | 205 seconds |
 | `CORE_INCOME_RAMP` | 1,125 — the shipped campaign's own length |
-| `SCRAP_START` | 6,000 |
+| `SCRAP_START` | 1,200 |
 
-**The doubling is the one knob.** 255 seconds against the 22.5-second wave cadence
-(`docs/authoring-waves.md`) is about **6% a wave**, so the run's wealth spreads about 20x from
-the first wave to the fiftieth. `CORE_INCOME_RATE` moves the whole run's wealth and nothing
-else.
+**The doubling is the one knob.** 205 seconds against the 22.5-second wave cadence
+(`docs/authoring-waves.md`) is about **7.9% a wave**, so the run's wealth spreads about 42x
+from the first wave to the fiftieth. `CORE_INCOME_RATE` moves the whole run's wealth and
+nothing else.
 
 | wave | second | rate/s | banked by then |
 |---|---|---|---|
-| 1 | 3 | 333 | 7,000 |
-| 10 | 206 | 578 | 97,000 |
-| 20 | 431 | 1,065 | 279,000 |
-| 30 | 656 | 1,962 | 614,000 |
-| 40 | 881 | 3,617 | 1,224,000 |
-| 50 | 1,106 | 6,665 | 2,329,000 |
+| 1 | 3 | 53 | 1,400 |
+| 10 | 206 | 104 | 17,000 |
+| 20 | 431 | 223 | 52,000 |
+| 30 | 656 | 477 | 127,000 |
+| 40 | 881 | 1,021 | 288,000 |
+| 50 | 1,106 | 2,185 | 632,000 |
 
-**It was 130 a second doubling every 190s, and that starved the opening.** A 190-second
-doubling puts 98% of a run's money after wave twenty; playtested, the first three minutes could
-not reach tier 2 at all. A curve that steep only pays the player who already survived it, which
-is the opposite of what a defence economy is for. The fix was half here and half in the prices
-below — see the tier-2 note.
+**THE WHOLE CURRENCY WAS DIVIDED BY TEN.** Every scrap figure in the game — the opening bank,
+the rate, the four tier prices, the mod and relic rolls, the kill-drop table — was cut by a
+factor of ten in one pass, because a run that ends with seven figures in the purse is a run
+whose HUD is unreadable and whose prices no player holds in their head. It is a redenomination
+and nothing else: every ratio in this document is the ratio it was, and the git history before
+it reads in the old currency, so multiply by ten before comparing.
 
-**The rate and the doubling move together, and that is how the opening gets paid.** 240 a
-second over 230s still read as tight through the first ten waves in play, which is the same
-complaint as the 190s curve in a milder form. Raising the rate alone inflates the whole run;
-lengthening the doubling alone makes the late game poorer against a tide that keeps doubling.
-Moving both — 330 a second over 255s — lifted the first ten waves by about a third and leaves
-the rate past wave forty where it was, so the generosity lands where the board has no coverage
-yet and nowhere else. The opening bank went 4,000 to 6,000 in the same pass: it is the only
-number that is purely the opening, and it buys three tier-1 presses.
+**The baseline and the curve are the two knobs, and they have been raised together twice.**
+The pure redenomination would have been 33 a second over 255s. It went to 40 over 235s, and
+then to the shipped **52 over 205s**. Prices did not move with either pass, so all of it is
+turrets: against the first of those curves the board is now about **1.4x richer through the
+opening stage and 2.0x through the last one**, because a shorter doubling compounds and a
+higher baseline does not. That is the intended shape — the late board wants depth behind lanes
+it has already covered, and depth is just more guns.
 
-**It was 600 for a while** — a flat 1.8x — while the shape of a card was a thing the player
-CHOSE and a press bought exactly the ground it was told to. The shape is a roll again, so the
-press is cheaper per turret on a good draw and dearer on a bad one, and the run does not need
-the extra money to cover the difference.
+**Which means the stage ceilings have been raised twice as well** (`STAGE_BOARDS` in
+`ladder.ts`). The floor still says a band must be able to buy its own stage; the ceiling says
+the stage before could not already have bought it, and a ceiling that moves every time income
+moves is a ceiling that has stopped checking anything. If income rises again, re-derive the
+ceilings from what a stage is *meant* to field rather than from what it now pays.
+
+**Its predecessors starved the opening.** A 190-second doubling puts 98% of a run's money after
+wave twenty; playtested, the first three minutes could not reach tier 2 at all. A curve that
+steep only pays the player who already survived it, which is the opposite of what a defence
+economy is for. Raising the rate alone inflates the whole run; lengthening the doubling alone
+makes the late game poorer against a tide that keeps doubling — so the two move together, as
+they did here.
 
 **It stops climbing at the ramp.** Past `CORE_INCOME_RAMP` the rate is flat while the tide
 keeps doubling the swarm's health every cycle (`docs/mission-design.md`), so no map can be
@@ -100,20 +108,20 @@ four rarities ARE the four tiers, which is where the card's border colour comes 
 
 | tier | per turret | a press | x4 | x16 | ground at 3x3 | at 6x6 |
 |---|---|---|---|---|---|---|
-| 1 | 120 | 1,920 | 7,680 | 30,720 | 3x3 tiles | 6x6 |
-| 2 | 700 | 11,200 | 44,800 | 179,200 | 6x6 | 12x12 |
-| 3 | 4,000 | 64,000 | 256,000 | 1,024,000 | 9x9 | 18x18 |
-| 4 | 24,000 | 384,000 | 1,536,000 | 6,144,000 | 12x12 | 24x24 |
+| 1 | 12 | 192 | 768 | 3,072 | 3x3 tiles | 6x6 |
+| 2 | 70 | 1,120 | 4,480 | 17,920 | 6x6 | 12x12 |
+| 3 | 400 | 6,400 | 25,600 | 102,400 | 9x9 | 18x18 |
+| 4 | 2,400 | 38,400 | 153,600 | 614,400 | 12x12 | 24x24 |
 
 **One step, about six times, all the way up** — 5.8x, 5.7x, 6.0x — **200x end to end**, which is
-still far steeper than the per-kind prices this replaced (110 to 9,500 was 86x). Per TILE it is
-120 / 175 / 444 / 1,500, a 12.5x spread: a tier-4 gun is dearer per tile as well as bigger,
+still far steeper than the per-kind prices this replaced (11 to 950 was 86x). Per TILE it is
+12 / 17.5 / 44.4 / 150, a 12.5x spread: a tier-4 gun is dearer per tile as well as bigger,
 because reach and splash are worth more than raw damage.
 
 **Tier 4 used to steepen to eight**, on the argument that the 4x4 is the thing worth gating and
 a gap at the bottom gates nothing except whether the run gets started. The gate is the run
 clock now (`TIER_UNLOCK`), and a band already shut until fifteen minutes does not need to be
-the dearest step on the ladder as well. At 512,000 a press a run could afford two before the
+the dearest step on the ladder as well. At 51,200 a press a run could afford two before the
 script ended, which made tier 4 a thing you bought once rather than a thing you built with.
 
 **The price is the tier's, flat, for every gun in it and whatever shape rolls.** It has to be:
@@ -128,9 +136,10 @@ square so "the price of a 4x4" is a thing a player can hold in their head. Draw 
 paid over the odds; draw well and you got a 6x6 for the price of a 4x4.
 
 **What the numbers buy**, measured as SECONDS OF INCOME at the rate in force *when the band
-opens*. Tier 1 is six seconds from the first frame; tier 2 about fifteen at 5:00; tier 3 about
-forty at 10:00; tier 4 about a hundred at 15:00. Counted as presses the bank can already cover
-on the minute the band opens, that is 3 / 14 / 7 / 3. A whole run banks about 2.33M.
+opens*. Tier 1 is four seconds from the first frame; tier 2 about eight at 5:00; tier 3 about
+sixteen at 10:00; tier 4 about thirty-five at 15:00. Counted as presses the bank can already
+cover on the minute the band opens, that is 6 / 25 / 16 / 8. A whole run banks about
+683,000.
 
 ### The shape is the roll
 
@@ -146,8 +155,10 @@ tackers in a block", and the question it asks is where nine of anything can go.
 **X is the AMOUNT, not the shape.** It cycles **1 / 4 / 9 / 16** as a standing setting and
 multiplies all four prices flat, **with no bulk discount**. What it buys is the rolled shape
 TILED that many times (`fleetLayout`) — one gun, one roll, that much more ground — and every
-amount is a square so the copies butt with no gap. A x16 at tier 4 is 6.1M, which no
-run banks; the top of the ladder is a ceiling rather than an offer.
+amount is a square so the copies butt with no gap. A x16 at tier 4 is 614,400 — a whole run's
+income within about twenty seconds, so only a purse that has spent nothing all game reaches
+one, and only on the last wave. The top of the ladder is very nearly a ceiling rather than an
+offer, and it is the number to watch if income rises again.
 
 ### The bands open on the clock
 

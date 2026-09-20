@@ -53,9 +53,9 @@ import { faster, piercing, stronger } from "./upgrades";
  * live and correct, the codex draws all fourteen, and no level hands one
  * over and no run can roll one until they are given a door of their own.
  *
- * EVERY RELIC IS POWERFUL, AND THE PRICE IS WHY. A hundred and fifty
- * thousand scrap (economy.ts RELIC_ROLL_PRICE) is a hundred and fifty
- * turret cards, or the whole opening bank twenty times over, and nothing
+ * EVERY RELIC IS POWERFUL, AND THE PRICE IS WHY. RELIC_ROLL_PRICE
+ * (economy.ts) is the better part of a hundred turret presses, or the
+ * whole opening bank twenty times over, and nothing
  * at that price may be a percentage: the board fires TWICE as fast, every
  * kill pays TRIPLE, armour stops existing, every turret revives. A
  * relic at "+10% damage" would be a mod with a worse price tag, and the
@@ -204,13 +204,13 @@ export const SCAVENGER_BONUS = 2;
 
 /**
  * INSURANCE: what a wrecked turret pays, EVERY time. It used to be a 40%
- * chance at five hundred — an expected two hundred scrap a death, which
- * on a relic priced in six figures pays itself back after seven hundred
- * and fifty wrecks, which is a relic that never pays. Two cards' worth,
- * certain, is seventy-five wrecks: a line that is being chewed through is
- * also a line that is funding its own replacement.
+ * chance at a twentieth of the roll price — a rate that paid itself back
+ * after seven hundred and fifty wrecks, which is a relic that never pays.
+ * Two presses' worth, certain, is seventy-five wrecks: a line that is
+ * being chewed through is also a line that is funding its own
+ * replacement.
  */
-export const INSURANCE_SCRAP = 2000;
+export const INSURANCE_SCRAP = 200;
 
 /** phosphor: every round hits half again as hard and goes through two
  *  more bodies, on top of burning white */
@@ -346,7 +346,7 @@ export const RELICS: readonly RelicDef[] = [
     name: "Salvage Insurance",
     rarity: "uncommon",
     glyph: "vault",
-    blurb: "Every destroyed turret pays out 2,000 scrap.",
+    blurb: "Every destroyed turret pays out 200 scrap.",
   },
   {
     id: "phosphor",

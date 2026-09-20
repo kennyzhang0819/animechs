@@ -187,6 +187,7 @@ export interface UiState {
    *  drawing it and a click picks it back up */
   held: { kind: TowerKind; form: FormationId; n: number } | null;
   /** the demolish tool is picked: the next press sells instead of selecting */
+  sellMode: boolean;
   paused: boolean;
   /** the core is destroyed — the field is frozen behind the score screen */
   lost: boolean;
@@ -370,8 +371,7 @@ export interface UiState {
   built: number;
   /** who each turret will shoot at, in the player's words — one line under
    *  the build card's description. It reads the turret's LIVE stats, so a
-   *  coil with Ionised Air bought reads "ground and air" the moment it
-   *  is */
+   *  rung that moves targetAir or targetGround moves this line with it */
   targeting: Record<TowerKind, string>;
 }
 
@@ -524,6 +524,14 @@ function paint(): Promise<void> {
 // about nothing but the fingertip. The floor depends on the map and the
 // viewport together, so it is computed from both (see minZoom).
 const ZOOM_MAX = 12;
+
+/** a pointer event from glass rather than from a mouse. The listeners are
+ *  typed MouseEvent because that is the shared shape they use; pointerType
+ *  is the one field only the PointerEvent has */
+/** how far a finger may slide and still count as a tap rather than a drag */
+const TOUCH_TAP_SLOP = 10;
+const isTouch = (e: MouseEvent): boolean => (e as PointerEvent).pointerType === "touch";
+const pointerId = (e: MouseEvent): number => (e as PointerEvent).pointerId;
 /**
  * WHERE A RUN OPENS: this far in from cover (zoom 1 fills the viewport
  * with the map), centred on the core — the thing the run is about, and
@@ -1234,6 +1242,25 @@ export class Game {
   private lastClickX = 0;
   private lastClickY = 0;
   private lastMouse = { x: 0, y: 0 };
+  /**
+   * TOUCH IS NOT A MOUSE, and the difference is only which gesture means
+   * what: one finger is the left button, and TWO are the pan and the zoom
+   * a mouse does with its middle button and its wheel, because a tablet
+   * has neither. docs/touch.md.
+   */
+  private readonly touchPts = new Map<number, { x: number; y: number }>();
+  private gesture: { dist: number; cx: number; cy: number } | null = null;
+  /** a one-finger press with a card in hand. The ghost tracks the finger
+   *  and the card lands on the LIFT, so a second finger arriving can turn
+   *  the press into a pan instead of placing a card nobody meant to */
+  private tapPlace = false;
+  /** ONE FINGER ON BARE GROUND DRAGS THE BOARD. There is no marquee on
+   *  glass — a drag is how you get around a map that does not fit on a
+   *  tablet, which is worth more than a group select, and a TAP still
+   *  selects. docs/touch.md */
+  private touchPan: { x: number; y: number; moved: number } | null = null;
+  /** the touch stand-in for the right button, which a tablet has not got */
+  private sellMode = false;
   private readonly keysDown = new Set<string>();
   private paused = false;
   /**
@@ -1443,6 +1470,7 @@ export class Game {
     this.clampCamera();
   };
   private readonly onMouseDown = (e: MouseEvent): void => {
+    if (isTouch(e) && this.touchDown(e)) return;
     if (e.button === 0 && !this.panning) {
       const p = this.mouseWorld(e);
       if (this.buildKind && this.dealing) {
@@ -1515,6 +1543,7 @@ export class Game {
     }
   };
   private readonly onMouseUp = (e: MouseEvent): void => {
+    if (isTouch(e) && this.touchUp(e)) return;
     const wasBuilding = this.building;
     this.selling = false;
     this.panning = false;
@@ -1545,6 +1574,7 @@ export class Game {
     this.host.click(p.x, p.y, this.selAdd, this.selLike);
   };
   private readonly onMove = (e: MouseEvent): void => {
+    if (isTouch(e) && this.touchMove(e)) return;
     if (this.panning) {
       const r = this.uiCanvas.getBoundingClientRect();
       const dx = e.clientX - this.lastMouse.x;
@@ -1580,6 +1610,10 @@ export class Game {
   };
   private readonly onLeave = (): void => {
     this.clearHover();
+    this.touchPts.clear();
+    this.gesture = null;
+    this.tapPlace = false;
+    this.touchPan = null;
     this.panning = false;
     this.building = false;
     this.selling = false;
@@ -1588,6 +1622,165 @@ export class Game {
     this.selecting = false;
   };
   private readonly onContext = (e: Event): void => e.preventDefault();
+
+  /** true when the touch layer has taken the press and the mouse path
+   *  below must not also answer it */
+  private touchDown(e: MouseEvent): boolean {
+    this.touchPts.set(pointerId(e), { x: e.clientX, y: e.clientY });
+    if (this.touchPts.size >= 2) {
+      // THE SECOND FINGER CANCELS WHAT THE FIRST STARTED and commits none
+      // of it, which is the whole reason a card lands on the lift: the two
+      // fingers of a pan never land on the same millisecond, and the first
+      // of them must not place anything
+      this.tapPlace = false;
+      this.touchPan = null;
+      this.selecting = false;
+      this.building = false;
+      this.selling = false;
+      this.ruler = false;
+      this.seedGesture();
+      return true;
+    }
+    if (this.sellMode) {
+      const p = this.mouseWorld(e);
+      this.selling = true;
+      this.sellFrom = p;
+      this.host.sellTowerAt(p.x, p.y);
+      return true;
+    }
+    if (this.buildKind) {
+      this.tapPlace = true;
+      this.setHover(this.mouseWorld(e));
+      return true;
+    }
+    this.touchPan = { x: e.clientX, y: e.clientY, moved: 0 };
+    return true;
+  }
+
+  private seedGesture(): void {
+    const [a, b] = [...this.touchPts.values()];
+    if (!a || !b) return;
+    this.gesture = {
+      dist: Math.hypot(a.x - b.x, a.y - b.y),
+      cx: (a.x + b.x) / 2,
+      cy: (a.y + b.y) / 2,
+    };
+  }
+
+  private touchMove(e: MouseEvent): boolean {
+    if (!this.touchPts.has(pointerId(e))) return false;
+    this.touchPts.set(pointerId(e), { x: e.clientX, y: e.clientY });
+    if (this.gesture) {
+      this.pinch();
+      return true;
+    }
+    if (this.tapPlace) {
+      this.setHover(this.mouseWorld(e));
+      return true;
+    }
+    const pan = this.touchPan;
+    if (pan) {
+      const r = this.uiCanvas.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) {
+        const dx = e.clientX - pan.x;
+        const dy = e.clientY - pan.y;
+        pan.moved += Math.abs(dx) + Math.abs(dy);
+        this.tlx -= (dx / r.width) * this.visW();
+        this.tly -= (dy / r.height) * this.visH();
+        this.clampCamera();
+      }
+      pan.x = e.clientX;
+      pan.y = e.clientY;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * PAN AND ZOOM ARE ONE GESTURE, because two fingers on glass are always
+   * doing a little of both. The world point under the OLD centroid is
+   * pinned to the new one — the same arithmetic the wheel uses to hold the
+   * point under the cursor still — so sliding pans, spreading zooms, and
+   * doing both does both.
+   */
+  private pinch(): void {
+    const g = this.gesture;
+    const [a, b] = [...this.touchPts.values()];
+    if (!g || !a || !b) return;
+    const r = this.uiCanvas.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return;
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    const cx = (a.x + b.x) / 2;
+    const cy = (a.y + b.y) / 2;
+    const before = this.mouseWorld({ clientX: g.cx, clientY: g.cy });
+    if (dist > 0 && g.dist > 0)
+      this.zoom = clamp(this.zoom * (dist / g.dist), this.minZoom(), ZOOM_MAX);
+    this.tlx = before.x - ((cx - r.left) / r.width) * this.visW();
+    this.tly = before.y - ((cy - r.top) / r.height) * this.visH();
+    this.clampCamera();
+    g.dist = dist;
+    g.cx = cx;
+    g.cy = cy;
+  }
+
+  private touchUp(e: MouseEvent): boolean {
+    if (!this.touchPts.delete(pointerId(e))) return false;
+    if (this.gesture) {
+      // down to one finger the gesture is over, and the finger still on the
+      // glass is NOT a fresh press: lifting one of two must place nothing
+      if (this.touchPts.size >= 2) this.seedGesture();
+      else {
+        this.gesture = null;
+        this.touchPts.clear();
+      }
+      this.selling = false;
+      return true;
+    }
+    if (this.tapPlace) {
+      this.tapPlace = false;
+      const p = this.mouseWorld(e);
+      if (this.buildKind) {
+        if (this.dealing) {
+          if (this.placeFormation(p) > 0) {
+            this.heldCard = null;
+            this.buildKind = null;
+            this.buildForm = null;
+          }
+        } else {
+          this.buildTo(p, false);
+        }
+      }
+      return true;
+    }
+    if (this.selling) {
+      this.selling = false;
+      return true;
+    }
+    const pan = this.touchPan;
+    if (pan) {
+      this.touchPan = null;
+      // a drag was the camera; a TAP was a pick, and the slop is in screen
+      // px so it means the same at every zoom
+      if (pan.moved <= TOUCH_TAP_SLOP) {
+        const p = this.mouseWorld(e);
+        this.host.click(p.x, p.y, false, false);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /** the demolish tool, which is what a tablet has instead of a right
+   *  button. Arming it puts the ghost away exactly as a right-click does —
+   *  the bought card stays in its slot and can be picked back up */
+  setSellMode(on: boolean): void {
+    this.sellMode = on;
+    this.selling = false;
+    if (on) {
+      this.buildKind = null;
+      this.buildForm = null;
+    }
+  }
 
   /** is this world point on the map at all, or out in the void past it? */
   private inWorld(p: { x: number; y: number }): boolean {
@@ -2575,6 +2768,7 @@ export class Game {
       buildForm: this.buildForm,
       buildFacing: this.buildFacing,
       held: this.heldCard,
+      sellMode: this.sellMode,
       paused: this.paused,
       fps: Math.round(this.fpsEma),
       simMs: this.simEma,

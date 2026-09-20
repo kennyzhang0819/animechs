@@ -56,6 +56,9 @@ find "$STAGE/.next" -mindepth 1 -maxdepth 1 ! -name cache -exec rm -rf {} +
 # mirror so the bundle carries the sheet as it stands, not as it stood.
 node scripts/sync-foundry-art.mjs
 
+# ...and the home-screen icons, drawn the same way (scripts/gen-icons.mjs)
+node scripts/gen-icons.mjs
+
 # The mirror: everything the build reads, nothing it generates. tar rather
 # than rsync because Git Bash ships the one and not the other.
 # .next-* GOES TOO, AND THAT ONE IS LOAD-BEARING. `npm run dev` builds
@@ -89,6 +92,10 @@ fi
 # (desktop/src/main.ts) and a static host serves it from there.
 rm -rf "$ROOT/out"
 mv "$STAGE/out" "$ROOT/out"
+
+# The service worker is written LAST, against the bundle that now exists:
+# its precache list is that file list, hashes and all (scripts/gen-sw.mjs).
+node scripts/gen-sw.mjs
 
 echo
 echo "Static bundle in out/"

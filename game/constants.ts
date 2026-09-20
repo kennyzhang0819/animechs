@@ -1167,7 +1167,8 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // damage and lightningLength 25. The bolt is not a shot — it walks twelve
   // nodes out from the muzzle, damaging what each lands on and chaining to
   // the furthest enemy within reach of it, which is why coil's reach in
-  // a crowd is far longer than the 90 units it targets from. Ground only.
+  // a crowd is far longer than the 90 units it targets from. Upstream is
+  // ground only; the bolt takes air here, and chains through it.
   coil: {
     name: "Coil",
     size: 1,
@@ -1181,7 +1182,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     inaccuracy: 0, // Turret default — coil never overrides it
     shootCone: (40 * Math.PI) / 180,
     rotateSpeed: ((8 * Math.PI) / 180) * TICK,
-    targetAir: false,
+    targetAir: true,
     targetGround: true,
     bullet: {
       speed: 0,
@@ -1191,7 +1192,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       lifetime: 10 / TICK,
       splash: 0,
       splashRadius: 0,
-      collidesAir: false,
+      collidesAir: true,
       collidesGround: true,
       // the node bullet is a plain BulletType, hitSize 4
       hitRadius: (4 / 2) * MU,
@@ -2211,8 +2212,7 @@ export const TOWERS: Record<TowerKind, TowerStats> = Object.fromEntries(
  *
  * WHO IT SHOOTS AT IS NOT IN HERE. That line is derived from targetAir and
  * targetGround (see targetingLine below) so it can never contradict the
- * stats, and so a rung that grants air targeting — coil's Ionised Air —
- * moves it for free.
+ * stats, and so a rung that moves either one moves the line for free.
  */
 export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   tacker: "Shoots small bullets quickly.",
@@ -2246,8 +2246,7 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
  * WHO A TURRET WILL SHOOT AT, as the one line the card prints under the
  * description. Derived rather than authored so it cannot drift from the
  * stats, and so it follows an upgraded turret: pass the stats the player
- * actually has and coil reads "ground and air" the moment Ionised Air is
- * bought.
+ * actually has, never the roster's.
  *
  * A SUPPORT BLOCK (TowerStats.heal) reads "Shoots nothing", which is the
  * whole truth about it — what it does INSTEAD is the sentence above, and
