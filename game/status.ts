@@ -43,7 +43,7 @@ import type { Sim } from "./sim";
 // the field row reads the picture's view of the bodies and not the sim: it is
 // drawn on the side that may not have one (simview.ts)
 import type { UnitsView } from "./simview";
-import { isCore, type Structure, type Tower } from "./types";
+import { isCore, type Structure, type Tower, isEnemyOnly } from "./types";
 import { UNIT_WEAPONS } from "./weapons";
 
 export type StatusId =
@@ -814,7 +814,11 @@ export function structStatusMask(s: Structure): number {
     (s.regen > 0 ? 64 : 0) |
     (s.revives > 0 ? 128 : 0) |
     (s.fireRate < 1 || s.soakT > 0 ? 256 : 0) |
-    (s.team === "enemy" ? 512 : 0)
+    // TAKEN IS ABOUT A TURRET THAT CHANGED HANDS, so it is asked only of
+    // one that COULD have: a garrison gun (types.ts ENEMY_ONLY_KINDS) was
+    // born the swarm's and was never yours, and a chip over it saying the
+    // enemy took it is a red flag on a machine nothing happened to
+    (s.team === "enemy" && !isEnemyOnly(s.kind) ? 512 : 0)
   );
 }
 
@@ -1089,7 +1093,7 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
     if (s.regen > 0) bump("regen");
     if (s.revives > 0) bump("revive");
     if (s.fireRate < 1 || s.soakT > 0) bump("soaked");
-    if (s.team === "enemy") bump("conquered");
+    if (s.team === "enemy" && !isEnemyOnly(s.kind)) bump("conquered");
   }
   const out: StatusChip[] = [];
   // the gun first — what it DOES — and only then what it is made of

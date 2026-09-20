@@ -152,7 +152,7 @@ import { MAX_LEGS, MAX_SEGS, MUZZLE_FLASH_LIFE, WAKE_PTS } from "./sim";
 // list, and reaching past it has to go through that list first.
 import type { ShotView, SimView, TowerView } from "./simview";
 import { PROJ_F } from "./snapshot";
-import { TOWER_KINDS } from "./types";
+import { TOWER_KINDS, isEnemyOnly } from "./types";
 import {
   BEAM_STYLES,
   EXPLOSION_STYLES,
@@ -3264,12 +3264,18 @@ export class Renderer {
       // unfinished state to draw any more: a placement is the building
       const t3 = (t.hp * 3) / t.hpMax;
       const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
-      // ONE ROSTER, TWO SIDES: a turret the swarm has taken (Conquest,
+      // ONE ROSTER, TWO SIDES: a turret the swarm has TAKEN (Conquest,
       // mutation.ts) is the same sprite on the same base, wearing the
       // crux red its BODIES wear — the one colour on this board that
       // already means "theirs", multiplied into the hp grey so a
-      // conquered turret still visibly takes damage as it is chewed down
-      const own = t.team === "player";
+      // conquered turret still visibly takes damage as it is chewed down.
+      //
+      // A GARRISON GUN IS NOT PAINTED (types.ts ENEMY_ONLY_KINDS). The
+      // tint is what says "this used to be yours"; one of these never
+      // was, and it is drawn as its own machine (wardenArt.ts) rather
+      // than as one of the player's wearing a costume. Red over art that
+      // is already the swarm's says nothing and hides the drawing.
+      const own = t.team === "player" || isEnemyOnly(t.kind);
       const r = own ? tint[0] : tint[0] * TEAM_CRUX_RGB[0];
       const g = own ? tint[1] : tint[1] * TEAM_CRUX_RGB[1];
       const b = own ? tint[2] : tint[2] * TEAM_CRUX_RGB[2];

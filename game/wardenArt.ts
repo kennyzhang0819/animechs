@@ -19,15 +19,16 @@
  * side's legs that the renderer rows fore and aft against their mirror
  * image. Every material is a dark/light PAIR split at the midline, the
  * left half is drawn and mirrored, nothing is under four pixels, and each
- * body is laid out AT ITS HITBOX on 32 native px a tile — 192, 128, 72,
- * 160 and 256, which is UR x 6 / 4 / 2.25 / 5 / 8 (levels.ts
- * UNIT_STATS).
+ * body is laid out AT ITS FOOTPRINT on 32 native px a tile — the railgun
+ * on six, the four turrets on 3, 3, 4 and 6 (constants.ts TOWERS).
  *
- * THE ACCENT IS THE SWARM'S CRUX, not a family colour, because none of
- * them is in a family: the garrison wears the red the Sovereign wears
- * (levels.ts FAMILY_ACCENT names nine families and these are in none of
- * them), and the `cell` each drawing returns is the mask of exactly that
- * material, which is what the renderer tints per team.
+ * ONLY THE RAILGUN WEARS THE CRUX. It is a BODY a mission plants and a
+ * player has to pick it out of a crowd, so it carries the red the
+ * Sovereign carries. The four turrets do not: they stand on turret
+ * plates and are read by silhouette and plate like every other building,
+ * and nothing tints them either (renderer.ts skips the crux multiply for
+ * ENEMY_ONLY_KINDS). Red on art that is already the swarm's says nothing
+ * and hides the drawing.
  *
  * WHAT EACH ONE HAS TO SAY IN ONE GLANCE:
  *
