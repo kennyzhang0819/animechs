@@ -111,17 +111,6 @@ async function fresh(spec) {
   return game;
 }
 
-/** every beacon on, so the whole map is legal ground — what the checks do
- *  (openBoard): the board's cost is the question, not the economy's.
- *
- *  It said `relays` and `setRelayOn` until now, which is what a beacon was
- *  called two renames ago: the read threw on every scene and took the whole
- *  render bench down with it (`Cannot read properties of undefined`). */
-const openBoard = (g) => {
-  const h = g.benchHost();
-  for (let i = 0; i < h.world.terrain.beacons.length; i++) h.setBeaconOn(i);
-};
-
 /**
  * `ms` of wall time pass and then one frame lands — the sim on its worker
  * has stepped that long meanwhile (simclock.ts), so the board it built is
@@ -162,7 +151,6 @@ const SCENES = {
     const g = await fresh(still());
     const h = g.benchHost();
     h.setTech(techStateFor(60));
-    openBoard(g);
     h.scatterTowers(FIELDED_KINDS, N);
     await settle(g, 500);
   },
@@ -182,7 +170,6 @@ const SCENES = {
     const g = await fresh(still());
     const h = g.benchHost();
     h.setTech(techStateFor(60));
-    openBoard(g);
     h.scatterTowers(FIELDED_KINDS, Math.round(N * 0.8));
     h.setBench({ towerRange: EVERYWHERE, unitRange: EVERYWHERE, coreHp: IMMORTAL });
     spawnMixed(h, N, { scatter: true, hp: IMMORTAL });
@@ -194,7 +181,6 @@ const SCENES = {
     const h = g.benchHost();
     h.setTech(randomUpgrades(UPGRADES));
     h.setRich(true);
-    openBoard(g);
     for (let i = 0; i < BUYS; i++) {
       const relic = i % 4 === 3 ? rollRelic(new Set()) : null;
       if (relic) h.takeRelic(relic);
@@ -211,7 +197,6 @@ const SCENES = {
     const g = await fresh(late());
     const h = g.benchHost();
     h.setTech(techStateFor(60));
-    openBoard(g);
     h.scatterTowers(FIELDED_KINDS, Math.round(N * 0.6));
     h.setBench({ coreHp: IMMORTAL });
     // the run is a clock, not a wave cursor (Sim.skipToTime), so the wave
