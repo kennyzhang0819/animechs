@@ -200,7 +200,7 @@ What the archetype turned out to need, and what each piece is answering:
 | `RazeMission` / `RazeSection` | `game/levels.ts` — the type and the clock: when the first battery rises and how far apart they come. `RazeSection.wave` is which rising a section belongs to, so several may share one |
 | the emplacements | the map's `railgun` marks, one a gun (`game/missionMarks.ts`, `missions.ts siegeFromMarks`) |
 | the railgun | `game/levels.ts` (`railgun`, `UnitStats.bombard`), `game/weapons.ts` (the bombard row) and `game/wardenArt.ts` (the drawing). It is **six tiles square** — the hitbox, the grid it is drawn on and the turret plate under it are one number (`RAZE_PLATE_TILES`), so an emplacement reads as the enemy turret it is |
-| the Wardens | SHELVED (`game/types.ts` `RETIRED_KINDS`). They were bodies a garrison was manned with, then turrets an author stood on a cell; nothing stands one up now. The drawings, stats and weapons are all still there |
+| the Wardens | four heavy BODIES that walk at the core like the rest of the swarm (`levels.ts` `WARDEN_NAME`, the `warden` tree). No wave may send one and no mission plants one, so nothing puts one on a board today |
 | a body that holds ground | `Sim.garrisonUnit`, `Sim.plantUnit`, and the `ugar` arrays — the general mechanism, of which this mission is the first customer |
 | what happens | `Sim.runSections`, `raiseSection`, `clearNear`, `fireBombard`, and the lines in `won()` and `removeUnit` |
 | what the player sees | the objective pane in `components/Animechs.tsx`, and the post overlay in `Game.drawMissionPosts` |

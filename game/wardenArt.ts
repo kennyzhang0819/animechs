@@ -1,18 +1,16 @@
 /**
  * THE SIEGE'S MACHINES — the railgun a raze mission plants (levels.ts
- * `railgun`), and the four Wardens, which are SHELVED TURRETS (types.ts
- * RETIRED_KINDS, constants.ts TOWERS): drawn, priced and whole, and stood
- * up by nothing on any board. The drawings are kept because they are worth
- * keeping, not because something is using them.
+ * `railgun`) and the four WARDENS, which are bodies that walk (levels.ts
+ * WARDEN_NAME) and that nothing on any board puts down today.
  *
  * THEY ARE NOT ANIMALS, AND THAT IS THE POINT. Nine of the roster's lines
  * are a herd of something with five sizes of it, drawn under the animal
  * flag (animalFlag.ts); these are MACHINERY, like the Borer and like
  * the turrets the player buys. A body that walks at your core is alive
  * here, and a body that was BUILT and left standing on a patch of ground
- * is not — a player should be able to tell a planted machine from a wave
- * at field zoom without reading a name, and the cheapest way to say "this was
- * installed" is to draw it out of the same plate, steel and bore the
+ * is not — a player should be able to tell one of these from a wave at
+ * field zoom without reading a name, and the cheapest way to say "this
+ * was built" is to draw it out of the same plate, steel and bore the
  * turrets are drawn out of (turretArt.ts).
  *
  * SO THE GRAMMAR IS THE TURRETS' (docs/unit-art.md section 1b) and the RIG
@@ -22,15 +20,12 @@
  * image. Every material is a dark/light PAIR split at the midline, the
  * left half is drawn and mirrored, nothing is under four pixels, and each
  * body is laid out AT ITS FOOTPRINT on 32 native px a tile — the railgun
- * on six, the four turrets on 3, 3, 4 and 6 (constants.ts TOWERS).
+ * on six, the four Wardens on 3, 4, 5 and 7 (levels.ts UNIT_STATS).
  *
- * ONLY THE RAILGUN WEARS THE CRUX. It is a BODY a mission plants and a
- * player has to pick it out of a crowd, so it carries the red the
- * Sovereign carries. The four turrets do not: they stand on turret
- * plates and are read by silhouette and plate like every other building,
- * and nothing tints them either (renderer.ts skips the crux multiply for
- * RETIRED_KINDS). Red on art that is already the swarm's says nothing
- * and hides the drawing.
+ * ALL FIVE WEAR THE CRUX, as one accent each and no more: a body the
+ * player has to pick out of a crowd carries the red the Sovereign
+ * carries, and the material is the one `drawWithCell` masks into the team
+ * cell so the renderer tints it per side.
  *
  * WHAT EACH ONE HAS TO SAY IN ONE GLANCE:
  *
@@ -90,23 +85,18 @@ export interface WardenTier {
  *  (levels.ts railgun) are one number, because an emplacement is an enemy
  *  turret that happens to be a body */
 export const RAZE_PLATE_TILES = 6;
-/**
- * THE FOOTPRINTS, in tiles — the plate each machine stands on, its grid
- * and its TOWERS size (constants.ts), all one number. A turret drawn at
- * one size and standing on another is two mistakes wearing each other.
- */
 export const RAZE_PLATE = RAZE_PLATE_TILES;
-export const LANCE_PLATE = 3;
-export const BULWARK_PLATE = 3;
-export const HALBERD_PLATE = 4;
-export const JUGGERNAUT_PLATE = 6;
-/** the five, in the order the mission puts them down. NONE OF THEM WALKS,
- *  so every stride is zero */
+/** the railgun stands still, so its stride is zero and it draws no legs */
 export const RAZE_TIER: WardenTier = { n: RAZE_PLATE * 32, stride: 0 };
-export const LANCE_TIER: WardenTier = { n: LANCE_PLATE * 32, stride: 0 };
-export const BULWARK_TIER: WardenTier = { n: BULWARK_PLATE * 32, stride: 0 };
-export const HALBERD_TIER: WardenTier = { n: HALBERD_PLATE * 32, stride: 0 };
-export const JUGGERNAUT_TIER: WardenTier = { n: JUGGERNAUT_PLATE * 32, stride: 0 };
+/**
+ * THE FOUR WARDENS' GRIDS, in native px — 32 a tile, and the same tiles
+ * their hitboxes are (levels.ts UNIT_STATS radius, `UR x tiles`). Three,
+ * four, five and seven, so the four read as one family climbing.
+ */
+export const LANCE_TIER: WardenTier = { n: 3 * 32, stride: 6 };
+export const BULWARK_TIER: WardenTier = { n: 4 * 32, stride: 9 };
+export const HALBERD_TIER: WardenTier = { n: 5 * 32, stride: 10 };
+export const JUGGERNAUT_TIER: WardenTier = { n: 7 * 32, stride: 12 };
 
 // ── the railgun ────────────────────────────────────────────────────────
 //
@@ -178,44 +168,70 @@ export function razeMech(T: WardenTier = RAZE_TIER): MechParts {
 
 // ── the four Wardens ───────────────────────────────────────────────────
 //
-// THEY WEAR NO ACCENT. The railgun above carries the swarm's crimson
-// because it is a BODY a mission plants and a player has to pick it out
-// of a crowd; these four are TURRETS standing on turret plates, and a
-// turret is read by its silhouette and its plate like every other
-// building on the board. A red band on one was a costume, and it made
-// four machines that share a grammar look like one machine in four
-// sizes.
+// THEY RIDE THE MECH RIG like every other ground body: a hull, a base
+// skirt under it and one side's legs that the renderer rows fore and aft
+// against their mirror image (animalArt.ts MechParts). They were drawn on
+// turret plates for a while and are not turrets any more, so the plate is
+// gone and the running gear is back.
 //
-// EACH IS DRAWN INSIDE ITS PLATE, on the railgun's terms: the machine on
-// a grid one stock margin smaller (`inner`), padded back out and laid
-// over `basePlate`. So the plate shows round every one of them and the
-// four sit in a row at 3, 3, 4 and 6 tiles reading as one family.
+// ONE CRUX ACCENT EACH, and no more than one: a vent, a lens, a band.
+// That is the material drawWithCell masks into the team cell, so the
+// renderer tints exactly that and nothing else — which is how the swarm's
+// red lands on a machine without being painted over the drawing.
+//
+// THEY CLIMB AT 3, 4, 5 AND 7 TILES, and the silhouettes climb with them:
+// a needle, a wall, a deck and a slab.
 
-/** the grid a machine is drawn on inside its plate's — the stock head's
- *  8px margin, exactly as the railgun's */
-const inner = (T: WardenTier): WardenTier => ({ ...T, n: T.n - 16 });
-
-/** the four share one assembly: a body on the plate its footprint owns */
-function plated(T: WardenTier, tiles: number, body: (P: Pen, T: WardenTier) => void): MechParts {
-  const I = inner(T);
-  const { art, cell } = drawWithCell(I.n, (P) => body(P, I), BORE);
+/** the four share one assembly: a hull on a skirt, over running gear */
+function walker(
+  T: WardenTier,
+  body: (P: Pen, T: WardenTier) => void,
+  base: (P: Pen, T: WardenTier) => void,
+  leg: (P: Pen, T: WardenTier) => void,
+): MechParts {
+  const { art, cell } = drawWithCell(T.n, (P) => body(P, T), CRUX);
   return {
-    body: pad(art, T.n),
-    base: basePlate(tiles),
-    leg: { n: T.n, px: new Array<string | null>(T.n * T.n).fill(null) },
-    cell: pad(cell, T.n),
+    body: art,
+    base: draw(T.n, (P) => base(P, T)),
+    leg: draw(T.n, (P) => leg(P, T), false),
+    cell,
     stride: T.stride,
   };
 }
 
+/** the skirt under a Warden: one chamfered block of gunmetal, short of
+ *  the nose so the hull's prow still reads */
+function wardenBase(P: Pen, T: WardenTier): void {
+  const { n } = T;
+  const { q, w } = scaler(n);
+  P.octa(q(1), q(6), n - q(1), n - q(1), w(6), GUN);
+}
+/** the treads: one banded block down the near flank, the band gaps
+ *  reading as plates as it rows */
+function wardenTreads(P: Pen, T: WardenTier): void {
+  const { n } = T;
+  const { q, w } = scaler(n);
+  P.box(0, q(8), w(7), n - q(4), ARMOUR);
+  bars(P, 0, w(7), q(10), 6, w(3), w(3), BORE);
+}
+/** ...and the Lance's, which are skids: it is the light one and it should
+ *  not be carrying the same running gear as the slab */
+function wardenSkids(P: Pen, T: WardenTier): void {
+  const { n } = T;
+  const { q, w } = scaler(n);
+  for (const y of [q(12), q(22)]) {
+    P.box(q(2), y, q(2) + w(5), y + w(6), ARMOUR);
+    P.box(q(2), y + w(6) - w(2), q(2) + w(5), y + w(6), BORE);
+  }
+}
+
 // ── the Lance ──────────────────────────────────────────────────────────
 //
-// A NEEDLE ON A BLOCK. It was a long thin body when it walked, and on a
-// three-tile plate that read as a splinter lying in a square. So the hull
-// is a squat chamfered box filling the plate and the EMITTER is the only
-// thing that leaves it — a steel tube out of the front, collared, with
-// the bore down the middle. The shape that says "one long shot" at this
-// size is a barrel with nothing beside it.
+// A NEEDLE ON A BLOCK, and the smallest of the four. The hull is a squat
+// chamfered box and the EMITTER is the only thing that leaves it — a
+// steel tube out of the front, collared, with the crimson lens in the
+// mouth. The shape that says "one long shot" at this size is a barrel
+// with nothing beside it.
 function lanceBody(P: Pen, T: WardenTier): void {
   const { n } = T;
   const { q, w } = scaler(n);
@@ -227,6 +243,8 @@ function lanceBody(P: Pen, T: WardenTier): void {
   P.box(c - w(3), 0, c + w(3), q(14), STEEL);
   P.box(c - w(5), q(6), c + w(5), q(6) + w(4), GUN);
   P.box(c - w(1), 0, c + w(1), w(6), BORE);
+  // the lens: the one accent, in the mouth of the tube
+  P.box(c - w(2), w(2), c + w(2), w(2) + w(3), CRUX);
   // the capacitor fins off the shoulders, and the vented deck behind
   P.box(q(1), q(13), q(1) + w(5), q(21), GUN);
   P.box(q(1), q(13), q(1) + w(2), q(21), BORE);
@@ -234,7 +252,7 @@ function lanceBody(P: Pen, T: WardenTier): void {
   bars(P, q(10), n - q(10), n - q(8), 2, w(2), w(2));
 }
 export const lanceMech = (T: WardenTier = LANCE_TIER): MechParts =>
-  plated(T, LANCE_PLATE, lanceBody);
+  walker(T, lanceBody, wardenBase, wardenSkids);
 
 // ── the Bulwark ────────────────────────────────────────────────────────
 //
@@ -242,7 +260,7 @@ export const lanceMech = (T: WardenTier = LANCE_TIER): MechParts =>
 // bore. Its reach is arm's length, so what the silhouette has to say is
 // MASS: the hull fills the plate, the nose is one bar of bore with a
 // single steel ram out of the middle of it, and the treads are banded
-// blocks down both flanks rather than legs it no longer has.
+// blocks down both flanks.
 function bulwarkBody(P: Pen, T: WardenTier): void {
   const { n } = T;
   const { q, w } = scaler(n);
@@ -263,12 +281,15 @@ function bulwarkBody(P: Pen, T: WardenTier): void {
   // texture, and what this needs to read as is a track
   P.box(0, q(9), w(6), n - q(3), GUN);
   bars(P, 0, w(6), q(11), 4, w(3), w(3), BORE);
-  // the deck between them, with the hatch cut across it
+  // the deck between them, with the hatch cut across it and the crimson
+  // vent behind it — the one accent, low and off the nose, because a
+  // bright band across the middle of a wide dark body is a MOUTH
   P.octa(q(10), q(13), n - q(10), n - q(5), w(4), GUN);
   P.box(q(12), q(17), n - q(12), q(17) + w(3), BORE);
+  P.box(q(13), q(23), n - q(13), q(23) + w(3), CRUX);
 }
 export const bulwarkMech = (T: WardenTier = BULWARK_TIER): MechParts =>
-  plated(T, BULWARK_PLATE, bulwarkBody);
+  walker(T, bulwarkBody, wardenBase, wardenTreads);
 
 // ── the Halberd ────────────────────────────────────────────────────────
 //
@@ -294,18 +315,21 @@ function halberdBody(P: Pen, T: WardenTier): void {
   P.box(q(1), q(13), q(1) + w(6), q(22), GUN);
   P.box(q(1), q(15), q(1) + w(6), q(15) + w(3), BORE);
   P.box(q(1), q(19), q(1) + w(6), q(19) + w(3), BORE);
+  // the emitter mouth, which is the one accent on it
+  P.box(c - w(3), q(4), c + w(3), q(4) + w(3), CRUX);
   // the hoist at the back, vented
   P.octa(q(8), n - q(9), n - q(8), n - q(3), w(4), GUN);
   bars(P, q(11), n - q(11), n - q(8), 3, w(2), w(2));
 }
 export const halberdMech = (T: WardenTier = HALBERD_TIER): MechParts =>
-  plated(T, HALBERD_PLATE, halberdBody);
+  walker(T, halberdBody, wardenBase, wardenTreads);
 
 // ── the Juggernaut ─────────────────────────────────────────────────────
 //
-// THE RAILGUN'S SHAPE AT THE RAILGUN'S SIZE, and that is deliberate: six
-// tiles is the biggest plate there is, and the one thing a machine that
-// big must not be is a square. So it is built the way the emplacement is
+// THE RAILGUN'S SHAPE AT MORE THAN THE RAILGUN'S SIZE, and that is
+// deliberate: seven tiles is the biggest thing that walks, and the one
+// thing a machine that big must not be is a square. So it is built the
+// way the emplacement is
 // — a heavy breech across the back, rails standing off a shaft, a brake
 // at the muzzle — with the width pushed into a pair of sponsons the
 // railgun does not have, so the two read as the same works at the same
@@ -332,12 +356,14 @@ function juggernautBody(P: Pen, T: WardenTier): void {
   P.box(c - w(5), 0, c + w(5), w(5), GUN);
   P.box(c - w(1), 0, c + w(1), w(5), BORE);
   // the trunnion across the front of the breech: gunmetal, with only its
-  // top edge in steel, so it reads as a bar and not as a stripe
+  // top edge in steel, so it reads as a bar and not as a stripe, and the
+  // capacitor band under it — the one accent on the biggest body here
   P.box(q(5), q(15), n - q(5), q(15) + w(4), GUN);
   P.box(q(5), q(15), n - q(5), q(15) + w(1), STEEL);
+  P.box(q(9), q(22), n - q(9), q(22) + w(3), CRUX);
   // the loading bed at the back, with the breech slot cut across it
   P.octa(q(8), n - q(9), n - q(8), n - q(3), w(3), GUN);
   P.box(q(11), n - q(7), n - q(11), n - q(7) + w(3), BORE);
 }
 export const juggernautMech = (T: WardenTier = JUGGERNAUT_TIER): MechParts =>
-  plated(T, JUGGERNAUT_PLATE, juggernautBody);
+  walker(T, juggernautBody, wardenBase, wardenTreads);

@@ -159,15 +159,6 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
   furnace: 4,
   railhead: 4,
   stinger: 4,
-  // THE WARDENS (types.ts RETIRED_KINDS). No run ever buys one
-  // — the band is here because every kind needs a price to be a kind, and
-  // it is NOT their footprint: the Juggernaut is six tiles and the bands
-  // stop at four, because a band is one of the build card's four keys and
-  // the card never offers these
-  lance: 3,
-  bulwark: 3,
-  halberd: 4,
-  juggernaut: 4,
 };
 
 /**

@@ -772,24 +772,6 @@ export const UV_DRIFTER = top("drifter", 96);
 export const UV_STINGER = top("stinger", 128);
 export const UV_TOWER_BASE4 = flat("tower-base-4", 128);
 /**
- * THE FOUR WARDEN HEADS (types.ts RETIRED_KINDS, wardenArt.ts).
- *
- * They are TOPS like every other turret's and they are DRAWN at pack time
- * rather than loaded, which is the beacon's case (UV_BEACON): there is no
- * Mindustry block under any of them, and the drawing already exists as
- * the body each one used to be. Nothing about the art changed when they
- * stopped walking — what changed is that the base plate under them is
- * the turret plate now and the legs are gone.
- *
- * A `top` cell turns its art a quarter turn on the way in (see reserve),
- * so the bodies go in facing up exactly as they are drawn and come out
- * facing +x with every other turret head.
- */
-export const UV_LANCE_TOP = top("lance-top", 96);
-export const UV_BULWARK_TOP = top("bulwark-top", 96);
-export const UV_HALBERD_TOP = top("halberd-top", 128);
-export const UV_JUGGERNAUT_TOP = top("juggernaut-top", 192);
-/**
  * The blocks that never turn keep the heading they were drawn at: the
  * shield tower (the Shield Towers mutator, Mindustry's force projector,
  * 96px of 3x3 block art) and the support pair, the fixer a 32px source
@@ -1256,6 +1238,12 @@ const wardenCells = (name: string, n: number, cell: number) => ({
 /** the railgun on a 192 cell: six tiles of turret plate (wardenArt.ts
  *  RAZE_PLATE_TILES) does not fit a 128 */
 const RAZE_CELLS = wardenCells("railgun", RAZE_TIER.n, 192);
+/** ...and the four Wardens, on the smallest 64-multiple that holds each
+ *  one's grid: 3 and 4 tiles fit a 128, 5 wants a 192 and 7 a 256 */
+const LANCE_CELLS = wardenCells("lance", LANCE_TIER.n, 128);
+const BULWARK_CELLS = wardenCells("bulwark", BULWARK_TIER.n, 128);
+const HALBERD_CELLS = wardenCells("halberd", HALBERD_TIER.n, 192);
+const JUGGERNAUT_CELLS = wardenCells("juggernaut", JUGGERNAUT_TIER.n, 256);
 /** the two buff towers (pylonArt.ts), on the same six-cell mech rig — 128
  *  native px is four tiles, so a 128 cell holds them at the sheet's scale */
 const GOAD_CELLS = wardenCells("goad", GOAD_TIER.n, 128);
@@ -1407,6 +1395,11 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   railgun: { uv: RAZE_CELLS.body, sprite: UNIT_SPRITE * 3 },
   goad: { uv: GOAD_CELLS.body, sprite: UNIT_SPRITE * 2 },
   bastion: { uv: BASTION_CELLS.body, sprite: UNIT_SPRITE * 2 },
+  // the four Wardens, each on its own cell at the sheet's px scale
+  lance: { uv: LANCE_CELLS.body, sprite: UNIT_SPRITE * 2 },
+  bulwark: { uv: BULWARK_CELLS.body, sprite: UNIT_SPRITE * 2 },
+  halberd: { uv: HALBERD_CELLS.body, sprite: UNIT_SPRITE * 3 },
+  juggernaut: { uv: JUGGERNAUT_CELLS.body, sprite: UNIT_SPRITE * 4 },
   ironhide1: { uv: UV_IRONHIDE1_BODY, sprite: UNIT_SPRITE },
   ironhide2: { uv: UV_IRONHIDE2_BODY, sprite: UNIT_SPRITE },
   ironhide3: { uv: UV_IRONHIDE3_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
@@ -2316,6 +2309,10 @@ if (ANIMAL_ART) {
   MECH_ART.railgun = { ...wardenMechArt(RAZE_CELLS, RAZE_TIER, 192), flatBase: true };
   MECH_ART.goad = wardenMechArt(GOAD_CELLS, GOAD_TIER);
   MECH_ART.bastion = wardenMechArt(BASTION_CELLS, BASTION_TIER);
+  MECH_ART.lance = wardenMechArt(LANCE_CELLS, LANCE_TIER);
+  MECH_ART.bulwark = wardenMechArt(BULWARK_CELLS, BULWARK_TIER);
+  MECH_ART.halberd = wardenMechArt(HALBERD_CELLS, HALBERD_TIER, 192);
+  MECH_ART.juggernaut = wardenMechArt(JUGGERNAUT_CELLS, JUGGERNAUT_TIER, 256);
 }
 
 const ENV = "/mindustry/sprites/blocks/environment";
@@ -3031,25 +3028,9 @@ export async function turretIcon(url: string): Promise<string> {
  * inspector and the progress screen show the head the board builds.
  */
 export async function towerIcon(kind: TowerKind): Promise<string> {
-  // THE GARRISON'S FOUR HAVE NO SPRITE FILE AT ALL (types.ts
-  // RETIRED_KINDS). Their heads are DRAWN into the sheet at pack time
-  // out of the bodies they used to be (wardenArt.ts), so the packed cell
-  // is not a nicer version of the picture — it is the only one there is,
-  // and pointing a swatch at somebody else's sprite would put a turret in
-  // the tray that is not the turret it stamps
-  const packed = ENEMY_TOP[kind];
-  if (packed) return cellIcon(packed, true);
   const head = FOUNDRY_ART ? foundryHeadUrl(kind) : null;
   return turretIcon(head ?? TOWER_ICONS[kind]);
 }
-/** the four drawn heads, by kind — what towerIcon carves instead of
- *  reaching for a file that does not exist */
-const ENEMY_TOP: Partial<Record<TowerKind, UVRect>> = {
-  bulwark: UV_BULWARK_TOP,
-  lance: UV_LANCE_TOP,
-  halberd: UV_HALBERD_TOP,
-  juggernaut: UV_JUGGERNAUT_TOP,
-};
 
 /**
  * A BODY OFF THE PACKED SHEET, as a data URL — for the HUD's unit
@@ -3420,18 +3401,11 @@ function packAnimalArt(
   // ---- the siege: the railgun on the mech rig, into cells nobody else
   // owns (see THE SIEGE'S CELLS) ----
   packMech(RAZE_CELLS, razeMech(RAZE_TIER), RAZE_TIER.n);
-  // ...and the four Wardens AS TURRET HEADS (types.ts RETIRED_KINDS).
-  // THE BODY ALONE: the renderer lays UV_TOWER_BASE* under every head, so
-  // the plate each drawing carries (wardenArt.ts plated) would be a
-  // second plate over the first. Each cell is the machine's own grid, so
-  // a three-tile gun is drawn on 96 px and a six-tile one on 192
-  for (const [uv, parts] of [
-    [UV_LANCE_TOP, lanceMech(LANCE_TIER)],
-    [UV_BULWARK_TOP, bulwarkMech(BULWARK_TIER)],
-    [UV_HALBERD_TOP, halberdMech(HALBERD_TIER)],
-    [UV_JUGGERNAUT_TOP, juggernautMech(JUGGERNAUT_TIER)],
-  ] as const)
-    part(uv, toCanvas(parts.body));
+  // ...and the four Wardens, on the same rig
+  packMech(LANCE_CELLS, lanceMech(LANCE_TIER), LANCE_TIER.n);
+  packMech(BULWARK_CELLS, bulwarkMech(BULWARK_TIER), BULWARK_TIER.n);
+  packMech(HALBERD_CELLS, halberdMech(HALBERD_TIER), HALBERD_TIER.n);
+  packMech(JUGGERNAUT_CELLS, juggernautMech(JUGGERNAUT_TIER), JUGGERNAUT_TIER.n);
   // ...and the two buff towers, on the same rig (pylonArt.ts)
   packMech(GOAD_CELLS, goadMech(GOAD_TIER), GOAD_TIER.n);
   packMech(BASTION_CELLS, bastionMech(BASTION_TIER), BASTION_TIER.n);

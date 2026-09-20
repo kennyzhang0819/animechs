@@ -3,9 +3,9 @@
  * order, and then the four authored ones that poison.
  *
  * EVERY ONE OF THEM IS IMPLEMENTED — real stats, real ammo, drawn on the
- * field. Six of them, the fixers and the Wardens, are RETIRED for now and
- * dealt to nobody (RETIRED_KINDS below); the other twenty-one are what the
- * deal draws from (rarity.ts) and what the track hands out. The late five were stubs
+ * field. Two of them, the fixers, are RETIRED for now and dealt to nobody
+ * (RETIRED_KINDS below); the other twenty-one are what the deal draws from
+ * (rarity.ts) and what the track hands out. The late five were stubs
  * carrying a tacker's bullet until they were given their own: hive's
  * homing missiles, whirl's proximity flak, repeater's piercing twin
  * cannon, furnace's held beam and railhead's rail shot.
@@ -53,12 +53,6 @@ export const TOWER_KINDS = [
   "blighter",
   "drifter",
   "stinger",
-  // THE WARDENS, shelved: four guns that are drawn, priced and whole, and
-  // that nothing on any board stands up (RETIRED_KINDS below)
-  "bulwark",
-  "lance",
-  "halberd",
-  "juggernaut",
 ] as const;
 export type TowerKind = (typeof TOWER_KINDS)[number];
 
@@ -72,25 +66,10 @@ export type TowerKind = (typeof TOWER_KINDS)[number];
  * them stays — Sim.updateFixer, their stats, their upgrades, their
  * sprites — so putting them back is deleting a name from this list.
  *
- * The four Wardens are here on the same terms. They were the swarm's own
- * guns for a while, stood up by an authored mark on a map, and that whole
- * system is gone: no mark places one, nothing deals one, and no run meets
- * one. Their art, stats, weapons and force field are all still here
- * (wardenArt.ts, constants.ts TOWERS) because the drawings are worth
- * keeping and because putting them back should be a decision rather than
- * a rebuild.
- *
  * Nothing outside this file should special-case a kind: read FIELDED_KINDS
  * and the retired ones are simply not there.
  */
-export const RETIRED_KINDS: readonly TowerKind[] = [
-  "fixer",
-  "restorer",
-  "bulwark",
-  "lance",
-  "halberd",
-  "juggernaut",
-];
+export const RETIRED_KINDS: readonly TowerKind[] = ["fixer", "restorer"];
 
 const RETIRED = new Set<TowerKind>(RETIRED_KINDS);
 
@@ -339,21 +318,6 @@ export interface Tower {
   /** seconds left on a neighbour's dying charge (Last Volley): while it
    *  runs the reload goes at LAST_VOLLEY_RATE on top of `fireRate` */
   boostT: number;
-  /**
-   * THE STANDING BUBBLE (constants.ts TowerStats.field, Sim.towerField) —
-   * points left in it, how wide it is drawn, the whitening flash a hit
-   * leaves, and the seconds until a broken one comes back whole.
-   *
-   * ZERO ON EVERY TURRET BUT THE GARRISON'S HALBERD, and the fields are
-   * on Tower rather than in a side table because the one place they are
-   * read is the one place a building takes damage (damageTower) — a map
-   * lookup there would be a lookup on every hit on every structure.
-   */
-  shield: number;
-  shieldMax: number;
-  shieldR: number;
-  shieldAlpha: number;
-  shieldT: number;
   /**
    * Which shield tower this tower's current volley is aimed at, as an index into
    * Sim.shieldTowers — or -1, the usual case, when it is aimed at a unit. The

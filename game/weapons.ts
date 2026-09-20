@@ -1,4 +1,4 @@
-import { CELL, GARRISON_SHOT, GARRISON_SHOT_BACK, PAL, SHRAPNEL, TEAM_CRUX_RGB } from "./constants";
+import { CELL, PAL, SHRAPNEL, TEAM_CRUX_RGB, WARDEN_SHOT, WARDEN_SHOT_BACK } from "./constants";
 import type { UnitKind } from "./levels";
 import { FxKind, type RGB, type TowerKind } from "./types";
 
@@ -614,14 +614,12 @@ export const TETHER_LASER = laserStyle({
  * style without a cycle. Anything absent draws style 0, piercer's.
  */
 /**
- * THE WARDENS' BEAM (types.ts RETIRED_KINDS) — red over near-black,
- * the palette every one of their guns throws (constants.ts
- * GARRISON_SHOT). Their rounds were already in it; a beam that came out
- * piercer's blue was the one thing on those machines still wearing
- * somebody else's colour.
+ * THE WARDENS' BEAM (levels.ts WARDEN_NAME) — red over near-black, the
+ * palette every one of their guns throws (constants.ts WARDEN_SHOT), so
+ * the beam and the round it comes out beside are the same machine's.
  */
-const GARRISON_LASER = laserStyle({
-  colors: [[GARRISON_SHOT_BACK, 0.55], [GARRISON_SHOT, 1], [WHITE, 1]],
+const WARDEN_LASER = laserStyle({
+  colors: [[WARDEN_SHOT_BACK, 0.55], [WARDEN_SHOT, 1], [WHITE, 1]],
   width: 11,
   sideAngle: 35 * DEG,
   sideWidth: 0.7,
@@ -631,9 +629,6 @@ const GARRISON_LASER = laserStyle({
 
 export const TOWER_LASER_STYLE: Partial<Record<TowerKind, number>> = {
   tether: TETHER_LASER.id,
-  // the two Wardens that fire a beam, both on the one style
-  lance: GARRISON_LASER.id,
-  halberd: GARRISON_LASER.id,
 };
 
 /** the furnace's beam, and it is HOT: the deep orange at .33 and .67, the
@@ -1578,6 +1573,66 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
       shoot: FxKind.HitPiercer,
     },
   ],
+
+  // ---- THE WARDENS (levels.ts WARDEN_NAME) ---------------------------
+  //
+  // FOUR BODIES NO WAVE MAY SEND (FAMILIES, `objective: true`). They walk
+  // at the core like everything else the swarm puts on the ground, and
+  // nothing on any board puts one down today.
+  //
+  // EVERYTHING THEY THROW IS RED AND BLACK (constants.ts WARDEN_SHOT) —
+  // one palette over four guns, so a round in the air is theirs before a
+  // player has worked out which of them fired it.
+
+  // THE BULWARK'S TUSKS are the Tusker apex's, number for number
+  // (tusker5 above): 800 a swing off a mirrored pair, 280 of splash over
+  // four and a half tiles, and the rend that eats a building's armour.
+  // "This is a T5 melee body" is the entire brief, so copying the row
+  // rather than inventing one is the honest way to say it.
+  bulwark: [
+    {
+      name: "bulwark-tusks", reload: t(40), mounts: 2, damage: 800, splash: 280, splashRadius: u(36),
+      range: u(38), speed: 0, fx: "melee", rend: 0.012,
+    },
+  ],
+  // THE LANCE'S BEAM is the Starlight apex's bite on a third of its cycle
+  // and a third of its reach, and it does NOT pierce. A starhart5 fires
+  // 560 down fifty-seven tiles and then spends five seconds doing
+  // nothing; this one carries the same 560 into a twenty-four-tile line
+  // every two seconds, at one target — constant rather than enormous.
+  lance: [
+    {
+      name: "lance-beam", reload: t(130), mounts: 1, damage: 560, range: u(190), speed: 0,
+      fx: "laser", laser: WARDEN_LASER, charge: t(20), shoot: FxKind.ShootBig,
+    },
+  ],
+  // THE HALBERD CUTS FOUR LANES AT ONCE. One pull, four beams in a narrow
+  // fan, armour-cutting like the Lance's and shorter: what it does to a
+  // line is open four holes in it rather than burn one.
+  halberd: [
+    {
+      name: "halberd-fan", reload: t(150), mounts: 1, shots: 4, spread: 7 * DEG,
+      damage: 380, range: u(230), speed: 0, fx: "laser", laser: WARDEN_LASER,
+      charge: t(24), shoot: FxKind.ShootBig,
+    },
+  ],
+  // THE JUGGERNAUT THROWS OUT OF BOTH FLANKS — six homing missiles a
+  // volley off a mirrored pair of sponsons, three volleys a second, each
+  // one small and splashing. The body is slow and the volume is the point.
+  juggernaut: [
+    {
+      name: "juggernaut-sponsons", reload: t(24), mounts: 2, shots: 3, spread: 9 * DEG,
+      damage: 260, splash: 300, splashRadius: u(26),
+      range: rng(9, 40), speed: spd(9), fx: "missile",
+      look: {
+        region: "missile", width: u(9), height: u(15), shrinkX: 0, shrinkY: 0,
+        back: WARDEN_SHOT_BACK, front: WARDEN_SHOT, hitColor: WARDEN_SHOT,
+        shoot: FxKind.ShootBig, hit: FxKind.BlastExplosion,
+        trail: { size: u(2.6), mult: 1, color: WARDEN_SHOT_BACK },
+      },
+    },
+  ],
+
   // THE PYLONS CARRY NOTHING (levels.ts goad, bastion). A buff tower does
   // not shoot: what it does is a number on the train (Sim.goadMul,
   // Sim.bastionCut), and a gun on one would make it a second railgun —

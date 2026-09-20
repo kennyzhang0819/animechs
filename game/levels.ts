@@ -6,7 +6,7 @@ import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // import must never become a value one or the two files form a cycle
 import type { MutationId } from "./mutation";
 
-export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail", "railgun", "goad", "bastion"] as const;
+export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail", "railgun", "goad", "bastion", "bulwark", "lance", "halberd", "juggernaut"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -69,6 +69,12 @@ export const UNIT_ID: Record<UnitKind, number> = {
   // ...and the two buff towers an intercept plants (PYLON_NAME)
   goad: 50,
   bastion: 51,
+  // THE WARDENS (WARDEN_NAME). No family, no tier ladder, and no wave may
+  // send one — nothing on any board puts one down today
+  bulwark: 52,
+  lance: 53,
+  halberd: 54,
+  juggernaut: 55,
 };
 
 /**
@@ -157,6 +163,16 @@ export const WORM_NAME = "Borer";
  * RETIRED_KINDS) and nothing on any board stands one up.
  */
 export const RAZE_NAME = "Railgun";
+/**
+ * THE WARDENS — the swarm's four heavy machines, named rather than
+ * tiered: they are in no family, so none of them has a `Body (rank)` to
+ * be built out of the way every other body's name is (UNIT_NAMES).
+ *
+ * NOTHING PUTS ONE ON A BOARD. No wave may send one (FAMILIES, the
+ * `objective: true` trees) and no mission stands one up. They walk at the
+ * core like everything else on the ground when something does.
+ */
+export const WARDEN_NAME = "Wardens";
 
 /** the two buff towers a mission plants over its road (docs/mission-marks.md) */
 export const PYLON_NAME = "Pylons";
@@ -2472,6 +2488,69 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     unslowable: true,
   },
 
+  // ── THE WARDENS (WARDEN_NAME) ────────────────────────────────────────
+  //
+  // FOUR HEAVY BODIES IN NO FAMILY, on no tier ladder, and sendable by
+  // nothing (FAMILIES, the `objective: true` trees). They WALK — at the
+  // core, on the field, like every other body the swarm puts on the
+  // ground — and what makes them different from a wave is weight, not
+  // behaviour. `tier: 5` is the weight class and not a rung, written down
+  // so the audit and the mutators that read a tier (ARMORED_MAX_TIER)
+  // treat them as the heavies they are.
+
+  // THE BULWARK — the wall. A Tusker apex's pool and a Tusker apex's
+  // plating on a body whose whole reach is its ram: it CHARGES like the
+  // elephants do and for the same reason, and everything it costs a board
+  // is paid at arm's length.
+  bulwark: {
+    hp: 25000,
+    speed: 2.6 * CELL,
+    armor: 104,
+    radius: UR * 4,
+    tier: 5,
+    rotateSpeed: 1.6,
+    charge: { range: 22 * CELL },
+  },
+
+  // THE LANCE — the needle. The Starlight apex's pool and the Starlight
+  // apex's bite (weapons.ts) on the quickest heavy body in the game: five
+  // tiles a second, twice the Bulwark and faster than anything else this
+  // size. One of them is a wall you cannot get past and the other is a
+  // gun you cannot get away from.
+  lance: {
+    hp: 17000,
+    speed: 5 * CELL,
+    armor: 14,
+    radius: UR * 2.25,
+    tier: 5,
+    rotateSpeed: 4.5,
+  },
+
+  // THE HALBERD — the fan, and the one of the four that walks behind a
+  // FORCE FIELD (the same bubble a Tusker carries). Four beams on one
+  // pull and a bubble that has to come down before any of it can be
+  // answered.
+  halberd: {
+    hp: 55000,
+    speed: 2.2 * CELL,
+    armor: 115,
+    radius: UR * 5,
+    tier: 5,
+    rotateSpeed: 1.4,
+    forceField: { radius: 11 * CELL, regen: 60, max: 9000, cooldown: 7 },
+  },
+
+  // THE JUGGERNAUT — the fortress. The heaviest thing on the ground in
+  // this game, slower than anything else that walks, throwing missiles
+  // out of both flanks the whole way in.
+  juggernaut: {
+    hp: 200000,
+    speed: 1.6 * CELL,
+    armor: 150,
+    radius: UR * 7,
+    tier: 5,
+    rotateSpeed: 0.9,
+  },
 };
 
 /**
@@ -2696,6 +2775,11 @@ export const UNIT_TREES = [
   // (missionMarks.ts, Sim.raiseMarkTowers). One row and not an upgrade
   // path: the two are two jobs and neither is a rung
   { key: "pylon", name: PYLON_NAME, kinds: ["goad", "bastion"], objective: true },
+  // ...AND THE WARDENS (WARDEN_NAME), which nothing puts on a board at
+  // all. They are here because every kind must be in exactly one tree,
+  // and `objective` keeps them out of every wave and out of the editor's
+  // rows. Four bodies and no upgrade path: the slots are not tiers
+  { key: "warden", name: WARDEN_NAME, kinds: ["bulwark", "lance", "halberd", "juggernaut"], objective: true },
 ] as const satisfies readonly {
   key: string;
   name: string;

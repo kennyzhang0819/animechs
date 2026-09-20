@@ -164,12 +164,6 @@ export interface TowerView {
   readonly size: number;
   readonly hp: number;
   readonly hpMax: number;
-  /** the standing bubble, where this kind has one (constants.ts
-   *  TowerStats.field) — what the force field pass draws it from */
-  readonly shield: number;
-  readonly shieldMax: number;
-  readonly shieldR: number;
-  readonly shieldAlpha: number;
   /** where the barrel is pointing */
   readonly angle: number;
   /** the muzzle mark burning down, and where it sits */

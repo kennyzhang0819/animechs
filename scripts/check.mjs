@@ -417,11 +417,13 @@ const cellFamilies = (() => {
     // each, and a cell the atlas refuses at load if it is empty
     ["goad", [PY.GOAD_TIER], PY.goadMech],
     ["bastion", [PY.BASTION_TIER], PY.bastionMech],
-    // ...and the raze emplacement, which is also on the rig and also
-    // refused at load if the crux it wears comes out empty. The other four
-    // drawings in wardenArt.ts are TURRET HEADS now (types.ts
-    // RETIRED_KINDS) and pack no team cell at all
+    // ...and the siege's five, all on the rig and all refused at load if
+    // the crux they wear comes out empty
     ["railgun", [WA.RAZE_TIER], WA.razeMech],
+    ["lance", [WA.LANCE_TIER], WA.lanceMech],
+    ["bulwark", [WA.BULWARK_TIER], WA.bulwarkMech],
+    ["halberd", [WA.HALBERD_TIER], WA.halberdMech],
+    ["juggernaut", [WA.JUGGERNAUT_TIER], WA.juggernautMech],
   ];
 })();
 const cellProblems = [];

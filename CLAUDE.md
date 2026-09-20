@@ -15,7 +15,7 @@ curve belongs to the tide.
 **Enemy factions — the families** (`FAMILIES` in `game/levels.ts`). Six active, five
 tiers each (ground/ironhide, dartback, support/starhart, air/stoop, naval/skate,
 navalSupport/livewire), three shelved. Plus the `objective: true` trees — the boss,
-the worm, the railgun and the two tierless Wardens — which **no wave may ever send**;
+the worm, the railgun, the two Pylons and the four Wardens — which **no wave may ever send**;
 only a mission puts those down. A mission can also POST a body instead of sending it
 (`Sim.garrisonUnit` / `plantUnit`): it holds a circle and never walks at the core.
 

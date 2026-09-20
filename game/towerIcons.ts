@@ -40,16 +40,6 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   blighter: `${T}/hail.png`,
   drifter: `${T}/tsunami.png`,
   stinger: `${T}/salvo/salvo-preview.png`,
-  // THE FOUR WARDENS POINT AT NOTHING, and that is not an omission.
-  // Every other value here is a vendored Mindustry file, which is the
-  // fallback for a head this game did not draw; these four ARE drawn
-  // (wardenArt.ts) and are carved off the packed sheet instead
-  // (atlas.ts towerIcon). Borrowing somebody else's sprite for one would
-  // put a turret in the picture that is not the turret on the board.
-  bulwark: "",
-  lance: "",
-  halberd: "",
-  juggernaut: "",
 };
 
 export const structIcon = (kind: TowerKind): string => TOWER_ICONS[kind];

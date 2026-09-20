@@ -100,7 +100,7 @@ type Cont = NonNullable<TowerView["spec"]["bullet"]["continuous"]>;
 type Barrel = { continuous?: Cont; fxColor?: RGB };
 
 /** floats a turret takes on the wire — see packTowers for the order */
-const TOWER_F = 34;
+const TOWER_F = 30;
 /** ...a dome, a shot of ours, and a shot of theirs */
 const DOME_F = 10;
 export const PROJ_F = 10;
@@ -304,12 +304,6 @@ export function packSnapshot(w: Packable, out: Snapshot, withPts = false): Snaps
     T[o + 27] = t.spec.range;
     T[o + 28] = t.mods;
     T[o + 29] = structStatusMask(t as unknown as Structure);
-    // the standing bubble, where this kind has one (constants.ts
-    // TowerStats.field) — the force field pass draws it from these
-    T[o + 30] = t.shield;
-    T[o + 31] = t.shieldMax;
-    T[o + 32] = t.shieldR;
-    T[o + 33] = t.shieldAlpha;
   }
 
   // ---- the domes ----
@@ -480,7 +474,6 @@ class TowerMirror implements TowerView {
   size = 1;
   hp = 0;
   hpMax = 0;
-  shield = 0; shieldMax = 0; shieldR = 0; shieldAlpha = 0;
   angle = 0;
   flashT = 0;
   flashRot = 0;
@@ -542,10 +535,6 @@ class TowerMirror implements TowerView {
     this.spec.range = T[o + 27];
     this.mods = T[o + 28];
     this.statuses = T[o + 29];
-    this.shield = T[o + 30];
-    this.shieldMax = T[o + 31];
-    this.shieldR = T[o + 32];
-    this.shieldAlpha = T[o + 33];
   }
 }
 

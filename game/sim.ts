@@ -3608,23 +3608,6 @@ export class Sim {
    * standing at a sliver of their new ceiling, and one that is somehow
    * narrowed must not leave them over it.
    */
-  /**
-   * RAISE THE BUBBLE this kind carries, if it carries one (constants.ts
-   * TowerStats.field) — at full, because a turret an author placed is
-   * standing before the run starts and has had all the time in the world
-   * to put it up. Re-read from the spec so a resolve never loses it.
-   */
-  private towerField(t: Tower): void {
-    const f = t.spec.field;
-    t.shieldMax = f ? f.shield : 0;
-    t.shieldR = f ? f.radius : 0;
-    if (!f) {
-      t.shield = 0;
-      return;
-    }
-    if (t.shieldT <= 0) t.shield = Math.min(f.shield, t.shield > 0 ? t.shield : f.shield);
-  }
-
   private resolveTower(t: Tower): void {
     const kind = this.specs.get(t.kind) ?? structStats(t.kind);
     // the mask says WHICH attributes this turret won and the run's ledger
@@ -4097,7 +4080,6 @@ export class Sim {
     // the attributes it just rolled become its stats and its pool, and it
     // opens at FULL health on the new ceiling rather than the table's
     this.resolveTower(tower);
-    this.towerField(tower);
     tower.hp = tower.hpMax;
     this.claimGround(tower, true);
     // a count-dependent rung (tacker power) reads the board, so the board
@@ -4191,14 +4173,6 @@ export class Sim {
       flashT: 0,
       flashX: 0,
       flashY: 0,
-      // the bubble, if this kind has one (constants.ts TowerStats.field).
-      // It opens FULL: a turret an author placed is standing before the
-      // run starts and has had all the time in the world to raise it
-      shield: 0,
-      shieldMax: 0,
-      shieldR: 0,
-      shieldAlpha: 0,
-      shieldT: 0,
       flashRot: 0,
     };
     return tower;
@@ -10997,23 +10971,6 @@ export class Sim {
         }
       }
     }
-    // ...AND THE BUBBLES ON BUILDINGS (constants.ts TowerStats.field). One
-    // pass beside the domes because they answer the same question and the
-    // clock is the same clock: a broken one comes back WHOLE after its
-    // delay rather than trickling, so sustained fire buys one window on
-    // the gun and not an indefinite one
-    for (const t of this.towers) {
-      if (t.shieldMax <= 0 || t.hp <= 0) continue;
-      if (t.shieldAlpha > 0) t.shieldAlpha = Math.max(0, t.shieldAlpha - dt * 4);
-      if (t.shieldT > 0) {
-        t.shieldT -= dt;
-        if (t.shieldT <= 0) {
-          t.shield = t.shieldMax;
-          t.shieldAlpha = 1;
-          this.pushFxCol(t.x, t.y, 0.5, FxKind.ShieldWave, 0, t.shieldR, TEAM_CRUX_RGB);
-        }
-      }
-    }
     this.domesUp = false;
     for (const s of this.shieldTowers) {
       if (s.hp <= 0) continue; // dead for good — its slot is a tombstone
@@ -11239,22 +11196,6 @@ export class Sim {
     // so there is nothing for plating to shave. It is also the whole reason
     // the Venom spitters and the Ground mechs are different problems.
     if (!pierceArmor && !isCore(t)) dmg = Sim.applyArmor(dmg, t.spec.armor);
-    // THE BUBBLE EATS IT FIRST (constants.ts TowerStats.field). It is a
-    // hard gate and not a share: while there
-    // is any shield left NOTHING reaches the building, so the gun is
-    // answered in two stages and a board cannot chip past the field with
-    // volume. The overflow of the hit that breaks it is spent on the
-    // shield and not carried through — the last point of a bubble buys a
-    // whole shot, which is what makes breaking one feel like an event
-    if (!isCore(t) && t.shield > 0) {
-      t.shield = Math.max(0, t.shield - dmg);
-      t.shieldAlpha = 1;
-      if (t.shield === 0) {
-        t.shieldT = t.spec.field?.delay ?? 0;
-        this.pushFxCol(t.x, t.y, 0.5, FxKind.ShieldWave, 0, t.shieldR, TEAM_CRUX_RGB);
-      }
-      return;
-    }
     // THE CART TAKES ITS HIT SOMEWHERE ELSE (damageConvoy). Everything
     // below this line answers the death of a BUILDING — a revive, a
     // payout, the virus moving on, a conquest, the ground being handed

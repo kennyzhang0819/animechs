@@ -78,10 +78,6 @@ import {
   UV_BLIGHTER,
   UV_DRIFTER,
   UV_STINGER,
-  UV_BULWARK_TOP,
-  UV_LANCE_TOP,
-  UV_HALBERD_TOP,
-  UV_JUGGERNAUT_TOP,
   UV_TETHER_LASER,
   UV_TETHER_LASER_END,
   UV_TRI,
@@ -203,12 +199,6 @@ const UV_TURRETS: Record<TowerKind, UVRect> = {
   blighter: UV_BLIGHTER,
   drifter: UV_DRIFTER,
   stinger: UV_STINGER,
-  // the four Wardens, shelved but whole (types.ts RETIRED_KINDS), drawn
-  // at pack time out of the bodies they used to be (atlas.ts, wardenArt.ts)
-  bulwark: UV_BULWARK_TOP,
-  lance: UV_LANCE_TOP,
-  halberd: UV_HALBERD_TOP,
-  juggernaut: UV_JUGGERNAUT_TOP,
 };
 /**
  * The two regions BasicBulletType.draw lays on one rect: the longer `-back`
@@ -3893,30 +3883,6 @@ export class Renderer {
       } else {
         this.fillDisc(b, upx[i], upy[i], rad, col, 0.09 + 0.08 * w);
         this.strokeCircle(b, upx[i], upy[i], rad, 1.5 * MU, col[0], col[1], col[2], 1);
-      }
-    }
-    // ...AND THE BUBBLES ON BUILDINGS (constants.ts TowerStats.field).
-    // Same pass, same shader, same circle and the
-    // same red: a force field is a force field whether the thing under it
-    // walks or is bolted down, and a player who has learned to break one
-    // has learned to break all of them
-    for (const t of sim.towers) {
-      if (t.shieldMax <= 0 || t.shield <= 0 || t.hp <= 0) continue;
-      const rad = t.shieldR;
-      if (rad < 1) continue;
-      const bm = rad + 16;
-      if (t.x < vx0 - bm || t.x > vx1 + bm || t.y < vy0 - bm || t.y > vy1 + bm) continue;
-      const w = Math.min(1, t.shieldAlpha);
-      const sc = SHIELD_FOE;
-      const col: RGB = [
-        sc[0] + (1 - sc[0]) * w,
-        sc[1] + (1 - sc[1]) * w,
-        sc[2] + (1 - sc[2]) * w,
-      ];
-      if (buffered) this.fillDisc(b, t.x, t.y, rad, col, SHIELD_PLAIN);
-      else {
-        this.fillDisc(b, t.x, t.y, rad, col, 0.09 + 0.08 * w);
-        this.strokeCircle(b, t.x, t.y, rad, 1.5 * MU, col[0], col[1], col[2], 1);
       }
     }
     // THE SHIELD TOWERS' DOMES (the Shield Towers mutator): same pass, same
