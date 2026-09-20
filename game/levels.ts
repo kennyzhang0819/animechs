@@ -2401,7 +2401,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   wormhead: {
     hp: 24000,
     speed: WORM_SPEED,
-    armor: 12,
+    armor: 0,
     // HALF AGAIN THE NATIVE SCALE, like the boss and for the same reason:
     // this is the body the whole map is about hitting, and at one-to-one
     // it was a three-tile machine on a five-hundred-tile road. The sheet
@@ -2427,7 +2427,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   wormcar: {
     hp: 12000,
     speed: WORM_SPEED,
-    armor: 12,
+    armor: 0,
     radius: UR * 3.75,
     hitbox: { long: 84, wide: 66 },
     tier: 4,
@@ -2437,7 +2437,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   wormtail: {
     hp: 12000,
     speed: WORM_SPEED,
-    armor: 12,
+    armor: 0,
     radius: UR * 3.75,
     hitbox: { long: 84, wide: 66 },
     tier: 4,
