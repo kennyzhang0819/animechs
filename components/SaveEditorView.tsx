@@ -10,7 +10,7 @@ import {
   TOP_TIER,
   XP_BASE_TIER,
 } from "@/game/ladder";
-import { WORLDS } from "@/game/levels";
+import { ACTIVE_FAMILIES, WORLDS } from "@/game/levels";
 import { MODS } from "@/game/mods";
 import { MUTATIONS } from "@/game/mutation";
 import {
@@ -25,6 +25,7 @@ import {
 } from "@/game/progress";
 import { RELICS } from "@/game/relics";
 import {
+  familiesAt,
   MAX_LEVEL,
   modsAt,
   mutatorsAt,
@@ -298,6 +299,11 @@ export default function SaveEditorView() {
                 than being left to wonder where the relics went */}
             <Tally label="Relics (reserved)" have={relicsAt(plays).size} all={RELICS.length} />
             <Tally label="Mutators in the deck" have={mutatorsAt(plays).size} all={MUTATIONS.length} />
+            <Tally
+              label="Factions in the hat"
+              have={familiesAt(plays).length}
+              all={ACTIVE_FAMILIES.length}
+            />
             <Tally
               label="Maps open"
               have={WORLDS.filter((w) => worldUnlockLevel(w.id) <= plays).length}

@@ -13,7 +13,8 @@ doors, and the **family roll** the deploy makes: the script is authored in three
 (ground, ground support, air) and those are its three **slots**, but a
 slot is a ROLE — "the line", "the support behind it", "the third thing" —
 and not a promise about which family plays it. Every run rolls
-`FAMILIES_PER_RUN` families (**four**, of the seven) and deals them into
+`FAMILIES_PER_RUN` families (**four**, of the ones the save has opened — see
+below) and deals them into
 the slots tier for tier, **a wave at a time** (`rollFamilies`,
 `transformScript` in `game/levels.ts`). Forty runts in the script are
 forty of whichever family took the line on that wave. The boss (Boss) is
@@ -42,6 +43,24 @@ Two rules keep a wave readable:
   is mush. The variety belongs *across* waves. Where a wave is wider than
   the cap the extra slots fold back onto the families already dealt to it
   and their counts add, so nothing authored is dropped.
+
+## The hat is what the track has opened
+
+A faction is a **campaign unlock** like a gun or a rule (`game/track.ts`
+`STARTING_FAMILIES`, `FAMILY_ORDER`): a fresh save meets four — the line, the
+rot, the self-mending crowd and the one thing in the sky, which the starting
+four turrets can all shoot at — and every `FAMILY_STEP` levels (5, 10, 15, …)
+puts one more in the hat, in the order they ask for something the board has to
+go and buy. `familiesAt` is the pool the deploy hands `rollFamilies`, so
+**regular mode can only be sent what the save has earned**; custom mode draws
+from the whole roster, as it does with maps, rungs and rules.
+
+That is why level 1 opens exactly `FAMILIES_PER_RUN` of them, and an import
+check enforces it: a fresh save whose hat holds fewer factions than a run is
+dealt would be a run padded with nothing. Each family carries a one-line
+`gimmick` (`FAMILIES` in `game/levels.ts`) — what makes it its own problem,
+said to the player — and that is the sentence the faction picker and the
+track's unlock card print.
 
 **Custom mode names the hand instead of rolling it**, and a named hand is
 the whole list: one family named is a fifty-wave run of that one family,

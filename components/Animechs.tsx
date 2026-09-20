@@ -134,7 +134,7 @@ import {
 } from "@/game/storage";
 import { BUILD } from "@/game/version";
 import { BUILD_COLS, BUILD_SLOTS, slotForCode, type BuildSlot } from "@/game/tech";
-import { lockedMutators, rewardsAt, rewardText } from "@/game/track";
+import { familiesAt, lockedMutators, rewardsAt, rewardText } from "@/game/track";
 import { TOWER_DESC, TOWERS } from "@/game/constants";
 import { TOWER_ICONS } from "@/game/towerIcons";
 import { TOWER_KINDS, type RGB } from "@/game/types";
@@ -356,6 +356,9 @@ const runSpec = (
   mutation: readonly MutationId[],
   /** custom mode's named families; empty (regular mode's always) is rolled */
   hand: readonly FamilyKey[] = [],
+  /** what the roll may deal — the campaign's is what the track has opened
+   *  (track.ts familiesAt), custom's is the whole roster */
+  pool: readonly FamilyKey[] = ACTIVE_FAMILIES,
 ): LevelSpec => {
   const spec = specForTier(world, tier);
   // THE DIE IS ROLLED HERE, against the script it is about to be dealt
@@ -367,7 +370,7 @@ const runSpec = (
   // A custom hand goes through the same call and is dealt under the same
   // rule — what it changes is which families are in the pile, never how
   // they are laid into the slots.
-  const families = rollFamilies(Math.random, spec.script, hand);
+  const families = rollFamilies(Math.random, spec.script, hand, pool);
   return {
     ...spec,
     script: transformScript(spec.script, families),
@@ -1109,6 +1112,7 @@ function FactionPicker({
             {family.name}
           </div>
         </div>
+        <p className="text-[14px] text-[#A6A6AF]">{family.gimmick}</p>
         <DetailLine label="Comes in by">
           {familyFlies(family.key) ? "air" : family.layer === "water" ? "water" : "ground"}
         </DetailLine>
@@ -2678,7 +2682,18 @@ export default function Animechs() {
     // the family die is rolled inside runSpec, against the script it is
     // dealt into — see there for why it cannot be rolled out here. The
     // custom hand goes the same way, and is empty in regular mode
-    setLevel(runSpec(w, tier, roll, custom ? families : []));
+    setLevel(
+      runSpec(
+        w,
+        tier,
+        roll,
+        custom ? families : [],
+        // THE HAT IS WHAT THE TRACK HAS OPENED, the same rule the deck
+        // follows: four factions on a fresh save and one more every
+        // FAMILY_STEP levels. Custom draws from the whole roster
+        custom ? ACTIVE_FAMILIES : familiesAt(effectiveLevel(p)),
+      ),
+    );
     setScreen("game");
     // raised in the same batch as the screen switch, so the game screen's
     // FIRST paint is already covered - an effect would run after that

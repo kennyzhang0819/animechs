@@ -2924,7 +2924,8 @@ export const FAMILIES = [
   //
   // WHAT IT POSES: a wall that walks, and armour is a flat shave floored at
   // a tenth (Sim.applyArmor) — so the answer is calibre and never volume.
-  { key: "ground", name: FAMILY_NAMES.ground.name, layer: "ground", icon: "ironhide1",
+  { key: "ground", name: FAMILY_NAMES.ground.name, gimmick: "Walking armour. Every hit is shaved flat, so calibre beats volume.",
+    layer: "ground", icon: "ironhide1",
     kinds: ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5"] },
   // THE SPITTERS: light, quick, and every shot they fire is the same purple
   // orb landing the same rot (weapons.ts POISON). No suicide charge, no
@@ -2936,7 +2937,8 @@ export const FAMILIES = [
   // WHAT IT POSES: rot ignores armour, so this is the family a board that
   // out-plated the ground mechs still loses turrets to. Kill them before
   // the clock refreshes, or bring repair.
-  { key: "dartback", name: FAMILY_NAMES.dartback.name, layer: "ground", icon: "dartback1",
+  { key: "dartback", name: FAMILY_NAMES.dartback.name, gimmick: "Purple orbs that leave rot — damage over time that ignores armour.",
+    layer: "ground", icon: "dartback1",
     kinds: ["dartback1", "dartback2", "dartback3", "dartback4", "dartback5"] },
   // THE LIGHT: named for stars, armed with green lasers, and every laser
   // PIERCES — it takes every structure along its length (weapons.ts
@@ -2948,7 +2950,8 @@ export const FAMILIES = [
   // that keeps mending. The answer is the carriers — kill the starhart4 and
   // the starhart5 before the line reaches the guns, because a row under a
   // starhart5 beam is a row.
-  { key: "groundSupport", name: FAMILY_NAMES.groundSupport.name, layer: "ground", icon: "starhart1",
+  { key: "groundSupport", name: FAMILY_NAMES.groundSupport.name, gimmick: "Piercing green lasers, from behind a crowd that keeps healing itself.",
+    layer: "ground", icon: "starhart1",
     kinds: ["starhart1", "starhart2", "starhart3", "starhart4", "starhart5"] },
   // THE BOMBERS: five bodies that ARE bombs (payload). Not one carries a
   // gun; each dives at the nearest structure inside its seek reach and
@@ -2961,7 +2964,8 @@ export const FAMILIES = [
   //
   // WHAT IT POSES: an AA line over the guns it protects detonates bombers
   // over them. The answer is reach — kill them over nothing.
-  { key: "air", name: FAMILY_NAMES.air.name, layer: "air", icon: "stoop1",
+  { key: "air", name: FAMILY_NAMES.air.name, gimmick: "Flying bombs. Every body dives at a structure and goes off on it.",
+    layer: "air", icon: "stoop1",
     kinds: ["stoop1", "stoop2", "stoop3", "stoop4", "stoop5"] },
   // THE SNIPERS: the whales — skate1, skate2, skate3, skate4, skate5 — and every
   // gun on them is a HARPOON RAIL from beyond most of the board's reach
@@ -2973,7 +2977,8 @@ export const FAMILIES = [
   //
   // WHAT IT POSES: it is shooting you long before you can shoot it. The
   // answer is the long guns — reach, and the spotter first.
-  { key: "naval", name: FAMILY_NAMES.naval.name, layer: "water", icon: "skate1",
+  { key: "naval", name: FAMILY_NAMES.naval.name, gimmick: "Harpoon rails that outrange the board, and a spotter that extends them.",
+    layer: "water", icon: "skate1",
     kinds: ["skate1", "skate2", "skate3", "skate4", "skate5"] },
   // THE WRAITHS: the sea slugs — livewire1, livewire2, livewire3, livewire4, livewire5
   // — and every gun on them is an ARC (weapons.ts): violet chain lightning
@@ -2991,7 +2996,8 @@ export const FAMILIES = [
   // WHAT IT POSES: a line that cannot hold a target. The answer is
   // bursts and fields that catch a body wherever it lands, and killing
   // the flagship in the seconds it shows.
-  { key: "navalSupport", name: FAMILY_NAMES.navalSupport.name, layer: "water", icon: "livewire1",
+  { key: "navalSupport", name: FAMILY_NAMES.navalSupport.name, gimmick: "Chain lightning that shorts guns, on hulls that blink and cloak.",
+    layer: "water", icon: "livewire1",
     kinds: ["livewire1", "livewire2", "livewire3", "livewire4", "livewire5"] },
   // THE TUSKERS: the elephants — tusker1 to tusker5 — and the first line
   // that carries NO GUN. Every one of them fights with its tusks
@@ -3024,7 +3030,8 @@ export const FAMILIES = [
   // WHAT IT POSES: nothing small hurts it, nothing draws it away, and
   // what it reaches it eats. The answer is calibre and reach, used on the
   // approach — there is no answering a Tusker that has arrived.
-  { key: "tusker", name: FAMILY_NAMES.tusker.name, layer: "ground", icon: "tusker1",
+  { key: "tusker", name: FAMILY_NAMES.tusker.name, gimmick: "Melee giants that leave the path to charge whatever they can see.",
+    layer: "ground", icon: "tusker1",
     kinds: ["tusker1", "tusker2", "tusker3", "tusker4", "tusker5"] },
   // THE GRAPNELS: the starfish — grapnel1 to grapnel5 — the slowest
   // bodies in the game, and the only ones that carry no weapon.
@@ -3045,7 +3052,8 @@ export const FAMILIES = [
   // it, and punishes it most for finishing the job. The answer is reach —
   // kill them far from the line, before they have found each other — and
   // spacing, so one death burst cannot take a patch.
-  { key: "grapnel", name: FAMILY_NAMES.grapnel.name, layer: "ground", icon: "grapnel1",
+  { key: "grapnel", name: FAMILY_NAMES.grapnel.name, gimmick: "Merges with its own kind and throws homing stars back when hit.",
+    layer: "ground", icon: "grapnel1",
     kinds: ["grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5"] },
   // THE KETTLES: the vultures — kettle1 to kettle5 — the second thing in
   // the sky and the first that does not blow itself up. A bomber spends
@@ -3059,11 +3067,17 @@ export const FAMILIES = [
   // board's SHAPE takes part in it. The answer is reach that points up,
   // far enough out that a flight is dead before the core is in its range
   // — an AA line hugging the core is an AA line being shot at.
-  { key: "kettle", name: FAMILY_NAMES.kettle.name, layer: "air", icon: "kettle1",
+  { key: "kettle", name: FAMILY_NAMES.kettle.name, gimmick: "Ignores the board, flies the straight line to the core and parks on it.",
+    layer: "air", icon: "kettle1",
     kinds: ["kettle1", "kettle2", "kettle3", "kettle4", "kettle5"] },
 ] as const satisfies readonly {
   key: string;
   name: string;
+  /** ONE LINE ON WHAT MAKES THIS FAMILY ITS OWN PROBLEM — the "what it
+   *  poses" note above each entry, said to the player. The faction picker
+   *  and the track's unlock card print it, so it is a sentence and not a
+   *  stat line */
+  gimmick: string;
   layer: MoveLayer;
   icon: UnitKind;
   kinds: readonly UnitKind[];
@@ -3499,11 +3513,15 @@ export function rollFamilies(
   rand: () => number = Math.random,
   script?: readonly LevelStep[],
   chosen: readonly FamilyKey[] = [],
+  /** what the DIE may deal — the campaign passes what the track has
+   *  opened (track.ts familiesAt); custom mode takes the default */
+  open: readonly FamilyKey[] = ACTIVE_FAMILIES,
 ): FamilyKey[] {
   const hand = cleanFamilies(chosen);
   // A HAND NAMED IS A HAND PLAYED (see `chosen`): the pool is drawn on
   // only to FILL a run nobody named, never to pad one somebody did
-  const pool: FamilyKey[] = hand.length > 0 ? [] : [...ACTIVE_FAMILIES];
+  const pool: FamilyKey[] =
+    hand.length > 0 ? [] : cleanFamilies(open.length > 0 ? open : ACTIVE_FAMILIES);
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];

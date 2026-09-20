@@ -84,8 +84,8 @@ import { tile } from "./tile";
 
 /**
  * THE ORDER, and it is the order a player thinks in rather than the order
- * the track deals in: the GUN first, then the rules the run is played
- * under, then the ground it is played on. One list that walks outward from
+ * the track deals in: the GUN first, then who it is pointed at, then the
+ * rules the run is played under, then the ground it is played on. One list that walks outward from
  * the thing on the board to the world round it, and the strip and the
  * "All" grid use the same order so switching a filter never re-shuffles
  * what was already on screen.
@@ -93,12 +93,13 @@ import { tile } from "./tile";
 const FILTERS: readonly { id: Category | "all"; label: string }[] = [
   { id: "all", label: "All" },
   { id: "turret", label: "Turrets" },
+  { id: "family", label: "Factions" },
   { id: "mutator", label: "Mutators" },
   { id: "world", label: "Maps" },
 ];
 
 /** every category, in strip order — what "All" concatenates */
-const EVERY: readonly Category[] = ["turret", "mutator", "world"];
+const EVERY: readonly Category[] = ["turret", "family", "mutator", "world"];
 
 /**
  * A BOARD CATEGORY IS A TRACK CATEGORY — the same three names, asked of

@@ -9,7 +9,7 @@ import {
   type RefObject,
 } from "react";
 import { levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
-import { WORLDS } from "@/game/levels";
+import { familyByKey, WORLDS, type FamilyKey } from "@/game/levels";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import { modDef } from "@/game/mods";
 import { relicDef } from "@/game/relics";
@@ -35,6 +35,7 @@ import { bandFor, MutationFace, MUT_LIT } from "./mutationFace";
 import { Glyph } from "./Relics";
 import { RARITY, rarityDef } from "@/game/rarity";
 import { useTowerIcon } from "./towerIcons";
+import { BLANK_ICON, useUnitIcon } from "./unitIcons";
 import { tile } from "./tile";
 
 /**
@@ -98,6 +99,9 @@ const REWARD_COLOR: Record<Reward["kind"], string> = {
   // chip below holds a full-colour turret sprite and a flat-tinted glyph
   // was the odd one out
   mutator: MUT_LIT,
+  // a faction wears the swarm's own red — the colour of the thing coming
+  // at the board, and the one kind of reward that is not the player's
+  family: "#FF6B6B",
   // a mod and a relic each wear their own band (rarityDef below), like a
   // turret does — these two are the fallback nothing reaches
   mod: "#C6C6CE",
@@ -148,8 +152,23 @@ function TurretFace({ kind }: { kind: TowerKind }) {
   return <img src={src} alt="" className="h-[26px] w-[26px] object-contain [image-rendering:pixelated]" />;
 }
 
+/** a faction's picture: the runt of the family, the same portrait the
+ *  faction picker draws it by (levels.ts FAMILIES `icon`) */
+function FamilyFace({ id }: { id: FamilyKey }) {
+  const src = useUnitIcon(familyByKey(id).icon);
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted
+    <img
+      src={src ?? BLANK_ICON}
+      alt=""
+      className="h-[26px] w-[26px] object-contain [image-rendering:pixelated]"
+    />
+  );
+}
+
 function RewardFace({ reward }: { reward: Reward }) {
   if (reward.kind === "points") return <CurrencyIcon glyph="point" className="h-[22px] w-[22px]" />;
+  if (reward.kind === "family") return <FamilyFace id={reward.id} />;
   if (reward.kind === "world") return <MapThumb mapId={worldMapId(reward.worldId)} />;
   if (reward.kind === "mutator") return <MutationFace id={reward.id} size="h-6 w-6" />;
   // a module has no sprite — it is not a building — so it wears the same

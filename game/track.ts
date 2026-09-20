@@ -1,6 +1,15 @@
 import { targetingLine, TOWER_DESC, TOWERS } from "./constants";
 import { SKILL_POINT_LEVELS } from "./economy";
-import { VISIBLE_WORLDS, worldHidden, WORLDS } from "./levels";
+import {
+  ACTIVE_FAMILIES,
+  FAMILIES,
+  FAMILIES_PER_RUN,
+  familyByKey,
+  VISIBLE_WORLDS,
+  worldHidden,
+  WORLDS,
+  type FamilyKey,
+} from "./levels";
 import { MODS, modBlurb, modDef, modName, type ModId } from "./mods";
 import { RELICS, relicDef, type RelicId } from "./relics";
 import { MUTATIONS, mutationById, mutationCostOf, type MutationId } from "./mutation";
@@ -183,6 +192,7 @@ export type Reward =
   | { kind: "mod"; id: ModId }
   | { kind: "relic"; id: RelicId }
   | { kind: "mutator"; id: MutationId }
+  | { kind: "family"; id: FamilyKey }
   | { kind: "upgrade"; id: UpgradeKind };
 
 /**
@@ -228,6 +238,65 @@ const PLACED: readonly { level: number; reward: Reward }[] = [
   { level: 15, reward: { kind: "world", worldId: "9" } },
 ];
 
+
+/**
+ * THE ENEMY FACTIONS, by the level that opens one (levels.ts FAMILIES).
+ *
+ * A run's swarm is dealt from the factions the save has OPENED, and the
+ * opening hand is exactly FAMILIES_PER_RUN of them — so a fresh save
+ * meets those four and only those four, and every fifth level after that
+ * puts one more face in the hat. That is the one reward on the track that
+ * makes the CAMPAIGN itself a different game rather than the board: a new
+ * gun is another answer, a new faction is another question.
+ *
+ * THE FOUR ARE THE FOUR PROBLEMS THE OPENING ROSTER CAN ANSWER: a line
+ * that walks (Ironhides), rot that ignores armour (Dartbacks), a crowd
+ * that mends itself (Starhart), and something in the sky (Stoop) — which
+ * the starting four turrets all shoot at. The rest arrive in the order
+ * they ask for something the board has to go and buy: the long guns for
+ * the Skates, burst for the Livewires, reach for the rest.
+ *
+ * THE TABLE IS WHOLE AND THE SHELF IS APPLIED AT THE READ, exactly as the
+ * maps are: a family on the shelf (levels.ts SHELVED_FAMILIES) keeps the
+ * level it was always promised, and comes back on it.
+ */
+export const STARTING_FAMILIES: readonly FamilyKey[] = [
+  "ground", "dartback", "groundSupport", "air",
+];
+
+/** how many levels apart the rest arrive — 5, 10, 15, … */
+export const FAMILY_STEP = 5;
+
+/** ...and the order they arrive in; the nth opens at (n + 1) * FAMILY_STEP */
+const FAMILY_ORDER: readonly FamilyKey[] = [
+  "naval", "navalSupport", "tusker", "grapnel", "kettle",
+];
+
+/** the level a faction joins the hat — 1 for the opening four */
+export function familyUnlockLevel(key: FamilyKey): number {
+  const at = FAMILY_ORDER.indexOf(key);
+  return at < 0 ? 1 : (at + 1) * FAMILY_STEP;
+}
+
+/** the factions a save at this level may be sent, the shelf taken off:
+ *  what the deploy's die draws from (levels.ts rollFamilies) */
+export function familiesAt(level: number): FamilyKey[] {
+  return ACTIVE_FAMILIES.filter((k) => familyUnlockLevel(k) <= level);
+}
+
+/** the whole table names every family exactly once, and the opening hand
+ *  fills a run on its own — a fresh save cannot be dealt a stranger */
+(() => {
+  const named = [...STARTING_FAMILIES, ...FAMILY_ORDER];
+  if (new Set(named).size !== named.length || named.length !== FAMILIES.length)
+    throw new Error("the faction table and FAMILIES disagree about which families there are");
+  for (const f of FAMILIES)
+    if (!named.includes(f.key)) throw new Error(`no level opens the ${f.key} family`);
+  if (STARTING_FAMILIES.length < FAMILIES_PER_RUN)
+    throw new Error(
+      `level 1 opens ${STARTING_FAMILIES.length} factions, under the ${FAMILIES_PER_RUN} a run is dealt`,
+    );
+})();
 
 /**
  * THE FIRST BOARD IS ONE GUN OF EACH TIER, so a fresh save can press 1, 2,
@@ -344,7 +413,7 @@ const ROSTER_LAST = 33;
  * else — which is the only thing above MAX_LEVEL there is to earn.
  */
 const POINTS: Readonly<Record<number, number>> = {
-  4: 2, 6: 2, 8: 2, 10: 2, 28: 2, 30: 2, 32: 2,
+  4: 2, 6: 2, 8: 2, 28: 2, 30: 2, 32: 2,
 };
 
 /** the points one level pays — zero past the payroll's end */
@@ -564,6 +633,7 @@ const REWARD_ORDER: readonly Reward["kind"][] = [
   "relic",
   "upgrade",
   "mutator",
+  "family",
   "world",
 ];
 
@@ -603,10 +673,14 @@ const rewardRank = (r: Reward): number => REWARD_ORDER.indexOf(r.kind);
  */
 export function rewardsAt(level: number, shelved = false): Reward[] {
   const showWorld = (id: string): boolean => shelved || !worldHidden(id);
+  const showFamily = (k: FamilyKey): boolean => shelved || ACTIVE_FAMILIES.includes(k);
   const out: Reward[] = [];
   const points = pointsAt(level);
   if (points > 0) out.push({ kind: "points", amount: points });
   for (const id of TURRETS_DEALT.get(level) ?? []) out.push({ kind: "turret", id });
+  for (const f of FAMILIES)
+    if (familyUnlockLevel(f.key) === level && showFamily(f.key))
+      out.push({ kind: "family", id: f.key });
   if (level === 1) {
     for (const id of STARTING_MODS) out.push({ kind: "mod", id });
     // the VISIBLE table: a map nobody may pick is not a reward, and a
@@ -755,6 +829,7 @@ export function rewardText(r: Reward): string {
   if (r.kind === "mod") return `Mod: ${modName(modDef(r.id))}`;
   if (r.kind === "relic") return `Relic: ${relicDef(r.id).name}`;
   if (r.kind === "mutator") return `Mutator: ${mutationById(r.id)?.name ?? r.id}`;
+  if (r.kind === "family") return `Faction: ${familyByKey(r.id).name}`;
   const u = upgradeDef(r.id);
   return `${TOWERS[u.turret].name}: ${u.name}`;
 }
@@ -769,6 +844,7 @@ export function rewardBlurb(r: Reward): string {
   if (r.kind === "relic") return relicDef(r.id).blurb;
   if (r.kind === "mutator")
     return mutationById(r.id)?.blurb ?? "";
+  if (r.kind === "family") return familyByKey(r.id).gimmick;
   return upgradeDef(r.id).blurb;
 }
 
@@ -789,6 +865,7 @@ export function rewardBlurb(r: Reward): string {
 export function rewardNote(r: Reward): string | null {
   if (r.kind === "points") return "Refundable in full, any time.";
   if (r.kind === "turret") return targetingLine(TOWERS[r.id]);
+  if (r.kind === "family") return "In the hat for every run from here on.";
   if (r.kind !== "mod") return null;
   return "Every copy adds its effect again.";
 }
@@ -831,7 +908,7 @@ export const TOWER_NAME: Readonly<Record<TowerKind, string>> = Object.fromEntrie
  * the game no longer has. It is a narrower list than `Reward`, which still
  * types both because the catalogs and this file's reward text do.
  */
-export type UnlockKind = "world" | "turret" | "mutator";
+export type UnlockKind = "world" | "turret" | "mutator" | "family";
 
 export interface UnlockEntry {
   reward: Reward;
@@ -875,6 +952,9 @@ export function unlocksOf(kind: UnlockKind): UnlockEntry[] {
   if (kind === "mutator")
     for (const m of MUTATIONS)
       out.push({ reward: { kind: "mutator", id: m.id }, level: mutatorUnlockLevel(m.id) });
+  if (kind === "family")
+    for (const k of ACTIVE_FAMILIES)
+      out.push({ reward: { kind: "family", id: k }, level: familyUnlockLevel(k) });
   // THE TECH-TREE BRANCHES ARE ON NO CATEGORY AT ALL, the same as the mods
   // and the relics: nothing deals one (UPGRADES_ON_TRACK) and nothing
   // sells one. If a rung is ever dealt again it gets a tab of its own and
