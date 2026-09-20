@@ -161,8 +161,8 @@ A tower in rock is an authoring mistake, and `npm run check` says so.
 
 `/admin` → the map → the **Mission** group in the palette. A click stamps
 one; the eraser takes one off. There is nothing to set on a buff tower —
-the only decision is where, and how many. A garrison has two dials, its
-range and its level, and both are printed on the map.
+the only decision is where, and how many. A railgun has one dial, the
+section it rises in, and it is printed on the map.
 
 **Count the standing total, not the hand.** There is no hand any more —
 every mark is a tower that comes up and stays up — so what sizes a map is
@@ -190,148 +190,6 @@ spread a count of guns round a post is gone: where a gun stands is a
 decision about cover and approach, so it is a mark, and how many rise is
 how many you drew.
 
-**`garrison`** — a circle of ground the swarm holds, how far it reaches,
-and one number saying how hard (**What mans one**, above). Its default
-range is 44 cells, and it lays **no decking**: a garrison is a circle, and
-the square of prepared ground it used to wear promised that something
-would stand on exactly those four by four cells when nothing ever does
-(`MarkKind.pad` 0 now means none, which is what the field always said). **It belongs to no mission.** This began as the guard
-over a railgun battery and is not that any more — a garrison is a fact
-about a PLACE, there is a force dug in here and it will not follow you
-home, and every board has places worth denying. So it is offered on every
-map whatever the mission is playing, and the emplacements it used to be
-bolted to are their own marks.
-
-**Every garrison is standing at mission start, and none of them is ever
-manned again** (`Sim.manGarrisons`, called from `Sim.reset`). There is no
-schedule on the mark and no wave list to set. A garrison is not something
-that arrives — it is ground the swarm already holds when the run opens —
-so **clearing one is permanent**, and what a board pays to take a post it
-pays once. The mark carried a wave list until this; it made a dug-in
-force into a respawn, and a player who had paid for a post watched it come
-back on a countdown the board never showed them.
-
-The radius is the leash `Sim.garrisonUnit` holds every body raised there
-to, and the circle the board rings while anything is still holding it, so
-what an author sets is exactly what a player can see. Once a circle is
-cleared the board stops drawing it: an empty ring would be a promise about
-something that is never coming.
-
-### What mans one
-
-**One number does** — `Level`, 1 to 5 (`levels.ts GARRISON_LEVELS`). A
-rung names a fixed count of ordinary swarm, and it is a table rather than
-five fields on the mark because a roster is numbers an author has to
-balance against each other every time they place one, and the answer is
-the same every time. What placing a garrison is a decision about is
-**where** and **how hard**.
-
-| level | what stands there |
-|---|---|
-| **1** | 10 T2, 5 T3 |
-| **2** | 20 T3 |
-| **3** | 20 T3, 10 T4 |
-| **4** | 20 T4, 5 T5 |
-| **5** | 10 T4, 20 T5 |
-
-Every rung is strictly heavier than the one under it, on both terms —
-weight and tier. 1 and 2 are a mass of the family's light bodies, 3 is
-where its T4 arrives, 5 is twenty apexes behind a T4 screen.
-
-**It is ordinary swarm and nothing else.** The Wardens used to be the
-spine of every rung and they are **enemy turrets** now (see `emplacement`
-below) — a thing an author stands on a cell, not a thing that comes with
-a circle. An author who wants a gun over that ground puts a gun over it.
-
-**Which family fills the tiers is not authored and cannot be**: the run
-rolls **one family per circle** out of the hand this deploy was dealt
-(`LevelSpec.families`, `Sim.garrisonFamilies`), at reset, and keeps it for
-the whole run. So a level 3 is a Tusker post one run and a Kettle post the
-next, and a board with three garrisons on it is three different problems.
-One family a circle: a circle never mixes.
-
-A garrison body is spawned **outside the wave count**: it belongs to no
-wave, it never walks at the core, and clearing it never clears a wave. It
-does carry the run's own enemy level — a T3 dug in on a Nemesis board is
-a Nemesis T3.
-
-**Held is read off the leash, not off the kind.** A circle is ringed while
-something posted to it is still alive (`Sim.garrisonHeldMask`, across the
-seam as one bit per mark). A kind test would be lit by the first wave that
-walked through.
-
-**`emplacement`** — one of the swarm's own turrets, standing where you put
-it. It belongs to no mission, it is up from mission start, and it never
-moves. Pick which of the four:
-
-| | footprint | pool | plating | reach | what it does |
-|---|---|---|---|---|---|
-| **Lance** | 3x3 | 17,000 | 14 | 25t | One armour-cutting beam, every 0.75s |
-| **Bulwark** | 3x3 | 25,000 | 104 | 15t | A ram — 1,500 twice a swing with splash, three times a second |
-| **Halberd** | 4x4 | 55,000 | 115 | 29t | **Four beams at once**, every 0.9s, from behind a 9,000-point force field |
-| **Juggernaut** | 6x6 | 200,000 | 150 | 41t | **Six homing missiles a volley out of the sponsons down both flanks**, three volleys a second |
-
-**The yardstick is the autocannon** at 24 tiles. Three of the four sit
-around it and the Juggernaut reaches half again as far — it is the one
-that is supposed to make you come to it rather than the other way round.
-They used to reach 60 to 75 tiles, which made every one of them a gun you
-fought from off-screen.
-
-**They hit hard and they hit often.** Every cycle is under a second and the
-damage is a multiple of what the bodies carried.
-
-**One palette, one muzzle, one hit.** Every gun fires `ShootBig`, lands
-`BlastExplosion` and throws `GARRISON_SHOT` — red (255,77,94) over the
-bore's near-black (20,9,12). The two that fire a beam use a garrison laser
-style in the same pair rather than piercer's blue, which was the one thing
-on those machines still wearing somebody else's colour. So a round in the
-air over your line is the garrison's before you have worked out which of
-them fired it.
-
-**The Halberd carries a force field** — the same one the swarm's bodies
-carry, drawn by the same pass (`Renderer.drawForceFields`), and the only
-turret in the game with one. It is a hard gate and not a share: while any
-shield is left nothing reaches the building, and the hit that breaks it is
-spent on the shield rather than carried through. Seven seconds after it
-breaks it is back whole.
-
-**The Juggernaut fires out of its flanks.** `barrels` walks the muzzle
-across six points down the sponsons, so a volley leaves the sides of the
-hull rather than one hole up the middle.
-
-**They wear no accent.** The railgun carries the swarm's crimson because it
-is a body a mission plants and you have to pick it out of a crowd; these
-four are turrets standing on turret plates, read by silhouette and plate
-like every other building. Nothing tints them either — `renderer.ts` skips
-the crux multiply for `ENEMY_ONLY_KINDS`, and `status.ts` never flags one
-as **Taken**, because nothing was.
-
-These four were the **Wardens** — the bodies a garrison used to be manned
-with. They were already turrets in everything but bookkeeping, so they are
-turrets: same drawings, same pools, same plating, same weapons, standing
-still. Their stats live in `constants.ts TOWERS` with every other turret's
-and they are `ENEMY_ONLY_KINDS` (`game/types.ts`), which keeps them out of
-`FIELDED_KINDS` — nothing deals one, the build card never offers one, and
-no run can buy one.
-
-**It lays no decking.** The plated ground belongs to the two marks that
-promise something will rise on a cell *later* — the railgun its section is
-due on, the buff tower its train — so a board reads the promise before
-anything stands there. A turret is up from the first frame and is its own
-announcement.
-
-**It owns its cells but not the path.** Nothing may be built over one and
-shots collide with it, but the swarm's routes run straight through the
-square it stands on. That is the rule every building of the swarm's is
-under (`Sim.conquerTower` says why): its own bodies will not shoot it, so
-a wall they cannot pass and will not break is a wall they would stand at
-forever — and a map is exactly where that would get authored by accident.
-
-**Your guns shoot it mid-wave.** A turret takes the nearest thing in its
-range and does not care what kind of thing it is — a body, a dome, a gun
-of the swarm's. So a line standing over an emplacement fights it, and a
-line with the wave closer fights the wave (`Sim.updateTowers`).
-
 **`road`** — the line a crosser walks (`game/missions.ts`): the Borers'
 lines on an intercept map, the convoy's on an escort one. Its corners are
 `pts` on the mark, and the marks' order is the roads' order, because a
@@ -352,8 +210,7 @@ Several railguns may name the **same section**: everything with that
 number rises together, on the same tick of the mission's clock, so "five
 guns on the third" is five marks and not a new field. The clock itself —
 `first` and `every` — stays in the mission spec, because when a siege
-starts is not a fact about the ground. A garrison is on no clock at
-all: every one a map carries is standing before the first frame.
+starts is not a fact about the ground.
 
 ## Drawing a road
 

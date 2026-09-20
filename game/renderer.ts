@@ -152,7 +152,7 @@ import { MAX_LEGS, MAX_SEGS, MUZZLE_FLASH_LIFE, WAKE_PTS } from "./sim";
 // list, and reaching past it has to go through that list first.
 import type { ShotView, SimView, TowerView } from "./simview";
 import { PROJ_F } from "./snapshot";
-import { TOWER_KINDS, isEnemyOnly } from "./types";
+import { TOWER_KINDS } from "./types";
 import {
   BEAM_STYLES,
   EXPLOSION_STYLES,
@@ -203,8 +203,8 @@ const UV_TURRETS: Record<TowerKind, UVRect> = {
   blighter: UV_BLIGHTER,
   drifter: UV_DRIFTER,
   stinger: UV_STINGER,
-  // the garrison's own (types.ts ENEMY_ONLY_KINDS), drawn at pack time
-  // out of the bodies they used to be (atlas.ts, wardenArt.ts)
+  // the four Wardens, shelved but whole (types.ts RETIRED_KINDS), drawn
+  // at pack time out of the bodies they used to be (atlas.ts, wardenArt.ts)
   bulwark: UV_BULWARK_TOP,
   lance: UV_LANCE_TOP,
   halberd: UV_HALBERD_TOP,
@@ -3269,13 +3269,7 @@ export class Renderer {
       // crux red its BODIES wear — the one colour on this board that
       // already means "theirs", multiplied into the hp grey so a
       // conquered turret still visibly takes damage as it is chewed down.
-      //
-      // A GARRISON GUN IS NOT PAINTED (types.ts ENEMY_ONLY_KINDS). The
-      // tint is what says "this used to be yours"; one of these never
-      // was, and it is drawn as its own machine (wardenArt.ts) rather
-      // than as one of the player's wearing a costume. Red over art that
-      // is already the swarm's says nothing and hides the drawing.
-      const own = t.team === "player" || isEnemyOnly(t.kind);
+      const own = t.team === "player";
       const r = own ? tint[0] : tint[0] * TEAM_CRUX_RGB[0];
       const g = own ? tint[1] : tint[1] * TEAM_CRUX_RGB[1];
       const b = own ? tint[2] : tint[2] * TEAM_CRUX_RGB[2];
@@ -3901,8 +3895,8 @@ export class Renderer {
         this.strokeCircle(b, upx[i], upy[i], rad, 1.5 * MU, col[0], col[1], col[2], 1);
       }
     }
-    // ...AND THE BUBBLES ON BUILDINGS (constants.ts TowerStats.field, the
-    // garrison's Halberd). Same pass, same shader, same circle and the
+    // ...AND THE BUBBLES ON BUILDINGS (constants.ts TowerStats.field).
+    // Same pass, same shader, same circle and the
     // same red: a force field is a force field whether the thing under it
     // walks or is bolted down, and a player who has learned to break one
     // has learned to break all of them

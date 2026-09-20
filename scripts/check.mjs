@@ -420,7 +420,7 @@ const cellFamilies = (() => {
     // ...and the raze emplacement, which is also on the rig and also
     // refused at load if the crux it wears comes out empty. The other four
     // drawings in wardenArt.ts are TURRET HEADS now (types.ts
-    // ENEMY_ONLY_KINDS) and pack no team cell at all
+    // RETIRED_KINDS) and pack no team cell at all
     ["railgun", [WA.RAZE_TIER], WA.razeMech],
   ];
 })();
@@ -671,17 +671,14 @@ try {
 
   // 1. the script sends something.
   //
-  //    A WALKER, AND NOT ANY BODY. Every garrison a map carries is
-  //    standing before the first frame (Sim.manGarrisons), so on a map
-  //    with one `sim.n` is nonzero at t = 0 and this stage would pass
-  //    without the script ever having been asked for anything. What it
-  //    wants is a body that is walking at the core.
+  //    A WALKER, AND NOT ANY BODY. A mission may have posted something
+  //    before the first frame (Sim.garrisonUnit), and a body standing on
+  //    a post would pass this stage without the script ever having been
+  //    asked for anything. What it wants is a body walking at the core.
   const walker = () => {
     for (let i = 0; i < sim.n; i++) if (sim.ugar[i] === 0) return i;
     return -1;
   };
-  // WAVE_GAP_OPENING is a full cadence now (levels.ts), so the first wave
-  // is most of two minutes in — the window has to clear it
   const FIRST_WAVE_BY = L.WAVE_GAP_OPENING + L.WAVE_RELEASE_SECONDS + 10;
   while (walker() < 0 && sim.time < FIRST_WAVE_BY) { half(); scan(); }
   const spawnedAt = Math.round(sim.time);
@@ -820,9 +817,8 @@ const DRAW_MS = 5;
 const SIM_BUDGET_MS = FRAME_MS - DRAW_MS;
 
 /** the stretch of the script to load the field with, 1-based and inclusive —
- *  wave 5 is the heaviest of the ten-wave script (7.5k bodies), where the
- *  old fifty-wave window [34, 36] was 5.7k */
-const LOAD_WAVES = [5, 5];
+ *  the heaviest three waves of the fifty-wave script, 5.7k bodies */
+const LOAD_WAVES = [34, 36];
 /** how far either side of the road the board is built out, in cells */
 const BELT_REACH = 30;
 /** seconds the swarm walks before the clock starts — long enough that it is

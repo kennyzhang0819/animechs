@@ -772,7 +772,7 @@ export const UV_DRIFTER = top("drifter", 96);
 export const UV_STINGER = top("stinger", 128);
 export const UV_TOWER_BASE4 = flat("tower-base-4", 128);
 /**
- * THE GARRISON'S FOUR HEADS (types.ts ENEMY_ONLY_KINDS, wardenArt.ts).
+ * THE FOUR WARDEN HEADS (types.ts RETIRED_KINDS, wardenArt.ts).
  *
  * They are TOPS like every other turret's and they are DRAWN at pack time
  * rather than loaded, which is the beacon's case (UV_BEACON): there is no
@@ -3032,7 +3032,7 @@ export async function turretIcon(url: string): Promise<string> {
  */
 export async function towerIcon(kind: TowerKind): Promise<string> {
   // THE GARRISON'S FOUR HAVE NO SPRITE FILE AT ALL (types.ts
-  // ENEMY_ONLY_KINDS). Their heads are DRAWN into the sheet at pack time
+  // RETIRED_KINDS). Their heads are DRAWN into the sheet at pack time
   // out of the bodies they used to be (wardenArt.ts), so the packed cell
   // is not a nicer version of the picture — it is the only one there is,
   // and pointing a swatch at somebody else's sprite would put a turret in
@@ -3420,7 +3420,7 @@ function packAnimalArt(
   // ---- the siege: the railgun on the mech rig, into cells nobody else
   // owns (see THE SIEGE'S CELLS) ----
   packMech(RAZE_CELLS, razeMech(RAZE_TIER), RAZE_TIER.n);
-  // ...and the four Wardens AS TURRET HEADS (types.ts ENEMY_ONLY_KINDS).
+  // ...and the four Wardens AS TURRET HEADS (types.ts RETIRED_KINDS).
   // THE BODY ALONE: the renderer lays UV_TOWER_BASE* under every head, so
   // the plate each drawing carries (wardenArt.ts plated) would be a
   // second plate over the first. Each cell is the machine's own grid, so

@@ -231,7 +231,7 @@ export const PAL = {
  */
 export const TEAM_CRUX_RGB: RGB = pal(0xf25555);
 /**
- * WHAT THE GARRISON'S GUNS THROW (types.ts ENEMY_ONLY_KINDS) — one
+ * WHAT THE WARDENS THROW (types.ts RETIRED_KINDS) — one
  * palette across all four, so a round in the air over the line is
  * theirs before a player has worked out which of them fired it.
  *
@@ -719,7 +719,7 @@ export interface TowerStats {
    * while it is up.
    *
    * NOTHING OF THE PLAYER'S HAS ONE and nothing of the player's can: it
-   * is written for the garrison's Halberd (ENEMY_ONLY_KINDS), where the
+   * is written for the Halberd (RETIRED_KINDS), where the
    * point of it is that the gun has to be answered in two stages. A
    * shield on a turret a run could buy is a different balance question
    * and would want its own rung to pay for it.
@@ -2208,30 +2208,31 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     },
   },
 
-  // ---- THE GARRISON'S GUNS (types.ts ENEMY_ONLY_KINDS) ----
+  // ---- THE WARDENS (types.ts RETIRED_KINDS) ----
   //
-  // FOUR TURRETS THE PLAYER NEVER OWNS. They are the swarm's, an author
-  // stands them on a map (missionMarks.ts EMPLACEMENT), and they are what
-  // the four Wardens became when they stopped walking.
+  // FOUR TURRETS NOTHING STANDS UP. They are what the four Wardens became
+  // when they stopped walking, and they are SHELVED: no mark places one,
+  // nothing deals one, and no run meets one. The table is kept whole so
+  // that bringing them back is a decision rather than a rebuild.
   //
   // THE POOLS ARE WRITTEN DIVIDED BY TOWER_HP_SCALE, because every
   // turret's table health is multiplied by it (resolveTower). A Bulwark
   // stands on 25,000 and `health: 2500` is how you say that here.
   //
-  // THEY HIT HARD AND THEY HIT OFTEN. These are OBJECTIVES — one of them
-  // is a trip the run makes on purpose, not traffic that wanders past —
-  // so the thing they must never be is a gun the player can stand in
-  // front of and out-heal. Every cycle here is under two seconds and the
-  // damage is a multiple of what the bodies carried.
+  // THEY HIT HARD AND THEY HIT OFTEN. These were written as OBJECTIVES —
+  // a trip the run makes on purpose, not traffic that wanders past — so
+  // the thing they must never be is a gun the player can stand in front
+  // of and out-heal. Every cycle here is under two seconds and the damage
+  // is a multiple of what the bodies carried.
   //
   // EVERYTHING THEY THROW IS RED AND BLACK (GARRISON_SHOT below): one
-  // palette across four guns, so a round in the air over your line is the
-  // garrison's before you have worked out which of them fired it. It is
-  // the swarm's crimson over the bore's near-black, which is the pair the
-  // machines themselves are drawn in.
+  // palette across four guns, so a round in the air is theirs before you
+  // have worked out which of them fired it. It is the swarm's crimson
+  // over the bore's near-black, which is the pair the machines themselves
+  // are drawn in.
   //
-  // NONE OF THEM TARGETS AIR. A garrison gun answers the board in front
-  // of it, and the board is buildings.
+  // NONE OF THEM TARGETS AIR: they answer the board in front of them, and
+  // the board is buildings.
 
   // THE LANCE — the needle. One armour-cutting beam down a long line,
   // now on a two-thirds cycle rather than a two-second one.
@@ -2581,7 +2582,7 @@ export const beaconPriceAt = (ladder: readonly number[], bought: number): number
  * moves it for free.
  */
 export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
-  // the garrison's four (types.ts ENEMY_ONLY_KINDS): never dealt and never
+  // the four Wardens (types.ts RETIRED_KINDS): never dealt and never
   // bought, but the codex and the inspector print a line for every kind
   bulwark: "The swarm's wall. Hits like a ram, and only what is next to it.",
   lance: "The swarm's needle. One armour-cutting beam down a long line, slowly.",

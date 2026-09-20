@@ -140,7 +140,7 @@ export const BOSS_NAME = ANIMAL_ART ? "Sovereign" : "Boss";
 export const WORM_NAME = "Borer";
 
 /**
- * WHAT THE SIEGE'S BODIES ARE CALLED — the emplacement and its garrison,
+ * WHAT THE SIEGE'S BODIES ARE CALLED — the emplacement and its guards,
  * beside the boss's name and the crosser's for the reason they are all
  * here: none of the three is in a family, so none of them has a
  * `Body (rank)` to be built out of, and a name written in two files is a
@@ -152,52 +152,11 @@ export const WORM_NAME = "Borer";
  * player ever does with it is take it down. "Railgun" and not a proper
  * noun, because there are ten of them.
  *
- * THE WARDENS ARE NOT BODIES ANY MORE. The four machines a garrison used
- * to be manned with are TURRETS (types.ts ENEMY_ONLY_KINDS, constants.ts
- * TOWERS): an author stands one on a cell and it is up from mission
- * start. They were already a turret in everything but bookkeeping — they
- * held a circle, never walked at the core, and the whole of what a run
- * did with one was go over and take it down — so their names live in the
- * turret table now and a garrison is ordinary swarm (GARRISON_LEVELS).
+ * THE WARDENS ARE NOT HERE AT ALL. The four machines that used to hold
+ * ground beside a railgun are shelved turrets now (types.ts
+ * RETIRED_KINDS) and nothing on any board stands one up.
  */
 export const RAZE_NAME = "Railgun";
-/**
- * HOW HARD ONE PIECE OF HELD GROUND IS — five presets, and the ONLY dial
- * a map sets on a garrison besides where it is and how far it reaches
- * (missionMarks.ts GARRISON, Sim.garrisonRoster).
- *
- * IT IS A PRESET AND NOT A ROSTER because a roster is ten numbers an
- * author has to balance against each other on every mark they place, and
- * the answer is the same every time. What placing a garrison is actually
- * a decision about is WHERE and HOW HARD; the mix that makes a 3 a 3 is
- * one table, here, so every level 3 on every map is the same fight and a
- * player learns it once.
- *
- * IT IS ORDINARY SWARM AND NOTHING ELSE. The Wardens used to be the
- * spine of every rung and they are ENEMY TURRETS now (missionMarks.ts
- * EMPLACEMENT) — a thing an author stands on a cell, not a thing that
- * comes with a circle. So a garrison is a CROWD dug in, its faces are
- * whichever family the circle rolled (Sim.garrisonFamilies), and an
- * author who wants a gun over that ground puts a gun over it.
- *
- * THE LADDER CLIMBS ON BOTH TERMS, weight and tier: 1 and 2 are a mass of
- * the family's light bodies, 3 is where its T4 arrives, and 5 is twenty
- * apexes with a T4 screen. Every rung is strictly heavier than the one
- * under it — a rung that was not would make the number a label rather
- * than a dial.
- *
- * `tiers` is T1 to T5 in order. See docs/mission-marks.md.
- */
-export interface GarrisonLevel {
-  tiers: readonly [number, number, number, number, number];
-}
-export const GARRISON_LEVELS: readonly GarrisonLevel[] = [
-  { tiers: [0, 10, 5, 0, 0] },
-  { tiers: [0, 0, 20, 0, 0] },
-  { tiers: [0, 0, 20, 10, 0] },
-  { tiers: [0, 0, 0, 20, 5] },
-  { tiers: [0, 0, 0, 10, 20] },
-];
 
 /** the two buff towers a mission plants over its road (docs/mission-marks.md) */
 export const PYLON_NAME = "Pylons";
@@ -3829,13 +3788,11 @@ export interface EscortMission {
  *   behind is fighting the fourth with the third still firing, and the
  *   arithmetic of that is what the mission is asking about.
  *
- *   IT IS GUARDED. An emplacement alone is answered by one long gun
- *   standing safely out of everything's way. Every railgun stands inside
- *   a garrison circle an author drew over it (missionMarks.ts GARRISON):
- *   that crowd never walks at the core and never leaves the circle
- *   (Sim.garrisonUnit), so it makes the GROUND AROUND the railgun
- *   expensive, which turns "buy a gun that reaches" into "buy a position
- *   and hold it", which is the only question this game can ask.
+ *   WHAT IT COSTS IS THE TRIP. A battery stands past the ground the core
+ *   lights, so answering one is a gun bought out there on a beacon while
+ *   the wave is still walking at the base — "buy a gun that reaches"
+ *   becomes "buy a position and hold it", which is the only question this
+ *   game can ask.
  *
  * THE SCHEDULE AND THE ROSTER ARE AUTHORED HERE; WHERE THE SECTIONS STAND
  * IS AUTHORED WITH THE TERRAIN (missions.ts POST_SPECS), exactly the way
@@ -3854,7 +3811,7 @@ export interface RazeMission {
 }
 
 /** one section: a post on the map, the emplacements that rise on it, and
- *  the garrison that stands over them */
+ *  anything the mission posts over them */
 export interface RazeSection {
   /** which of the map's posts it rises on, by index into POST_SPECS
    *  (missions.ts) — a place authored with the terrain */
@@ -3863,7 +3820,7 @@ export interface RazeSection {
    * WHICH RISING IT BELONGS TO, 1-based. Sections sharing a number rise
    * together on the same tick of the mission's clock; absent means "its
    * own", i.e. position in the list. It is here for the batteries an
-   * author places on the map (missionMarks.ts BATTERY), where two in one
+   * author places on the map (missionMarks.ts RAILGUN), where two in one
    * section is two marks rather than a shape in the list.
    */
   wave?: number;
@@ -3872,10 +3829,9 @@ export interface RazeSection {
   /**
    * WHAT STANDS OVER THEM, by kind and count — the same shape a wave is
    * written in (WaveUnits), and deliberately not a list of one special
-   * kind: a garrison is a mission putting bodies on a post, and the day a
-   * mission wants to post a Tusker herd it should not need a new field.
-   * The shipped siege leaves this empty and guards its posts with
-   * GARRISON marks on the map instead.
+   * kind: posting a guard is a mission putting bodies on a post, and the
+   * day a mission wants to post a Tusker herd it should not need a new
+   * field. The shipped siege leaves this empty.
    *
    * Every body named here is PLANTED ON THE POST rather than sent at the
    * core (Sim.garrisonUnit), whatever kind it is.
@@ -4284,42 +4240,24 @@ export interface LevelDoc {
 
 
 /**
- * THE RUN'S CLOCK, as authored: TEN waves, one every 112.5 seconds. The
+ * THE RUN'S CLOCK, as authored: FIFTY waves, one every 22.5 seconds. The
  * document (public/levels/campaign.json) sets the gap; this is what a
  * missing document or a missing field plays.
  *
- * IT USED TO BE FIFTY WAVES EVERY 22.5s, and the change is a COMPRESSION
- * and not a cut: five of those waves are summed into one of these, so the
- * script still sends the same 50,000 bodies over the same ~1,125s of
- * schedule. The 50-wave document it was folded from is kept verbatim at
- * public/levels/legacy/campaign-50.json.
- *
- * 109 IS A RUN LENGTH, not a feel. The cadence a run keeps is this gap
- * plus WAVE_RELEASE_SECONDS, and it is the schedule ITSELF rather than an
- * average — wave n lands at WAVE_GAP_OPENING + (n-1) x cadence and nothing
- * about the board can move it (Sim.waveStartTime). So the script's own
- * clock is exactly 112.5 + 9 x 112.5 = 1,125s, and with the last wave's
+ * NINETEEN IS A RUN LENGTH, not a feel. The cadence a run keeps is this
+ * gap plus WAVE_RELEASE_SECONDS, and it is the schedule ITSELF rather
+ * than an average — wave n lands at WAVE_GAP_OPENING + (n-1) x cadence
+ * and nothing about the board can move it (Sim.waveStartTime). So the
+ * script's own clock is 3 + 49 x 22.5 = 1,105s, and with the last wave's
  * walk and die on the end a mission comes in around twenty minutes, which
  * is the sitting one is meant to be.
- *
- * WHAT THE COMPRESSION ACTUALLY CHANGES IS THE SHAPE OF THE FIELD. A wave
- * is five waves' worth of bodies released at count / WAVE_RELEASE_SECONDS,
- * so it arrives as a PULSE the doors cannot pass in one breath — several
- * waves' worth still releasing while the board fights the front of it
- * (Sim.live) — and then the map empties before the next one. The tide used
- * to be a steady overlap; it is a swell and a trough now, and the counts
- * below are authored against that.
  */
-export const WAVE_GAP_DEFAULT = 109;
+export const WAVE_GAP_DEFAULT = 19;
 
-/**
- * The OPENING gap only, in seconds — one full cadence, so wave 1 lands at
- * 112.5s like every wave after it and the run opens on an even beat. It is
- * a LONG opening: a board buys its first cards off the run clock
- * (economy.ts) with nothing to shoot, and the first thing it meets is five
- * waves at once.
- */
-export const WAVE_GAP_OPENING = 112.5;
+/** The OPENING gap only, in seconds: wave 1 is not made to wait a full
+ *  cadence, because the first thing a run does is build and there is
+ *  nothing to build against yet. */
+export const WAVE_GAP_OPENING = 3;
 
 /**
  * The documents as last loaded or saved, by world id — the raw counts the
@@ -4330,8 +4268,8 @@ export const WAVE_GAP_OPENING = 112.5;
 const docs = new Map<string, LevelDoc>();
 
 /**
- * THE ONE SCRIPT. Every map plays the same ten waves — the document
- * under this id in public/levels — and then plays the last two of them
+ * THE ONE SCRIPT. Every map plays the same fifty waves — the document
+ * under this id in public/levels — and then plays the last eleven of them
  * again, and again, heavier each time (Sim.loadStep). What makes one map
  * different from the next is its ground, its doors, the family roll the
  * deploy makes (rollFamilies) and, above all, its MISSION: the script is
@@ -4431,12 +4369,13 @@ export const WORLDS: LevelSpec[] = [
     // waves. Nothing is finished that way now, so it is an OBJECTIVE
     // instead (OBJECTIVE_KINDS) and a wave cannot send one at all.
     //
-    // TEN IS THE DOCUMENT'S LENGTH AND NOT THE RUN'S. The script does not
-    // end: past the tenth wave the last TIDE_CYCLE_WAVES go again, one
-    // doubling of enemy health a cycle, forever (Sim.loadStep — the tide,
-    // LEVELS_PER_DOUBLING in ladder.ts). So THE LAST TWO WAVES ARE THE
-    // ONES THAT GET PLAYED FOREVER — author that stretch as something that
-    // stands repeating, because the endgame of every long run is it.
+    // FIFTY IS THE DOCUMENT'S LENGTH AND NOT THE RUN'S. The script does
+    // not end: past the fiftieth wave the last TIDE_CYCLE_WAVES go again,
+    // one doubling of enemy health a cycle, forever (Sim.loadStep — the
+    // tide, LEVELS_PER_DOUBLING in ladder.ts). So THE LAST ELEVEN WAVES
+    // ARE THE ONES THAT GET PLAYED FOREVER — author that stretch as
+    // something that stands repeating, because the endgame of every long
+    // run is it.
     //
     //   line       T1        T2       T3         T4         T5
     //   ironhide1     ironhide1    ironhide2     ironhide3   ironhide4    ironhide5
@@ -4538,11 +4477,11 @@ export const WORLDS: LevelSpec[] = [
     // this board: there is no standing ground there, and a mission that
     // pretended otherwise would be putting an emplacement in the water.
     //
-    // WHERE THEY STAND IS THE MAP'S (missionMarks.ts BATTERY). The four
+    // WHERE THEY STAND IS THE MAP'S (missionMarks.ts RAILGUN). The four
     // are placed in the map editor as marks on the document, along with
-    // how many guns rise on each, which section it belongs to and what
-    // garrison holds it; `sections` below is the fallback for a map that
-    // carries none, and the clock is this spec's either way.
+    // how many guns rise on each and which section it belongs to;
+    // `sections` below is the fallback for a map that carries none, and
+    // the clock is this spec's either way.
     //
     // THE DISTANCE IS THE POWER GRID. The core lights ninety cells, so a
     // battery stands past it: the first can be answered by the longest
@@ -4560,14 +4499,11 @@ export const WORLDS: LevelSpec[] = [
     // is at zero core AT 14:00, the tick the fourth battery rises. Answer
     // each section as it comes and the siege costs about half the base.
     //
-    // THE GUARDS ARE NOT THE SIEGE'S ANY MORE. What holds the ground round
-    // an emplacement is a `garrison` mark on the map (missionMarks.ts),
-    // drawn where an author wants it and standing before the run opens —
-    // and not one of those bodies will follow you home: they hold their
-    // circle and nothing else (Sim.garrisonUnit). The ground is a PLACE
-    // that has to be taken, which is the only way this game knows how to
-    // charge for it, and it is a fact about the board rather than about
-    // this mission. `sections` below is the clock and the gun count.
+    // NOTHING STANDS OVER THEM. A battery is guns and the ground they are
+    // on, and what the run has to beat to reach one is the wave that is
+    // walking at the core while it goes. `guards` is still on the section
+    // (RazeSection) for the day a mission wants to post a body, and the
+    // shipped siege posts none.
     mission: {
       kind: "raze",
       first: 120,

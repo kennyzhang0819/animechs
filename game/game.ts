@@ -9,7 +9,7 @@ import {
   refreshMap,
   SPAWN_STYLE,
 } from "./maps";
-import { garrisonsFor, postsFor, roadAt, roadsFor, siegeFor } from "./missions";
+import { postsFor, roadAt, roadsFor, siegeFor } from "./missions";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { towerBaseIcon, towerGhostIcon } from "./towerIcons";
 import {
@@ -878,9 +878,8 @@ const MM_CROSS_EDGE = mmColor(0x00, 0x00, 0x00);
  *
  * THE TRAIN IS ITS HEAD AND NOTHING ELSE. Twenty cars would be twenty
  * pins, which is a corner map made of pins; the head is the end a player
- * is trying to get in front of. A garrison is off it for the same reason
- * — a siege digs crowds in around its guns, and they are the
- * emplacement's fence rather than the thing behind it.
+ * is trying to get in front of. A posted guard is off it for the same
+ * reason — it is the emplacement's fence rather than the thing behind it.
  */
 const MM_PIN_FOE = Uint8Array.from(UNIT_KINDS, (k) =>
   k === "wormhead" || k === "railgun" || k === "goad" || k === "bastion" || k === "boss" ? 1 : 0,
@@ -4292,9 +4291,10 @@ export class Game {
    * see where the south-west IS has not been asked anything.
    *
    * THE CIRCLE IS THE TRUTH AND NOT A DECORATION: it is exactly the leash
-   * the garrison is held to (missions.ts PostSpec.radius, Sim.garrison-
-   * Unit), so a turret placed outside the line is a turret the garrison
-   * will never walk out to, and the player can see that before they spend.
+   * anything posted there is held to (missions.ts PostSpec.radius,
+   * Sim.garrisonUnit), so a turret placed outside the line is a turret
+   * they will never walk out to, and the player can see it before they
+   * spend.
    *
    * A RISEN SECTION GOES QUIET. Once the bodies are actually standing
    * there the ring has nothing left to tell anybody — the emplacements are
@@ -4302,49 +4302,6 @@ export class Game {
    * label comes off. The overlay is a PROMISE about the future, and it
    * stops being one the moment the future arrives.
    */
-  /**
-   * THE GROUND THE SWARM HOLDS (missionMarks.ts GARRISON), ringed on every
-   * board that draws one, whatever the mission.
-   *
-   * THE CIRCLE IS THE TRUTH AND NOT A DECORATION: it is exactly the leash
-   * the bodies in it are held to (Sim.garrisonUnit), so a turret placed
-   * outside the line is a turret they will never walk out to, and a player
-   * can see that before they spend.
-   *
-   * A CLEARED ONE IS NOT DRAWN AT ALL. Every garrison is standing from
-   * the first frame and none is ever manned again (Sim.manGarrisons), so
-   * an empty circle is not a promise about anything — it is ground that
-   * has been taken, and a ring left on it would say the opposite. While
-   * one IS held the line is the only thing the overlay has to add, since
-   * the bodies are already on screen, so it is drawn as a hairline.
-   */
-  private drawGarrisons(c: CanvasRenderingContext2D): void {
-    const rings = garrisonsFor(this.world.terrain.marks);
-    if (rings.length === 0) return;
-    // HELD IS READ OFF THE LEASH, and the sim is the only side that can
-    // see one — so it comes across as a bitmask (simreport.ts
-    // GARRISON_HELD). It used to be worked out here by KIND, which held
-    // only while a garrison was made of bodies no wave could send; a
-    // circle manned with ordinary swarm (levels.ts GARRISON_LEVELS) would
-    // be lit by the first wave that walked through it
-    const mask = this.world.garrisonHeld;
-    const held = rings.map((_, r) => (mask & (1 << r)) !== 0);
-    c.save();
-    c.beginPath();
-    c.rect(0, 0, W, H);
-    c.clip();
-    c.strokeStyle = SPAWN_STYLE.css;
-    c.globalAlpha = 0.16;
-    c.lineWidth = 2;
-    for (const [n, g] of rings.entries()) {
-      if (!held[n]) continue;
-      c.beginPath();
-      c.arc(g.post.x, g.post.y, g.post.r, 0, Math.PI * 2);
-      c.stroke();
-    }
-    c.restore();
-  }
-
   private drawMissionPosts(c: CanvasRenderingContext2D): void {
     const level = this.world.level;
     const m = level.mission;
@@ -4378,8 +4335,7 @@ export class Game {
       }
     }
     // the rings are the FALLBACK's: a map that places its own guns draws
-    // them on their cells above, and what holds the ground round them is a
-    // garrison and not this mission's (drawGarrisons)
+    // them on their cells above
     const rings = siege
       ? []
       : m.sections.map((sec, i) => ({ post: posts[sec.post], wave: razeWave(sec, i), guns: sec.guns }));
@@ -4518,7 +4474,6 @@ export class Game {
     // reason: the mission's geometry belongs under the fight
     this.drawMissionPosts(c);
     // ...and the ground the swarm holds, which is not a mission's at all
-    this.drawGarrisons(c);
 
     // ROUTES, under everything else so a selection ring still reads on top
     if (this.showRoutes) {

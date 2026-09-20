@@ -938,7 +938,7 @@ export class MapEditor {
   private readonly markArt = new Map<string, HTMLImageElement>();
   /**
    * A WHOLE TURRET, PLATE AND ALL, for the marks that stand one up
-   * (missionMarks.ts EMPLACEMENT) — the same two pieces the board draws
+   * (missionMarks.ts towerField) — the same two pieces the board draws
    * (renderer.ts: UV_TOWER_BASE* under UV_TURRETS) composed into one
    * picture, so what an author sees on the map is what the run puts
    * there. A bare head floating on a coloured plate was a mark; this is
@@ -1445,8 +1445,8 @@ export class MapEditor {
         if (k.geom === "path") { this.drawPathMark(c, m, k, i, s); continue; }
         const side = markSize(m) * CELL;
         // the region a kind measures in cells, drawn as the circle it is
-        // (missionMarks.ts radiusField): a garrison's ground is a number
-        // on a panel and an author has to see how much board it covers
+        // (missionMarks.ts radiusField): ground an author sets as a
+        // number is ground they have to see the size of
         if (k.radiusField) {
           const r = Number(m.opts?.[k.radiusField] ?? 0) * CELL;
           if (r > 0) {
@@ -1468,11 +1468,7 @@ export class MapEditor {
         const towerKind = markTower(m);
         const faceKey = towerKind ?? markUnit(m) ?? "";
         // A TURRET IS DRAWN AS THE BUILDING IT WILL BE, at its own
-        // footprint and on the cells the sim will actually use
-        // (Sim.raiseEmplacements centres it in the mark's square). The
-        // four are 2x2, 2x2, 3x3 and 4x4 and a mark is 4x4 for all of
-        // them, so a picture stretched to the mark would be the wrong
-        // size for three of the four and the wrong thing for all of them
+        // footprint (markSize) and not stretched to the mark's square
         const block = towerKind ? this.towerBlockArt.get(towerKind) : null;
         if (block) {
           // THE MARK IS THE BUILDING. Its footprint is the turret's own

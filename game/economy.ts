@@ -159,7 +159,7 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
   furnace: 4,
   railhead: 4,
   stinger: 4,
-  // THE GARRISON'S GUNS (types.ts ENEMY_ONLY_KINDS). No run ever buys one
+  // THE WARDENS (types.ts RETIRED_KINDS). No run ever buys one
   // — the band is here because every kind needs a price to be a kind, and
   // it is NOT their footprint: the Juggernaut is six tiles and the bands
   // stop at four, because a band is one of the build card's four keys and
@@ -219,9 +219,9 @@ export const TOWER_PRICE: Record<TowerKind, number> = Object.fromEntries(
  * THE TIER IS THE FOOTPRINT, and the corner's four keys promise it.
  *
  * IT IS A PROMISE ABOUT THE BUILD CARD, so it is asked of the kinds the
- * card can offer and no others (types.ts FIELDED_KINDS). The garrison's
- * guns are never dealt and never bought, and one of them is six tiles —
- * a size the card has no key for, because nothing the player places is
+ * card can offer and no others (types.ts FIELDED_KINDS). The shelved
+ * Wardens are never dealt and never bought, and one of them is six tiles
+ * — a size the card has no key for, because nothing the player places is
  * ever that big.
  */
 (() => {

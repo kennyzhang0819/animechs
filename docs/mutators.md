@@ -83,7 +83,7 @@ is not a harder wave, it is a different fight.
 
 **Conquest is the one number to distrust**, and it is priced with that said out loud.
 The instrument's board is four hundred turrets in a blob that is dying anyway, and what
-Conquest costs a player is the *line* — a thin one, held for ten waves, where every gun
+Conquest costs a player is the *line* — a thin one, held for a whole run, where every gun
 lost is a gun shooting back. It measured −2% and was authored at six on a hunch; four is
 the compromise. The honest thing is to measure it on a real board.
 

@@ -23,10 +23,10 @@
  * to go and break them; that one wants no line at all, only places and how
  * far each one reaches.
  *
- * ALL OF IT IS DRAWN ON THE MAP NOW. The roads, the emplacements and the
- * garrison regions are marks on the document, placed in the map editor
- * (missionMarks.ts, docs/mission-marks.md); the tables below are the
- * fallback for a map that carries none, and both are empty.
+ * ALL OF IT IS DRAWN ON THE MAP NOW. The roads and the emplacements are
+ * marks on the document, placed in the map editor (missionMarks.ts,
+ * docs/mission-marks.md); the tables below are the fallback for a map
+ * that carries none, and both are empty.
  *
  * A ROAD IS AUTHORED, NOT PATHFOUND, and that is the whole point of both
  * archetypes. Everything else on the field reads the flow field and ends
@@ -456,8 +456,8 @@ export function roadProblems(road: Road): string[] {
  *
  * `radius` IS TWO THINGS AT ONCE and that is deliberate. It is how wide
  * the section is laid out — the emplacements are rung around the centre
- * inside it, and the garrison inside them — and it is the LEASH the
- * garrison is held to (Sim.garrisonUnit): a body posted here will cross
+ * inside it, and the guards inside them — and it is the LEASH those
+ * guards are held to (Sim.garrisonUnit): a body posted here will cross
  * the circle to get at a turret standing in it and will never take a step
  * outside. One number, so what the player sees drawn on the board is
  * exactly the ground the guards contest, and there is no second radius to
@@ -524,10 +524,6 @@ export function postsFor(mapId: string | undefined): readonly Post[] {
  * and exists so that everything counting the siege off the mission spec
  * still counts it right (levels.ts razeGuns, missionText, missionProgress).
  *
- * THE GARRISONS ARE NOT IN HERE. A garrison is a fact about a place and
- * not about this mission (garrisonsFrom below), so a siege no longer owns
- * the ground round its guns — an author draws that separately, on any map.
- *
  * IT IS THE MAP'S ANSWER TO A QUESTION THE MISSION ASKS. RazeMission
  * still owns the clock (first, every) and the marks own the places and
  * the counts, which is the same split the intercept's roads and buff
@@ -571,46 +567,6 @@ export function siegeFromMarks(marks: readonly MapMark[]): MarkSiege | null {
     guards: {},
   }));
   return { sections, spots };
-}
-
-/**
- * THE GARRISONS A DOCUMENT CARRIES — a circle of ground and what mans it
- * (missionMarks.ts GARRISON). Every mission reads these and so does a map
- * under no mission at all: what they say is "there is a force dug in
- * here", which is a fact about the board.
- *
- * THERE IS NO SCHEDULE ON ONE. All of them are standing from mission
- * start (Sim.reset) and none of them is ever manned again.
- */
-export interface MarkGarrison {
-  post: Post;
-  /** which rung of levels.ts GARRISON_LEVELS mans it, 1-based. The roster
-   *  is not on the mark: it is that table, read by Sim.garrisonRoster */
-  level: number;
-}
-const GARRISONS = new WeakMap<object, readonly MarkGarrison[]>();
-export function garrisonsFor(marks: readonly MapMark[] | undefined): readonly MarkGarrison[] {
-  if (!marks || marks.length === 0) return [];
-  const had = GARRISONS.get(marks);
-  if (had) return had;
-  const kind = markKind("garrison");
-  const out: MarkGarrison[] = [];
-  const half = kind ? (kind.size * CELL) / 2 : 0;
-  for (const m of marks) {
-    if (!kind || m.kind !== "garrison") continue;
-    const o = markOpts(kind, m.opts);
-    out.push({
-      post: {
-        name: `Garrison ${out.length + 1}`,
-        x: m.x * CELL + half,
-        y: m.y * CELL + half,
-        r: Number(o.radius) * CELL,
-      },
-      level: Number(o.level),
-    });
-  }
-  GARRISONS.set(marks, out);
-  return out;
 }
 
 /**

@@ -161,14 +161,13 @@ What the archetype turned out to need, and what each piece is answering:
   board that does not fights six at once. The obvious other rule, "the next
   rises when the last falls", makes the mission easier the worse you are at
   it, which is the wrong direction for every clock in this game.
-- **A GARRISON IS A DIFFERENT KIND OF BODY, and it had to be built first.**
-  An emplacement on its own is answered by one long gun standing where
-  nothing can reach it; the mission only becomes about GROUND if the ground
-  around it is contested. So `Sim.garrisonUnit` (above): the garrison holds
-  its circle, fights what you build in it, and cannot be pulled out of it.
-  That last clause is the design, not the implementation — a guard that
-  could be baited home would be a wave with extra steps, and this game
-  already has a wave.
+- **A POSTED BODY IS A DIFFERENT KIND OF BODY, and it had to be built
+  first.** `Sim.garrisonUnit` (above) holds a body to a circle: it fights
+  what you build in there and cannot be pulled out of it. That last clause
+  is the design, not the implementation — a guard that could be baited home
+  would be a wave with extra steps, and this game already has a wave. The
+  shipped siege posts nothing today; the mechanism is here for the day one
+  wants to.
 - **THE DISTANCE IS THE POWER GRID AND NOT THE TERRAIN.** The core lights
   ninety cells (`CORE_POWER_R`); every battery stands past it. So the
   first can be answered by the longest gun in the game (railhead,
@@ -186,11 +185,9 @@ What the archetype turned out to need, and what each piece is answering:
   mission spec keeps the clock and nothing else. **The guns are placed,
   not rung** — the sim used to spread a count of them round a post, and a
   ring is a shape where a position is a decision about cover and approach.
-- **AND THE GARRISON IS NOT THE MISSION'S.** What holds the ground round
-  them is a `garrison` mark, which any map may draw under any mission: a
-  circle and what stands in it, up from the first frame and never manned
-  again. The siege no longer owns it, which is why a board with no
-  railguns on it at all can still have ground the swarm is dug into.
+- **NOTHING STANDS OVER THEM.** A battery is guns and the ground they are
+  on; what a run has to beat to reach one is the wave walking at the core
+  while it goes.
 - **THE POSTS ARE ON SCREEN FROM WAVE ONE**, empty, with the number of
   emplacements that will rise in each and a dial on the ring counting down
   to the minute they do (`Game.drawMissionPosts`). No fog means no
@@ -202,9 +199,8 @@ What the archetype turned out to need, and what each piece is answering:
 |---|---|
 | `RazeMission` / `RazeSection` | `game/levels.ts` — the type and the clock: when the first battery rises and how far apart they come. `RazeSection.wave` is which rising a section belongs to, so several may share one |
 | the emplacements | the map's `railgun` marks, one a gun (`game/missionMarks.ts`, `missions.ts siegeFromMarks`) |
-| the garrison regions | the map's `garrison` marks — no longer the mission's at all (`missions.ts garrisonsFor`, `Sim.manGarrisons`). `radius` is the ring the board draws AND the leash, deliberately one number |
 | the railgun | `game/levels.ts` (`railgun`, `UnitStats.bombard`), `game/weapons.ts` (the bombard row) and `game/wardenArt.ts` (the drawing). It is **six tiles square** — the hitbox, the grid it is drawn on and the turret plate under it are one number (`RAZE_PLATE_TILES`), so an emplacement reads as the enemy turret it is |
-| the Wardens | not bodies — they are TURRETS an author stands on a cell (`game/types.ts` `ENEMY_ONLY_KINDS`, `constants.ts TOWERS`, the `emplacement` mark). See `docs/mission-marks.md` |
+| the Wardens | SHELVED (`game/types.ts` `RETIRED_KINDS`). They were bodies a garrison was manned with, then turrets an author stood on a cell; nothing stands one up now. The drawings, stats and weapons are all still there |
 | a body that holds ground | `Sim.garrisonUnit`, `Sim.plantUnit`, and the `ugar` arrays — the general mechanism, of which this mission is the first customer |
 | what happens | `Sim.runSections`, `raiseSection`, `clearNear`, `fireBombard`, and the lines in `won()` and `removeUnit` |
 | what the player sees | the objective pane in `components/Animechs.tsx`, and the post overlay in `Game.drawMissionPosts` |

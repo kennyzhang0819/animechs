@@ -217,7 +217,7 @@ export default function MapEditorView({
   // (unitIcons.ts) — the palette and the map both draw them
   const markFace = useUnitIcons(MARK_UNITS);
   // ...and the turret heads, for the marks that stand a TURRET up rather
-  // than a body (missionMarks.ts EMPLACEMENT). They are drawn into the
+  // than a body (missionMarks.ts towerField). They are drawn into the
   // sheet at pack time like the beacon's block, so there is no sprite
   // file to point a swatch at
   const [towerFaces, setTowerFaces] = useState<Record<string, string>>({});

@@ -1,15 +1,17 @@
 /**
- * THE SIEGE'S MACHINES — the railgun and the four Wardens a garrison is
- * manned with (levels.ts `railgun`, `bulwark`, `lance`, `halberd`,
- * `juggernaut`; missionMarks.ts GARRISON).
+ * THE SIEGE'S MACHINES — the railgun a raze mission plants (levels.ts
+ * `railgun`), and the four Wardens, which are SHELVED TURRETS (types.ts
+ * RETIRED_KINDS, constants.ts TOWERS): drawn, priced and whole, and stood
+ * up by nothing on any board. The drawings are kept because they are worth
+ * keeping, not because something is using them.
  *
  * THEY ARE NOT ANIMALS, AND THAT IS THE POINT. Nine of the roster's lines
  * are a herd of something with five sizes of it, drawn under the animal
  * flag (animalFlag.ts); these are MACHINERY, like the Borer and like
  * the turrets the player buys. A body that walks at your core is alive
  * here, and a body that was BUILT and left standing on a patch of ground
- * is not — a player should be able to tell a garrison from a wave at field
- * zoom without reading a name, and the cheapest way to say "this thing was
+ * is not — a player should be able to tell a planted machine from a wave
+ * at field zoom without reading a name, and the cheapest way to say "this was
  * installed" is to draw it out of the same plate, steel and bore the
  * turrets are drawn out of (turretArt.ts).
  *
@@ -27,7 +29,7 @@
  * Sovereign carries. The four turrets do not: they stand on turret
  * plates and are read by silhouette and plate like every other building,
  * and nothing tints them either (renderer.ts skips the crux multiply for
- * ENEMY_ONLY_KINDS). Red on art that is already the swarm's says nothing
+ * RETIRED_KINDS). Red on art that is already the swarm's says nothing
  * and hides the drawing.
  *
  * WHAT EACH ONE HAS TO SAY IN ONE GLANCE:
@@ -52,8 +54,8 @@
  *             middle and an arc pod out on each shoulder, so the two
  *             things it does are both on the silhouette. Wide and stubby
  *             where the Lance is long and thin.
- *   JUGGERNAUT a block. The biggest thing the garrison stands up and the
- *             only one whose outline is meant to be boring: a slab with a
+ *   JUGGERNAUT a block. The biggest of the four and the only one whose
+ *             outline is meant to be boring: a slab with a
  *             barbette on it, treads down both flanks and a prow. Nothing
  *             about it is quick, and the drawing says so by being square.
  */
@@ -174,15 +176,15 @@ export function razeMech(T: WardenTier = RAZE_TIER): MechParts {
   };
 }
 
-// ── the garrison's four ────────────────────────────────────────────────
+// ── the four Wardens ───────────────────────────────────────────────────
 //
 // THEY WEAR NO ACCENT. The railgun above carries the swarm's crimson
 // because it is a BODY a mission plants and a player has to pick it out
-// of a crowd; these four are TURRETS (types.ts ENEMY_ONLY_KINDS) standing
-// on turret plates, and a turret is read by its silhouette and its plate
-// like every other building on the board. A red band on one was a
-// costume, and it made four machines that share a grammar look like one
-// machine in four sizes.
+// of a crowd; these four are TURRETS standing on turret plates, and a
+// turret is read by its silhouette and its plate like every other
+// building on the board. A red band on one was a costume, and it made
+// four machines that share a grammar look like one machine in four
+// sizes.
 //
 // EACH IS DRAWN INSIDE ITS PLATE, on the railgun's terms: the machine on
 // a grid one stock margin smaller (`inner`), padded back out and laid

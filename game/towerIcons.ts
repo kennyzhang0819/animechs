@@ -40,7 +40,7 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   blighter: `${T}/hail.png`,
   drifter: `${T}/tsunami.png`,
   stinger: `${T}/salvo/salvo-preview.png`,
-  // THE GARRISON'S FOUR POINT AT NOTHING, and that is not an omission.
+  // THE FOUR WARDENS POINT AT NOTHING, and that is not an omission.
   // Every other value here is a vendored Mindustry file, which is the
   // fallback for a head this game did not draw; these four ARE drawn
   // (wardenArt.ts) and are carved off the packed sheet instead

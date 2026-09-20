@@ -137,10 +137,6 @@ import {
 } from "./hitbox";
 import {
   WORLDS,
-  ACTIVE_FAMILIES,
-  FAMILIES,
-  GARRISON_LEVELS,
-  type FamilyKey,
   missionProgress,
   missionTarget,
   razeGuns,
@@ -188,14 +184,14 @@ import { LEVELS_PER_DOUBLING, unitHpOnRung } from "./ladder";
  * so the script had to stop being able to run out underneath one. When the
  * cursor reaches the end and the mission is still open, THE LAST
  * TIDE_CYCLE_WAVES GO AGAIN, at TIDE_LEVELS more enemy level than the
- * cycle before: waves 9 and 10 of a ten-wave script, then 9 and 10 at
- * double health, then at quadruple, then at eight times, with no ceiling.
+ * cycle before: waves 40-50 of a fifty-wave script, then 40-50 at double
+ * health, then at quadruple, then at eight times, with no ceiling.
  *
  * MORE THAN ONE WAVE, ON PURPOSE. The tail of a script is its shape — a
  * lull, a spike — and a finale sent on a loop is a metronome. Replaying
  * the last stretch keeps the rhythm the author wrote, so the climb reads
- * as the same fight getting heavier rather than as a different game. Two
- * is the same FIFTH of the document eleven was of the fifty-wave one.
+ * as the same fight getting heavier rather than as a different game.
+ * Eleven is about a fifth of the document.
  *
  * ONE DOUBLING A CYCLE (LEVELS_PER_DOUBLING) because the step has to be
  * felt. Three levels — about +19% — was the old survive-only ramp, and a
@@ -211,7 +207,7 @@ import { LEVELS_PER_DOUBLING, unitHpOnRung } from "./ladder";
  * changed is how long it takes to kill.
  */
 const TIDE_LEVELS = LEVELS_PER_DOUBLING;
-const TIDE_CYCLE_WAVES = 2;
+const TIDE_CYCLE_WAVES = 11;
 import {
   ARMORED_ARMOR,
   ARMORED_MAX_TIER,
@@ -261,10 +257,10 @@ import {
   VOLATILE_RADIUS,
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
-import { markKind, markOpts, markTower } from "./missionMarks";
+import { markKind, markOpts } from "./missionMarks";
 import {
-  garrisonsFor, levelWithMarks, postProblems, postsFor, roadAt, roadProblems, roadsFor,
-  siegeFromMarks, type MarkGarrison, type MarkSiege, type Post, type Road,
+  levelWithMarks, postProblems, postsFor, roadAt, roadProblems, roadsFor,
+  siegeFromMarks, type MarkSiege, type Post, type Road,
 } from "./missions";
 import { NO_UPGRADES, skilledTower, upgradedTower, type TechState } from "./tech";
 
@@ -1467,7 +1463,7 @@ export class Sim {
    * kind opts into, it is the shape of the field (flowfield.ts — every
    * route on the board runs to the base), and it is why the swarm is a
    * TIDE rather than an army. A mission that wants a thing to be SOMEWHERE
-   * — an emplacement to go and break, a garrison standing over it, a camp,
+   * — an emplacement to go and break, a guard standing over it, a camp,
    * a nest, a picket on a road — cannot ask for it in that language: a
    * body handed to the field is a body that will be at your door in ninety
    * seconds whatever it was put down for.
@@ -1628,28 +1624,6 @@ export class Sim {
    * Every emplacement is a place an author put a gun.
    */
   private siege: MarkSiege | null = null;
-  /**
-   * THE GROUND THE SWARM HOLDS, on every map and under every mission
-   * (missions.ts garrisonsFor, missionMarks.ts GARRISON). Read once at
-   * reset and never spent: a garrison whose bodies are still standing does
-   * nothing on its later waves, and one that has been cleared is manned
-   * again on the next one it names — so what an author draws is a place
-   * the swarm keeps re-taking.
-   */
-  private garrisons: readonly MarkGarrison[] = [];
-  /**
-   * WHICH FAMILY EACH GARRISON'S TIER COUNTS ARE MADE OF (levels.ts
-   * GARRISON_LEVELS) — one key per circle, rolled at reset out of the hand this
-   * deploy was dealt (LevelSpec.families) and kept for the whole run.
-   *
-   * ONE FAMILY A CIRCLE, AND THE SAME ONE EVERY TIME IT IS RE-MANNED. A
-   * garrison is a place with a force dug into it, and a force that came
-   * back as a different faction every few waves would be a respawn rather
-   * than a garrison — the player would have nothing to learn from taking
-   * it once. Rolled per CIRCLE and not per map so a board with three of
-   * them is three different problems.
-   */
-  private garrisonFamilies: FamilyKey[] = [];
   /** railguns destroyed — the mission's whole objective */
   razeKilled = 0;
   /** the posts this map carries (missions.ts), empty on every other map */
@@ -2659,14 +2633,6 @@ export class Sim {
     // level.mission (levels.ts razeGuns) — simreads.ts World does the
     // same to the host's copy, off the same document
     const raze = this.level.mission.kind === "raze" ? this.level.mission : null;
-    // THE GROUND THE SWARM HOLDS, whatever the mission: a map may draw a
-    // garrison on any board, and every one it draws is manned at the foot
-    // of this method (manGarrisons), once
-    this.garrisons = garrisonsFor(this.terrain.marks);
-    {
-      const hand = this.level.families?.length ? this.level.families : ACTIVE_FAMILIES;
-      this.garrisonFamilies = this.garrisons.map(() => hand[(Math.random() * hand.length) | 0]);
-    }
     if (raze) {
       const siege = siegeFromMarks(this.terrain.marks);
       this.siege = siege;
@@ -2680,10 +2646,6 @@ export class Sim {
           if (!this.posts[sec.post])
             bad.push(`a section names post ${sec.post} and the map has ${this.posts.length}`);
       for (const post of this.posts) bad.push(...postProblems(post));
-      if (bad.length > 0) throw new Error(`${this.level.name}: ${bad.join("; ")}`);
-    }
-    for (const g of this.garrisons) {
-      const bad = postProblems(g.post);
       if (bad.length > 0) throw new Error(`${this.level.name}: ${bad.join("; ")}`);
     }
     // ...and the ROADS, off the same document: a map's own `road` marks
@@ -2860,85 +2822,6 @@ export class Sim {
         );
     this.stageScript();
     this.aliveByKind.fill(0);
-    // ...AND THE GROUND THE SWARM ALREADY HOLDS, last, because the bodies
-    // it puts down are real bodies: the census above has to be zeroed
-    // before they are counted, and clearNear needs the field solved a few
-    // lines up
-    this.manGarrisons();
-    this.raiseEmplacements();
-  }
-
-  /**
-   * THE SWARM'S TURRETS, WHERE AN AUTHOR PUT THEM (missionMarks.ts
-   * EMPLACEMENT) — up before the run starts and never put up again, the
-   * same terms a garrison is on.
-   *
-   * IT IS A PLACEMENT LIKE ANY OTHER, on the swarm's side: the record goes
-   * in `towers`, it claims its cells (claimGround), and then it is handed
-   * the team — so everything that already knows what an enemy turret is
-   * (Conquest, Sim.conquerTower) knows what these are, and nothing needed
-   * a second kind of building to be invented for them.
-   *
-   * A MARK IN ROCK OR OVER THE CORE IS SKIPPED, not walked clear: where a
-   * gun stands is a decision an author made looking at the map, and the
-   * editor is where a bad one is caught (npm run check says so).
-   */
-  private raiseEmplacements(): void {
-    for (const mk of this.terrain.marks) {
-      if (mk.kind !== "emplacement") continue;
-      const kind = markTower(mk);
-      if (!kind) continue;
-      // THE MARK IS THE FOOTPRINT (missionMarks.ts markSize): an author
-      // placed a 2x2 on a 2x2, so nothing is centred or offset here and
-      // what the editor drew is what stands up
-      const sz = structStats(kind).size;
-      const gx = mk.x, gy = mk.y;
-      // NOT canPlace: that is the PLAYER's question and it asks about
-      // power, tech and spawn tiles, none of which the swarm is under.
-      // What is left is the ground itself — on the board, not rock, and
-      // not already somebody's
-      if (gx < 0 || gy < 0 || gx + sz > COLS || gy + sz > ROWS) continue;
-      let free = true;
-      for (let y = gy; y < gy + sz && free; y++)
-        for (let x = gx; x < gx + sz && free; x++) {
-          const i = y * COLS + x;
-          if (this.terrain.blocked[i] || this.occupied[i]) free = false;
-        }
-      if (!free) continue;
-      this.addTower(gx, gy, kind, sz, 0);
-      this.enemyTower(this.towers[this.towers.length - 1]);
-    }
-  }
-
-  /**
-   * HAND A BUILDING TO THE SWARM at birth (raiseEmplacements). Conquest
-   * does the same thing to a turret it takes (conquerTower) and this is
-   * the half of it that is about SIDES rather than about a turret
-   * changing hands: no health cut, no rate cut, no revives handed back,
-   * because none of that is what an author placing a gun asked for.
-   *
-   * IT GIVES THE GROUND BACK TO THE PATH, exactly as a conquest does and
-   * for exactly the same reason: the swarm will not shoot its own, so a
-   * building of theirs that blocked a route is a route nothing ever walks
-   * again. It keeps its cells in the structure grid — shots collide with
-   * it and nothing may be built over it — and loses only the wall.
-   */
-  private enemyTower(t: Tower): void {
-    t.team = "enemy";
-    this.enemyTowers++;
-    t.angle = Math.atan2(this.core.y - t.y, this.core.x - t.x);
-    const { blocked } = this.terrain;
-    for (let y = t.gy; y < t.gy + t.size; y++)
-      for (let x = t.gx; x < t.gx + t.size; x++) {
-        const i = y * COLS + x;
-        if (blocked[i]) continue;
-        this.field.walk[i] = 0;
-        this.field.soft[i] = 0;
-        this.navalField.walk[i] = 0;
-        this.navalField.soft[i] = 0;
-      }
-    this.fieldDirty = true;
-    this.navalDirty = true;
   }
 
   loadLevel(spec: LevelSpec): void {
@@ -3505,8 +3388,8 @@ export class Sim {
     const m = this.level.mission;
     if (m.kind === "intercept") return this.crossKilled >= m.kills;
     // ...A SIEGE IS MET BY ITS COUNT AND BY NOTHING ELSE either: the last
-    // emplacement going down ends the run, with whatever is left of the
-    // garrison still standing on ground nobody needs any more
+    // emplacement going down ends the run, with whatever is left standing
+    // on ground nobody needs any more
     if (m.kind === "raze") return this.razeKilled >= razeGuns(m);
     // ...and an escort the moment the last cart is at the post
     if (m.kind === "escort") return this.convoyDone >= m.deliver;
@@ -5420,8 +5303,8 @@ export class Sim {
       const sec = m.sections[this.razeRisen];
       // THE MAP'S OWN GUNS WHERE IT HAS THEM: every emplacement placed for
       // this rising goes up on its own cell. What holds the ground round
-      // them is not this mission's (runGarrisons). A map with no marks
-      // falls back to the mission's sections, which ring a post instead
+      // A map with no marks falls back to the mission's sections, which
+      // ring a post instead
       if (this.siege) {
         const wave = razeWave(sec, this.razeRisen);
         for (const g of this.siege.spots) if (g.wave === wave) this.raiseGun(g.x, g.y);
@@ -5433,7 +5316,7 @@ export class Sim {
   }
 
   /**
-   * ONE SECTION UP: the emplacements rung round the post, the garrison
+   * ONE SECTION UP: the emplacements rung round the post, the guards
    * scattered inside it (levels.ts RazeSection, missions.ts PostSpec).
    *
    * THE EMPLACEMENTS ARE ON A RING AND THE GUARDS ARE NOT. A railgun is
@@ -5441,7 +5324,7 @@ export class Sim {
    * mission's geometry and has to be legible: one in the middle when there
    * is one, and otherwise evenly round a circle at half the post's radius,
    * which reads as a battery from any direction rather than as a heap. The
-   * guards are scattered because a garrison in formation reads as a wave
+   * guards are scattered because a guard in formation reads as a wave
    * that has stopped, and because they are going to move anyway.
    *
    * IT NEVER FAILS TO PLACE. `clearNear` walks out from the wanted spot
@@ -5552,84 +5435,6 @@ export class Sim {
     this.urot[i] = a;
     this.ubrot[i] = a;
     this.uheldRot[i] = a;
-  }
-
-  /**
-   * EVERY GARRISON THE MAP CARRIES, MANNED, ONCE (missions.ts
-   * garrisonsFor) — at reset, before the clock starts.
-   *
-   * THEY ARE ALREADY THERE. A garrison is not a thing that arrives: it is
-   * ground the swarm HOLDS when the run opens, which is why the board
-   * rings it from the first frame and why nothing about it is on a
-   * schedule. It used to man on a wave list and refill on the next wave
-   * it named, and that made a dug-in force into a respawn — a board that
-   * had paid to take a post watched it come back, and the reward for the
-   * work was a countdown nobody could see.
-   *
-   * SO CLEARING ONE IS PERMANENT, and that is the whole of the trade:
-   * what the ground costs is paid once and what it buys is kept.
-   */
-  private manGarrisons(): void {
-    for (const [i, g] of this.garrisons.entries())
-      this.raiseGarrison(g.post, this.garrisonRoster(i));
-  }
-
-  /**
-   * ONE GARRISON'S WHOLE ROSTER: its rung's tier counts (levels.ts
-   * GARRISON_LEVELS) cast into the family this circle rolled
-   * (garrisonFamilies). Ordinary swarm and nothing else — a gun over the
-   * ground is an emplacement an author placed, not part of the circle.
-   */
-  private garrisonRoster(i: number): Partial<Record<UnitKind, number>> {
-    const rung = GARRISON_LEVELS[clamp(this.garrisons[i].level, 1, GARRISON_LEVELS.length) - 1];
-    const out: Partial<Record<UnitKind, number>> = {};
-    const fam = FAMILIES.find((f) => f.key === this.garrisonFamilies[i]);
-    if (fam)
-      for (let t = 0; t < rung.tiers.length; t++) {
-        const kind = fam.kinds[t];
-        if (!kind || rung.tiers[t] <= 0) continue;
-        out[kind] = (out[kind] ?? 0) + rung.tiers[t];
-      }
-    return out;
-  }
-
-  /**
-   * WHICH CIRCLES ARE STILL HELD, as one bit each (simreport.ts
-   * GARRISON_HELD) — the same question manGarrisons asks, answered for
-   * the overlay that rings them.
-   *
-   * IT IS READ OFF THE LEASH AND NOT OFF THE KIND. The board used to test
-   * "is a Warden standing in there", which worked only while a garrison
-   * was made of bodies no wave could send; a circle manned with ordinary
-   * swarm (levels.ts GARRISON_LEVELS) would be lit by the first wave that
-   * walked through it.
-   */
-  garrisonHeldMask(): number {
-    let mask = 0;
-    for (let i = 0; i < this.n; i++) {
-      if (this.ugar[i] !== 1 || this.uhp[i] <= 0) continue;
-      for (let r = 0; r < this.garrisons.length && r < 30; r++) {
-        const post = this.garrisons[r].post;
-        if (this.ugarx[i] === post.x && this.ugary[i] === post.y) mask |= 1 << r;
-      }
-    }
-    return mask;
-  }
-
-  /** the garrison of one region, scattered inside it and leashed to it */
-  private raiseGarrison(post: Post, guards: Partial<Record<UnitKind, number>>): void {
-    for (const [kind, n] of Object.entries(guards) as [UnitKind, number][]) {
-      for (let g = 0; g < Math.max(0, Math.floor(n)); g++) {
-        // anywhere inside the post, biased outward: sqrt of a uniform roll
-        // spreads them evenly over the AREA rather than piling them at the
-        // middle, which is where the railguns already are
-        const a = Math.random() * Math.PI * 2;
-        const d = Math.sqrt(Math.random()) * post.r * 0.85;
-        const spot = this.clearNear(post.x + Math.cos(a) * d, post.y + Math.sin(a) * d, HB_OUTER[UNIT_ID[kind]]);
-        if (!this.spawnUnit(kind, { x: spot.x, y: spot.y, exact: true }, 0)) return;
-        this.garrisonUnit(this.n - 1, post.x, post.y, post.r);
-      }
-    }
   }
 
   private raiseSection(sec: RazeSection): void {
@@ -10686,7 +10491,7 @@ export class Sim {
         // THE WALK HOME IS WHAT MAKES THE LEASH A LEASH. Without it a
         // guard that chased a target to the edge of its post would simply
         // stop there and hold the wrong ground for the rest of the run;
-        // with it the post is a place the garrison returns to, which is
+        // with it the post is a place a guard returns to, which is
         // what a player watching one fight and win expects to see. The
         // dead zone is a fifth of the radius so a guard that is nearly
         // home does not jitter on the spot.
@@ -11434,8 +11239,8 @@ export class Sim {
     // so there is nothing for plating to shave. It is also the whole reason
     // the Venom spitters and the Ground mechs are different problems.
     if (!pierceArmor && !isCore(t)) dmg = Sim.applyArmor(dmg, t.spec.armor);
-    // THE BUBBLE EATS IT FIRST (constants.ts TowerStats.field, the
-    // garrison's Halberd). It is a hard gate and not a share: while there
+    // THE BUBBLE EATS IT FIRST (constants.ts TowerStats.field). It is a
+    // hard gate and not a share: while there
     // is any shield left NOTHING reaches the building, so the gun is
     // answered in two stages and a board cannot chip past the field with
     // volume. The overflow of the hit that breaks it is spent on the

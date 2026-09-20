@@ -502,7 +502,7 @@ export const PALETTE: readonly PaletteSet[] = [
   // than typed out (missionMarks.ts MARK_KINDS): adding a mission's
   // furniture is an entry there and no edit here
   // ONE SWATCH A CHOICE where a kind offers one. A mark whose body or
-  // turret is a field (missionMarks.ts EMPLACEMENT, BUFF_TOWER) used to
+  // turret is a field (missionMarks.ts BUFF_TOWER) used to
   // be a single swatch you stamped and then went to the panel to set,
   // which is a decision made twice and made blind — the tray is exactly
   // where a picture can make it once. A kind with no choice is one swatch

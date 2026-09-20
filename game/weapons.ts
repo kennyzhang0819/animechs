@@ -541,7 +541,7 @@ const STARHART5_LASER = laserStyle({
 /**
  * THE SIEGE'S TWO BEAMS (the railgun and the Lance, UNIT_WEAPONS below).
  * Both are the SWARM'S OWN CRIMSON rather than a family's colour, because
- * neither body is in a family: the garrison wears the crux the way the
+ * neither body is in a family: they wear the crux the way the
  * Sovereign does, and a player who sees red on the line knows what side
  * it came from without being told.
  *
@@ -614,7 +614,7 @@ export const TETHER_LASER = laserStyle({
  * style without a cycle. Anything absent draws style 0, piercer's.
  */
 /**
- * THE GARRISON'S BEAM (types.ts ENEMY_ONLY_KINDS) — red over near-black,
+ * THE WARDENS' BEAM (types.ts RETIRED_KINDS) — red over near-black,
  * the palette every one of their guns throws (constants.ts
  * GARRISON_SHOT). Their rounds were already in it; a beam that came out
  * piercer's blue was the one thing on those machines still wearing
@@ -631,7 +631,7 @@ const GARRISON_LASER = laserStyle({
 
 export const TOWER_LASER_STYLE: Partial<Record<TowerKind, number>> = {
   tether: TETHER_LASER.id,
-  // the two garrison guns that fire a beam, both on the one style
+  // the two Wardens that fire a beam, both on the one style
   lance: GARRISON_LASER.id,
   halberd: GARRISON_LASER.id,
 };

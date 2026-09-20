@@ -56,11 +56,8 @@ export type MarkField =
   /** A LIST OF WAVES, written the way a person says one: "2-7", "2,4,6",
    *  "2-3,6". It is its own field kind rather than a free text box because
    *  a wave list is a real thing in this game and the parser belongs with
-   *  it (parseWaves), not in whichever panel happens to render it. */
-  // NOTHING DECLARES ONE TODAY — the garrison lost its wave list when
-  // garrisons became a thing that is simply already there (GARRISON
-  // below). The kind stays wired end to end for the next mark that wants
-  // a schedule on it
+   *  it (parseWaves), not in whichever panel happens to render it. Nothing
+   *  declares one today; it is wired for the next mark that wants one. */
   | { key: string; label: string; kind: "waves"; def: string }
   /** a short line of prose — what the objective panel calls this thing */
   | { key: string; label: string; kind: "text"; def: string; max?: number };
@@ -91,9 +88,11 @@ export interface MarkKind {
    *  rise here — a buff tower is a Goad or a Bastion, and the block on the
    *  map has to be whichever one the author picked */
   unitField?: string;
-  /** ...and the same for a mark that stands a TURRET up rather than a body
-   *  (EMPLACEMENT): its choice field names a TowerKind, and the block
-   *  wears that turret's head instead of a unit portrait */
+  /** ...and the same for a mark that stands a TURRET up rather than a body:
+   *  its choice field names a TowerKind, and the block wears that turret's
+   *  head instead of a unit portrait. NOTHING DECLARES ONE TODAY — the
+   *  swarm's own turrets are shelved (types.ts RETIRED_KINDS) — and it is
+   *  wired end to end for the next mark that stands a building up */
   towerField?: string;
   /** the turret this mark stands up, and therefore its face (markTower) */
   tower?: TowerKind;
@@ -102,7 +101,7 @@ export interface MarkKind {
   pad: number;
   /** the int field, if any, that is a RADIUS IN CELLS round the mark: the
    *  editor rings it, so a region an author sets as a number is a region
-   *  they can see the size of */
+   *  they can see the size of. No kind declares one today either */
   radiusField?: string;
   fields: readonly MarkField[];
 }
@@ -206,56 +205,6 @@ const RAILGUN: MarkKind = {
 };
 
 /**
- * A GARRISON — a circle of ground the swarm HOLDS, and what holds it.
- *
- * IT BELONGS TO NO MISSION. This started as the guard over a railgun
- * battery and is not that any more: a garrison is a fact about a PLACE —
- * there is a force dug in here and it will not follow you home — and
- * every board has places worth denying. So it is offered on every map,
- * whatever the mission, and the emplacements it used to be bolted to are
- * their own marks now (RAILGUN above).
- *
- * THE RANGE IS THE LEASH AND THE PICTURE. `radius` is exactly the circle
- * Sim.garrisonUnit holds every body raised here to — they fight what
- * comes into it and cannot be drawn out — and exactly the ring the board
- * draws. One number, so what an author sets is what a player sees.
- *
- * IT IS STANDING BEFORE THE RUN STARTS, and there is no schedule on it.
- * Every garrison a map carries is manned at mission start (Sim.reset) and
- * never manned again — a garrison is ground the swarm ALREADY HOLDS, not
- * a thing that arrives, and a board that has taken one has taken it. The
- * mark carried a wave list once and the list was the wrong question: it
- * made a dug-in force into a respawn, and a player who cleared a post
- * watched it come back for reasons the board never showed them.
- *
- * WHAT STANDS IN IT IS ONE NUMBER (levels.ts GARRISON_LEVELS). A rung
- * from 1 to 5 names a fixed count of swarm per tier, and the mix is a
- * table rather than ten fields on the mark: what placing a garrison is a
- * decision about is WHERE and HOW HARD, and every level 3 on every map
- * should be the same fight.
- *
- * THE SWARM HALF IS NOT AUTHORED EITHER. The tier counts are filled from
- * whichever family the circle rolled at reset (Sim.garrisonFamilies) —
- * one family a circle, kept for the whole run — so the same rung is a
- * different board every deploy.
- */
-const GARRISON: MarkKind = {
-  id: "garrison",
-  label: "Garrison",
-  missions: ["hold", "survive", "intercept", "escort", "raze"],
-  geom: "point",
-  size: 4,
-  color: "#ffb44a",
-  unit: "ironhide3",
-  pad: 0,
-  radiusField: "radius",
-  fields: [
-    { key: "radius", label: "Range", kind: "int", min: 8, max: 90, def: 44 },
-    { key: "level", label: "Level", kind: "int", min: 1, max: 5, def: 1 },
-  ],
-};
-
-/**
  * A ROAD — the line a crosser walks (missions.ts): the Borers' lines on an
  * intercept map, the convoy's on an escort one. The corners are the
  * mark's `pts` and the map is where they live, so moving a road is a drag
@@ -286,63 +235,10 @@ const ROAD: MarkKind = {
   fields: [{ key: "name", label: "Name", kind: "text", def: "the line" }],
 };
 
-/**
- * ONE OF THE SWARM'S TURRETS, standing where an author put it (types.ts
- * ENEMY_ONLY_KINDS, constants.ts TOWERS). It is up from mission start and
- * it never moves, and it belongs to no mission: a gun dug in on a piece
- * of ground is a fact about the board, the same way a garrison is.
- *
- * THE FOUR USED TO BE BODIES — the Wardens a garrison was manned with.
- * What they were was already a turret in everything but bookkeeping: they
- * held a circle, they never walked at the core, and the whole of what a
- * run did with one was go over there and take it down. So they are
- * turrets, with the pools, the plating and the weapons they had, and a
- * garrison is ordinary swarm again (levels.ts GARRISON_LEVELS).
- *
- * IT OWNS ITS CELLS AND NOT THE PATH. Nothing may be built over one
- * (Sim.cellTower) and shots collide with it, but the swarm's routes run
- * straight through the square it stands on — the rule every building of
- * the swarm's is under (Sim.conquerTower says why): its own bodies will
- * not shoot it, so a wall they cannot pass and will not break is a wall
- * they would stand at forever.
- */
-const EMPLACEMENT: MarkKind = {
-  id: "emplacement",
-  label: "Enemy turret",
-  missions: ["hold", "survive", "intercept", "escort", "raze"],
-  geom: "point",
-  size: 4,
-  color: "#ff5c73",
-  unit: "railgun",
-  tower: "bulwark",
-  towerField: "tower",
-  // NO DECKING. The plated ground is for the two marks that promise
-  // something will rise on a cell LATER — the railgun its section is due
-  // on, the buff tower its train — so a player reads the promise off the
-  // board before anything stands there. A turret is up from the first
-  // frame and is its own announcement; a plate under one says nothing
-  // twice
-  pad: 0,
-  fields: [
-    {
-      key: "tower",
-      label: "Turret",
-      kind: "choice",
-      choices: [
-        { value: "lance", label: "Lance" },
-        { value: "bulwark", label: "Bulwark" },
-        { value: "halberd", label: "Halberd" },
-        { value: "juggernaut", label: "Juggernaut" },
-      ],
-      def: "bulwark",
-    },
-  ],
-};
-
-export const MARK_KINDS: readonly MarkKind[] = [BUFF_TOWER, RAILGUN, GARRISON, EMPLACEMENT, ROAD];
+export const MARK_KINDS: readonly MarkKind[] = [BUFF_TOWER, RAILGUN, ROAD];
 
 /** the turret a mark stands up, where it stands one — the TowerKind twin
- *  of markUnit (EMPLACEMENT) */
+ *  of markUnit */
 export function markTower(m: MapMark): TowerKind | null {
   const k = markKind(m.kind);
   if (!k?.towerField) return null;
@@ -354,11 +250,10 @@ export function markTower(m: MapMark): TowerKind | null {
  * THE FOOTPRINT A MARK ACTUALLY OCCUPIES, in cells — what it is drawn as,
  * what a click hits, and what another mark may not overlap.
  *
- * IT IS THE TURRET'S OWN SIZE where a mark stands a turret up
- * (EMPLACEMENT): the four are 2x2, 2x2, 3x3 and 4x4, and one fixed square
- * for all of them would be the wrong picture for three and a lie about
- * the ground for all four. `MarkKind.size` is the fallback, which is what
- * every other kind uses.
+ * IT IS THE TURRET'S OWN SIZE where a mark stands a turret up, since a
+ * fixed square for every turret would be a lie about the ground under
+ * most of them. `MarkKind.size` is the fallback, which is what every kind
+ * on the registry uses today.
  */
 export function markSize(m: MapMark): number {
   const k = markKind(m.kind);
@@ -404,10 +299,8 @@ export function forEachMarkPadCell(
   // to, and `x`/`y` on one is its first corner rather than a footprint
   if (!k || k.geom !== "point") return;
   // ...and NEITHER DOES pad 0, which is what the field has always said it
-  // meant. It was decking the footprint anyway, so a garrison wore a four
-  // by four plate on the board — furniture under a mark whose whole
-  // picture is its circle, and a square of prepared ground promising
-  // something would stand exactly there when nothing ever does
+  // meant: the plate is a promise that something will stand on that cell,
+  // and a mark that makes no such promise should lay no ground
   if (k.pad <= 0) return;
   const size = markSize(m);
   const x0 = Math.max(0, m.x - k.pad), y0 = Math.max(0, m.y - k.pad);
