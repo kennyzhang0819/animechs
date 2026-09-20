@@ -1,4 +1,5 @@
 import { buildAtlas, DECOR_TILES, FLOOR_SHALLOW_WATER, SHALLOW_FOR_DEEP, towerIcon, unitIcon } from "./atlas";
+import { towerBaseIcon } from "./towerIcons";
 import { fitZoom } from "./fit";
 import {
   CELL,
@@ -25,7 +26,7 @@ import {
 import { ALL_LAYERS, Renderer, type TerrainLayers } from "./renderer";
 import { loadInvertZoom } from "./progress";
 import {
-  MARK_KINDS, MARK_TOWERS, MARK_UNITS, MAX_MARKS, markKind, markOpts, markTower, markUnit,
+  MARK_KINDS, MARK_TOWERS, MARK_UNITS, MAX_MARKS, markKind, markOpts, markSize, markTower, markUnit,
   type MapMark, type MarkKind,
 } from "./missionMarks";
 import { unitAccent } from "./levels";
@@ -635,9 +636,9 @@ export class MapEditor {
     // no two marks may overlap: two things in one place is an author who
     // cannot click the one underneath
     for (const m of this.terrain.marks) {
-      const k = markKind(m.kind);
-      if (!k) continue;
-      if (x0 < m.x + k.size && x0 + kind.size > m.x && y0 < m.y + k.size && y0 + kind.size > m.y)
+      const ms = markSize(m);
+      if (!markKind(m.kind)) continue;
+      if (x0 < m.x + ms && x0 + kind.size > m.x && y0 < m.y + ms && y0 + kind.size > m.y)
         return;
     }
     // THE SWATCH CARRIES THE CHOICE (maps.ts, the mark swatches): a kind
@@ -650,6 +651,14 @@ export class MapEditor {
     if (f?.kind === "choice")
       opts[f.key] = f.choices[clamp(this.variant, 0, f.choices.length - 1)].value;
     this.terrain.marks.push({ kind: kind.id, x: x0, y: y0, opts });
+    // ...and a turret's footprint is its own (markSize), so the square it
+    // was centred on is re-centred on the size it actually takes
+    const only = this.terrain.marks[this.terrain.marks.length - 1];
+    const sz = markSize(only);
+    if (sz !== kind.size) {
+      only.x = clamp(gx - ((sz / 2) | 0), 0, COLS - sz);
+      only.y = clamp(gy - ((sz / 2) | 0), 0, ROWS - sz);
+    }
     this.picked = this.terrain.marks.length - 1;
     rebuildReserved(this.terrain);
     this.dirty = true;
@@ -662,7 +671,8 @@ export class MapEditor {
       const k = markKind(m.kind);
       if (!k) return false;
       if (k.geom === "path") return this.pathHit(m, gx, gy) !== null;
-      return gx >= m.x && gx < m.x + k.size && gy >= m.y && gy < m.y + k.size;
+      const sz = markSize(m);
+      return gx >= m.x && gx < m.x + sz && gy >= m.y && gy < m.y + sz;
     });
   }
 
@@ -841,7 +851,8 @@ export class MapEditor {
         this.redraw();
         return true;
       }
-      if (gx >= m.x && gx < m.x + k.size && gy >= m.y && gy < m.y + k.size) {
+      const sz = markSize(m);
+      if (gx >= m.x && gx < m.x + sz && gy >= m.y && gy < m.y + sz) {
         this.picked = i;
         this.markDrag = { mark: i, dx: gx - m.x, dy: gy - m.y };
         this.redraw();
@@ -860,8 +871,9 @@ export class MapEditor {
     const m = this.terrain.marks[d.mark];
     const k = m ? markKind(m.kind) : null;
     if (!m || !k) return;
-    const x0 = clamp(gx - d.dx, 0, COLS - k.size);
-    const y0 = clamp(gy - d.dy, 0, ROWS - k.size);
+    const sz = markSize(m);
+    const x0 = clamp(gx - d.dx, 0, COLS - sz);
+    const y0 = clamp(gy - d.dy, 0, ROWS - sz);
     if (x0 === m.x && y0 === m.y) return;
     // the same rule a stamp is under: two marks in one place is an author
     // who cannot click the one underneath
@@ -869,7 +881,8 @@ export class MapEditor {
       if (i === d.mark) continue;
       const ok = markKind(o.kind);
       if (!ok || ok.geom === "path") continue;
-      if (x0 < o.x + ok.size && x0 + k.size > o.x && y0 < o.y + ok.size && y0 + k.size > o.y) return;
+      const os = markSize(o);
+      if (x0 < o.x + os && x0 + sz > o.x && y0 < o.y + os && y0 + sz > o.y) return;
     }
     m.x = x0;
     m.y = y0;
@@ -923,6 +936,15 @@ export class MapEditor {
    * plate until each one lands and then redraws.
    */
   private readonly markArt = new Map<string, HTMLImageElement>();
+  /**
+   * A WHOLE TURRET, PLATE AND ALL, for the marks that stand one up
+   * (missionMarks.ts EMPLACEMENT) — the same two pieces the board draws
+   * (renderer.ts: UV_TOWER_BASE* under UV_TURRETS) composed into one
+   * picture, so what an author sees on the map is what the run puts
+   * there. A bare head floating on a coloured plate was a mark; this is
+   * the building.
+   */
+  private readonly towerBlockArt = new Map<string, HTMLCanvasElement>();
 
   private loadMarkArt(): void {
     // a mark that stands a TURRET up wears that turret's head instead of a
@@ -930,12 +952,30 @@ export class MapEditor {
     for (const kind of MARK_TOWERS)
       void towerIcon(kind)
         .then((url) => {
-          const img = new Image();
-          img.onload = () => {
-            this.markArt.set(kind, img);
+          const head = new Image();
+          head.onload = () => {
+            this.markArt.set(kind, head);
+            // ...and the plate under it, at the footprint this kind
+            // actually stands on (constants.ts TOWERS)
+            const plate = new Image();
+            plate.onload = () => {
+              const n = Math.max(head.naturalWidth, plate.naturalWidth, 64);
+              const cv = document.createElement("canvas");
+              cv.width = cv.height = n;
+              const g = cv.getContext("2d");
+              if (!g) return;
+              g.imageSmoothingEnabled = false;
+              // the plate never turns and the head is already carved
+              // upright (atlas.ts towerIcon), so neither is rotated here
+              g.drawImage(plate, 0, 0, n, n);
+              g.drawImage(head, 0, 0, n, n);
+              this.towerBlockArt.set(kind, cv);
+              this.redraw();
+            };
+            plate.src = towerBaseIcon(TOWERS[kind].size);
             this.redraw();
           };
-          img.src = url;
+          head.src = url;
         })
         .catch(() => {});
     for (const kind of MARK_UNITS)
@@ -1403,7 +1443,7 @@ export class MapEditor {
         const k = markKind(m.kind);
         if (!k) continue;
         if (k.geom === "path") { this.drawPathMark(c, m, k, i, s); continue; }
-        const side = k.size * CELL;
+        const side = markSize(m) * CELL;
         // the region a kind measures in cells, drawn as the circle it is
         // (missionMarks.ts radiusField): a garrison's ground is a number
         // on a panel and an author has to see how much board it covers
@@ -1425,15 +1465,36 @@ export class MapEditor {
         // footprint, and the ink is how the kind is told apart at a zoom
         // where the picture is eight pixels across
         c.fillStyle = k.color;
-        const faceKey = markTower(m) ?? markUnit(m) ?? "";
-        c.globalAlpha = this.markArt.get(faceKey) ? 0.35 : 0.75;
-        c.fillRect(m.x * CELL, m.y * CELL, side, side);
-        c.globalAlpha = 1;
-        const face = this.markArt.get(faceKey);
-        if (face) c.drawImage(face, m.x * CELL, m.y * CELL, side, side);
-        c.strokeStyle = i === this.picked ? "#ffffff" : "rgba(20,4,8,0.9)";
-        c.lineWidth = (i === this.picked ? 3 : 1.5) / s;
-        c.strokeRect(m.x * CELL, m.y * CELL, side, side);
+        const towerKind = markTower(m);
+        const faceKey = towerKind ?? markUnit(m) ?? "";
+        // A TURRET IS DRAWN AS THE BUILDING IT WILL BE, at its own
+        // footprint and on the cells the sim will actually use
+        // (Sim.raiseEmplacements centres it in the mark's square). The
+        // four are 2x2, 2x2, 3x3 and 4x4 and a mark is 4x4 for all of
+        // them, so a picture stretched to the mark would be the wrong
+        // size for three of the four and the wrong thing for all of them
+        const block = towerKind ? this.towerBlockArt.get(towerKind) : null;
+        if (block) {
+          // THE MARK IS THE BUILDING. Its footprint is the turret's own
+          // (markSize), so what is drawn here is the size the run puts
+          // down, on the cells it puts it on — no square around it, and
+          // nothing to reconcile between the picture and the placement
+          c.drawImage(block, m.x * CELL, m.y * CELL, side, side);
+          if (i === this.picked) {
+            c.strokeStyle = "#ffffff";
+            c.lineWidth = 3 / s;
+            c.strokeRect(m.x * CELL, m.y * CELL, side, side);
+          }
+        } else {
+          c.globalAlpha = this.markArt.get(faceKey) ? 0.35 : 0.75;
+          c.fillRect(m.x * CELL, m.y * CELL, side, side);
+          c.globalAlpha = 1;
+          const face = this.markArt.get(faceKey);
+          if (face) c.drawImage(face, m.x * CELL, m.y * CELL, side, side);
+          c.strokeStyle = i === this.picked ? "#ffffff" : "rgba(20,4,8,0.9)";
+          c.lineWidth = (i === this.picked ? 3 : 1.5) / s;
+          c.strokeRect(m.x * CELL, m.y * CELL, side, side);
+        }
         // its fields, one short line each, under the block
         c.fillStyle = "#ffffff";
         c.font = `${Math.round(side / 4)}px monospace`;

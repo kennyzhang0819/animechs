@@ -207,10 +207,14 @@ the other way round.
   rider today and stays for the centipede, which is the worm rig with
   legs drawn on. A new family should need a new drawing, not a new
   renderer path.
-- **Stock art is never deleted.** `public/mindustry/` is untouched. A
-  trial family draws into its own cells and is packed OVER the stock
-  family's cells in `packAnimalArt` while the flag is on. Turn the flag
-  off and the stock swarm is back, byte for byte.
+- **The stock cells are never deleted.** A trial family draws into its own
+  cells and is packed OVER the stock family's cells in `packAnimalArt`
+  while the flag is on; turn the flag off and the stock swarm is back.
+  `public/mindustry/` now holds ONLY the files the atlas actually names —
+  the vendored mirror was ~2,200 sprites and is the 180 that are loaded.
+  Since the fallbacks are named in source like everything else, they are
+  among the survivors and the flag still resolves; what is gone is the
+  2,000 nobody ever pointed at.
 
 ## 1b. The turrets' grammar: where the art is going next
 

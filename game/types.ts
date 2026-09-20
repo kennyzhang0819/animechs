@@ -345,6 +345,21 @@ export interface Tower {
    *  runs the reload goes at LAST_VOLLEY_RATE on top of `fireRate` */
   boostT: number;
   /**
+   * THE STANDING BUBBLE (constants.ts TowerStats.field, Sim.towerField) —
+   * points left in it, how wide it is drawn, the whitening flash a hit
+   * leaves, and the seconds until a broken one comes back whole.
+   *
+   * ZERO ON EVERY TURRET BUT THE GARRISON'S HALBERD, and the fields are
+   * on Tower rather than in a side table because the one place they are
+   * read is the one place a building takes damage (damageTower) — a map
+   * lookup there would be a lookup on every hit on every structure.
+   */
+  shield: number;
+  shieldMax: number;
+  shieldR: number;
+  shieldAlpha: number;
+  shieldT: number;
+  /**
    * Which shield tower this tower's current volley is aimed at, as an index into
    * Sim.shieldTowers — or -1, the usual case, when it is aimed at a unit. The
    * instant weapons (laser, lightning, rail, ray, the held beam) damage

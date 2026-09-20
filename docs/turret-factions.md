@@ -208,9 +208,9 @@ four stock plates darkened by `BASE_DARK` (`plateArt`), and puts the
 HUD's turret pictures through the same pass (`towerIcon`); the placement
 ghost composes its stamp from the head's own file (`towerGhostIcon`)
 over the plate darkened the same way (`game.ts ghostArt`). A kind with no drawing
-(the retired fixers) keeps its stock sprite. Nothing under
-`public/mindustry` is touched, and the flag off restores Mindustry's
-turrets byte for byte.
+(the retired fixers) keeps its stock sprite. The flag off still restores
+the stock turrets: `public/mindustry` has been cut to the files the atlas
+names, and a fallback a kind names in source is one of them.
 
 `scripts/turret-concepts.mjs` imports the roster from the game module,
 so a re-render starts from the same parts the heads were built out of;

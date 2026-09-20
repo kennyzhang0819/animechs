@@ -785,10 +785,10 @@ export const UV_TOWER_BASE4 = flat("tower-base-4", 128);
  * so the bodies go in facing up exactly as they are drawn and come out
  * facing +x with every other turret head.
  */
-export const UV_BULWARK_TOP = top("bulwark-top", 128);
-export const UV_LANCE_TOP = top("lance-top", 128);
+export const UV_LANCE_TOP = top("lance-top", 96);
+export const UV_BULWARK_TOP = top("bulwark-top", 96);
 export const UV_HALBERD_TOP = top("halberd-top", 128);
-export const UV_JUGGERNAUT_TOP = top("juggernaut-top", 128);
+export const UV_JUGGERNAUT_TOP = top("juggernaut-top", 192);
 /**
  * The blocks that never turn keep the heading they were drawn at: the
  * shield tower (the Shield Towers mutator, Mindustry's force projector,
@@ -3420,12 +3420,14 @@ function packAnimalArt(
   // ---- the siege: the railgun on the mech rig, into cells nobody else
   // owns (see THE SIEGE'S CELLS) ----
   packMech(RAZE_CELLS, razeMech(RAZE_TIER), RAZE_TIER.n);
-  // ...and the four Wardens AS TURRET HEADS (types.ts ENEMY_ONLY_KINDS):
-  // the body alone, with no base plate and no legs, because a turret's
-  // plate is the one the renderer already lays under every head
+  // ...and the four Wardens AS TURRET HEADS (types.ts ENEMY_ONLY_KINDS).
+  // THE BODY ALONE: the renderer lays UV_TOWER_BASE* under every head, so
+  // the plate each drawing carries (wardenArt.ts plated) would be a
+  // second plate over the first. Each cell is the machine's own grid, so
+  // a three-tile gun is drawn on 96 px and a six-tile one on 192
   for (const [uv, parts] of [
-    [UV_BULWARK_TOP, bulwarkMech(BULWARK_TIER)],
     [UV_LANCE_TOP, lanceMech(LANCE_TIER)],
+    [UV_BULWARK_TOP, bulwarkMech(BULWARK_TIER)],
     [UV_HALBERD_TOP, halberdMech(HALBERD_TIER)],
     [UV_JUGGERNAUT_TOP, juggernautMech(JUGGERNAUT_TIER)],
   ] as const)

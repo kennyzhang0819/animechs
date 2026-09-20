@@ -1,5 +1,5 @@
 import { TOWERS } from "./constants";
-import { TOWER_KINDS, type TowerKind } from "./types";
+import { TOWER_KINDS, type TowerKind, FIELDED_KINDS } from "./types";
 
 /**
  * THE ECONOMY — two currencies that never touch. docs/economy.md is the
@@ -161,10 +161,12 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
   stinger: 4,
   // THE GARRISON'S GUNS (types.ts ENEMY_ONLY_KINDS). No run ever buys one
   // — the band is here because every kind needs a price to be a kind, and
-  // the footprints are what it reads
-  lance: 2,
-  bulwark: 2,
-  halberd: 3,
+  // it is NOT their footprint: the Juggernaut is six tiles and the bands
+  // stop at four, because a band is one of the build card's four keys and
+  // the card never offers these
+  lance: 3,
+  bulwark: 3,
+  halberd: 4,
   juggernaut: 4,
 };
 
@@ -213,9 +215,17 @@ export const TOWER_PRICE: Record<TowerKind, number> = Object.fromEntries(
   TOWER_KINDS.map((k) => [k, TIER_PRICE[TOWER_TIER[k]]]),
 ) as Record<TowerKind, number>;
 
-/** THE TIER IS THE FOOTPRINT, and the corner's four keys promise it */
+/**
+ * THE TIER IS THE FOOTPRINT, and the corner's four keys promise it.
+ *
+ * IT IS A PROMISE ABOUT THE BUILD CARD, so it is asked of the kinds the
+ * card can offer and no others (types.ts FIELDED_KINDS). The garrison's
+ * guns are never dealt and never bought, and one of them is six tiles —
+ * a size the card has no key for, because nothing the player places is
+ * ever that big.
+ */
 (() => {
-  for (const k of TOWER_KINDS)
+  for (const k of FIELDED_KINDS)
     if (TOWERS[k].size !== TOWER_TIER[k])
       throw new Error(`${k} is ${TOWERS[k].size}x${TOWERS[k].size} but filed at tier ${TOWER_TIER[k]}`);
 })();

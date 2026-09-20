@@ -264,12 +264,35 @@ walked through.
 it. It belongs to no mission, it is up from mission start, and it never
 moves. Pick which of the four:
 
-| | pool | plating | what it does |
-|---|---|---|---|
-| **Lance** | 17,000 | 14 | 2x2. One crimson beam down 24 tiles every 2.2s. No pierce |
-| **Bulwark** | 25,000 | 104 | 2x2. A ram at five tiles — 800 twice a swing with splash. The turret you can only answer up close |
-| **Halberd** | 55,000 | 115 | 3x3. A shell from 40 tiles out that bursts over 13 and throws a bolt on landing |
-| **Juggernaut** | 200,000 | 150 | 4x4. A fan of five shells across 19 tiles, and a pool nothing chips down by accident |
+| | footprint | pool | plating | what it does |
+|---|---|---|---|---|
+| **Lance** | 3x3 | 17,000 | 14 | An armour-cutting beam down 24 tiles, three times every two seconds |
+| **Bulwark** | 3x3 | 25,000 | 104 | A ram at five tiles — 1,500 twice a swing, with splash. The turret you can only answer up close |
+| **Halberd** | 4x4 | 55,000 | 115 | A shell from 40 tiles out that bursts over 13 and throws a bolt, every 1.2s — **behind a 9,000-point force field** that has to come down first |
+| **Juggernaut** | 6x6 | 200,000 | 150 | Five shells in a spread twice a second, on the railgun's own six-tile plate. Nothing chips it down by accident |
+
+**They hit hard and they hit often.** Every cycle is under two seconds and
+the damage is a multiple of what the bodies carried. These are objectives —
+a trip the run makes on purpose — so the thing they must never be is a gun
+you can stand in front of and out-heal.
+
+**Everything they throw is red and black** (`GARRISON_SHOT`): one palette
+across four guns, so a round in the air over your line is the garrison's
+before you have worked out which of them fired it. It is the swarm's
+crimson over the bore's near-black — the pair the machines themselves are
+drawn in.
+
+**The Halberd carries a force field** (`TowerStats.field`, `Sim.towerField`)
+and it is the only turret in the game that does. It is a hard gate, not a
+share: while there is any shield left nothing reaches the building, and the
+hit that breaks it is spent on the shield rather than carried through. Seven
+seconds after it breaks it is back whole. So the gun is answered in two
+stages and a board cannot chip past it with volume.
+
+**They wear no accent.** The railgun carries the swarm's crimson because it
+is a body a mission plants and you have to pick it out of a crowd; these
+four are turrets standing on turret plates, and a turret is read by its
+silhouette and its plate like every other building on the board.
 
 These four were the **Wardens** — the bodies a garrison used to be manned
 with. They were already turrets in everything but bookkeeping, so they are

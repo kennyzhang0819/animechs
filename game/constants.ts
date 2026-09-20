@@ -230,6 +230,17 @@ export const PAL = {
  * rather than baked into the sheet (atlas.ts UNIT_CELL).
  */
 export const TEAM_CRUX_RGB: RGB = pal(0xf25555);
+/**
+ * WHAT THE GARRISON'S GUNS THROW (types.ts ENEMY_ONLY_KINDS) — one
+ * palette across all four, so a round in the air over the line is
+ * theirs before a player has worked out which of them fired it.
+ *
+ * RED OVER NEAR-BLACK, which is the pair the machines themselves are
+ * drawn in (wardenArt.ts: the crux and the bore). The back is the shell's
+ * rim and the trail, the front is its face and every spark it throws.
+ */
+export const GARRISON_SHOT: RGB = pal(0xff4d5e);
+export const GARRISON_SHOT_BACK: RGB = pal(0x14090c);
 /** Team.sharded.color, the player's amber — the core's own (Pal.accent) */
 export const TEAM_SHARDED_RGB: RGB = pal(0xffd37f);
 
@@ -701,6 +712,19 @@ export interface TowerStats {
   // has no target, no barrel and no volley — `bullet` is the inert zero
   // the table's shape demands, and the fire path never reaches it
   heal?: { percent: number };
+  /**
+   * A STANDING BUBBLE OVER THE BUILDING (Sim.towerField): `shield` points
+   * of it, `radius` px across, back whole `delay` seconds after the last
+   * one broke. It eats damage before health does and nothing gets through
+   * while it is up.
+   *
+   * NOTHING OF THE PLAYER'S HAS ONE and nothing of the player's can: it
+   * is written for the garrison's Halberd (ENEMY_ONLY_KINDS), where the
+   * point of it is that the gun has to be answered in two stages. A
+   * shield on a turret a run could buy is a different balance question
+   * and would want its own rung to pay for it.
+   */
+  field?: { shield: number; radius: number; delay: number };
   bullet: BulletStats;
 }
 
@@ -853,6 +877,7 @@ export function normalizeTower(s: TowerStats): TowerStats {
     altChance: s.altChance,
     sort: s.sort,
     heal: s.heal,
+    field: s.field,
     bullet: normalizeBullet(s.bullet),
   };
   return out;
@@ -2186,114 +2211,118 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // ---- THE GARRISON'S GUNS (types.ts ENEMY_ONLY_KINDS) ----
   //
   // FOUR TURRETS THE PLAYER NEVER OWNS. They are the swarm's, an author
-  // stands them on a map (missionMarks.ts EMPLACEMENT), and every number
-  // here is the body each of them used to be: the pools, the plating and
-  // the weapons are carried over rather than re-invented, because the
-  // whole point of turning them into turrets was that they stop walking,
-  // not that they stop being the Bulwark and the Lance.
+  // stands them on a map (missionMarks.ts EMPLACEMENT), and they are what
+  // the four Wardens became when they stopped walking.
   //
-  // THE POOLS ARE THE POOLS THEY HAD AS BODIES, and they are written here
-  // DIVIDED BY TOWER_HP_SCALE because every turret's table health is
-  // multiplied by it (resolveTower). A Bulwark stood on 25,000 and stands
-  // on 25,000: `health: 2500` is how you say that in this table.
+  // THE POOLS ARE WRITTEN DIVIDED BY TOWER_HP_SCALE, because every
+  // turret's table health is multiplied by it (resolveTower). A Bulwark
+  // stands on 25,000 and `health: 2500` is how you say that here.
   //
-  // THEY STILL DWARF EVERY ROW ABOVE. A railhead is a few thousand on the
-  // board; a Juggernaut is two hundred thousand behind a hundred and
-  // fifty armour. That is deliberate and it is the same reason it was
-  // deliberate when they were bodies: these are OBJECTIVES, a trip the
-  // run makes on purpose, not traffic.
+  // THEY HIT HARD AND THEY HIT OFTEN. These are OBJECTIVES — one of them
+  // is a trip the run makes on purpose, not traffic that wanders past —
+  // so the thing they must never be is a gun the player can stand in
+  // front of and out-heal. Every cycle here is under two seconds and the
+  // damage is a multiple of what the bodies carried.
+  //
+  // EVERYTHING THEY THROW IS RED AND BLACK (GARRISON_SHOT below): one
+  // palette across four guns, so a round in the air over your line is the
+  // garrison's before you have worked out which of them fired it. It is
+  // the swarm's crimson over the bore's near-black, which is the pair the
+  // machines themselves are drawn in.
   //
   // NONE OF THEM TARGETS AIR. A garrison gun answers the board in front
   // of it, and the board is buildings.
 
-  // THE BULWARK — the ram, as a gun with no reach. Five tiles is arm's
-  // length: it is the turret you can stand next to and not the turret you
-  // can stand away from, which is what the charging body was.
-  bulwark: {
-    name: "Bulwark",
-    size: 2,
-    health: 2500,
-    armor: 104,
-    range: 40 * MU,
-    reload: 40 / TICK,
-    shots: 2,
-    shotDelay: 6 / TICK,
-    spread: 0,
-    inaccuracy: 0,
-    shootCone: (20 * Math.PI) / 180,
-    rotateSpeed: ((6 * Math.PI) / 180) * TICK,
-    targetAir: false,
-    targetGround: true,
-    bullet: {
-      speed: 0,
-      damage: 800,
-      lifetime: 10 / TICK,
-      splash: 280,
-      splashRadius: 36 * MU,
-      collidesAir: false,
-      collidesGround: true,
-      shootFx: FxKind.ShootBig,
-      hitFx: FxKind.BlastExplosion,
-      fxColor: TEAM_CRUX_RGB,
-    },
-  },
-  // THE LANCE — the needle, unchanged: one crimson beam every two and a
-  // sixth seconds, twenty-four tiles, and it does NOT pierce
+  // THE LANCE — the needle. One armour-cutting beam down a long line,
+  // now on a two-thirds cycle rather than a two-second one.
   lance: {
     name: "Lance",
-    size: 2,
+    size: 3,
     health: 1700,
     armor: 14,
     range: 190 * MU,
-    reload: 130 / TICK,
-    chargeTime: 20 / TICK,
+    reload: 45 / TICK,
+    chargeTime: 10 / TICK,
     shots: 1,
     shotDelay: 0,
     spread: 0,
     inaccuracy: 0,
     shootCone: (8 * Math.PI) / 180,
-    rotateSpeed: ((90 * Math.PI) / 180) * TICK,
+    rotateSpeed: ((120 * Math.PI) / 180) * TICK,
     targetAir: false,
     targetGround: true,
     bullet: {
       speed: 0,
-      damage: 560,
+      damage: 900,
       lifetime: 14 / TICK,
       splash: 0,
       splashRadius: 0,
       collidesAir: false,
       collidesGround: true,
-      laser: { length: 195 * MU, pierceCap: 1, width: 7 * MU },
+      armorMultiplier: 3,
+      laser: { length: 195 * MU, pierceCap: 2, width: 9 * MU },
       shootFx: FxKind.PiercerShoot,
       chargeFx: FxKind.PiercerCharge,
       hitFx: FxKind.HitPiercer,
-      fxColor: TEAM_CRUX_RGB,
+      fxColor: GARRISON_SHOT,
     },
   },
-  // THE HALBERD — the mortar. The shell is the body's, number for number,
-  // and the arc it carried as a second weapon is a BOLT off the same
-  // shell (BulletStats.lightning): a turret fires one thing, so the two
-  // halves are one round that bursts and then jumps.
+  // THE BULWARK — the ram, as a gun with no reach. Five tiles is arm's
+  // length: the turret you can only answer up close, and it swings twice
+  // a second for its trouble.
+  bulwark: {
+    name: "Bulwark",
+    size: 3,
+    health: 2500,
+    armor: 104,
+    range: 44 * MU,
+    reload: 22 / TICK,
+    shots: 2,
+    shotDelay: 4 / TICK,
+    spread: 0,
+    inaccuracy: 0,
+    shootCone: (25 * Math.PI) / 180,
+    rotateSpeed: ((10 * Math.PI) / 180) * TICK,
+    targetAir: false,
+    targetGround: true,
+    bullet: {
+      speed: 0,
+      damage: 1500,
+      lifetime: 10 / TICK,
+      splash: 600,
+      splashRadius: 40 * MU,
+      collidesAir: false,
+      collidesGround: true,
+      shootFx: FxKind.ShootBig,
+      hitFx: FxKind.BlastExplosion,
+      fxColor: GARRISON_SHOT,
+    },
+  },
+  // THE HALBERD — the mortar, and the one of the four that carries a
+  // FORCE FIELD (TowerStats.field). A shell out of reach of most of the
+  // board, a bolt off it where it lands, and a bubble that has to come
+  // down before any of that can be answered.
   halberd: {
     name: "Halberd",
-    size: 3,
+    size: 4,
     health: 5500,
     armor: 115,
     range: 319 * MU,
-    reload: 200 / TICK,
+    reload: 70 / TICK,
     shots: 1,
     shotDelay: 0,
     spread: 0,
     inaccuracy: (1 * Math.PI) / 180,
-    shootCone: (10 * Math.PI) / 180,
-    rotateSpeed: ((5 * Math.PI) / 180) * TICK,
+    shootCone: (12 * Math.PI) / 180,
+    rotateSpeed: ((8 * Math.PI) / 180) * TICK,
     targetAir: false,
     targetGround: true,
+    field: { shield: 9000, radius: 11 * 8 * MU, delay: 7 },
     bullet: {
-      speed: 4.2 * TICK * MU,
-      damage: 220,
-      lifetime: (319 + 10) / 4.2 / TICK,
-      splash: 820,
+      speed: 5 * TICK * MU,
+      damage: 420,
+      lifetime: (319 + 10) / 5 / TICK,
+      splash: 1400,
       splashRadius: 104 * MU,
       collidesAir: false,
       collidesGround: true,
@@ -2306,41 +2335,40 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
         shrinkX: 0,
         shrinkY: 0.2,
         slopeShrink: true,
-        back: TEAM_CRUX_RGB,
-        front: PAL.lighterOrange,
+        back: GARRISON_SHOT_BACK,
+        front: GARRISON_SHOT,
       },
       trail: { size: 3.4 * MU, mult: 1 },
       shootFx: FxKind.ShootBig,
       hitFx: FxKind.BlastExplosion,
-      fxColor: TEAM_CRUX_RGB,
+      fxColor: GARRISON_SHOT,
     },
   },
-  // THE JUGGERNAUT — the flak fan. The body swept an eighty-degree wedge
-  // and took eight things at once; a turret has one barrel, so the wedge
-  // is FIVE SHELLS IN A SPREAD and the sweep is what lands rather than
-  // what is drawn. Its force field and its plating aura do not come over:
-  // a turret is not a body and has no crowd to hand anything to.
+  // THE JUGGERNAUT — the flak fan, on the railgun's own six-tile plate.
+  // Five shells in a spread twice a second: the wedge is what LANDS
+  // rather than what is drawn, and a block of turrets standing off and
+  // shooting it is exactly what it is for.
   juggernaut: {
     name: "Juggernaut",
-    size: 4,
+    size: 6,
     health: 20000,
     armor: 150,
     range: 150 * MU,
-    reload: 120 / TICK,
+    reload: 34 / TICK,
     shots: 5,
-    shotDelay: 3 / TICK,
-    spread: (10 * Math.PI) / 180,
+    shotDelay: 2 / TICK,
+    spread: (9 * Math.PI) / 180,
     inaccuracy: (3 * Math.PI) / 180,
     shootCone: (40 * Math.PI) / 180,
-    rotateSpeed: ((4 * Math.PI) / 180) * TICK,
+    rotateSpeed: ((6 * Math.PI) / 180) * TICK,
     targetAir: false,
     targetGround: true,
     bullet: {
-      speed: 5 * TICK * MU,
-      damage: 180,
-      lifetime: (150 + 10) / 5 / TICK,
-      splash: 240,
-      splashRadius: 30 * MU,
+      speed: 6 * TICK * MU,
+      damage: 420,
+      lifetime: (150 + 10) / 6 / TICK,
+      splash: 520,
+      splashRadius: 34 * MU,
       collidesAir: false,
       collidesGround: true,
       sprite: {
@@ -2349,12 +2377,12 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
         along: 14 * MU,
         shrinkX: 0,
         shrinkY: 0.4,
-        back: TEAM_CRUX_RGB,
-        front: PAL.lighterOrange,
+        back: GARRISON_SHOT_BACK,
+        front: GARRISON_SHOT,
       },
       shootFx: FxKind.ShootBig,
       hitFx: FxKind.BlastExplosion,
-      fxColor: TEAM_CRUX_RGB,
+      fxColor: GARRISON_SHOT,
     },
   },
 };

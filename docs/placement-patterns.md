@@ -204,49 +204,27 @@ should read as a mistake the moment the number goes grey.
 
 The current palette is **grass, stone, dirt, sand, darksand, shallow water,
 deep water**, three wall families (stone / dirt / dark rock), pines, boulders
-and shrubs (`PALETTE`, `game/maps.ts`). Mindustry ships far more. The full
-inventory, from `Blocks.java`'s environment region, with a verdict per group.
+and shrubs (`PALETTE`, `game/maps.ts`). What is worth adding, and what it
+costs, with a verdict per group.
 
-### Everything Mindustry has
+### What the ground is made of
 
-**Serpulo floors** — stone, crater-stone, char, basalt, hotrock, magmarock,
-sand, darksand, dirt, mud, dacite, grass, salt, snow, ice, ice-snow, shale,
-moss, spore-moss, redmat, bluemat, pebbles, tendrils, metal-floor (×5 +
-3 damaged), dark-panel (×6), dark-metal, base-zone.
+**Terrain art is DRAWN, not vendored** (`game/tiles.ts`, behind
+`game/terrainFlag.ts`). This chapter used to open with an inventory of
+Mindustry's environment regions and the claim that every sprite in it was
+already sitting under `public/mindustry/` waiting to be pointed at. Neither is
+true any more: the floors, the walls and the props are this game's own
+paintings, and the vendored tree has been cut back to the handful of files the
+atlas still composites.
 
-**Serpulo liquids** — shallow water, deep water, tainted water, deep tainted
-water, sand-water, darksand-water, darksand-tainted-water, tar, pooled
-cryofluid, molten slag.
+So the cost of a new floor is not "find the region" — it is a painting in
+`tiles.ts` and a `PALETTE` row, and the question below is only ever whether the
+ground is worth having. What Mindustry's own floors DID is still worth reading
+as prior art, which is what the hazard table further down is; it is a list of
+rules, not a list of files.
 
-**Erekir floors** — arkycite, arkyic stone, rhyolite, rhyolite crater, rough
-rhyolite, regolith, yellow stone, yellow stone plates, carbon stone, ferric
-stone, ferric craters, beryllic stone, crystalline stone, crystal floor, red
-stone, dense red stone, red ice, and eight **steam vents** (stone, basalt,
-rhyolite, carbon, arkyic, yellow-stone, red-stone, crystalline).
-
-**Static walls** — stone, dirt, dacite, ice, snow, dune, sand, salt, shale,
-spore, shrubs, graphitic; plus the Erekir set (regolith, yellow-stone,
-rhyolite, carbon, ferric, beryllic, arkyic, crystalline, red-ice, red-stone,
-red-diamond).
-
-**Trees and props** — pine, snow-pine, spore-pine, white-tree, white-tree-dead,
-spore cluster, nine boulder families, redweed, pur-bush, yellow coral.
-
-**Ore overlays** — floor ores (copper, lead, coal, scrap, titanium, thorium,
-beryllium, tungsten, crystal-thorium) and **wall ores** (thorium, beryllium,
-graphite, tungsten).
-
-Every sprite listed is already sitting in
-`public/mindustry/sprites/blocks/environment/`. Nothing needs downloading;
-adding a floor is an atlas entry plus a `PALETTE` row.
 
 ### Verdicts
-
-**Take the whole Erekir set out of scope.** Rhyolite, regolith, arkycite,
-crystalline stone and the red-stone family are a different planet's palette and
-they will not sit next to grass and pine without the map looking like two games
-stapled together. The **steam vents** are the one exception — a vent reads as a
-vent on any ground, and `stone-vent` / `basalt-vent` are Serpulo-native anyway.
 
 **Ore overlays are the cheapest win in this entire document.** A wall ore is an
 overlay on a *wall* cell, which is exactly the cell a turret stands on. It costs
@@ -288,12 +266,12 @@ Three batches, cheapest first.
 | **metal floor, dark panel, dark metal** | a ruined installation |
 | **salt** + salt wall | flats |
 
-Each is three sprite variants and a `PALETTE` row. Six biomes for roughly the
-work of one.
+Each is three paintings in `tiles.ts` and a `PALETTE` row. Six biomes for
+roughly the work of one — and most of this batch is already in the palette.
 
 **Batch 3 — hazard floors that carry a rule. Read the pathfinding note first.**
 
-| floor | Mindustry's rule | ours |
+| floor | the rule it is modelled on | ours |
 | --- | --- | --- |
 | **mud** | speed ×0.6, `muddy` | mild slow; the natural apron around any water |
 | **tar** | speed ×0.19, `tarred`, drowns | hard slow, and **burning does double damage on it** — the torch/incendiary terrain |

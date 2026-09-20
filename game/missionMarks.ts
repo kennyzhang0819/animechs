@@ -10,6 +10,7 @@
  */
 import type { Mission, UnitKind } from "./levels";
 import type { TowerKind } from "./types";
+import { TOWERS } from "./constants";
 
 /**
  * WHAT SHAPE OF THING AN AUTHOR PLACES. A `point` is one footprint at
@@ -349,6 +350,27 @@ export function markTower(m: MapMark): TowerKind | null {
   return f?.kind === "choice" ? (markField(m.opts, f) as TowerKind) : (k.tower ?? null);
 }
 
+/**
+ * THE FOOTPRINT A MARK ACTUALLY OCCUPIES, in cells — what it is drawn as,
+ * what a click hits, and what another mark may not overlap.
+ *
+ * IT IS THE TURRET'S OWN SIZE where a mark stands a turret up
+ * (EMPLACEMENT): the four are 2x2, 2x2, 3x3 and 4x4, and one fixed square
+ * for all of them would be the wrong picture for three and a lie about
+ * the ground for all four. `MarkKind.size` is the fallback, which is what
+ * every other kind uses.
+ */
+export function markSize(m: MapMark): number {
+  const k = markKind(m.kind);
+  if (!k) return 1;
+  const t = markTower(m);
+  return t ? TOWERS[t].size : k.size;
+}
+/** the same, for a kind and a chosen turret — the stamp knows both before
+ *  a mark exists to ask */
+export const markSizeFor = (k: MarkKind, tower: TowerKind | null): number =>
+  tower ? TOWERS[tower].size : k.size;
+
 /** every turret face a mark may wear — what a panel carves up front */
 export const MARK_TOWERS: readonly TowerKind[] = [
   ...new Set(
@@ -387,9 +409,10 @@ export function forEachMarkPadCell(
   // picture is its circle, and a square of prepared ground promising
   // something would stand exactly there when nothing ever does
   if (k.pad <= 0) return;
+  const size = markSize(m);
   const x0 = Math.max(0, m.x - k.pad), y0 = Math.max(0, m.y - k.pad);
-  const x1 = Math.min(cols, m.x + k.size + k.pad);
-  const y1 = Math.min(rows, m.y + k.size + k.pad);
+  const x1 = Math.min(cols, m.x + size + k.pad);
+  const y1 = Math.min(rows, m.y + size + k.pad);
   for (let y = y0; y < y1; y++)
     for (let x = x0; x < x1; x++) {
       const dx = Math.min(x - x0, x1 - 1 - x), dy = Math.min(y - y0, y1 - 1 - y);
