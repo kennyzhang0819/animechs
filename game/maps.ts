@@ -299,6 +299,13 @@ export interface PaletteSet {
    *  MarkKind.id), and the missions that understand it — the editor hides
    *  a swatch no world on this map could use */
   mark?: string;
+  /** for kind "mark": the body or turret each variant's swatch WEARS, so
+   *  a kind with a choice on it is four pictures in the tray rather than
+   *  one picture and a dropdown (see the note by the mark swatches) */
+  markFaces?: string[];
+  /** ...and what each variant is called, where the variants are choices
+   *  rather than interchangeable art */
+  variantLabels?: string[];
 }
 
 /**
@@ -472,15 +479,28 @@ export const PALETTE: readonly PaletteSet[] = [
   // THE MISSION MARKS, one swatch a kind, built from the registry rather
   // than typed out (missionMarks.ts MARK_KINDS): adding a mission's
   // furniture is an entry there and no edit here
-  ...MARK_KINDS.map((k) => ({
-    id: `mark-${k.id}`,
-    label: k.label,
-    kind: "mark" as const,
-    variants: [0],
-    noRandom: true,
-    icons: ["/mindustry/sprites/blocks/power/power-node-large.png"],
-    mark: k.id,
-  })),
+  // ONE SWATCH A CHOICE where a kind offers one. A mark whose body or
+  // turret is a field (missionMarks.ts EMPLACEMENT, BUFF_TOWER) used to
+  // be a single swatch you stamped and then went to the panel to set,
+  // which is a decision made twice and made blind — the tray is exactly
+  // where a picture can make it once. A kind with no choice is one swatch
+  // as before.
+  ...MARK_KINDS.map((k) => {
+    const faceField = k.towerField ?? k.unitField;
+    const f = faceField ? k.fields.find((x) => x.key === faceField) : null;
+    const choices = f?.kind === "choice" ? f.choices : null;
+    return {
+      id: `mark-${k.id}`,
+      label: k.label,
+      kind: "mark" as const,
+      variants: (choices ?? [null]).map((_, i) => i),
+      noRandom: true,
+      icons: (choices ?? [null]).map(() => "/mindustry/sprites/blocks/power/power-node-large.png"),
+      mark: k.id,
+      markFaces: choices ? choices.map((c) => c.value) : [k.tower ?? k.unit],
+      variantLabels: choices ? choices.map((c) => c.label) : undefined,
+    };
+  }),
   { id: "erase", label: "Erase", kind: "erase", variants: [0], icons: [`${ENV}/clear-editor.png`] },
 ];
 

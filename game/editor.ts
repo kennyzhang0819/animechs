@@ -635,7 +635,16 @@ export class MapEditor {
       if (x0 < m.x + k.size && x0 + kind.size > m.x && y0 < m.y + k.size && y0 + kind.size > m.y)
         return;
     }
-    this.terrain.marks.push({ kind: kind.id, x: x0, y: y0, opts: markOpts(kind, undefined) });
+    // THE SWATCH CARRIES THE CHOICE (maps.ts, the mark swatches): a kind
+    // whose body or turret is a choice field gets one swatch per value,
+    // so what the tray shows is what gets stamped and the panel is where
+    // you CHANGE it rather than where you have to go and set it
+    const opts = markOpts(kind, undefined);
+    const faceField = kind.towerField ?? kind.unitField;
+    const f = faceField ? kind.fields.find((x) => x.key === faceField) : null;
+    if (f?.kind === "choice")
+      opts[f.key] = f.choices[clamp(this.variant, 0, f.choices.length - 1)].value;
+    this.terrain.marks.push({ kind: kind.id, x: x0, y: y0, opts });
     this.picked = this.terrain.marks.length - 1;
     rebuildReserved(this.terrain);
     this.dirty = true;

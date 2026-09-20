@@ -4,9 +4,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { ADMIN_ENABLED } from "@/game/env";
 import { useConfirm } from "./ConfirmDialog";
 import { MapEditor, PATH_WIDTHS, type BrushShape } from "@/game/editor";
-import { markKind, MARK_UNITS } from "@/game/missionMarks";
+import { markKind, MARK_TOWERS, MARK_UNITS } from "@/game/missionMarks";
+import type { UnitKind } from "@/game/levels";
 import { useUnitIcons } from "./unitIcons";
-import { cellIcon, UV_BEACON } from "@/game/atlas";
+import { cellIcon, towerIcon, UV_BEACON } from "@/game/atlas";
 import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
 import {
   LEGACY_COLS,
@@ -215,6 +216,21 @@ export default function MapEditorView({
   // the portraits every mission mark wears, carved off the atlas once
   // (unitIcons.ts) — the palette and the map both draw them
   const markFace = useUnitIcons(MARK_UNITS);
+  // ...and the turret heads, for the marks that stand a TURRET up rather
+  // than a body (missionMarks.ts EMPLACEMENT). They are drawn into the
+  // sheet at pack time like the beacon's block, so there is no sprite
+  // file to point a swatch at
+  const [towerFaces, setTowerFaces] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let alive = true;
+    for (const kind of MARK_TOWERS)
+      void towerIcon(kind).then((url) => {
+        if (alive) setTowerFaces((had) => ({ ...had, [kind]: url }));
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
   // ...and the beacon's own block, which is drawn into the sheet at pack
   // time and has no sprite file to point at (atlas.ts UV_BEACON)
   const [beaconFace, setBeaconFace] = useState<string | null>(null);
@@ -701,18 +717,23 @@ export default function MapEditorView({
                         // these used to be the same stock power node,
                         // which told an author nothing about which was
                         // which
-                        const face = set.mark ? markKind(set.mark)?.unit : null;
+                        // the face is PER VARIANT now (maps.ts markFaces):
+                        // an enemy turret swatch wears the turret it
+                        // stamps, so the four are four pictures
+                        const face = set.markFaces?.[v] ?? (set.mark ? markKind(set.mark)?.unit : null);
                         const icon =
-                          (face && markFace(face)) ||
+                          (face && (towerFaces[face] || markFace(face as UnitKind))) ||
                           (set.kind === "beacon" && beaconFace) ||
                           stockIcon;
                         const active =
                           setId === set.id && ((randomize && !set.noRandom) || variant === v);
                         const spawn = set.kind === "spawn";
                         const name =
-                          randomize && set.icons.length > 1
-                            ? `${set.label} (random of ${set.icons.length})`
-                            : `${set.label}${set.icons.length > 1 ? ` ${v + 1}` : ""}`;
+                          set.variantLabels?.[v]
+                            ? `${set.label}: ${set.variantLabels[v]}`
+                            : randomize && set.icons.length > 1
+                              ? `${set.label} (random of ${set.icons.length})`
+                              : `${set.label}${set.icons.length > 1 ? ` ${v + 1}` : ""}`;
                         return (
                           <button
                             key={`${set.id}:${v}`}
