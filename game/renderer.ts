@@ -1040,8 +1040,9 @@ const LOD_SHOT_ONE_PX = 8;
  *  it let every T4 walker keep its legs at a zoom where the walker was
  *  five pixels. A leg is a stroke a few world px wide: under a ten-pixel
  *  body it is a pixel, and a pixel-wide line is a flicker, not a leg.
- *  The same floor takes a TURRET to its base plate alone — the head's
- *  bearing is unreadable on a four-pixel square */
+ *  The same floor takes a TURRET to its plate and its head alone: the
+ *  head stays because a plate with nothing on it is not a gun, and the
+ *  sampler's own mip is the detail it loses; the muzzle flash goes */
 const LOD_BODY_PX = 10;
 /** a beam thinner than this on screen has no rounded caps (flameFront): a
  *  cap is half the stroke in radius, and under a pixel and a half of
@@ -3211,10 +3212,10 @@ export class Renderer {
       const g = own ? tint[1] : tint[1] * TEAM_CRUX_RGB[1];
       const b = own ? tint[2] : tint[2] * TEAM_CRUX_RGB[2];
       this.push(dyn, t.x, t.y, px, px, 0, base, r, g, b, 1);
-      // LOD (LOD_BODY_PX): a turret this small on screen is its base plate
-      // — the head's bearing and the muzzle flash are under a pixel
-      if (px * this.ppw < LOD_BODY_PX) continue;
       this.push(dyn, t.x, t.y, px, px, angle, top, r, g, b, 1);
+      // LOD (LOD_BODY_PX): a turret this small on screen is its plate and
+      // its head and nothing else — the flash is under a pixel
+      if (px * this.ppw < LOD_BODY_PX) continue;
       // THE FALLBACK MUZZLE FLASH (Sim, Tower.flashT): this turret fired
       // and the effect pool refused its muzzle effect, so the shot has
       // nothing else on screen. One tongue at the barrel — half of
