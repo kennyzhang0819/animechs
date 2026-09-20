@@ -1,17 +1,32 @@
 "use client";
 
-import {
-  levelProgress,
-  POINT_COLOR,
-  SCRAP_COLOR,
-  SCRAP_ICON,
-  XP_COLOR,
-} from "@/game/economy";
-
-/* eslint-disable @next/next/no-img-element -- raw pixel sprites, no optimization wanted */
+import { levelProgress, POINT_COLOR, SCRAP_COLOR, XP_COLOR } from "@/game/economy";
+import { CURRENCY_GRID, currencyGlyph, type CurrencyGlyph } from "./currencyArt";
 
 const SIZES = { sm: "h-4 w-4", md: "h-5 w-5" } as const;
 type Size = keyof typeof SIZES;
+
+/** a currency mark, drawn (components/currencyArt.ts) rather than sprited */
+export function CurrencyIcon({
+  glyph,
+  className = "h-4 w-4",
+}: {
+  glyph: CurrencyGlyph;
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox={`0 0 ${CURRENCY_GRID} ${CURRENCY_GRID}`}
+      className={`${className} shrink-0`}
+      shapeRendering="crispEdges"
+      aria-hidden="true"
+    >
+      {currencyGlyph(glyph).map((layer) => (
+        <path key={layer.color} fill={layer.color} d={layer.d} />
+      ))}
+    </svg>
+  );
+}
 
 /**
  * A COUNT AS A STACK READS IT. Lifetime XP runs to seven and eight
@@ -71,11 +86,7 @@ export function ScrapAmount({
       style={{ color: short ? "#FF8A8A" : (tone ?? SCRAP_COLOR) }}
       title="Scrap"
     >
-      <img
-        src={SCRAP_ICON}
-        alt="Scrap"
-        className={`${SIZES[size]} shrink-0 [image-rendering:pixelated] ${short ? "opacity-70" : ""}`}
-      />
+      <CurrencyIcon glyph="scrap" className={`${SIZES[size]} ${short ? "opacity-70" : ""}`} />
       {itemCount(amount)}
     </span>
   );
@@ -99,6 +110,28 @@ export function XpAmount({
     >
       <XpStar className={SIZES[size]} />
       {itemCount(amount)} XP
+    </span>
+  );
+}
+
+/** upgrade points, wherever the campaign's own currency is printed */
+export function PointAmount({
+  amount,
+  size = "sm",
+  className = "",
+}: {
+  amount: number;
+  size?: Size;
+  className?: string;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 font-bold ${className}`}
+      style={{ color: POINT_COLOR }}
+      title="Upgrade Points"
+    >
+      <CurrencyIcon glyph="point" className={SIZES[size]} />
+      {itemCount(amount)}
     </span>
   );
 }

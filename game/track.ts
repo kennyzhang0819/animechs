@@ -1,4 +1,5 @@
 import { targetingLine, TOWER_DESC, TOWERS } from "./constants";
+import { SKILL_POINT_LEVELS } from "./economy";
 import { VISIBLE_WORLDS, worldHidden, WORLDS } from "./levels";
 import { MODS, modBlurb, modDef, modName, type ModId } from "./mods";
 import { RELICS, relicDef, type RelicId } from "./relics";
@@ -39,14 +40,15 @@ import {
  *   handed out — the mods that ride them, and the maps to take the lot to.
  *   A fresh save opens with STARTING_ROSTER and STARTING_MODS.
  *
- *   THE MUTATOR PHASE, MUTATORS_FROM to MAX_LEVEL. What a level hands out
- *   here is a RULE, added to the deck the deploy roll draws from
+ *   THE MUTATOR PHASE, MUTATORS_FROM up. What a level hands out here is
+ *   a RULE, added to the deck the deploy roll draws from
  *   (MUTATOR_UNLOCKS): the reward for climbing past the seam is that the
  *   game is ALLOWED TO BE HARDER, which is the reward a tower defence
- *   player is actually climbing for. THE ROSTER SPILLS INTO ITS FIRST
- *   THREE ROWS and nothing else does — one gun a level (UNLOCKS) runs the
- *   seventeen to level ROSTER_LAST, and a row carrying a rule and a gun
- *   together is a better row than one carrying two guns.
+ *   player is actually climbing for. THE ROSTER SPILLS RIGHT THROUGH IT
+ *   and out the far side — one gun every OTHER level (UNLOCKS) runs the
+ *   seventeen to ROSTER_LAST, which is what sets MAX_LEVEL — and a row
+ *   carrying a rule and a gun together is a better row than one carrying
+ *   two guns.
  *
  * THE TWO PHASES USED TO OVERLAP, AND ON PURPOSE. The roster ran to 20 and
  * the modules to 30, threaded between the rules so that every level of a
@@ -57,10 +59,10 @@ import {
  * then FIGHT.
  *
  * EVERY LEVEL STILL CARRIES SOMETHING, and it is CHECKED at import rather
- * than trusted (see the last invariant in this file). A row of the
- * progress screen that hands out nothing is a row with no reason to be
- * looked at; two dense phases back to back is how the track keeps that
- * true without a 30-level stretch to fill.
+ * than trusted (see the last invariant in this file). What guarantees it
+ * is the UPGRADE POINTS (POINTS below): every level pays at least one,
+ * and the levels the guns and the rules step over pay more, so a breather
+ * row is still a row with a reward on it.
  *
  * THE RELICS ARE OFF THE TRACK ENTIRELY — see the relic note below. They
  * used to fill the back half, which is the mutator phase's half; nothing
@@ -132,15 +134,20 @@ const MUTATOR_UNLOCKS: Readonly<Record<number, readonly MutationId[]>> = {
 
 /**
  * THE LAST LEVEL THAT HANDS ANYTHING OUT — the bottom of the progress
- * screen, and the dearest rule's row.
+ * screen, and it is THE END OF THE PAYROLL, not the last gun.
  *
- * IT IS NOT THE LEVEL CAP. The curve runs to LEVEL_CAP (economy.ts) and a
- * save is free to climb past the track's top; there is simply nothing
- * above here left to hand over. It came down from 30 with the relics: the
- * back half was fourteen relics threaded through thirteen rules, and
- * without them the rules close the track on their own.
+ * EVERY LEVEL PAYS AN UPGRADE POINT (POINTS below), so every level to
+ * SKILL_POINT_LEVELS has a reason to be drawn: the rows past the last
+ * gun (ROSTER_LAST) hand over their point and nothing else, which is
+ * exactly what the climb up there is worth. A track that stopped at the
+ * last gun would leave sixty-seven levels a save can reach and be paid
+ * for with no row on the screen that says so.
+ *
+ * IT IS NOT THE LEVEL CAP. The curve runs to LEVEL_CAP (economy.ts) and
+ * a save is free to climb past here; there is simply nothing above it
+ * left to hand over.
  */
-export const MAX_LEVEL = 26;
+export const MAX_LEVEL = SKILL_POINT_LEVELS;
 
 /** THE CATALOG IS DEALT WHOLE, ONCE EACH, INSIDE THE PHASE — checked at import */
 (() => {
@@ -170,6 +177,7 @@ export const MAX_LEVEL = 26;
  * "Mod" or "Relic" off the kind it IS.
  */
 export type Reward =
+  | { kind: "points"; amount: number }
   | { kind: "world"; worldId: string }
   | { kind: "turret"; id: TowerKind }
   | { kind: "mod"; id: ModId }
@@ -257,13 +265,19 @@ export const STARTING_ROSTER: readonly TowerKind[] = [
  * the shape of the opening — which gun answers which wave — is a design
  * decision and not an arithmetic on build cost.
  *
- * ONE GUN A LEVEL AND NEVER TWO, from 2 to the last of them. A row that
- * handed over two put both of them in the same glance and made the second
- * one furniture; a row is a gun now, so every one of the seventeen gets
- * its own arrival. That runs the roster PAST the build phase's top
- * (ROSTER_TOP) and into the mutator phase's opening rows, which is
- * allowed: those rows carry a rule and a gun together rather than a rule
- * alone.
+ * ONE GUN EVERY OTHER LEVEL, and the first three rows are the exception
+ * that sets the rhythm: the torch on 2 and the airburst on 3 come back to
+ * back because a save two clears old has almost nothing to build with,
+ * and from the lobber on 5 the guns step two levels at a time to the top.
+ * A gun a level put a new face in the build bar faster than a player
+ * could find a use for the last one; every other level gives each of the
+ * seventeen a run of its own, and the rows in between are not empty —
+ * they pay DOUBLE UPGRADE POINTS (POINTS below), so a breather row buys a
+ * rank on a dial instead of a gun.
+ *
+ * That runs the roster past the build phase's top (ROSTER_TOP) and
+ * through the whole mutator phase; ROSTER_LAST is the last row of the
+ * track that hands over a THING, and everything above it pays points.
  *
  * The order is the one the pairs used to be read in, left before right.
  */
@@ -274,45 +288,78 @@ const UNLOCKS: Readonly<Record<number, readonly TowerKind[]>> = {
   // list are retired (types.ts RETIRED_KINDS) and no level hands one out
   2: ["torch"],
   3: ["airburst"],
-  4: ["lobber"],
+  // ...and from here the guns step two at a time
+  5: ["lobber"],
   // the CLEAVER is the one row that hands over a band a save cannot yet
   // afford: a tier-4 block is 270,000, so what it widens is what the 4
   // button will turn over long before the bank can press it
-  5: ["cleaver"],
+  7: ["cleaver"],
   // the 2x2s, the band a run spends most of its middle in
-  6: ["coil"],
-  7: ["hive"],
+  9: ["coil"],
+  11: ["hive"],
   // the BARRAGE breaks the 2x2 run: it is the crowd artillery the script
   // asks for from the first waves, and the opening hand no longer holds one
-  8: ["barrage"],
-  9: ["piercer"],
+  13: ["barrage"],
+  15: ["piercer"],
   // the douser closes the 2x2s — it traded rows with the barrage, which
   // the early script asks for far sooner than a board asks for a slow
-  10: ["douser"],
+  17: ["douser"],
   // and the rest are spread and interleaved: a save already owns one gun
   // of every band (STARTING_ROSTER), so what these rows widen is WHICH gun
   // the button turns over
-  11: ["tether"],
-  12: ["furnace"],
-  13: ["deluge"],
+  19: ["tether"],
+  21: ["furnace"],
+  23: ["deluge"],
   // ...AND THEN THE TOXIN LINE. Four guns that do one thing
   // (docs/elements.md) and one of them in every band, so dealing them by
   // footprint alongside the rest would scatter a set the player only
   // understands held together. They close the roster, cheapest first —
-  // and the RAILHEAD SITS INSIDE THEM at 16, which is the one row that
-  // breaks the set: it is the last of Serpulo's half of the roster and it
-  // lands on the mutator phase's opening rows, beside the rules those
-  // rows open
-  14: ["duster"],
-  15: ["blighter"],
-  16: ["railhead"],
-  17: ["drifter"],
-  18: ["stinger"],
+  // and the RAILHEAD SITS INSIDE THEM at 29, which is the one row that
+  // breaks the set: it is the last of Serpulo's half of the roster
+  25: ["duster"],
+  27: ["blighter"],
+  29: ["railhead"],
+  31: ["drifter"],
+  33: ["stinger"],
 };
 
-/** the last level that hands over a gun — past the build phase's top, and
- *  what the roster's own invariant is checked against */
-const ROSTER_LAST = 18;
+/** the last level that hands over a gun — the top of the track, and what
+ *  the roster's own invariant is checked against */
+const ROSTER_LAST = 33;
+
+/**
+ * THE UPGRADE POINTS — the one reward on the track that is a NUMBER
+ * rather than a thing, and the currency the Upgrades board is bought
+ * with (skills.ts).
+ *
+ * ONE A LEVEL IS THE FLOOR AND THIS TABLE IS THE EXCEPTIONS. A level the
+ * guns, the maps and the rules all step over pays TWO, so a breather row
+ * hands over a rank on a dial instead of nothing — which is what lets the
+ * roster come every other level at all. Vary a level by writing it here;
+ * everything else pays one.
+ *
+ * THE PAYROLL RUNS TO SKILL_POINT_LEVELS AND NOT TO MAX_LEVEL. The XP
+ * curve is authored to pay a level's worth of climb that far (economy.ts)
+ * and the rows past the track's top hand over their point and nothing
+ * else — which is the only thing above MAX_LEVEL there is to earn.
+ */
+const POINTS: Readonly<Record<number, number>> = {
+  4: 2, 6: 2, 8: 2, 10: 2, 28: 2, 30: 2, 32: 2,
+};
+
+/** the points one level pays — zero past the payroll's end */
+export const pointsAt = (level: number): number =>
+  level >= 1 && level <= SKILL_POINT_LEVELS ? (POINTS[level] ?? 1) : 0;
+
+/** ...and every point a save standing at `level` has been paid */
+export function pointsThrough(level: number): number {
+  let out = 0;
+  for (let l = 1; l <= Math.min(Math.floor(level), SKILL_POINT_LEVELS); l++) out += pointsAt(l);
+  return out;
+}
+
+/** the whole budget the tree may ever spend (progress.ts clamps to it) */
+export const TOTAL_POINTS = pointsThrough(SKILL_POINT_LEVELS);
 
 
 /**
@@ -440,16 +487,17 @@ const TURRETS_DEALT = dealTurrets();
   }
   if (ROSTER_LAST > MAX_LEVEL)
     throw new Error(`the roster runs to level ${ROSTER_LAST}, past the top of the track`);
-  // ...AND THE ROWS ARE UNBROKEN FROM 2. One gun a level is the rule the
-  // phase is dealt by, so a hole in the run is the failure to catch — the
-  // roster may finish before the phase does (it fills it exactly today),
-  // but it may not skip a row on the way there
-  Object.keys(UNLOCKS)
-    .map(Number)
-    .sort((a, b) => a - b)
-    .forEach((l, i) => {
-      if (l !== i + 2) throw new Error(`the roster skips level ${i + 2} — one turret a level from 2`);
-    });
+  // ...AND THE CADENCE IS THE ONE THE TABLE'S NOTE CLAIMS: 2, 3, then
+  // every other level to ROSTER_LAST. A gun that drifts off it puts two
+  // guns in one glance again, or leaves a row with nothing but points
+  const rows = Object.keys(UNLOCKS).map(Number).sort((a, b) => a - b);
+  const want = [2, 3, ...rows.slice(2).map((_, i) => 5 + 2 * i)];
+  rows.forEach((l, i) => {
+    if (l !== want[i])
+      throw new Error(`the roster deals a turret on level ${l}, not ${want[i]} — 2, 3, then every other level`);
+  });
+  if (rows[rows.length - 1] !== ROSTER_LAST)
+    throw new Error(`the roster closes on level ${rows[rows.length - 1]}, not ROSTER_LAST`);
 })();
 
 /** the level a turret joins the roster — 1 for the starting four */
@@ -502,12 +550,15 @@ const DEALT: Map<number, UpgradeKind[]> = UPGRADES_ON_TRACK ? dealUpgrades() : n
  * the eye has to re-find it every row. Fixed slots mean a player learns
  * where to look once.
  *
- * Smallest change to the board first: a turret is one more card in the
- * deal, a module is what rides it, a rule changes the fight, and a pace
- * or a MAP is a place to take all of it — so the maps come last, where a
- * row's biggest reward sits at its end.
+ * Smallest change to the board first: a point is a number, a turret is
+ * one more card in the deal, a module is what rides it, a rule changes
+ * the fight, and a pace or a MAP is a place to take all of it — so the
+ * maps come last, where a row's biggest reward sits at its end.
  */
 const REWARD_ORDER: readonly Reward["kind"][] = [
+  // the points lead: every row has them, so a fixed first slot is one
+  // place the eye never has to re-find
+  "points",
   "turret",
   "mod",
   "relic",
@@ -553,6 +604,8 @@ const rewardRank = (r: Reward): number => REWARD_ORDER.indexOf(r.kind);
 export function rewardsAt(level: number, shelved = false): Reward[] {
   const showWorld = (id: string): boolean => shelved || !worldHidden(id);
   const out: Reward[] = [];
+  const points = pointsAt(level);
+  if (points > 0) out.push({ kind: "points", amount: points });
   for (const id of TURRETS_DEALT.get(level) ?? []) out.push({ kind: "turret", id });
   if (level === 1) {
     for (const id of STARTING_MODS) out.push({ kind: "mod", id });
@@ -582,30 +635,41 @@ export const TRACK: readonly { level: number; rewards: Reward[] }[] = Array.from
 );
 
 /**
- * EVERY LEVEL OF THE TRACK CARRIES SOMETHING — the header's claim, checked
- * at import rather than trusted. The two phases are dense and back to back
- * now, so a bare row means a table has drifted off the seam (a mod moved
- * out of the build phase, a rule dropped, MAX_LEVEL raised past the last
- * one) and not a deliberate breather.
+/**
+ * EVERY LEVEL OF THE TRACK CARRIES SOMETHING — the header's claim, and
+ * the UPGRADE POINTS are what make it true on every row. So the check
+ * worth running is the sharper one, and it runs over the DEALT part of
+ * the track (to ROSTER_LAST): A ROW THERE THAT PAYS NOTHING BUT POINTS
+ * PAYS DOUBLE, and no other row does.
+ *
+ * Both directions are drift worth catching. A row that lost its gun to a
+ * re-spacing and still pays one point is a bare row wearing a reward; a
+ * row that got a gun back and still pays two is overpaying for a breather
+ * it is no longer taking.
  *
  * IT IS CHECKED AGAINST THE TABLES AND NOT AGAINST THE SHELF
  * (rewardsAt's `shelved`). With fifteen of the seventeen boards off the
- * menu, level 15 hands out nothing a player can see — its one reward was
- * Whitepeak — and that is the shelf doing exactly what it is for, not a
- * table that has drifted. Putting the boards back fills those rows again
- * without a line moving. What this still catches is the thing it was
- * written for: a level whose tables are empty on their own.
+ * menu, several build-phase rows hand out nothing a player can see, and
+ * that is the shelf doing exactly what it is for, not a table that has
+ * drifted.
  */
 (() => {
-  const authored = Array.from({ length: MAX_LEVEL }, (_, i) => ({
-    level: i + 1,
-    rewards: rewardsAt(i + 1, true),
-  }));
-  const bare = authored.filter((r) => r.rewards.length === 0).map((r) => r.level);
-  if (bare.length > 0)
-    throw new Error(
-      `the track hands nothing out on level${bare.length > 1 ? "s" : ""} ${bare.join(", ")}`,
-    );
+  for (let level = 1; level <= MAX_LEVEL; level++) {
+    const rewards = rewardsAt(level, true);
+    if (rewards.length === 0) throw new Error(`the track hands nothing out on level ${level}`);
+    // ...and only up to the last gun. Past ROSTER_LAST the track IS the
+    // payroll and every row is a point on its own
+    if (level > ROSTER_LAST) continue;
+    const bare = rewards.every((r) => r.kind === "points");
+    const paid = pointsAt(level);
+    if (bare && paid < 2)
+      throw new Error(`level ${level} hands out nothing but ${paid} point — a breather row pays two`);
+    if (!bare && paid !== 1)
+      throw new Error(`level ${level} pays ${paid} points beside its other rewards — only a breather row pays more`);
+  }
+  for (const l of Object.keys(POINTS).map(Number))
+    if (l < 1 || l > SKILL_POINT_LEVELS)
+      throw new Error(`the track pays points on level ${l}, off the payroll`);
 })();
 
 /** the mutators a level has put in the deck — empty through the whole build phase */
@@ -673,14 +737,19 @@ export function upgradesAt(level: number): Record<TowerKind, UpgradePoints> {
   ) as Record<TowerKind, UpgradePoints>;
 }
 
-/** the next level that hands out anything, past `level`; null at the top */
+/** the next level that hands out anything BESIDES points, past `level`;
+ *  null at the top. Every level pays a point, so "anything" would always
+ *  be the very next row and answer nothing */
 export function nextRewardLevel(level: number): number | null {
-  for (let l = level + 1; l <= MAX_LEVEL; l++) if (rewardsAt(l).length > 0) return l;
+  for (let l = level + 1; l <= MAX_LEVEL; l++)
+    if (rewardsAt(l).some((r) => r.kind !== "points")) return l;
   return null;
 }
 
 /** a reward in the player's own words */
 export function rewardText(r: Reward): string {
+  if (r.kind === "points")
+    return `${r.amount} Upgrade Point${r.amount === 1 ? "" : "s"}`;
   if (r.kind === "world") return `Map: ${WORLDS.find((w) => w.id === r.worldId)?.name ?? "Unknown"}`;
   if (r.kind === "turret") return `Turret: ${TOWERS[r.id].name}`;
   if (r.kind === "mod") return `Mod: ${modName(modDef(r.id))}`;
@@ -692,6 +761,8 @@ export function rewardText(r: Reward): string {
 
 /** ...and what it does, for the hover card */
 export function rewardBlurb(r: Reward): string {
+  if (r.kind === "points")
+    return "The campaign's own currency, paid for every level and kept for good. Points are spent on the Upgrades board, where each one raises a dial that every turret on every board keeps — there is no other thing to spend them on and no run can take them back.";
   if (r.kind === "world") return "A map the campaign can be deployed on.";
   if (r.kind === "turret") return TOWER_DESC[r.id];
   if (r.kind === "mod") return modBlurb(modDef(r.id));
@@ -716,6 +787,7 @@ export function rewardBlurb(r: Reward): string {
  * add — it is bought once and it is on.
  */
 export function rewardNote(r: Reward): string | null {
+  if (r.kind === "points") return "Refundable in full, any time.";
   if (r.kind === "turret") return targetingLine(TOWERS[r.id]);
   if (r.kind !== "mod") return null;
   return "Every copy adds its effect again.";

@@ -42,12 +42,22 @@ faces is a real statement about what the whole board is for.
 
 ## The points, and the missing cap
 
-**One a level, levels 1 to 100** (`SKILL_POINT_LEVELS`, `economy.ts`), so a save holds at most
-100 and a rank costs one. The climb ramps to those hundred levels rather than charging a flat
-price for each — 2,500 XP for the first and 500,000 for the hundredth, the whole of it about
-ninety-nine Nemesis clears. See `docs/economy.md`.
+They are called **upgrade points** everywhere a player sees them — the tab that spends them is
+Upgrades, the track prints them with a gold token (`components/currencyArt.ts`), and a rank costs
+one.
 
-**A dial has no ceiling a player can reach.** The pool is the only limit there is: all 100 points
+**Levels 1 to 100 pay them** (`SKILL_POINT_LEVELS`, `economy.ts`), but *how many* a level pays is
+the track's and not the climb's: `POINTS` in `game/track.ts` is one a level by default and two on
+a level that hands over nothing else, which is how the roster can arrive every other level without
+leaving a bare row. `TOTAL_POINTS` is what the whole track pays — **107** today — and that, not
+the level count, is the budget `progress.ts` clamps a save to. Vary a level by writing it into
+`POINTS`; the progress row and the pool follow.
+
+The climb ramps to those hundred levels rather than charging a flat price for each — 2,500 XP for
+the first and 500,000 for the hundredth, the whole of it about ninety-nine Nemesis clears. See
+`docs/economy.md`.
+
+**A dial has no ceiling a player can reach.** The pool is the only limit there is: every point
 may go into Attack Damage if that is the board you want. `MAX_RANKS` is 1000 — a runaway guard
 against a stuck key or a bad save, set far past what any save can pay for, and **nothing prints
 it**. A board that drew "12 / 1000" would be drawing a bar that never fills.

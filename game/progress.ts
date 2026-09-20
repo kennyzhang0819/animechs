@@ -2,7 +2,7 @@ import { cleanFamilies, VISIBLE_WORLDS, WORLD, WORLDS, type FamilyKey } from "./
 import { cleanMutations, type MutationId } from "./mutation";
 import { tierXpBonus, TOP_TIER } from "./ladder";
 import { ADMIN_ENABLED } from "./env";
-import { levelForXp, missionXp, skillPointsAt, SKILL_POINT_LEVELS } from "./economy";
+import { levelForXp, missionXp } from "./economy";
 import {
   MAX_RANKS,
   NO_SKILLS,
@@ -11,7 +11,7 @@ import {
   spentSkillPoints,
   type SkillPoints,
 } from "./skills";
-import { MAX_LEVEL, techStateFor, worldUnlockLevel } from "./track";
+import { MAX_LEVEL, pointsThrough, techStateFor, TOTAL_POINTS, worldUnlockLevel } from "./track";
 import { type TechState } from "./tech";
 import { clearSave, readSave, writeSave } from "./storage";
 import { TOWER_KINDS, type TowerKind } from "./types";
@@ -259,12 +259,12 @@ const devUnlocking = (p?: { devGrantOff?: boolean }): boolean =>
 
 /** the stored spend, clamped: a node past MAX_RANKS, a node this build has
  *  never heard of (the tree that was one line a turret wrote those), or a
- *  spend past what 100 levels can pay all degrade rather than crash */
+ *  spend past the track's whole payroll all degrade rather than crash */
 function readSkills(v: unknown): SkillPoints {
   if (!v || typeof v !== "object" || Array.isArray(v)) return {};
   const raw = v as Record<string, unknown>;
   const out: SkillPoints = {};
-  let budget = SKILL_POINT_LEVELS;
+  let budget = TOTAL_POINTS;
   for (const node of SKILL_NODES) {
     const n = raw[node.id];
     if (typeof n !== "number" || !(n > 0)) continue;
@@ -567,12 +567,12 @@ export function techOf(p: Progress): TechState {
 // ---------- the skill tree ----------
 
 /**
- * THE POINTS THIS SAVE HAS BEEN PAID — one a level to
- * SKILL_POINT_LEVELS, and the dev door pays the lot (the same door that
- * plays every save at the top of the track).
+ * THE POINTS THIS SAVE HAS BEEN PAID — what the track's payroll owes at
+ * this level (track.ts POINTS), and the dev door pays the lot (the same
+ * door that plays every save at the top of the track).
  */
 export const skillPointsOf = (p: Progress): number =>
-  devUnlocking(p) ? SKILL_POINT_LEVELS : skillPointsAt(levelOf(p));
+  devUnlocking(p) ? TOTAL_POINTS : pointsThrough(levelOf(p));
 
 /** ...and the ones still in hand — the one number the board prints */
 export const skillPointsLeft = (p: Progress): number =>

@@ -14,6 +14,7 @@ import {
   type SkillNode,
 } from "@/game/skills";
 import { HoverCard, useHoverCard } from "./HoverCard";
+import { CurrencyIcon } from "./Items";
 import { MOD_GRID, modGlyph } from "./modArt";
 import { tile } from "./tile";
 
@@ -113,8 +114,9 @@ export default function SkillTree({
   return (
     <div className="ui-zoom mx-auto flex w-full max-w-4xl flex-1 flex-col gap-3 overflow-y-auto px-4 pt-[6.5rem] pb-12">
       <div className="flex items-center justify-between gap-4 px-1">
-        <span className="font-display text-2xl font-bold">
-          <span className="text-[#A6A6AF]">Number of points: </span>
+        <span className="flex items-center gap-2 font-display text-2xl font-bold">
+          <CurrencyIcon glyph="point" className="h-6 w-6" />
+          <span className="text-[#A6A6AF]">Upgrade Points: </span>
           <span style={{ color: POINT_COLOR }}>{skillPointsLeft(progress)}</span>
         </span>
         <button

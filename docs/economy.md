@@ -231,9 +231,11 @@ A Nemesis clear pays 100,000, so **level 101 is ninety-nine clears** and the fir
 are two and a half. That front-loading is the point: a new save is levelling while it is still
 learning the board, and the grind arrives only once there is something to grind for.
 
-- **Levels 1 to `SKILL_POINT_LEVELS`** (100) each pay **one skill point** — a save that reaches
-  100 has 100 to spend over the 200 ranks of the skill tree (`docs/skills.md`). This is the climb
-  that is actually *for* something, and it is also exactly the ramp.
+- **Levels 1 to `SKILL_POINT_LEVELS`** (100) each pay an **upgrade point**, and the track says how
+  many: one by default, two on a level that hands over nothing else (`POINTS` in `game/track.ts`).
+  A save that reaches 100 has `TOTAL_POINTS` — 107 today — to spend on the dials
+  (`docs/skills.md`). This is the climb that is actually *for* something, and it is also exactly
+  the ramp.
 - **Levels 100 to `LEVEL_CAP`** cost `XP_PER_LEVEL` each and hand over nothing. The number still
   moves, and that is all it does.
 

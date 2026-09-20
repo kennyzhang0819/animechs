@@ -28,7 +28,7 @@ import type { TowerKind } from "@/game/types";
 import { upgradeDef } from "@/game/upgrades";
 import { BackButton, BoardTabs } from "./Board";
 import { HoverCard, useHoverCard } from "./HoverCard";
-import { itemCount } from "./Items";
+import { CurrencyIcon, itemCount } from "./Items";
 import Codex from "./Codex";
 import SkillTree from "./SkillTree";
 import { bandFor, MutationFace, MUT_LIT } from "./mutationFace";
@@ -84,6 +84,9 @@ type TabId = (typeof TABS)[number]["id"];
 /** the colour a reward chip wears, by what it is — except a turret, which
  *  wears its RARITY (rarityOf below) rather than one flat orange */
 const REWARD_COLOR: Record<Reward["kind"], string> = {
+  // the points wear the tree's own gold, the same colour the board that
+  // spends them prints its pool in (SkillTree.tsx)
+  points: POINT_COLOR,
   world: "#7BE58A",
   turret: "#FF9A62",
   // a mutator wears the codex's pink here, not its own weight band: the
@@ -146,6 +149,7 @@ function TurretFace({ kind }: { kind: TowerKind }) {
 }
 
 function RewardFace({ reward }: { reward: Reward }) {
+  if (reward.kind === "points") return <CurrencyIcon glyph="point" className="h-[22px] w-[22px]" />;
   if (reward.kind === "world") return <MapThumb mapId={worldMapId(reward.worldId)} />;
   if (reward.kind === "mutator") return <MutationFace id={reward.id} size="h-6 w-6" />;
   // a module has no sprite — it is not a building — so it wears the same
@@ -214,6 +218,10 @@ function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
   const { color, tag } = rewardLook(reward);
   const rarity = tag;
   const text = rewardText(reward);
+  // THE AMOUNT RIDES IN THE CORNER, not in the face: the icon is what
+  // says which currency and the badge is what says how much, so a level
+  // paying two points is the same picture with a different number on it
+  const count = reward.kind === "points" && reward.amount > 1 ? reward.amount : null;
   // "auto": the list scrolls, so which side of the window a chip is on is
   // not a property of its row — the card picks its side when it opens
   const tip = useHoverCard("auto");
@@ -226,7 +234,7 @@ function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
           rewardNote(reward) ? `. ${rewardNote(reward)}` : ""
         }`}
         {...tip.anchorProps}
-        className="flex h-9 w-9 shrink-0 cursor-default focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+        className="relative flex h-9 w-9 shrink-0 cursor-default focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
       >
         {/* THE FRAME FADES WITH THE FACE, so a reward the save has not
             reached reads as one dim thing rather than a lit border round
@@ -244,6 +252,11 @@ function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
         >
           <RewardFace reward={reward} />
         </span>
+        {count !== null && (
+          <span className="ms-tile-count" style={{ color, opacity: reached ? 1 : 0.45 }}>
+            {count}
+          </span>
+        )}
       </span>
       <HoverCard
         tip={tip}

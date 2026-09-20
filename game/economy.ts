@@ -395,9 +395,10 @@ const SC2_MASTERY: readonly number[] = [
 export const XP_PER_LEVEL = 500_000;
 
 /**
- * THE LAST LEVEL THAT PAYS A SKILL POINT, and therefore how many points a
- * save can ever hold: one for level 1 and one for every level after it to
- * here. It is also where the ramp ends and the flat climb starts — see
+ * THE LAST LEVEL THAT PAYS AN UPGRADE POINT. HOW MANY it pays is the
+ * track's (track.ts POINTS — one a level, two on a level that hands over
+ * nothing else), and the budget a save can ever hold is TOTAL_POINTS
+ * there. This is also where the ramp ends and the flat climb starts — see
  * docs/skills.md.
  */
 export const SKILL_POINT_LEVELS = 100;
@@ -437,10 +438,6 @@ const AT: readonly number[] = (() => {
   for (let i = 1; i < STEPS.length; i++)
     if (STEPS[i] < STEPS[i - 1]) throw new Error(`the climb falls at level ${i + 1}`);
 })();
-
-/** the points a save standing at `level` has been paid, spent or not */
-export const skillPointsAt = (level: number): number =>
-  Math.max(0, Math.min(SKILL_POINT_LEVELS, Math.floor(level)));
 
 /** the highest level a save can stand at; XP past it banks and does nothing */
 export const LEVEL_CAP = 1000;
@@ -484,10 +481,9 @@ export function levelProgress(xp: number): { level: number; into: number; need: 
   return { level, into, need };
 }
 
-/** the scrap sprite and colour (Mindustry Items.scrap, 777777, lifted) */
-export const SCRAP_ICON = "/mindustry/sprites/items/item-scrap.png";
+/** the scrap tint — the sprite is drawn in code (components/currencyArt.ts) */
 export const SCRAP_COLOR = "#B8B8C0";
 /** XP has no Mindustry item — it draws as a star in this colour */
 export const XP_COLOR = "#7BDFF2";
-/** the skill-point colour, the tree's own gold */
+/** the upgrade-point colour, the tree's own gold */
 export const POINT_COLOR = "#FFD37F";
