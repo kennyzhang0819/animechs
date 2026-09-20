@@ -104,6 +104,8 @@ import {
   UI_SCALES,
   saveRunPick,
   techOf,
+  topOpenTier,
+  difficultyLock,
   worldLock,
   GAME_MODE_DEFAULT,
   type GameMode,
@@ -132,13 +134,7 @@ import {
 } from "@/game/storage";
 import { BUILD } from "@/game/version";
 import { BUILD_COLS, BUILD_SLOTS, slotForCode, type BuildSlot } from "@/game/tech";
-import {
-  difficultyOpen,
-  lockedMutators,
-  MUTATORS_FROM,
-  rewardsAt,
-  rewardText,
-} from "@/game/track";
+import { lockedMutators, rewardsAt, rewardText } from "@/game/track";
 import { TOWER_DESC, TOWERS } from "@/game/constants";
 import { TOWER_ICONS } from "@/game/towerIcons";
 import { TOWER_KINDS, type RGB } from "@/game/types";
@@ -595,18 +591,6 @@ const xpBonusText = (mult: number): string => {
 };
 
 /**
- * THE HARDEST DIFFICULTY THAT ROLLS NO RULES — Nemesis, the whole script
- * at full count. It is the ceiling for a save below the mutator phase,
- * and where a stored pick that has become unplayable lands (see the
- * clamp below): a save whose difficulty was set on the dev door and then
- * reset must not sit pointing at a run it cannot deploy.
- */
-const TOP_RULELESS_TIER = Math.max(
-  0,
-  ...Array.from({ length: RUNG_COUNT }, (_, t) => t).filter((t) => tierMutationCount(t) === 0),
-);
-
-/**
  * THE OBJECTIVE PANEL — WHAT THIS RUN IS FOR, top-left under the shelf,
  * and on EVERY mission (levels.ts Mission).
  *
@@ -886,16 +870,15 @@ function MapPicker({
  * first frame. The rules themselves are still not spelled out — a player
  * finds those out by playing; only their number is promised.
  *
- * THE ONES THAT ROLL RULES ARE SHUT UNTIL THE SAVE HAS RULES (track.ts
- * difficultyOpen): Nemesis +1 and up promise a number of mutators, and a
- * deck with nothing in it makes that promise a lie. The four named
- * difficulties carry no rules and are open from level 1, so the whole
- * script at full count is always playable. IN CUSTOM MODE NOTHING IS
- * SHUT (see `custom`): the draw there is the whole catalog or the
- * player's own list, so the promise is good at any level.
+ * TWO THINGS SHUT A ROW (progress.ts difficultyLock). THE CLIMB: a rung
+ * wants the one below it beaten on some map, one named difficulty at a
+ * time up to Nemesis, which every rung above it also wants. THE DECK:
+ * Nemesis +1 and up promise a number of mutators, and a save below
+ * MUTATORS_FROM has none to roll. IN CUSTOM MODE NOTHING IS SHUT (see
+ * `custom`): the run pays nothing and the draw is the whole catalog.
  *
- * A SHUT ROW IS GREYED IN THE LIST AND NAMES ITS LEVEL IN THE DETAIL —
- * a row a player cannot click is a question, and the answer costs one
+ * A SHUT ROW IS GREYED IN THE LIST AND NAMES WHAT OPENS IT IN THE DETAIL
+ * — a row a player cannot click is a question, and the answer costs one
  * line beside the thing they are already looking at. The list itself
  * stays wordless, so nine greyed names do not become nine copies of the
  * same sentence.
@@ -911,7 +894,7 @@ const SWARM_SIZE: readonly string[] = [
 function DifficultyPicker({
   tier,
   world,
-  level,
+  progress,
   custom,
   onPick,
   onClose,
@@ -919,8 +902,8 @@ function DifficultyPicker({
   tier: number;
   /** the picked map, for a body count — null when the run is on Random */
   world: LevelSpec | null;
-  /** the level the save PLAYS at — what decides which rows are shut */
-  level: number;
+  /** the save — its clears and its level are what shut a row */
+  progress: Progress;
   /**
    * CUSTOM MODE OPENS THE WHOLE LADDER (GameMode). The gate above exists
    * so that a difficulty promising three mutators can actually draw
@@ -937,10 +920,11 @@ function DifficultyPicker({
   const rules = tierMutationCount(focus);
   const step = tierMutationStep(focus);
   const swarm = world ? budget(world, focus) : null;
-  const open = custom || difficultyOpen(level, rules);
+  const lockOf = (t: number) => (custom ? null : difficultyLock(progress, t));
+  const lock = lockOf(focus);
 
   const list = Array.from({ length: RUNG_COUNT }, (_, t) => {
-    const shut = !custom && !difficultyOpen(level, tierMutationCount(t));
+    const shut = lockOf(t) != null;
     return (
       <PickRow key={t} selected={t === tier} focused={t === focus} onPick={() => setFocus(t)}>
         <span
@@ -979,16 +963,21 @@ function DifficultyPicker({
         <DetailLine label="Pays">
           <span className="text-[#71717C]">No XP</span>
         </DetailLine>
-      ) : open ? (
+      ) : lock == null ? (
         <DetailLine label="Pays">
           <span style={{ color: XP_COLOR }}>{xpShareText(tierXpBonus(focus))}</span>
         </DetailLine>
+      ) : lock.kind === "clear" ? (
+        <DetailLine label="Opens on">
+          <span style={{ color: rungColor(lock.tier) }}>{rungLabel(lock.tier)}</span>
+          <span className="text-[#71717C]"> cleared, any map</span>
+        </DetailLine>
       ) : (
         <DetailLine label="Opens at">
-          <span style={{ color: POINT_COLOR }}>level {MUTATORS_FROM}</span>
+          <span style={{ color: POINT_COLOR }}>level {lock.level}</span>
         </DetailLine>
       )}
-      <SelectButton onClick={() => onPick(focus)} disabled={!open} />
+      <SelectButton onClick={() => onPick(focus)} disabled={lock != null} />
     </>
   );
 
@@ -1855,9 +1844,9 @@ export default function Animechs() {
   );
   const [level, setLevel] = useState<LevelSpec | null>(null);
   /**
-   * The difficulty macro: the rung the next run is played at. Every rung
-   * is open from the first run; this is the save's remembered pick
-   * (Progress.difficulty), Incursion on a fresh save.
+   * The difficulty macro: the rung the next run is played at — the save's
+   * remembered pick (Progress.difficulty), Incursion on a fresh save and
+   * clamped back to what the save has earned (difficultyLock).
    */
   const [tier, setTier] = useState(0);
   /**
@@ -1969,22 +1958,19 @@ export default function Animechs() {
   // the campaign save (bank, cleared levels, tech nodes) — localStorage,
   // so it loads in an effect; null only for the first client frame
   const [progress, setProgress] = useState<Progress | null>(null);
-  /** the level the save PLAYS at — the dev door's, so a fully unlocked
-   *  save sees every difficulty open. What gates the ladder's top six */
-  const playLevel = progress ? effectiveLevel(progress) : 1;
   /** A PICK THAT HAS GONE OUT OF REACH COMES BACK DOWN. The difficulty is
    *  saved with the run (progress.difficulty) and the save that wrote it
    *  may since have been reset, or written by the dev door — either way
    *  the deploy screen must never stand on a difficulty whose Start is
-   *  dead. Silent, and it costs nothing: the four named ones are open at
-   *  every level, so there is always somewhere for it to land.
+   *  dead. Silent, and it costs nothing: Incursion is open to every save,
+   *  so there is always somewhere for it to land.
    *  IN REGULAR MODE ONLY: custom opens the whole ladder (GameMode), so
    *  the clamp also fires the moment a player flips back to regular
-   *  standing on a rung the track has not reached */
+   *  standing on a rung the campaign has not earned */
   useEffect(() => {
-    if (mode === "regular" && !difficultyOpen(playLevel, tierMutationCount(tier)))
-      setTier(TOP_RULELESS_TIER);
-  }, [playLevel, tier, mode]);
+    if (mode === "regular" && progress && difficultyLock(progress, tier) != null)
+      setTier(topOpenTier(progress));
+  }, [progress, tier, mode]);
   // a finished run's settled payout: non-null exactly while the results
   // overlay shows the breakdown, and the guard against granting twice
   const [result, setResult] = useState<RunReward | null>(null);
@@ -3298,13 +3284,13 @@ export default function Animechs() {
               }}
             />
           )}
-          {picker === "difficulty" && (
+          {picker === "difficulty" && progress && (
             <DifficultyPicker
               tier={tier}
               // the body count on the detail pane is the PICKED map's, and
               // only custom mode has one — regular's is rolled on Start
               world={mode === "custom" ? pickedWorld : null}
-              level={playLevel}
+              progress={progress}
               custom={mode === "custom"}
               onClose={() => setPicker(null)}
               onPick={(t) => {

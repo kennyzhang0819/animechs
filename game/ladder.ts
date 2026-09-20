@@ -142,6 +142,17 @@ export const tierCountScale = (tier: number): number => RUNGS[clampTier(tier)].c
  *  points. Nothing else about it moves (docs/difficulty.md) */
 export const tierObjectiveHpScale = (tier: number): number => tierCountScale(tier);
 
+/** the rung a save must have cleared on SOME map to open this one, -1 for
+ *  none: the climb is one named difficulty at a time and stops asking at
+ *  Nemesis, so every rung above it wants the same clear (docs/difficulty.md) */
+export const tierClearNeeded = (tier: number): number =>
+  Math.min(clampTier(tier) - 1, XP_BASE_TIER);
+
+/** does a save whose best clear anywhere is `bestCleared` (0-based, -1 for
+ *  none) stand high enough on the climb to deploy this rung? */
+export const tierClimbOpen = (bestCleared: number, tier: number): boolean =>
+  bestCleared >= tierClearNeeded(tier);
+
 /** how many mutator steps above Nemesis a rung stands — 0 on every named one */
 export const tierMutationStep = (tier: number): number =>
   Math.max(0, clampTier(tier) - MUT_FIRST_TIER + 1);

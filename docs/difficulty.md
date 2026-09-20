@@ -88,6 +88,35 @@ tier rolls make it a good deal more than a third harder.
 A clear pays the same the first time and the fifth. There is no first-clear bonus: a tier is
 worth exactly what its kills are.
 
+## Climbing it — a rung is earned by the one below it
+
+**A difficulty opens on the one below it cleared, on any map.** A fresh save may deploy
+Incursion and nothing else; clearing it anywhere opens Onslaught, clearing Onslaught opens
+Scourge, Scourge opens Nemesis. **The chain stops asking at Nemesis**: every rung above it
+— Nemesis +1 … +5 — wants that same Nemesis clear and no more, because what separates them
+is the mutator roll rather than the fight, and the roll has its own gate (below).
+
+`tierClearNeeded` is the whole rule — `min(tier - 1, XP_BASE_TIER)`, the rung that must
+have been beaten — and `progress.ts` answers it against the save: `bestClearAnywhere` is
+the best of `clearedByMap`'s per-world rows, and `difficultyLock` returns *why* a rung is
+shut so the picker can say it in one line. **A clear counts wherever it was won**: the
+per-world record stays per-world and the map list still prints it, but the climb reads the
+best row, so a player is never asked to re-clear Incursion on a map the campaign has not
+opened yet.
+
+**Two gates, and the climb is reported first**, because it is the one a player opens by
+playing. The second is the deck: a difficulty promising three mutators needs three to draw,
+so the rules ramp also stays shut until `MUTATORS_FROM` (`track.ts difficultyOpen`).
+
+**Custom mode asks for neither** (`GameMode`): it pays nothing and records nothing, so
+there is nothing for an unearned rung to be a shortcut to — and its draw is the whole
+catalog, so the mutator promise is good at any level. The dev grant opens everything for
+the same reason it opens the track.
+
+A pick that goes out of reach comes back down rather than dying: the deploy screen clamps
+to `topOpenTier` whenever the save cannot deploy what it is standing on, which is what a
+reset, a wipe or a flip back from custom does.
+
 ## Extending the ladder
 
 `RUNG_COUNT` is nine because nine is where the tuning has been checked, not because anything
@@ -95,9 +124,9 @@ is finite. **Every tier's dials are arithmetic on its index** (`RUNGS`), and `cl
 is an unbounded int per world, so raising `RUNG_COUNT` is the whole edit a tenth tier
 needs.
 
-**The ladder is climbed once per world.** `RUNGS` says what a tier *is*; how far up it a
-save has got is a per-world number (`clearedByMap` in `progress.ts`), so standing on tier 8
-somewhere says nothing about anywhere else.
+**The record is per world; the climb is not.** `RUNGS` says what a tier *is*; how far up it
+a save has got on one map is `clearedByMap` in `progress.ts`, and what it may DEPLOY reads
+the best of those rows (above), so a clear earned anywhere counts everywhere.
 
 A tier's colour is its only identity beyond its number: four anchors — green, gold, red and
 the purple the hidden top tier wore — evenly spaced and interpolated. Label and colour clamp

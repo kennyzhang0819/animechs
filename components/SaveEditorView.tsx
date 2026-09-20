@@ -7,7 +7,6 @@ import {
   RUNG_COUNT,
   rungColor,
   rungLabel,
-  tierMutationCount,
   TOP_TIER,
   XP_BASE_TIER,
 } from "@/game/ladder";
@@ -15,6 +14,8 @@ import { WORLDS } from "@/game/levels";
 import { MODS } from "@/game/mods";
 import { MUTATIONS } from "@/game/mutation";
 import {
+  bestClearAnywhere,
+  difficultyLock,
   effectiveLevel,
   levelOf,
   loadProgress,
@@ -24,7 +25,6 @@ import {
 } from "@/game/progress";
 import { RELICS } from "@/game/relics";
 import {
-  difficultyOpen,
   MAX_LEVEL,
   modsAt,
   mutatorsAt,
@@ -306,12 +306,12 @@ export default function SaveEditorView() {
           </div>
 
           <div className="mt-4 sm:mt-0">
-            {/* the ladder is the reason anyone comes to this page: the
-                difficulties that ROLL RULES are the one thing a level gates */}
+            {/* the ladder is the reason anyone comes to this page, and it is
+                the DRAFT's own reach: the record below moves these too */}
             <div className="mb-1 text-[15px] text-[#A6A6AF]">Difficulties</div>
             <div className="flex flex-wrap gap-1.5">
               {Array.from({ length: RUNG_COUNT }, (_, t) => t).map((t) => {
-                const open = difficultyOpen(plays, tierMutationCount(t));
+                const open = difficultyLock(draft, t) == null;
                 return (
                   <span
                     key={t}
@@ -326,8 +326,11 @@ export default function SaveEditorView() {
               })}
             </div>
             <div className="mt-2 text-[13px] text-[#71717C]">
-              Everything above {rungLabel(XP_BASE_TIER)} rolls rules, and stays shut until level{" "}
-              {MUTATORS_FROM} has rules to roll.
+              Each one opens on the one below it cleared anywhere, up to{" "}
+              {rungLabel(XP_BASE_TIER)} — this save's best is{" "}
+              {bestClearAnywhere(draft) >= 0 ? rungLabel(bestClearAnywhere(draft)) : "nothing"}.
+              Everything above {rungLabel(XP_BASE_TIER)} rolls rules, so it also stays shut until
+              level {MUTATORS_FROM} has rules to roll.
             </div>
 
             <div className="mt-4 border-t border-[#2E2E36] pt-3">
@@ -350,8 +353,8 @@ export default function SaveEditorView() {
       <div className={CARD}>
         <div className={HEAD}>The record — the best difficulty beaten on each map</div>
         <p className="mb-2 text-[15px] text-[#71717C]">
-          A record and never a gate: every difficulty is open from the first run, and this is only
-          what the map list prints. 0 is never won on.
+          The map list prints each row, and the BEST of them is the climb: a difficulty opens on the
+          one below it cleared anywhere (progress.ts difficultyLock). 0 is never won on.
         </p>
         <div className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
           {WORLDS.map((w) => {

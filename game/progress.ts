@@ -1,6 +1,12 @@
 import { cleanFamilies, VISIBLE_WORLDS, WORLD, WORLDS, type FamilyKey } from "./levels";
 import { cleanMutations, type MutationId } from "./mutation";
-import { tierXpBonus, TOP_TIER } from "./ladder";
+import {
+  tierClearNeeded,
+  tierClimbOpen,
+  tierMutationCount,
+  tierXpBonus,
+  TOP_TIER,
+} from "./ladder";
 import { ADMIN_ENABLED } from "./env";
 import { levelForXp, missionXp } from "./economy";
 import {
@@ -11,7 +17,15 @@ import {
   spentSkillPoints,
   type SkillPoints,
 } from "./skills";
-import { MAX_LEVEL, pointsThrough, techStateFor, TOTAL_POINTS, worldUnlockLevel } from "./track";
+import {
+  difficultyOpen,
+  MAX_LEVEL,
+  MUTATORS_FROM,
+  pointsThrough,
+  techStateFor,
+  TOTAL_POINTS,
+  worldUnlockLevel,
+} from "./track";
 import { type TechState } from "./tech";
 import { clearSave, readSave, writeSave } from "./storage";
 import { TOWER_KINDS, type TowerKind } from "./types";
@@ -117,15 +131,13 @@ export interface Progress {
   xp: number;
   /**
    * THE BEST THIS SAVE HAS DONE ON EACH WORLD, keyed by world id: the
-   * NUMBER of the highest level beaten there (1..RUNG_COUNT), so a world
-   * whose value is 7 has had Level 7 cleared on it. Every level is open
-   * from the first run — the ladder is not climbed one rung at a time any
-   * more, and nothing is paid for a first clear — so this is a record and
-   * never a gate: the map list prints it, and that is all it does. A world
+   * NUMBER of the highest difficulty beaten there (1..RUNG_COUNT), so a
+   * world whose value is 7 has had the seventh rung cleared on it. A world
    * absent from this record has never been won on and reads 0.
    *
-   * ONE NUMBER PER WORLD, NOT ONE FOR THE SAVE: beating Level 7 somewhere
-   * says nothing about anywhere else.
+   * ONE NUMBER PER WORLD, NOT ONE FOR THE SAVE, and the map list prints
+   * each one; the CLIMB reads the best of them (bestClearAnywhere), because
+   * a rung is opened by beating the one below it ANYWHERE, not here.
    */
   clearedByMap: Record<string, number>;
   /**
@@ -622,6 +634,51 @@ export function refundAllSkills(): Progress {
 /** the number of the highest level this save has beaten on one world — 0 for none */
 export const bestClearOn = (p: Progress, worldId: string): number =>
   Math.min(TOP_TIER + 1, Math.max(0, Math.floor(p.clearedByMap[worldId] ?? 0)));
+
+/**
+ * THE HIGHEST RUNG THIS SAVE HAS CLEARED ANYWHERE — 0-based, -1 for a save
+ * that has never won. Read off the record rather than stored beside it, so
+ * a hand-edited clearedByMap and the climb can never disagree.
+ */
+export const bestClearAnywhere = (p: Progress): number => {
+  let best = 0;
+  for (const n of Object.values(p.clearedByMap ?? {}))
+    if (typeof n === "number" && Number.isFinite(n)) best = Math.max(best, Math.floor(n));
+  return Math.min(TOP_TIER + 1, best) - 1;
+};
+
+/** why a difficulty is shut: the rung that has to be cleared somewhere
+ *  first, or the level the track opens its mutators at */
+export type DifficultyLock =
+  | { kind: "clear"; tier: number }
+  | { kind: "level"; level: number };
+
+/**
+ * WHAT IS STILL STANDING BETWEEN THIS SAVE AND A DIFFICULTY — null when it
+ * is open. Two gates, and the climb is reported first because it is the one
+ * a player opens by playing: a rung wants the one below it beaten on SOME
+ * map (ladder.ts tierClearNeeded), and above Nemesis it also wants the
+ * mutator deck the track deals (docs/difficulty.md).
+ *
+ * CUSTOM MODE ASKS NOTHING — it pays nothing, so there is nothing for an
+ * unearned rung to be a shortcut to; its callers simply do not ask.
+ */
+export function difficultyLock(p: Progress, tier: number): DifficultyLock | null {
+  if (devUnlocking(p)) return null;
+  const need = tierClearNeeded(tier);
+  if (!tierClimbOpen(bestClearAnywhere(p), tier)) return { kind: "clear", tier: need };
+  if (!difficultyOpen(effectiveLevel(p), tierMutationCount(tier)))
+    return { kind: "level", level: MUTATORS_FROM };
+  return null;
+}
+
+/** the hardest difficulty this save may deploy — where a pick that has
+ *  gone out of reach lands */
+export function topOpenTier(p: Progress): number {
+  let top = 0;
+  for (let t = 1; t <= TOP_TIER; t++) if (difficultyLock(p, t) == null) top = t;
+  return top;
+}
 
 /**
  * WHAT IS STILL STANDING BETWEEN THIS SAVE AND A MAP — the level the
