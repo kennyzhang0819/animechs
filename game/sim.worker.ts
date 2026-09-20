@@ -47,7 +47,6 @@ const COMMANDS = new Set<string>([
   "skipToTime",
   "placeFormation",
   "placeTower",
-  "setBeaconOn",
   "placeMany",
   "placeLine",
   "placeRuler",
@@ -168,8 +167,6 @@ async function init(spec: LevelSpec, field: MessagePort | null, phys: MessagePor
     isGoal: s.field.isGoal,
     occupied: s.occupied,
     waterlogged: s.waterloggedMask(),
-    powered: s.poweredMask(),
-    beaconOn: s.beaconOnMask(),
     airRoutes: s.airRoutes(),
   });
   last = performance.now();

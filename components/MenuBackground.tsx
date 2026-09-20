@@ -281,13 +281,13 @@ export default function MenuBackground({
       if (!doc || !renderer) return;
       rng = mulberry32((Math.random() * 0x7fffffff) | 0);
       terrain = terrainFromMap(doc);
-      // NO BASE, NO SPAWN PADS, NO BEACONS, NO RAILS: the core and the
-      // beacons are buildings, the pads are an authoring mark and a rail
-      // bed is a mission saying where its body walks — the menu shows
-      // COUNTRY. The ground, its rock and its props are all a map is here
+      // NO BASE, NO SPAWN PADS, NO RAILS: the core is a building, the
+      // pads are an authoring mark and a rail bed is a mission saying
+      // where its body walks — the menu shows COUNTRY. The ground, its
+      // rock and its props are all a map is here
       renderer.rebuildTerrain(
         { terrain },
-        { wall: true, props: true, spawn: false, rails: false, base: false, beacon: false, mark: false },
+        { wall: true, props: true, spawn: false, rails: false, base: false, mark: false },
       );
       shots = shotsFor(terrain, rng);
     };

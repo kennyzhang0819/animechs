@@ -52,8 +52,8 @@ Three consequences for everything below:
 
 The run has ONE VERB: spend scrap to place a structure. Nothing is
 produced, nothing is commanded, nothing is hidden — a player sees the
-whole board from wave 1 and can put a turret anywhere their beacon zones
-reach. So a mission cannot ask for scouting, micro or an army. It can
+whole board from wave 1 and can put a turret anywhere on it. So a mission
+cannot ask for scouting, micro or an army. It can
 only ask the player to **spend somewhere other than the base**, and the
 whole of its difficulty is the cost of doing that.
 
@@ -168,12 +168,10 @@ What the archetype turned out to need, and what each piece is answering:
   would be a wave with extra steps, and this game already has a wave. The
   shipped siege posts nothing today; the mechanism is here for the day one
   wants to.
-- **THE DISTANCE IS THE POWER GRID AND NOT THE TERRAIN.** The core lights
-  ninety cells (`CORE_POWER_R`); every battery stands past it. So the
-  first can be answered by the longest gun in the game (railhead,
-  sixty-two) from the edge of your own light, and everything after that is
-  bought off a beacon — which is the archetype's own "a beacon that
-  reaches it", said in the only currency the map has.
+- **THE DISTANCE IS THE COST AND NOT THE TERRAIN.** Every battery stands
+  well out past the base's own ground, so the first can be answered by the
+  longest gun in the game (railhead, sixty-two tiles) from near home and
+  everything after that is a gun standing where it defends nothing.
 - **WHY THIS BOARD.** Sear's core is hard against the east edge of the
   caldera and every approach is from the west, so the four batteries are
   an ARC and not a ring: one due west, one north-east over the rim, and
@@ -365,9 +363,8 @@ What Thornway does with it, and what the mirror turned out to need:
 
 Own a place away from the base for a duration.
 
-Variants: capture points granting a global buff · a beacon that must
-stay powered · ground that must be kept clear of the swarm · zones that
-flip back the moment you leave.
+Variants: capture points granting a global buff · ground that must be
+kept clear of the swarm · zones that flip back the moment you leave.
 
 ### 5. Protect the second thing
 
@@ -417,11 +414,6 @@ map has to supply:
 - **Somewhere the objective is, that is not on the way to anything.** A
   gun placed there defends nothing, which is what makes buying it a
   decision.
-- **A beacon that reaches it.** Its price is the rung the run has reached on
-  the campaign's one ladder, not its own and not the map's
-  (docs/authoring-maps.md), so the entry fee is how DEEP into that ladder a
-  run has to go to stand a gun there — how many beacons it must already
-  have bought, and what the next rung asks.
 - **A reason the objective cannot be answered by one turret.** It fights
   back, it moves, it is only open for a moment, or it takes a damage type
   the player has to have drafted.

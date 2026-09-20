@@ -7,9 +7,6 @@ import {
   COLS,
   BASE_SIZE,
   H,
-  MAX_BEACONS,
-  BEACON_POWER_R,
-  BEACON_SIZE,
   ROWS,
   TOWERS,
   W,
@@ -32,7 +29,7 @@ import {
 import { unitAccent } from "./levels";
 import { MIN_RUN, pathProblems } from "./missions";
 import { canHoldSpawn, isWaterFloor, rebuildReserved } from "./terrain";
-import { WALL_DEEP, WALL_PINE, type MapBeacon, type Prop, type Terrain } from "./terrain";
+import { WALL_DEEP, WALL_PINE, type Prop, type Terrain } from "./terrain";
 
 // THE ZOOM FLOOR IS NO LONGER COVER. It used to be 1 — "the world fills
 // the viewport" — which meant the one view an author needs most, the whole
@@ -61,7 +58,6 @@ interface Snapshot {
   spawn: Uint8Array;
   pines: Prop[];
   decor: Prop[];
-  beacons: MapBeacon[];
   marks: MapMark[];
   base: { x: number; y: number; size: number };
 }
@@ -358,7 +354,6 @@ export class MapEditor {
     this.terrain.spawn.set(s.spawn);
     this.terrain.pines = s.pines;
     this.terrain.decor = s.decor;
-    this.terrain.beacons = s.beacons;
     this.terrain.marks = s.marks;
     rebuildReserved(this.terrain);
     this.terrain.base = s.base;
@@ -385,7 +380,6 @@ export class MapEditor {
       spawn: this.terrain.spawn.slice(),
       pines: this.terrain.pines.map((p) => ({ ...p })),
       decor: this.terrain.decor.map((p) => ({ ...p })),
-      beacons: this.terrain.beacons.map((r) => ({ ...r })),
       marks: this.terrain.marks.map((r) => ({ ...r, pts: r.pts?.map((p) => [p[0], p[1]] as [number, number]), opts: { ...r.opts } })),
       base: { ...this.terrain.base },
     });
@@ -484,14 +478,6 @@ export class MapEditor {
       // layer shields them from the eraser exactly as hiding the hills
       // shields the rock
       if (L.spawn) T.spawn[i] = 0;
-      // ...AND THE BEACONS, for the same reason and by the same rule. A
-      // beacon used to be removable only by clicking it with the Beacon
-      // brush in hand, which is a gesture nobody guesses: the eraser is
-      // the tool that takes things off a map, and a beacon is a thing on
-      // the map. Its whole footprint goes when the stroke touches any cell
-      // of it — erasing two thirds of a three-cell block would leave a
-      // beacon standing that the author was plainly rubbing out
-      if (L.beacon) this.removeBeaconAt(gx, gy);
       if (L.mark) this.removeMarkAt(gx, gy);
     }
     this.dirty = true;
@@ -545,75 +531,14 @@ export class MapEditor {
    * the swarm can never reach.
    */
   /**
-   * STAMP A BEACON HERE, or take the one that is already here back off.
-   *
-   * ONE CLICK, BOTH WAYS, because a beacon is a point and not a stroke:
-   * there is no brush size, no drag and nothing to erase over. Clicking a
-   * beacon removes it, which is the only gesture an author needs and the
-   * one they will reach for.
-   *
-   * IT LANDS ON ROCK AND NOWHERE ELSE. A beacon stands on a hill precisely
-   * so that nothing can reach it (terrain.ts MapBeacon) — one placed on
-   * open ground would be a beacon in the swarm's way, which is a promise
-   * this game does not keep about them. A click on floor does nothing
-   * rather than raising rock to oblige: the author asked for a beacon, not
-   * for terrain.
-   *
-   * IT CARRIES NO PRICE, AND NEITHER DOES THE MAP. What a beacon costs is
-   * the campaign's one rising ladder (constants.ts BEACON_LADDER): every
-   * beacon on every board is offered at the rung the run has reached, and
-   * buying any of them moves the rest up. Placing one here decides where
-   * a run may spread to and how dear the last acre is — nothing about
-   * price, which is why this editor has no price field anywhere in it.
-   */
-  private toggleBeacon(gx: number, gy: number): void {
-    // a hidden beacon layer is out of reach, exactly like the others
-    if (!this.layers.beacon) return;
-    const T = this.terrain;
-    const half = (BEACON_SIZE / 2) | 0;
-    const x0 = clamp(gx - half, 0, COLS - BEACON_SIZE);
-    const y0 = clamp(gy - half, 0, ROWS - BEACON_SIZE);
-    // a click anywhere on a standing beacon takes it off
-    if (this.removeBeaconAt(gx, gy)) return;
-    if (T.beacons.length >= MAX_BEACONS) return;
-    // every cell of the footprint has to be rock, and none of it a tree:
-    // a pine is a prop the swarm can clear out from under it
-    for (let y = y0; y < y0 + BEACON_SIZE; y++)
-      for (let x = x0; x < x0 + BEACON_SIZE; x++) {
-        const i = y * COLS + x;
-        if (!T.blocked[i] || T.wall[i] === WALL_PINE) return;
-      }
-    T.beacons.push({ x: x0, y: y0 });
-    this.dirty = true;
-  }
-
-  /**
-   * TAKE THE BEACON STANDING ON THIS CELL OFF, if one is — the whole
-   * three-cell block, whichever of its cells was hit. Says whether it
-   * removed one, which is what lets the Beacon brush use it as the first
-   * half of its toggle and the eraser use it on its own.
-   */
-  private removeBeaconAt(gx: number, gy: number): boolean {
-    const rs = this.terrain.beacons;
-    const hit = rs.findIndex(
-      (r) => gx >= r.x && gx < r.x + BEACON_SIZE && gy >= r.y && gy < r.y + BEACON_SIZE,
-    );
-    if (hit < 0) return false;
-    rs.splice(hit, 1);
-    this.dirty = true;
-    return true;
-  }
-
-  /**
-   * STAMP A MISSION MARK, or take one off — the beacon's toggle, over the
+   * STAMP A MISSION MARK, or take one off — one click both ways, over the
    * registry (missionMarks.ts).
    *
-   * IT ASKS LESS OF THE GROUND THAN A BEACON DOES. A beacon has to stand
-   * on rock because that is what it means; a mark is a place a mission
-   * will put something, and which ground that needs is the mission's
-   * business, not the brush's. What is refused is only what would be a
-   * mark nobody could ever see or use: off the board, or on top of one
-   * that is already there.
+   * IT ASKS LITTLE OF THE GROUND. A mark is a place a mission will put
+   * something, and which ground that needs is the mission's business, not
+   * the brush's. What is refused is only what would be a mark nobody
+   * could ever see or use: off the board, or on top of one that is
+   * already there.
    *
    * A CLICK ON A STANDING MARK SELECTS IT rather than removing it, because
    * the fields are the point — an author places one and then says which
@@ -1077,10 +1002,6 @@ export class MapEditor {
       this.placeBase(gx, gy);
       return;
     }
-    if (this.set.kind === "beacon") {
-      this.toggleBeacon(gx, gy);
-      return;
-    }
     if (this.set.kind === "mark") {
       this.toggleMark(gx, gy);
       return;
@@ -1390,46 +1311,8 @@ export class MapEditor {
     const s = this.scale * this.zoom;
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
 
-    // THE BEACONS THIS MAP CARRIES, whatever brush is in hand — they are a
-    // layer of the document and an author has to be able to see the shape
-    // they make without holding the brush that draws them. Each with the
-    // circle of ground it opens, because a beacon is that circle: two of
-    // them whose discs overlap completely are one beacon and a wasted
-    // price. Hiding the layer hides them, and puts them out of reach of
-    // every tool (renderer.ts TerrainLayers.beacon).
-    //
-    // NO PRICE IS DRAWN ON THEM ANY MORE. Each one used to wear its own
-    // four-figure number here, and that number no longer exists: a beacon
-    // costs whichever rung of the campaign's one ladder the run has
-    // reached (constants.ts BEACON_LADDER), so a price painted on one hill
-    // would be a lie about every other — and the ladder is not a map's to
-    // set, so there is nothing to draw here and no panel to draw it in.
-    //
-    // On the OVERLAY rather than in the terrain batch (Renderer.
-    // rebuildTerrain) because beacons are not tiles — they are a list of
-    // blocks with a circle each.
-    if (this.layers.beacon && this.terrain.beacons.length > 0) {
-      const side = BEACON_SIZE * CELL;
-      c.setLineDash([12 / s, 10 / s]);
-      c.strokeStyle = "rgba(255,211,127,0.35)";
-      c.lineWidth = 1.5 / s;
-      for (const r of this.terrain.beacons) {
-        c.beginPath();
-        c.arc((r.x + BEACON_SIZE / 2) * CELL, (r.y + BEACON_SIZE / 2) * CELL, BEACON_POWER_R, 0, Math.PI * 2);
-        c.stroke();
-      }
-      c.setLineDash([]);
-      c.fillStyle = "rgba(255,211,127,0.85)";
-      c.strokeStyle = "rgba(20,14,4,0.9)";
-      c.lineWidth = 1.5 / s;
-      for (const r of this.terrain.beacons) {
-        c.fillRect(r.x * CELL, r.y * CELL, side, side);
-        c.strokeRect(r.x * CELL, r.y * CELL, side, side);
-      }
-    }
-
-    // THE MISSION MARKS, on the same terms as the beacons: a list of
-    // blocks drawn over the ground rather than tiles in the batch. Each
+    // THE MISSION MARKS: a list of blocks drawn over the ground rather
+    // than tiles in the batch. Each
     // wears its kind's ink, and its FIELDS are printed on it — an author
     // has to be able to read "goad, train 2" off the map without clicking
     // every square, because the whole thing they are authoring is which
@@ -1533,26 +1416,6 @@ export class MapEditor {
       c.strokeStyle = "rgba(255,211,127,0.9)";
       c.lineWidth = 2 / s;
       c.strokeRect(x0, y0, side, side);
-      return;
-    }
-    if (this.set.kind === "beacon") {
-      const half = (BEACON_SIZE / 2) | 0;
-      const x0 = clamp(this.hoverGx - half, 0, COLS - BEACON_SIZE) * CELL;
-      const y0 = clamp(this.hoverGy - half, 0, ROWS - BEACON_SIZE) * CELL;
-      const side = BEACON_SIZE * CELL;
-      c.fillStyle = "rgba(255,211,127,0.25)";
-      c.fillRect(x0, y0, side, side);
-      c.strokeStyle = "rgba(255,211,127,0.9)";
-      c.lineWidth = 2 / s;
-      c.strokeRect(x0, y0, side, side);
-      // ...and the circle it would open, which is the whole reason to care
-      // where it goes
-      c.beginPath();
-      c.arc(x0 + side / 2, y0 + side / 2, BEACON_POWER_R, 0, Math.PI * 2);
-      c.setLineDash([12 / s, 10 / s]);
-      c.lineWidth = 1.5 / s;
-      c.stroke();
-      c.setLineDash([]);
       return;
     }
     if (this.set.kind === "path") {

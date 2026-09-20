@@ -264,29 +264,6 @@ const { COLS, ROWS, CELL } = C;
  * It stops at the goal, at a dead end, or on a cell it has already stood
  * on, so a field with a flat patch in it ends the walk instead of looping.
  */
-/**
- * EVERY BEACON ON THIS MAP SWITCHED ON — what a harness does before it
- * builds a board.
- *
- * A run may only build where its base and the beacons it has BOUGHT light
- * the ground (Sim.rebuildPower), and on a fresh board that is one circle
- * around the base. Every check below that fills a board is asking a
- * question about the SIM — does a round connect, does a step still fit in
- * a frame, does the death path get timed — and none of them is asking
- * whether the economy would have let a player open that much ground. A
- * board confined to the base's circle would answer all three wrongly: the
- * turrets would sit in a heap the swarm takes most of a minute to walk to,
- * and the contact these checks exist to time would never happen.
- *
- * So the harnesses buy the whole map open, for free, and the power rule is
- * tested where it belongs — by the placement test itself, and by the one
- * assertion in the sim check that the grid grows when a beacon is bought.
- */
-const openBoard = (s) => {
-  for (let i = 0; i < s.terrain.beacons.length; i++) s.setBeaconOn(i);
-  return s;
-};
-
 const roadToCore = (sim, from) => {
   const route = [];
   const seen = new Set();
@@ -632,37 +609,12 @@ const simProblems = [];
 let simDetail = "";
 try {
   reseed(7);
-  // THE BOARD IT RUNS ON HAS TO BE ONE A RUN CAN BUILD ON. This asks
-  // whether a round connects, and where a turret may legally stand is the
-  // POWER GRID's business: on a map with no beacons the only lit ground is
-  // the core's own circle, so the dozen tackers go down beside the base
-  // and the check becomes a test of how long a body takes to walk the
-  // whole map. So it takes the first playable world whose map carries
-  // beacons, and falls back to the first playable world when none does.
-  const fixture =
-    L.VISIBLE_WORLDS.find((w) => (M.OFFICIAL_MAPS.find((d) => d.id === w.map)?.beacons ?? []).length > 0) ??
-    L.VISIBLE_WORLDS[0];
+  const fixture = L.VISIBLE_WORLDS[0];
   const sim = new Sim(LA.specForTier(fixture, 0));
   // the field solves whole, so a re-route cannot depend on how loaded the
   // machine is — see FIELD_BUDGET_MS in sim.ts
   sim.setFieldBudget(Infinity);
   sim.setTech(TR.techStateFor(15));
-  // EVERY BEACON SWITCHED ON, because this check is about the COMBAT
-  // pipeline and not about the power grid. A campaign run may only build
-  // inside the circle its base lights plus whatever beacons it has bought
-  // (Sim.rebuildPower), so on a fresh board the only legal stretch of the
-  // route is the last few cells before the core — and a body takes most of
-  // a minute to walk that far, which would make this a test of the clock.
-  // Buying the board open puts the turrets back where the check means to
-  // put them: on the earliest stretch of the road.
-  const lit0 = sim.powered.reduce((a, b) => a + b, 0);
-  openBoard(sim);
-  // ...and while we are here, the cheapest possible gate on the grid
-  // itself: a map with beacons on it must light more ground with them on
-  // than without, or something has quietly stopped painting
-  if (sim.terrain.beacons.length > 0 && sim.powered.reduce((a, b) => a + b, 0) <= lit0)
-    simProblems.push("switching every beacon on lit no new ground");
-
   const half = () => { for (let s = 0; s < 30; s++) sim.update(1 / 60); };
   let nan = null;
   const scan = () => {
@@ -710,17 +662,10 @@ try {
 
   // 4. a round connects.
   //
-  //    THE HORIZON IS A HUNDRED AND FIFTY SECONDS AND IT USED TO BE
-  //    TWENTY-FIVE. That was margin on a thirteen-second answer, back when
-  //    a turret could go down anywhere and the check put its dozen right
-  //    beside the drop zone. It cannot any more: a run may only build
-  //    where the base and its bought beacons light the ground
-  //    (Sim.rebuildPower), and on every official map the spawn edge is
-  //    further out than the last beacon — so the earliest LEGAL stretch of
-  //    the road is a long way down it, and what this waits for is a body
-  //    to walk there. How far that is, is the fixture map's own geometry,
-  //    so the horizon is generous rather than tuned: Coldline answers in
-  //    the twenties and a wider board may take twice that.
+  //    THE HORIZON IS A HUNDRED AND FIFTY SECONDS, and it is generous
+  //    rather than tuned: what it waits for is a body to walk from the
+  //    doors to the dozen turrets this check laid on the road, and how far
+  //    that is is the fixture map's own geometry.
   let hitAt = null;
   const until = sim.time + 150;
   while (hitAt === null && sim.time < until && !sim.lost() && !sim.won()) {
@@ -854,10 +799,8 @@ if (wants("frames")) try {
     .reduce((a, r) => a + r.units, 0);
   const sim = new Sim(spec);
   // the save that has everything, so the board is built out of the whole
-  // catalogue rather than the opening tier — and the whole map open to
-  // build on, which is the other half of "everything" now (openBoard)
+  // catalogue rather than the opening tier
   sim.setTech(TR.techStateFor(60));
-  openBoard(sim);
   // ...and the SHIPPED field budget, deliberately: setFieldBudget(Infinity)
   // is right for the sim check, which wants one settled field and does not
   // care what it cost, and wrong here, where a re-route solved whole would
@@ -1049,7 +992,6 @@ const SIEGE_LENIENT_OVER = SIEGE_OVER;
 const legalCells = (world) => {
   const s = new Sim(LA.specForTier(world, 0));
   s.setTech(TR.techStateFor(60));
-  openBoard(s);
   let n = 0;
   for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (s.canPlace(x, y, "tacker")) n++;
   return n;
@@ -1079,8 +1021,7 @@ function siege({
     const spec = LA.specForTier(world, LA.RUNG_COUNT - 1);
     const sim = new Sim(spec);
     sim.setTech(tech ?? TR.techStateFor(60));
-    openBoard(sim);
-
+  
     // the purchases, off the game's own tables and odds: every fourth press
     // is the G button, until the relics run out (a relic is held once —
     // relics.ts — so a late run's G presses land on nothing and the player
@@ -1298,8 +1239,7 @@ if (FULL) {
     const spec = { ...LA.specForTier(world, LA.RUNG_COUNT - 1), script: [] };
     const sim = new Sim(spec);
     sim.setTech(null);
-    openBoard(sim);
-    const info = build(sim) ?? {};
+      const info = build(sim) ?? {};
     for (let f = 0; f < ISO_WARM; f++) sim.update(1 / 60);
     sim.profile(true);
     const ms = [];
@@ -1441,8 +1381,7 @@ if (FULL) {
       const sim = new Sim(spec);
       sim.setTech(TR.techStateFor(60));
       sim.setRich(true);
-      openBoard(sim);
-      sim.setBench({ coreHp: IMMORTAL });
+          sim.setBench({ coreHp: IMMORTAL });
       const made = spawnMixed(sim, N, { scatter: true });
       for (let f = 0; f < ISO_WARM; f++) sim.update(1 / 60);
       const CARD = 300;

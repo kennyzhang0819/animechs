@@ -9,7 +9,7 @@
  * glance and as NOT A TURRET at the same glance —
  *
  *   - it wears the PLAYER'S AMBER (turretArt.ts POWER), the hue the core,
- *     the beacons' lamps, every selection ring and every price on the HUD
+ *     every selection ring and every price on the HUD
  *     are drawn in, and the one hue nothing in the swarm has. The amber is
  *     the CARGO: three crates strapped to the deck, which is the thing the
  *     mission is actually about and the part a player should find first;
@@ -41,7 +41,7 @@ import { BORE, GUN, GUN_R, POWER, STEEL, draw, type Mat, type Pen } from "./turr
 
 /**
  * THE HAULER'S OWN PLATING: a warm olive-drab, the one colour on the sheet
- * that is neither a turret's gunmetal, the core's slate, the beacon's
+ * that is neither a turret's gunmetal, the core's slate, the mast's
  * blue-black nor the Borer's cold rail. A working vehicle rather than a
  * weapon, and legible against Thornway's grass and dirt, which is the map
  * it crosses.

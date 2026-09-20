@@ -151,7 +151,6 @@ import { HoverCard, useHoverCard } from "./HoverCard";
 import MenuBackground from "./MenuBackground";
 import { useEscapeBack } from "./Board";
 import { DealCorner, useDeal } from "./Deal";
-import { Beacon } from "./Beacon";
 import { Inspector } from "./Inspector";
 import { BLANK_ICON, carveUnitIcon, unitIconOf } from "./unitIcons";
 import { RelicShelf } from "./Relics";
@@ -2499,22 +2498,6 @@ export default function Animechs() {
    */
   const deal = useDeal(gameRef, hud, refresh);
 
-  /**
-   * SWITCH THE PICKED BEACON ON — the button in the bottom-centre panel.
-   *
-   * It re-reads the HUD on its way out rather than waiting for the poll,
-   * like every other click that spends money here (see `refresh`): the
-   * purse in the corner, the region outline on the field and this panel's
-   * own button all have to move on the press that moved them, not a
-   * tenth of a second later.
-   */
-  const buyBeacon = (i: number): void => {
-    const g = gameRef.current;
-    if (!g) return;
-    g.buyBeacon(i);
-    refresh();
-  };
-
   const pickTower = (kind: TowerKind): void => {
     const g = gameRef.current;
     if (!g) return;
@@ -3726,23 +3709,9 @@ export default function Animechs() {
             It stands only while the run does — the end screens own the
             frame — and it goes with the pause menu, which is the one time
             a panel over the field is in the way of reading the field. */}
-        {hud?.inspect && !hud.beacon && !hud.lost && !hud.won && !hud.menuOpen && (
+        {hud?.inspect && !hud.lost && !hud.won && !hud.menuOpen && (
           <div className="ui-zoom pointer-events-none absolute bottom-[1rem] left-1/2 z-10 -translate-x-1/2">
             <Inspector inspect={hud.inspect} icons={icons} />
-          </div>
-        )}
-        {/* ...AND THE SAME SLOT ANSWERS FOR A BEACON (components/Beacon.tsx),
-            which is the one thing you can click on this board that is not
-            on the field: what it costs, what it would open, and the button
-            that buys it. It takes the slot outright rather than sharing it
-            — a click on a beacon clears the field's selection and a click
-            on the field clears the beacon (Game.selectBeacon), so the two
-            can only ever both be set for the frame between a poll and a
-            press, and the guard above keeps even that from stacking two
-            panels on one anchor. */}
-        {hud?.beacon && !hud.lost && !hud.won && !hud.menuOpen && (
-          <div className="ui-zoom pointer-events-none absolute bottom-[1rem] left-1/2 z-10 -translate-x-1/2">
-            <Beacon beacon={hud.beacon} scrap={hud.scrap} onBuy={buyBeacon} />
           </div>
         )}
         {/* THE BOTTOM-RIGHT CORNER: the command card. The run's deal used

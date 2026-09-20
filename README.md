@@ -117,7 +117,7 @@ undressed ground, waiting for a mission.
    early-out.
 4. **Art is code**, no image files. Read [docs/unit-art.md](docs/unit-art.md).
 5. **Maps and levels are data** — no rules in `public/maps/*.json`, and
-   re-running `scripts/maps/<id>.mjs` wipes painted spawns and seeded beacons.
+   re-running `scripts/maps/<id>.mjs` wipes painted spawn tiles.
 6. **A road is on a lattice** — every leg axis-aligned or exactly diagonal, every
    corner 45°. Move one with `scripts/maps/railbed.mjs`, not the map generator.
 7. **The file headers are the documentation.** `sim.ts`, `levels.ts`,

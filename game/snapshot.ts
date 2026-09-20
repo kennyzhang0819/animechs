@@ -874,8 +874,6 @@ export class DrawView implements SimView {
     private readonly domes: () => readonly BoardDome[],
     private readonly unlocked: () => ReadonlySet<TowerKind> | null,
     airRoutes: readonly { pts: readonly number[] }[] = [],
-    /** the beacons this run has switched on (Sim.beaconOn), by reference */
-    readonly beaconOn: Uint8Array = new Uint8Array(0),
   ) {
     this.airRoutes = airRoutes;
     this.upx = src.upx;

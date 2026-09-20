@@ -168,8 +168,8 @@ async function buildDocument(
     if (fails.length)
       return { error: `${fails.length} check(s) failed — fix them before writing the map`, fails };
     // WHAT THE AUTHOR PAINTED SURVIVES THE RE-EMIT (mindustry.mjs
-    // carryPainted). A graph edit rewrites the terrain; the spawn tiles,
-    // the beacons and the mission marks were never the graph's to rewrite
+    // carryPainted). A graph edit rewrites the terrain; the spawn tiles
+    // and the mission marks were never the graph's to rewrite
     let prev: Record<string, unknown> | null = null;
     try {
       prev = JSON.parse(await readFile(mapFile, "utf8")) as Record<string, unknown>;

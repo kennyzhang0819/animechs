@@ -85,7 +85,7 @@ docs/                  the SYSTEMS live here, not in the files: mutators,
 4. **Art is code**, no image files. Read `docs/unit-art.md` first: materials are
    dark/light pairs, mirrored, nothing under 4px, drawn facing up.
 5. **Maps and levels are data.** Put no rules in `public/maps/*.json`, and note that
-   re-running `scripts/maps/<id>.mjs` wipes painted spawns and seeded beacons.
+   re-running `scripts/maps/<id>.mjs` wipes painted spawn tiles.
 6. **A road is on a lattice.** Every leg of a `ROAD_SPECS` line is along an
    axis or exactly diagonal and every corner is 45 degrees, because the rail
    bed is drawn as tiles and those are the only headings a pixel grid draws

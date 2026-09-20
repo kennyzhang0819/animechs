@@ -15,9 +15,6 @@ import { ANIMAL_ART } from "./animalFlag";
 import { FOUNDRY_ART } from "./turretFlag";
 import { FOUNDRY_BASE_URLS, FOUNDRY_CORE_URL, FOUNDRY_HEAD_URLS, foundryHeadUrl } from "./foundryArt";
 import { TOWER_ICONS } from "./towerIcons";
-// the Foundry's palette, for the one block whose art is drawn here rather
-// than loaded from a file (beaconBlock)
-import { BORE, MAST, POWER, STEEL, type Mat } from "./turretArt";
 import type { TowerKind } from "./types";
 import {
   toCanvas,
@@ -781,24 +778,6 @@ export const UV_SHIELD_TOWER = flat("shield-tower", 96);
 export const UV_RESTORER = flat("restorer", 128);
 export const UV_FIXER = flat("fixer", 64);
 /**
- * THE BEACON'S MAST — a HEAD, not a whole block, and 96px because it is a
- * 3x3 head like the cleaver's and the shield tower's. It never turns: a
- * mast has no front, so it is flat rather than a `top`.
- *
- * WHAT IS NOT IN THIS CELL IS THE PLATE. A beacon is drawn exactly the way
- * a player's turret is drawn (renderer.ts): UV_TOWER_BASE3 first, this
- * over it. That is the whole reason the sprite stopped covering its own
- * cell — a head fills the middle and lets its plate show at the rim, and
- * the plate is what makes a beacon read as square and as OURS.
- *
- * Its art is still the only structure art in the game with no source file
- * behind it at all: it is DRAWN here, at pack time (beaconBlock), because
- * there is no Mindustry block it is a port of and a hand-authored PNG for
- * four flat shapes would be a file to keep in step with a palette that
- * already lives in turretArt.ts.
- */
-export const UV_BEACON = flat("beacon", 96);
-/**
  * Tether's beam, the two regions Drawf.laser stretches between the
  * turret and its target. The line is packed ROTATED — its 4x48 source runs
  * along the beam, and pushSeg maps a region's WIDTH along the line it is
@@ -852,7 +831,7 @@ export const UV_MISSILE_BACK = sprite("missile-back", 36, 36);
 /**
  * THE FOURTH PAIR, AND THE ONE WITH NO MINDUSTRY FILE BEHIND IT: the
  * toxin line's canister (canisterBullet), drawn here at pack time the way
- * the beacon's mast is. One pair, three guns — duster's dart, blighter's
+ * every drawn head is. One pair, three guns — duster's dart, blighter's
  * lobbed drum and the cylinder tumbling in the middle of drifter's field
  * are this shape at three sizes in one colour, exactly as tacker's pellet
  * and repeater's slug are both `bullet`. Same rule as the three above:
@@ -2785,48 +2764,6 @@ function liquidTurret(
  * middle of the sprite.
  */
 /**
- * THE BEACON'S MAST, drawn rather than vendored — there is no Mindustry
- * block behind it to port.
- *
- * IT IS A HEAD ON A TURRET'S PLATE and is authored as one. The renderer
- * lays UV_TOWER_BASE3 down first and stamps this on top, which is the
- * same two quads every gun on the board is made of. So this canvas draws
- * the MAST ONLY, sized to sit inside the plate with its rim showing all
- * round — exactly as far in as a turret's head sits inside its own.
- *
- * It follows the Foundry's rules for a head (docs/turret-factions.md and
- * the header of turretArt.ts) because it now literally is one: no outline
- * of its own, flat colours butted together, every material a PAIR whose
- * dark half is on the left of the sprite and light half on the right, and
- * 45-degree cuts only — which a diamond is made of.
- *
- * IT IS AUTHORED FOR SIXTY PIXELS, which is the only size that matters: a
- * 3x3 building on a 20px tile is 60px on screen at 1x, and this cell is
- * 96, so every feature is cut down before anybody sees it. An earlier cut
- * of this ignored that and drew four concentric rings each about four
- * pixels wide once scaled. It collapsed into a grey square with a dot in
- * it, which is a fair description of nothing.
- *
- * SO THE DESIGN IS A SILHOUETTE AND ONE FEATURE:
- *
- *   A DIAMOND, corner to corner. Not one of the turret heads is a
- *   diamond — they are all snouts and drums — so the shape alone says
- *   "this is not a gun" from across the board, at any zoom, before a single
- *   interior detail resolves. The plate underneath says "this is a
- *   building of yours"; the diamond says which one.
- *
- *   A BRIGHT STEEL RIM inside it. This is what makes the thing readable on
- *   DARK ground: a beacon stands on a hill, and dark plating on dark rock
- *   is invisible. The rim is 11 units — seven pixels on screen — which
- *   survives the downscale.
- *
- *   AN AMBER CORE, 22 units, better than thirteen pixels on the board. The
- *   single loudest thing on the building, in the player's own colour,
- *   because "this is ground you can own" is the whole of what a beacon
- *   says. It is also the lamp the vision ring is meant to be coming from
- *   (constants.ts BEACON_VISION_R), so it wants to look lit.
- */
-/**
  * THE TOXIN LINE'S ROUND, drawn rather than loaded: a gas canister, nose
  * up like every bullet source, white for the two tint passes that draw it
  * (BasicBulletType.draw lays `back` under `front` on one rect).
@@ -2870,48 +2807,6 @@ function canisterBullet(back: boolean): HTMLCanvasElement {
   return cv;
 }
 
-function beaconBlock(): HTMLCanvasElement {
-  const S = 96;
-  const cv = document.createElement("canvas");
-  cv.width = cv.height = S;
-  const c = cv.getContext("2d");
-  if (!c) throw new Error("2d context unavailable for the beacon block");
-  c.imageSmoothingEnabled = false;
-  // THE SHADE IS THE WHOLE OF THE LIGHTING and it is applied per PART, not
-  // per drawing: each shape is filled twice, clipped to one half of the
-  // sprite, so the form stays symmetric by construction and only the light
-  // is not (turretArt.ts)
-  const halves = (path: () => void, mat: Mat): void => {
-    for (let side = 0; side < 2; side++) {
-      c.save();
-      c.beginPath();
-      c.rect(side === 0 ? 0 : S / 2, 0, S / 2, S);
-      c.clip();
-      c.beginPath();
-      path();
-      c.fillStyle = mat[side];
-      c.fill();
-      c.restore();
-    }
-  };
-  const diamond = (r: number): void => {
-    c.moveTo(S / 2, S / 2 - r);
-    c.lineTo(S / 2 + r, S / 2);
-    c.lineTo(S / 2, S / 2 + r);
-    c.lineTo(S / 2 - r, S / 2);
-    c.closePath();
-  };
-  // 38 of 96 leaves nine units of plate outside the mast's widest point,
-  // which is the margin a turret head leaves on the same plate — enough
-  // for the base's rim and its outline to read all the way round
-  halves(() => diamond(38), MAST);
-  halves(() => diamond(27), STEEL);
-  halves(() => diamond(18), BORE);
-  // the lamp, 22 across the midline — the shade cuts it in two, so each
-  // half is still well past the minimum feature width
-  halves(() => c.rect(37, 37, 22, 22), POWER);
-  return cv;
-}
 
 function mendBlock(base: HTMLImageElement, top: HTMLImageElement): HTMLCanvasElement {
   const cv = outlined(base, BLOCK_OUTLINE, BLOCK_OUTLINE_R);
@@ -3075,11 +2970,9 @@ export async function unitQuad(
 }
 
 /**
- * ANY PACKED CELL AS A DATA URL — the beacon's block, a turret's plate,
- * whatever else a panel wants a picture of. The cell is DRAWN into the
- * sheet at pack time (see UV_BEACON), so this is the only honest source
- * for one: the file it used to be loaded from is not what the board puts
- * on the map any more.
+ * ANY PACKED CELL AS A DATA URL — a turret's plate, a drawn head,
+ * whatever else a panel wants a picture of. Some cells are DRAWN into the
+ * sheet at pack time, and for those this is the only honest source.
  */
 export async function cellIcon(
   uv: readonly [number, number, number, number],
@@ -3910,11 +3803,6 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   draw(UV_SHIELD_TOWER, outlinedBlock(img.shieldTower));
   draw(UV_RESTORER, antialiased(mendBlock(img.restorer, img.restorerTop)));
   draw(UV_FIXER, antialiased(mendBlock(img.fixer, img.fixerTop)));
-  // ...and the mast, generated rather than loaded (beaconBlock), through the
-  // same outline and antialias pass every other block goes through so it
-  // sits on the board as one of them
-  draw(UV_BEACON, outlinedBlock(beaconBlock()));
-
   // the base building at native 160px: the block, then the team overlay
   // tinted sharded-yellow the way Mindustry composites team regions
   if (FOUNDRY_ART) {

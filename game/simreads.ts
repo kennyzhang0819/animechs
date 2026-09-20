@@ -49,11 +49,6 @@ export interface WorldSource {
   readonly isGoal: Uint8Array;
   readonly occupied: Uint8Array;
   readonly waterlogged: Uint8Array | null;
-  /** the cells the base and the bought beacons light (Sim.powered) */
-  readonly powered: Uint8Array;
-  /** which of the map's beacons this run has switched on, indexed into
-   *  terrain.beacons (Sim.beaconOn) */
-  readonly beaconOn: Uint8Array;
   readonly airRoutes: readonly { pts: readonly number[] }[];
 }
 
@@ -75,8 +70,6 @@ export class World {
   readonly header: Float64Array;
   readonly bodies: BoardBodies;
   readonly waterlogged: Uint8Array | null;
-  readonly powered: Uint8Array;
-  readonly beaconOn: Uint8Array;
   readonly airRoutes: readonly { pts: readonly number[] }[];
   private readonly isGoal: Uint8Array;
   private readonly occupied: Uint8Array;
@@ -108,8 +101,6 @@ export class World {
     this.isGoal = src.isGoal;
     this.occupied = src.occupied;
     this.waterlogged = src.waterlogged;
-    this.powered = src.powered;
-    this.beaconOn = src.beaconOn;
     this.airRoutes = src.airRoutes;
     const h = src.header, f = src.flat;
     this.bodies = {
@@ -166,11 +157,6 @@ export class World {
   }
   get placed(): number {
     return this.header[HDR.PLACED];
-  }
-  /** goes up every time the sim repaints the power grid — what the build
-   *  overlay's layer is invalidated against (Game.buildPowerLayer) */
-  get powerVersion(): number {
-    return this.header[HDR.POWER];
   }
   get lost(): boolean {
     return this.header[HDR.LOST] !== 0;
@@ -296,7 +282,6 @@ export class World {
       isGoal: this.isGoal,
       occupied: this.occupied,
       waterlogged: this.waterlogged,
-      powered: this.powered,
     };
   }
 }

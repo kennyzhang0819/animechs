@@ -1039,16 +1039,16 @@ export function preview(spec, m, SC = 2) {
 /**
  * THE LAYERS AN AUTHOR PAINTED, carried across a regeneration. The
  * generator writes terrain and nothing else; the spawn tiles, the
- * beacons, the mission marks and the valley line are put on afterwards in
+ * the mission marks and the valley line are put on afterwards in
  * the map editor, and a re-emit used to take them with it — which is a
  * map that typechecks, loads, and has no way in. They are copied onto the
  * new document unchecked: a tile that now falls on rock is dropped on
- * load (maps.ts spawnTilesOf) and a beacon that does is an author's to
+ * load (maps.ts spawnTilesOf) and a mark that does is an author's to
  * move, and both are better than none at all.
  */
 export function carryPainted(doc, prev) {
   if (!prev) return doc;
-  for (const k of ["spawnTiles", "beacons", "marks", "valleyY"])
+  for (const k of ["spawnTiles", "marks", "valleyY"])
     if (prev[k] !== undefined) doc[k] = prev[k];
   return doc;
 }
@@ -1072,7 +1072,7 @@ export function run(authored, argv = process.argv.slice(2)) {
     spawns: m.spawns, pines: m.pines, decor: m.decor,
   }, prev);
   writeFileSync(out, JSON.stringify(doc));
-  const carried = ["spawnTiles", "beacons", "marks"].filter((k) => doc[k]?.length).map((k) => `${doc[k].length} ${k}`);
+  const carried = ["spawnTiles", "marks"].filter((k) => doc[k]?.length).map((k) => `${doc[k].length} ${k}`);
   console.log(`  wrote ${out}${carried.length ? ` — kept ${carried.join(", ")}` : ""}`);
   return m;
 }

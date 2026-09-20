@@ -55,7 +55,6 @@ import {
   UV_TOWER_BASE1,
   UV_TOWER_BASE3,
   UV_TOWER_BASE4,
-  UV_BEACON,
   UV_SHIELD_TOWER,
   UV_CONVOY,
   CONVOY_QUAD,
@@ -104,9 +103,6 @@ import {
   MERGE_GROWTH,
   NCELLS,
   PAL as PAL_IMPORT,
-  BEACON_SIZE,
-  BEACON_VISION_FADE_R,
-  BEACON_VISION_R,
   ROWS as ROWS_IMPORT,
   TEAM_CRUX_RGB,
   TOWERS as TOWERS_IMPORT,
@@ -907,11 +903,6 @@ export interface TerrainLayers {
   /** the rail bed a road mission's line is drawn on (missions.ts railsFor) */
   rails: boolean;
   base: boolean;
-  /** the beacons (terrain.ts MapBeacon) — their blocks, the circles they
-   *  open, and the ring of vision each burns in the darkness. Hidden, they
-   *  are also out of reach: the editor's brush will not stamp one and the
-   *  eraser will not take one off (MapEditor.paintCell) */
-  beacon: boolean;
   /** the mission marks an author placed (missionMarks.ts) — an editor-only
    *  layer: they are drawn in the editor's own overlay and never on a
    *  board, where what stands there is a real body the mission raised */
@@ -923,7 +914,6 @@ export const ALL_LAYERS: TerrainLayers = {
   spawn: true,
   rails: true,
   base: true,
-  beacon: true,
   mark: true,
 };
 /**
@@ -945,7 +935,6 @@ export const GAME_LAYERS: TerrainLayers = {
   // a match wants said louder than anything else on the ground
   rails: true,
   base: true,
-  beacon: true,
 };
 
 // flyer drop shadow: painter's offset + premultiplied black tint
@@ -2234,48 +2223,6 @@ export class Renderer {
         dark.set(next);
       }
     }
-    // ...AND THE BEACONS BURN A HOLE IN IT (constants.ts BEACON_VISION_R).
-    //
-    // A beacon is authored on ROCK, which is the ground this pass has just
-    // finished painting black: the block was drawn and then buried, and a
-    // player looking for the thing they are being asked to pay four
-    // figures for could not see it. So each one lifts the darkness around
-    // itself — a lamp on a mast lighting the hill it stands on, which is
-    // both the obvious reading of the building and the thing that makes it
-    // findable.
-    //
-    // THE FALLOFF IS THE POINT. `dark` is an integer 0..DARK_RADIUS and
-    // the mask below ramps its alpha off that, so a ceiling of
-    // DARK_RADIUS * (d - inner) / (outer - inner) gives the hill back its
-    // own darkness one step at a time across the gap. Clamping flat to
-    // zero inside one radius would cut a hard-edged circle out of a soft
-    // gradient, which reads as a bug rather than as light.
-    //
-    // IT IS NOT BOUGHT AND NEVER CHANGES, which is why it belongs here, in
-    // the pass that runs once per map, rather than in the frame: where the
-    // beacons are is in the map document, the same on both threads, and a
-    // beacon the run never affords still lights its own rock.
-    if (layers.beacon && T.beacons.length > 0) {
-      const inner = BEACON_VISION_R / CELL;
-      const outer = BEACON_VISION_FADE_R / CELL;
-      const span = Math.max(1e-6, outer - inner);
-      for (const b of T.beacons) {
-        const bx = b.x + BEACON_SIZE / 2, by = b.y + BEACON_SIZE / 2;
-        const x0 = Math.max(0, Math.floor(bx - outer)), x1 = Math.min(mapCols - 1, Math.ceil(bx + outer));
-        const y0 = Math.max(0, Math.floor(by - outer)), y1 = Math.min(mapRows - 1, Math.ceil(by + outer));
-        for (let y = y0; y <= y1; y++)
-          for (let x = x0; x <= x1; x++) {
-            const i = y * COLS + x;
-            if (dark[i] === 0) continue;
-            // the cell's own CENTRE against the disc, the same test every
-            // other radius in this game is measured with (Sim.rebuildPower)
-            const d = Math.hypot(x + 0.5 - bx, y + 0.5 - by);
-            if (d >= outer) continue;
-            const cap = d <= inner ? 0 : Math.floor((DARK_RADIUS * (d - inner)) / span);
-            if (cap < dark[i]) dark[i] = cap;
-          }
-      }
-    }
     const darkMask = new Uint8Array(n * 4);
     // how black THIS cell is allowed to get: DARK_MAX inland, ramping back
     // to fully opaque over the map's last DARK_RIM cells (see DARK_RIM)
@@ -3311,7 +3258,7 @@ export class Renderer {
     // turret.
     //
     // IT TURNS, WHICH NOTHING ELSE ON THIS PASS DOES. A shield tower, a
-    // beacon and a turret base are all square things bolted to the
+    // dome and a turret base are all square things bolted to the
     // ground; the cart is on a road and faces the way the road goes, so
     // it is pushed on its own heading exactly as a body is.
     //
@@ -3328,47 +3275,6 @@ export class Renderer {
         const t3 = (cv.hp * 3) / Math.max(1, cv.hpMax);
         const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
         this.push(dyn, cv.x, cv.y, CONVOY_QUAD, CONVOY_QUAD, cv.rot, UV_CONVOY, tint[0], tint[1], tint[2], 1);
-      }
-    }
-    // THE BEACONS, beside the shield towers because they are the same kind of
-    // thing: a block that stands where the map put it, never turns, and is
-    // nobody's to place or sell. They are drawn here rather than in the
-    // TERRAIN batch (rebuildTerrain) because their tint moves — a beacon
-    // switched on is lit and one still for sale is dark — and the terrain
-    // batch is built once per map.
-    //
-    // TWO QUADS, A PLATE AND A MAST — which is exactly how every turret on
-    // this board is drawn, a few lines up, and that is the point. A beacon
-    // used to be one full-bleed block with its own plating painted into
-    // the art, and it read as a decal somebody had stuck on the rock. On a
-    // real UV_TOWER_BASE3 it reads as a BUILDING OF YOURS standing on a
-    // hill: same plate, same rim, same square silhouette as the guns, with
-    // a head on it that is a diamond instead of a snout.
-    {
-      const rpx = BEACON_SIZE * CELL;
-      const rs = sim.terrain.beacons;
-      for (let i = 0; i < rs.length; i++) {
-        const r = rs[i];
-        const x = (r.x + BEACON_SIZE / 2) * CELL, y = (r.y + BEACON_SIZE / 2) * CELL;
-        if (x < vx0 - rpx || x > vx1 + rpx || y < vy0 - rpx || y > vy1 + rpx) continue;
-        // DIMMED UNTIL IT IS BOUGHT, and full colour after. It is dimmed
-        // rather than greyed so it still reads as the same building, and a
-        // player learns the silhouette long before they can afford one.
-        //
-        // HALF AND NOT A THIRD: a beacon stands on a hill and a hill is the
-        // darkest ground in the game, so a third put the unlit ones under
-        // the rock they sit on. Half is plainly "off" beside a lit one and
-        // still finds the eye on black basalt. The beacon's own ring of
-        // vision (drawDarkness, BEACON_VISION_R) is what makes even the
-        // half-lit one findable at all.
-        //
-        // THE PLATE TAKES THE SAME TINT as the mast: a bright plate under a
-        // dim head would read as a turret whose barrel is broken, not as a
-        // building waiting to be switched on.
-        const lit = sim.beaconOn[i] !== 0;
-        const k = lit ? 1 : 0.5;
-        this.push(dyn, x, y, rpx, rpx, 0, UV_TOWER_BASE3, k, k, k, 1);
-        this.push(dyn, x, y, rpx, rpx, 0, UV_BEACON, k, k, k, 1);
       }
     }
     // a lock turret's beam sits over the turrets and under the body it is

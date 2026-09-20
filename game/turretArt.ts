@@ -62,23 +62,12 @@ export const GUN_R: Mat = rev(GUN);
 export const SLATE: Mat = ["#343846", "#4e5464"];
 export const IRON: Mat = ["#5a5f6e", "#8b90a0"];
 /**
- * THE BEACON'S LAMP, and the one accent on this list that is not the colour
- * of something a turret throws (ACCENT below). A mast throws nothing — what
- * it hands out is the player's own permission to build, so it wears the
- * player's own amber, the colour the core is drawn in and the colour every
- * selection ring and price on the HUD is written in. Nothing else in the
- * roster is that hue, which is the point: a mast should be findable on a
- * board of twenty-one gunmetal heads at a glance.
+ * THE PLAYER'S OWN AMBER, and the one accent on this list that is not the
+ * colour of something a turret throws (ACCENT below). It is the hue the
+ * core is drawn in and the hue every selection ring and price on the HUD
+ * is written in, and nothing in the turret roster wears it.
  */
 export const POWER: Mat = ["#f6a53a", "#ffd37f"];
-/**
- * THE BEACON'S OWN PLATING, darker and bluer than a turret's gunmetal, so a
- * mast is not mistaken for a gun at a glance. It is NOT the core's slate
- * either (SLATE/IRON above are the core's and nowhere else) — the board has
- * three kinds of building on it now and each one is a different metal.
- */
-export const MAST: Mat = ["#2f3442", "#48505f"];
-
 /** what a turret throws, and the colour it wears for it */
 export type AmmoGroup = "bullet" | "shell" | "flame" | "beam" | "water" | "field" | "missile" | "toxin";
 export const ACCENT: Record<AmmoGroup, Mat> = {

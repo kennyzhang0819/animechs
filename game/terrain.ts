@@ -142,42 +142,6 @@ export function airWalkMask(t: Terrain): Uint8Array {
   return m;
 }
 
-/**
- * ONE BEACON, as the map document carries it — and it is MAP FURNITURE, not
- * a building.
- *
- * WHAT A BEACON IS. It stands on a hill, on rock, where nothing can reach
- * it: it has no health, it is never targeted, it cannot be destroyed and
- * it is never placed. What it has is a CIRCLE OF GROUND it opens for
- * building (constants.ts BEACON_POWER_R). The core lights the home ground
- * for free and every cell past that edge is bought, one beacon at a time.
- *
- * THAT IS WHY IT IS AUTHORED AND NOT GENERATED. Where the beacons are is
- * where the map's decisions are — a mission is written by deciding which
- * piece of ground a run can afford to open and when, and a scatter rule
- * cannot make that decision. Moving one beacon forty cells is a mission
- * edit.
- *
- * THE PRICE IS NOT ON IT, AND NOT ON THE MAP EITHER. A beacon costs
- * whatever the campaign's one ladder says the next one costs (constants.ts
- * BEACON_LADDER): every beacon on every board wears the same price, and
- * buying any of them moves every other one up a rung. A number stamped per
- * beacon meant the cheap ones were bought in whatever order the map
- * happened to lay them out; one rising price means the DECISION is how
- * many acres to open, not which bargain to find.
- */
-export interface MapBeacon {
-  /** top-left cell of its BEACON_SIZE footprint */
-  x: number;
-  y: number;
-  // A BEACON IS A PLACE AND NOTHING ELSE. It used to carry a `price` of
-  // its own; every official document has been stripped of it and the
-  // field is gone from the type, so there is one place a price can be
-  // written and it is BEACON_LADDER. A stray `price` in a hand-edited
-  // or exported document is simply ignored — terrainFromMap reads the two
-  // coordinates and builds the beacon from those.
-}
-
 export interface Terrain {
   blocked: Uint8Array; // mountains, forests, rocks — everything units can't cross
   floor: Uint8Array; // UV_FLOORS index per cell (pine cells: the grass underneath)
@@ -199,9 +163,6 @@ export interface Terrain {
   pines: Prop[]; // blocking tree cells, drawn as overhanging props
   decor: Prop[]; // non-blocking props: boulders, shrubs
   valleyY: Float32Array; // carved main-valley centerline per column
-  /** the beacons standing on this map's hills, as authored (maps.ts
-   *  MapBeacon) — where the buildable ground can be extended to */
-  beacons: MapBeacon[];
   /** the mission furniture placed on this map (missionMarks.ts MapMark):
    *  where a mission's own things stand, and nothing about when */
   marks: MapMark[];
@@ -529,10 +490,8 @@ export function generateTerrain(seed: number): Terrain {
 
   return {
     blocked, floor, wall, spawn, reserved: new Uint8Array(NCELLS), pines, decor, valleyY,
-    // the generated fallback board carries NONE: beacons are authored, and
-    // a board nobody authored has nothing to say about where a run may
-    // spread to. It plays inside the circle its base lights
-    beacons: [],
+    // the generated fallback board carries no marks: they are authored,
+    // and a board nobody authored has no mission furniture on it
     marks: [],
     // ...and no rails, for the same reason: a road is authored against a
     // map id (missions.ts ROAD_SPECS) and this board has none

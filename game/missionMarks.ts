@@ -22,7 +22,7 @@ export type MarkGeom = "point" | "path";
 
 /**
  * ONE PLACED MARK, as the map document carries it (maps.ts MapData.marks).
- * `x`/`y` are the top-left cell of its footprint, like a beacon's; `opts`
+ * `x`/`y` are the top-left cell of its footprint; `opts`
  * is whatever its kind's fields say, and is read through markOpts so a
  * document missing one still loads.
  */

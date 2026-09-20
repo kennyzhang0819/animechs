@@ -3872,11 +3872,10 @@ export interface EscortMission {
  *   behind is fighting the fourth with the third still firing, and the
  *   arithmetic of that is what the mission is asking about.
  *
- *   WHAT IT COSTS IS THE TRIP. A battery stands past the ground the core
- *   lights, so answering one is a gun bought out there on a beacon while
- *   the wave is still walking at the base — "buy a gun that reaches"
- *   becomes "buy a position and hold it", which is the only question this
- *   game can ask.
+ *   WHAT IT COSTS IS THE TRIP. A battery stands a long way from the
+ *   core, so answering one is a gun bought out there while the wave is
+ *   still walking at the base — "buy a gun that reaches" becomes "buy a
+ *   position and hold it", which is the only question this game can ask.
  *
  * THE SCHEDULE AND THE ROSTER ARE AUTHORED HERE; WHERE THE SECTIONS STAND
  * IS AUTHORED WITH THE TERRAIN (missions.ts POST_SPECS), exactly the way
@@ -4567,11 +4566,9 @@ export const WORLDS: LevelSpec[] = [
     // `sections` below is the fallback for a map that carries none, and
     // the clock is this spec's either way.
     //
-    // THE DISTANCE IS THE POWER GRID. The core lights ninety cells, so a
-    // battery stands past it: the first can be answered by the longest
-    // gun in the game from the edge of your own light, and everything
-    // after that is bought off a beacon — which is the archetype's entry
-    // fee, and how deep into the ladder the run has gone.
+    // THE DISTANCE IS THE COST. A battery stands out past the base's own
+    // ground, so every gun that answers one is a gun that defends nothing
+    // while it stands there — which is the archetype's entry fee.
     //
     // THE CLOCK. First battery at two minutes, then one every four:
     // 2:00, 6:00, 10:00, 14:00, and they do NOT wait for each other. One
@@ -4613,13 +4610,10 @@ export const WORLDS: LevelSpec[] = [
     // that is not the waves (docs/mission-design.md).
     //
     // WHAT IT COSTS. Neither road passes within a hundred cells of the
-    // core, so every gun that shoots a Borer is a gun bought outside the
-    // ground the core lights, on a beacon paid for out of the same purse
-    // the defence comes out of (nine of them, on the one rising ladder in
-    // constants.ts BEACON_LADDER — 2,000 for the first up to 60,000).
-    // Nothing built on a road defends the base, and the sale returns
-    // nothing, so the whole difficulty of this map is that one decision
-    // made five or six times.
+    // core, so every gun that shoots a Borer is a gun standing where it
+    // defends nothing, paid for out of the same purse the defence comes
+    // out of. The sale returns nothing either, so the whole difficulty of
+    // this map is that one decision made five or six times.
     //
     // THE PATTERN IS THE DESIGN. South, north, both, south, both — seven
     // Borers in five launches, which is exactly the seven the mission
@@ -4671,15 +4665,14 @@ export const WORLDS: LevelSpec[] = [
     // IT IS COLDLINE INSIDE OUT. There the road is the swarm's and the
     // board pays to reach it; here the road is YOURS and the board pays
     // to stay on it. The money goes to the same place either way — a
-    // beacon and a battery a long way from anything that defends the base
-    // — and the difference is what happens when you get it wrong: a Borer
+    // battery a long way from anything that defends the base — and the
+    // difference is what happens when you get it wrong: a Borer
     // you failed to kill is a number on a panel, and a hauler you failed
     // to hold is gone.
     //
-    // WHAT IT COSTS. The road is thirteen hundred cells long and the core
-    // lights ninety, so all but the first tenth of it is ground bought
-    // with beacons (the map carries thirteen, 232,000 scrap to open it
-    // all). And the cart is only ever in ONE place, which is the thing
+    // WHAT IT COSTS. The road is thirteen hundred cells long, so all but
+    // the first tenth of it is a long way from anything that defends the
+    // base. And the cart is only ever in ONE place, which is the thing
     // that makes this mission different to defend than a base: a battery
     // built for the third halt is dead weight for the first fourteen
     // minutes and the only thing that matters for the ninety seconds the

@@ -59,11 +59,11 @@ import { scaler } from "./ironhideArt";
 import { BORE, GUN, STEEL, bars, basePlate, draw, drawWithCell, pad, rev, type Mat, type Pen } from "./turretArt";
 
 /**
- * THE GARRISON'S PLATE, and a third metal on a board that already has two:
- * a turret's gunmetal (GUN) and a beacon's blue-black (MAST). This one is
- * colder and darker than either — bare rolled armour with no paint on it —
- * so an emplacement standing in the open is not read as a turret the
- * player forgot they bought.
+ * THE SWARM'S PLATE, a third metal beside a turret's gunmetal (GUN)
+ * and the core's slate (SLATE). It is colder and darker than either —
+ * bare rolled armour with no paint on it — so a machine of the swarm's
+ * standing in the open is not read as a turret the player forgot they
+ * bought.
  */
 export const ARMOUR: Mat = ["#2a2e37", "#464c58"];
 /** the swarm's crux, as a drawable pair: the accent all three wear, and

@@ -1,4 +1,4 @@
-import { BASE, COLS, MAX_BEACONS, NCELLS, ROWS } from "./constants";
+import { BASE, COLS, NCELLS, ROWS } from "./constants";
 
 /**
  * The grid width every map was authored at before the board grew. Documents
@@ -13,7 +13,6 @@ import {
   rebuildReserved,
   WALL_DEEP,
   WALL_PINE,
-  type MapBeacon,
   type Prop,
   type Terrain,
 } from "./terrain";
@@ -105,24 +104,12 @@ export interface MapData {
   // seed-tower search reads; older documents fall back to a flat line
   valleyY?: number[];
   /**
-   * THE BEACONS THIS MAP CARRIES (see MapBeacon). Absent or empty means a map
-   * whose only buildable ground is the circle around its own base — which
-   * is what every document written before beacons existed means, and a
-   * playable if very small board.
-   *
-   * A LIST AND NOT A LAYER, unlike the spawn tiles: there are a dozen of
-   * these on a map, they are placed one at a time on a footprint three
-   * cells across, and a cell-per-entry grid cannot say which cells are one
-   * beacon.
-   */
-  beacons?: MapBeacon[];
-  /**
    * THE MISSION FURNITURE placed on this map (missionMarks.ts MapMark):
    * the buff towers an intercept plants, and whatever a later mission
    * asks an author to put down.
    *
-   * A LIST, like the beacons and for the same reasons — there are a
-   * handful, each covers a footprint several cells across, and a
+   * A LIST rather than a layer — there are a handful, each covers a
+   * footprint several cells across, and a
    * cell-per-entry grid cannot say which cells are one mark.
    *
    * IT CARRIES A SCHEDULE NUMBER and that is the one place this document
@@ -133,13 +120,6 @@ export interface MapData {
    * mission's (levels.ts InterceptMission).
    */
   marks?: MapMark[];
-  // A MAP SAYS NOTHING ABOUT WHAT A BEACON COSTS. It carried a ladder of
-  // its own for a while, editable in the map editor; no document on disk
-  // ever set one, and a per-map price list was a dial that answered a
-  // question the campaign already answers — every beacon everywhere is
-  // offered at the rung the run has reached, off the one ladder in
-  // constants.ts BEACON_LADDER. A `beaconPrices` left in a hand-edited or
-  // exported document is simply ignored, like a `price` on a beacon.
   /** where this map's base sits (top-left cell). Absent = the default BASE
    * position, which is what every pre-per-base document means */
   base?: { x: number; y: number };
@@ -259,12 +239,9 @@ export type PaintKind =
   | "erase"
   | "path"
   | "base"
-  /** a beacon on a hill (terrain.ts MapBeacon): a click stamps one on rock
-   *  and a click on one takes it back off */
-  | "beacon"
-  /** a mission's own furniture (missionMarks.ts MapMark): the same stamp-
-   *  and-take-off a beacon has, and which KIND of mark is the palette
-   *  set's id — one swatch per entry in MARK_KINDS */
+  /** a mission's own furniture (missionMarks.ts MapMark): a click stamps
+   *  one and a click on one takes it off, and which KIND of mark is the
+   *  palette set's id — one swatch per entry in MARK_KINDS */
   | "mark"
   /** deep water: blocks the swarm like a wall, takes no tower like a pine
    *  — a floor index plus the WALL_DEEP sentinel (see terrain.ts) */
@@ -486,15 +463,6 @@ export const PALETTE: readonly PaletteSet[] = [
   // clears the ground it lands on, since a walled base is unreachable
   { id: "base", label: "Base", kind: "base", variants: [0], noRandom: true,
     icons: ["/mindustry/sprites/blocks/storage/core-nucleus.png"] },
-  // the beacons: where a run may BUY its way out of the circle the base
-  // lights. A click stamps one on rock, a click on one takes it off, and
-  // so does the eraser — they are a layer of their own now (renderer.ts
-  // TerrainLayers.beacon), which is what lets them be hidden while the
-  // rock under them is painted. What one COSTS is not on the brush and not
-  // on the beacon: it is the campaign's one ladder, and no map or editor
-  // sets it (constants.ts BEACON_LADDER)
-  { id: "beacon", label: "Beacon", kind: "beacon", variants: [0], noRandom: true,
-    icons: ["/mindustry/sprites/blocks/power/power-node-large.png"] },
   // the swarm's buildings — the player's roster, on the swarm's side —
   // one swatch a kind: a click stamps one on open ground and the eraser
   // takes it back off (MapData.enemies)
@@ -559,7 +527,7 @@ export const PALETTE_SECTIONS: readonly { label: string; ids: readonly string[] 
   // the veins are their own group rather than a stray swatch among the
   // floors: ore is not a floor tile at all but a layer over one (T.ore),
   // and it is the only brush that decides what a run EARNS
-  { label: "Zones", ids: ["spawn", "base", "beacon"] },
+  { label: "Zones", ids: ["spawn", "base"] },
   // ...and the mission's own, which is the group that grows as the mission
   // list does (missionMarks.ts)
   { label: "Mission", ids: MARK_KINDS.map((k) => `mark-${k.id}`) },
@@ -754,10 +722,6 @@ export function mapFromTerrain(
     spawnTiles: spawnTileList(t.spawn, n),
     pines: t.pines.map((p) => ({ ...p })),
     decor: t.decor.map((p) => ({ ...p })),
-    // the beacons carry NO price: what one costs is the campaign's ladder,
-    // and a number left on each of them would be a second answer to the
-    // same question (terrain.ts MapBeacon)
-    beacons: t.beacons.map((r) => ({ x: r.x, y: r.y })),
     // ...through each kind's own reader, so a field half-typed in the
     // editor ("2-") is cleaned on the way out rather than written to the
     // repo file and quietly read as a default next load
@@ -850,17 +814,6 @@ export function terrainFromMap(m: MapData): Terrain {
     valleyY: m.valleyY
       ? Float32Array.from(m.valleyY)
       : new Float32Array(COLS).fill(base.y + base.size / 2),
-    // THE BEACONS, read straight through and CAPPED (constants.ts
-    // MAX_BEACONS): which ones are switched on lives in a shared array of
-    // that length, so a hand-edited document with a hundred of them would
-    // be a document whose last forty could never be bought. Dropping them
-    // here, where the document is read, is the one place that stays true
-    // for both threads — each builds its own terrain from the same file
-    // ...and nothing but WHERE each one stands: a document's own `price`
-    // per beacon, and the `relays` this field was called two renames ago,
-    // are both gone from every map on disk and from the type. A stray one
-    // in a hand-edited document is dropped here rather than half-read
-    beacons: (m.beacons ?? []).slice(0, MAX_BEACONS).map((r) => ({ x: r.x, y: r.y })),
     // THE MARKS, read the same way and cleaned against their own kinds
     // (missionMarks.ts markOpts): a mark naming a kind this build does
     // not have is DROPPED rather than half-read, and a field it is

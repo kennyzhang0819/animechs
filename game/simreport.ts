@@ -58,10 +58,6 @@ export const HDR = {
   INSPECTED_UNIT: 16,
   /** goes up every time the live spec table is recomposed (Sim.refreshSpecs) */
   SPECS: 17,
-  /** ...and every time the power grid is repainted (Sim.rebuildPower). The
-   *  overlay paints a layer off 262,144 cells and must not do it per frame,
-   *  so this is what tells it the layer it holds is stale */
-  POWER: 18,
   /**
    * THE INTERCEPT MISSION'S LEDGER (levels.ts InterceptMission): crossers
    * destroyed whole, crossers that got across, and how many are on the
@@ -136,7 +132,6 @@ export function writeHeader(sim: Sim): void {
   h[HDR.CHARGING] = sim.charging ? 1 : 0;
   h[HDR.INSPECTED_UNIT] = sim.inspectedUnit;
   h[HDR.SPECS] = sim.specsVersion;
-  h[HDR.POWER] = sim.powerVersion;
   h[HDR.CROSS_KILLED] = sim.crossKilled;
   h[HDR.CROSS_LEAKED] = sim.crossLeaked;
   h[HDR.CROSS_LIVE] = sim.crossersLive();

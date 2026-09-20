@@ -313,7 +313,7 @@ that is not. It is the escort mission's cart (`docs/mission-design.md`) —
 a tracked flatbed with three crates of cargo on it, crossing Thornway at
 walking pace while the player pays to keep it alive — and the one thing
 it does that nothing else here does is wear the PLAYER'S amber
-(`turretArt.ts` POWER): the hue the core, the beacons' lamps and every
+(`turretArt.ts` POWER): the hue the core and every
 price on the HUD are drawn in, and the one hue nothing in the swarm has.
 The amber is the CARGO, because the cargo is what the mission is about
 and it is the part a player should find first. Everything else about the

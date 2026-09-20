@@ -36,7 +36,7 @@ A mark in `public/maps/<id>.json`:
 ]
 ```
 
-`x`/`y` are the **top-left cell** of the footprint, like a beacon's. `opts`
+`x`/`y` are the **top-left cell** of the footprint. `opts`
 is whatever that kind's fields say, and nothing else.
 
 A **path** kind carries `pts` as well — its corners, in cells, entry first
@@ -168,7 +168,7 @@ section it rises in, and it is printed on the map.
 every mark is a tower that comes up and stays up — so what sizes a map is
 how many are on the board at the last train and what a run has to do to
 thin them. The **Mission marks** layer hides them and puts them out of
-reach of every tool, like the beacons.
+reach of every tool.
 
 Each block is drawn in its kind's ink with its fields printed under it, so
 "goad, train 2" is readable off the map without clicking every square —

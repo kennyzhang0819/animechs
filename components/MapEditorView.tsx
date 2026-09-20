@@ -7,7 +7,7 @@ import { MapEditor, PATH_WIDTHS, type BrushShape } from "@/game/editor";
 import { markKind, MARK_TOWERS, MARK_UNITS } from "@/game/missionMarks";
 import type { UnitKind } from "@/game/levels";
 import { useUnitIcons } from "./unitIcons";
-import { cellIcon, towerIcon, UV_BEACON } from "@/game/atlas";
+import { towerIcon } from "@/game/atlas";
 import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
 import {
   LEGACY_COLS,
@@ -24,10 +24,6 @@ const LAYER_ROWS: ReadonlyArray<[keyof TerrainLayers, string]> = [
   ["props", "Props"],
   ["spawn", "Spawn tiles"],
   ["base", "Base"],
-  // the beacons are a layer like any other now: hide them to paint the rock
-  // they stand on, and while they are hidden neither the brush nor the
-  // eraser can touch one (game/editor.ts)
-  ["beacon", "Beacons"],
   // the mission's own furniture (missionMarks.ts) — an authoring layer
   // like the pads: a match never draws one, it draws what rose there
   ["mark", "Mission marks"],
@@ -218,8 +214,7 @@ export default function MapEditorView({
   const markFace = useUnitIcons(MARK_UNITS);
   // ...and the turret heads, for the marks that stand a TURRET up rather
   // than a body (missionMarks.ts towerField). They are drawn into the
-  // sheet at pack time like the beacon's block, so there is no sprite
-  // file to point a swatch at
+  // sheet at pack time, so there is no sprite file to point a swatch at
   const [towerFaces, setTowerFaces] = useState<Record<string, string>>({});
   useEffect(() => {
     let alive = true;
@@ -227,18 +222,6 @@ export default function MapEditorView({
       void towerIcon(kind).then((url) => {
         if (alive) setTowerFaces((had) => ({ ...had, [kind]: url }));
       });
-    return () => {
-      alive = false;
-    };
-  }, []);
-  // ...and the beacon's own block, which is drawn into the sheet at pack
-  // time and has no sprite file to point at (atlas.ts UV_BEACON)
-  const [beaconFace, setBeaconFace] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    void cellIcon(UV_BEACON).then((url) => {
-      if (alive) setBeaconFace(url);
-    });
     return () => {
       alive = false;
     };
@@ -324,8 +307,7 @@ export default function MapEditorView({
       ed.layers.wall !== layers.wall ||
       ed.layers.props !== layers.props ||
       ed.layers.spawn !== layers.spawn ||
-      ed.layers.base !== layers.base ||
-      ed.layers.beacon !== layers.beacon
+      ed.layers.base !== layers.base
     ) {
       ed.layers = { ...layers };
       // exits live in the per-frame overlay rather than the static batches,
@@ -712,9 +694,8 @@ export default function MapEditorView({
                   {section.sets.flatMap((set) =>
                     (randomize && !set.noRandom ? set.icons.slice(0, 1) : set.icons).map(
                       (stockIcon, v) => {
-                        // A MARK WEARS THE BODY IT PUTS DOWN, and the
-                        // beacon the block the board draws. Every one of
-                        // these used to be the same stock power node,
+                        // A MARK WEARS THE BODY IT PUTS DOWN. Every one
+                        // of these used to be the same stock power node,
                         // which told an author nothing about which was
                         // which
                         // the face is PER VARIANT now (maps.ts markFaces):
@@ -723,7 +704,6 @@ export default function MapEditorView({
                         const face = set.markFaces?.[v] ?? (set.mark ? markKind(set.mark)?.unit : null);
                         const icon =
                           (face && (towerFaces[face] || markFace(face as UnitKind))) ||
-                          (set.kind === "beacon" && beaconFace) ||
                           stockIcon;
                         const active =
                           setId === set.id && ((randomize && !set.noRandom) || variant === v);
