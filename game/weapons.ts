@@ -1,4 +1,4 @@
-import { CELL, PAL, SHRAPNEL, TEAM_CRUX_RGB } from "./constants";
+import { CELL, GARRISON_SHOT, GARRISON_SHOT_BACK, PAL, SHRAPNEL, TEAM_CRUX_RGB } from "./constants";
 import type { UnitKind } from "./levels";
 import { FxKind, type RGB, type TowerKind } from "./types";
 
@@ -613,8 +613,27 @@ export const TETHER_LASER = laserStyle({
  * UPSTREAM of this file (weapons.ts imports PAL from it) and cannot name a
  * style without a cycle. Anything absent draws style 0, piercer's.
  */
+/**
+ * THE GARRISON'S BEAM (types.ts ENEMY_ONLY_KINDS) — red over near-black,
+ * the palette every one of their guns throws (constants.ts
+ * GARRISON_SHOT). Their rounds were already in it; a beam that came out
+ * piercer's blue was the one thing on those machines still wearing
+ * somebody else's colour.
+ */
+const GARRISON_LASER = laserStyle({
+  colors: [[GARRISON_SHOT_BACK, 0.55], [GARRISON_SHOT, 1], [WHITE, 1]],
+  width: 11,
+  sideAngle: 35 * DEG,
+  sideWidth: 0.7,
+  sideLength: 12,
+  lifetime: t(16),
+});
+
 export const TOWER_LASER_STYLE: Partial<Record<TowerKind, number>> = {
   tether: TETHER_LASER.id,
+  // the two garrison guns that fire a beam, both on the one style
+  lance: GARRISON_LASER.id,
+  halberd: GARRISON_LASER.id,
 };
 
 /** the furnace's beam, and it is HOT: the deep orange at .33 and .67, the

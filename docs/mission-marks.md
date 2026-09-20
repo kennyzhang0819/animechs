@@ -266,36 +266,38 @@ moves. Pick which of the four:
 
 | | footprint | pool | plating | reach | what it does |
 |---|---|---|---|---|---|
-| **Lance** | 3x3 | 17,000 | 14 | 70t | One armour-cutting beam, every 0.75s |
-| **Bulwark** | 3x3 | 25,000 | 104 | 27t | A ram — 1,500 twice a swing with splash, three times every second |
-| **Halberd** | 4x4 | 55,000 | 115 | 75t | **Four beams at once**, every 0.9s, from behind a 9,000-point force field |
-| **Juggernaut** | 6x6 | 200,000 | 150 | 60t | **Six homing missiles a volley out of the sponsons down both flanks**, three volleys a second |
+| **Lance** | 3x3 | 17,000 | 14 | 25t | One armour-cutting beam, every 0.75s |
+| **Bulwark** | 3x3 | 25,000 | 104 | 15t | A ram — 1,500 twice a swing with splash, three times a second |
+| **Halberd** | 4x4 | 55,000 | 115 | 29t | **Four beams at once**, every 0.9s, from behind a 9,000-point force field |
+| **Juggernaut** | 6x6 | 200,000 | 150 | 41t | **Six homing missiles a volley out of the sponsons down both flanks**, three volleys a second |
 
-**They out-reach your line, and that is the point.** The longest turret a
-run can buy is the railhead at 62 tiles; every garrison gun but the
-Bulwark beats it. A gun you can answer from outside its reach is not an
-objective, it is a slow-moving pile of scrap — the trip out to one has to
-be a trip you take under fire.
+**The yardstick is the autocannon** at 24 tiles. Three of the four sit
+around it and the Juggernaut reaches half again as far — it is the one
+that is supposed to make you come to it rather than the other way round.
+They used to reach 60 to 75 tiles, which made every one of them a gun you
+fought from off-screen.
 
 **They hit hard and they hit often.** Every cycle is under a second and the
 damage is a multiple of what the bodies carried.
 
-**Everything they throw is red and black** (`GARRISON_SHOT`): one palette
-across four guns, so a round in the air over your line is the garrison's
-before you have worked out which of them fired it.
+**One palette, one muzzle, one hit.** Every gun fires `ShootBig`, lands
+`BlastExplosion` and throws `GARRISON_SHOT` — red (255,77,94) over the
+bore's near-black (20,9,12). The two that fire a beam use a garrison laser
+style in the same pair rather than piercer's blue, which was the one thing
+on those machines still wearing somebody else's colour. So a round in the
+air over your line is the garrison's before you have worked out which of
+them fired it.
 
 **The Halberd carries a force field** — the same one the swarm's bodies
 carry, drawn by the same pass (`Renderer.drawForceFields`), and the only
 turret in the game with one. It is a hard gate and not a share: while any
 shield is left nothing reaches the building, and the hit that breaks it is
 spent on the shield rather than carried through. Seven seconds after it
-breaks it is back whole. So the gun is answered in two stages and a board
-cannot chip past it with volume.
+breaks it is back whole.
 
 **The Juggernaut fires out of its flanks.** `barrels` walks the muzzle
 across six points down the sponsons, so a volley leaves the sides of the
-hull rather than one hole up the middle — which is what the drawing has
-and what six tiles of machine should look like firing.
+hull rather than one hole up the middle.
 
 **They wear no accent.** The railgun carries the swarm's crimson because it
 is a body a mission plants and you have to pick it out of a crowd; these
