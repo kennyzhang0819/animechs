@@ -241,10 +241,11 @@ export interface ProfileCensus {
   corpses: number;
   fx: number;
   /**
-   * THE WIDEST LIVE HITBOX on each layer, px. Every broad-phase pad in
-   * the sim is sized by this and not by the thing doing the asking
-   * (Sim.rmaxAliveFor), so one very wide body raises the price of every
-   * sweep on the board — and this is the only place that shows up.
+   * THE WIDEST LIVE HITBOX on each layer, px. Every broad-phase pad but
+   * the shot sweep's is sized by this and not by the thing doing the
+   * asking (Sim.rmaxAliveFor); the shot sweep pads to the widest body that
+   * is not a giant and meets the giants off a list, and shotSpan below is
+   * what one shot actually paid.
    */
   rmaxAir: number;
   rmaxGround: number;

@@ -126,6 +126,7 @@ import { DT_CAP, SIM_DT } from "./simclock";
 import {
   HB_A,
   HB_B,
+  HB_GIANT,
   HB_HEAVY,
   HB_MEAN,
   HB_OUTER,
@@ -385,6 +386,9 @@ const CHAIN_LINKS_MAX = 64;
 /** seconds a homing shot holds its quarry before it searches for a nearer
  *  one — six ticks (updateProjectiles) */
 const HOMING_REPICK = 6 / 60;
+/** giants alive past which the shot sweep pads its span to reach them instead
+ * of meeting them off giantList one by one — a board of bosses is a swarm */
+const GIANT_LIST_MAX = 128;
 /** the hit list, highest body index first, so swap-removes below never
  *  disturb a removal still pending above (updateProjectiles) */
 const PROJ_DESC = (a: number, b: number): number => b - a;
@@ -2284,6 +2288,12 @@ export class Sim {
    */
   private rmaxAliveGround = 0;
   private rmaxAliveAir = 0;
+  /** ...and the widest per layer NOT counted a giant (HB_GIANT): the shot
+   * sweep's pad, the giants being met off giantList (updateProjectiles) */
+  private rmaxAliveGroundNG = 0;
+  private rmaxAliveAirNG = 0;
+  private readonly giantList = new Int32Array(MAX_UNITS);
+  private giantN = 0;
   /** physics span per kind against ANY live partner on its layer — what a
    * heavy scans, since a heavy owns every pair it is in */
   private readonly kindSpanDyn = shared.i32(UNIT_KINDS.length);
@@ -4503,13 +4513,10 @@ export class Sim {
       else shots++;
     }
     // THE PAD ONE BULLET PAYS, in hash cells: the sweep in
-    // updateProjectiles walks (2*span+1) squared of them, and span is set
-    // by the widest hitbox ALIVE rather than by anything about the bullet.
-    // One heavy body on the field therefore raises the price of every
-    // shot in the air, which is the single most surprising line in this
-    // whole report and the reason it is printed
-    const rmax = Math.max(this.rmaxAliveAir, this.rmaxAliveGround);
-    const span = Math.max(1, Math.ceil((rmax + 2.5) / HC));
+    // updateProjectiles walks (2*span+1) squared of them. span follows the
+    // widest body alive that is not a giant (shotSpanFor): a boss is met
+    // off giantList instead of widening every shot's sweep to reach it
+    const span = this.shotSpanFor(true, true, 2.5);
     return {
       wave: this.currentWave(),
       bodies: this.n,
@@ -10123,6 +10130,8 @@ export class Sim {
     let g = 0, a = 0, na = 0, ng = 0;
     // widest SMALL unit per layer, for the swarm's own physics span
     let gs = 0, as = 0;
+    // ...and widest NON-GIANT per layer, for the shot sweep (HB_GIANT)
+    let gng = 0, ang = 0;
     for (let k = 0; k < UNIT_KINDS.length; k++) {
       const alive = this.aliveByKind[k];
       if (alive <= 0) continue;
@@ -10131,14 +10140,18 @@ export class Sim {
         na += alive;
         if (r > a) a = r;
         if (!HB_HEAVY[k] && r > as) as = r;
+        if (!HB_GIANT[k] && r > ang) ang = r;
       } else {
         ng += alive;
         if (r > g) g = r;
         if (!HB_HEAVY[k] && r > gs) gs = r;
+        if (!HB_GIANT[k] && r > gng) gng = r;
       }
     }
     this.rmaxAliveGround = g;
     this.rmaxAliveAir = a;
+    this.rmaxAliveGroundNG = gng;
+    this.rmaxAliveAirNG = ang;
     this.nAliveAir = na;
     this.nAliveGround = ng;
     // the same reach kindSpan holds, with the live rmax in place of the
@@ -10155,6 +10168,16 @@ export class Sim {
    * — the live-roster stand-in for HB_RMAX in every broad-phase pad */
   private rmaxAliveFor(air: boolean, ground: boolean): number {
     return Math.max(air ? this.rmaxAliveAir : 0, ground ? this.rmaxAliveGround : 0);
+  }
+
+  /** the shot sweep's span: padded to the widest NON-giant while the giants
+   * are few enough to be met off giantList, to the widest body alive past that */
+  private shotSpanFor(air: boolean, ground: boolean, brad: number): number {
+    const r =
+      this.giantN <= GIANT_LIST_MAX
+        ? Math.max(air ? this.rmaxAliveAirNG : 0, ground ? this.rmaxAliveGroundNG : 0)
+        : this.rmaxAliveFor(air, ground);
+    return Math.max(1, Math.ceil((r + brad) / HC));
   }
 
   /**
@@ -10199,6 +10222,10 @@ export class Sim {
   private buildHash(): void {
     this.bodyIters += this.n;
     buildHash(this.upx, this.upy, this.n, this.bStart, this.bCount, this.bUnits);
+    const { ukind, giantList } = this;
+    let gn = 0;
+    for (let i = 0; i < this.n; i++) if (HB_GIANT[ukind[i]] !== 0) giantList[gn++] = i;
+    this.giantN = gn;
   }
 
   // ---------- units ----------
@@ -13751,7 +13778,8 @@ export class Sim {
     // through a constant-shaped object is one L1 read; it is not the
     // cost. The comparator is PROJ_DESC, made once at module scope
     const K = P.kind, FL = P.flags, PIER = P.pierced;
-    const { uid, ufly } = this;
+    const { uid, ufly, ukind, giantList } = this;
+    const giantSplit = this.giantN <= GIANT_LIST_MAX;
     // THE STATS, ONCE A PASS PER (KIND, FRAG, ALT) rather than once a shot:
     // bulletFor is a map lookup on a string and a chain of reads, and
     // beside it the bucket span (rmaxAliveFor, a ceil and a divide) is
@@ -13782,13 +13810,11 @@ export class Sim {
         b = this.bulletFor(TOWER_KINDS[K[p]], (fl & PROJ_FRAG) !== 0, (fl & PROJ_ALT) !== 0);
         tbl[ti] = b;
         // the static HIT_SPAN/FRAG_SPAN bound, shrunk to the LIVE largest
-        // hitbox on the layers this bullet can touch — same hits, fewer
-        // buckets walked in the waves that field no heavy
+        // hitbox on the layers this bullet can touch that is not a giant —
+        // the giants are met off giantList below, so one boss no longer
+        // widens every shot's sweep to reach it
         brt[ti] = b.hitRadius ?? 2.5;
-        spt[ti] = Math.max(
-          1,
-          Math.ceil((this.rmaxAliveFor(b.collidesAir, b.collidesGround) + brt[ti]) / HC),
-        );
+        spt[ti] = this.shotSpanFor(b.collidesAir, b.collidesGround, brt[ti]);
         bft[ti] =
           (b.homing ? BF_HOMING : 0) |
           (b.puff ? BF_PUFF : 0) |
@@ -13960,6 +13986,7 @@ export class Sim {
           for (let k = e0; k < e; k++) {
             const i = bUnits[k];
             if (i >= this.n || uhp[i] <= 0) continue;
+            if (giantSplit && HB_GIANT[ukind[i]] !== 0) continue;
             if (ufly[i] !== 0 ? !b.collidesAir : !b.collidesGround) continue;
             // Bullet.collides: a pierce shot skips whoever it already hit
             if (pier && pier.includes(uid[i])) continue;
@@ -13982,6 +14009,26 @@ export class Sim {
                 dead = true;
                 break outer;
               }
+            }
+          }
+        }
+        // ...then the giants, off the list: the sweep's test written out a
+        // second time, because this loop has deoptimized on a closure before
+        if (!dead && giantSplit) {
+          probes += this.giantN;
+          for (let h = 0; h < this.giantN; h++) {
+            const i = giantList[h];
+            if (i >= this.n || uhp[i] <= 0 || HB_GIANT[ukind[i]] === 0) continue;
+            if (ufly[i] !== 0 ? !b.collidesAir : !b.collidesGround) continue;
+            if (pier && pier.includes(uid[i])) continue;
+            const dx = upx[i] - px, dy = upy[i] - py;
+            const d2 = dx * dx + dy * dy;
+            const hr = this.hitR(i, dx, dy, d2) + brad;
+            if (d2 < hr * hr) {
+              hits.push(i);
+              if (!pier) { dead = true; break; }
+              pier.push(uid[i]);
+              if (b.pierceCap !== undefined && pier.length >= b.pierceCap) { dead = true; break; }
             }
           }
         }

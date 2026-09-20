@@ -81,6 +81,9 @@ const N = UNIT_KINDS.length;
  * body stretched past the line in the editor starts owning its own pairs.
  */
 export const HEAVY_R = 20;
+/** the shot sweep's own cut, above the T5 hulls: a body this wide is met
+ * off Sim.giantList rather than by padding every shot's span to reach it */
+export const SHOT_GIANT_R = 80;
 
 // --- the derived tables, REWRITTEN IN PLACE -------------------------------
 //
@@ -102,6 +105,8 @@ export const HB_OUTER = new Float32Array(N);
 export const HB_OVAL = new Uint8Array(N);
 /** 1 when this kind owns its physics pairs (see HEAVY_R) */
 export const HB_HEAVY = new Uint8Array(N);
+/** 1 when wider than SHOT_GIANT_R */
+export const HB_GIANT = new Uint8Array(N);
 /**
  * The widest OUTER radius on each layer over the whole roster — the static
  * broad-phase bound. Ground and air never touch each other, so a
@@ -146,6 +151,7 @@ function rebuild(): void {
     HB_OUTER[i] = outer;
     HB_OVAL[i] = ha === hb ? 0 : 1;
     HB_HEAVY[i] = outer > HEAVY_R ? 1 : 0;
+    HB_GIANT[i] = outer > SHOT_GIANT_R ? 1 : 0;
     if (UNIT_STATS[kind].flying) {
       if (outer > a) a = outer;
     } else if (outer > g) g = outer;
