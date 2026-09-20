@@ -48,6 +48,10 @@ import {
   sellValue,
   TOWER_TIER,
   TOWER_TIERS,
+  TIER_UNLOCK,
+  BUY_AMOUNTS,
+  nextBuyAmount,
+  type BuyAmount,
   type TowerTier,
 } from "./economy";
 import {
@@ -66,12 +70,11 @@ import {
   type RelicId,
 } from "./relics";
 import {
-  FORMATION_IDS,
   formationCells,
   formationCount,
   formationSpan,
   nextFacing,
-  nextFormation,
+  rollFormation,
   type Facing,
   type FormationId,
 } from "./formation";
@@ -306,13 +309,21 @@ export interface UiState {
   /** is this board DEALT (a charged run) or PICKED (sandbox, editors)? —
    *  which of the two corners the overlay puts in the bottom right */
   dealing: boolean;
-  /** what a card of each tier costs at the standing shape — the four
+  /** what a press of each tier costs at the standing amount — the four
    *  numbers on the four buttons (economy.ts cardPrice) */
   tierPrices: Record<TowerTier, number>;
+  /**
+   * WHETHER EACH TIER IS PRESSABLE, and what its button has to draw while
+   * it is not: `left` is the seconds until it opens (0 when it is open)
+   * and `of` is how long the wait was, so the sweep on the button is
+   * `left / of` (economy.ts TIER_UNLOCK, components/Deal.tsx).
+   */
+  tierGates: Record<TowerTier, { left: number; of: number }>;
   modPrice: number;
   relicPrice: number;
-  /** the shape the next press buys: the corner's X button */
-  shape: FormationId;
+  /** how many copies of the rolled shape the next press buys: the
+   *  corner's X button (economy.ts BUY_AMOUNTS) */
+  amount: BuyAmount;
   /**
    * WHAT THE RUN OWNS, IN TWO LISTS BECAUSE IT IS TWO CATEGORIES. The
    * shelf on the top-left of the field draws the relics first and then the
@@ -1176,11 +1187,12 @@ export class Game {
    */
   private heldCard: { kind: TowerKind; form: FormationId; n: number } | null = null;
   /**
-   * THE SHAPE THE NEXT PRESS BUYS (formation.ts) — the corner's X button,
-   * a STANDING setting and not a modifier held down. It survives a reset:
-   * the shape is a habit of the player's, not a fact about the level.
+   * HOW MANY COPIES THE NEXT PRESS BUYS (economy.ts BUY_AMOUNTS) — the
+   * corner's X button, a STANDING setting and not a modifier held down.
+   * It survives a reset: the amount is a habit of the player's, not a
+   * fact about the level.
    */
-  private buyShape: FormationId = FORMATION_IDS[0];
+  private buyAmount: BuyAmount = BUY_AMOUNTS[0];
   private building = false;
   private buildFrom = { x: 0, y: 0 };
   /**
@@ -1739,19 +1751,24 @@ export class Game {
    */
   buyTurretCard(tier: TowerTier): { kind: TowerKind; form: FormationId; n: number } | null {
     if (this.world.lost || this.won() || this.menuOpen) return null;
+    if (this.tierGate(tier).left > 0) return null;
     const kind = rollTurretOfTier(this.drawPool(), tier);
     if (!kind) return null;
+    // the SHAPE is the roll (formation.ts) and the price is not: a press
+    // costs its tier times the amount, whichever square comes up
+    const form = rollFormation();
+    if (!form) return null;
     const price = this.cardPriceOf(tier);
     if (!this.world.spend(price)) return null;
     this.host.spend(price);
-    const form = this.buyShape;
-    this.heldCard = { kind, form, n: 1 };
+    const n = this.buyAmount;
+    this.heldCard = { kind, form, n };
     this.buildKind = kind;
     this.buildForm = form;
     this.buildFacing = 0; // a new card is a new question about the ground
 
     this.host.clearStructSelection();
-    return { kind, form, n: 1 };
+    return { kind, form, n };
   }
 
   /**
@@ -1938,11 +1955,11 @@ export class Game {
     return true;
   }
 
-  /** THE SHAPE BUTTON (X): 3x3 -> 5x5 -> 7x7 -> 3x3, and it spends
+  /** THE AMOUNT BUTTON (X): 1 -> 4 -> 9 -> 16 -> 1, and it spends
    *  nothing. A standing setting, not a held modifier */
-  cycleBuyShape(): FormationId {
-    this.buyShape = nextFormation(this.buyShape);
-    return this.buyShape;
+  cycleBuyAmount(): BuyAmount {
+    this.buyAmount = nextBuyAmount(this.buyAmount);
+    return this.buyAmount;
   }
 
   /** throw the owned card away — what a second draw does to the first
@@ -2016,10 +2033,21 @@ export class Game {
     return anyRelicLeft(this.world.relicsHeld, this.relicPool()) ? "open" : "owned";
   }
 
-  /** what a card of this tier costs at the standing shape — and nothing
+  /** what a press of this tier costs at the standing amount — and nothing
    *  at all on a free board */
   private cardPriceOf(tier: TowerTier): number {
-    return this.dealing ? cardPrice(tier, formationCount(this.buyShape)) : 0;
+    return this.dealing ? cardPrice(tier, this.buyAmount) : 0;
+  }
+
+  /**
+   * IS THIS TIER OPEN YET, and how long is left if it is not (economy.ts
+   * TIER_UNLOCK). A free board — a sandbox or an editor — has no clock on
+   * it at all, because nothing there is being paced.
+   */
+  private tierGate(tier: TowerTier): { left: number; of: number } {
+    const of = TIER_UNLOCK[tier];
+    if (!this.dealing || of <= 0) return { left: 0, of: 0 };
+    return { left: Math.max(0, of - this.world.time), of };
   }
 
   /** point the deal at different odds — what Ascendancy Protocol does */
@@ -2591,9 +2619,12 @@ export class Game {
       tierPrices: Object.fromEntries(
         TOWER_TIERS.map((t) => [t, this.cardPriceOf(t)]),
       ) as Record<TowerTier, number>,
+      tierGates: Object.fromEntries(
+        TOWER_TIERS.map((t) => [t, this.tierGate(t)]),
+      ) as Record<TowerTier, { left: number; of: number }>,
       modPrice: this.dealing ? MOD_ROLL_PRICE : 0,
       relicPrice: this.dealing ? RELIC_ROLL_PRICE : 0,
-      shape: this.buyShape,
+      amount: this.buyAmount,
       shelfMods: w.report.mods,
       shelfRelics: w.report.relics,
       lastDraw: this.lastDraw,

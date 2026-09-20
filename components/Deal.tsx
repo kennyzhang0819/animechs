@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode, type RefObject } from "react";
 
 import { TOWER_DESC, TOWERS } from "@/game/constants";
-import { TOWER_TIER, TOWER_TIERS, type TowerTier } from "@/game/economy";
+import { TOWER_TIER, TOWER_TIERS, type BuyAmount, type TowerTier } from "@/game/economy";
 import {
   fleetFootprint,
   formationCount,
@@ -27,17 +27,21 @@ import { tile } from "./tile";
  * BUTTONS in a 2x2 with the SHAPE button under them:
  *
  *   1 / 2 / 3 / 4 BUY A CARD OF THAT TIER. The tier is the turret's
- *   footprint in tiles (economy.ts TOWER_TIER), the price is the tier's
- *   times the standing shape's cell count, and the only thing rolled is
- *   WHICH gun of the tier comes up. So the number on the button is the
- *   size of the thing, the price under it is exact before the press, and
- *   the surprise is which of the four or five guns in the band arrived —
- *   never what it cost. The card drops into the corner already aimed.
+ *   footprint in tiles (economy.ts TOWER_TIER) and the price under the
+ *   button is exact before the press. WHAT IS ROLLED is which gun of the
+ *   band comes up and HOW BIG A PATCH of it lands — 3x3 up to 6x6
+ *   (formation.ts) — so the same scrap sometimes buys nine turrets and
+ *   sometimes thirty-six. The card drops into the corner already aimed.
  *
- *   SHAPE (X) cycles 3x3 -> 5x5 -> 7x7 and is a standing setting, not a
- *   held modifier. It multiplies all four prices by its cell count, flat,
- *   with no bulk discount: it buys GROUND, and a 7x7 of tier 4 is a 28x28
- *   patch of map and most of a run's bank.
+ *   THE BANDS OPEN ON THE RUN CLOCK (economy.ts TIER_UNLOCK): tier 1 from
+ *   the first frame, then one every five minutes. A shut button wears a
+ *   grey sweep that retreats clockwise as its minute comes round, so the
+ *   wait is a thing on screen rather than a rule to remember.
+ *
+ *   AMOUNT (X) cycles 1 -> 4 -> 9 -> 16 and is a standing setting, not a
+ *   held modifier. It multiplies all four prices, flat, with no bulk
+ *   discount, and what it buys is the rolled shape TILED that many times
+ *   — one gun, one roll, that much more ground.
  *
  * THE MODULE BUTTONS ARE GONE. Mods and relics are out of the run
  * (track.ts, economy.ts) — the corner buys guns and ground and nothing
@@ -47,10 +51,10 @@ import { tile } from "./tile";
  * thing here that is not a button in the square: it is a verb on the
  * GHOST, aimed with the cursor.
  *
- * THE FLOW IS 1, CLICK, 1, CLICK. There is no hand to manage and no clock
- * to beat: a card is drawn already aimed and stands until the ground takes
- * it. A re-roll is not refunded — it costs another card, which is what
- * keeps the band's spread a real spread and not a free look.
+ * THE FLOW IS 1, CLICK, 1, CLICK. There is no hand to manage: a card is
+ * drawn already aimed and stands until the ground takes it. A re-roll is
+ * not refunded — it costs another card, which is what keeps the band's
+ * spread a real spread and not a free look.
  *
  * OWNING A CARD AND AIMING IT ARE TWO DIFFERENT STATES. The right button
  * puts the GHOST away and leaves the card in its slot; clicking the slot
@@ -106,11 +110,11 @@ export function useDeal(
     [gameRef, refresh],
   );
 
-  /** the shape button, and the only one that spends nothing */
+  /** the amount button, and the only one that spends nothing */
   const cycleShape = useCallback(() => {
     const g = gameRef.current;
     if (!g) return;
-    g.cycleBuyShape();
+    g.cycleBuyAmount();
     refresh();
   }, [gameRef, refresh]);
 
@@ -300,47 +304,62 @@ function TurretCard({
 /**
  * THE SQUARE, and the one card standing over it.
  *
- * FOUR TIER BUTTONS IN A 2x2 with the shape button under them, in a pane
+ * FOUR TIER BUTTONS IN A 2x2 with the amount button under them, in a pane
  * the size of the minimap's — the two bottom corners are a matched pair.
  * Each button is a big square target rather than a strip of text, which is
  * what a control pressed a hundred times a run, mid-wave, without looking,
  * has to be.
  *
  * READING ORDER IS THE ORDER OF THE PRICE: tier 1 through tier 4, cheapest
- * first, wearing their own four colours. The SHAPE comes last and spans
+ * first, wearing their own four colours. The AMOUNT comes last and spans
  * the width, because it is the multiplier on the other four rather than a
  * fifth thing to buy — the quantity field goes after the item.
  */
+/** m:ss, for a wait a player is watching count down */
+const clock = (left: number): string => {
+  const t = Math.ceil(left);
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+};
+
 function TierButton({
   tier,
   price,
   poor,
-  disabled,
+  owned,
+  gate,
   free,
-  size,
   onPress,
 }: {
   tier: TowerTier;
   price: number;
   poor: boolean;
-  disabled: boolean;
+  /** has the track dealt this save anything in the band at all? */
+  owned: boolean;
+  /** the run clock's own gate: seconds left, and how long the wait was
+   *  (game.ts UiState.tierGates) */
+  gate: { left: number; of: number };
   free: boolean;
-  /** the shape's side, in turrets — what the glyph draws */
-  size: number;
   onPress: () => void;
 }) {
   const r = RARITY[rarityForTier(tier)];
+  const shut = gate.left > 0;
+  const disabled = !owned || shut;
+  // the grey retreats CLOCKWISE as the wait runs down: the covered wedge
+  // is what is left of it, measured from twelve o'clock
+  const swept = gate.of > 0 ? Math.max(0, Math.min(1, gate.left / gate.of)) : 0;
   return (
     <button
       onClick={onPress}
       disabled={disabled}
       aria-keyshortcuts={String(tier)}
       aria-label={
-        disabled
+        !owned
           ? `Tier ${tier} — the track has dealt this save none`
-          : `Buy a ${size}x${size} of tier ${tier} for ${price} scrap, shortcut ${tier}`
+          : shut
+            ? `Tier ${tier} opens in ${clock(gate.left)}`
+            : `Buy a tier ${tier} card for ${price} scrap, shortcut ${tier}`
       }
-      className={`ms-btn ms-btn-key ms-btn-tint relative flex h-full w-full flex-col items-center justify-center gap-1 px-1 py-1 ${
+      className={`ms-btn ms-btn-key ms-btn-tint relative flex h-full w-full flex-col items-center justify-center gap-1 overflow-hidden px-1 py-1 ${
         !disabled && poor ? "opacity-60" : ""
       }`}
       style={{ ["--ms-tint" as string]: r.color }}
@@ -370,6 +389,19 @@ function TierButton({
           {price.toLocaleString()}
         </span>
       )}
+      {shut && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 flex items-center justify-center"
+          style={{
+            background: `conic-gradient(from 0deg, transparent 0turn ${1 - swept}turn, rgba(8,9,12,0.78) ${1 - swept}turn 1turn)`,
+          }}
+        >
+          <span className="font-display text-[15px] font-bold leading-none tabular-nums text-[#E8E4D8] drop-shadow">
+            {clock(gate.left)}
+          </span>
+        </span>
+      )}
     </button>
   );
 }
@@ -384,7 +416,7 @@ export function DealCorner({
   deal: DealActions;
 }) {
   const card = cardOf(hud);
-  const form = formationDef(hud.shape);
+  const amount: BuyAmount = hud.amount;
   const free = hud.scrap === null;
   const short = (cost: number): boolean => hud.scrap !== null && hud.scrap < cost;
   const owns = (t: TowerTier): boolean =>
@@ -412,24 +444,24 @@ export function DealCorner({
               tier={t}
               price={hud.tierPrices[t]}
               poor={short(hud.tierPrices[t])}
-              disabled={!owns(t)}
+              owned={owns(t)}
+              gate={hud.tierGates[t]}
               free={free}
-              size={form.w}
               onPress={() => deal.buy(t)}
             />
           ))}
           <button
             onClick={deal.cycleShape}
             aria-keyshortcuts="X"
-            aria-label={`Shape: ${form.w} by ${form.h}, ${formationCount(hud.shape)} turrets. Click to cycle, shortcut X`}
+            aria-label={`Amount: ${amount} ${amount === 1 ? "copy" : "copies"} of whatever shape the press rolls. Click to cycle, shortcut X`}
             className="ms-btn ms-btn-key col-span-2 relative flex h-full w-full flex-row items-center justify-center gap-2 px-1 py-1"
           >
             <span className="ms-key">X</span>
             <span className="font-display text-[22px] font-bold leading-none tabular-nums">
-              {form.w}×{form.h}
+              ×{amount}
             </span>
             <span className="font-display text-[10px] font-bold uppercase leading-none text-[#8A8E98]">
-              {formationCount(hud.shape)} turrets
+              {amount === 1 ? "one patch" : `${amount} patches`}
             </span>
           </button>
         </div>

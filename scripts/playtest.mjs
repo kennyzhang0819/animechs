@@ -300,8 +300,8 @@ function airCells(sim) {
 function play() {
   for (const k of TY.TOWER_KINDS)
     E.setScrapPrice(k, Math.max(1, Math.round(E.scrapPriceOf(k) * SCALE)));
-  // WHAT A CARD COSTS is its tier times its cell count (economy.ts
-  // cardPrice), read at the buy below
+  // WHAT A PRESS COSTS is its tier's flat price (economy.ts cardPrice),
+  // read at the buy below
   if (START !== null) E.SCRAP_START = +START;
   if (UNIT_DAMAGE !== null) WP.setUnitDamageScale(+UNIT_DAMAGE);
 
@@ -314,9 +314,10 @@ function play() {
   const owned = tech.unlocked;
   /** what the deal may turn over for this save — Game.drawPool's twin */
   const roster = TY.FIELDED_KINDS.filter((k) => owned.has(k));
-  /** ...and the shapes, which the player CHOOSES now (formation.ts). The
-   *  bot buys the smallest: the biggest patch it can find ground for is a
-   *  question about a map and not about a script */
+  /** ...and the shape, which the deal ROLLS (formation.ts rollFormation).
+   *  The bot takes the smallest every time rather than rolling: what this
+   *  measures is a script against a board, and a run-to-run size roll
+   *  would put variance in the answer that is not the map's */
   const shape = FO.FORMATION_IDS[0];
   sim.setTech(tech);
 
@@ -476,10 +477,10 @@ function play() {
     for (let tries = 0; tries < 40; tries++) {
       // the bot buys the cheapest tier its plan still names it can afford,
       // which is the player's own question at the four buttons
-      const afford = pool.filter((k) => sim.scrap >= E.cardPrice(E.TOWER_TIER[k], want));
+      const afford = pool.filter((k) => sim.scrap >= E.cardPrice(E.TOWER_TIER[k]));
       if (afford.length === 0 || sim.towers.length >= CAP) break;
       const kind = afford[Math.floor(Math.random() * afford.length)];
-      const fee = E.cardPrice(E.TOWER_TIER[kind], want);
+      const fee = E.cardPrice(E.TOWER_TIER[kind]);
       // the fee is charged once the FIRST of them lands rather than at the
       // draw, which is the one place the bot is kinder to itself than the
       // game is: a player who cannot find ground for a card watches it

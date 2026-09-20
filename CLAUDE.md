@@ -25,8 +25,10 @@ Nemesis +1 up. Custom mode may name a hand instead of rolling.
 
 **The economy** (`game/economy.ts`, `docs/economy.md`). The core pays on the RUN
 CLOCK and nothing else — no kill drops, no wave bonus — so difficulty and income are
-independent. A turret card costs its TIER (the gun's footprint in tiles, 1 to 4, picked
-with 1/2/3/4) times its shape's cell count (3x3 / 5x5 / 7x7, cycled with X). **Mods and
+independent. A press costs its TIER (the gun's footprint in tiles, 1 to 4, picked with
+1/2/3/4) times `CARD_CELLS`, flat, times the AMOUNT (1/4/9/16, cycled with X); the SHAPE
+it hands over is rolled, 3x3 to 6x6. The bands open on the run clock — tier 1 at once,
+then 5:00, 10:00 and 15:00. **Mods and
 relics** (`game/mods.ts`, `game/relics.ts`) are OUT OF PLAY: the catalogs, odds, shelf
 and codex tabs are intact and `track.ts` deals neither, so nothing in a run can roll one.
 Do not delete them.

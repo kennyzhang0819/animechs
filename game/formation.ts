@@ -1,29 +1,33 @@
 /**
- * FORMATION — the SHAPE half of a card, and what makes a draw a decision
- * about ground rather than about a gun.
+ * FORMATION — the SHAPE half of a card, and the ROLL on every press.
  *
- * A card carries two answers and NEITHER OF THEM IS A ROLL ANY MORE: the
- * player picks the TIER with 1/2/3/4 (economy.ts TOWER_TIER) and the
- * SHAPE with X, and the only thing the deal rolls is which gun of that
- * tier comes up. So the price is known before the press, which is the
- * whole reason the shape stopped being a second roll.
+ * A card carries two answers. The player picks the TIER with 1/2/3/4
+ * (economy.ts TOWER_TIER), which is the gun's footprint and the price;
+ * the deal rolls WHICH gun of that tier comes up and HOW BIG A PATCH of
+ * it lands. So the money is known before the press and the size is the
+ * luck — the same press sometimes buys nine turrets and sometimes
+ * thirty-six, for the same scrap.
  *
  * THE CELLS ARE TURRETS, NOT TILES. Every offset below is counted in
  * WHOLE TURRETS, so a formation's footprint on the board is its grid
  * times the turret's own size — and since the tier IS the turret's size,
- * a block is 3x3 tiles at tier 1 and 12x12 at tier 4. That is what the
- * two buttons buy between them: which gun, and how much map.
+ * a block is 3x3 tiles at tier 1 and 12x12 at tier 4.
  *
- * THREE SHAPES, ODD SQUARES, 3x3 to 7x7. An odd square has a middle, so
- * the ghost sits centred on the cursor and the patch a player is aiming
- * is the patch they get. Nothing is carved: a hole in a formation is a
- * hole in a wall and the swarm walks it.
+ * FOUR SHAPES, 3x3 to 6x6, and nothing is carved: a hole in a formation
+ * is a hole in a wall and the swarm walks it. A square has one thing to
+ * say and says it in its own diagram — THIS MUCH GROUND.
+ *
+ * SHAPES HAVE RARITIES TOO, and they are the turrets' own four
+ * (rarity.ts), worn on the same frames — so one palette answers "how good
+ * is this card" twice over, once for the gun and once for the shape.
  *
  * NOTHING HERE IS EARNED. Every shape is a save's from wave one — the
- * track deals guns and maps and rules (track.ts) and deals no shapes.
+ * track deals guns and maps and rules (track.ts) and deals no shapes, so
+ * the 6x6 is rare because it is RARE and not because it is locked.
  */
+import { RARITIES, weightDial, type Rarity, type RarityWeights, type WeightDial } from "./rarity";
 
-export const FORMATION_IDS = ["block", "bastion", "citadel"] as const;
+export const FORMATION_IDS = ["block", "grid", "bastion", "citadel"] as const;
 export type FormationId = (typeof FORMATION_IDS)[number];
 
 export interface FormationDef {
@@ -44,16 +48,88 @@ const solid = (w: number, h: number): (readonly [number, number])[] => {
   return out;
 };
 
-/** the three, smallest first — the name is the size */
+/** the four, smallest first — the name is the size */
 export const FORMATIONS: Readonly<Record<FormationId, FormationDef>> = {
   /* 9 — the floor of the deal, and nothing is ever smaller */
   block: { id: "block", name: "Block", w: 3, h: 3, cells: solid(3, 3) },
+  /* 16 */
+  grid: { id: "grid", name: "Grid", w: 4, h: 4, cells: solid(4, 4) },
   /* 25 */
   bastion: { id: "bastion", name: "Bastion", w: 5, h: 5, cells: solid(5, 5) },
-  /* 49 — forty-nine repeaters is a 28x28 tile ironhide3, and finding the
-     ground for one is most of the reward */
-  citadel: { id: "citadel", name: "Citadel", w: 7, h: 7, cells: solid(7, 7) },
+  /* 36 — the largest thing the deal will ever hand over: thirty-six
+     repeaters is a 24x24 tile citadel, and finding the ground for one is
+     most of the reward */
+  citadel: { id: "citadel", name: "Citadel", w: 6, h: 6, cells: solid(6, 6) },
 };
+
+/**
+ * THE BAND A SHAPE IS IN, read off its side and nothing else. A rule
+ * rather than a table because the size IS the worth, so a square added or
+ * taken away lands in its band by itself.
+ */
+export const formationRarity = (id: FormationId): Rarity =>
+  RARITIES[Math.min(RARITIES.length - 1, FORMATIONS[id].w - 3)];
+
+/** every shape of one band, smallest first — for the codex and the tests */
+export const formationsOfRarity = (r: Rarity): FormationId[] =>
+  FORMATION_IDS.filter((id) => formationRarity(id) === r);
+
+/**
+ * THE SHAPE ODDS, AND THEY ARE DELIBERATELY SOFT. The turret roll is
+ * where a run's tension lives — one draw in a hundred is purple there —
+ * and this one is the generous half of the same press: the 6x6 comes up
+ * about one draw in ten. What a player should feel is "which gun" first
+ * and "how much of it" second, and odds as steep as the turrets' would
+ * invert that.
+ *
+ * Weights are relative and renormalised over whatever bands the pool
+ * handed in actually covers (rollFormation), so a caller that narrows the
+ * pool still draws.
+ */
+export const FORMATION_WEIGHTS: RarityWeights = {
+  common: 40,
+  uncommon: 30,
+  rare: 20,
+  ultra: 10,
+};
+
+/** ...and the same table as a dial the dashboard can turn (rarity.ts
+ *  weightDial). Read this, not the const, anywhere the live answer matters */
+export const SHAPE_ODDS: WeightDial = weightDial(FORMATION_WEIGHTS);
+
+/**
+ * ONE DRAW OFF THE SHAPE TABLE: a band against the weights, then a shape
+ * uniformly inside it. The same two-step the turret roll uses and for the
+ * same reason — adding a fifth square should change WHICH shape of its
+ * band comes up, never how often that band does.
+ */
+export function rollFormation(
+  pool: readonly FormationId[] = FORMATION_IDS,
+  weights: RarityWeights = SHAPE_ODDS.live(),
+  rng: () => number = Math.random,
+): FormationId | null {
+  const byRarity = new Map<Rarity, FormationId[]>();
+  for (const id of pool) {
+    const r = formationRarity(id);
+    const list = byRarity.get(r);
+    if (list) list.push(id);
+    else byRarity.set(r, [id]);
+  }
+  const live = RARITIES.filter((r) => (byRarity.get(r)?.length ?? 0) > 0);
+  if (live.length === 0) return null;
+  const pick = (r: Rarity): FormationId => {
+    const list = byRarity.get(r)!;
+    return list[Math.floor(rng() * list.length) % list.length];
+  };
+  const total = live.reduce((n, r) => n + Math.max(0, weights[r]), 0);
+  if (total <= 0) return pick(live[live.length - 1]);
+  let n = rng() * total;
+  for (const r of live) {
+    n -= Math.max(0, weights[r]);
+    if (n <= 0) return pick(r);
+  }
+  return pick(live[live.length - 1]);
+}
 
 export const formationDef = (id: FormationId): FormationDef => FORMATIONS[id];
 
@@ -61,15 +137,12 @@ export const formationDef = (id: FormationId): FormationDef => FORMATIONS[id];
 export const formationCount = (id: FormationId, n = 1): number =>
   FORMATIONS[id].cells.length * Math.max(1, n);
 
-/** the shape after this one, wrapping — what the X button does */
-export const nextFormation = (id: FormationId): FormationId =>
-  FORMATION_IDS[(FORMATION_IDS.indexOf(id) + 1) % FORMATION_IDS.length];
-
 /**
- * THE FLEET — one card's shape TILED n times. Nothing in the corner buys
- * a fleet any more (the amount ladder became the shape button), so every
- * live card is n = 1; the tiling is kept because the editors and the
- * headless playtest still lay patches down with it.
+ * THE FLEET — one card's shape TILED n times, which is what the corner's
+ * AMOUNT button buys (economy.ts BUY_AMOUNTS). A x4 press does NOT roll
+ * four cards: it rolls one gun and one shape, exactly as a single press
+ * does, and tiles that shape four times. Every amount is a SQUARE so the
+ * copies butt with no gap.
  */
 
 export function fleetLayout(n: number): readonly (readonly [number, number])[] {
@@ -199,13 +272,13 @@ export function formationSpan(
   return [w * size, h * size];
 }
 
-/** EVERY FORMATION IS A SOLID ODD SQUARE — checked at import, because the
- *  centred ghost and the fleet tiling both lean on it */
+/** EVERY FORMATION IS A SOLID SQUARE — checked at import, because the
+ *  fleet tiling leans on it */
 (() => {
   for (const id of FORMATION_IDS) {
     const f = FORMATIONS[id];
-    if (f.w < 3 || f.w !== f.h || f.w % 2 === 0)
-      throw new Error(`the formation "${id}" is ${f.w}x${f.h}; every formation is an odd square of 3 or more`);
+    if (f.w < 3 || f.w !== f.h)
+      throw new Error(`the formation "${id}" is ${f.w}x${f.h}; every formation is a square of 3 or more`);
     if (f.cells.length !== f.w * f.h)
       throw new Error(
         `the formation "${id}" carries ${f.cells.length} of its ${f.w * f.h} cells; every formation is solid`,

@@ -162,8 +162,8 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
 };
 
 /**
- * WHAT ONE TURRET OF A TIER COSTS. A card is this times the shape's cell
- * count (cardPrice), so the smallest tier-4 card is 288,000 and no opening
+ * WHAT ONE TURRET OF A TIER IS PRICED AT. A press costs this times
+ * CARD_CELLS (cardPrice), so a tier-4 press is 512,000 and no opening
  * bank comes near one.
  *
  * THE STEEPNESS IS AT THE TOP, WHERE IT BUYS SOMETHING. About six times a
@@ -188,10 +188,73 @@ export const TIER_PRICE: Record<TowerTier, number> = {
 export const towersOfTier = (tier: TowerTier): TowerKind[] =>
   TOWER_KINDS.filter((k) => TOWER_TIER[k] === tier);
 
-/** what a card of `cells` turrets at this tier costs — flat, no bulk
- *  discount anywhere (docs/economy.md) */
-export const cardPrice = (tier: TowerTier, cells: number): number =>
-  TIER_PRICE[tier] * Math.max(0, Math.floor(cells));
+/**
+ * THE SHAPE A PRESS IS PRICED AT, in turrets — and it is a CONSTANT, not
+ * the shape that comes up.
+ *
+ * THE SIZE IS THE LUCK (formation.ts rollFormation). A press buys one
+ * tier and one amount, and how big a patch of it lands is the roll: 9,
+ * 16, 25 or 36 turrets for exactly the same scrap. So the price cannot
+ * be the cell count — it has to be paid before the roll, or the button
+ * would be a number that changes after the press.
+ *
+ * SIXTEEN IS THE MEAN SHAPE under the shipped odds (FORMATION_WEIGHTS:
+ * 40/30/20/10 over 9/16/25/36 averages 17), rounded down to a square so
+ * "the price of a 4x4" is a thing a player can hold in their head. A run
+ * that draws badly pays over the odds and one that draws well pays
+ * under, and across a run it comes out where the old per-cell price was.
+ */
+export const CARD_CELLS = 16;
+
+/** what one press at this tier costs — flat, and the same however the
+ *  shape rolls (docs/economy.md) */
+export const cardPrice = (tier: TowerTier, amount = 1): number =>
+  TIER_PRICE[tier] * CARD_CELLS * Math.max(1, Math.floor(amount));
+
+/**
+ * THE AMOUNT LADDER — the corner's X button, multiplying whichever tier
+ * is pressed next. It TILES the rolled shape rather than rolling again
+ * (formation.ts fleetLayout), so a x4 press is one gun, one shape and
+ * four times the ground.
+ *
+ * EVERY AMOUNT IS A SQUARE so the copies butt with no gap — checked below
+ * rather than trusted.
+ */
+export const BUY_AMOUNTS = [1, 4, 9, 16] as const;
+export type BuyAmount = (typeof BUY_AMOUNTS)[number];
+
+/** the amount after this one, wrapping — what one press of X does */
+export const nextBuyAmount = (n: BuyAmount): BuyAmount =>
+  BUY_AMOUNTS[(BUY_AMOUNTS.indexOf(n) + 1) % BUY_AMOUNTS.length];
+
+(() => {
+  for (const n of BUY_AMOUNTS)
+    if (!Number.isInteger(Math.sqrt(n)))
+      throw new Error(`the buy amount ${n} is not a square; a fleet of it cannot tile square`);
+})();
+
+/**
+ * WHEN EACH BAND OPENS, in seconds of run time. Tier 1 from the first
+ * frame; the rest on the clock, five minutes apart.
+ *
+ * IT IS THE RUN CLOCK AND NOT THE BANK, which is the point. Income is a
+ * function of time alone (coreIncomeRate), so a bank gate would be a
+ * clock gate wearing a disguise and a player who saved would meet the
+ * same wall a player who spent did — later, and with nothing to show for
+ * the wait. A clock says the same thing out loud, and the corner can
+ * draw it counting down.
+ *
+ * THE LAST ONE IS THE ONE THAT MATTERS. Fifteen minutes is wave forty of
+ * fifty (levels.ts WAVE_GAP_DEFAULT), which is where STAGES puts tier 4
+ * anyway — so the gate is the stage table said in seconds rather than a
+ * new rule on top of it.
+ */
+export const TIER_UNLOCK: Record<TowerTier, number> = {
+  1: 0,
+  2: 300,
+  3: 600,
+  4: 900,
+};
 
 /** the run cut into four stages, one a tier (see ladder.ts stageAudit) */
 export const STAGES: readonly { tier: TowerTier; from: number; to: number }[] = [

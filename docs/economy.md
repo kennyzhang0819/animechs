@@ -30,7 +30,7 @@ rate(t) = CORE_INCOME_RATE x 2 ^ (min(t, CORE_INCOME_RAMP) / CORE_INCOME_DOUBLIN
 
 | | |
 |---|---|
-| `CORE_INCOME_RATE` | 600 scrap a second, at t = 0 |
+| `CORE_INCOME_RATE` | 330 scrap a second, at t = 0 |
 | `CORE_INCOME_DOUBLING` | 255 seconds |
 | `CORE_INCOME_RAMP` | 1,125 — the shipped campaign's own length |
 | `SCRAP_START` | 6,000 |
@@ -42,12 +42,12 @@ else.
 
 | wave | second | rate/s | banked by then |
 |---|---|---|---|
-| 1 | 3 | 605 | 7,808 |
-| 10 | 206 | 1,050 | 171,680 |
-| 20 | 431 | 1,937 | 497,861 |
-| 30 | 656 | 3,568 | 1,097,821 |
-| 40 | 881 | 6,576 | 2,204,212 |
-| 50 | 1,106 | 12,119 | 4,243,076 |
+| 1 | 3 | 333 | 7,000 |
+| 10 | 206 | 578 | 97,000 |
+| 20 | 431 | 1,065 | 279,000 |
+| 30 | 656 | 1,962 | 614,000 |
+| 40 | 881 | 3,617 | 1,224,000 |
+| 50 | 1,106 | 6,665 | 2,329,000 |
 
 **It was 130 a second doubling every 190s, and that starved the opening.** A 190-second
 doubling puts 98% of a run's money after wave twenty; playtested, the first three minutes could
@@ -61,8 +61,13 @@ complaint as the 190s curve in a milder form. Raising the rate alone inflates th
 lengthening the doubling alone makes the late game poorer against a tide that keeps doubling.
 Moving both — 330 a second over 255s — lifted the first ten waves by about a third and leaves
 the rate past wave forty where it was, so the generosity lands where the board has no coverage
-yet and nowhere else. The rate is now 600, a flat 1.8x of that curve at every second. The opening bank went 4,000 to 6,000 in the same pass: it is the only
-number that is purely the opening, and it buys five tier-1 cards instead of three.
+yet and nowhere else. The opening bank went 4,000 to 6,000 in the same pass: it is the only
+number that is purely the opening, and it buys three tier-1 presses.
+
+**It was 600 for a while** — a flat 1.8x — while the shape of a card was a thing the player
+CHOSE and a press bought exactly the ground it was told to. The shape is a roll again, so the
+press is cheaper per turret on a good draw and dearer on a bad one, and the run does not need
+the extra money to cover the difference.
 
 **It stops climbing at the ramp.** Past `CORE_INCOME_RAMP` the rate is flat while the tide
 keeps doubling the swarm's health every cycle (`docs/mission-design.md`), so no map can be
@@ -93,12 +98,12 @@ keys name the tier and the deal rolls uniformly inside it (`rarity.ts rollTurret
 the number on the button says how much ground the card will want before the roll happens. The
 four rarities ARE the four tiers, which is where the card's border colour comes from.
 
-| tier | per turret | 3x3 (9) | 5x5 (25) | 7x7 (49) | ground at 3x3 | at 7x7 |
+| tier | per turret | a press | x4 | x16 | ground at 3x3 | at 6x6 |
 |---|---|---|---|---|---|---|
-| 1 | 120 | 1,080 | 3,000 | 5,880 | 3x3 tiles | 7x7 |
-| 2 | 700 | 6,300 | 17,500 | 34,300 | 6x6 | 14x14 |
-| 3 | 4,000 | 36,000 | 100,000 | 196,000 | 9x9 | 21x21 |
-| 4 | 32,000 | 288,000 | 800,000 | 1,568,000 | 12x12 | 28x28 |
+| 1 | 120 | 1,920 | 7,680 | 30,720 | 3x3 tiles | 6x6 |
+| 2 | 700 | 11,200 | 44,800 | 179,200 | 6x6 | 12x12 |
+| 3 | 4,000 | 64,000 | 256,000 | 1,024,000 | 9x9 | 18x18 |
+| 4 | 32,000 | 512,000 | 2,048,000 | 8,192,000 | 12x12 | 24x24 |
 
 **The gaps are about six times a step through the middle and eight into tier 4**, 267x end to
 end, which is far steeper than the per-kind prices this replaced (110 to 9,500 was 86x). Per
@@ -108,32 +113,52 @@ thing worth gating is the 4x4. A tier-4 gun is expensive because it is sixteen t
 and then expensive again on top of that because reach and splash are worth more than raw
 damage.
 
-**The price is the tier's, flat, for every gun in it.** It has to be: the gun is rolled and the
-price is printed on the button before the press. `TOWER_PRICE` is derived from the tier and the
-admin dashboard can still bend one kind (`setScrapPrice`).
+**The price is the tier's, flat, for every gun in it and whatever shape rolls.** It has to be:
+the gun and the shape are both rolled, and the price is printed on the button before the press.
+`TOWER_PRICE` is derived from the tier and the admin dashboard can still bend one kind
+(`setScrapPrice`).
 
-**What the numbers buy**, measured as SECONDS OF INCOME at the rate in force — which is the
-number that decides whether a band is reachable, not the raw price. A tier-2 block is well
-under a wave's income from wave one (19s at wave 1, 12s at wave 8). A tier-3 block is about
-1.5 waves at wave 20, a real save-up. A tier-4 block is about 3.5 waves at wave 40, a genuine commitment.
-Saving every coin, the earliest a bank covers a 3x3 is wave 1 / wave 1 / wave 5 / **wave 21**,
-and a run actually holding a line reaches those much later. A whole run banks about 2.34M.
+**`CARD_CELLS` is 16 and it is a price, not a size.** A press is `TIER_PRICE x CARD_CELLS x
+amount`, and the shape that actually lands is 9, 16, 25 or 36 turrets. Sixteen is the mean
+shape under the shipped odds (40/30/20/10 over those four averages 17), rounded down to a
+square so "the price of a 4x4" is a thing a player can hold in their head. Draw badly and you
+paid over the odds; draw well and you got a 6x6 for the price of a 4x4.
 
-### The shape
+**What the numbers buy**, measured as SECONDS OF INCOME at the rate in force. A tier-1 press is
+under six seconds of income from the first frame. A tier-2 press is about twenty seconds at the
+minute it opens. A tier-3 press is about a minute, and a tier-4 press is about two and a half —
+a genuine commitment, and one a run can make twice before the script ends. A whole run banks
+about 2.33M.
 
-`FORMATION_IDS` is three solid odd squares — **3x3, 5x5, 7x7** — cycled with **X** as a
-standing setting. It multiplies all four prices by its cell count, flat, **with no bulk
-discount**: what it buys is ground, and a 7x7 of tier 4 is a 28x28 patch of map and most of a
-run's bank.
+### The shape is the roll
 
-They are ODD squares so the shape has a middle and the ghost sits centred on the cursor. The
-floor is nine turrets and there is nothing smaller: a card is never "a tacker", it is "nine
+`FORMATION_IDS` is four solid squares — **3x3, 4x4, 5x5, 6x6** — and the deal rolls one on
+every press (`rollFormation`). The bands are the turrets' own four, off the square's side, so a
+3x3 is common and a 6x6 ultra; the odds are **40 / 30 / 20 / 10**, deliberately softer than the
+turret roll's, because what a player should feel at the button is "which gun" first and "how
+much of it" second.
+
+The floor is nine turrets and there is nothing smaller: a card is never "a tacker", it is "nine
 tackers in a block", and the question it asks is where nine of anything can go.
 
-**Neither half of a card is a roll any more.** The tier is chosen and the shape is chosen; the
-only thing the deal turns over is which gun of the band came up, and every gun of a band is the
-same footprint and the same money. A press is a decision about ground and about how much of the
-bank to commit, and never a slot machine with a price on it.
+**X is the AMOUNT, not the shape.** It cycles **1 / 4 / 9 / 16** as a standing setting and
+multiplies all four prices flat, **with no bulk discount**. What it buys is the rolled shape
+TILED that many times (`fleetLayout`) — one gun, one roll, that much more ground — and every
+amount is a square so the copies butt with no gap. A x16 of a 6x6 at tier 4 is 8.2M, which no
+run banks; the top of the ladder is a ceiling rather than an offer.
+
+### The bands open on the clock
+
+`TIER_UNLOCK` shuts a band until the run clock reaches it: tier 1 from the first frame, then
+**5:00, 10:00 and 15:00**. A shut button wears a grey sweep that retreats clockwise as its
+minute comes round, with the time left printed in it.
+
+**It is the clock and not the bank**, which is the point. Income is a function of time alone,
+so a bank gate would be a clock gate in disguise — and a player who saved would meet the same
+wall as one who spent, later and with nothing to show for the wait.
+
+15:00 is wave forty of fifty (`docs/authoring-waves.md`), which is where `STAGES` puts tier 4
+anyway: the gate is the stage table said in seconds rather than a new rule on top of it.
 
 ### The press pays
 
@@ -144,8 +169,8 @@ and where to put it is the only question left.
 **So a second press throws the first card away and the money with it.** Drawing was free for a
 while, and re-drawing with it, which made 1, 2, 3, 4 a way of asking what each tier would put
 down here at no cost — that is a browse, not a purchase, and it took the decision out of the
-press. The prices are on the buttons and the shape is a standing setting, so nothing about a draw
-is a surprise that needs paying for twice.
+press. The price is on the button before it is pressed, so the only surprise a draw can hold is
+what it hands over — never what it cost.
 
 **Placing costs nothing**, because the card is already owned. Ground that takes none of the shape
 keeps the card in hand to try somewhere else; ground that takes part of it spends the card on the
