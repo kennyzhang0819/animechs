@@ -267,7 +267,7 @@ moves. Pick which of the four:
 | | pool | plating | what it does |
 |---|---|---|---|
 | **Lance** | 17,000 | 14 | 2x2. One crimson beam down 24 tiles every 2.2s. No pierce |
-| **Bulwark** | 25,000 | 104 | 3x3. A ram at five tiles — 800 twice a swing with splash. The turret you can only answer up close |
+| **Bulwark** | 25,000 | 104 | 2x2. A ram at five tiles — 800 twice a swing with splash. The turret you can only answer up close |
 | **Halberd** | 55,000 | 115 | 3x3. A shell from 40 tiles out that bursts over 13 and throws a bolt on landing |
 | **Juggernaut** | 200,000 | 150 | 4x4. A fan of five shells across 19 tiles, and a pool nothing chips down by accident |
 
@@ -278,6 +278,12 @@ still. Their stats live in `constants.ts TOWERS` with every other turret's
 and they are `ENEMY_ONLY_KINDS` (`game/types.ts`), which keeps them out of
 `FIELDED_KINDS` — nothing deals one, the build card never offers one, and
 no run can buy one.
+
+**It lays no decking.** The plated ground belongs to the two marks that
+promise something will rise on a cell *later* — the railgun its section is
+due on, the buff tower its train — so a board reads the promise before
+anything stands there. A turret is up from the first frame and is its own
+announcement.
 
 **It owns its cells but not the path.** Nothing may be built over one and
 shots collide with it, but the swarm's routes run straight through the

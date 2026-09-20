@@ -3031,9 +3031,25 @@ export async function turretIcon(url: string): Promise<string> {
  * inspector and the progress screen show the head the board builds.
  */
 export async function towerIcon(kind: TowerKind): Promise<string> {
+  // THE GARRISON'S FOUR HAVE NO SPRITE FILE AT ALL (types.ts
+  // ENEMY_ONLY_KINDS). Their heads are DRAWN into the sheet at pack time
+  // out of the bodies they used to be (wardenArt.ts), so the packed cell
+  // is not a nicer version of the picture — it is the only one there is,
+  // and pointing a swatch at somebody else's sprite would put a turret in
+  // the tray that is not the turret it stamps
+  const packed = ENEMY_TOP[kind];
+  if (packed) return cellIcon(packed, true);
   const head = FOUNDRY_ART ? foundryHeadUrl(kind) : null;
   return turretIcon(head ?? TOWER_ICONS[kind]);
 }
+/** the four drawn heads, by kind — what towerIcon carves instead of
+ *  reaching for a file that does not exist */
+const ENEMY_TOP: Partial<Record<TowerKind, UVRect>> = {
+  bulwark: UV_BULWARK_TOP,
+  lance: UV_LANCE_TOP,
+  halberd: UV_HALBERD_TOP,
+  juggernaut: UV_JUGGERNAUT_TOP,
+};
 
 /**
  * A BODY OFF THE PACKED SHEET, as a data URL — for the HUD's unit
@@ -3084,18 +3100,28 @@ export async function unitQuad(
  * for one: the file it used to be loaded from is not what the board puts
  * on the map any more.
  */
-export async function cellIcon(uv: readonly [number, number, number, number]): Promise<string> {
+export async function cellIcon(
+  uv: readonly [number, number, number, number],
+  upright = false,
+): Promise<string> {
   const sheet = await buildAtlas();
   const x = Math.round(uv[0] * ATLAS_W), y = Math.round(uv[1] * ATLAS_H);
   const w = Math.round((uv[2] - uv[0]) * ATLAS_W);
   const h = Math.round((uv[3] - uv[1]) * ATLAS_H);
   const out = document.createElement("canvas");
-  out.width = w;
-  out.height = h;
+  out.width = upright ? h : w;
+  out.height = upright ? w : h;
   const c = out.getContext("2d");
   if (!c) throw new Error("2d context unavailable for a cell icon");
   c.imageSmoothingEnabled = false;
-  c.drawImage(sheet, x, y, w, h, 0, 0, w, h);
+  // A CELL IS PACKED FACING +X and a PICTURE of one is read facing up, so
+  // an upright icon undoes the quarter turn the packer put in (the same
+  // undoing unitIcon does for a body)
+  if (upright) {
+    c.translate(h / 2, w / 2);
+    c.rotate(-Math.PI / 2);
+    c.drawImage(sheet, x, y, w, h, -w / 2, -h / 2, w, h);
+  } else c.drawImage(sheet, x, y, w, h, 0, 0, w, h);
   return out.toDataURL();
 }
 

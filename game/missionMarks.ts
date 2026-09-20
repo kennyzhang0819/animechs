@@ -315,7 +315,13 @@ const EMPLACEMENT: MarkKind = {
   unit: "railgun",
   tower: "bulwark",
   towerField: "tower",
-  pad: 1,
+  // NO DECKING. The plated ground is for the two marks that promise
+  // something will rise on a cell LATER — the railgun its section is due
+  // on, the buff tower its train — so a player reads the promise off the
+  // board before anything stands there. A turret is up from the first
+  // frame and is its own announcement; a plate under one says nothing
+  // twice
+  pad: 0,
   fields: [
     {
       key: "tower",

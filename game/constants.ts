@@ -2211,7 +2211,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // can stand away from, which is what the charging body was.
   bulwark: {
     name: "Bulwark",
-    size: 3,
+    size: 2,
     health: 2500,
     armor: 104,
     range: 40 * MU,

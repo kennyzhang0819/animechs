@@ -163,7 +163,7 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
   // — the band is here because every kind needs a price to be a kind, and
   // the footprints are what it reads
   lance: 2,
-  bulwark: 3,
+  bulwark: 2,
   halberd: 3,
   juggernaut: 4,
 };
