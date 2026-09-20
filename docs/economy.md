@@ -151,7 +151,8 @@ run banks; the top of the ladder is a ceiling rather than an offer.
 
 `TIER_UNLOCK` shuts a band until the run clock reaches it: tier 1 from the first frame, then
 **5:00, 10:00 and 15:00**. A shut button wears a grey sweep that retreats clockwise as its
-minute comes round, with the time left printed in it.
+minute comes round, and **no number**: the shade says "not yet" and roughly how far off, which
+is what a player glances at mid-wave. A countdown would be a clock to watch.
 
 **It is the clock and not the bank**, which is the point. Income is a function of time alone,
 so a bank gate would be a clock gate in disguise — and a player who saved would meet the same

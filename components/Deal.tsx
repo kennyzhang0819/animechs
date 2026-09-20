@@ -35,8 +35,9 @@ import { tile } from "./tile";
  *
  *   THE BANDS OPEN ON THE RUN CLOCK (economy.ts TIER_UNLOCK): tier 1 from
  *   the first frame, then one every five minutes. A shut button wears a
- *   grey sweep that retreats clockwise as its minute comes round, so the
- *   wait is a thing on screen rather than a rule to remember.
+ *   grey sweep that retreats clockwise as its minute comes round, and NO
+ *   NUMBER: the shade says "not yet" and how far off it is, which is what
+ *   a player glances at mid-wave — a countdown would be a clock to watch.
  *
  *   AMOUNT (X) cycles 1 -> 4 -> 9 -> 16 and is a standing setting, not a
  *   held modifier. It multiplies all four prices, flat, with no bulk
@@ -315,12 +316,6 @@ function TurretCard({
  * the width, because it is the multiplier on the other four rather than a
  * fifth thing to buy — the quantity field goes after the item.
  */
-/** m:ss, for a wait a player is watching count down */
-const clock = (left: number): string => {
-  const t = Math.ceil(left);
-  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
-};
-
 function TierButton({
   tier,
   price,
@@ -356,7 +351,7 @@ function TierButton({
         !owned
           ? `Tier ${tier} — the track has dealt this save none`
           : shut
-            ? `Tier ${tier} opens in ${clock(gate.left)}`
+            ? `Tier ${tier} is not open yet`
             : `Buy a tier ${tier} card for ${price} scrap, shortcut ${tier}`
       }
       className={`ms-btn ms-btn-key ms-btn-tint relative flex h-full w-full flex-col items-center justify-center gap-1 overflow-hidden px-1 py-1 ${
@@ -389,18 +384,18 @@ function TierButton({
           {price.toLocaleString()}
         </span>
       )}
+      {/* THE SHADE AND NO NUMBER. It retreats clockwise as the wait runs
+          down, and that is all it says: a countdown on the button would
+          turn the opening into a thing a player waits out with a timer
+          rather than a band that arrives while they are playing */}
       {shut && (
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 flex items-center justify-center"
+          className="pointer-events-none absolute inset-0"
           style={{
-            background: `conic-gradient(from 0deg, transparent 0turn ${1 - swept}turn, rgba(8,9,12,0.78) ${1 - swept}turn 1turn)`,
+            background: `conic-gradient(from 0deg, transparent 0turn ${1 - swept}turn, rgba(8,9,12,0.8) ${1 - swept}turn 1turn)`,
           }}
-        >
-          <span className="font-display text-[15px] font-bold leading-none tabular-nums text-[#E8E4D8] drop-shadow">
-            {clock(gate.left)}
-          </span>
-        </span>
+        />
       )}
     </button>
   );
