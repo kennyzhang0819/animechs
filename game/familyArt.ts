@@ -466,12 +466,14 @@ export function stoop(T: FlyerTier): StoopArt {
 // forward of it — IN THE REVERSED PAIR AND NOT IN STEEL, because a fin is
 // part of the fish and only the gear on its back is machine — the harpoon
 // tail the same, with its barb the family's teal. The teal seam runs down
-// the spine from T2 and a gunmetal transom sits at the hips from T4. The wings are FINS, not the bat's pods: wider than they
+// the spine at every tier — a stub off the shoulders on the runt, the
+// body's length from T2 — and a gunmetal transom sits at the hips from
+// T4. The wings are FINS, not the bat's pods: wider than they
 // are tall, full height at the root and tapering on 45-degree cuts to a
 // four-pixel tip, with a fold along the leading edge — in the reversed
 // pair to T3, a gunmetal spar from T4 — that follows the taper at one width all
-// the way out. A teal cell on each fin at T5, a second one out where the
-// taper leaves less room, and the cowl grown into the two CEPHALIC PRONGS
+// the way out. A teal cell on each fin from T2, a second one at T5 out
+// where the taper leaves less room, and the cowl grown into the two CEPHALIC PRONGS
 // a manta leads with — the apex's own tell, and the thing that tells it
 // from the bat at a glance.
 export const SKIN: Mat = ["#28404c", "#5a8090"];
@@ -510,9 +512,10 @@ export function manta(T: FlyerTier): StoopArt {
       P.box(cx - B, q(3), cx + B, q(3) + w(4), SKIN_R);
       P.box(cx - B, 0, cx - B + w(3), q(3) + w(4), SKIN_R);
     } else P.box(cx - B + U, q(1), cx + B - U, q(1) + w(4), SKIN_R);
-    // the seam ends a unit above the harpoon's shaft, never nearer
+    // the seam ends a unit above the harpoon's shaft, never nearer; the
+    // runt carries a stub of one off the shoulders instead of the length
     const shaft = q(27) - 1 - (w(4) - U);
-    if (t >= 2) P.box(cx - U, q(9), cx + U, shaft - U, TEAL);
+    P.box(cx - U, q(9), cx + U, t >= 2 ? shaft - U : q(9) + w(6), TEAL);
     if (t >= 4) P.box(cx - B, q(24), cx + B, q(24) + w(3), GUN);
     // the harpoon last, over the transom: the shaft and the barb
     // the shaft starts on the row where the body's chamfer has narrowed
@@ -533,13 +536,11 @@ export function manta(T: FlyerTier): StoopArt {
     const c = (y1 - y0 - 4) / 2, fold = reach - c - 4;
     O.octa(-c, y0, reach, y1, c, SKIN);
     if (fold >= 4) O.box(0, y0, fold, y0 + w(4), t >= 4 ? GUN : SKIN_R);
-    // two teal cells out the fin at T5, the outer one shorter because the
-    // taper leaves it less room: a manta's spots, and they sit inside the
-    // octagon's diagonals at every row they cross
-    if (t >= 5) {
-      O.box(R.q(10), q(14), R.q(10) + R.w(6), q(14) + w(4), TEAL);
-      O.box(R.q(19), q(14), R.q(19) + R.w(5), q(14) + w(3), TEAL);
-    }
+    // a teal cell out the fin from T2 and a second one at T5, the outer
+    // shorter because the taper leaves it less room: a manta's spots, and
+    // they sit inside the octagon's diagonals at every row they cross
+    if (t >= 2) O.box(R.q(10), q(14), R.q(10) + R.w(6), q(14) + w(4), TEAL);
+    if (t >= 5) O.box(R.q(19), q(14), R.q(19) + R.w(5), q(14) + w(3), TEAL);
   };
   return flyer(T, L, body, wing, TEAL);
 }
