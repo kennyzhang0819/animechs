@@ -32,7 +32,7 @@ rate(t) = CORE_INCOME_RATE x 2 ^ (min(t, CORE_INCOME_RAMP) / CORE_INCOME_DOUBLIN
 |---|---|
 | `CORE_INCOME_RATE` | 52 scrap a second, at t = 0 |
 | `CORE_INCOME_DOUBLING` | 205 seconds |
-| `CORE_INCOME_RAMP` | 1,203 — the shipped campaign's own length |
+| `CORE_INCOME_RAMP` | 1,200 — twenty minutes, where the rate goes flat |
 | `SCRAP_START` | 1,200 |
 
 **The doubling is the one knob.** 205 seconds against the 24-second wave cadence

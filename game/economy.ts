@@ -84,8 +84,8 @@ export const SCRAP_START = 1200;
  */
 export const CORE_INCOME_RATE = 52;
 export const CORE_INCOME_DOUBLING = 205;
-/** the shipped campaign's own length, 3 + 50 x 24 (levels.ts) */
-export const CORE_INCOME_RAMP = 1203;
+/** twenty minutes: the rate is flat from here, whatever the script's length */
+export const CORE_INCOME_RAMP = 1200;
 
 /** scrap a second at `t` seconds of run time */
 export function coreIncomeRate(t: number): number {
