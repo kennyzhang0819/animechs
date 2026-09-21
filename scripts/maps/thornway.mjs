@@ -13,13 +13,13 @@
  * about where the swarm enters it, so the document this writes carries no
  * drop zones and the tiles are painted onto it in the map editor
  * afterwards. RE-RUNNING THIS FILE OVERWRITES THE DOCUMENT and takes them
- * with it. The pipeline and every rule are in mindustry.mjs; this file is
+ * with it. The pipeline and every rule are in mapgen.mjs; this file is
  * the numbers.
  */
 import {
   run, FLOOR_DIRT, FLOOR_GRASS, FLOOR_MOSS, WALL_DIRT, WALL_SPORE,
   WALL_STONE,
-} from "./mindustry.mjs";
+} from "./mapgen.mjs";
 
 export const spec = {
   id: "thornway",

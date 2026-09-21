@@ -332,7 +332,7 @@ export const SPAWN_STYLE = {
   css: "#E65342",
 } as const;
 
-const ENV = "/mindustry/sprites/blocks/environment";
+const ENV = "/stock/sprites/blocks/environment";
 
 /** the Select swatch's arrow — written here so the tool needs no file */
 const CURSOR_ICON =
@@ -462,7 +462,7 @@ export const PALETTE: readonly PaletteSet[] = [
   // the base: a map has exactly one, so placing it MOVES it. The click
   // clears the ground it lands on, since a walled base is unreachable
   { id: "base", label: "Base", kind: "base", variants: [0], noRandom: true,
-    icons: ["/mindustry/sprites/blocks/storage/core-nucleus.png"] },
+    icons: ["/stock/sprites/blocks/storage/core-nucleus.png"] },
   // the swarm's buildings — the player's roster, on the swarm's side —
   // one swatch a kind: a click stamps one on open ground and the eraser
   // takes it back off (MapData.enemies)
@@ -485,7 +485,7 @@ export const PALETTE: readonly PaletteSet[] = [
       kind: "mark" as const,
       variants: (choices ?? [null]).map((_, i) => i),
       noRandom: true,
-      icons: (choices ?? [null]).map(() => "/mindustry/sprites/blocks/power/power-node-large.png"),
+      icons: (choices ?? [null]).map(() => "/stock/sprites/blocks/power/power-node-large.png"),
       mark: k.id,
       markFaces: choices ? choices.map((c) => c.value) : [k.tower ?? k.unit],
       variantLabels: choices ? choices.map((c) => c.label) : undefined,

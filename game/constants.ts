@@ -5,7 +5,7 @@ import { FxKind, type RGB, type TowerKind } from "./types";
  * the game was a tower defence played on one lane; an RTS run expands
  * outward over 18 to 26 minutes and wants ground to expand INTO, so every
  * map is drawn at twice the width and twice the height (scripts/maps/
- * mindustry.mjs SCALE), and the openings are wider again on top of that.
+ * mapgen.mjs SCALE), and the openings are wider again on top of that.
  * A document narrower than this lands in the top-left of the grid with
  * rock around it (maps.ts terrainFromMap) and the camera stops at its edge.
  */

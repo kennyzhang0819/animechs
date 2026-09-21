@@ -9,7 +9,7 @@ editor and is playable by nothing. `/admin` has both doors — **Edit map**
 for terrain, **Edit level** for the wave script.
 
 **Every campaign map is generated, never drawn**, by a spec file in
-`scripts/maps/` over the shared generator `scripts/maps/mindustry.mjs`:
+`scripts/maps/` over the shared generator `scripts/maps/mapgen.mjs`:
 
 ```
 node scripts/maps/confluence.mjs [public/maps/confluence.json] [preview.png]
@@ -30,7 +30,7 @@ imports whole, Ground Zero and Cratered Battleground, are 256x256, which
 is the board every spec in `scripts/maps/` is **authored** on. The game
 became a real-time strategy game played by expanding outward over
 twenty-odd minutes, and a 256 board ran out of ground to expand into, so
-the grid (`COLS`, `ROWS`) and `SIZE` in `mindustry.mjs` are 512 and
+the grid (`COLS`, `ROWS`) and `SIZE` in `mapgen.mjs` are 512 and
 `scaleSpec` carries a spec across: positions and radii doubled
 (`SCALE`), the ground lanes, links and chokes opened half as wide again
 (`WIDEN`) and the clearings a quarter wider (`ROOM_WIDEN`), the noise
@@ -88,7 +88,7 @@ common, and what the generator is built to reproduce:
 
 ## The pipeline
 
-`mindustry.mjs` is Mindustry's `SerpuloPlanetGenerator`, step for step,
+`mapgen.mjs` is Mindustry's `SerpuloPlanetGenerator`, step for step,
 on this game's document shape:
 
 1. **Rock from noise.** A domain-warped three-octave value noise, cut at
@@ -290,7 +290,7 @@ same cells on demand. Paint as many tiles as the map wants — none of it
 lands on the board a player looks at.
 
 The atlas indices a generator paints with are COPIED into
-`mindustry.mjs` rather than imported, because the generator is plain node
+`mapgen.mjs` rather than imported, because the generator is plain node
 and the atlas reaches for a canvas at load. Keep the names identical and
 grep both when a family moves. `scripts/maps/seal.mjs` still brings an
 older or imported document up to the sealed-rim rule in place.

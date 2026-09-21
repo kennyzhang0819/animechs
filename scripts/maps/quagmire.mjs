@@ -10,7 +10,7 @@ import {
   run, PINE, FLOOR_MOSS, FLOOR_SPORE_MOSS, FLOOR_SHALE, FLOOR_MUD, FLOOR_DARKSAND,
   FLOOR_TAINTED_WATER, FLOOR_DEEP_TAINTED_WATER,
   WALL_SPORE, WALL_SHALE, WALL_DUNE,
-} from "./mindustry.mjs";
+} from "./mapgen.mjs";
 
 const well = (cx, cy, r, depth) => (x, y) => -depth * Math.exp(-((x - cx) ** 2 + (y - cy) ** 2) / (2 * r * r));
 const pool = well(58, 150, 14, 0.4);

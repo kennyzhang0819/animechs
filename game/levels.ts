@@ -1602,7 +1602,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // never swapped. It replaced Erekir's tier-5 missile bomber, which with
   // the animal art on was the last Mindustry sprite left on the field;
   // what survives of that unit is `drag` 0.07 and the path under
-  // public/mindustry the eagle is packed BESIDE rather than over, so the
+  // public/stock the eagle is packed BESIDE rather than over, so the
   // hull is still there with the switch off (atlas.ts KING_CELLS).
   //
   // IT IS TWENTY-FOUR BLOCKS ACROSS. The widest thing any family fields is
@@ -3259,7 +3259,7 @@ export type UnitRank = (typeof UNIT_RANKS)[number];
 
 /**
  * WHAT A BODY IS CALLED ON SCREEN, and it is NOT its kind. The kind is an
- * ID — it keys the sim's arrays, the sprite files under public/mindustry
+ * ID — it keys the sim's arrays, the sprite files under public/stock
  * and every wave in public/levels/campaign.json — and a panel that
  * answers "what is this?" with "starhart3" is naming a Mindustry unit the
  * player has never been shown a picture of.

@@ -8,7 +8,7 @@
  *
  *   node scripts/maps/confluence.mjs [public/maps/confluence.json] [preview.png]
  *
- * The pipeline and every rule are in mindustry.mjs; this file is the
+ * The pipeline and every rule are in mapgen.mjs; this file is the
  * numbers. Sand under sand walls, darksand under dune, stone under stone
  * wall; salt where the rooms open out, two lakes for the coil's earthing,
  * three ruins and the sand's own boulders.
@@ -16,7 +16,7 @@
 import {
   run, FLOOR_SAND, FLOOR_DARKSAND, FLOOR_STONE, FLOOR_SALT,
   WALL_SAND, WALL_DUNE, WALL_STONE,
-} from "./mindustry.mjs";
+} from "./mapgen.mjs";
 
 /** a lake: pulls the water noise down round a point */
 const well = (cx, cy, r, depth) => (x, y) => -depth * Math.exp(-((x - cx) ** 2 + (y - cy) ** 2) / (2 * r * r));

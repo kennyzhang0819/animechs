@@ -8,7 +8,7 @@ import { graphSpecShape, specSource, type BiasTerm, type GraphSpec } from "@/gam
 /**
  * THE GRAPH EDITOR'S BACK END — it runs the real generator and nothing
  * else. A graph (game/mapgraph.ts) comes in, its bias terms are turned
- * back into the closures a spec carries, and `scripts/maps/mindustry.mjs`
+ * back into the closures a spec carries, and `scripts/maps/mapgen.mjs`
  * builds, checks and draws it exactly as the command line would.
  *
  * NOTHING HERE DECIDES WHAT A MAP IS. If the checks fail the editor is
@@ -53,7 +53,7 @@ const generator = (): Promise<Gen> => {
   // sit where this file does.
   genPromise ??= import(
     /* webpackIgnore: true */ pathToFileURL(
-      path.join(process.cwd(), "scripts", "maps", "mindustry.mjs"),
+      path.join(process.cwd(), "scripts", "maps", "mapgen.mjs"),
     ).href
   ) as Promise<Gen>;
   return genPromise;
@@ -113,7 +113,7 @@ function compileBias(terms: BiasTerm[]): (x: number, y: number) => number {
   };
 }
 
-/** the graph as the object mindustry.mjs expects, closures and all —
+/** the graph as the object mapgen.mjs expects, closures and all —
  *  the SHAPE is mapgraph.ts's (so the editor and the emitted .mjs cannot
  *  disagree about it) and only the bias closure is built here */
 function toSpec(g: GraphSpec): Record<string, unknown> {
@@ -167,7 +167,7 @@ async function buildDocument(
     const fails = gen.check(scaled, m);
     if (fails.length)
       return { error: `${fails.length} check(s) failed — fix them before writing the map`, fails };
-    // WHAT THE AUTHOR PAINTED SURVIVES THE RE-EMIT (mindustry.mjs
+    // WHAT THE AUTHOR PAINTED SURVIVES THE RE-EMIT (mapgen.mjs
     // carryPainted). A graph edit rewrites the terrain; the spawn tiles
     // and the mission marks were never the graph's to rewrite
     let prev: Record<string, unknown> | null = null;

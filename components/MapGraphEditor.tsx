@@ -13,7 +13,7 @@ import {
 /**
  * THE MAP GRAPH EDITOR — draw the room graph, press Generate, read the
  * checks. The terrain is never drawn here and never can be: what an
- * author places is ROOMS, ROADS and CHOKES, and mindustry.mjs makes the
+ * author places is ROOMS, ROADS and CHOKES, and mapgen.mjs makes the
  * ground out of noise every time. That is the whole point — a shape
  * asked for in the graph comes back as terrain that never looks drawn.
  *

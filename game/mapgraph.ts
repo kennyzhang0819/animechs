@@ -2,7 +2,7 @@
  * THE MAP GRAPH — a map spec as DATA rather than as a module.
  *
  * `scripts/maps/<id>.mjs` is the map: a few dozen numbers handed to the
- * generator (mindustry.mjs). Those numbers are hand-typed, and the part
+ * generator (mapgen.mjs). Those numbers are hand-typed, and the part
  * that is actually hard to author is not the terrain — the generator
  * makes that natural on its own — but the ROOM GRAPH: which clearings
  * exist, which of them a road joins, and how wide. Typing coordinates and
@@ -22,7 +22,7 @@
  * document loses them, which is the price of keeping the two apart.
  *
  * WHAT IT IS NOT: a second generator. The document this describes is fed
- * to mindustry.mjs unchanged — every rule, every check and every pass
+ * to mapgen.mjs unchanged — every rule, every check and every pass
  * stays there, and a graph that will not pass its checks is not a map.
  */
 
@@ -142,7 +142,7 @@ export interface GraphSpec {
   ruins: number;
 }
 
-/** the authored board every spec is written on — mindustry.mjs scales it */
+/** the authored board every spec is written on — mapgen.mjs scales it */
 export const AUTHORED = 256;
 
 /** an empty board to start an author off: a core and one clearing on a road */
@@ -261,7 +261,7 @@ function biasSource(t: BiasTerm): string {
 
 /**
  * THE SPEC AS ITS OWN FILE. `names` maps a tile index to the constant
- * mindustry.mjs exports for it, so the emitted source reads the way a
+ * mapgen.mjs exports for it, so the emitted source reads the way a
  * hand-written spec does rather than in raw indices — the caller builds
  * it off the generator's own exports, which is the only place those
  * numbers and those names are known to agree.
@@ -368,12 +368,12 @@ ${s.archetype ? ` * MISSION ARCHETYPE: ${s.archetype} (docs/mission-design.md).\
  * about where the swarm enters it, so the document this writes carries no
  * drop zones and the tiles are painted onto it in the map editor
  * afterwards. RE-RUNNING THIS FILE OVERWRITES THE DOCUMENT and takes them
- * with it. The pipeline and every rule are in mindustry.mjs; this file is
+ * with it. The pipeline and every rule are in mapgen.mjs; this file is
  * the numbers.
  */
 import {
 ${wrapped.map((l) => `  ${l},`).join("\n")}
-} from "./mindustry.mjs";
+} from "./mapgen.mjs";
 ${wellDecl}
 export const spec = {
   id: "${s.id}",

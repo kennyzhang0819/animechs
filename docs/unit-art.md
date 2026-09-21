@@ -55,7 +55,7 @@ the other way round.
   survives in the codebase**, and a new family must not reintroduce one:
   the only place Mindustry's vocabulary is still written is the sprite
   paths in `game/atlas.ts`, which are the real filenames under
-  `public/mindustry` that the animal art packs OVER. Nothing in the UI
+  `public/stock` that the animal art packs OVER. Nothing in the UI
   prints a kind — it prints `unitName(kind)` — and a portrait comes off
   the packed sheet (`components/unitIcons.ts`), never from a sprite file
   a drawn family does not have.
@@ -210,7 +210,7 @@ the other way round.
 - **The stock cells are never deleted.** A trial family draws into its own
   cells and is packed OVER the stock family's cells in `packAnimalArt`
   while the flag is on; turn the flag off and the stock swarm is back.
-  `public/mindustry/` now holds ONLY the files the atlas actually names —
+  `public/stock/` now holds ONLY the files the atlas actually names —
   the vendored mirror was ~2,200 sprites and is the 180 that are loaded.
   Since the fallbacks are named in source like everything else, they are
   among the survivors and the flag still resolves; what is gone is the

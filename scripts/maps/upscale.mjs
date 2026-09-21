@@ -3,7 +3,7 @@
 //   node scripts/maps/upscale.mjs [--widen n] <id ...>
 //
 // The grid is 512x512 now (COLS, ROWS in game/constants.ts); the campaign
-// maps are regenerated at that size from their specs (mindustry.mjs
+// maps are regenerated at that size from their specs (mapgen.mjs
 // SCALE), but the reference documents — the Mindustry imports and the
 // last of the old noise maps — have no spec to regenerate from. This
 // brings one of those up to the new board in place:

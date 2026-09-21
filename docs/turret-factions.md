@@ -1,11 +1,11 @@
 # Foundry: the player's turret set
 
 Seventeen of the twenty-one turrets started as Mindustry's, sprite for sprite
-(`public/mindustry/README.md`: placeholder art, GPL, to be replaced). The
+(`public/stock/README.md`: placeholder art, GPL, to be replaced). The
 swarm stopped being Mindustry's first (`docs/unit-art.md`), then the
 heads, and now the names: every kind says what the gun DOES — tacker,
 lobber, piercer, repeater — and the stock names survive in one place
-only, as the filenames of the vendored art under `public/mindustry`,
+only, as the filenames of the vendored art under `public/stock`,
 which is upstream's tree and is left spelled upstream's way. Foundry is the first
 player faction: machine turrets, one metal, every kind its own shape, an
 accent per ammo. The heads are in
@@ -209,7 +209,7 @@ HUD's turret pictures through the same pass (`towerIcon`); the placement
 ghost composes its stamp from the head's own file (`towerGhostIcon`)
 over the plate darkened the same way (`game.ts ghostArt`). A kind with no drawing
 (the retired fixers) keeps its stock sprite. The flag off still restores
-the stock turrets: `public/mindustry` has been cut to the files the atlas
+the stock turrets: `public/stock` has been cut to the files the atlas
 names, and a fallback a kind names in source is one of them.
 
 `scripts/turret-concepts.mjs` imports the roster from the game module,

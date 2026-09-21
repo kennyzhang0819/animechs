@@ -14,7 +14,7 @@
  * (a manta line on the bat's parts rig) and the wraith fleet as the
  * LIVEWIRES (a narwhal line on the same rig, its tusk the arc emitter).
  * Everything is generated at load (game/animalArt.ts) and packed over
- * the stock cells (game/atlas.ts packAnimalArt), so NOTHING under public/mindustry is touched and
+ * the stock cells (game/atlas.ts packAnimalArt), so NOTHING under public/stock is touched and
  * flipping this back restores the shipped look byte for byte.
  *
  * IT ALSO GATES THE TWO FAMILIES THAT ARE NOT MINDUSTRY TREES. The

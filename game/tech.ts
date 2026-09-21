@@ -75,10 +75,10 @@ const GRID_KEYS: readonly (string | readonly [label: string, code: string])[] = 
 
 /**
  * THE CARD'S ORDER: cheapest first, by Mindustry's own build cost — the
- * one order every list of turrets in the game uses (BY_MINDUSTRY_VALUE),
+ * one order every list of turrets in the game uses (BY_BUILD_VALUE),
  * so the cheap guns fill the top rows and the 4x4s the bottom.
  */
-export const MINDUSTRY_VALUE: Record<TowerKind, number> = {
+export const BUILD_VALUE: Record<TowerKind, number> = {
   tacker: 17.5,
   torch: 34.5,
   lobber: 37,
@@ -108,13 +108,13 @@ export const MINDUSTRY_VALUE: Record<TowerKind, number> = {
 /** the roster, cheapest first — the one order every list of turrets uses.
  *  RETIRED kinds are not in it: nothing lists a turret the game does not
  *  field, the sandbox's own grid included */
-export const BY_MINDUSTRY_VALUE: readonly TowerKind[] = [...FIELDED_KINDS].sort(
-  (a, b) => (MINDUSTRY_VALUE[a] ?? 0) - (MINDUSTRY_VALUE[b] ?? 0),
+export const BY_BUILD_VALUE: readonly TowerKind[] = [...FIELDED_KINDS].sort(
+  (a, b) => (BUILD_VALUE[a] ?? 0) - (BUILD_VALUE[b] ?? 0),
 );
 
 /** the grid: one slot per turret in roster order, the rest empty */
 export const BUILD_SLOTS: readonly (BuildSlot | null)[] = GRID_KEYS.map((k, i) => {
-  const kind = BY_MINDUSTRY_VALUE[i];
+  const kind = BY_BUILD_VALUE[i];
   const [key, code] = typeof k === "string" ? [k, `Key${k}`] : k;
   return kind ? { kind, key, code } : null;
 });
@@ -125,8 +125,8 @@ export function slotForCode(code: string): BuildSlot | null {
 }
 
 (() => {
-  if (GRID_KEYS.length < BY_MINDUSTRY_VALUE.length)
+  if (GRID_KEYS.length < BY_BUILD_VALUE.length)
     throw new Error(
-      `the command card has ${GRID_KEYS.length} slots for ${BY_MINDUSTRY_VALUE.length} turrets — add a row of keys`,
+      `the command card has ${GRID_KEYS.length} slots for ${BY_BUILD_VALUE.length} turrets — add a row of keys`,
     );
 })();

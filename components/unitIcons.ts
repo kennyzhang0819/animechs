@@ -8,7 +8,7 @@ import { unitAccent, type UnitKind } from "@/game/levels";
 /**
  * A BODY'S PORTRAIT, WHEREVER THE DOM WANTS ONE — and the reason it is a
  * module rather than an `<img>` pointed at a file under
- * public/mindustry is that the file under that path is no longer the unit.
+ * public/stock is that the file under that path is no longer the unit.
  *
  * Four families draw as ANIMALS now (game/animalArt.ts, behind
  * game/animalFlag.ts): the ground line is a herd of rhinos, the venom
@@ -27,7 +27,7 @@ import { unitAccent, type UnitKind } from "@/game/levels";
  * atlas it came off is memoised the same way and never changes.
  *
  * THERE IS NO SPRITE-FILE FALLBACK, and there cannot be one: a kind is
- * `ironhide1` now, and nothing under public/mindustry is called that.
+ * `ironhide1` now, and nothing under public/stock is called that.
  * Building a path out of the kind is what the panels used to do, and
  * after the rename every one of those was a 404. A carve that has not
  * landed yet — or that failed, which only happens if the sheet itself

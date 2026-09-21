@@ -72,7 +72,7 @@
 
 /**
  * THE PALETTE, COUNTED OFF THE GAME'S OWN SPRITES rather than invented.
- * Every hex was taken from the art under public/mindustry/sprites — the
+ * Every hex was taken from the art under public/stock/sprites — the
  * gunmetal ramp is what piercer, cleaver and repeater are plated in, the
  * green is the fixer's and the force projector's, the field blue is
  * tether's, the ember ramp is repeater's and hive's heat, and the water

@@ -9,7 +9,7 @@
 import {
   run, FLOOR_SAND, FLOOR_DARKSAND, FLOOR_SHALE, FLOOR_SALT,
   WALL_SAND, WALL_DUNE, WALL_SHALE,
-} from "./mindustry.mjs";
+} from "./mapgen.mjs";
 
 export const spec = {
   id: "shoals",

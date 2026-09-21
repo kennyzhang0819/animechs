@@ -10,7 +10,7 @@
 import {
   run, FLOOR_STONE, FLOOR_DARKSAND, FLOOR_SHALE, FLOOR_BASALT,
   WALL_STONE, WALL_DUNE, WALL_SHALE,
-} from "./mindustry.mjs";
+} from "./mapgen.mjs";
 
 export const spec = {
   id: "maelstrom",

@@ -12,7 +12,7 @@
 // than an apex as the roster says it is. The tile grid behind them is the
 // board's own 20 world px.
 //
-// The stock disrupt is read straight off public/mindustry rather than
+// The stock disrupt is read straight off public/stock rather than
 // redrawn: it is still there, the eagle is packed beside it and not over
 // it, and ANIMAL_ART off still plays it.
 import { deflateSync, inflateSync } from "node:zlib";
@@ -170,7 +170,7 @@ const stockArt = (file, scl) => { const s = readPng(file); return { art: s, worl
 
 const ROW = [
   { label: "SOVEREIGN", sub: "THE BOSS", ...art(king().full, BOSS_SCALE), hero: true },
-  { label: "DISRUPT", sub: "THE OLD BOSS", ...stockArt("public/mindustry/sprites/units/disrupt.png", BOSS_SCALE), was: true },
+  { label: "DISRUPT", sub: "THE OLD BOSS", ...stockArt("public/stock/sprites/units/disrupt.png", BOSS_SCALE), was: true },
   { label: "STOOP", sub: "APEX BOMBER", ...art(stoop(STOOP_TIERS[4]).full) },
   { label: "SKATE", sub: "APEX HULL", ...art(manta(MANTA_TIERS[4]).full) },
   { label: "TUSKER", sub: "APEX WALKER", ...art(tuskLegged(TUSK_TIERS[4]).body) },

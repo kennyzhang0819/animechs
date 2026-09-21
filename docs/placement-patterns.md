@@ -212,7 +212,7 @@ costs, with a verdict per group.
 **Terrain art is DRAWN, not vendored** (`game/tiles.ts`, behind
 `game/terrainFlag.ts`). This chapter used to open with an inventory of
 Mindustry's environment regions and the claim that every sprite in it was
-already sitting under `public/mindustry/` waiting to be pointed at. Neither is
+already sitting under `public/stock/` waiting to be pointed at. Neither is
 true any more: the floors, the walls and the props are this game's own
 paintings, and the vendored tree has been cut back to the handful of files the
 atlas still composites.

@@ -13,13 +13,13 @@
  * about where the swarm enters it, so the document this writes carries no
  * drop zones and the tiles are painted onto it in the map editor
  * afterwards. RE-RUNNING THIS FILE OVERWRITES THE DOCUMENT and takes them
- * with it. The pipeline and every rule are in mindustry.mjs; this file is
+ * with it. The pipeline and every rule are in mapgen.mjs; this file is
  * the numbers.
  */
 import {
   run, FLOOR_DARKSAND, FLOOR_SALT, FLOOR_SAND, WALL_DUNE, WALL_SALT,
   WALL_SAND,
-} from "./mindustry.mjs";
+} from "./mapgen.mjs";
 
 export const spec = {
   id: "saltmouth",

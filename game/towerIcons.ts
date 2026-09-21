@@ -2,7 +2,7 @@ import { foundryBaseUrl, foundryHeadUrl } from "./foundryArt";
 import { FOUNDRY_ART } from "./turretFlag";
 import type { TowerKind } from "./types";
 
-const T = "/mindustry/sprites/blocks/turrets";
+const T = "/stock/sprites/blocks/turrets";
 
 /**
  * Every turret's palette sprite — the build card, the editor and the
@@ -10,7 +10,7 @@ const T = "/mindustry/sprites/blocks/turrets";
  *
  * THE VALUES ARE STOCK FILENAMES AND THE KEYS ARE OURS. This is the
  * fallback the game draws with FOUNDRY_ART off, so every path points into
- * the vendored tree (`public/mindustry`), which is upstream's and is left
+ * the vendored tree (`public/stock`), which is upstream's and is left
  * spelled upstream's way; nothing else in the game is.
  */
 export const TOWER_ICONS: Record<TowerKind, string> = {
@@ -25,10 +25,10 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   barrage: `${T}/ripple.png`,
   douser: `${T}/wave.png`,
   deluge: `${T}/tsunami.png`,
-  tether: `/mindustry/sprites/blocks/defense/parallax.png`,
+  tether: `/stock/sprites/blocks/defense/parallax.png`,
   // the support pair is filed under defense with tether, not turrets
-  fixer: `/mindustry/sprites/blocks/defense/mender.png`,
-  restorer: `/mindustry/sprites/blocks/defense/mend-projector.png`,
+  fixer: `/stock/sprites/blocks/defense/mender.png`,
+  restorer: `/stock/sprites/blocks/defense/mend-projector.png`,
   hive: `${T}/swarmer.png`,
   whirl: `${T}/cyclone/cyclone-preview.png`,
   repeater: `${T}/spectre.png`,

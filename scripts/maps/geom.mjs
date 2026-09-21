@@ -4,7 +4,7 @@
 //
 // The arc-only Path builder and the cosine-lobed blob that used to live
 // here are gone with the geometric maps they drew: every shape on a map
-// now comes out of noise and a brushed A* route (mindustry.mjs).
+// now comes out of noise and a brushed A* route (mapgen.mjs).
 
 /** a disc of `r` cells stamped through `put(i, x, y)` */
 export const disc = (W, H, cx, cy, r, put) => {

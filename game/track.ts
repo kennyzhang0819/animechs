@@ -15,7 +15,7 @@ import { RELICS, relicDef, type RelicId } from "./relics";
 import { MUTATIONS, mutationById, mutationCostOf, type MutationId } from "./mutation";
 import { RARITIES, rarityDef } from "./rarity";
 import { NO_SKILLS } from "./skills";
-import { BY_MINDUSTRY_VALUE, type TechState } from "./tech";
+import { BY_BUILD_VALUE, type TechState } from "./tech";
 import {
   FIELDED_KINDS,
   isRetired,
@@ -586,7 +586,7 @@ export function turretUnlockLevel(kind: TowerKind): number {
 const TIER_FROM: Readonly<Record<number, number>> = { 1: 2, 2: 6, 3: 10, 4: 14 };
 
 function dealUpgrades(): Map<number, UpgradeKind[]> {
-  const order = new Map<TowerKind, number>(BY_MINDUSTRY_VALUE.map((k, i) => [k, i]));
+  const order = new Map<TowerKind, number>(BY_BUILD_VALUE.map((k, i) => [k, i]));
   const rungs = [...ALL_UPGRADES].sort(
     (a, b) =>
       a.tier - b.tier ||

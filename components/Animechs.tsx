@@ -161,7 +161,7 @@ function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) 
     if (m && ref.current) drawThumb(m, ref.current);
   }, [mapId]);
   // fixed-aspect frame: every campaign map is square (Mindustry's own
-  // 256x256, see scripts/maps/mindustry.mjs), so the frame is square too;
+  // 256x256, see scripts/maps/mapgen.mjs), so the frame is square too;
   // a reference document of another shape sits centred inside it rather
   // than setting its own height and leaving the cards ragged.
   // `bare` drops the frame's own border and fill: on the menu the thumb is
@@ -1318,14 +1318,14 @@ const DEAL_COLOR = "#FFD37F";
 
 /**
  * THE FAMILY PICTURES, one per family: its T1, carved off the PACKED SHEET
- * rather than loaded from /mindustry/sprites/units
+ * rather than loaded from /stock/sprites/units
  * (components/unitIcons.ts, atlas.ts unitIcon).
  *
  * The raw sprite file is not the body the game draws, and for most of the
  * seven families there is no file at all — the rhinos, frogs, stags and
  * bats are generated at load (game/animalArt.ts) and packed over the
  * stock cells, and the elephants have no upstream hull behind them at
- * all — so a thumbnail off public/mindustry showed a picture of
+ * all — so a thumbnail off public/stock showed a picture of
  * upstream's unit, or nothing: wrong animal, wrong edges, and
  * Mindustry's crux red where the hue that tells a player which family
  * this is belongs.
@@ -2959,25 +2959,14 @@ export default function Animechs() {
           </SettingsBox>
         )}
 
-        {/* INFO — the three lines that used to be scattered over the
-            front of house: the build number the corner prints, whose game
-            this is (it was under the title card) and what it came from (it
-            was under this very panel). One place to look them up, and a
-            title screen that carries the game's name and nothing else. */}
+        {/* INFO — the two lines that used to be scattered over the front
+            of house: the build number the corner prints and whose game
+            this is (it was under the title card). One place to look them
+            up, and a title screen that carries the game's name alone. */}
         {tab === "info" && (
           <SettingsBox>
             <FactRow label="Version">{`v${BUILD}`}</FactRow>
             <FactRow label="Created by">Zerkka</FactRow>
-            <FactRow label="Inspired by">
-              <a
-                href="https://mindustrygame.github.io/"
-                target="_blank"
-                rel="noreferrer"
-                className="underline decoration-[#4A4A55] underline-offset-2 hover:text-[#EDEDEF]"
-              >
-                Mindustry
-              </a>
-            </FactRow>
           </SettingsBox>
         )}
       </>
