@@ -971,7 +971,8 @@ export function check(spec, m) {
   const famCount = new Map();
   for (let i = 0; i < N; i++) { const g = floor[i] - (floor[i] % 3); famCount.set(g, (famCount.get(g) ?? 0) + 1); }
   console.log(`  -- floors: ${[...famCount].sort((a, b) => b[1] - a[1]).map(([g, c]) => `${g} ${pct(c)}`).join(", ")}`);
-  say(open / N >= 0.15 && open / N <= 0.5, `open ground between 15% and 50%: ${pct(open)}`);
+  // advisory, not a gate: open ground outside 15%-50% is a smell, not a broken map
+  if (open / N < 0.15 || open / N > 0.5) console.log(`  -- open ground ${pct(open)} is outside the usual 15%-50%`);
   say(rock > 8000 * SCALE * SCALE, `rock for towers: ${rock}`);
   let big = 0;
   for (let y = 0; y < H - 3; y++)

@@ -47,11 +47,10 @@ Upgrades, the track prints them with a gold token (`components/currencyArt.ts`),
 one.
 
 **Levels 1 to 100 pay them** (`SKILL_POINT_LEVELS`, `economy.ts`), but *how many* a level pays is
-the track's and not the climb's: `POINTS` in `game/track.ts` is one a level by default and two on
-a level that hands over nothing else, which is how the roster can arrive every other level without
-leaving a bare row. `TOTAL_POINTS` is what the whole track pays — **107** today — and that, not
-the level count, is the budget `progress.ts` clamps a save to. Vary a level by writing it into
-`POINTS`; the progress row and the pool follow.
+the track's and not the climb's: `POINTS` in `game/track.ts` is one a level, flat, with no
+exceptions written in — a breather row pays the same point a gun row does. `TOTAL_POINTS` is what
+the whole track pays — **100** today — and that, not the level count, is the budget `progress.ts`
+clamps a save to. Vary a level by writing it into `POINTS`; the progress row and the pool follow.
 
 The climb ramps to those hundred levels rather than charging a flat price for each — 2,500 XP for
 the first and 500,000 for the hundredth, the whole of it about ninety-nine Nemesis clears. See

@@ -6,7 +6,7 @@ import { BASE, COLS, NCELLS, ROWS } from "./constants";
  * Never change it — it is a fact about files already on disk.
  */
 export const LEGACY_COLS = 128;
-import { MARK_KINDS, MAX_MARKS, markOpts, type MapMark } from "./missionMarks";
+import { MARK_KINDS, MAX_MARKS, markOpts, markSize, type MapMark } from "./missionMarks";
 import { railsFor } from "./missions";
 import {
   canHoldSpawn,
@@ -780,12 +780,11 @@ function marksOf(raw: readonly MapMark[] | undefined): MapMark[] {
     }
     const x = Math.round(Number(m.x)), y = Math.round(Number(m.y));
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    out.push({
-      kind: kind.id,
-      x: Math.max(0, Math.min(COLS - kind.size, x)),
-      y: Math.max(0, Math.min(ROWS - kind.size, y)),
-      opts: markOpts(kind, m.opts),
-    });
+    const mark: MapMark = { kind: kind.id, x, y, opts: markOpts(kind, m.opts) };
+    const sz = markSize(mark);
+    mark.x = Math.max(0, Math.min(COLS - sz, x));
+    mark.y = Math.max(0, Math.min(ROWS - sz, y));
+    out.push(mark);
     if (out.length >= MAX_MARKS) break;
   }
   return out;

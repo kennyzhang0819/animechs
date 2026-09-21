@@ -55,54 +55,53 @@ export const spec = {
     { x: 128, y: 128, r: 22, wobble: 0.22 }, // 0
     { x: 128, y: 66, r: 11 }, // 1
     { x: 128, y: 190, r: 11 }, // 2
-    { x: 66, y: 128, r: 11 }, // 3
-    { x: 190, y: 128, r: 11 }, // 4
-    { x: 78, y: 78, r: 11 }, // 5
-    { x: 178, y: 178, r: 11 }, // 6
-    { x: 74, y: 196, r: 14 }, // 7
-    { x: 196, y: 68, r: 14 }, // 8
-    { x: 208, y: 210, r: 14 }, // 9
-    { x: 108, y: 172, r: 9, water: true }, // 10
-    { x: 128, y: 16, r: 15 }, // 11 ground entry
-    { x: 128, y: 240, r: 15 }, // 12 ground entry
-    { x: 16, y: 128, r: 15 }, // 13 ground entry
-    { x: 240, y: 128, r: 15 }, // 14 ground entry
-    { x: 38, y: 38, r: 15 }, // 15 ground entry
-    { x: 218, y: 218, r: 15 }, // 16 ground entry
-    { x: 18, y: 176, r: 12, water: true }, // 17 water entry
-    { x: 238, y: 176, r: 12, water: true }, // 18 water entry
-    { x: 126, y: 126, r: 10, wobble: 0.2 }, // 19 the core's own ground
+    { x: 190, y: 128, r: 11 }, // 3
+    { x: 75, y: 75, r: 11 }, // 4
+    { x: 178, y: 178, r: 11 }, // 5
+    { x: 80, y: 186, r: 14 }, // 6
+    { x: 189, y: 73, r: 14 }, // 7
+    { x: 209, y: 214, r: 14 }, // 8
+    { x: 72, y: 129, r: 14, water: true }, // 9
+    { x: 128, y: 16, r: 15 }, // 10 ground entry
+    { x: 128, y: 240, r: 15 }, // 11 ground entry
+    { x: 240, y: 128, r: 15 }, // 12 ground entry
+    { x: 38, y: 38, r: 15 }, // 13 ground entry
+    { x: 16, y: 130, r: 21, water: true }, // 14 water entry
+    { x: 37, y: 231, r: 21, water: true }, // 15
+    { x: 228, y: 27, r: 22 }, // 16
+    { x: 234, y: 189, r: 16 }, // 17
+    { x: 26, y: 72, r: 16 }, // 18
+    { x: 84, y: 24, r: 17 }, // 19
+    { x: 126, y: 126, r: 10, wobble: 0.2 }, // 20 the core's own ground
   ],
   core: { x: 126, y: 126, r: 10 },
   spawns: [],
   routes: [],
   links: [
-    { rooms: [17, 10], width: [17, 23], layer: "water" },
-    { rooms: [18, 10], width: [17, 23], layer: "water" },
-    { rooms: [11, 1], width: [8, 14] },
-    { rooms: [1, 19], width: [8, 14] },
-    { rooms: [12, 2], width: [8, 14] },
-    { rooms: [2, 19], width: [8, 14] },
-    { rooms: [13, 3], width: [8, 14] },
-    { rooms: [3, 19], width: [8, 14] },
-    { rooms: [14, 4], width: [8, 14] },
-    { rooms: [4, 19], width: [8, 14] },
-    { rooms: [15, 5], width: [8, 14] },
-    { rooms: [5, 19], width: [8, 14] },
-    { rooms: [16, 6], width: [8, 14] },
-    { rooms: [6, 19], width: [8, 14] },
-    { rooms: [1, 5], width: [7, 10] },
+    { rooms: [14, 9], width: [17, 23], layer: "water" },
+    { rooms: [10, 1], width: [8, 14] },
+    { rooms: [1, 20], width: [8, 14] },
+    { rooms: [11, 2], width: [8, 14] },
+    { rooms: [2, 20], width: [8, 14] },
+    { rooms: [12, 3], width: [8, 14] },
+    { rooms: [3, 20], width: [8, 14] },
+    { rooms: [13, 4], width: [8, 14] },
+    { rooms: [1, 4], width: [7, 10] },
+    { rooms: [2, 5], width: [7, 10] },
     { rooms: [5, 3], width: [7, 10] },
-    { rooms: [2, 6], width: [7, 10] },
-    { rooms: [6, 4], width: [7, 10] },
+    { rooms: [2, 6], width: [6, 9] },
     { rooms: [3, 7], width: [6, 9] },
-    { rooms: [2, 7], width: [6, 9] },
-    { rooms: [4, 8], width: [6, 9] },
-    { rooms: [1, 8], width: [6, 9] },
-    { rooms: [6, 9], width: [6, 9] },
+    { rooms: [1, 7], width: [6, 9] },
+    { rooms: [5, 8], width: [6, 9] },
+    { rooms: [4, 9], width: [8, 12], layer: "water" },
+    { rooms: [9, 0], width: [8, 12], layer: "water" },
+    { rooms: [6, 9], width: [8, 12], layer: "water" },
+    { rooms: [7, 16], width: [8, 12] },
+    { rooms: [12, 16], width: [8, 12] },
+    { rooms: [15, 6], width: [8, 12], layer: "water" },
   ],
-  chokes: [{ x: 128, y: 100, w: 10, reach: 7 }, { x: 128, y: 156, w: 10, reach: 7 }, { x: 100, y: 128, w: 10, reach: 7 }, { x: 156, y: 128, w: 10, reach: 7 }],
-  holes: 6, lumps: 16, ruins: 2,
+  chokes: [{ x: 128, y: 100, w: 10, reach: 7 }, { x: 128, y: 156, w: 10, reach: 7 }, { x: 100, y: 128, w: 10, reach: 7 }, { x: 156, y: 126, w: 10, reach: 8 }],
+  holes: 6, lumps: 10, ruins: 2,
 };
 
 run(spec);

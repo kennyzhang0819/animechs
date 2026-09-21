@@ -69,9 +69,8 @@ import {
  *
  * EVERY LEVEL STILL CARRIES SOMETHING, and it is CHECKED at import rather
  * than trusted (see the last invariant in this file). What guarantees it
- * is the UPGRADE POINTS (POINTS below): every level pays at least one,
- * and the levels the guns and the rules step over pay more, so a breather
- * row is still a row with a reward on it.
+ * is the UPGRADE POINTS (POINTS below): every level pays one, so a
+ * breather row is still a row with a reward on it.
  *
  * THE RELICS ARE OFF THE TRACK ENTIRELY — see the relic note below. They
  * used to fill the back half, which is the mutator phase's half; nothing
@@ -341,8 +340,8 @@ export const STARTING_ROSTER: readonly TowerKind[] = [
  * A gun a level put a new face in the build bar faster than a player
  * could find a use for the last one; every other level gives each of the
  * seventeen a run of its own, and the rows in between are not empty —
- * they pay DOUBLE UPGRADE POINTS (POINTS below), so a breather row buys a
- * rank on a dial instead of a gun.
+ * they pay the same upgrade point every row pays (POINTS below), so a
+ * breather row buys a rank on a dial instead of a gun.
  *
  * That runs the roster past the build phase's top (ROSTER_TOP) and
  * through the whole mutator phase; ROSTER_LAST is the last row of the
@@ -401,20 +400,16 @@ const ROSTER_LAST = 33;
  * rather than a thing, and the currency the Upgrades board is bought
  * with (skills.ts).
  *
- * ONE A LEVEL IS THE FLOOR AND THIS TABLE IS THE EXCEPTIONS. A level the
- * guns, the maps and the rules all step over pays TWO, so a breather row
- * hands over a rank on a dial instead of nothing — which is what lets the
- * roster come every other level at all. Vary a level by writing it here;
- * everything else pays one.
+ * ONE A LEVEL, FLAT, AND THIS TABLE IS EMPTY. A breather row pays the
+ * same point every other row does; the rhythm of the guns is the only
+ * thing that varies down the track. Vary a level by writing it here.
  *
  * THE PAYROLL RUNS TO SKILL_POINT_LEVELS AND NOT TO MAX_LEVEL. The XP
  * curve is authored to pay a level's worth of climb that far (economy.ts)
  * and the rows past the track's top hand over their point and nothing
  * else — which is the only thing above MAX_LEVEL there is to earn.
  */
-const POINTS: Readonly<Record<number, number>> = {
-  4: 2, 6: 2, 8: 2, 28: 2, 30: 2, 32: 2,
-};
+const POINTS: Readonly<Record<number, number>> = {};
 
 /** the points one level pays — zero past the payroll's end */
 export const pointsAt = (level: number): number =>
@@ -711,15 +706,8 @@ export const TRACK: readonly { level: number; rewards: Reward[] }[] = Array.from
 /**
 /**
  * EVERY LEVEL OF THE TRACK CARRIES SOMETHING — the header's claim, and
- * the UPGRADE POINTS are what make it true on every row. So the check
- * worth running is the sharper one, and it runs over the DEALT part of
- * the track (to ROSTER_LAST): A ROW THERE THAT PAYS NOTHING BUT POINTS
- * PAYS DOUBLE, and no other row does.
- *
- * Both directions are drift worth catching. A row that lost its gun to a
- * re-spacing and still pays one point is a bare row wearing a reward; a
- * row that got a gun back and still pays two is overpaying for a breather
- * it is no longer taking.
+ * the UPGRADE POINTS are what make it true on every row: one a level, the
+ * whole length of the payroll.
  *
  * IT IS CHECKED AGAINST THE TABLES AND NOT AGAINST THE SHELF
  * (rewardsAt's `shelved`). With fifteen of the seventeen boards off the
@@ -731,15 +719,9 @@ export const TRACK: readonly { level: number; rewards: Reward[] }[] = Array.from
   for (let level = 1; level <= MAX_LEVEL; level++) {
     const rewards = rewardsAt(level, true);
     if (rewards.length === 0) throw new Error(`the track hands nothing out on level ${level}`);
-    // ...and only up to the last gun. Past ROSTER_LAST the track IS the
-    // payroll and every row is a point on its own
-    if (level > ROSTER_LAST) continue;
-    const bare = rewards.every((r) => r.kind === "points");
     const paid = pointsAt(level);
-    if (bare && paid < 2)
-      throw new Error(`level ${level} hands out nothing but ${paid} point — a breather row pays two`);
-    if (!bare && paid !== 1)
-      throw new Error(`level ${level} pays ${paid} points beside its other rewards — only a breather row pays more`);
+    if (level <= SKILL_POINT_LEVELS && paid !== 1)
+      throw new Error(`level ${level} pays ${paid} upgrade points — the track pays one a level`);
   }
   for (const l of Object.keys(POINTS).map(Number))
     if (l < 1 || l > SKILL_POINT_LEVELS)
@@ -837,7 +819,7 @@ export function rewardText(r: Reward): string {
 /** ...and what it does, for the hover card */
 export function rewardBlurb(r: Reward): string {
   if (r.kind === "points")
-    return "The campaign's own currency, paid for every level and kept for good. Points are spent on the Upgrades board, where each one raises a dial that every turret on every board keeps — there is no other thing to spend them on and no run can take them back.";
+    return "Points can be used to permanently strengthen all turrets";
   if (r.kind === "world") return "A map the campaign can be deployed on.";
   if (r.kind === "turret") return TOWER_DESC[r.id];
   if (r.kind === "mod") return modBlurb(modDef(r.id));

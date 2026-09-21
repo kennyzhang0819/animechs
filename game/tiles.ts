@@ -557,6 +557,63 @@ export function wallCanvas(kind: WallKind, variant: number, span = 1): HTMLCanva
 export const wallIcon = (kind: WallKind, variant: number): string =>
   `/tiles/wall-${kind}${(variant % WALL_VARIANTS) + 1}.png`;
 
+/* ======================================================================
+ * THE DECKING UNDER A MISSION MARK — the plated ground a Pylon stands on
+ * (renderer.ts forEachMarkPadCell, atlas.ts UV_MARK_PAD).
+ *
+ * One plate a CELL, so a mark's pad reads as a laid floor rather than one
+ * slab: the seam runs round every tile and the grid of it is the whole
+ * texture. Lit from the top-right like the rock is, so a plate sits proud
+ * of the ground instead of sunk into it.
+ * ====================================================================== */
+const PAD_STYLE = {
+  base: "#4a4450",
+  dark: "#2a2630",
+  light: "#6f6879",
+  bolt: "#8d8498",
+} as const;
+
+export function paintMarkPad(): Uint8ClampedArray<ArrayBuffer> {
+  const N = TILE_LOGICAL;
+  const grid = new Array<string>(N * N).fill(PAD_STYLE.base);
+  const rect = (x0: number, y0: number, w: number, h: number, c: string): void => {
+    for (let y = y0; y < y0 + h; y++)
+      for (let x = x0; x < x0 + w; x++)
+        if (x >= 0 && y >= 0 && x < N && y < N) grid[y * N + x] = c;
+  };
+  const M = MIN_MARK;
+  // the seam: the lit pair on the top and right rims, the shaded pair on
+  // the bottom and left, each the turrets' four px so the plates read
+  rect(0, 0, N, M, PAD_STYLE.light);
+  rect(N - M, 0, M, N, PAD_STYLE.light);
+  rect(0, N - M, N, M, PAD_STYLE.dark);
+  rect(0, 0, M, N, PAD_STYLE.dark);
+  // ...and the two bolts holding it down, on the plate's own diagonal
+  rect(M * 2, M * 2, M, M, PAD_STYLE.bolt);
+  rect(N - M * 3, N - M * 3, M, M, PAD_STYLE.bolt);
+
+  const out = new Uint8ClampedArray(new ArrayBuffer(TILE_PX * TILE_PX * 4));
+  for (let y = 0; y < TILE_PX; y++)
+    for (let x = 0; x < TILE_PX; x++) {
+      const [r, g, b] = hex(grid[Math.floor(y / TILE_SCALE) * N + Math.floor(x / TILE_SCALE)]);
+      const o = (y * TILE_PX + x) * 4;
+      out[o] = r;
+      out[o + 1] = g;
+      out[o + 2] = b;
+      out[o + 3] = 255;
+    }
+  return out;
+}
+
+export function markPadCanvas(): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  c.width = c.height = TILE_PX;
+  const g = c.getContext("2d");
+  if (!g) throw new Error("2d context unavailable for the mark pad");
+  g.putImageData(new ImageData(paintMarkPad(), TILE_PX, TILE_PX), 0, 0);
+  return c;
+}
+
 // ---------------------------------------------------------------------------
 // THE PROPS: the things that stand on the ground — trees, boulders, shrubs,
 // spore pods. Painted the way the turrets are: round shapes in ONE PAIR of

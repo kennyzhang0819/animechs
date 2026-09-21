@@ -260,12 +260,16 @@ What Coldline does with it, and what the shape turned out to need:
   arrival is a clock the road advertises from wave one; the only answer
   to it is killing the thing.
 - **EVERY LAUNCH IS HEAVIER THAN THE LAST** (`wormRamp`) — and the step
-  itself grows: x1.00, x1.35, x1.95, x3.01, x4.99 across the pattern,
-  with the spare at x8.82 past that. This is the mission's price and not
-  just its shape: a board gets richer between launches, faster towards
-  the end, and a train worth what the last one was worth is a train the
-  player has already solved. `WORM_RAMP_GROWTH` sets the opening,
-  `WORM_RAMP_ACCEL` the back half alone.
+  itself grows: x1.00, x1.21, x1.52, x1.95, x2.59, x3.54, x4.99 across the
+  seven-launch pattern, with the spare at x7.24 past that. This is the
+  mission's price and not just its shape: a board gets richer between
+  launches, faster towards the end, and a train worth what the last one
+  was worth is a train the player has already solved. `WORM_RAMP_GROWTH`
+  sets the opening, `WORM_RAMP_ACCEL` the back half alone, and
+  `WORM_RAMP_STRETCH` how many launches the curve is spread over — it is
+  4/6 so that the seventh train carries what the fifth did before the
+  pattern was lengthened, rather than the x16.7 the old stride would have
+  put there.
 - **AND THE WHOLE TRAIN IS A SHARE OF THE TIER.** A Borer is an objective,
   so its pool carries `tierObjectiveHpScale` like the Sovereign and the
   siege do — a quarter at Incursion, three quarters at Scourge, all of it

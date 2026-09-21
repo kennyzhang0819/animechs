@@ -1,0 +1,248 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Bullet Concepts</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Barlow:wght@500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#0B0B0D; --panel:#131318; --sunk:#08080A; --rule:#23232A;
+  --ink:#D2D2DC; --ink-dim:#8A8A99; --ink-faint:#5E5E6B; --codex:#FF8ACB;
+  --display:"Chakra Petch",ui-sans-serif,system-ui,sans-serif;
+  --body:"Barlow",ui-sans-serif,system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,monospace;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--body);font-weight:500;line-height:1.5;
+     margin:0;padding-block:56px;padding-left:24px;padding-right:24px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:56px}
+canvas{image-rendering:pixelated;display:block}
+header.top{display:flex;flex-direction:column;gap:18px;max-width:66ch}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--codex);margin:0}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(32px,5vw,46px);line-height:1.05;letter-spacing:-.01em;margin:0;text-wrap:balance}
+h1 em{font-style:normal;color:var(--codex)}
+.lede{margin:0;font-size:18px;color:var(--ink-dim)}
+.lede b,.flag b,.note b,.copy b{color:var(--ink);font-weight:600}
+h2{font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.16em;text-transform:uppercase;
+   color:var(--ink-faint);margin:0 0 18px;padding-bottom:10px;border-bottom:1px solid var(--rule)}
+.flag{border-left:2px solid var(--codex);background:var(--panel);padding:16px 18px;font-size:15px;color:var(--ink-dim);margin:0}
+code{font-family:var(--mono);font-size:.88em;color:var(--codex)}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:28px}
+.note h3{font-family:var(--display);font-weight:600;font-size:16px;margin:0 0 8px}
+.note p{margin:0 0 10px;font-size:15px;color:var(--ink-dim)}
+.note p:last-child{margin:0}
+
+.card{background:var(--panel);border:1px solid var(--rule);display:flex;flex-direction:column}
+.card.pick{border-color:var(--codex)}
+.head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:18px 20px 12px}
+.head h3{font-family:var(--display);font-weight:600;font-size:22px;margin:0;line-height:1.1}
+.head h3 small{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--codex);margin-right:10px;vertical-align:middle}
+.head .tag{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);white-space:nowrap}
+.copy{padding:0 20px 16px;font-size:14px;color:var(--ink-dim);max-width:78ch;line-height:1.45}
+.copy p{margin:0 0 8px}.copy p:last-child{margin:0}
+.rows{display:flex;flex-direction:column;border-top:1px solid var(--rule)}
+.row{display:grid;grid-template-columns:130px 1fr;border-bottom:1px solid var(--rule)}
+.row:last-child{border-bottom:0}
+.row .lbl{padding:14px 20px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);
+          line-height:1.5;border-right:1px solid var(--rule);display:flex;flex-direction:column;justify-content:center}
+.row .lbl b{display:block;color:var(--ink-dim);font-weight:500;font-size:11px;text-transform:none;letter-spacing:.02em}
+.strip{display:flex;align-items:flex-end;gap:14px;padding:14px 20px;background:var(--sunk);overflow-x:auto;min-width:0}
+.cell{display:flex;flex-direction:column;align-items:center;gap:6px}
+.cell span{font-family:var(--mono);font-size:10px;color:var(--ink-faint);text-align:center;letter-spacing:.02em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.frame{border:1px solid var(--rule);background:var(--ground)}
+.frame.grid{background-image:linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px);background-size:4px 4px}
+.sw{display:flex;height:8px;width:100%}.sw i{flex:1}
+.verdict{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.v{background:var(--panel);border:1px solid var(--rule);padding:16px 18px;font-size:14px;color:var(--ink-dim)}
+.v h3{font-family:var(--display);font-weight:600;font-size:17px;margin:0 0 6px;color:var(--ink)}
+.v p{margin:0 0 8px}.v p:last-child{margin:0}
+.v.pick{border-color:var(--codex)}
+pre{background:var(--sunk);border:1px solid var(--rule);padding:14px 16px;font-family:var(--mono);font-size:12px;color:var(--ink-dim);overflow:auto;margin:0;line-height:1.45}
+@media (max-width:640px){body{padding-block:36px}.row{grid-template-columns:1fr}.row .lbl{border-right:0;border-bottom:1px solid var(--rule)}}
+</style>
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">Animechs &middot; shot art</p>
+    <h1>Four bullets that are <em>not Mindustry's</em></h1>
+    <p class="lede">The stock <code>bullet</code> pair is a symmetric lozenge lifted from Mindustry's sprites. These four replace it under the <b>same contract</b>, so nothing downstream changes: a white <b>front</b> and a longer white <b>back</b>, drawn nose-up into one 52&times;52 cell, tinted with the ammo's two colours, stretched onto the shot's <code>across &times; along</code> box, shrunk on its life, turned to its heading.</p>
+    <p class="flag"><b>Everything below is rendered by the same code that would pack the atlas.</b> Each option is one drawing function beside <code>canisterBullet</code> in <code>game/atlas.ts</code>; the recolours, stretches and life strips are the renderer's own arithmetic applied to it, at the zoom a run starts on. Nothing here is a mock-up of what it might look like.</p>
+  </header>
+
+  <section>
+    <h2>The contract every option is drawn to</h2>
+    <div class="notes">
+      <div class="note"><h3>Two white layers, two tints</h3><p>An ammo is a pair of colours over a pair of shapes. The renderer pushes <b>back</b> in <code>backColor</code> then <b>front</b> in <code>frontColor</code> on one quad. Where the back sticks out past the front is the only shading a shot ever gets, so the design lives in that rim.</p></div>
+      <div class="note"><h3>Stretch is the quad, not the art</h3><p>The whole 52px cell is mapped onto <code>across &times; along</code>, so a 7&times;9 pellet and a 16&times;23 slug are the same pixels at different aspect ratios. Straight edges survive that; circles become ellipses. Then <code>shrinkY</code> eats half the length over the shot's life.</p></div>
+      <div class="note"><h3>Alpha is free</h3><p>The tint multiplies colour <i>and</i> alpha, and the atlas is antialiased. A soft tail or a translucent halo costs nothing and still recolours. The stock pair never used this.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Reference &middot; the stock lozenge, not to copy</h2>
+    <div class="card" id="stock"></div>
+  </section>
+
+  <section>
+    <h2>The four options</h2>
+    <div style="display:flex;flex-direction:column;gap:22px" id="cards"></div>
+  </section>
+
+  <section>
+    <h2>Which one</h2>
+    <div class="verdict" id="verdict"></div>
+  </section>
+
+  <section>
+    <h2>How it ships</h2>
+    <div class="notes">
+      <div class="note"><p><b>Shipped: the plain bolt (02b)</b> is <code>boltBullet</code> in <code>game/atlas.ts</code> next to <code>canisterBullet</code>, and the two lines that pack <code>UV_BULLET</code> and <code>UV_BULLET_BACK</code> draw it instead of loading the PNGs, which are gone. <code>BULLET_REGIONS</code>, every ammo's <code>sprite</code> block, the LOD floors and the swarm's <code>ShotLook</code> all keep working, because the cell is still 52 white pixels facing the same way. The two PNGs come off the manifest. The same treatment then fits <code>shell</code> and <code>missile</code>, which are the same lozenge at 36.</p></div>
+    </div>
+  </section>
+</div>
+
+<script>
+// ---- the art: nose up, white, in a 52 cell. `back` dilates by RIM and
+// lengthens the tail, which is the rim Mindustry's pairs show fore and aft.
+const S = 52, RIM = 2.5;
+const cv = (w = S, h = w) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+
+function stock(c, back) {
+  // the lozenge as it is on disk: 20 wide; 28 tall front, 40 tall back
+  const h = back ? 20 : 14, w = 10, cx = 26, cy = 26;
+  c.fillStyle = "#fff";
+  c.beginPath(); c.moveTo(cx, cy - h); c.lineTo(cx + w, cy - h + w); c.lineTo(cx + w, cy + h - w);
+  c.lineTo(cx, cy + h); c.lineTo(cx - w, cy + h - w); c.lineTo(cx - w, cy - h + w); c.closePath(); c.fill();
+}
+
+function tracer(c, back) {
+  // a round head and a tail that runs out to nothing
+  const r = 9 + (back ? RIM : 0), cx = 26, cy = 18, tip = back ? 49 : 42;
+  c.fillStyle = "#fff";
+  c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.fill();
+  const g = c.createLinearGradient(0, cy, 0, tip);
+  g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(back ? .45 : .7, "rgba(255,255,255,1)"); g.addColorStop(1, back ? "rgba(255,255,255,.12)" : "rgba(255,255,255,.55)");
+  c.fillStyle = g;
+  c.beginPath(); c.moveTo(cx - r, cy); c.lineTo(cx + r, cy); c.lineTo(cx, tip); c.closePath(); c.fill();
+}
+
+function bolt(c, back, band = true) {
+  // a capsule, with or without a driving band cut through it at the waist
+  const b = back ? RIM : 0, x0 = 16 - b, x1 = 36 + b, y0 = 8 - b, y1 = 42 + b + (back ? 3 : 0), rn = 10 + b, rt = 4 + b;
+  c.fillStyle = "#fff";
+  c.beginPath(); c.moveTo(x0, y0 + rn); c.arc(26, y0 + rn, rn, Math.PI, 0);
+  c.lineTo(x1, y1 - rt); c.arcTo(x1, y1, x1 - rt, y1, rt); c.lineTo(x0 + rt, y1); c.arcTo(x0, y1, x0, y1 - rt, rt); c.closePath(); c.fill();
+  if (!back && band) { c.globalCompositeOperation = "destination-out"; c.fillRect(14, 31, 24, 3); c.globalCompositeOperation = "source-over"; }
+}
+const boltPlain = (c, back) => bolt(c, back, false);
+
+function chevron(c, back) {
+  // an arrowhead on a short shaft; the back is the same shape dilated by
+  // a stroke and its shaft run out further aft
+  const path = () => { c.beginPath(); c.moveTo(26, 7); c.lineTo(44, 34); c.lineTo(34, 34); c.lineTo(26, 22); c.lineTo(18, 34); c.lineTo(8, 34); c.closePath(); };
+  const shaft = (t) => { c.beginPath(); c.rect(22, 20, 8, t - 20); c.closePath(); };
+  c.fillStyle = c.strokeStyle = "#fff"; c.lineJoin = "round"; c.lineWidth = RIM * 2;
+  path(); c.fill(); if (back) c.stroke();
+  shaft(back ? 48 : 43); c.fill(); if (back) c.stroke();
+}
+
+function shard(c, back) {
+  // an elongated hexagon with one facet cut through to the back colour
+  const path = () => { c.beginPath(); c.moveTo(26, 6); c.lineTo(36, 17); c.lineTo(36, 36); c.lineTo(26, 44); c.lineTo(16, 36); c.lineTo(16, 17); c.closePath(); };
+  c.fillStyle = c.strokeStyle = "#fff"; c.lineJoin = "miter"; c.lineWidth = RIM * 2;
+  path(); c.fill(); if (back) { c.stroke(); c.beginPath(); c.moveTo(16, 36); c.lineTo(26, 49); c.lineTo(36, 36); c.closePath(); c.fill(); }
+  if (!back) {
+    c.globalCompositeOperation = "destination-out"; c.lineWidth = 2.2; c.strokeStyle = "#000";
+    c.beginPath(); c.moveTo(15, 28); c.lineTo(37, 20); c.stroke();
+    c.globalCompositeOperation = "source-over";
+  }
+}
+
+// ---- the renderer's arithmetic
+const MU = 20 / 8, ZOOM = 3;
+const PAL = {
+  copper:   ["#d39169", "#eac1a8"], graphite: ["#7d89d8", "#dae1ee"], thorium: ["#f595be", "#ffffff"],
+  blast:    ["#e9665b", "#eeab89"], toxin:    ["#3d7a2e", "#7cd64a"], ion:     ["#38c6ff", "#dffbff"],
+};
+const tinted = (src, hex) => { const o = cv(); const c = o.getContext("2d"); c.fillStyle = hex; c.fillRect(0, 0, S, S);
+  c.globalCompositeOperation = "destination-in"; c.drawImage(src, 0, 0); return o; };
+const pairOf = (fn) => { const b = cv(), f = cv(); fn(b.getContext("2d"), true); fn(f.getContext("2d"), false); return { back: b, front: f, fn }; };
+
+// one shot: the back then the front on a rotated across x along box, in px at `ppw`
+function shot(c, x, y, p, hex, along, across, rot, ppw, backOnly) {
+  c.save(); c.translate(x, y); c.rotate(rot + Math.PI / 2); c.imageSmoothingEnabled = true;
+  const w = across * ppw, h = along * ppw;
+  c.drawImage(tinted(p.back, hex[0]), -w / 2, -h / 2, w, h);
+  if (!backOnly) c.drawImage(tinted(p.front, hex[1]), -w / 2, -h / 2, w, h);
+  c.restore();
+}
+function frame(w, h, mag, draw, grid) {
+  const c = cv(w, h); c.style.width = w * mag + "px"; c.style.height = h * mag + "px"; c.className = "frame" + (grid ? " grid" : "");
+  draw(c.getContext("2d")); return c;
+}
+const cell = (node, label) => { const d = document.createElement("div"); d.className = "cell"; d.append(node); const s = document.createElement("span"); s.textContent = label; d.append(s); return d; };
+const row = (label, sub, nodes) => `<div class="row"><div class="lbl">${label}<b>${sub}</b></div><div class="strip"></div></div>`;
+
+const SIZES = [["pellet", 7, 9], ["slug", 8, 13], ["heavy", 16, 23], ["flak", 14, 8], ["needle", 5, 26]];
+
+function build(id, name, tag, copy, fn, pick) {
+  const p = pairOf(fn);
+  const card = document.createElement("div"); card.className = "card" + (pick ? " pick" : "");
+  card.innerHTML = `<div class="head"><h3><small>${id}</small>${name}</h3><span class="tag">${tag}</span></div><div class="copy">${copy}</div><div class="rows">
+    ${row("Pair", "52 px source, 3x, white", [])}
+    ${row("Recolour", "pellet 7x9 at zoom 3, 2x", [])}
+    ${row("Stretch", "across x along, copper, zoom 3, 2x", [])}
+    ${row("Life", "shrinkY .5; linear then slope", [])}
+    ${row("Heading", "the slug at eight rotations", [])}
+    ${row("Far away", "zoom 1 pellet, 4x; then the LOD dot", [])}
+  </div>`;
+  const strips = card.querySelectorAll(".strip");
+  // pair
+  const white = (src) => frame(S, S, 3, (c) => { c.drawImage(src, 0, 0); }, true);
+  strips[0].append(cell(white(p.back), "back"), cell(white(p.front), "front"),
+    cell(frame(S, S, 3, (c) => { c.drawImage(tinted(p.back, "#8a8a99"), 0, 0); c.drawImage(p.front, 0, 0); }, true), "back under front"));
+  // recolour
+  for (const [k, hex] of Object.entries(PAL)) {
+    const n = frame(70, 44, 2, (c) => shot(c, 38, 22, p, hex, 9 * MU, 7 * MU, 0, ZOOM / 1.25));
+    const d = cell(n, k); const sw = document.createElement("div"); sw.className = "sw"; sw.innerHTML = `<i style="background:${hex[0]}"></i><i style="background:${hex[1]}"></i>`; d.insertBefore(sw, d.lastChild); strips[1].append(d);
+  }
+  // stretch
+  for (const [k, ac, al] of SIZES) strips[2].append(cell(frame(80, 60, 2, (c) => shot(c, 40, 30, p, PAL.copper, al * MU, ac * MU, 0, ZOOM / 1.25)), `${k} ${ac}x${al}`));
+  // life
+  const life = (slope, hex) => frame(432, 44, 2, (c) => { for (let i = 0; i < 6; i++) { const fout = 1 - i / 5;
+    const shr = slope ? 1 - Math.abs(fout - .5) * 2 : fout; const along = 13 * MU * (1 - .5 + .5 * shr);
+    shot(c, 36 + i * 72, 22, p, hex, along, 8 * MU, 0, ZOOM / 1.5); } });
+  strips[3].append(cell(life(false, PAL.graphite), "a slug, born to spent"), cell(life(true, PAL.blast), "a shell, on Mathf.slope"));
+  // heading
+  strips[4].append(cell(frame(576, 44, 2, (c) => { for (let i = 0; i < 8; i++) shot(c, 36 + i * 72, 22, p, PAL.thorium, 13 * MU, 8 * MU, i * Math.PI / 4, ZOOM / 1.5); }), "0 to 315 degrees"));
+  // far away
+  strips[5].append(cell(frame(30, 30, 4, (c) => shot(c, 15, 15, p, PAL.copper, 9 * MU, 7 * MU, 0, 1)), "zoom 1"),
+    cell(frame(30, 30, 4, (c) => shot(c, 15, 15, p, PAL.copper, 9 * MU, 7 * MU, 0, .5, true)), "zoom .5, back only"),
+    cell(frame(120, 60, 2, (c) => { let s = 7; for (let i = 0; i < 14; i++) { s = (s * 16807) % 2147483647; const a = (s % 628) / 100; shot(c, 12 + (s % 97), 8 + ((s >> 7) % 44), p, PAL.copper, 9 * MU, 7 * MU, a, 1); } }), "a volley at zoom 1"));
+  return card;
+}
+
+document.getElementById("stock").append(build("00", "Stock lozenge", "Mindustry's, on disk",
+  "<p>Two identical diamonds, 20 wide, the back twelve pixels longer. <b>Nothing says which end is the nose</b>, nothing softens, and the rim is the same width fore and aft. Every ammo in the game is currently this.</p>", stock, false));
+
+const cards = document.getElementById("cards");
+cards.append(build("01", "Tracer", "round head, fading tail",
+  `<p>A circle for the head and a tail that runs out to nothing, with the back's tail longer and more transparent than the front's. <b>The alpha does the work:</b> the ammo's back colour reads as a streak behind its front colour, so a volley looks like tracer fire without the renderer drawing a trail.</p>
+   <p><b>Stretched</b> along, the head goes egg-shaped but the streak just gets longer, which is what a faster round should look like. Stretched across (flak) it turns into a blunt blob; the tail is what suffers. <b>Life</b> is its best trick: as <code>shrinkY</code> eats the length the streak is what goes, so a spent round is a dot. At zoom 1 it is a bright bead with a dim comma behind it.</p>`, tracer, true));
+cards.append(build("02", "Bolt", "capsule, banded",
+  `<p>The literal bullet: a capsule with a round nose, a flat tail, and a <b>driving band cut through the front</b> so the back colour shows as a dark stripe near the tail, the same trick as the canister's strap. Direction reads off the band, not the nose.</p>
+   <p><b>Stretched</b> it is the most forgiving of the four. The straight flanks take any aspect; the nose ellipse is small enough not to read as a squash. Flak comes out as a fat pill with a band, a needle as a rod. <b>Recolour</b> needs the two tints to contrast or the band vanishes: thorium's white-on-pink and toxin's two greens keep it, copper's two tans nearly lose it at zoom 1.</p>`, bolt, false));
+cards.append(build("02b", "Bolt, plain", "capsule, no band",
+  `<p>The same capsule with nothing cut out of it: a round nose, a flat tail, and the back's rim as the only second tone. <b>It is the stock lozenge with a nose</b>, which is what the far-away pellet already looked like. Direction reads off the flat tail against the round head, and it holds under every stretch the banded one does.</p>
+   <p>What it gives up is the second tone on the body: the front is one flat field, so copper is one tan with a darker edge, and thorium a white pill in pink. What it gains is that nothing inside the shape can vanish at zoom 1.</p>`, boltPlain, true));
+cards.append(build("03", "Chevron", "arrowhead on a shaft",
+  `<p>A V with a short shaft, the back a stroked copy with its shaft run out behind. <b>Unmistakable direction at any size</b>; a volley reads as a flight of darts, and the notch between the wings holds the back colour as a second tone.</p>
+   <p><b>Stretched</b> along, the V narrows into a needle; across, it opens into a broad flak wedge. Both still read as an arrow, which is the point. <b>Life</b> is where it is odd: the shaft shortens on <code>shrinkY</code> but the head does not, so a spent round is a stubby head. At zoom 1 the wings are under a pixel and it is a triangle.</p>`, chevron, false));
+cards.append(build("04", "Shard", "hexagon with a facet",
+  `<p>An elongated hexagon, one thin facet cut through the front on the diagonal so the back colour shows as a seam. The back has a pointed tail. <b>Only straight edges</b>, which makes it the one design that is exactly itself under any stretch: a 5&times;26 shard is still a hexagon.</p>
+   <p><b>Recolour</b> is its strength: the seam is a hard line of the back colour on a field of the front, so thorium is a white crystal with a pink crack and toxin a green one with a dark one. <b>Direction</b> reads only off the tail rim, so at zoom 1 it is an oval. It suits energy and mineral ammo more than a copper pellet, but there is no rule the pellet has to look like lead.</p>`, shard, false));
+
+document.getElementById("verdict").innerHTML = `
+  <div class="v"><h3>Tracer for <code>bullet</code></h3><p>It uses the one thing the stock pair never touched, alpha, and gets a trail out of the tint pass for free. It survives the shrink better than any of them because what shrinks is the streak. It is the only option that makes a volley look faster.</p><p>Its weak case is flak, and no flak ammo uses the <code>bullet</code> region; flak is on <code>shell</code>.</p></div>
+  <div class="v pick"><h3>Bolt, plain: the one that shipped</h3><p>Picked because the far-away pellet already looked like this. Closest to the stock's role, drops in with the least visual change at zoom 1, and stretches without complaint. Pick this if the tracer's streak turns out to clutter a 22k-body screen.</p></div>
+  <div class="v"><h3>Shard for the 36 pairs</h3><p>Whichever wins for <code>bullet</code>, the hexagon is the right shape for <code>shell</code> and <code>missile</code>, which are drawn on <code>Mathf.slope</code> and swell to double their width; a shape with no arcs is the one that swells cleanly.</p></div>
+  <div class="v"><h3>Chevron, not for this</h3><p>The best direction read and the worst shrink. It belongs on a shot that never shrinks: a dart the swarm fires, or a homing round. Kept here so the comparison is honest.</p></div>`;
+</script>

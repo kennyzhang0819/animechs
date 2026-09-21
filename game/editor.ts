@@ -555,17 +555,6 @@ export class MapEditor {
       return;
     }
     if (this.terrain.marks.length >= MAX_MARKS) return;
-    const half = (kind.size / 2) | 0;
-    const x0 = clamp(gx - half, 0, COLS - kind.size);
-    const y0 = clamp(gy - half, 0, ROWS - kind.size);
-    // no two marks may overlap: two things in one place is an author who
-    // cannot click the one underneath
-    for (const m of this.terrain.marks) {
-      const ms = markSize(m);
-      if (!markKind(m.kind)) continue;
-      if (x0 < m.x + ms && x0 + kind.size > m.x && y0 < m.y + ms && y0 + kind.size > m.y)
-        return;
-    }
     // THE SWATCH CARRIES THE CHOICE (maps.ts, the mark swatches): a kind
     // whose body or turret is a choice field gets one swatch per value,
     // so what the tray shows is what gets stamped and the panel is where
@@ -575,15 +564,22 @@ export class MapEditor {
     const f = faceField ? kind.fields.find((x) => x.key === faceField) : null;
     if (f?.kind === "choice")
       opts[f.key] = f.choices[clamp(this.variant, 0, f.choices.length - 1)].value;
-    this.terrain.marks.push({ kind: kind.id, x: x0, y: y0, opts });
-    // ...and a turret's footprint is its own (markSize), so the square it
-    // was centred on is re-centred on the size it actually takes
-    const only = this.terrain.marks[this.terrain.marks.length - 1];
-    const sz = markSize(only);
-    if (sz !== kind.size) {
-      only.x = clamp(gx - ((sz / 2) | 0), 0, COLS - sz);
-      only.y = clamp(gy - ((sz / 2) | 0), 0, ROWS - sz);
+    // the footprint is the chosen turret's or body's own (markSize), so
+    // the square is centred and tested at the size the run puts down
+    const mark: MapMark = { kind: kind.id, x: 0, y: 0, opts };
+    const sz = markSize(mark);
+    const half = (sz / 2) | 0;
+    mark.x = clamp(gx - half, 0, COLS - sz);
+    mark.y = clamp(gy - half, 0, ROWS - sz);
+    // no two marks may overlap: two things in one place is an author who
+    // cannot click the one underneath
+    for (const m of this.terrain.marks) {
+      const ms = markSize(m);
+      if (!markKind(m.kind)) continue;
+      if (mark.x < m.x + ms && mark.x + sz > m.x && mark.y < m.y + ms && mark.y + sz > m.y)
+        return;
     }
+    this.terrain.marks.push(mark);
     this.picked = this.terrain.marks.length - 1;
     rebuildReserved(this.terrain);
     this.dirty = true;
@@ -1381,7 +1377,7 @@ export class MapEditor {
         for (const f of k.fields) {
           const v = m.opts?.[f.key];
           const txt = f.kind === "choice"
-            ? (f.choices.find((ch) => ch.value === v)?.label ?? String(v)).split(" ")[0]
+            ? (f.choices.find((ch) => ch.value === v)?.label ?? String(v))
             : `${f.label.split(" ").pop()} ${v}`;
           c.strokeStyle = "rgba(10,10,14,0.9)";
           c.lineWidth = 4 / s;

@@ -144,6 +144,15 @@ import {
   BASTION_CUT,
   GOAD_SPEED_MUL,
   pylonRamp,
+  ACTIVE_FAMILIES,
+  FABRICATOR_BATCH,
+  FABRICATOR_KINDS,
+  FABRICATOR_RATES,
+  type FabricatorRate,
+  type FamilyKey,
+  fabricatorTier,
+  familyByKey,
+  familyOf,
   UNIT_ID,
   UNIT_KINDS as UNIT_KINDS_IMPORT,
   UNIT_STATS,
@@ -255,7 +264,7 @@ import {
   VOLATILE_RADIUS,
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
-import { markKind, markOpts } from "./missionMarks";
+import { markKind, markOpts, markSize } from "./missionMarks";
 import {
   levelWithMarks, postProblems, postsFor, roadAt, roadProblems, roadsFor,
   siegeFromMarks, type MarkSiege, type Post, type Road,
@@ -817,6 +826,10 @@ const KIND_MERGE_MAX = Uint8Array.from(
   UNIT_KINDS,
   (k) => UNIT_STATS[k].starburst?.merge ?? MERGE_MAX_STACK,
 );
+/** the tier a body fabricates, by kind id — 0 for anything that is not a
+ *  house (levels.ts fabricatorTier) */
+const FAB_TIER = Uint8Array.from(UNIT_KINDS, fabricatorTier);
+const FABRICATOR_IDS: readonly number[] = FABRICATOR_KINDS.map((k) => UNIT_ID[k]);
 // A TRAIT WITH NO ROUND BEHIND IT IS A FAMILY THAT SILENTLY DOES NOTHING
 // — the body would take its hits, roll its chance and throw nothing at
 // all — so the two tables are checked against each other at load rather
@@ -1538,7 +1551,15 @@ export class Sim {
    * when its train comes round; a tower the board knocks down does not
    * come back, so what a run pays to clear a leg of road it pays once.
    */
-  private towerSpots: { x: number; y: number; kind: UnitKind; wave: number }[] = [];
+  private towerSpots: { x: number; y: number }[] = [];
+  /** the fabricators the map carries (missionMarks.ts FABRICATOR), each
+   *  spent once when its wave comes round (runFabricators) */
+  private fabSpots: { x: number; y: number; kind: UnitKind; wave: number; every: number; up: boolean }[] = [];
+  /** a standing house's clock: seconds to its next batch, and the gap */
+  private readonly ufabT = new Float32Array(MAX_UNITS);
+  private readonly ufabEvery = new Float32Array(MAX_UNITS);
+  /** the families this run's script deals, which is what a house sends */
+  private runFamilies: readonly FamilyKey[] = [];
   /**
    * IS THE MISSION'S SECOND CLOCK DISARMED? — true once there is nothing
    * left to launch, ever (runCrossers).
@@ -2565,6 +2586,7 @@ export class Sim {
     this.crossDone = mission.kind !== "intercept";
     this.crossSweeping = false;
     this.towerSpots = [];
+    this.fabSpots = [];
     // ...and so does an ESCORT, off the same roads (runConvoys). Both
     // missions are drawn on missions.ts lines, so the geometry is fetched
     // once here for whichever of the two is being played
@@ -2670,21 +2692,43 @@ export class Sim {
     // is not loaded until this line. Which tower, where and on which train
     // are all on the mark; nothing is put down yet — runCrossers spends
     // the list as the trains go out
-    const towerKind = markKind("buffTower");
-    if (this.level.mission.kind === "intercept" && towerKind)
+    if (this.level.mission.kind === "intercept")
       for (const mk of this.terrain.marks) {
         if (mk.kind !== "buffTower") continue;
-        const o = markOpts(towerKind, mk.opts);
         // the mark's top-left cell is a footprint corner; a body stands at
         // the middle of the square an author drew
         const half = (MARK_TOWER_SIZE * CELL) / 2;
-        this.towerSpots.push({
+        this.towerSpots.push({ x: mk.x * CELL + half, y: mk.y * CELL + half });
+      }
+    // THE FABRICATORS AN AUTHOR PLACED (missionMarks.ts FABRICATOR), on
+    // any mission; nothing is put down yet (runFabricators)
+    const fabKind = markKind("fabricator");
+    if (fabKind)
+      for (const mk of this.terrain.marks) {
+        if (mk.kind !== "fabricator") continue;
+        const o = markOpts(fabKind, mk.opts);
+        const half = (markSize(mk) * CELL) / 2;
+        this.fabSpots.push({
           x: mk.x * CELL + half,
           y: mk.y * CELL + half,
-          kind: o.unit as UnitKind,
+          kind: o.tier as UnitKind,
           wave: Number(o.wave),
+          every: FABRICATOR_RATES[o.rate as FabricatorRate],
+          up: false,
         });
       }
+    // ...and what a house sends is the run's own families, read off the
+    // script it was dealt; a script that sends nothing falls back to all
+    const dealt = new Set<FamilyKey>();
+    for (const step of this.level.script) {
+      if (!("wave" in step)) continue;
+      for (const g of waveGroups(step.wave))
+        g.counts.forEach((c, k) => {
+          const f = c > 0 ? familyOf(UNIT_KINDS[k]) : null;
+          if (f) dealt.add(f);
+        });
+    }
+    this.runFamilies = dealt.size > 0 ? [...dealt] : ACTIVE_FAMILIES;
     // the Hydrophobic mask needs the terrain, so it is built here rather
     // than up with the other rules — and only where the rule is in force
     this.waterlogged = hasMutation(inForce, "hydrophobic") ? this.buildWaterlogged() : null;
@@ -4577,6 +4621,8 @@ export class Sim {
     // ...and the escort's, which is the same clock read the other way:
     // one departure per cart, on absolute moments (runConvoys)
     this.runConvoys();
+    // ...and the houses, on the wave clock (runFabricators)
+    this.runFabricators(dt);
     // a structure went up on, or came down off, open ground: shove anything
     // standing in its cells clear now, and re-solve the routes when the
     // board settles (solveDirtyFields)
@@ -4953,6 +4999,9 @@ export class Sim {
       this.removeUnit(i);
     }
     this.crossSweeping = false;
+    // a swept house comes back up with the moment jumped to, like every
+    // launch the jump passed over (runFabricators)
+    for (const f of this.fabSpots) f.up = false;
     // ...and the corpses go with them, or Reconstruction stands a skipped
     // wave back up in the middle of the one jumped to (updateCorpses). A
     // corpse is a body its wave is still owed (killUnit un-books it), so
@@ -5273,48 +5322,59 @@ export class Sim {
    * reported nowhere.
    */
   /**
-   * THE TOWERS DRAWN FOR THIS TRAIN WAVE, PUT UP (missionMarks.ts
-   * BUFF_TOWER). Bolted to the ground like an emplacement is (plantUnit)
-   * and pointing at the core, which is the only heading a body that never
-   * turns can be given.
+   * THE PYLONS THIS TRAIN COMES IN UNDER (levels.ts InterceptMission.pylons):
+   * the row for `wave` says how many Goads and Bastions rise, and WHERE
+   * each one stands is drawn at random from the spots the map carries that
+   * nothing is standing on yet (missionMarks.ts BUFF_TOWER).
    *
-   * NOTHING IS ROLLED. Every mark names its tower and its train, so the
-   * same map plays the same way every run and an author can say "the
-   * third train comes in under two Bastions on the north leg" and have it
-   * be true. It used to shuffle a hand from a schedule into whichever
-   * spots were free, which meant the one thing a player could have
-   * learned from a run — where the tax is — was re-rolled behind them.
-   *
-   * THE GUARD IS FOR OVERLAPPING MARKS and nothing else: two towers on
-   * one cell would stack invisibly, and a mark already holding a live
-   * body is skipped.
+   * A ROW THE MAP CANNOT PAY FOR SIMPLY PUTS FEWER DOWN. Running out of
+   * free ground is an authoring shortfall, not a fault: the mission is
+   * quieter than the table says and nothing else changes. Draw more spots.
    *
    * IT DOES NOT clearNear. A raze section is rung round a post by the sim
    * and may land its geometry on a boulder, so it walks for open ground; a
-   * buff tower was put on a cell by a person looking at the map, and moving
-   * it a couple of tiles "for them" would mean the thing they placed and
-   * the thing that rose are in different places. A tower placed in rock is
-   * an authoring mistake and the editor is where it is caught.
+   * spot was put on a cell by a person looking at the map, and moving it a
+   * couple of tiles "for them" would mean the thing they drew and the
+   * thing that rose are in different places. A spot in rock is an
+   * authoring mistake and the editor is where it is caught.
    */
   private raiseMarkTowers(wave: number): void {
-    for (const t of this.towerSpots) {
-      if (t.wave !== wave || this.towerStanding(t.x, t.y)) continue;
-      if (!this.spawnUnit(t.kind, { x: t.x, y: t.y, exact: true }, 0)) continue;
-      const i = this.n - 1;
-      this.plantUnit(i);
-      // ...AND IT IS MADE OF THE WAVE IT ROSE ON (levels.ts pylonRamp), so
-      // every tower up on one wave is the same tower and the next wave's
-      // are tougher. Applied here, over whatever the level curve and the
-      // tier's objective share already made it, exactly as the train's own
-      // launch ramp rides on top of its pool (launchCrosser)
-      const ramp = pylonRamp(wave);
-      this.uhp[i] *= ramp;
-      this.uhpmax[i] *= ramp;
-      const a = Math.atan2(this.core.y - t.y, this.core.x - t.x);
-      this.urot[i] = a;
-      this.ubrot[i] = a;
-      this.uheldRot[i] = a;
+    const m = this.level.mission;
+    if (m.kind !== "intercept") return;
+    const row = m.pylons[wave - 1];
+    if (!row) return;
+    // the ground still going spare, shuffled once so one roll serves both
+    // kinds and no spot can be handed out twice
+    const free = this.towerSpots.filter((t) => !this.towerStanding(t.x, t.y));
+    for (let i = free.length - 1; i > 0; i--) {
+      const j = (Math.random() * (i + 1)) | 0;
+      [free[i], free[j]] = [free[j], free[i]];
     }
+    let next = 0;
+    const raise = (kind: UnitKind, n: number): void => {
+      for (let k = 0; k < n; k++) {
+        const t = free[next];
+        if (!t) return;
+        next++;
+        if (!this.spawnUnit(kind, { x: t.x, y: t.y, exact: true }, 0)) continue;
+        const i = this.n - 1;
+        this.plantUnit(i);
+        // ...AND IT IS MADE OF THE WAVE IT ROSE ON (levels.ts pylonRamp), so
+        // every tower up on one wave is the same tower and the next wave's
+        // are tougher. Applied here, over whatever the level curve and the
+        // tier's objective share already made it, exactly as the train's own
+        // launch ramp rides on top of its pool (launchCrosser)
+        const ramp = pylonRamp(wave);
+        this.uhp[i] *= ramp;
+        this.uhpmax[i] *= ramp;
+        const a = Math.atan2(this.core.y - t.y, this.core.x - t.x);
+        this.urot[i] = a;
+        this.ubrot[i] = a;
+        this.uheldRot[i] = a;
+      }
+    };
+    raise("goad", row.goad);
+    raise("bastion", row.bastion);
   }
 
   /**
@@ -5354,6 +5414,66 @@ export class Sim {
   private get bastionCut(): number {
     const n = this.aliveByKind[UNIT_ID.bastion];
     return n > 0 ? (1 - BASTION_CUT) ** n : 1;
+  }
+
+  /**
+   * THE FABRICATORS AN AUTHOR PLACED (missionMarks.ts FABRICATOR): each
+   * rises on the wave its mark names and then sends a batch of its tier
+   * every `every` seconds, drawn from the run's own families
+   * (runFamilies). On the wave clock, so a jump raises what it passed.
+   */
+  private runFabricators(dt: number): void {
+    for (const f of this.fabSpots) {
+      if (f.up || this.wavesStarted < f.wave) continue;
+      f.up = true;
+      if (!this.spawnUnit(f.kind, { x: f.x, y: f.y, exact: true }, 0)) continue;
+      const i = this.n - 1;
+      this.plantUnit(i);
+      this.ufabEvery[i] = f.every;
+      this.ufabT[i] = f.every;
+      // a building sits square to the grid: its art is drawn facing up
+      this.urot[i] = -Math.PI / 2;
+      this.ubrot[i] = -Math.PI / 2;
+      this.uheldRot[i] = -Math.PI / 2;
+    }
+    let standing = 0;
+    for (const id of FABRICATOR_IDS) standing += this.aliveByKind[id];
+    if (standing === 0) return;
+    for (let i = 0; i < this.n; i++) {
+      const tier = FAB_TIER[this.ukind[i]];
+      if (tier === 0 || this.uhp[i] <= 0) continue;
+      this.ufabT[i] -= dt;
+      if (this.ufabT[i] > 0) continue;
+      this.ufabT[i] = this.ufabEvery[i];
+      this.fabricate(i, tier);
+    }
+  }
+
+  /** one batch out of house `i`: its tier of one of the run's families,
+   *  landed on open ground round the house. Booked under wave 0 like a
+   *  crosser, so no wave is held open waiting for a body a house sent */
+  private fabricate(i: number, tier: number): void {
+    const fam = this.runFamilies[(Math.random() * this.runFamilies.length) | 0];
+    if (!fam) return;
+    const kind: UnitKind = familyByKey(fam).kinds[tier - 1];
+    const id = UNIT_ID[kind];
+    const fly = !!UNIT_STATS[kind].flying;
+    const wallField = this.layerOf(kind) === "water" ? this.navalField : this.field;
+    const r = HB_OUTER[id];
+    const span = kindSpan(id, fly);
+    const fx = this.upx[i], fy = this.upy[i];
+    const near = HB_OUTER[this.ukind[i]] + r + 2;
+    const n = FABRICATOR_BATCH[tier - 1];
+    for (let a = 0, made = 0; a < n * 8 && made < n; a++) {
+      const ang = Math.random() * Math.PI * 2;
+      const d = near + Math.random() * CELL * 1.5;
+      const x = clamp(fx + Math.cos(ang) * d, r, W - r);
+      const y = clamp(fy + Math.sin(ang) * d, r, H - r);
+      if ((!fly && wallField.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly, span))
+        continue;
+      if (!this.spawnUnit(kind, { x, y, exact: true }, 0)) return;
+      made++;
+    }
   }
 
   /**
@@ -8685,6 +8805,8 @@ export class Sim {
       this.urisen[i] = 0;
       this.ueaten[i] = 0;
       this.uhungerT[i] = HUNGRY_PERIOD;
+      this.ufabT[i] = 0;
+      this.ufabEvery[i] = 0;
       // ...and every body walks in standing for itself alone, with no
       // squeeze on its clock (mergeSqueezed)
       this.ustack[i] = 1;
@@ -9857,6 +9979,8 @@ export class Sim {
     this.uhungry[i] = this.uhungry[n];
     this.ueaten[i] = this.ueaten[n];
     this.uhungerT[i] = this.uhungerT[n];
+    this.ufabT[i] = this.ufabT[n];
+    this.ufabEvery[i] = this.ufabEvery[n];
     this.ustack[i] = this.ustack[n];
     this.usqzT[i] = this.usqzT[n];
     // the squeeze scratch travels too: mergeSqueezed removes rows in the

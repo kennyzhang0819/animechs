@@ -29,7 +29,7 @@ A mark in `public/maps/<id>.json`:
 
 ```jsonc
 "marks": [
-  { "kind": "buffTower", "x": 420, "y": 100, "opts": { "unit": "goad", "wave": 2 } },
+  { "kind": "buffTower", "x": 420, "y": 100, "opts": {} },
   { "kind": "railgun",   "x": 411, "y":  79, "opts": { "wave": 1 } },
   { "kind": "road",      "x": -59, "y": 488, "pts": [[-59,488],[55,488],[216,327]],
     "opts": { "name": "the south line" } }
@@ -70,7 +70,7 @@ does not know what a buff tower is.
    the buff tower schedule into the spots as trains go out.
 3. Add what an author can get wrong to the `worlds` stage of
    `scripts/check.mjs` — the editor cannot see the mission spec, so "this
-   tower rises on a train that never comes" is caught there and nowhere else.
+   pylon table asks for more towers than the map has spots" is caught there.
 
 The loader (`maps.ts marksOf`) drops a mark naming a kind this build does
 not have and fills a missing field from its default, so a document from a
@@ -89,41 +89,47 @@ send one (`UNIT_TREES`, `objective: true`) — and both are bolted down
 
 Neither has a health pool to give away and neither shoots.
 
-**A MARK IS A TOWER.** It names which of the two it is and which train it
-rises on, and **nothing about it is rolled** — train 3 comes in under
-exactly the towers drawn for train 3, every run. An author who wants two
-Bastions up for the last train draws two Bastions for the last train.
+**A MARK IS A SPOT.** It carries nothing but a position: which tower rises
+on it, and on which train, is **rolled per run** from the mission's own
+schedule (`InterceptMission.pylons`, `Sim.raiseMarkTowers`). An author draws
+the ground a tower may stand on; the mission's table decides the hand.
 
-This replaces a die roll that shuffled a fixed hand into whichever spots
-were free. The roll threw away the one thing the map was for: a tower's
-**buff is global** (`Sim.goadMul`, `Sim.bastionCut` read the alive census,
-so a Goad anywhere speeds every train), and what its *position* decides is
-how far a run has to travel, and past what, to take it down. Two runs of
-one map asked for different trips for no reason a player could see.
+This reverses an earlier design in which a mark named its own tower and
+train. That version bought repeatability — train 3 came in under exactly the
+towers drawn for train 3 — at the cost of putting the escalation in seven
+separate places on the map instead of one table. The roll is back, and the
+table is where the difficulty is now read and tuned.
 
-**They accumulate.** A tower is up from its train until the board kills it,
-and the two buffs **stack by multiplying** — so a run that answers none of
-them meets the last train under all of them. That is the mission: clearing
-the road is not a side errand the intercept offers, it is the bill. An
-author sizing a map counts the **standing total at the last train**, not
-the towers on any one of them. Coldline's seven, as authored:
+**Draw more spots than the schedule asks for.** The roll takes free spots at
+random and simply sends nothing where none is left, so a map with too few
+spots is a map whose late trains come in under fewer towers than the table
+says. That is not an error — `npm run check` prints it as a `note` and the
+mission plays quieter.
+
+**They accumulate.** A tower is up from the train it rose on until the board
+kills it, and the two buffs **stack by multiplying** — so a run that answers
+none of them meets the last train under all of them. That is the mission:
+clearing the road is not a side errand the intercept offers, it is the bill.
+The table's rows are **new arrivals, not a standing total**. Coldline's:
 
 | train | rises | standing, if the board kills none |
 |---|---|---|
-| 2 | Goad | 1 Goad — trains run 2x |
-| 3 | Goad | 2 Goads — 4x |
-| 4 | Bastion | 2G 1B — 4x, half the damage lands |
-| 5 | Goad | 3G 1B — 8x |
-| 6 (the spare) | Goad, 2 Bastions | 4G 3B — 16x, an eighth of the damage lands |
+| 1 | — | — |
+| 2 | 1 Goad | 1G — trains run 2x |
+| 3 | 1 Bastion | 1G 1B — 2x, half the damage lands |
+| 4 | 1 Goad, 1 Bastion | 2G 2B — 4x, a quarter lands |
+| 5 | 2 Goads, 1 Bastion | 4G 3B — 16x, an eighth lands |
+| 6 | 2 Goads, 2 Bastions | 6G 5B |
+| 7 | 2 Goads, 3 Bastions | 8G 8B |
+| 8 (the spare) | 2 Goads, 4 Bastions | 10G 12B |
 
-The marks are ordered by how far each stands from the nearest road, so the
-early trains bring towers a board can answer cheaply and the last one
-brings the trip.
+The map draws seven spots today, so everything past the seventh tower is
+dropped and the run tops out at 7 standing. Paint more spots to reach the
+table.
 
 **Every tower rising on one wave is the same tower** (`pylonRamp`): health
 rides the wave it rose on, so wave 6's are tougher than wave 4's and a
-player reads the difficulty off the wave number. It is the one thing about
-a buff tower the map does not decide. The curve is 1.28 a wave —
+player reads the difficulty off the wave number. The curve is 1.28 a wave —
 deliberately gentler than the train's own `WORM_RAMP_GROWTH`, because a
 Borer is one body shot for four minutes and a tower has to be knocked down
 *again* between trains; a curve that steep goes from "kill it each time" to
@@ -131,12 +137,11 @@ Borer is one body shot for four minutes and a tower has to be knocked down
 
 **They rise on a train wave, not on a clock.** Every other schedule in the
 game is absolute seconds; this one is the launch index of
-`InterceptMission.pattern` — *the second train comes in under a Goad*. The
-spare counts as the train after the pattern's last, so a mark drawn for it
-names that number. `npm run check` says so if a tower is drawn for a train
-the pattern never launches. A jump (`skipToTime`) walks the same loop, so a
-rise the jump passed over happens at once, like every launch it passed
-over.
+`InterceptMission.pattern`, and the pylon table is indexed the same way —
+row 2 is what the second train comes in under. The spare is the train after
+the pattern's last and takes the table's last row. A jump (`skipToTime`)
+walks the same loop, so a rise the jump passed over happens at once, like
+every launch it passed over.
 
 **They stack by multiplying** (`Sim.goadMul`, `Sim.bastionCut`). Two
 Bastions at half off each leave a quarter of the damage getting through, and
@@ -155,7 +160,7 @@ re-taking before anything has risen on them.
 and may land on a boulder, so it searches for open ground; a buff tower was
 put on a cell by a person looking at the map, and moving it "for them" would
 mean the thing they placed and the thing that rose are in different places.
-A tower in rock is an authoring mistake, and `npm run check` says so.
+A spot in rock is an authoring mistake, and `npm run check` says so.
 
 ## Authoring them
 
@@ -164,15 +169,17 @@ one; the eraser takes one off. There is nothing to set on a buff tower —
 the only decision is where, and how many. A railgun has one dial, the
 section it rises in, and it is printed on the map.
 
-**Count the standing total, not the hand.** There is no hand any more —
-every mark is a tower that comes up and stays up — so what sizes a map is
-how many are on the board at the last train and what a run has to do to
-thin them. The **Mission marks** layer hides them and puts them out of
-reach of every tool.
+**Draw more spots than the table asks for.** What sizes a map is the
+mission's own pylon table — how many towers are standing at the last train
+and what a run has to do to thin them — and the spots are only the ground
+that can hold them. A spot the roll never reaches costs nothing; a table row
+the map cannot pay for is silently quieter, and `npm run check` notes it.
+The **Mission marks** layer hides them and puts them out of reach of every
+tool.
 
-Each block is drawn in its kind's ink with its fields printed under it, so
-"goad, train 2" is readable off the map without clicking every square —
-which is the thing being authored.
+Each block is drawn in its kind's ink with its fields printed under it. A
+buff tower spot has no fields, so it is a bare square — what it will hold is
+the mission's business, not the map's.
 
 Two marks may not overlap, and the save route refuses a document with an
 unknown kind or an off-board mark: the loader would drop it anyway, but a
@@ -189,6 +196,33 @@ sections it rises in. **Every gun is placed.** The ring the sim used to
 spread a count of guns round a post is gone: where a gun stands is a
 decision about cover and approach, so it is a mark, and how many rise is
 how many you drew.
+
+**`fabricator`** — one house that keeps sending one tier of the swarm. It
+belongs to **no mission**: any map may carry one, in any number, and the
+sim reads them off the map whatever the objective is (`Sim.runFabricators`).
+Three dials, all on the mark:
+
+| | |
+|---|---|
+| **Tier** | T1 to T5 — which body rises (`fabricator1`..`fabricator5`) and so its footprint: 1, 2, 3, 4 and 6 tiles. The face says the tier too (`game/fabricatorArt.ts`): a square, a plaque, a bare skull, a skull with its jaw, a horned skull |
+| **Rate** | Slow, Medium, Fast, Extra fast — seconds between batches (`FABRICATOR_RATES`: 45, 30, 20, 12) |
+| **Spawns at** | the wave it rises on |
+
+What a house sends is **its tier of the run's own families**: each batch
+picks one of the families the script deals and lands that family's body
+of the house's tier on open ground round it. The batch shrinks up the
+ladder (`FABRICATOR_BATCH`: 6, 4, 3, 2, 1) so a runt house is a trickle and
+an apex house is an apex every so often. The bodies are booked under wave
+0, like a Borer's pieces, so no wave is held open waiting for one to die
+and no wave pays XP for it; the scrap is real. A house is bolted down,
+unarmed, and comes back for nothing once the board kills it. The swatch
+carries the tier — one per T — so the block on the map is the size the
+run will put down. Nothing is placed on any map today.
+
+**Spawns at** is the one field every rising thing shares: the railgun's
+section, the fabricator's wave. The number is a count on the kind's own
+clock, and the label is the same so the panel reads the same. (The buff
+tower has no rise field while it is a rolled spot.)
 
 **`road`** — the line a crosser walks (`game/missions.ts`): the Borers'
 lines on an intercept map, the convoy's on an escort one. Its corners are

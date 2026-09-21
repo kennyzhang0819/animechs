@@ -44,6 +44,35 @@ A document's headers are fixed before any worker controls the page, so the first
 never isolated. `OfflineReady` reloads once, guarded by a session flag so a page that still
 is not isolated cannot loop.
 
+## Pushing a build to the tablet
+
+```bash
+npm run ipad         # export, serve out/, point the tailnet name at it, print the URL
+npm run ipad:watch   # the same, and re-export on every source edit
+npm run ipad:serve    # serve out/ as it stands, no export
+```
+
+`scripts/push-ipad.mjs` does the three things by hand in one go: `build:static`, a static
+host on `127.0.0.1:3120`, and `tailscale serve --bg --https=443` aimed at that port, so the
+tablet reaches it at the machine's `*.ts.net` name over real HTTPS. Only the `/` mount is
+touched; anything else the tailnet is serving is left alone. There is no Funnel anywhere in
+this — the bundle is visible to the tailnet and nothing wider.
+
+It serves the bundle itself rather than `npx serve` for two reasons. It sends COOP/COEP on
+every response, so the **first** load is already cross-origin isolated and `OfflineReady`'s
+reload never fires; and it starts without a network, which `npx serve` does not.
+`sw.js` and every `.html` go out `no-store`, because a tablet holding the old bundle must
+not be handed a cached copy of the file that would tell it about the new one.
+
+**The tablet takes an update on its next launch, not while it is open.** The new `sw.js`
+differs (its cache name is a digest of the file list), so the worker installs, `skipWaiting`s
+and deletes the old cache — but the page already running was drawn from the old one. Close
+the app on the iPad and reopen it.
+
+`--watch` covers `game/`, `components/`, `app/`, `public/`, `docs/turret-concepts/` and
+`next.config.ts`, minus the paths the build itself writes (`public/foundry/`,
+`public/icon-*.png`) — watching those would rebuild forever.
+
 ## THE ORIGIN HAS TO BE SECURE, and a LAN address is not
 
 **This is the one that bites.** A service worker is secure-context only, and only two things

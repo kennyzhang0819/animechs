@@ -1,6 +1,6 @@
 # Stock sprites
 
-`sprites/` holds the **178 sprite files this game actually loads**, taken from
+`sprites/` holds the **177 sprite files this game actually loads**, taken from
 [Mindustry](https://github.com/Anuken/Mindustry)'s assets
 (`core/assets-raw/sprites/`), by Anuken and contributors, licensed under
 **GPL-3.0**. They are placeholder art in a personal prototype; the folder

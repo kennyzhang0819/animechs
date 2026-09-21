@@ -8,7 +8,7 @@
  * that knows both, so adding a mission's furniture is one entry here
  * rather than an edit to the editor, the loader and the panel.
  */
-import type { Mission, UnitKind } from "./levels";
+import { FABRICATOR_KINDS, FABRICATOR_TILES, type Mission, type UnitKind } from "./levels";
 import type { TowerKind } from "./types";
 import { TOWERS } from "./constants";
 
@@ -71,6 +71,9 @@ export interface MarkKind {
   geom: MarkGeom;
   /** footprint in cells, square */
   size: number;
+  /** ...or, per body a unitField may choose, that body's own footprint —
+   *  a T5 fabricator is six tiles where a T1 is one (markSize) */
+  sizeByUnit?: Readonly<Partial<Record<UnitKind, number>>>;
   /** the ink it is drawn in, in the editor and on the board overlay */
   color: string;
   /**
@@ -128,54 +131,49 @@ export function parseWaves(raw: string | number | undefined): number[] {
  *  wave the mission never sends simply never comes */
 export const WAVE_CEIL = 40;
 
+/** THE ONE FIELD EVERY RISING THING SHARES: when it comes up, as a count
+ *  on its kind's clock — a wave for a fabricator, a section for a railgun.
+ *  One label so the editor reads the same for all of them */
+export const spawnsAt = (max: number, def: number): MarkField => ({
+  key: "wave",
+  label: "Spawns at",
+  kind: "int",
+  min: 1,
+  max,
+  def,
+});
+
 /**
- * ONE BUFF TOWER on an intercept map (levels.ts `goad` and `bastion`):
- * WHICH of the two, WHERE it stands, and WHICH TRAIN it is up for. All
- * three are the author's, and none of them is rolled.
+ * ONE PLACE A BUFF TOWER MAY STAND on an intercept map (levels.ts `goad`
+ * and `bastion`). The mark is a SPOT and nothing else: which tower rises
+ * on it, and on which train, is rolled per run from the mission's own
+ * schedule (InterceptMission.pylons, Sim.raiseMarkTowers).
  *
- * IT WAS A SPOT AND A DIE ROLL ONCE, and the roll was the wrong idea. A
- * tower's BUFF IS GLOBAL — Sim.goadMul and Sim.bastionCut read the alive
- * census, so a Goad anywhere on the board speeds every train — and what
- * its POSITION decides is how far a run has to travel, and past what, to
- * take it down. That is a thing an author looks at the map to judge, and
- * a shuffle threw it away: two runs of one map asked for different trips
- * for no reason a player could see, so nothing a run taught them was
- * worth carrying.
+ * SO AN AUTHOR DRAWS THE GROUND, NOT THE HAND. What a spot decides is how
+ * far a run has to travel, and past what, to take a tower down — that is
+ * the thing worth looking at the map to judge. How many towers are up and
+ * of which kind is the mission's escalation, and it is one table rather
+ * than a number typed onto every mark.
  *
- * SO A MARK IS A TOWER AND NOT A SPOT. Train 3 comes in under exactly
- * the towers drawn for train 3, every run, and the escalation is the
- * marks an author laid rather than a curve the game owns.
+ * DRAW MORE SPOTS THAN THE SCHEDULE ASKS FOR. The roll takes free spots
+ * at random and simply sends nothing where none is left, so a map with
+ * too few is a map whose late trains come in under fewer towers than the
+ * table says — no error, just a quieter mission.
  *
- * THEY ACCUMULATE. A tower is up from its train until the board kills
- * it, and the two buffs STACK BY MULTIPLYING, so a run that answers none
- * of them meets the last train under all of them. That is the mission:
- * clearing the road is not a side errand the intercept offers, it is the
- * bill, and an author sizing a map has to count the standing total at
- * the last train rather than the towers on any one of them.
+ * THEY ACCUMULATE. A tower is up from the train it rose on until the
+ * board kills it, and the two buffs STACK BY MULTIPLYING, so a run that
+ * answers none of them meets the last train under all of them.
  */
 const BUFF_TOWER: MarkKind = {
   id: "buffTower",
-  label: "Buff tower",
+  label: "Buff tower spot",
   missions: ["intercept"],
   geom: "point",
   size: 4,
   color: "#ff5c73",
   unit: "goad",
-  unitField: "unit",
   pad: 2,
-  fields: [
-    {
-      key: "unit",
-      label: "Tower",
-      kind: "choice",
-      choices: [
-        { value: "goad", label: "Goad" },
-        { value: "bastion", label: "Bastion" },
-      ],
-      def: "goad",
-    },
-    { key: "wave", label: "Rises on train", kind: "int", min: 1, max: WAVE_CEIL, def: 2 },
-  ],
+  fields: [],
 };
 
 /**
@@ -201,7 +199,48 @@ const RAILGUN: MarkKind = {
   color: "#ff8a3a",
   unit: "railgun",
   pad: 2,
-  fields: [{ key: "wave", label: "Rises in section", kind: "int", min: 1, max: 4, def: 1 }],
+  fields: [spawnsAt(4, 1)],
+};
+
+/**
+ * A FABRICATOR — one house that keeps sending one tier of the run's
+ * families on its own clock (levels.ts FABRICATOR_RATES, Sim.runFabricators).
+ * It belongs to no mission: any map may carry one, and it rises on the
+ * wave the mark names. The tier picks the body and so the footprint.
+ */
+const FABRICATOR: MarkKind = {
+  id: "fabricator",
+  label: "Fabricator",
+  missions: ["hold", "survive", "intercept", "escort", "raze"],
+  geom: "point",
+  size: 1,
+  sizeByUnit: Object.fromEntries(FABRICATOR_KINDS.map((k, i) => [k, FABRICATOR_TILES[i]])),
+  color: "#ffb03a",
+  unit: "fabricator1",
+  unitField: "tier",
+  pad: 1,
+  fields: [
+    {
+      key: "tier",
+      label: "Tier",
+      kind: "choice",
+      choices: FABRICATOR_KINDS.map((k, i) => ({ value: k, label: `T${i + 1}` })),
+      def: "fabricator1",
+    },
+    {
+      key: "rate",
+      label: "Rate",
+      kind: "choice",
+      choices: [
+        { value: "slow", label: "Slow" },
+        { value: "medium", label: "Medium" },
+        { value: "fast", label: "Fast" },
+        { value: "xfast", label: "Extra fast" },
+      ],
+      def: "medium",
+    },
+    spawnsAt(WAVE_CEIL, 1),
+  ],
 };
 
 /**
@@ -235,7 +274,7 @@ const ROAD: MarkKind = {
   fields: [{ key: "name", label: "Name", kind: "text", def: "the line" }],
 };
 
-export const MARK_KINDS: readonly MarkKind[] = [BUFF_TOWER, RAILGUN, ROAD];
+export const MARK_KINDS: readonly MarkKind[] = [BUFF_TOWER, RAILGUN, FABRICATOR, ROAD];
 
 /** the turret a mark stands up, where it stands one — the TowerKind twin
  *  of markUnit */
@@ -258,13 +297,12 @@ export function markTower(m: MapMark): TowerKind | null {
 export function markSize(m: MapMark): number {
   const k = markKind(m.kind);
   if (!k) return 1;
-  const t = markTower(m);
-  return t ? TOWERS[t].size : k.size;
+  return markSizeFor(k, markTower(m), markUnit(m));
 }
-/** the same, for a kind and a chosen turret — the stamp knows both before
- *  a mark exists to ask */
-export const markSizeFor = (k: MarkKind, tower: TowerKind | null): number =>
-  tower ? TOWERS[tower].size : k.size;
+/** the same, for a kind and a chosen turret or body — the stamp knows
+ *  both before a mark exists to ask */
+export const markSizeFor = (k: MarkKind, tower: TowerKind | null, unit: UnitKind | null): number =>
+  tower ? TOWERS[tower].size : (unit && k.sizeByUnit?.[unit]) || k.size;
 
 /** every turret face a mark may wear — what a panel carves up front */
 export const MARK_TOWERS: readonly TowerKind[] = [

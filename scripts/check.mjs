@@ -134,6 +134,9 @@ const report = (name, problems, detail = "") => {
   if (problems.length > 0) failed = true;
   results.push({ name, bad: problems.length > 0, detail, problems });
 };
+/** things worth telling an author that are NOT failures — a map still
+ *  being painted is not a broken map */
+const notes = [];
 
 // ---------- stage one: the two compiles, side by side ----------
 
@@ -199,6 +202,7 @@ function print() {
     for (const p of r.problems.slice(0, 12)) console.log(`       ${p}`);
     if (r.problems.length > 12) console.log(`       ...and ${r.problems.length - 12} more`);
   }
+  for (const n of notes) console.log(`note   ${n}`);
   console.log(
     `\n${failed ? "BROKEN" : "clean"} in ${wall}s` +
       `${stale ? "" : " (transpile cached)"} — compile ${(tCompile / 1000).toFixed(1)}s`,
@@ -373,6 +377,7 @@ report("atlas", atlasProblems, atlasDetail);
 const cellFamilies = (() => {
   const IA = R("ironhideArt.js"), FAM = R("familyArt.js"), TA = R("tuskerArt.js"), SA = R("grapnelArt.js");
   const KA = R("kingArt.js"), KE = R("kettleArt.js"), PY = R("pylonArt.js"), WA = R("wardenArt.js");
+  const FB = R("fabricatorArt.js");
   // a ground family's tier is a mech tier or a legged one; the Grapnels
   // ride the mech rig at every tier with no stride at all, so the rig is
   // named per family rather than read off the stride
@@ -394,6 +399,8 @@ const cellFamilies = (() => {
     // each, and a cell the atlas refuses at load if it is empty
     ["goad", [PY.GOAD_TIER], PY.goadMech],
     ["bastion", [PY.BASTION_TIER], PY.bastionMech],
+    // ...and the five fabricators, one grid a tier
+    ["fabricator", FB.FABRICATOR_TIERS, FB.fabricatorMech],
     // ...and the siege's five, all on the rig and all refused at load if
     // the crux they wear comes out empty
     ["railgun", [WA.RAZE_TIER], WA.razeMech],
@@ -519,18 +526,24 @@ for (const w of L.WORLDS) {
       say(`the pattern sends ${sent} crossers and the mission asks for ${m.kills}`);
     if (m.leaks > 0 && m.spare.length === 0)
       say(`${m.leaks} leaks allowed and no spare launch to make them back`);
-    // ...and the buff towers an author placed on this map (game/
-    // missionMarks.ts BUFF_TOWER). Each one names the train it rises on,
-    // so the thing to check is that the train exists: a tower drawn for a
-    // train the pattern never launches is a tower that never comes up,
-    // and nothing else on the board would ever say so
+    // ...and the PYLON SCHEDULE against the ground the map has for it
+    // (game/missionMarks.ts BUFF_TOWER). The towers are rolled into free
+    // spots now, so the thing to check is supply: a row asking for more
+    // than the map can hold puts fewer down and says nothing at runtime
     const lastTrain = m.pattern.length + (m.spare.length > 0 ? 1 : 0);
     const towerKind = MK.markKind("buffTower");
-    for (const mk of sim.terrain.marks) {
-      if (mk.kind !== "buffTower") continue;
-      const wave = Number(MK.markOpts(towerKind, mk.opts).wave);
-      if (wave > lastTrain)
-        say(`a buff tower at ${mk.x},${mk.y} rises on train ${wave} and the pattern launches ${lastTrain}`);
+    const spots = sim.terrain.marks.filter((mk) => mk.kind === "buffTower");
+    if (m.pylons.length < lastTrain)
+      say(`the pylon table has ${m.pylons.length} rows and the pattern launches ${lastTrain}`);
+    const wanted = m.pylons
+      .slice(0, lastTrain)
+      .reduce((n, r) => n + r.goad + r.bastion, 0);
+    if (wanted > spots.length)
+      notes.push(
+        `${w.id} ${w.name}: the pylon table asks for ${wanted} towers and the map draws ` +
+          `${spots.length} spots — the late trains come in under fewer than the table says`,
+      );
+    for (const mk of spots) {
       // a tower dropped in rock is a tower nothing can see to shoot
       // (Sim.canSee) — and unlike a raze section it is never walked clear
       const size = towerKind.size;
@@ -538,7 +551,7 @@ for (const w of L.WORLDS) {
       for (let y = mk.y; y < mk.y + size; y++)
         for (let x = mk.x; x < mk.x + size; x++)
           if (sim.terrain.blocked[y * COLS + x]) rock++;
-      if (rock > 0) say(`a buff tower at ${mk.x},${mk.y} stands on ${rock} cells of rock`);
+      if (rock > 0) say(`a buff tower spot at ${mk.x},${mk.y} stands on ${rock} cells of rock`);
     }
   } else if (m.kind === "escort") {
     // the same shape of arithmetic pointed the other way: enough carts to
@@ -580,6 +593,17 @@ for (const w of L.WORLDS) {
     });
   } else {
     say(`mission kind "${m.kind}" has no objective the sim knows how to meet`);
+  }
+  // ...and the fabricators, which any mission may carry (missionMarks.ts
+  // FABRICATOR): a house dropped in rock is one nothing can see to shoot
+  for (const mk of sim.terrain.marks) {
+    if (mk.kind !== "fabricator") continue;
+    const size = MK.markSize(mk);
+    let rock = 0;
+    for (let y = mk.y; y < mk.y + size; y++)
+      for (let x = mk.x; x < mk.x + size; x++)
+        if (sim.terrain.blocked[y * COLS + x]) rock++;
+    if (rock > 0) say(`a fabricator at ${mk.x},${mk.y} stands on ${rock} cells of rock`);
   }
 }
 report(

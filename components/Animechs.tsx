@@ -594,6 +594,29 @@ const xpBonusText = (mult: number): string => {
 };
 
 /**
+ * WHICH ASSIGNMENT, AND HOW HARD — the two things a run is chosen by,
+ * over the list of what it asks. The name is the WORLD's (levels.ts
+ * LevelSpec.name), which is the mission's name and not the terrain's.
+ */
+function RunTitle({ hud }: { hud: UiState }): React.ReactElement | null {
+  const world = worldById(hud.levelId);
+  if (!world) return null;
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-3 [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
+      <span className="font-display text-[22px] font-bold uppercase leading-tight tracking-widest text-[#EDEDEF]">
+        {world.name}
+      </span>
+      <span
+        className="font-display text-[17px] font-bold uppercase leading-tight tracking-widest"
+        style={{ color: rungColor(hud.tier) }}
+      >
+        {rungLabel(hud.tier)}
+      </span>
+    </div>
+  );
+}
+
+/**
  * THE OBJECTIVE PANEL — WHAT THIS RUN IS FOR, top-left under the shelf,
  * and on EVERY mission (levels.ts Mission).
  *
@@ -3450,8 +3473,8 @@ export default function Animechs() {
             health bar on the board like every other building does
             (drawStructureBars), and the scrap moved down to the
             bottom-right, one line above the prices it is read against.
-            What hangs here is the standing state — the relics, the
-            sandbox pace strip, the mission's objective lines — and the
+            What hangs here is the standing state — the relics, the run's
+            name and tier, the mission's objective lines — and the
             stack is as wide as the widest of those, the objective lines,
             which read as sentences and must not wrap. */}
         {hud && (
@@ -3461,6 +3484,7 @@ export default function Animechs() {
                 is a RULE in force for the rest of the run, so it heads the
                 corner that holds what is true of the run for good. */}
             <RelicShelf relics={hud.shelfRelics} mods={hud.shelfMods} />
+            {!hud.lost && !hud.won && <RunTitle hud={hud} />}
             {/* THE OBJECTIVE, on every mission. It used to be the
                 intercept's alone — a hold and a survive asked for the thing
                 the player was already doing — and that reasoning went with

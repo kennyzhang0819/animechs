@@ -2,6 +2,7 @@ import { CELL, UNIT_SPRITE } from "./constants";
 import { LINOCUT_TERRAIN } from "./terrainFlag";
 import {
   floorCanvas,
+  markPadCanvas,
   propCanvas,
   waterCanvas,
   type PropKind,
@@ -57,6 +58,7 @@ import {
 } from "./wardenArt";
 import { KETTLE_TIERS, kettle, kettleGeom } from "./kettleArt";
 import { BASTION_TIER, GOAD_TIER, bastionMech, goadMech } from "./pylonArt";
+import { FABRICATOR_TIERS, fabricatorMech } from "./fabricatorArt";
 import { KING_TIER, king, kingGeom } from "./kingArt";
 
 /**
@@ -815,11 +817,10 @@ export const UV_BASE = flat("base", 160);
  * and all. A cell any larger than the source would draw the art small by
  * exactly that ratio.
  *
- * The `-back` sprite is the longer of each pair: 40px of art in bullet's
- * 52 against the inner region's 28, and 32 of shell's 36 against 20. Drawn
- * into the same box it therefore sticks out fore and aft, which is the
- * rim you see on every Mindustry shot. Both face +x, like all the other
- * rotated art.
+ * The `-back` sprite is the larger of each pair, so drawn into the same
+ * box it sticks out as a rim. `bullet` is drawn here (boltBullet), a
+ * capsule with a nose; shell and missile are still Mindustry's lozenges
+ * on disk. All face +x, like the other rotated art.
  */
 export const UV_BULLET = sprite("bullet", 52, 52);
 export const UV_BULLET_BACK = sprite("bullet-back", 52, 52);
@@ -1227,6 +1228,12 @@ const JUGGERNAUT_CELLS = wardenCells("juggernaut", JUGGERNAUT_TIER.n, 256);
  *  native px is four tiles, so a 128 cell holds them at the sheet's scale */
 const GOAD_CELLS = wardenCells("goad", GOAD_TIER.n, 128);
 const BASTION_CELLS = wardenCells("bastion", BASTION_TIER.n, 128);
+/** the five fabricators (fabricatorArt.ts), 1, 2, 3, 4 and 6 tiles, each
+ *  on the smallest 64-multiple cell that holds its grid */
+const FABRICATOR_CELL_PX: readonly number[] = [64, 64, 128, 128, 192];
+const FABRICATOR_CELLS = FABRICATOR_TIERS.map((T, i) =>
+  wardenCells(`fabricator${i + 1}`, T.n, FABRICATOR_CELL_PX[i]),
+);
 
 /**
  * THE KETTLES' CELLS, and the third family to ask the packer for room of
@@ -1374,6 +1381,11 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   railgun: { uv: RAZE_CELLS.body, sprite: UNIT_SPRITE * 3 },
   goad: { uv: GOAD_CELLS.body, sprite: UNIT_SPRITE * 2 },
   bastion: { uv: BASTION_CELLS.body, sprite: UNIT_SPRITE * 2 },
+  fabricator1: { uv: FABRICATOR_CELLS[0].body, sprite: UNIT_SPRITE },
+  fabricator2: { uv: FABRICATOR_CELLS[1].body, sprite: UNIT_SPRITE },
+  fabricator3: { uv: FABRICATOR_CELLS[2].body, sprite: UNIT_SPRITE * 2 },
+  fabricator4: { uv: FABRICATOR_CELLS[3].body, sprite: UNIT_SPRITE * 2 },
+  fabricator5: { uv: FABRICATOR_CELLS[4].body, sprite: UNIT_SPRITE * 3 },
   // the four Wardens, each on its own cell at the sheet's px scale
   lance: { uv: LANCE_CELLS.body, sprite: UNIT_SPRITE * 2 },
   bulwark: { uv: BULWARK_CELLS.body, sprite: UNIT_SPRITE * 2 },
@@ -2288,6 +2300,9 @@ if (ANIMAL_ART) {
   MECH_ART.railgun = { ...wardenMechArt(RAZE_CELLS, RAZE_TIER, 192), flatBase: true };
   MECH_ART.goad = wardenMechArt(GOAD_CELLS, GOAD_TIER);
   MECH_ART.bastion = wardenMechArt(BASTION_CELLS, BASTION_TIER);
+  FABRICATOR_CELLS.forEach((c, i) => {
+    MECH_ART[c.kind] = wardenMechArt(c, FABRICATOR_TIERS[i], FABRICATOR_CELL_PX[i]);
+  });
   MECH_ART.lance = wardenMechArt(LANCE_CELLS, LANCE_TIER);
   MECH_ART.bulwark = wardenMechArt(BULWARK_CELLS, BULWARK_TIER);
   MECH_ART.halberd = wardenMechArt(HALBERD_CELLS, HALBERD_TIER, 192);
@@ -2436,7 +2451,6 @@ const SPRITES = {
   foundryDrifter: FOUNDRY_HEAD_URLS.drifter!,
   foundryStinger: FOUNDRY_HEAD_URLS.stinger!,
   spawnPad: `${ENV}/dark-panel-2.png`,
-  markPad: `${ENV}/dark-metal1.png`,
   towerBase: "/stock/sprites/blocks/turrets/bases/block-2.png",
   towerBase1: "/stock/sprites/blocks/turrets/bases/block-1.png",
   towerBase3: "/stock/sprites/blocks/turrets/bases/block-3.png",
@@ -2490,8 +2504,6 @@ const SPRITES = {
   shellBack: "/stock/sprites/effects/shell-back.png",
   base: "/stock/sprites/blocks/storage/core-nucleus.png",
   baseTeam: "/stock/sprites/blocks/storage/core-nucleus-team.png",
-  bullet: "/stock/sprites/effects/bullet.png",
-  bulletBack: "/stock/sprites/effects/bullet-back.png",
   // the swarm's own bullet sprites beyond the turrets' three pairs (see
   // UV_CIRCLE_BULLET): the emp round, the livewire1 torpedo, livewire3's plasma
   // missile, the boss's missile unit, and the sap beam's line and cap
@@ -2763,6 +2775,30 @@ function liquidTurret(
  * block's own silhouette, and outlining it would draw a black ring in the
  * middle of the sprite.
  */
+// the bullet pair: a capsule, round nose up and flat tail, the back a
+// rim wider and longer aft. See docs/bullet-concepts.html for the choice
+function boltBullet(back: boolean): HTMLCanvasElement {
+  const S = 52;
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = S;
+  const c = cv.getContext("2d");
+  if (!c) throw new Error("2d context unavailable for the bullet round");
+  const b = back ? 2.5 : 0;
+  const x0 = 16 - b, x1 = 36 + b, y0 = 8 - b, y1 = 42 + b + (back ? 3 : 0);
+  const rn = 10 + b, rt = 4 + b;
+  c.fillStyle = "#ffffff";
+  c.beginPath();
+  c.moveTo(x0, y0 + rn);
+  c.arc(26, y0 + rn, rn, Math.PI, 0);
+  c.lineTo(x1, y1 - rt);
+  c.arcTo(x1, y1, x1 - rt, y1, rt);
+  c.lineTo(x0 + rt, y1);
+  c.arcTo(x0, y1, x0, y1 - rt, rt);
+  c.closePath();
+  c.fill();
+  return cv;
+}
+
 /**
  * THE TOXIN LINE'S ROUND, drawn rather than loaded: a gas canister, nose
  * up like every bullet source, white for the two tint passes that draw it
@@ -3302,6 +3338,7 @@ function packAnimalArt(
   // ...and the two buff towers, on the same rig (pylonArt.ts)
   packMech(GOAD_CELLS, goadMech(GOAD_TIER), GOAD_TIER.n);
   packMech(BASTION_CELLS, bastionMech(BASTION_TIER), BASTION_TIER.n);
+  FABRICATOR_CELLS.forEach((c, i) => packMech(c, fabricatorMech(FABRICATOR_TIERS[i]), FABRICATOR_TIERS[i].n));
 
   // ---- Stoop, Skate, Livewire ----
   // the wing rig: the composed sprite in the kind's own cell, the body
@@ -3532,7 +3569,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   PINE_KINDS.forEach((k, i) => draw(UV_PINES[i], antialiased(propCanvas(k))));
   DECOR_KINDS.forEach(([k], i) => draw(UV_DECOR[i], antialiased(propCanvas(k))));
   draw(UV_SPAWN, antialiased(img.spawnPad));
-  draw(UV_MARK_PAD, antialiased(img.markPad));
+  draw(UV_MARK_PAD, antialiased(markPadCanvas()));
   // THE RAIL PIECES, painted like the floors and through the same filter
   RAIL_STYLES.forEach((_, st) =>
     RAIL_PIECES.forEach((_p, i) => draw(UV_RAILS[st][i], antialiased(railCanvas(st, i)))),
@@ -3682,8 +3719,8 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // renderer lays the -back region under the inner one on one rect and
   // tints each with the firing ammo's own colour, as BasicBulletType.draw
   // does
-  draw(UV_BULLET, antialiased(img.bullet));
-  draw(UV_BULLET_BACK, antialiased(img.bulletBack));
+  draw(UV_BULLET, antialiased(boltBullet(false)));
+  draw(UV_BULLET_BACK, antialiased(boltBullet(true)));
   draw(UV_SHELL, antialiased(img.shell));
   draw(UV_SHELL_BACK, antialiased(img.shellBack));
   draw(UV_MISSILE, antialiased(img.missile));

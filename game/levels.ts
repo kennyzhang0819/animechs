@@ -6,7 +6,7 @@ import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // import must never become a value one or the two files form a cycle
 import type { MutationId } from "./mutation";
 
-export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail", "railgun", "goad", "bastion", "bulwark", "lance", "halberd", "juggernaut"] as const;
+export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail", "railgun", "goad", "bastion", "bulwark", "lance", "halberd", "juggernaut", "fabricator1", "fabricator2", "fabricator3", "fabricator4", "fabricator5"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -75,6 +75,13 @@ export const UNIT_ID: Record<UnitKind, number> = {
   lance: 53,
   halberd: 54,
   juggernaut: 55,
+  // THE FABRICATORS (FABRICATOR_NAME): five houses, one a tier, that a
+  // map stands up to keep sending that tier (Sim.runFabricators)
+  fabricator1: 56,
+  fabricator2: 57,
+  fabricator3: 58,
+  fabricator4: 59,
+  fabricator5: 60,
 };
 
 /**
@@ -176,6 +183,23 @@ export const WARDEN_NAME = "Wardens";
 
 /** the two buff towers a mission plants over its road (docs/mission-marks.md) */
 export const PYLON_NAME = "Pylons";
+
+/** the five houses a map stands up, one a tier, each sending that tier of
+ *  the run's families on its own clock (docs/mission-marks.md) */
+export const FABRICATOR_NAME = "Fabricators";
+export const FABRICATOR_KINDS: readonly UnitKind[] = [
+  "fabricator1", "fabricator2", "fabricator3", "fabricator4", "fabricator5",
+];
+/** footprint in tiles, T1 to T5 — the stats' radius and the art's grid
+ *  are both this (UNIT_STATS, fabricatorArt.ts) */
+export const FABRICATOR_TILES: readonly number[] = [1, 2, 3, 4, 6];
+/** seconds between one house's batches, by the mark's rate preset */
+export const FABRICATOR_RATES = { slow: 45, medium: 30, fast: 20, xfast: 12 } as const;
+export type FabricatorRate = keyof typeof FABRICATOR_RATES;
+/** bodies a batch, T1 to T5: a runt house sends a handful, an apex house one */
+export const FABRICATOR_BATCH: readonly number[] = [6, 4, 3, 2, 1];
+/** the tier a house fabricates, 1-5, or 0 for a body that is not one */
+export const fabricatorTier = (kind: UnitKind): number => FABRICATOR_KINDS.indexOf(kind) + 1;
 /**
  * WHAT ONE PYLON IS WORTH (Sim.goadMul, Sim.bastionCut — they stack by
  * multiplying). A Goad doubles a Borer's pace, halving the firing a board
@@ -2252,6 +2276,18 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     unslowable: true,
   },
 
+  // ── THE FABRICATORS, the five houses (game/fabricatorArt.ts) ─────────
+  //
+  // Bolted down like the pylons (Sim.plantUnit) and unarmed: what a house
+  // does is send its tier on a clock (Sim.runFabricators), so the whole of
+  // what the board has to do is reach it. `radius` is the footprint in
+  // tiles — 1, 2, 3, 4 and 6 — and `tier` is the tier it sends.
+  fabricator1: { hp: 2500, speed: 0, armor: 4, radius: UR * 1, tier: 1, rotateSpeed: 30, unslowable: true },
+  fabricator2: { hp: 5000, speed: 0, armor: 8, radius: UR * 2, tier: 2, rotateSpeed: 30, unslowable: true },
+  fabricator3: { hp: 9000, speed: 0, armor: 12, radius: UR * 3, tier: 3, rotateSpeed: 30, unslowable: true },
+  fabricator4: { hp: 16000, speed: 0, armor: 18, radius: UR * 4, tier: 4, rotateSpeed: 30, unslowable: true },
+  fabricator5: { hp: 30000, speed: 0, armor: 25, radius: UR * 6, tier: 5, rotateSpeed: 30, unslowable: true },
+
   // ── THE KETTLES, the vulture (game/kettleArt.ts) ──────────────────────
   //
   // THE SECOND THING IN THE SKY, AND THE FIRST THAT ARRIVES. The Skyfall
@@ -2401,7 +2437,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   wormhead: {
     hp: 24000,
     speed: WORM_SPEED,
-    armor: 0,
+    armor: 6,
     // HALF AGAIN THE NATIVE SCALE, like the boss and for the same reason:
     // this is the body the whole map is about hitting, and at one-to-one
     // it was a three-tile machine on a five-hundred-tile road. The sheet
@@ -2427,7 +2463,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   wormcar: {
     hp: 12000,
     speed: WORM_SPEED,
-    armor: 0,
+    armor: 6,
     radius: UR * 3.75,
     hitbox: { long: 84, wide: 66 },
     tier: 4,
@@ -2437,7 +2473,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   wormtail: {
     hp: 12000,
     speed: WORM_SPEED,
-    armor: 0,
+    armor: 6,
     radius: UR * 3.75,
     hitbox: { long: 84, wide: 66 },
     tier: 4,
@@ -2673,13 +2709,13 @@ export const CONVOY_MEND = 2000;
  * the first) multiplies the whole chain's health pool by.
  *
  * WHY IT IS A RAMP AND NOT A FLAT POOL. The launches are three and a
- * third minutes apart and the run gets RICHER between them: by the fifth
- * the board has had thirteen more minutes of scrap than it had at the
- * first, and a Borer worth exactly as much as the one it already killed
- * is a Borer the player has already solved. The mission asks its question
- * once and then asks it again harder — buy more road, or watch this one
- * walk — which is the only way five repetitions of one event stay a
- * decision instead of a chore.
+ * third minutes apart and the run gets RICHER between them: by the
+ * seventh the board has had twenty more minutes of scrap than it had at
+ * the first, and a Borer worth exactly as much as the one it already
+ * killed is a Borer the player has already solved. The mission asks its
+ * question once and then asks it again harder — buy more road, or watch
+ * this one walk — which is the only way seven repetitions of one event
+ * stay a decision instead of a chore.
  *
  * IT USED TO BE A CENTRED LINE, AND THEN A PLAIN GEOMETRIC ONE. 0.7
  * stepping to 1.3 was built to hold the mission's total where a flat pool
@@ -2692,30 +2728,38 @@ export const CONVOY_MEND = 2000;
  *
  * SO THE RATE ITSELF CLIMBS. The step is GROWTH at the first gap and a
  * further ACCEL each gap after it, which compounds the growth rather than
- * the pool: x1.00, x1.35, x1.95, x3.01, x4.99, and x8.82 for the spare.
- * The first two launches are within a whisker of where they already were
- * — that end was not broken — and the fifth is FIVE times the first
- * instead of three and a third, on the board with the most scrap behind
- * it. At Nemesis that is 252,000 of train at the first launch and 1.26M
- * at the fifth; the whole pattern of seven is 6.4M.
+ * the pool.
  *
- * TWO NUMBERS TO MOVE, and they do different jobs. GROWTH is the opening
+ * ...AND THE CURVE IS WALKED AT STRETCH OF A STEP A LAUNCH. It was drawn
+ * for a five-launch pattern and reached x4.99 at the last of them; the
+ * pattern is SEVEN now, and a curve that kept its old stride would have
+ * put x16.7 there instead — the extra launches would have been paid for
+ * in health the board was never given the scrap to answer. So the same
+ * curve is walked more slowly: the seventh train carries exactly what the
+ * fifth used to, and every train before it sits where that curve says.
+ * x1.00, x1.21, x1.52, x1.95, x2.59, x3.54, x4.99, and x7.24 for the
+ * spare. At Nemesis that is 252,000 of train at the first launch and 1.26M
+ * at the seventh.
+ *
+ * THREE NUMBERS TO MOVE, and they do different jobs. GROWTH is the opening
  * — raise it and the early trains get harder. ACCEL is the back half
- * alone — raise it and only launches four, five and the spare feel it.
- * If the close overshoots, ACCEL is the one to touch.
+ * alone. STRETCH is how many launches the whole curve is spread over:
+ * lengthen the pattern and this is the number that keeps the last train
+ * where it was, rather than every number below it.
  *
- * THE SPARE KEEPS CLIMBING, and now steeply: it is launched at index
- * `pattern.length`, so the replacement for a train that got through is
- * nearly nine times the first one — which is what a second chance earned
- * by a mistake ought to feel like. And the DROP does not ramp with it:
- * scrap comes off the kind's authored health like every other body's
- * (unitDrop), the same way the level curve leaves drops alone however
- * high the tier climbs.
+ * THE SPARE KEEPS CLIMBING: it is launched at index `pattern.length`, so
+ * the replacement for a train that got through is seven times the first
+ * one. And the DROP does not ramp with it: scrap comes off the kind's
+ * authored health like every other body's (unitDrop), the same way the
+ * level curve leaves drops alone however high the tier climbs.
  */
 export const WORM_RAMP_GROWTH = 1.35;
 export const WORM_RAMP_ACCEL = 1.07;
+/** how far along the curve one launch moves. 4/6 puts the SEVENTH train
+ *  (launch 6) exactly where the fifth (launch 4) used to be */
+export const WORM_RAMP_STRETCH = 4 / 6;
 export const wormRamp = (launch: number): number => {
-  const n = Math.max(0, launch);
+  const n = Math.max(0, launch) * WORM_RAMP_STRETCH;
   // GROWTH^n is the flat geometric curve; ACCEL^(n(n-1)/2) is the sum of
   // one extra step per gap already taken, which is what makes the RATE
   // rise instead of the pool. n = 0 and n = 1 are untouched by ACCEL.
@@ -2775,6 +2819,10 @@ export const UNIT_TREES = [
   // (missionMarks.ts, Sim.raiseMarkTowers). One row and not an upgrade
   // path: the two are two jobs and neither is a rung
   { key: "pylon", name: PYLON_NAME, kinds: ["goad", "bastion"], objective: true },
+  // THE FABRICATORS — five houses a map stands up (missionMarks.ts
+  // FABRICATOR, Sim.runFabricators). The slots ARE tiers here: house n
+  // sends tier n, but a wave still may not send a house
+  { key: "fabricator", name: FABRICATOR_NAME, kinds: ["fabricator1", "fabricator2", "fabricator3", "fabricator4", "fabricator5"], objective: true },
   // ...AND THE WARDENS (WARDEN_NAME), which nothing puts on a board at
   // all. They are here because every kind must be in exactly one tree,
   // and `objective` keeps them out of every wave and out of the editor's
@@ -3308,6 +3356,7 @@ export const UNIT_NAMES: Record<UnitKind, string> = (() => {
   out.wormhead = `${WORM_NAME} (head)`;
   out.wormcar = `${WORM_NAME} (car)`;
   out.wormtail = `${WORM_NAME} (tail)`;
+  FABRICATOR_KINDS.forEach((k, i) => (out[k] = `Fabricator (T${i + 1})`));
   return out;
 })();
 
@@ -3792,6 +3841,22 @@ export interface InterceptMission {
    * run ends when the pattern does.
    */
   spare: readonly number[];
+  /**
+   * HOW MANY PYLONS RISE ON EACH TRAIN, one entry a launch and in launch
+   * order — the spare's entry last. `goad` speeds every train, `bastion`
+   * blunts every shot at one (GOAD_SPEED_MUL, BASTION_CUT), and both are
+   * global the moment they are up, so this table IS the mission's
+   * escalation.
+   *
+   * THE COUNTS ARE NEW ARRIVALS, NOT A STANDING TOTAL. Towers accumulate
+   * until the board takes them down, so a run that answers none of them
+   * meets the last train under the sum of every row above it.
+   *
+   * WHERE each one stands is rolled from the map's free spots
+   * (missionMarks.ts BUFF_TOWER), and a row asking for more than the map
+   * has left simply puts fewer down.
+   */
+  pylons: readonly { goad: number; bastion: number }[];
 }
 
 /**
@@ -4633,41 +4698,56 @@ export const WORLDS: LevelSpec[] = [
     // out of. The sale returns nothing either, so the whole difficulty of
     // this map is that one decision made five or six times.
     //
-    // THE PATTERN IS THE DESIGN. South, north, both, south, both — seven
-    // Borers in five launches, which is exactly the seven the mission
-    // asks for, so a run that lets one through has spent its allowance
-    // and the spare (north, one launch later) is the only way back to
-    // seven. Two through and it is over: there is no second spare and
-    // the arithmetic says so before the player has to work it out.
+    // THE PATTERN IS THE DESIGN. Lower, upper, both, lower, both,
+    // upper, both — ten Borers over seven launches, which is exactly the
+    // ten the mission asks for, so a run that lets one through has spent
+    // its allowance and the spare (lower, one launch later) is the only
+    // way back to ten. Two through and it is over: there is no second
+    // spare and the arithmetic says so before the player has to work it
+    // out.
     //
     // ...AND EACH LAUNCH IS HEAVIER THAN THE LAST (wormRamp), by more
-    // each time: a third again at the first gap, and a steeper step at
-    // every gap after it, so the fifth Borer carries FIVE times the first
-    // one's health and the spare nearly nine — on a board that has had
-    // thirteen more minutes of scrap to spend. The whole pattern is also
-    // a share of the tier, like every objective body. Compounding is what it
-    // takes to stay ahead of a board that is itself compounding, and
-    // compounding faster is what it takes at the end, where the board's
-    // own curve is steepest: a battery that answered the first train is
-    // nowhere near the battery that answers the fifth, which is what
-    // keeps the third repetition from being the second one again.
+    // each time, on a board that has had more minutes of scrap to spend.
+    // The whole pattern is also a share of the tier, like every objective
+    // body. Compounding is what it takes to stay ahead of a board that is
+    // itself compounding, and compounding faster is what it takes at the
+    // end, where the board's own curve is steepest: a battery that
+    // answered the first train is nowhere near the battery that answers
+    // the seventh, which is what keeps the third repetition from being
+    // the second one again.
+    //
+    // ...AND UNDER AN EVER-LARGER HAND OF PYLONS (mission.pylons), whose
+    // POSITIONS are rolled from the spots drawn on the map. The last
+    // train comes in under everything the board failed to pull down.
     //
     // THE CLOCK. First launch at 2:30, one every 3:20 after it, the last
-    // of the pattern at 15:50 and the spare at 19:10; a Borer is on the
-    // board for 4:16 to 5:00 (WORM_SPEED). So a board that kills a train
-    // where it meets it is done about sixteen minutes in, one that grinds
-    // each one down near the far end about twenty-one, and a run that
-    // spent its allowance and earned the spare about twenty-four. The
-    // wave script underneath all of that is the campaign's own and is
-    // tuned separately.
+    // of the pattern at 22:30. The spare has no moment of its own — it
+    // goes the instant a leak is on the books (Sim.runCrossers), which on
+    // a run that never leaks is never. A Borer is on the board for 4:16 to
+    // 5:00 (WORM_SPEED) before a Goad touches it. The wave script
+    // underneath all of that is the campaign's own and is tuned
+    // separately.
     mission: {
       kind: "intercept",
-      kills: 7,
+      kills: 10,
       leaks: 1,
       first: 150,
       every: 200,
-      pattern: [[0], [1], [0, 1], [0], [0, 1]],
-      spare: [1],
+      // road 0 is the LOWER line and road 1 the UPPER (missionMarks.ts
+      // ROAD, in map order). Ten trains over seven launches, which is
+      // exactly the ten the mission asks for
+      pattern: [[0], [1], [0, 1], [0], [0, 1], [1], [0, 1]],
+      spare: [0],
+      pylons: [
+        { goad: 0, bastion: 0 },
+        { goad: 1, bastion: 0 },
+        { goad: 0, bastion: 1 },
+        { goad: 1, bastion: 1 },
+        { goad: 2, bastion: 1 },
+        { goad: 2, bastion: 2 },
+        { goad: 2, bastion: 3 },
+        { goad: 2, bastion: 4 },
+      ],
     },
     waveGap: WAVE_GAP_DEFAULT,
     script: [],

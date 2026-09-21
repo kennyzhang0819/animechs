@@ -227,8 +227,9 @@ broken map. Every one of these is printed on every run:
 - **No gate is a short cut.** The walks to the core from every ground
   zone are within 50% of each other.
 - **Open == reachable.** No orphan pocket.
-- **Composition.** Open ground between 15% and 45% of the board, the
-  floor families' shares, forest, water, holes, lumps, ruins, props.
+- **Composition.** Reported, not enforced: open ground (a share outside
+  15%-50% is noted as a smell, not a failure), the floor families'
+  shares, forest, water, holes, lumps, ruins, props.
 - **Room to build.** More than 8,000 rock cells and more than 200 4x4
   footprints, because towers stand on rock and the biggest needs sixteen
   contiguous cells of it.

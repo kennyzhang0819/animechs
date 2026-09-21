@@ -847,7 +847,10 @@ const MM_CROSS_EDGE = mmColor(0x00, 0x00, 0x00);
  * reason — it is the emplacement's fence rather than the thing behind it.
  */
 const MM_PIN_FOE = Uint8Array.from(UNIT_KINDS, (k) =>
-  k === "wormhead" || k === "railgun" || k === "goad" || k === "bastion" || k === "boss" ? 1 : 0,
+  k === "wormhead" || k === "railgun" || k === "goad" || k === "bastion" || k === "boss" ||
+  k.startsWith("fabricator")
+    ? 1
+    : 0,
 );
 /**
  * HOW DARK A HILL IS ON THE MINIMAP, as a factor on the rock's true tone.
