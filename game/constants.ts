@@ -1121,7 +1121,8 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // (Fx.shootSmallFlame) painted at the muzzle; the shot itself is an
   // invisible piercing dart that rakes the whole file of units in front of
   // it and sets each alight. 60 units of range makes it the shortest-
-  // ranged turret in the game, and it cannot touch the air at all
+  // ranged turret in the game. Upstream it cannot touch the air; here the
+  // flame takes flyers too, since a bat over a torch is inside its reach
   torch: {
     name: "Torch",
     size: 1,
@@ -1135,7 +1136,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     inaccuracy: 0, // Turret default — torch never overrides it
     shootCone: (50 * Math.PI) / 180,
     rotateSpeed: ((5 * Math.PI) / 180) * TICK, // BaseTurret default
-    targetAir: false,
+    targetAir: true,
     targetGround: true,
     shootY: 3 * MU,
     bullet: {
@@ -1146,7 +1147,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       lifetime: 18 / TICK,
       splash: 0,
       splashRadius: 0,
-      collidesAir: false,
+      collidesAir: true,
       collidesGround: true,
       pierce: true,
       hitRadius: (7 / 2) * MU, // hitSize 7

@@ -48,7 +48,7 @@ A `MarkKind` (`game/missionMarks.ts`) declares:
 | | |
 |---|---|
 | `id` / `label` | what it is called, on disk and in the palette |
-| `missions` | which mission kinds understand it |
+| `missions` | which mission kinds understand it — unset for a **structure** any map may carry, which the palette lists under **Structures** rather than **Mission** |
 | `geom` | `point` (one footprint at `x`/`y`) or `path` (a polyline in `pts`) |
 | `size` | footprint in cells, square — a path's is the size of the handle on each corner |
 | `color` | the ink it is drawn in, in the editor |
@@ -197,29 +197,38 @@ spread a count of guns round a post is gone: where a gun stands is a
 decision about cover and approach, so it is a mark, and how many rise is
 how many you drew.
 
-**`fabricator`** — one house that keeps sending one tier of the swarm. It
-belongs to **no mission**: any map may carry one, in any number, and the
-sim reads them off the map whatever the objective is (`Sim.runFabricators`).
-Three dials, all on the mark:
+**`fabricator`** — one house the **sweep** has to bring down (`levels.ts`
+`SweepMission`: destroy every fabricator the map carries, X/Y, where Y is
+how many an author drew). Spore Ring plays it. There is no cap on marks.
+Two dials, both on the mark:
 
 | | |
 |---|---|
-| **Tier** | T1 to T5 — which body rises (`fabricator1`..`fabricator5`) and so its footprint: 1, 2, 3, 4 and 6 tiles. The face says the tier too (`game/fabricatorArt.ts`): a square, a plaque, a bare skull, a skull with its jaw, a horned skull |
-| **Rate** | Slow, Medium, Fast, Extra fast — seconds between batches (`FABRICATOR_RATES`: 45, 30, 20, 12) |
-| **Spawns at** | the wave it rises on |
+| **House** | Small (3x3, `fabricatorSmall`) or Large (6x6, `fabricatorLarge`). The face says which (`game/fabricatorArt.ts`): a bare skull, or a horned skull with its jaw |
+| **Rate** | Slow, Medium, Fast, Extra fast — seconds between one body and the next once it is producing (`FABRICATOR_RATES`: 4, 2, 1, 0.5) |
+| **Rises at** | the wave the house appears on |
 
-What a house sends is **its tier of the run's own families**: each batch
-picks one of the families the script deals and lands that family's body
-of the house's tier on open ground round it. The batch shrinks up the
-ladder (`FABRICATOR_BATCH`: 6, 4, 3, 2, 1) so a runt house is a trickle and
-an apex house is an apex every so often. The bodies are booked under wave
-0, like a Borer's pieces, so no wave is held open waiting for one to die
-and no wave pays XP for it; the scrap is real. A house is bolted down,
-unarmed, and comes back for nothing once the board kills it. The swatch
-carries the tier — one per T — so the block on the map is the size the
-run will put down. Nothing is placed on any map today.
+**A house is a mine.** It rises dormant and does nothing until the first
+hit lands on it — a shot, a splash, fire, anything. Then (`Sim.triggerHouse`):
 
-**Spawns at** is the one field every rising thing shares: the railgun's
+1. it deals `FABRICATOR_BLAST` (100) to **every structure within
+   `FABRICATOR_BLAST_TILES` (10) tiles**, the player's turrets and the
+   swarm's planted bodies alike — and a dormant house inside that circle is
+   hit, and so goes off in turn. Houses drawn in a group are one trap.
+2. it throws out `FABRICATOR_BURST` (30) bodies at once, each a fresh
+   roll from its pool;
+3. it is **active** from then on and sends one body every tick of its clock — one every two seconds at Medium.
+
+Each roll picks a family from the ones the script deals and a tier from
+the house's range — **T1 to T3 for the small house, T4 or T5 for the
+large** (`FABRICATOR_SENDS`) — and lands that body on open ground round
+the house. The bodies are booked under wave 0,
+like a Borer's pieces, so no wave is held open waiting for one to die and
+no wave pays XP for it; the scrap is real. A house is bolted down, unarmed,
+and comes back for nothing once the board kills it — which is what the
+mission counts. Nothing is placed on any map today.
+
+**Rises at** is the one field every rising thing shares: the railgun's
 section, the fabricator's wave. The number is a count on the kind's own
 clock, and the label is the same so the panel reads the same. (The buff
 tower has no rise field while it is a rolled spot.)

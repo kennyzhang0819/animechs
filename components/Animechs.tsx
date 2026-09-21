@@ -594,23 +594,17 @@ const xpBonusText = (mult: number): string => {
 };
 
 /**
- * WHICH ASSIGNMENT, AND HOW HARD — the two things a run is chosen by,
- * over the list of what it asks. The name is the WORLD's (levels.ts
- * LevelSpec.name), which is the mission's name and not the terrain's.
+ * WHICH ASSIGNMENT, over the list of what it asks. The name is the
+ * WORLD's (levels.ts LevelSpec.name), which is the mission's name and not
+ * the terrain's. How hard is on the swarm tooltip (DealFamiliesCell).
  */
 function RunTitle({ hud }: { hud: UiState }): React.ReactElement | null {
   const world = worldById(hud.levelId);
   if (!world) return null;
   return (
     <div className="flex flex-wrap items-baseline gap-x-3 [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
-      <span className="font-display text-[22px] font-bold uppercase leading-tight tracking-widest text-[#EDEDEF]">
+      <span className="font-display text-[19px] font-bold uppercase leading-tight tracking-widest text-[#EDEDEF]">
         {world.name}
-      </span>
-      <span
-        className="font-display text-[17px] font-bold uppercase leading-tight tracking-widest"
-        style={{ color: rungColor(hud.tier) }}
-      >
-        {rungLabel(hud.tier)}
       </span>
     </div>
   );
@@ -1363,7 +1357,7 @@ const buildFamilyIcons = (): Promise<void> =>
 
 
 /** the bottom square: which families the die dealt this map */
-function DealFamiliesCell({ families }: { families: readonly FamilyKey[] }) {
+function DealFamiliesCell({ families, tier }: { families: readonly FamilyKey[]; tier: number }) {
   const tip = useHoverCard("up");
   const names = families.map((f) => familyByKey(f).name);
   // the pictures are built off the sheet and so cannot be read on the
@@ -1414,6 +1408,12 @@ function DealFamiliesCell({ families }: { families: readonly FamilyKey[] }) {
           </>
         )}
         <span className="mt-1.5 block text-[#EDEDEF]">{names.join(" · ")}</span>
+        <span className="mt-1.5 block">
+          Difficulty{" "}
+          <span className="font-bold uppercase tracking-widest" style={{ color: rungColor(tier) }}>
+            {rungLabel(tier)}
+          </span>
+        </span>
       </HoverCard>
     </div>
   );
@@ -3695,7 +3695,7 @@ export default function Animechs() {
                 className="pointer-events-none mb-2 flex flex-col-reverse items-start gap-1.5"
               >
                 {level.families && level.families.length > 0 && (
-                  <DealFamiliesCell families={level.families} />
+                  <DealFamiliesCell families={level.families} tier={hud.tier} />
                 )}
                 {hudRules.map((def) => (
                   <DealRuleCell key={def.id} def={def} />
@@ -3879,6 +3879,8 @@ export default function Animechs() {
                   <div className="text-[14px] uppercase tracking-widest text-[#71717C]">
                     {hud.mission.kind === "raze"
                       ? `${hud.razeKilled} of ${razeGuns(hud.mission)} destroyed, ${hud.razeUp} still firing`
+                      : hud.mission.kind === "sweep"
+                      ? `${hud.fabKilled} of ${hud.fabTotal} fabricators destroyed`
                       : hud.mission.kind === "intercept"
                       ? `${hud.crossKilled} of ${hud.mission.kills} destroyed, ${hud.crossLeaked} past you`
                       : hud.mission.kind === "escort"

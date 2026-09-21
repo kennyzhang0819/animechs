@@ -367,6 +367,12 @@ What Thornway does with it, and what the mirror turned out to need:
 
 Own a place away from the base for a duration.
 
+Spore Ring (the world Fabricator Sweep) plays a **sweep** instead (`SweepMission`): destroy every
+fabricator drawn on the map. The houses are mines — dormant until hit,
+then a blast that sets off their neighbours and a burst of the swarm
+before they start producing — so the trip out is the fight
+(docs/mission-marks.md, the `fabricator` kind).
+
 Variants: capture points granting a global buff · ground that must be
 kept clear of the swarm · zones that flip back the moment you leave.
 

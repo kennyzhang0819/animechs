@@ -1640,11 +1640,8 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   goad: [],
   bastion: [],
   // ...and neither does a fabricator: it sends bodies, and they shoot
-  fabricator1: [],
-  fabricator2: [],
-  fabricator3: [],
-  fabricator4: [],
-  fabricator5: [],
+  fabricatorSmall: [],
+  fabricatorLarge: [],
 };
 
 /**

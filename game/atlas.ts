@@ -11,7 +11,7 @@ import {
   type FloorKind,
   type WallKind,
 } from "./tiles";
-import { CONVOY_SIZE, type UnitKind } from "./levels";
+import { CONVOY_SIZE, FABRICATOR_KINDS, type UnitKind } from "./levels";
 import { ANIMAL_ART } from "./animalFlag";
 import { FOUNDRY_ART } from "./turretFlag";
 import { FOUNDRY_BASE_URLS, FOUNDRY_CORE_URL, FOUNDRY_HEAD_URLS, foundryHeadUrl } from "./foundryArt";
@@ -1228,11 +1228,11 @@ const JUGGERNAUT_CELLS = wardenCells("juggernaut", JUGGERNAUT_TIER.n, 256);
  *  native px is four tiles, so a 128 cell holds them at the sheet's scale */
 const GOAD_CELLS = wardenCells("goad", GOAD_TIER.n, 128);
 const BASTION_CELLS = wardenCells("bastion", BASTION_TIER.n, 128);
-/** the five fabricators (fabricatorArt.ts), 1, 2, 3, 4 and 6 tiles, each
- *  on the smallest 64-multiple cell that holds its grid */
-const FABRICATOR_CELL_PX: readonly number[] = [64, 64, 128, 128, 192];
+/** the two fabricators (fabricatorArt.ts), 3 and 6 tiles, each on the
+ *  smallest 64-multiple cell that holds its grid */
+const FABRICATOR_CELL_PX: readonly number[] = [128, 192];
 const FABRICATOR_CELLS = FABRICATOR_TIERS.map((T, i) =>
-  wardenCells(`fabricator${i + 1}`, T.n, FABRICATOR_CELL_PX[i]),
+  wardenCells(FABRICATOR_KINDS[i], T.n, FABRICATOR_CELL_PX[i]),
 );
 
 /**
@@ -1381,11 +1381,8 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   railgun: { uv: RAZE_CELLS.body, sprite: UNIT_SPRITE * 3 },
   goad: { uv: GOAD_CELLS.body, sprite: UNIT_SPRITE * 2 },
   bastion: { uv: BASTION_CELLS.body, sprite: UNIT_SPRITE * 2 },
-  fabricator1: { uv: FABRICATOR_CELLS[0].body, sprite: UNIT_SPRITE },
-  fabricator2: { uv: FABRICATOR_CELLS[1].body, sprite: UNIT_SPRITE },
-  fabricator3: { uv: FABRICATOR_CELLS[2].body, sprite: UNIT_SPRITE * 2 },
-  fabricator4: { uv: FABRICATOR_CELLS[3].body, sprite: UNIT_SPRITE * 2 },
-  fabricator5: { uv: FABRICATOR_CELLS[4].body, sprite: UNIT_SPRITE * 3 },
+  fabricatorSmall: { uv: FABRICATOR_CELLS[0].body, sprite: UNIT_SPRITE * 2 },
+  fabricatorLarge: { uv: FABRICATOR_CELLS[1].body, sprite: UNIT_SPRITE * 3 },
   // the four Wardens, each on its own cell at the sheet's px scale
   lance: { uv: LANCE_CELLS.body, sprite: UNIT_SPRITE * 2 },
   bulwark: { uv: BULWARK_CELLS.body, sprite: UNIT_SPRITE * 2 },

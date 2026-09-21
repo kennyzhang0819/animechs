@@ -399,7 +399,7 @@ const cellFamilies = (() => {
     // each, and a cell the atlas refuses at load if it is empty
     ["goad", [PY.GOAD_TIER], PY.goadMech],
     ["bastion", [PY.BASTION_TIER], PY.bastionMech],
-    // ...and the five fabricators, one grid a tier
+    // ...and the two fabricators
     ["fabricator", FB.FABRICATOR_TIERS, FB.fabricatorMech],
     // ...and the siege's five, all on the rig and all refused at load if
     // the crux they wear comes out empty
@@ -591,6 +591,11 @@ for (const w of L.WORLDS) {
     m.sections.forEach((sec, i) => {
       if (!(sec.guns > 0)) say(`section ${i} raises ${sec.guns} emplacements`);
     });
+  } else if (m.kind === "sweep") {
+    // the count is the map's (Sim.fabTotal): a sweep with nothing drawn on
+    // it is a map with no way out
+    const houses = sim.terrain.marks.filter((mk) => mk.kind === "fabricator").length;
+    if (houses === 0) say("a sweep mission on a map with no fabricator drawn");
   } else {
     say(`mission kind "${m.kind}" has no objective the sim knows how to meet`);
   }

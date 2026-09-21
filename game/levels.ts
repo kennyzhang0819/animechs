@@ -6,7 +6,7 @@ import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // import must never become a value one or the two files form a cycle
 import type { MutationId } from "./mutation";
 
-export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail", "railgun", "goad", "bastion", "bulwark", "lance", "halberd", "juggernaut", "fabricator1", "fabricator2", "fabricator3", "fabricator4", "fabricator5"] as const;
+export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail", "railgun", "goad", "bastion", "bulwark", "lance", "halberd", "juggernaut", "fabricatorSmall", "fabricatorLarge"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -75,13 +75,11 @@ export const UNIT_ID: Record<UnitKind, number> = {
   lance: 53,
   halberd: 54,
   juggernaut: 55,
-  // THE FABRICATORS (FABRICATOR_NAME): five houses, one a tier, that a
-  // map stands up to keep sending that tier (Sim.runFabricators)
-  fabricator1: 56,
-  fabricator2: 57,
-  fabricator3: 58,
-  fabricator4: 59,
-  fabricator5: 60,
+  // THE FABRICATORS (FABRICATOR_NAME): two houses a map stands up to keep
+  // sending the swarm — the small one T1-T3, the large one T4-T5
+  // (Sim.runFabricators)
+  fabricatorSmall: 56,
+  fabricatorLarge: 57,
 };
 
 /**
@@ -184,22 +182,28 @@ export const WARDEN_NAME = "Wardens";
 /** the two buff towers a mission plants over its road (docs/mission-marks.md) */
 export const PYLON_NAME = "Pylons";
 
-/** the five houses a map stands up, one a tier, each sending that tier of
- *  the run's families on its own clock (docs/mission-marks.md) */
+/** the two houses a map stands up, each sending its tiers of the run's
+ *  families on its own clock (docs/mission-marks.md) */
 export const FABRICATOR_NAME = "Fabricators";
-export const FABRICATOR_KINDS: readonly UnitKind[] = [
-  "fabricator1", "fabricator2", "fabricator3", "fabricator4", "fabricator5",
-];
-/** footprint in tiles, T1 to T5 — the stats' radius and the art's grid
- *  are both this (UNIT_STATS, fabricatorArt.ts) */
-export const FABRICATOR_TILES: readonly number[] = [1, 2, 3, 4, 6];
-/** seconds between one house's batches, by the mark's rate preset */
-export const FABRICATOR_RATES = { slow: 45, medium: 30, fast: 20, xfast: 12 } as const;
+export const FABRICATOR_KINDS: readonly UnitKind[] = ["fabricatorSmall", "fabricatorLarge"];
+/** footprint in tiles, small and large — the stats' radius and the art's
+ *  grid are both this (UNIT_STATS, fabricatorArt.ts) */
+export const FABRICATOR_TILES: readonly number[] = [3, 6];
+/** the tiers each house rolls a body from */
+export const FABRICATOR_SENDS: readonly (readonly number[])[] = [[1, 2, 3], [4, 5]];
+/** seconds between one body and the next out of an active house, by the
+ *  mark's rate preset — a house is a tap, not a wave */
+export const FABRICATOR_RATES = { slow: 4, medium: 2, fast: 1, xfast: 0.5 } as const;
 export type FabricatorRate = keyof typeof FABRICATOR_RATES;
-/** bodies a batch, T1 to T5: a runt house sends a handful, an apex house one */
-export const FABRICATOR_BATCH: readonly number[] = [6, 4, 3, 2, 1];
-/** the tier a house fabricates, 1-5, or 0 for a body that is not one */
-export const fabricatorTier = (kind: UnitKind): number => FABRICATOR_KINDS.indexOf(kind) + 1;
+/** A HOUSE IS A MINE (Sim.triggerHouse): dormant until the first hit, then this
+ *  much damage to every structure within this many tiles — which sets off
+ *  every house inside it — and this many single bodies at once, before it
+ *  runs its clock */
+export const FABRICATOR_BLAST = 100;
+export const FABRICATOR_BLAST_TILES = 10;
+export const FABRICATOR_BURST = 30;
+/** which house a body is, 1 small or 2 large, or 0 for a body that is not one */
+export const fabricatorHouse = (kind: UnitKind): number => FABRICATOR_KINDS.indexOf(kind) + 1;
 /**
  * WHAT ONE PYLON IS WORTH (Sim.goadMul, Sim.bastionCut — they stack by
  * multiplying). A Goad doubles a Borer's pace, halving the firing a board
@@ -2276,17 +2280,14 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     unslowable: true,
   },
 
-  // ── THE FABRICATORS, the five houses (game/fabricatorArt.ts) ─────────
+  // ── THE FABRICATORS, the two houses (game/fabricatorArt.ts) ──────────
   //
   // Bolted down like the pylons (Sim.plantUnit) and unarmed: what a house
-  // does is send its tier on a clock (Sim.runFabricators), so the whole of
+  // does is send bodies on a clock (Sim.runFabricators), so the whole of
   // what the board has to do is reach it. `radius` is the footprint in
-  // tiles — 1, 2, 3, 4 and 6 — and `tier` is the tier it sends.
-  fabricator1: { hp: 2500, speed: 0, armor: 4, radius: UR * 1, tier: 1, rotateSpeed: 30, unslowable: true },
-  fabricator2: { hp: 5000, speed: 0, armor: 8, radius: UR * 2, tier: 2, rotateSpeed: 30, unslowable: true },
-  fabricator3: { hp: 9000, speed: 0, armor: 12, radius: UR * 3, tier: 3, rotateSpeed: 30, unslowable: true },
-  fabricator4: { hp: 16000, speed: 0, armor: 18, radius: UR * 4, tier: 4, rotateSpeed: 30, unslowable: true },
-  fabricator5: { hp: 30000, speed: 0, armor: 25, radius: UR * 6, tier: 5, rotateSpeed: 30, unslowable: true },
+  // tiles (FABRICATOR_TILES) and `tier` the heaviest it sends.
+  fabricatorSmall: { hp: 36000, speed: 0, armor: 12, radius: UR * 3, tier: 3, rotateSpeed: 30, unslowable: true },
+  fabricatorLarge: { hp: 120000, speed: 0, armor: 25, radius: UR * 6, tier: 5, rotateSpeed: 30, unslowable: true },
 
   // ── THE KETTLES, the vulture (game/kettleArt.ts) ──────────────────────
   //
@@ -2819,10 +2820,10 @@ export const UNIT_TREES = [
   // (missionMarks.ts, Sim.raiseMarkTowers). One row and not an upgrade
   // path: the two are two jobs and neither is a rung
   { key: "pylon", name: PYLON_NAME, kinds: ["goad", "bastion"], objective: true },
-  // THE FABRICATORS — five houses a map stands up (missionMarks.ts
-  // FABRICATOR, Sim.runFabricators). The slots ARE tiers here: house n
-  // sends tier n, but a wave still may not send a house
-  { key: "fabricator", name: FABRICATOR_NAME, kinds: ["fabricator1", "fabricator2", "fabricator3", "fabricator4", "fabricator5"], objective: true },
+  // THE FABRICATORS — two houses a map stands up (missionMarks.ts
+  // FABRICATOR, Sim.runFabricators): the slots are not tiers, and a wave
+  // may not send a house
+  { key: "fabricator", name: FABRICATOR_NAME, kinds: ["fabricatorSmall", "fabricatorLarge"], objective: true },
   // ...AND THE WARDENS (WARDEN_NAME), which nothing puts on a board at
   // all. They are here because every kind must be in exactly one tree,
   // and `objective` keeps them out of every wave and out of the editor's
@@ -3356,7 +3357,8 @@ export const UNIT_NAMES: Record<UnitKind, string> = (() => {
   out.wormhead = `${WORM_NAME} (head)`;
   out.wormcar = `${WORM_NAME} (car)`;
   out.wormtail = `${WORM_NAME} (tail)`;
-  FABRICATOR_KINDS.forEach((k, i) => (out[k] = `Fabricator (T${i + 1})`));
+  out.fabricatorSmall = "Fabricator (small)";
+  out.fabricatorLarge = "Fabricator (large)";
   return out;
 })();
 
@@ -3739,7 +3741,17 @@ export type Mission =
   | { kind: "survive"; minutes: number }
   | InterceptMission
   | EscortMission
-  | RazeMission;
+  | RazeMission
+  | SweepMission;
+
+/**
+ * DESTROY EVERY FABRICATOR the map carries (missionMarks.ts FABRICATOR).
+ * The count is the map's, not the spec's: it is however many houses an
+ * author drew, and the sim reads it at reset (Sim.fabTotal).
+ */
+export interface SweepMission {
+  kind: "sweep";
+}
 
 /**
  * HOLD THE LINE for a stated number of waves.
@@ -4044,6 +4056,14 @@ export function missionText(spec: LevelSpec): { title: string; detail: string } 
         "and every one of them is guarded. The core must stand.",
     };
   }
+  if (m.kind === "sweep")
+    return {
+      title: "Destroy every fabricator",
+      detail:
+        "They stand dormant until something hits one. A hit house blasts every " +
+        "structure within ten tiles — its neighbours go off in turn — throws out a " +
+        "burst of the swarm, and then keeps producing. The core must stand.",
+    };
   if (m.kind === "intercept")
     return {
       title: `Destroy ${m.kills} ${WORM_NAME.toLowerCase()}s`,
@@ -4083,6 +4103,8 @@ export function missionProgress(
     convoyDone: number;
     convoyAt: number;
     razeKilled: number;
+    fabKilled: number;
+    fabTotal: number;
   },
 ): number {
   const frac =
@@ -4094,6 +4116,8 @@ export function missionProgress(
         // job, which is the thing a player watching this mission is doing
         mission.kind === "raze"
         ? state.razeKilled / Math.max(1, razeGuns(mission))
+        : mission.kind === "sweep"
+        ? state.fabKilled / Math.max(1, state.fabTotal)
         : mission.kind === "intercept"
         ? state.crossKilled / Math.max(1, mission.kills)
         : // THE ESCORT'S BAR IS THE JOURNEY, not the delivery count. A
@@ -4113,9 +4137,18 @@ export function missionProgress(
 export function missionCount(
   mission: Mission,
   target: number,
-  state: { wavesCleared: number; crossKilled: number; convoyDone: number; razeKilled: number },
+  state: {
+    wavesCleared: number;
+    crossKilled: number;
+    convoyDone: number;
+    razeKilled: number;
+    fabKilled: number;
+    fabTotal: number;
+  },
 ): { done: number; of: number; noun: string } {
   if (mission.kind === "survive") return { done: 0, of: 0, noun: "" };
+  if (mission.kind === "sweep")
+    return { done: Math.min(state.fabTotal, state.fabKilled), of: state.fabTotal, noun: "destroyed" };
   if (mission.kind === "raze") {
     const guns = razeGuns(mission);
     return { done: Math.min(guns, state.razeKilled), of: guns, noun: "destroyed" };
@@ -4181,6 +4214,8 @@ export function missionLines(
     convoyDone: number;
     convoyLost: number;
     razeKilled: number;
+    fabKilled: number;
+    fabTotal: number;
   },
 ): MissionLine[] {
   const out: MissionLine[] = [];
@@ -4250,6 +4285,8 @@ export function missionLines(
     // (components/Animechs.tsx ObjectivePane) with the tide and the crossers
     // on the board.
     of(`Destroy ${many(razeGuns(mission), RAZE_NAME)}`, state.razeKilled, razeGuns(mission));
+  } else if (mission.kind === "sweep") {
+    of(`Destroy ${many(state.fabTotal, "fabricator")}`, state.fabKilled, state.fabTotal);
   } else {
     of(`Hold the line for ${target} waves`, state.wavesCleared, target);
   }
@@ -4817,10 +4854,11 @@ export const WORLDS: LevelSpec[] = [
   },
   {
     id: "13",
-    name: "Spore Ring",
+    name: "Fabricator Sweep",
     map: "sporering",
-    // HOLD REMOTE GROUND — the core dead centre, six arcs in, three of them worth owning
-    mission: { kind: "hold" },
+    // THE SWEEP — every fabricator the map carries has to come down
+    // (missionMarks.ts FABRICATOR); none are drawn on it yet
+    mission: { kind: "sweep" },
     waveGap: WAVE_GAP_DEFAULT,
     script: [],
   },
@@ -4912,7 +4950,7 @@ export function worldById(id: string): LevelSpec | null {
  * player gets bored, offered in a picker that now names each row after the
  * thing it asks for. It comes back the day it is given one.
  */
-export const PLAYABLE_WORLD_IDS: readonly string[] = ["10", "11", "12"];
+export const PLAYABLE_WORLD_IDS: readonly string[] = ["10", "11", "12", "13"];
 
 /** is this world off the menu? — everything the list above does not name */
 export const worldHidden = (id: string): boolean => !PLAYABLE_WORLD_IDS.includes(id);

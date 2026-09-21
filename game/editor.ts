@@ -23,7 +23,7 @@ import {
 import { ALL_LAYERS, Renderer, type TerrainLayers } from "./renderer";
 import { loadInvertZoom } from "./progress";
 import {
-  MARK_KINDS, MARK_TOWERS, MARK_UNITS, MAX_MARKS, markKind, markOpts, markSize, markTower, markUnit,
+  MARK_KINDS, MARK_TOWERS, MARK_UNITS, markKind, markOpts, markSize, markTower, markUnit,
   type MapMark, type MarkKind,
 } from "./missionMarks";
 import { unitAccent } from "./levels";
@@ -554,23 +554,9 @@ export class MapEditor {
       this.picked = hit;
       return;
     }
-    if (this.terrain.marks.length >= MAX_MARKS) return;
-    // THE SWATCH CARRIES THE CHOICE (maps.ts, the mark swatches): a kind
-    // whose body or turret is a choice field gets one swatch per value,
-    // so what the tray shows is what gets stamped and the panel is where
-    // you CHANGE it rather than where you have to go and set it
-    const opts = markOpts(kind, undefined);
-    const faceField = kind.towerField ?? kind.unitField;
-    const f = faceField ? kind.fields.find((x) => x.key === faceField) : null;
-    if (f?.kind === "choice")
-      opts[f.key] = f.choices[clamp(this.variant, 0, f.choices.length - 1)].value;
-    // the footprint is the chosen turret's or body's own (markSize), so
-    // the square is centred and tested at the size the run puts down
-    const mark: MapMark = { kind: kind.id, x: 0, y: 0, opts };
+    const mark = this.markToStamp(gx, gy);
+    if (!mark) return;
     const sz = markSize(mark);
-    const half = (sz / 2) | 0;
-    mark.x = clamp(gx - half, 0, COLS - sz);
-    mark.y = clamp(gy - half, 0, ROWS - sz);
     // no two marks may overlap: two things in one place is an author who
     // cannot click the one underneath
     for (const m of this.terrain.marks) {
@@ -583,6 +569,32 @@ export class MapEditor {
     this.picked = this.terrain.marks.length - 1;
     rebuildReserved(this.terrain);
     this.dirty = true;
+  }
+
+  /**
+   * THE MARK A CLICK ON THIS CELL WOULD STAMP — the same object the ghost
+   * draws, so what follows the cursor is what lands.
+   *
+   * THE SWATCH CARRIES THE CHOICE (maps.ts, the mark swatches): a kind
+   * whose body or turret is a choice field gets one swatch per value, so
+   * what the tray shows is what gets stamped and the panel is where you
+   * CHANGE it. The footprint is the chosen turret's or body's own
+   * (markSize), so the square is centred at the size the run puts down.
+   */
+  private markToStamp(gx: number, gy: number): MapMark | null {
+    const kind = markKind(this.set.mark ?? "");
+    if (!kind || kind.geom !== "point") return null;
+    const opts = markOpts(kind, undefined);
+    const faceField = kind.towerField ?? kind.unitField;
+    const f = faceField ? kind.fields.find((x) => x.key === faceField) : null;
+    if (f?.kind === "choice")
+      opts[f.key] = f.choices[clamp(this.variant, 0, f.choices.length - 1)].value;
+    const mark: MapMark = { kind: kind.id, x: 0, y: 0, opts };
+    const sz = markSize(mark);
+    const half = (sz / 2) | 0;
+    mark.x = clamp(gx - half, 0, COLS - sz);
+    mark.y = clamp(gy - half, 0, ROWS - sz);
+    return mark;
   }
 
   /** the mark whose footprint — or, for a road, whose corner or leg —
@@ -724,7 +736,6 @@ export class MapEditor {
       this.pathDrag = { mark: i, corner: hit.leg };
       return true;
     }
-    if (this.terrain.marks.length >= MAX_MARKS) return true;
     this.terrain.marks.push({ kind: kind.id, x: gx, y: gy, pts: [[gx, gy]], opts: markOpts(kind, undefined) });
     this.picked = this.terrain.marks.length - 1;
     this.drawing = this.picked;
@@ -963,7 +974,7 @@ export class MapEditor {
   /** every mark kind this map could use, given the missions its worlds
    *  play — what the palette filters its Mission group down to */
   markKindsHere(missions: readonly string[]): readonly MarkKind[] {
-    return MARK_KINDS.filter((k) => k.missions.some((m) => missions.includes(m)));
+    return MARK_KINDS.filter((k) => !k.missions || k.missions.some((m) => missions.includes(m)));
   }
 
   private placeBase(gx: number, gy: number): void {
@@ -1378,7 +1389,7 @@ export class MapEditor {
           const v = m.opts?.[f.key];
           const txt = f.kind === "choice"
             ? (f.choices.find((ch) => ch.value === v)?.label ?? String(v))
-            : `${f.label.split(" ").pop()} ${v}`;
+            : `${f.label} ${v}`;
           c.strokeStyle = "rgba(10,10,14,0.9)";
           c.lineWidth = 4 / s;
           c.strokeText(txt, m.x * CELL + side / 2, ty);
@@ -1409,6 +1420,33 @@ export class MapEditor {
       const side = BASE_SIZE * CELL;
       c.fillStyle = "rgba(255,211,127,0.18)";
       c.fillRect(x0, y0, side, side);
+      c.strokeStyle = "rgba(255,211,127,0.9)";
+      c.lineWidth = 2 / s;
+      c.strokeRect(x0, y0, side, side);
+      return;
+    }
+    // THE MARK GHOST: the building itself, at its own footprint, wearing
+    // the face the stamp would put down (markToStamp) — a T5 house is six
+    // tiles and the cursor has to say so before the click does
+    if (this.set.kind === "mark" && this.layers.mark) {
+      const mark = this.markToStamp(this.hoverGx, this.hoverGy);
+      if (!mark) return;
+      const k = markKind(mark.kind);
+      if (!k) return;
+      const side = markSize(mark) * CELL;
+      const x0 = mark.x * CELL, y0 = mark.y * CELL;
+      const towerKind = markTower(mark);
+      const block = towerKind ? this.towerBlockArt.get(towerKind) : null;
+      const face = block ?? this.markArt.get(towerKind ?? markUnit(mark) ?? "");
+      c.globalAlpha = 0.7;
+      if (!block) {
+        c.fillStyle = k.color;
+        c.globalAlpha = face ? 0.25 : 0.5;
+        c.fillRect(x0, y0, side, side);
+        c.globalAlpha = 0.7;
+      }
+      if (face) c.drawImage(face, x0, y0, side, side);
+      c.globalAlpha = 1;
       c.strokeStyle = "rgba(255,211,127,0.9)";
       c.lineWidth = 2 / s;
       c.strokeRect(x0, y0, side, side);

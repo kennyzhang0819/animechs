@@ -216,6 +216,9 @@ export interface UiState {
    */
   razeKilled: number;
   razeUp: number;
+  /** the sweep's ledger (levels.ts SweepMission): houses down, houses drawn */
+  fabKilled: number;
+  fabTotal: number;
   /**
    * THE ESCORT MISSION'S LEDGER (levels.ts EscortMission): carts
    * delivered and lost, how far the one on the road has got (0 to 1), how
@@ -847,10 +850,7 @@ const MM_CROSS_EDGE = mmColor(0x00, 0x00, 0x00);
  * reason — it is the emplacement's fence rather than the thing behind it.
  */
 const MM_PIN_FOE = Uint8Array.from(UNIT_KINDS, (k) =>
-  k === "wormhead" || k === "railgun" || k === "goad" || k === "bastion" || k === "boss" ||
-  k.startsWith("fabricator")
-    ? 1
-    : 0,
+  k === "wormhead" || k === "railgun" || k === "goad" || k === "bastion" || k === "boss" ? 1 : 0,
 );
 /**
  * HOW DARK A HILL IS ON THE MINIMAP, as a factor on the rock's true tone.
@@ -2795,6 +2795,8 @@ export class Game {
       crossLive: w.crossLive,
       razeKilled: w.razeKilled,
       razeUp: w.razeUp,
+      fabKilled: w.fabKilled,
+      fabTotal: w.fabTotal,
       convoyDone: w.convoyDone,
       convoyLost: w.convoyLost,
       convoyAt: w.convoyAt,

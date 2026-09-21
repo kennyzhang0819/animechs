@@ -36,9 +36,6 @@ export interface MapMark {
   opts?: Record<string, string | number>;
 }
 
-/** the most marks one map may carry — an authoring bound, not a rule */
-export const MAX_MARKS = 64;
-
 /**
  * ONE EDITABLE NUMBER OR CHOICE on a mark, as the editor should offer it.
  * The panel is built from these rather than written per kind, which is
@@ -65,14 +62,14 @@ export type MarkField =
 export interface MarkKind {
   id: string;
   label: string;
-  /** which missions understand it — the editor offers a mark only on a map
-   *  whose world plays one of these */
-  missions: readonly Mission["kind"][];
+  /** which missions understand it, for a kind that is one mission's
+   *  furniture; unset, the mark is a structure any map may carry */
+  missions?: readonly Mission["kind"][];
   geom: MarkGeom;
   /** footprint in cells, square */
   size: number;
   /** ...or, per body a unitField may choose, that body's own footprint —
-   *  a T5 fabricator is six tiles where a T1 is one (markSize) */
+   *  a large fabricator is six tiles where a small one is three (markSize) */
   sizeByUnit?: Readonly<Partial<Record<UnitKind, number>>>;
   /** the ink it is drawn in, in the editor and on the board overlay */
   color: string;
@@ -134,9 +131,9 @@ export const WAVE_CEIL = 40;
 /** THE ONE FIELD EVERY RISING THING SHARES: when it comes up, as a count
  *  on its kind's clock — a wave for a fabricator, a section for a railgun.
  *  One label so the editor reads the same for all of them */
-export const spawnsAt = (max: number, def: number): MarkField => ({
+export const risesAt = (max: number, def: number): MarkField => ({
   key: "wave",
-  label: "Spawns at",
+  label: "Rises at",
   kind: "int",
   min: 1,
   max,
@@ -199,33 +196,38 @@ const RAILGUN: MarkKind = {
   color: "#ff8a3a",
   unit: "railgun",
   pad: 2,
-  fields: [spawnsAt(4, 1)],
+  fields: [risesAt(4, 1)],
 };
 
 /**
- * A FABRICATOR — one house that keeps sending one tier of the run's
- * families on its own clock (levels.ts FABRICATOR_RATES, Sim.runFabricators).
- * It belongs to no mission: any map may carry one, and it rises on the
- * wave the mark names. The tier picks the body and so the footprint.
+ * A FABRICATOR — one house the sweep has to bring down (levels.ts
+ * SweepMission). It rises on its wave and stands DORMANT, a mine: the first
+ * hit sets it off (Sim.triggerHouse) — a blast on every structure round it,
+ * which sets off every house inside that, a burst of the swarm, and from
+ * then on a body a tick of its clock (FABRICATOR_RATES): the small one rolls a
+ * tier from T1-T3, the large one from T4-T5. Any number may be drawn.
  */
 const FABRICATOR: MarkKind = {
   id: "fabricator",
   label: "Fabricator",
-  missions: ["hold", "survive", "intercept", "escort", "raze"],
+  missions: ["sweep"],
   geom: "point",
-  size: 1,
+  size: 3,
   sizeByUnit: Object.fromEntries(FABRICATOR_KINDS.map((k, i) => [k, FABRICATOR_TILES[i]])),
   color: "#ffb03a",
-  unit: "fabricator1",
-  unitField: "tier",
+  unit: "fabricatorSmall",
+  unitField: "house",
   pad: 1,
   fields: [
     {
-      key: "tier",
-      label: "Tier",
+      key: "house",
+      label: "House",
       kind: "choice",
-      choices: FABRICATOR_KINDS.map((k, i) => ({ value: k, label: `T${i + 1}` })),
-      def: "fabricator1",
+      choices: [
+        { value: "fabricatorSmall", label: "Small (T1-T3)" },
+        { value: "fabricatorLarge", label: "Large (T4-T5)" },
+      ],
+      def: "fabricatorSmall",
     },
     {
       key: "rate",
@@ -239,7 +241,7 @@ const FABRICATOR: MarkKind = {
       ],
       def: "medium",
     },
-    spawnsAt(WAVE_CEIL, 1),
+    risesAt(WAVE_CEIL, 1),
   ],
 };
 
@@ -385,7 +387,7 @@ export const MARK_UNITS: readonly UnitKind[] = [
 
 /** the mark kinds a map running these missions may carry */
 export const marksForMissions = (kinds: readonly Mission["kind"][]): readonly MarkKind[] =>
-  MARK_KINDS.filter((k) => k.missions.some((m) => kinds.includes(m)));
+  MARK_KINDS.filter((k) => !k.missions || k.missions.some((m) => kinds.includes(m)));
 
 /** a field's value off a mark, falling back to its default — the one
  *  reader, so a hand-edited document missing a field still loads */

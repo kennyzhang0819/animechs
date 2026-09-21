@@ -145,12 +145,15 @@ import {
   GOAD_SPEED_MUL,
   pylonRamp,
   ACTIVE_FAMILIES,
-  FABRICATOR_BATCH,
+  FABRICATOR_BLAST,
+  FABRICATOR_BLAST_TILES,
+  FABRICATOR_BURST,
   FABRICATOR_KINDS,
   FABRICATOR_RATES,
   type FabricatorRate,
   type FamilyKey,
-  fabricatorTier,
+  FABRICATOR_SENDS,
+  fabricatorHouse,
   familyByKey,
   familyOf,
   UNIT_ID,
@@ -826,9 +829,9 @@ const KIND_MERGE_MAX = Uint8Array.from(
   UNIT_KINDS,
   (k) => UNIT_STATS[k].starburst?.merge ?? MERGE_MAX_STACK,
 );
-/** the tier a body fabricates, by kind id — 0 for anything that is not a
- *  house (levels.ts fabricatorTier) */
-const FAB_TIER = Uint8Array.from(UNIT_KINDS, fabricatorTier);
+/** which house a body is, by kind id — 0 for anything that is not one
+ *  (levels.ts fabricatorHouse) */
+const FAB_HOUSE = Uint8Array.from(UNIT_KINDS, fabricatorHouse);
 const FABRICATOR_IDS: readonly number[] = FABRICATOR_KINDS.map((k) => UNIT_ID[k]);
 // A TRAIT WITH NO ROUND BEHIND IT IS A FAMILY THAT SILENTLY DOES NOTHING
 // — the body would take its hits, roll its chance and throw nothing at
@@ -1555,9 +1558,15 @@ export class Sim {
   /** the fabricators the map carries (missionMarks.ts FABRICATOR), each
    *  spent once when its wave comes round (runFabricators) */
   private fabSpots: { x: number; y: number; kind: UnitKind; wave: number; every: number; up: boolean }[] = [];
-  /** a standing house's clock: seconds to its next batch, and the gap */
+  /** a standing house's clock: seconds to its next body, and the gap */
   private readonly ufabT = new Float32Array(MAX_UNITS);
   private readonly ufabEvery = new Float32Array(MAX_UNITS);
+  /** 0 dormant, 1 hit and about to go off, 2 producing (runFabricators) */
+  private readonly ufabState = new Uint8Array(MAX_UNITS);
+  /** houses destroyed, and houses the map carries — the sweep's whole
+   *  objective (levels.ts SweepMission), counted at removeUnit */
+  fabKilled = 0;
+  fabTotal = 0;
   /** the families this run's script deals, which is what a house sends */
   private runFamilies: readonly FamilyKey[] = [];
   /**
@@ -2601,6 +2610,8 @@ export class Sim {
     // waits until the document is loaded, below
     this.razeRisen = 0;
     this.razeKilled = 0;
+    this.fabKilled = 0;
+    this.fabTotal = 0;
     this.posts = [];
     this.roads = [];
     this.loopLevel = 0;
@@ -2711,12 +2722,13 @@ export class Sim {
         this.fabSpots.push({
           x: mk.x * CELL + half,
           y: mk.y * CELL + half,
-          kind: o.tier as UnitKind,
+          kind: o.house as UnitKind,
           wave: Number(o.wave),
           every: FABRICATOR_RATES[o.rate as FabricatorRate],
           up: false,
         });
       }
+    this.fabTotal = this.fabSpots.length;
     // ...and what a house sends is the run's own families, read off the
     // script it was dealt; a script that sends nothing falls back to all
     const dealt = new Set<FamilyKey>();
@@ -3374,6 +3386,8 @@ export class Sim {
       convoyDone: this.convoyDone,
       convoyAt: this.convoyAt(),
       razeKilled: this.razeKilled,
+      fabKilled: this.fabKilled,
+      fabTotal: this.fabTotal,
     });
   }
 
@@ -3410,6 +3424,8 @@ export class Sim {
     // emplacement going down ends the run, with whatever is left standing
     // on ground nobody needs any more
     if (m.kind === "raze") return this.razeKilled >= razeGuns(m);
+    // ...and a sweep when the last house the map drew is down
+    if (m.kind === "sweep") return this.fabTotal > 0 && this.fabKilled >= this.fabTotal;
     // ...and an escort the moment the last cart is at the post
     if (m.kind === "escort") return this.convoyDone >= m.deliver;
     if (m.kind === "survive") return this.time >= this.deadline;
@@ -5418,9 +5434,11 @@ export class Sim {
 
   /**
    * THE FABRICATORS AN AUTHOR PLACED (missionMarks.ts FABRICATOR): each
-   * rises on the wave its mark names and then sends a batch of its tier
-   * every `every` seconds, drawn from the run's own families
-   * (runFamilies). On the wave clock, so a jump raises what it passed.
+   * rises on the wave its mark names and stands DORMANT until the first
+   * hit lands on it (damageUnit), goes off (triggerHouse), and from then on
+   * sends a batch every `every` seconds drawn from the run's own
+   * families (runFamilies). On the wave clock, so a jump raises what it
+   * passed.
    */
   private runFabricators(dt: number): void {
     for (const f of this.fabSpots) {
@@ -5431,6 +5449,7 @@ export class Sim {
       this.plantUnit(i);
       this.ufabEvery[i] = f.every;
       this.ufabT[i] = f.every;
+      this.ufabState[i] = 0;
       // a building sits square to the grid: its art is drawn facing up
       this.urot[i] = -Math.PI / 2;
       this.ubrot[i] = -Math.PI / 2;
@@ -5440,19 +5459,60 @@ export class Sim {
     for (const id of FABRICATOR_IDS) standing += this.aliveByKind[id];
     if (standing === 0) return;
     for (let i = 0; i < this.n; i++) {
-      const tier = FAB_TIER[this.ukind[i]];
-      if (tier === 0 || this.uhp[i] <= 0) continue;
+      const house = FAB_HOUSE[this.ukind[i]];
+      if (house === 0 || this.uhp[i] <= 0 || this.ufabState[i] === 0) continue;
+      if (this.ufabState[i] === 1) {
+        this.triggerHouse(i, house);
+        continue;
+      }
       this.ufabT[i] -= dt;
       if (this.ufabT[i] > 0) continue;
       this.ufabT[i] = this.ufabEvery[i];
-      this.fabricate(i, tier);
+      this.fabricate(i, house);
     }
   }
 
-  /** one batch out of house `i`: its tier of one of the run's families,
-   *  landed on open ground round the house. Booked under wave 0 like a
-   *  crosser, so no wave is held open waiting for a body a house sent */
-  private fabricate(i: number, tier: number): void {
+  /**
+   * A HIT HOUSE GOES OFF, once: the blast lands on every structure within
+   * reach on both sides — a player's turret, a planted body, and every
+   * other dormant house, which is hit and so goes off in turn — then the
+   * burst of single bodies, and from here on the house runs its clock.
+   */
+  private triggerHouse(i: number, house: number): void {
+    this.ufabState[i] = 2;
+    this.ufabT[i] = this.ufabEvery[i];
+    const x = this.upx[i], y = this.upy[i];
+    const r = FABRICATOR_BLAST_TILES * CELL;
+    for (const t of this.structuresWithin(x, y, r, this.splashOut)) this.damageTower(t, FABRICATOR_BLAST);
+    if (this.enemyTowers > 0)
+      for (const t of this.structuresWithin(x, y, r, this.splashOut, "enemy"))
+        this.damageTower(t, FABRICATOR_BLAST);
+    const hit: number[] = [];
+    for (let j = 0; j < this.n; j++) {
+      if (j === i || this.ugar[j] !== 2 || this.uhp[j] <= 0) continue;
+      const dx = this.upx[j] - x, dy = this.upy[j] - y;
+      if (dx * dx + dy * dy > r * r) continue;
+      this.damageUnit(j, FABRICATOR_BLAST, false, 1, DMG_NEITHER);
+      hit.push(j);
+    }
+    for (const j of hit) if (this.uhp[j] <= 0) this.killUnit(j);
+    this.pushFx(x, y, 0.8, FxKind.Breach);
+    this.pushFxCol(x, y, 22 / 60, FxKind.ShieldWave, 0, r, TEAM_CRUX_RGB);
+    for (let k = 0; k < FABRICATOR_BURST; k++) this.fabricate(i, house, 1);
+  }
+
+  /** one body out of house `i` (or `count` of them): a tier rolled from
+   *  the house's range (levels.ts FABRICATOR_SENDS), landed round the house */
+  private fabricate(i: number, house: number, count?: number): void {
+    const tiers = FABRICATOR_SENDS[house - 1];
+    this.fabricateTier(i, tiers[(Math.random() * tiers.length) | 0], count ?? 1);
+  }
+
+  /** `count` bodies of one tier out of house `i`, each from a family the
+   *  run deals, landed on open ground round the house. Booked under wave 0
+   *  like a crosser, so no wave is held open waiting for a body a house
+   *  sent */
+  private fabricateTier(i: number, tier: number, count: number): void {
     const fam = this.runFamilies[(Math.random() * this.runFamilies.length) | 0];
     if (!fam) return;
     const kind: UnitKind = familyByKey(fam).kinds[tier - 1];
@@ -5463,7 +5523,7 @@ export class Sim {
     const span = kindSpan(id, fly);
     const fx = this.upx[i], fy = this.upy[i];
     const near = HB_OUTER[this.ukind[i]] + r + 2;
-    const n = FABRICATOR_BATCH[tier - 1];
+    const n = count;
     for (let a = 0, made = 0; a < n * 8 && made < n; a++) {
       const ang = Math.random() * Math.PI * 2;
       const d = near + Math.random() * CELL * 1.5;
@@ -8807,6 +8867,7 @@ export class Sim {
       this.uhungerT[i] = HUNGRY_PERIOD;
       this.ufabT[i] = 0;
       this.ufabEvery[i] = 0;
+      this.ufabState[i] = 0;
       // ...and every body walks in standing for itself alone, with no
       // squeeze on its clock (mergeSqueezed)
       this.ustack[i] = 1;
@@ -9890,6 +9951,7 @@ export class Sim {
     // crossers' — a board jumped past rather than fought must not be
     // handed the mission (skipToTime)
     if (this.ukind[i] === UNIT_ID.railgun && !this.crossSweeping) this.razeKilled++;
+    if (FAB_HOUSE[this.ukind[i]] !== 0 && !this.crossSweeping) this.fabKilled++;
     const cross = this.ucross[i];
     if (cross >= 0) {
       const worm = this.crossers[cross];
@@ -9981,6 +10043,7 @@ export class Sim {
     this.uhungerT[i] = this.uhungerT[n];
     this.ufabT[i] = this.ufabT[n];
     this.ufabEvery[i] = this.ufabEvery[n];
+    this.ufabState[i] = this.ufabState[n];
     this.ustack[i] = this.ustack[n];
     this.usqzT[i] = this.usqzT[n];
     // the squeeze scratch travels too: mergeSqueezed removes rows in the
@@ -13440,6 +13503,9 @@ export class Sim {
     // OWN ONE OF THEM rather than a reason to stop playing, and it is why
     // those seven can also still take aim at a dark hull (bestTarget).
     if (HAS_CLOAK && nature & DMG_BULLET && this.ucloakT[i] > 0) return;
+    // A DORMANT HOUSE GOES OFF ON ITS FIRST HIT, whatever the hit was and
+    // whatever plating leaves of it (triggerHouse)
+    if (this.ufabState[i] === 0 && FAB_HOUSE[this.ukind[i]] !== 0) this.ufabState[i] = 1;
     // THE IRONHIDE5'S PLATING STAMP rides on top of the body's own armour
     // (levels.ts armorField), and it goes through the same armorMult a
     // bullet carries — borrowed plating is plating, so a piercer's

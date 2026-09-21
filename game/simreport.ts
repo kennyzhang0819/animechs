@@ -108,8 +108,11 @@ export const HDR = {
    */
   RAZE_KILLED: 30,
   RAZE_UP: 31,
+  /** the sweep's ledger (levels.ts SweepMission): houses down, houses drawn */
+  FAB_KILLED: 32,
+  FAB_TOTAL: 33,
 } as const;
-export const HEADER_LEN = 32;
+export const HEADER_LEN = 34;
 
 /** the sim's scalars, into its own header — after every step, and on reset */
 export function writeHeader(sim: Sim): void {
@@ -140,6 +143,8 @@ export function writeHeader(sim: Sim): void {
   h[HDR.SCRIPT_WAVES] = sim.scriptWaves;
   h[HDR.RAZE_KILLED] = sim.razeKilled;
   h[HDR.RAZE_UP] = sim.razeUp();
+  h[HDR.FAB_KILLED] = sim.fabKilled;
+  h[HDR.FAB_TOTAL] = sim.fabTotal;
   h[HDR.CONVOY_DONE] = sim.convoyDone;
   h[HDR.CONVOY_LOST] = sim.convoyLost;
   {

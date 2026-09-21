@@ -224,6 +224,9 @@ const PLACED: readonly { level: number; reward: Reward }[] = [
   // something alive that moves, and the siege asks them to attack
   { level: 2, reward: { kind: "world", worldId: "12" } },
   { level: 3, reward: { kind: "world", worldId: "10" } },
+  // ...and the sweep, the fourth: the one that asks the player to go and
+  // set the swarm's own mines off
+  { level: 4, reward: { kind: "world", worldId: "13" } },
   // ...and the shelved boards after them (levels.ts PLAYABLE_WORLD_IDS
   // keeps all fifteen off the menu). They fill the tail of the phase so
   // every row of the build phase still carries something

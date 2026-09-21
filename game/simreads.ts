@@ -196,6 +196,14 @@ export class World {
   get razeUp(): number {
     return this.header[HDR.RAZE_UP];
   }
+  /** the sweep's ledger (levels.ts SweepMission): houses down, and houses
+   *  the map drew. Zero on every other mission */
+  get fabKilled(): number {
+    return this.header[HDR.FAB_KILLED];
+  }
+  get fabTotal(): number {
+    return this.header[HDR.FAB_TOTAL];
+  }
   /** THE ESCORT MISSION'S LEDGER (levels.ts EscortMission) — carts
    *  delivered and lost, how far the one on the road has got, how many
    *  halts it still has to make, and whether it is standing at one. Zero
