@@ -696,18 +696,10 @@ function ObjectivePane({ hud }: { hud: UiState }): React.ReactElement | null {
       {/* ...AND THE RUNNING COMMENTARY, under the rule and in the quieter
           grey: what is true this second, which is not a requirement and
           must not be read as one */}
-      {(hud.loopCycle > 0 ||
-        (m.kind === "intercept" && hud.crossLive > 0) ||
+      {((m.kind === "intercept" && hud.crossLive > 0) ||
         (m.kind === "raze" && hud.razeUp > 0) ||
         (m.kind === "escort" && hud.convoyHpMax > 0)) && (
         <div className="mt-1.5 flex flex-col gap-0.5 text-[13px] leading-tight text-[#A6A6AF]">
-          {/* THE TIDE, once it has turned: x2, x4, x8 — every body's
-              health, and nothing else (ladder.ts LEVELS_PER_DOUBLING) */}
-          {hud.loopCycle > 0 && (
-            <span className="text-[#FFD37F]" title="The script has run out and is going again, heavier">
-              The tide has turned — every body has x{2 ** hud.loopCycle} health
-            </span>
-          )}
           {m.kind === "intercept" && hud.crossLive > 0 && (
             <span>
               {hud.crossLive === 1

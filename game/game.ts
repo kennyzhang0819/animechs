@@ -252,9 +252,7 @@ export interface UiState {
   /**
    * HOW MANY TIMES THE TIDE HAS TURNED (Sim.loopCycle) — 0 while the
    * script is on its first pass, and every step above that is a DOUBLING
-   * of every body's health. The HUD only says it once it is above zero,
-   * because a badge reading "x1" on the first forty minutes of every run
-   * is a badge nobody reads by the time it means something.
+   * of every body's health. Only the two end screens print it.
    */
   loopCycle: number;
   /** the authored script's own wave count; the tide grows totalWaves, never this */

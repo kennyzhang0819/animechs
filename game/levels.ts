@@ -4443,19 +4443,19 @@ export interface LevelDoc {
 
 
 /**
- * THE RUN'S CLOCK, as authored: FIFTY waves, one every 22.5 seconds. The
+ * THE RUN'S CLOCK, as authored: FIFTY waves, one every 24 seconds. The
  * document (public/levels/campaign.json) sets the gap; this is what a
  * missing document or a missing field plays.
  *
- * NINETEEN IS A RUN LENGTH, not a feel. The cadence a run keeps is this
+ * THE GAP IS A RUN LENGTH, not a feel. The cadence a run keeps is this
  * gap plus WAVE_RELEASE_SECONDS, and it is the schedule ITSELF rather
  * than an average — wave n lands at WAVE_GAP_OPENING + (n-1) x cadence
  * and nothing about the board can move it (Sim.waveStartTime). So the
- * script's own clock is 3 + 49 x 22.5 = 1,105s, and with the last wave's
- * walk and die on the end a mission comes in around twenty minutes, which
+ * script's own clock is 3 + 49 x 24 = 1,179s, and with the last wave's
+ * walk and die on the end a mission comes in a little past twenty minutes, which
  * is the sitting one is meant to be.
  */
-export const WAVE_GAP_DEFAULT = 19;
+export const WAVE_GAP_DEFAULT = 20.5;
 
 /** The OPENING gap only, in seconds: wave 1 is not made to wait a full
  *  cadence, because the first thing a run does is build and there is
@@ -4559,7 +4559,7 @@ export const WORLDS: LevelSpec[] = [
     // EVERY RUNG PLAYS THIS WHOLE LIST. There is one run per map and ten
     // difficulties to play it at, and a rung only scales the counts
     // (COUNT_SCALE in ladder.ts) — no wave is ever cut. THE SCRIPT IS
-    // FIFTY WAVES, 22.5 seconds apart on a clock nothing about the board
+    // FIFTY WAVES, 24 seconds apart on a clock nothing about the board
     // can move (Sim.waveStartTime), each stronger than the last: a few
     // dozen runts on wave 1, the first heavies by wave 10, waves in the
     // thousands by the end. The waves overlap — the gap is shorter than a

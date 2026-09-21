@@ -86,7 +86,7 @@ one answer at a time, and air is fair.
 
 `public/levels/campaign.json` is the script every map plays — a
 `LevelDoc`, `{ id, waveGap, script }`, of raw per-kind counts per wave.
-`waveGap` is the seconds held between waves (19 as authored — the clock
+`waveGap` is the seconds held between waves (20.5 as authored — the clock
 starts when the previous wave has finished ENTERING, not when it dies).
 **Fifty waves**, forty bodies on wave 1 and thousands by the end, at
 Mindustry's own unit numbers. `index.json` beside it lists the documents.
@@ -105,10 +105,10 @@ at every rung up to the count.
 
 **Wave n lands at `WAVE_GAP_OPENING + (n-1) x (waveGap + WAVE_RELEASE_SECONDS)`
 seconds of run time, and nothing about the board can move it**
-(`Sim.waveStartTime`). At the shipped 19-second gap that is a wave every
-**22.5s** — so the fifty-wave script is 1,105s of schedule whatever map it
+(`Sim.waveStartTime`). At the shipped 20.5-second gap that is a wave every
+**24s** — so the fifty-wave script is 1,179s of schedule whatever map it
 is played on and whatever difficulty it is played at, wave 1 at 3s and
-wave 50 at 1,105s.
+wave 50 at 1,179s (19:39).
 
 It used to be a lower bound rather than a schedule. One wave was loaded at a
 time and the next waited for the last to finish spawning, so a map whose drop

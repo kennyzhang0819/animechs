@@ -32,11 +32,11 @@ rate(t) = CORE_INCOME_RATE x 2 ^ (min(t, CORE_INCOME_RAMP) / CORE_INCOME_DOUBLIN
 |---|---|
 | `CORE_INCOME_RATE` | 52 scrap a second, at t = 0 |
 | `CORE_INCOME_DOUBLING` | 205 seconds |
-| `CORE_INCOME_RAMP` | 1,125 — the shipped campaign's own length |
+| `CORE_INCOME_RAMP` | 1,203 — the shipped campaign's own length |
 | `SCRAP_START` | 1,200 |
 
-**The doubling is the one knob.** 205 seconds against the 22.5-second wave cadence
-(`docs/authoring-waves.md`) is about **7.9% a wave**, so the run's wealth spreads about 42x
+**The doubling is the one knob.** 205 seconds against the 24-second wave cadence
+(`docs/authoring-waves.md`) is about **8.5% a wave**, so the run's wealth spreads about 53x
 from the first wave to the fiftieth. `CORE_INCOME_RATE` moves the whole run's wealth and
 nothing else.
 
@@ -171,7 +171,7 @@ is what a player glances at mid-wave. A countdown would be a clock to watch.
 so a bank gate would be a clock gate in disguise — and a player who saved would meet the same
 wall as one who spent, later and with nothing to show for the wait.
 
-15:00 is wave forty of fifty (`docs/authoring-waves.md`), which is where `STAGES` puts tier 4
+15:00 is wave thirty-eight of fifty (`docs/authoring-waves.md`), which is where `STAGES` puts tier 4
 anyway: the gate is the stage table said in seconds rather than a new rule on top of it.
 
 ### The press pays
