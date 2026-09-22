@@ -108,8 +108,8 @@ to be:
 offered as **Hauler Escort**: one Hauler of the player's own, twelve tiles
 square, standing outside the core from the first frame of the run and
 rolling out of its depot halt forty-five seconds in, then crossing twelve
-hundred cells of double S at 1.6 tiles a second to the post in the far
-corner, stopping four more times on the way to mend. Losing it loses the
+hundred cells of double S at 1.38 tiles a second to the post in the far
+corner, arriving at about twenty minutes, stopping four more times on the way to mend. Losing it loses the
 run.
 
 It is **on the board before it moves** on purpose. An escort is a thing

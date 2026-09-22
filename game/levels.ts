@@ -2690,16 +2690,16 @@ export const CONVOY_SIZE = 12;
  */
 export const CONVOY_BASE_KIND = "tacker" as const;
 /**
- * HOW FAST IT ROLLS, world px/s: 1.6 tiles a second, under half the pace
- * of the slowest thing the swarm fields. Thornway's road is 23,750 px, so
- * the driving alone is twelve and a half minutes and the halts put it
- * over fifteen.
+ * HOW FAST IT ROLLS, world px/s: 1.38 tiles a second, under half the pace
+ * of the slowest thing the swarm fields. Thornway's road is 1,346 tiles, so
+ * the driving alone is sixteen and a quarter minutes and the halts put it
+ * at twenty.
  *
  * SLOW IS THE POINT. The mission is "hold a position that moves", and a
  * position that moves quickly is not one: the cart has to be somewhere
  * long enough for the swarm to arrive at it, or the escort is a parade.
  */
-export const CONVOY_SPEED = 1.6 * CELL;
+export const CONVOY_SPEED = 1.38 * CELL;
 /** seconds it stands at each halt (EscortMission.halts), and the health it
  *  mends a second while it stands there */
 export const CONVOY_HALT = 45;
@@ -4826,9 +4826,9 @@ export const WORLDS: LevelSpec[] = [
     // the start it is a fact about the board the player can see, walk the
     // camera along, and price a battery against before it moves.
     //
-    // Then it drives at 1.6 tiles a second (CONVOY_SPEED), so the driving
-    // is fourteen minutes; five halts of forty-five seconds put the
-    // arrival a little past seventeen. The four on the road are at 15,
+    // Then it drives at 1.38 tiles a second (CONVOY_SPEED), so the driving
+    // is sixteen and a quarter minutes; five halts of forty-five seconds
+    // put the arrival at twenty. The four on the road are at 15,
     // 32, 55 and 79 per cent, each chosen to land in a clearing the
     // terrain already has — a stopped cart is the easiest target on the
     // board, and standing it in a corridor would be asking the player to
