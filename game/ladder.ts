@@ -627,10 +627,10 @@ export function stageAudit(spec: LevelSpec = WORLD): StageRow[] {
  *  band is priced out of its own stage, above the ceiling the stage before
  *  could have bought it */
 export const STAGE_BOARDS: Readonly<Record<TowerTier, { min: number; max: number }>> = {
-  1: { min: 560, max: 4100 },
-  2: { min: 190, max: 2300 },
-  3: { min: 40, max: 1000 },
-  4: { min: 10, max: 350 },
+  1: { min: 560, max: 3890 },
+  2: { min: 190, max: 1950 },
+  3: { min: 40, max: 800 },
+  4: { min: 10, max: 260 },
 };
 
 /** one rung, weighed — the row the editor's ladder check renders */

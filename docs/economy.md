@@ -31,23 +31,23 @@ rate(t) = CORE_INCOME_RATE x 2 ^ (min(t, CORE_INCOME_RAMP) / CORE_INCOME_DOUBLIN
 | | |
 |---|---|
 | `CORE_INCOME_RATE` | 60 scrap a second, at t = 0 |
-| `CORE_INCOME_DOUBLING` | 195 seconds |
+| `CORE_INCOME_DOUBLING` | 212 seconds |
 | `CORE_INCOME_RAMP` | 1,200 — twenty minutes, where the rate goes flat |
 | `SCRAP_START` | 1,200 |
 
-**The doubling is the one knob.** 195 seconds against the 24-second wave cadence
-(`docs/authoring-waves.md`) is about **8.9% a wave**, so the run's wealth spreads about 65x
+**The doubling is the one knob.** 212 seconds against the 24-second wave cadence
+(`docs/authoring-waves.md`) is about **8.2% a wave**, so the run's wealth spreads about 47x
 from the first wave to the fiftieth. `CORE_INCOME_RATE` moves the whole run's wealth and
 nothing else.
 
 | wave | second | rate/s | banked by then |
 |---|---|---|---|
 | 1 | 3 | 61 | 1,400 |
-| 10 | 219 | 131 | 21,100 |
-| 20 | 459 | 307 | 70,600 |
-| 30 | 699 | 720 | 186,800 |
-| 40 | 939 | 1,689 | 459,600 |
-| 50 | 1,179 | 3,965 | 1,099,700 |
+| 10 | 219 | 123 | 20,400 |
+| 20 | 459 | 269 | 65,200 |
+| 30 | 699 | 590 | 163,200 |
+| 40 | 939 | 1,293 | 378,200 |
+| 50 | 1,179 | 2,833 | 849,400 |
 
 **THE WHOLE CURRENCY WAS DIVIDED BY TEN.** Every scrap figure in the game — the opening bank,
 the rate, the four tier prices, the mod and relic rolls, the kill-drop table — was cut by a
@@ -58,9 +58,9 @@ it reads in the old currency, so multiply by ten before comparing.
 
 **The baseline and the curve are the two knobs, and they have been raised together three times.**
 The pure redenomination would have been 33 a second over 255s. It went to 40 over 235s, and
-then to 52 over 205s, and now to the shipped **60 over 195s**. Prices did not move with any pass, so all of it is
-turrets: against the first of those curves the board is now about **1.9x richer through the
-opening stage and 3.7x through the last one**, because a shorter doubling compounds and a
+then to 52 over 205s, and now to the shipped **60 over 212s**. Prices did not move with any pass, so all of it is
+turrets: against the first of those curves the board is now about **2.2x richer through the
+opening stage and 4.2x through the last one**, because a shorter doubling compounds and a
 higher baseline does not. That is the intended shape — the late board wants depth behind lanes
 it has already covered, and depth is just more guns.
 
@@ -136,10 +136,10 @@ square so "the price of a 4x4" is a thing a player can hold in their head. Draw 
 paid over the odds; draw well and you got a 6x6 for the price of a 4x4.
 
 **What the numbers buy**, measured as SECONDS OF INCOME at the rate in force *when the band
-opens*. Tier 1 is three seconds from the first frame; tier 2 about six at 5:00; tier 3 about
-thirteen at 10:00; tier 4 about twenty-six at 15:00. Counted as presses the bank can already
-cover on the minute the band opens, that is 6 / 29 / 19 / 10. A whole run banks about
-1,186,000.
+opens*. Tier 1 is three seconds from the first frame; tier 2 about seven at 5:00; tier 3 about
+fifteen at 10:00; tier 4 about thirty-four at 15:00. Counted as presses the bank can already
+cover on the minute the band opens, that is 6 / 28 / 17 / 8. A whole run banks about
+911,000.
 
 ### The shape is the roll
 

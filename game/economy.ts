@@ -73,8 +73,8 @@ export const SCRAP_START = 1200;
  * the seconds it takes that rate to double; the rate stops climbing at
  * CORE_INCOME_RAMP so the tide cannot be banked out of.
  *
- * The doubling is the one knob that matters: 195s against the 24s wave
- * cadence is about 8.9% a wave, so the rate at the ramp is about seventy times
+ * The doubling is the one knob that matters: 212s against the 24s wave
+ * cadence is about 8.2% a wave, so the rate at the ramp is about fifty times
  * the opening one. A much longer doubling was tried and it put 98% of a
  * run's money after wave twenty and starved the opening — a tier-2 press
  * cost one and a half waves of TOTAL income at wave eight, so the only
@@ -83,7 +83,7 @@ export const SCRAP_START = 1200;
  * who already survived it.
  */
 export const CORE_INCOME_RATE = 60;
-export const CORE_INCOME_DOUBLING = 195;
+export const CORE_INCOME_DOUBLING = 212;
 /** twenty minutes: the rate is flat from here, whatever the script's length */
 export const CORE_INCOME_RAMP = 1200;
 
