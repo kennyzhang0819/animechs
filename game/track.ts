@@ -848,9 +848,7 @@ export function rewardBlurb(r: Reward): string {
  * add — it is bought once and it is on.
  */
 export function rewardNote(r: Reward): string | null {
-  if (r.kind === "points") return "Refundable in full, any time.";
   if (r.kind === "turret") return targetingLine(TOWERS[r.id]);
-  if (r.kind === "family") return "In the hat for every run from here on.";
   if (r.kind !== "mod") return null;
   return "Every copy adds its effect again.";
 }
