@@ -3461,10 +3461,10 @@ export default function Animechs() {
                       shortening from the right as the pool burns down */}
                   {b.shieldMax > 0 && b.shield > 0 && (
                     <div
-                      className="pointer-events-none absolute -inset-y-[4px] -left-[4px] transition-[width] duration-150 ease-linear"
+                      className="pointer-events-none absolute -inset-y-[2px] -left-[2px] transition-[width] duration-150 ease-linear"
                       style={{
-                        width: `calc(${Math.max(0, Math.min(100, (100 * b.shield) / b.shieldMax))}% + 8px)`,
-                        maxWidth: "calc(100% + 8px)",
+                        width: `calc(${Math.max(0, Math.min(100, (100 * b.shield) / b.shieldMax))}% + 4px)`,
+                        maxWidth: "calc(100% + 4px)",
                         background: "rgba(160,220,255,0.35)",
                         border: "2px solid rgba(210,242,255,0.95)",
                         boxSizing: "border-box",

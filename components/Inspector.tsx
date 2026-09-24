@@ -188,10 +188,10 @@ function HealthBar({ hp, max, shield = 0, shieldMax = 0 }: { hp: number; max: nu
         {/* the shield as a casing round the bar — see the objective stack */}
         {g > 0 && (
           <div
-            className="pointer-events-none absolute -inset-y-[3px] -left-[3px] transition-[width] duration-150"
+            className="pointer-events-none absolute -inset-y-[2px] -left-[2px] transition-[width] duration-150"
             style={{
-              width: `calc(${g * 100}% + 6px)`,
-              maxWidth: "calc(100% + 6px)",
+              width: `calc(${g * 100}% + 4px)`,
+              maxWidth: "calc(100% + 4px)",
               background: "rgba(160,220,255,0.35)",
               border: "2px solid rgba(210,242,255,0.95)",
               boxSizing: "border-box",

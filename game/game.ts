@@ -993,7 +993,7 @@ const BAR_SOAK = "#7FC4FF";
  *  the frame's line, how far past the bar it reaches and how thick it is */
 const BAR_GLASS = "rgba(160,220,255,0.45)";
 const BAR_GLASS_EDGE = "rgba(210,242,255,0.95)";
-const BAR_GLASS_PAD = 1.25;
+const BAR_GLASS_PAD = 0.6;
 const BAR_GLASS_LINE = 1;
 
 /**
