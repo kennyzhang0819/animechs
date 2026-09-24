@@ -1603,14 +1603,15 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
     },
   ],
   // THE LANCE'S BEAM is the Starlight apex's bite on a third of its cycle
-  // and a third of its reach, and it does NOT pierce. A starhart5 fires
-  // 560 down fifty-seven tiles and then spends five seconds doing
-  // nothing; this one carries the same 560 into a twenty-four-tile line
-  // every two seconds, at one target — constant rather than enormous.
+  // and a third of its reach, and it PIERCES like the Starlight beams do.
+  // A starhart5 fires 560 down fifty-seven tiles and then spends five
+  // seconds doing nothing; this one carries the same 560 into a
+  // twenty-four-tile line every two seconds, at everything on the line —
+  // constant rather than enormous.
   lance: [
     {
       name: "lance-beam", reload: t(130), mounts: 1, damage: 560, range: u(190), speed: 0,
-      fx: "laser", laser: WARDEN_LASER, charge: t(20), shoot: FxKind.ShootBig,
+      fx: "laser", pierce: true, laser: WARDEN_LASER, charge: t(20), shoot: FxKind.ShootBig,
     },
   ],
   // THE HALBERD THROWS FOUR ARCS AT ONCE: chain lightning on the Coil's
