@@ -7374,36 +7374,48 @@ export class Sim {
             if (!ar) break;
             const seen = this.arcOut;
             seen.length = 0;
-            let cur: Structure = tgt.s;
-            let dmg = wpDamage;
-            this.hitStructure(cur, dmg, wp.poison ?? 0, wp.poisonChance ?? 1);
-            this.shortTower(cur, wp.short ?? 0, wp.shortChance ?? 1);
-            this.chainFx(x, y, cur, ar.color);
-            // the first hop's blast is what an arc shows of itself: weapon lane
-            this.pushFxCol(cur.x, cur.y, 12 / 60, FxKind.HitLaserBlast, aim, 0, ar.color, 0, true);
-            seen.push(cur);
-            for (let j = 0; j < ar.jumps; j++) {
-              const near = this.structuresWithin(cur.x, cur.y, ar.reach, this.arcNear);
-              let next: Structure | null = null;
+            // `shots` chains leave the mount at once, each from a structure
+            // no earlier chain struck — the target first, then the nearest
+            // untouched ones in reach — so a volley fans across a patch
+            // rather than four bolts retracing one path
+            const nearestUnseen = (cx: number, cy: number, r: number): Structure | null => {
+              const near = this.structuresWithin(cx, cy, r, this.arcNear);
+              let best: Structure | null = null;
               let bd = Infinity;
               for (let k = 0; k < near.length; k++) {
                 const c = near[k];
                 if (seen.includes(c)) continue;
-                const ddx = c.x - cur.x, ddy = c.y - cur.y;
+                const ddx = c.x - cx, ddy = c.y - cy;
                 const d2 = ddx * ddx + ddy * ddy;
                 if (d2 < bd) {
                   bd = d2;
-                  next = c;
+                  best = c;
                 }
               }
-              if (!next) break;
-              dmg *= ar.decay;
-              this.hitStructure(next, dmg, wp.poison ?? 0, wp.poisonChance ?? 1);
-              this.shortTower(next, wp.short ?? 0, wp.shortChance ?? 1);
-              this.chainFx(cur.x, cur.y, next, ar.color);
-              this.pushFxCol(next.x, next.y, 12 / 60, FxKind.HitLaserBlast, 0, 0, ar.color);
-              seen.push(next);
-              cur = next;
+              return best;
+            };
+            for (let n = 0; n < shots; n++) {
+              const start = n === 0 ? tgt.s : nearestUnseen(x, y, wreach);
+              if (!start) break;
+              let cur: Structure = start;
+              let dmg = wpDamage;
+              this.hitStructure(cur, dmg, wp.poison ?? 0, wp.poisonChance ?? 1);
+              this.shortTower(cur, wp.short ?? 0, wp.shortChance ?? 1);
+              this.chainFx(x, y, cur, ar.color);
+              // the first hop's blast is what an arc shows of itself: weapon lane
+              this.pushFxCol(cur.x, cur.y, 12 / 60, FxKind.HitLaserBlast, aim, 0, ar.color, 0, true);
+              seen.push(cur);
+              for (let j = 0; j < ar.jumps; j++) {
+                const next = nearestUnseen(cur.x, cur.y, ar.reach);
+                if (!next) break;
+                dmg *= ar.decay;
+                this.hitStructure(next, dmg, wp.poison ?? 0, wp.poisonChance ?? 1);
+                this.shortTower(next, wp.short ?? 0, wp.shortChance ?? 1);
+                this.chainFx(cur.x, cur.y, next, ar.color);
+                this.pushFxCol(next.x, next.y, 12 / 60, FxKind.HitLaserBlast, 0, 0, ar.color);
+                seen.push(next);
+                cur = next;
+              }
             }
             this.pushFxCol(x, y, 8 / 60, FxKind.HitEmpSpark, aim, 0, ar.color, 0, false,
               (Math.random() * 0x7fffffff) | 0);

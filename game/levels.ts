@@ -2599,10 +2599,10 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 4.5,
   },
 
-  // THE HALBERD — the fan, and the one of the four that walks behind a
-  // FORCE FIELD (the same bubble a Tusker carries). Four beams on one
-  // pull and a bubble that has to come down before any of it can be
-  // answered.
+  // THE HALBERD — the arc thrower, and the one of the four that walks
+  // behind a FORCE FIELD (the same bubble a Tusker carries). Four chains
+  // of lightning on one pull (weapons.ts) and a bubble that has to come
+  // down before any of it can be answered.
   halberd: {
     hp: 46000,
     speed: 2.2 * CELL,

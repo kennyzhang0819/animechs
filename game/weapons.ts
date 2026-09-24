@@ -1613,14 +1613,14 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
       fx: "laser", laser: WARDEN_LASER, charge: t(20), shoot: FxKind.ShootBig,
     },
   ],
-  // THE HALBERD CUTS FOUR LANES AT ONCE. One pull, four beams in a narrow
-  // fan, armour-cutting like the Lance's and shorter: what it does to a
-  // line is open four holes in it rather than burn one.
+  // THE HALBERD THROWS FOUR ARCS AT ONCE: chain lightning on the Coil's
+  // and the Livewires' logic (fx "arc"), four chains a pull, each leaving
+  // for a structure the others have not struck and jumping three times
+  // from there. What it does to a patch is light the whole patch.
   halberd: [
     {
-      name: "halberd-fan", reload: t(150), mounts: 1, shots: 4, spread: 7 * DEG,
-      damage: 380, range: u(230), speed: 0, fx: "laser", laser: WARDEN_LASER,
-      charge: t(24), shoot: FxKind.ShootBig,
+      name: "halberd-arcs", reload: t(90), mounts: 1, shots: 4, damage: 260, range: u(230), speed: 0,
+      fx: "arc", arc: { jumps: 3, reach: u(32), decay: 0.7, color: WARDEN_SHOT },
     },
   ],
   // THE JUGGERNAUT THROWS OUT OF BOTH FLANKS — six homing missiles a
