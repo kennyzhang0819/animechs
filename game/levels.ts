@@ -4848,9 +4848,9 @@ export const WORLDS: LevelSpec[] = [
     //
     // THE CLOCK. It is ON THE BOARD FROM THE FIRST FRAME (`first: 0`) and
     // the first thing it does is STAND STILL: the halt at 0 is the depot
-    // it is loaded at, so the mission opens with the cart parked outside
-    // the core for forty-five seconds rather than with ninety seconds of
-    // empty road and then a spawn.
+    // it is loaded at, so the mission opens with the cart parked a few
+    // tiles below the core for forty-five seconds rather than with ninety
+    // seconds of empty road and then a spawn.
     //
     // THAT IS THE WHOLE REASON FOR IT. An escort is a thing the player is
     // asked to spend against, and until it exists there is nothing to
