@@ -3453,6 +3453,19 @@ export default function Animechs() {
                       background: b.ally ? "#EDEDEF" : "#e55454",
                     }}
                   />
+                  {/* the shield as GLASS over the bar: a translucent pane
+                      its pool's share wide, so the layer is seen thinning
+                      while the health under it stays legible through it */}
+                  {b.shieldMax > 0 && b.shield > 0 && (
+                    <div
+                      className="absolute inset-y-0 left-0 transition-[width] duration-150 ease-linear"
+                      style={{
+                        width: `${Math.max(0, Math.min(100, (100 * b.shield) / b.shieldMax))}%`,
+                        background: "rgba(200,236,255,0.5)",
+                        boxShadow: "inset 0 2px 0 rgba(255,255,255,0.6)",
+                      }}
+                    />
+                  )}
                 </div>
               </div>
             ))}

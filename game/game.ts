@@ -89,7 +89,7 @@ import {
 import { FIELDED_KINDS, isRetired, TOWER_KINDS } from "./types";
 import { GAME_LAYERS, Renderer } from "./renderer";
 import { fitZoom } from "./fit";
-import type { Sim } from "./sim";
+import type { ObjectiveBar, Sim } from "./sim";
 import type { SimHost } from "./simhost";
 import { makeHost } from "./workerhost";
 import type { World } from "./simreads";
@@ -166,7 +166,7 @@ export interface UiState {
    * row carries a name rather than a unit kind — and `ally` is whose thing
    * it is, so the player's hauler is not painted in the swarm's crimson.
    */
-  objectives: { id: number; name: string; hp: number; max: number; ally: boolean }[];
+  objectives: ObjectiveBar[];
   /** seconds until the next wave, or 0 while one is already coming in */
   nextWaveIn: number;
   /** seconds of simulated time since the run started (Sim.time) */
@@ -989,6 +989,9 @@ const ENEMY_HP = "#FF5A5A";
 /** the soak band: health already forfeit, drawn from the left of the bar
  *  (docs/elements.md — a body breaks down the moment hp falls under it) */
 const BAR_SOAK = "#7FC4FF";
+/** the shield's pane over a bar (drawBars), and the light along its top */
+const BAR_GLASS = "rgba(200,236,255,0.5)";
+const BAR_GLASS_EDGE = "rgba(255,255,255,0.55)";
 
 /**
  * THE PLACEMENT GHOST'S WASHES — refused, and taxed by the Hydrophobic
@@ -3637,7 +3640,7 @@ export class Game {
     cx: number,
     topY: number,
     width: number,
-    bars: ReadonlyArray<{ v: number; col: string; doomed?: number }>,
+    bars: ReadonlyArray<{ v: number; col: string; doomed?: number; shield?: number }>,
   ): number {
     if (bars.length === 0) return topY;
     const w = Math.max(width, BAR_MIN_W);
@@ -3659,6 +3662,16 @@ export class Game {
       if (d > 0) {
         c.fillStyle = BAR_SOAK;
         c.fillRect(x, y, w * d, BAR_H);
+      }
+      // the shield, as GLASS over the whole bar: a translucent layer the
+      // pool's share wide, so what shrinks is the pane and the health
+      // under it stays legible through it
+      const g = clamp(b.shield ?? 0, 0, 1);
+      if (g > 0) {
+        c.fillStyle = BAR_GLASS;
+        c.fillRect(x, y, w * g, BAR_H);
+        c.fillStyle = BAR_GLASS_EDGE;
+        c.fillRect(x, y, w * g, BAR_H * 0.3);
       }
       c.strokeStyle = BAR_EDGE;
       c.lineWidth = 0.5;
@@ -3800,7 +3813,7 @@ export class Game {
    */
   private drawUnitBars(c: CanvasRenderingContext2D): void {
     const w = this.world;
-    const { upx, upy, urad, uhp, uhpmax, usoak } = w.flat;
+    const { upx, upy, urad, uhp, uhpmax, usoak, ushield, ushieldMax } = w.flat;
     const n = w.n;
     const bars = this.barBuf;
     const ids = this.statusBuf;
@@ -3841,8 +3854,9 @@ export class Game {
         // an untouched body carrying one is exactly the case "damaged"
         // would have hidden
         const doomed = clamp(usoak[i] / Math.max(1, uhpmax[i]), 0, 1);
-        if (this.barsOn(false, f, false) || (doomed > 0 && this.enemyBars !== "never"))
-          bars.push({ v: f, col: ENEMY_HP, doomed });
+        const shield = ushieldMax[i] > 0 ? clamp(ushield[i] / ushieldMax[i], 0, 1) : 0;
+        if (this.barsOn(false, f, false) || ((doomed > 0 || shield > 0) && this.enemyBars !== "never"))
+          bars.push({ v: f, col: ENEMY_HP, doomed, shield });
       }
       // THE GATE, and why this is affordable over eight hundred bodies:
       // six typed-array reads, no allocation, and a no for nearly all of
@@ -3888,7 +3902,7 @@ export class Game {
 
   /** scratch for the two passes over the board, reused rather than
    *  rebuilt: one body's bars, and one body's status symbols */
-  private readonly barBuf: { v: number; col: string; doomed?: number }[] = [];
+  private readonly barBuf: { v: number; col: string; doomed?: number; shield?: number }[] = [];
   private readonly statusBuf: StatusId[] = [];
 
   /**

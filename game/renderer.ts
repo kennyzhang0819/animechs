@@ -495,9 +495,12 @@ uniform float uFill;
 // with NO interior has only the line, so the field pass resolves this from
 // the zoom and keeps the line a constant thickness on screen
 uniform float uEdge;
+// the rim's opacity — a shield's is turned down so the bubble reads as a
+// tint over the ground rather than a drawn circle; a field ring is 1
+uniform float uRim;
 in vec2 vUV;
 out vec4 o;
-const float ALPHA = 0.18;
+const float ALPHA = 0.14;
 const float TAU = 6.2831853;
 // fills at or above this keep Mindustry's travelling diagonals; below it
 // (but still over the 0.9 the edge detect wants) the interior gets the
@@ -525,7 +528,7 @@ void main() {
     texture(uTex, T + vec2(-uEdge, 0.0) * uInv));
   if (color.a < 0.9 && maxed.a > 0.9) {
     // maxed.a * 100 saturates: the rim is drawn at full opacity
-    o = vec4(maxed.rgb, 1.0) * uAlpha;
+    o = vec4(maxed.rgb, 1.0) * uAlpha * uRim;
   } else if (color.a > 0.5) {
     // Mindustry tests "> 0" here, over fills that are hard-edged
     // polygons. These fills are one disc sprite, antialiased in the sheet
@@ -562,14 +565,12 @@ const SHIELD_DP = 1;
  * purpose — anything under 0.9 would stop being a shield shape at all.
  */
 const SHIELD_PLAIN = 0.94;
-/**
- * The shield rim's wave (SHIELD_FS uZig): Mindustry's own gentle sine, one
- * world unit deep on a 2*pi*3-unit period, drifting. Kink 0 and snap 0 are
- * what make the shader's `wave` collapse back to the plain `sin` this pass
- * has always run — the shields are not changed by any of this, they simply
- * name what they were already doing.
- */
-const SHIELD_ZIG = new Float32Array([3, 1, 0, 0]);
+/** the shield rim's wave (SHIELD_FS uZig): amplitude 0, so the outline
+ *  is a still circle rather than Mindustry's rippling one */
+const SHIELD_ZIG = new Float32Array([3, 0, 0, 0]);
+/** how opaque a shield's rim is (SHIELD_FS uRim) — kept low so a bubble is
+ *  a faint tint over the ground and not a drawn circle */
+const SHIELD_RIM = 0.4;
 /**
  * THE ENERGY FIELD'S RIM, and it is the same shader doing something else
  * entirely: a full triangle (kink 1) at a wide period and a deep throw, on
@@ -1376,6 +1377,7 @@ export class Renderer {
   private readonly uShieldAlpha: WebGLUniformLocation;
   private readonly uShieldFill: WebGLUniformLocation;
   private readonly uShieldEdge: WebGLUniformLocation;
+  private readonly uShieldRim: WebGLUniformLocation;
   /** the field pass's uZig, refilled per frame from the zoom — the teeth are
    *  a screen-space size (FIELD_TOOTH_PX), so they cannot be a constant */
   private readonly fieldZig = new Float32Array([1, 1, 1, FIELD_SNAP]);
@@ -1560,6 +1562,7 @@ export class Renderer {
     this.uShieldAlpha = needIn("uAlpha");
     this.uShieldFill = needIn("uFill");
     this.uShieldEdge = needIn("uEdge");
+    this.uShieldRim = needIn("uRim");
     // the blit is one quad off the shared corner VBO — no instance data,
     // so it takes attribute 0 alone
     const bvao = gl.createVertexArray();
@@ -3976,7 +3979,7 @@ export class Renderer {
     time: number,
     buffered: boolean,
   ): void {
-    this.blitField(this.shields, SHIELD_ZIG, 1, 1, SHIELD_EDGE, zoom, offX, offY, kPx, time, buffered);
+    this.blitField(this.shields, SHIELD_ZIG, 1, 1, SHIELD_EDGE, SHIELD_RIM, zoom, offX, offY, kPx, time, buffered);
     // THE TEETH ARE A SCREEN SIZE, so the wave is resolved against this
     // frame's zoom rather than baked in world units (FIELD_TOOTH_PX).
     // uZig.x is the sine's divisor, so a world period P is P / 2pi
@@ -3984,7 +3987,7 @@ export class Renderer {
     const zig = this.fieldZig;
     zig[0] = FIELD_TOOTH_PX / pxPerUnit / (Math.PI * 2);
     zig[1] = FIELD_DEPTH_PX / pxPerUnit;
-    this.blitField(this.fields, zig, FIELD_ALPHA, FIELD_FILL, FIELD_EDGE_PX / pxPerUnit,
+    this.blitField(this.fields, zig, FIELD_ALPHA, FIELD_FILL, FIELD_EDGE_PX / pxPerUnit, 1,
       zoom, offX, offY, kPx, time, buffered);
   }
 
@@ -3997,6 +4000,7 @@ export class Renderer {
     alpha: number,
     fill: number,
     edge: number,
+    rim: number,
     zoom: number,
     offX: number,
     offY: number,
@@ -4061,6 +4065,7 @@ export class Renderer {
     gl.uniform1f(this.uShieldAlpha, alpha);
     gl.uniform1f(this.uShieldFill, fill);
     gl.uniform1f(this.uShieldEdge, edge);
+    gl.uniform1f(this.uShieldRim, rim);
     gl.bindTexture(gl.TEXTURE_2D, this.shieldTex);
     gl.bindVertexArray(this.blitVao);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);

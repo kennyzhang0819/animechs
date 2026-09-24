@@ -714,6 +714,7 @@ export type FlatWorld = {
   readonly ustack: Uint8Array;
   readonly ushield: Float32Array;
   readonly ushieldAlpha: Float32Array;
+  readonly ushieldMax: Float32Array;
   readonly uforceScale: Float32Array;
   readonly ubeamT: Float32Array;
   readonly ucharge: Float32Array;
@@ -763,7 +764,7 @@ export type FlatWorld = {
 export const FLAT_KEYS = [
   "upx", "upy", "ubrot", "urot", "ukind", "uid", "uhp", "uhpmax", "urad", "uwalk",
   "ufly", "uwet", "uhungry", "ueaten", "uwade", "ucloakT", "ustack", "ushield",
-  "ushieldAlpha", "uforceScale", "ubeamT", "ucharge", "uheldRot", "ulegFX", "ulegFY",
+  "ushieldAlpha", "ushieldMax", "uforceScale", "ubeamT", "ucharge", "uheldRot", "ulegFX", "ulegFY",
   "ulegJX", "ulegJY", "ulegStage", "ulegMove", "usegX", "usegY", "uwakeX", "uwakeY",
   "uwakeN", "aliveByKind", "uspawn", "uburn", "upoison", "usoak", "uvet", "uled", "uvirus", "fxX", "fxY", "fxAge", "fxTtl", "fxKind", "fxLen", "fxRot",
   "fxSeed", "fxSides", "fxUnit", "fxHasCol", "fxColR", "fxColG", "fxColB", "fxPts",
@@ -810,6 +811,7 @@ export class DrawView implements SimView {
   readonly ustack: Uint8Array;
   readonly ushield: Float32Array;
   readonly ushieldAlpha: Float32Array;
+  readonly ushieldMax: Float32Array;
   readonly uforceScale: Float32Array;
   readonly ubeamT: Float32Array;
   readonly ucharge: Float32Array;
@@ -895,6 +897,7 @@ export class DrawView implements SimView {
     this.ustack = src.ustack;
     this.ushield = src.ushield;
     this.ushieldAlpha = src.ushieldAlpha;
+    this.ushieldMax = src.ushieldMax;
     this.uforceScale = src.uforceScale;
     this.ubeamT = src.ubeamT;
     this.ucharge = src.ucharge;

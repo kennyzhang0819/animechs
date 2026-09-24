@@ -696,6 +696,18 @@ export const SEL_LIKE_STRUCT_R = CELL * 40;
  * with `ui` the last known index) say which it is, and are what the
  * damage lands on (Sim.aimHit).
  */
+/** one row of the HUD's objective stack (objectiveBars): the pool, and
+ *  the shield over it drawn as a glass layer on the same bar */
+export interface ObjectiveBar {
+  id: number;
+  name: string;
+  hp: number;
+  max: number;
+  shield: number;
+  shieldMax: number;
+  ally: boolean;
+}
+
 export interface Aim {
   x: number;
   y: number;
@@ -1230,6 +1242,9 @@ export class Sim {
   readonly ushield = shared.f32(MAX_UNITS);
   /** shield draw opacity — 1 on apply or hit, fading over 15 ticks */
   readonly ushieldAlpha = shared.f32(MAX_UNITS);
+  /** the most shield this body has been given, for the bar's glass layer:
+   *  its own bubble's pool, or the largest field that has covered it */
+  readonly ushieldMax = shared.f32(MAX_UNITS);
   /** seconds since this unit's support ability last pulsed */
   readonly uability = new Float32Array(MAX_UNITS);
   /**
@@ -3994,12 +4009,12 @@ export class Sim {
    * The boss scan early-exits off the census the way collectForceFields
    * does, so a board with no boss on it pays nothing.
    */
-  objectiveBars(): { id: number; name: string; hp: number; max: number; ally: boolean }[] {
-    const out: { id: number; name: string; hp: number; max: number; ally: boolean }[] = [];
+  objectiveBars(): ObjectiveBar[] {
+    const out: ObjectiveBar[] = [];
     let left = 0;
     for (const k of BOSS_KINDS) left += this.aliveByKind[k];
     if (left > 0) {
-      const bosses: { id: number; name: string; hp: number; max: number; ally: boolean }[] = [];
+      const bosses: ObjectiveBar[] = [];
       for (let i = 0; i < this.n && bosses.length < left; i++) {
         const k = this.ukind[i];
         if (!KIND_BOSS[k]) continue;
@@ -4008,6 +4023,8 @@ export class Sim {
           name: unitName(UNIT_KINDS[k]),
           hp: Math.max(0, this.uhp[i]),
           max: this.uhpmax[i],
+          shield: Math.max(0, this.ushield[i]),
+          shieldMax: this.ushieldMax[i],
           ally: false,
         });
       }
@@ -4025,6 +4042,8 @@ export class Sim {
         name: WORM_NAME,
         hp: Math.max(0, w.hp),
         max: w.hpMax,
+        shield: 0,
+        shieldMax: 0,
         ally: false,
       });
     }
@@ -4042,6 +4061,8 @@ export class Sim {
         name: CONVOY_NAME,
         hp: Math.max(0, c.struct.hp),
         max: c.struct.hpMax,
+        shield: 0,
+        shieldMax: 0,
         ally: true,
       });
     }
@@ -8888,6 +8909,7 @@ export class Sim {
       // so does every other read of a shield spec's max/amount/regen
       // (updateAbilities), or the spawn bonus could never refill
       this.ushield[i] = stats.forceField ? stats.forceField.max * this.shieldScale : 0;
+      this.ushieldMax[i] = this.ushield[i];
       this.ushieldAlpha[i] = 0;
       this.uforceScale[i] = 0;
       this.uforceDown[i] = 0;
@@ -9216,6 +9238,7 @@ export class Sim {
           // have one to fill; a bubble refills itself
           if (shield && ushield[j] >= 0 && ushield[j] < shield.max * ss) {
             ushield[j] = Math.min(ushield[j] + shield.amount * ss, shield.max * ss);
+            if (this.ushieldMax[j] < shield.max * ss) this.ushieldMax[j] = shield.max * ss;
             ushieldAlpha[j] = 1;
             did = true;
           }
@@ -9647,6 +9670,7 @@ export class Sim {
       uhp[i] += uhp[j];
       uhpmax[i] += uhpmax[j];
       ushield[i] += ushield[j];
+      this.ushieldMax[i] += this.ushieldMax[j];
       ustack[i] += ustack[j];
       this.merged++;
       usqzT[i] = 0;
@@ -9714,6 +9738,7 @@ export class Sim {
       uhp[i] += uhp[j];
       uhpmax[i] += uhpmax[j];
       ushield[i] += ushield[j];
+      this.ushieldMax[i] += this.ushieldMax[j];
       ustack[i] += ustack[j];
       this.merged++;
       // the same ring the squeeze closes on its survivor — one rule, one
@@ -10104,6 +10129,7 @@ export class Sim {
     this.uarmor[i] = this.uarmor[n];
     this.ushield[i] = this.ushield[n];
     this.ushieldAlpha[i] = this.ushieldAlpha[n];
+    this.ushieldMax[i] = this.ushieldMax[n];
     this.uability[i] = this.uability[n];
     this.upullx[i] = this.upullx[n];
     this.upully[i] = this.upully[n];
