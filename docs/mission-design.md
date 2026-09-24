@@ -127,6 +127,7 @@ thing it added was a body the SWARM shoots rather than one the board does.
 | | |
 |---|---|
 | `EscortMission` | `game/levels.ts` — the type, and Thornway's authored numbers: how many carts, how many may be lost, when the first rolls, which road, where it halts and what it mends |
+| the Branders | the map's `brander` marks (`docs/mission-marks.md`): laser towers over the road, up from the first frame, each a constant beam on the Hauler and on nothing else (`Sim.raiseBranders`, `Sim.pickConvoyAim`) |
 | the cart | `game/levels.ts` (`CONVOY_HP` and the numbers beside it) and `game/convoyArt.ts` (the drawing) |
 | what happens | `Sim.runConvoys`, `launchConvoy`, `updateConvoys`, `damageConvoy`, and the branches in `nearestStructure`, `structureAt`, `inReach` and `damageTower` |
 | what keeps the swarm off it | `Sim.aimIsConvoy` — the cart is a target and never a destination |
@@ -198,7 +199,7 @@ What the archetype turned out to need, and what each piece is answering:
 | `RazeMission` / `RazeSection` | `game/levels.ts` — the type and the clock: when the first battery rises and how far apart they come. `RazeSection.wave` is which rising a section belongs to, so several may share one |
 | the emplacements | the map's `railgun` marks, one a gun (`game/missionMarks.ts`, `missions.ts siegeFromMarks`) |
 | the railgun | `game/levels.ts` (`railgun`, `UnitStats.bombard`), `game/weapons.ts` (the bombard row) and `game/wardenArt.ts` (the drawing). It is **six tiles square** — the hitbox, the grid it is drawn on and the turret plate under it are one number (`RAZE_PLATE_TILES`), so an emplacement reads as the enemy turret it is |
-| the Wardens | four heavy BODIES that walk at the core like the rest of the swarm (`levels.ts` `WARDEN_NAME`, the `warden` tree). No wave may send one and no mission plants one, so nothing puts one on a board today |
+| the Wardens | four heavy BODIES (`levels.ts` `WARDEN_NAME`, the `warden` tree). No wave may send one; a garrison mark posts a preset of them to a circle (`GARRISON_LEVELS`, `docs/mission-marks.md`) |
 | a body that holds ground | `Sim.garrisonUnit`, `Sim.plantUnit`, and the `ugar` arrays — the general mechanism, of which this mission is the first customer |
 | what happens | `Sim.runSections`, `raiseSection`, `clearNear`, `fireBombard`, and the lines in `won()` and `removeUnit` |
 | what the player sees | the objective pane in `components/Animechs.tsx`, and the post overlay in `Game.drawMissionPosts` |
@@ -270,12 +271,10 @@ What Coldline does with it, and what the shape turned out to need:
   4/6 so that the seventh train carries what the fifth did before the
   pattern was lengthened, rather than the x16.7 the old stride would have
   put there.
-- **AND THE WHOLE TRAIN IS A SHARE OF THE TIER.** A Borer is an objective,
-  so its pool carries `tierObjectiveHpScale` like the Sovereign and the
-  siege do — a quarter at Incursion, three quarters at Scourge, all of it
-  from Nemesis up (`docs/difficulty.md`). The ramp rides on top of that
-  share: the tier says how big a train is, the ramp how much heavier this
-  one is than the last.
+- **AND THE WHOLE TRAIN IS THE SAME ON EVERY RUNG.** A Borer is an
+  objective, and an objective's pool does not read the difficulty
+  (`docs/difficulty.md`): the ramp is the only thing that makes one train
+  heavier than another.
 - **It walks an AUTHORED line and it walks it kinematically.** Not the
   flow field, not the crowd shove, not wall collision — a position read
   off a polyline at an arc length. Everything else on the board ends up

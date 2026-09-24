@@ -76,7 +76,7 @@ The loader (`maps.ts marksOf`) drops a mark naming a kind this build does
 not have and fills a missing field from its default, so a document from a
 branch with an extra kind still loads.
 
-## What is on the board today: the buff towers
+## The buff towers
 
 Two of them, on the intercept map. Both are **mission assets** — no wave may
 send one (`UNIT_TREES`, `objective: true`) — and both are bolted down
@@ -164,10 +164,12 @@ A spot in rock is an authoring mistake, and `npm run check` says so.
 
 ## Authoring them
 
-`/admin` → the map → the **Mission** group in the palette. A click stamps
-one; the eraser takes one off. There is nothing to set on a buff tower —
-the only decision is where, and how many. A railgun has one dial, the
-section it rises in, and it is printed on the map.
+`/admin` → the map → the **Mission** group in the palette (the garrison
+presets are under **Structures**, since every map may carry one). A click
+stamps one; the eraser takes one off. There is nothing to set on a buff
+tower or a brander — the only decision is where, and how many. A railgun
+has one dial, the section it rises in; a garrison has its range; both are
+printed on the map.
 
 **Draw more spots than the table asks for.** What sizes a map is the
 mission's own pylon table — how many towers are standing at the last train
@@ -206,9 +208,12 @@ Two dials, both on the mark:
 |---|---|
 | **House** | Small (3x3, `fabricatorSmall`) or Large (6x6, `fabricatorLarge`). The face says which (`game/fabricatorArt.ts`): a bare skull, or a horned skull with its jaw |
 | **Rate** | Slow, Medium, Fast, Extra fast — seconds between one body and the next once it is producing (`FABRICATOR_RATES`: 4, 2, 1, 0.5) |
-| **Rises at** | the wave the house appears on |
 
-**A house is a mine.** It rises dormant and does nothing until the first
+**Every house is standing from the first frame** (`Sim.raiseHouses`, at
+reset). There is no schedule on one: a wave list made a dug-in trap into a
+respawn, and a player who cleared the ground watched it come back.
+
+**A house is a mine.** It stands dormant and does nothing until the first
 hit lands on it — a shot, a splash, fire, anything. Then (`Sim.triggerHouse`):
 
 1. it deals `FABRICATOR_BLAST` (100) to **every structure within
@@ -228,10 +233,51 @@ no wave pays XP for it; the scrap is real. A house is bolted down, unarmed,
 and comes back for nothing once the board kills it — which is what the
 mission counts. Nothing is placed on any map today.
 
-**Rises at** is the one field every rising thing shares: the railgun's
-section, the fabricator's wave. The number is a count on the kind's own
-clock, and the label is the same so the panel reads the same. (The buff
-tower has no rise field while it is a rolled spot.)
+**Rises at** is the railgun's section. (The buff tower has no rise field
+while it is a rolled spot; a fabricator, a brander and a garrison are up
+from the first frame.)
+
+**`brander`** — the laser tower an **escort** map stands over its road
+(`levels.ts` `brander`, `Sim.raiseBranders`). Four tiles, bolted down, up
+from the first frame, and armed with one thing: a **constant held beam on
+the Hauler** (`weapons.ts` `brander-beam`, `UnitStats.huntsConvoy`) out to
+twenty tiles. It shoots nothing else — no structure search at all, and no
+target while no cart is in reach (`Sim.pickConvoyAim`) — so the swarm's
+route is not its business and a turret built beside it is safe from it.
+Where it stands is a leg of road the board has to hold *before* the cart
+gets there: 150 a bite over the cart's forty plating, ten bites a second,
+is about what one halt mends, per tower the cart rolls past. No fields.
+The ground under it is decked like a railgun's.
+
+**`garrison1` … `garrison5`** — a circle of ground the swarm **holds**, and
+the Wardens that hold it. It belongs to **no mission**: a force dug in
+somewhere is a fact about a place, so every map offers all five, under
+**Structures**. One kind per preset, so the palette shows the five as five
+swatches; the only dial on a mark is **Range**, the radius in cells (8 to
+90, 44 by default).
+
+The preset is what stands in it (`levels.ts GARRISON_LEVELS`), Wardens
+only — a garrison is not ordinary swarm, and its four faces
+(`docs/mission-design.md`, `game/wardenArt.ts`) are the machinery a
+player learns once:
+
+| preset | Lance | Bulwark | Halberd | Juggernaut |
+|---|---|---|---|---|
+| T1 | 1 | 1 | | |
+| T2 | 2 | 2 | | |
+| T3 | 4 | 4 | 1 | |
+| T4 | 6 | 6 | 2 | |
+| T5 | 8 | 8 | 3 | 1 |
+
+**The range is the leash and the picture.** It is exactly the circle
+`Sim.garrisonUnit` holds every body to — they fight what the player builds
+inside it and never take a step outside — and exactly the ring the board
+draws (`Game.drawGarrisons`, off `HDR.GARRISON_HELD`). One number, so what
+an author sets is what a player sees.
+
+**Every garrison is manned at mission start** (`Sim.manGarrisons`, at
+reset) **and never again.** A cleared circle is not drawn: it is ground
+that has been taken, and what the ground cost is paid once.
 
 **`road`** — the line a crosser walks (`game/missions.ts`): the Borers'
 lines on an intercept map, the convoy's on an escort one. Its corners are

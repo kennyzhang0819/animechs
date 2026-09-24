@@ -6,7 +6,7 @@ import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // import must never become a value one or the two files form a cycle
 import type { MutationId } from "./mutation";
 
-export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail", "railgun", "goad", "bastion", "bulwark", "lance", "halberd", "juggernaut", "fabricatorSmall", "fabricatorLarge"] as const;
+export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail", "railgun", "goad", "bastion", "bulwark", "lance", "halberd", "juggernaut", "fabricatorSmall", "fabricatorLarge", "brander"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -80,6 +80,9 @@ export const UNIT_ID: Record<UnitKind, number> = {
   // (Sim.runFabricators)
   fabricatorSmall: 56,
   fabricatorLarge: 57,
+  // THE BRANDER (BRANDER_NAME): the laser tower an escort map stands over
+  // its road, which burns the Hauler and nothing else (Sim.raiseBranders)
+  brander: 58,
 };
 
 /**
@@ -163,9 +166,7 @@ export const WORM_NAME = "Borer";
  * player ever does with it is take it down. "Railgun" and not a proper
  * noun, because there are ten of them.
  *
- * THE WARDENS ARE NOT HERE AT ALL. The four machines that used to hold
- * ground beside a railgun are shelved turrets now (types.ts
- * RETIRED_KINDS) and nothing on any board stands one up.
+ * THE WARDENS are what a garrison is made of (GARRISON_LEVELS below).
  */
 export const RAZE_NAME = "Railgun";
 /**
@@ -173,14 +174,32 @@ export const RAZE_NAME = "Railgun";
  * tiered: they are in no family, so none of them has a `Body (rank)` to
  * be built out of the way every other body's name is (UNIT_NAMES).
  *
- * NOTHING PUTS ONE ON A BOARD. No wave may send one (FAMILIES, the
- * `objective: true` trees) and no mission stands one up. They walk at the
- * core like everything else on the ground when something does.
+ * ONLY A GARRISON PUTS ONE ON A BOARD. No wave may send one (FAMILIES, the
+ * `objective: true` trees); a garrison mark (missionMarks.ts GARRISONS)
+ * stands a preset of them in a circle they hold and never leave
+ * (Sim.garrisonUnit).
  */
 export const WARDEN_NAME = "Wardens";
+/**
+ * WHAT ONE PIECE OF HELD GROUND IS MADE OF — five presets, T1 to T5, the
+ * only dial a map sets on a garrison besides where it is and how far it
+ * reaches. A preset and not a roster because the mix that makes a T3 a T3
+ * should be the same fight on every map. Wardens only: see
+ * docs/mission-marks.md.
+ */
+export const GARRISON_LEVELS: readonly Readonly<Partial<Record<UnitKind, number>>>[] = [
+  { lance: 1, bulwark: 1 },
+  { lance: 2, bulwark: 2 },
+  { lance: 4, bulwark: 4, halberd: 1 },
+  { lance: 6, bulwark: 6, halberd: 2 },
+  { lance: 8, bulwark: 8, halberd: 3, juggernaut: 1 },
+];
 
 /** the two buff towers a mission plants over its road (docs/mission-marks.md) */
 export const PYLON_NAME = "Pylons";
+/** the laser tower an escort map plants over its road (missionMarks.ts
+ *  BRANDER): a held beam on the Hauler and on nothing else */
+export const BRANDER_NAME = "Branders";
 
 /** the two houses a map stands up, each sending its tiers of the run's
  *  families on its own clock (docs/mission-marks.md) */
@@ -786,6 +805,9 @@ export interface UnitStats {
    * so ten of them on a board are ten bodies that never walk a ring.
    */
   bombard?: boolean;
+  /** the body shoots the escort's Hauler and nothing else (Sim.pickConvoyAim):
+   *  no structure search, no target while no cart is on the road */
+  huntsConvoy?: boolean;
   /**
    * CLOAK — every `period` seconds the body vanishes for `duration`, and
    * it is drawn as a ghost of itself. `veil` is the flagship's: when it
@@ -1665,10 +1687,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // reached, because 30 still let a mid-calibre turret through at seventy
   // per cent.
   //
-  // HEALTH IS 720,000 AT NEMESIS, five times what the Erekir hull carried,
-  // and it is a SHARE OF THE TIER (ladder.ts tierObjectiveHpScale), like
-  // every objective body: one boss is one boss at every difficulty, so it
-  // pays the size ramp in hit points instead of in bodies.
+  // HEALTH IS 720,000 ON EVERY RUNG, five times what the Erekir hull
+  // carried: one boss is one boss at every difficulty, and an objective
+  // body does not read the ladder (ladder.ts tierObjectiveHpScale).
   //
   // Speed stays at 2.0 tiles/s, the slowest thing in the game, and the
   // turn is slower than anything else that flies: a boss is a deadline the
@@ -2289,6 +2310,23 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   fabricatorSmall: { hp: 36000, speed: 0, armor: 12, radius: UR * 3, tier: 3, rotateSpeed: 30, unslowable: true },
   fabricatorLarge: { hp: 120000, speed: 0, armor: 25, radius: UR * 6, tier: 5, rotateSpeed: 30, unslowable: true },
 
+  // ── THE BRANDER, the escort's laser tower (game/pylonArt.ts) ─────────
+  //
+  // Bolted down like a pylon and armed with one thing: a held beam on the
+  // Hauler (weapons.ts brander-beam, huntsConvoy). A Goad's pool behind a
+  // Goad's plating, so a tower on the road is a position the board has to
+  // buy before the cart gets there rather than a wall it has to grind.
+  brander: {
+    hp: 9000,
+    speed: 0,
+    armor: 14,
+    radius: UR * 4,
+    tier: 5,
+    rotateSpeed: 30,
+    unslowable: true,
+    huntsConvoy: true,
+  },
+
   // ── THE KETTLES, the vulture (game/kettleArt.ts) ──────────────────────
   //
   // THE SECOND THING IN THE SKY, AND THE FIRST THAT ARRIVES. The Skyfall
@@ -2424,9 +2462,8 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // of it visible, and nothing reads them per piece any more.
   //
   // A Borer is an OBJECTIVE, so what actually spawns is this times the
-  // tier's count share (ladder.ts tierObjectiveHpScale) and then times the
-  // launch ramp (wormRamp): a quarter of it at Incursion, all of it from
-  // Nemesis up.
+  // launch ramp (wormRamp) and nothing about the rung (ladder.ts
+  // tierObjectiveHpScale is 1).
   //
   // IT WAS 45,000, THEN 126,000. The first number was measured before the
   // roads were refit straighter and before the train stopped taking the
@@ -2528,10 +2565,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // ── THE WARDENS (WARDEN_NAME) ────────────────────────────────────────
   //
   // FOUR HEAVY BODIES IN NO FAMILY, on no tier ladder, and sendable by
-  // nothing (FAMILIES, the `objective: true` trees). They WALK — at the
-  // core, on the field, like every other body the swarm puts on the
-  // ground — and what makes them different from a wave is weight, not
-  // behaviour. `tier: 5` is the weight class and not a rung, written down
+  // nothing (FAMILIES, the `objective: true` trees). A garrison posts
+  // them to a circle (GARRISON_LEVELS, Sim.garrisonUnit) and what makes
+  // them different from a wave is weight, not behaviour. `tier: 5` is the weight class and not a rung, written down
   // so the audit and the mutators that read a tier (ARMORED_MAX_TIER)
   // treat them as the heavies they are.
 
@@ -2824,10 +2860,13 @@ export const UNIT_TREES = [
   // FABRICATOR, Sim.runFabricators): the slots are not tiers, and a wave
   // may not send a house
   { key: "fabricator", name: FABRICATOR_NAME, kinds: ["fabricatorSmall", "fabricatorLarge"], objective: true },
-  // ...AND THE WARDENS (WARDEN_NAME), which nothing puts on a board at
-  // all. They are here because every kind must be in exactly one tree,
-  // and `objective` keeps them out of every wave and out of the editor's
-  // rows. Four bodies and no upgrade path: the slots are not tiers
+  // THE BRANDER — the laser tower an escort map plants (missionMarks.ts
+  // BRANDER, Sim.raiseBranders). One row, no upgrade path
+  { key: "brander", name: BRANDER_NAME, kinds: ["brander"], objective: true },
+  // ...AND THE WARDENS (WARDEN_NAME), which a garrison mark stands up
+  // (GARRISON_LEVELS). `objective` keeps them out of every wave and out
+  // of the editor's rows. Four bodies and no upgrade path: the slots are
+  // not tiers
   { key: "warden", name: WARDEN_NAME, kinds: ["bulwark", "lance", "halberd", "juggernaut"], objective: true },
 ] as const satisfies readonly {
   key: string;
@@ -4345,15 +4384,9 @@ export interface LevelSpec {
   enemyLevel?: number;
   /** which tier of the ladder this spec was expanded for; unset = baseline */
   tier?: number;
-  /**
-   * THE OBJECTIVE BODIES' SHARE OF THE SIZE RAMP (ladder.ts
-   * tierObjectiveHpScale): a wave's count is scaled to the tier, but a
-   * mission puts down ONE body whatever the difficulty, so every
-   * OBJECTIVE_KINDS body pays that share in HEALTH instead. Nothing else
-   * on the roster reads this.
-   *
-   * Unset (the authored baseline) means 1. Set by specForTier().
-   */
+  /** what every OBJECTIVE_KINDS body's health is multiplied by (ladder.ts
+   *  tierObjectiveHpScale) — 1 on every rung: a mission's body does not
+   *  read the difficulty. Unset means 1. Set by specForTier(). */
   objectiveHpScale?: number;
   /**
    * THE FAMILIES THIS RUN SENDS — the die roll (rollFamilies) the deploy

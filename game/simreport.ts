@@ -111,8 +111,12 @@ export const HDR = {
   /** the sweep's ledger (levels.ts SweepMission): houses down, houses drawn */
   FAB_KILLED: 32,
   FAB_TOTAL: 33,
+  /** which garrison circles are still held, one bit per mark in document
+   *  order (Sim.garrisonHeldMask) — the leash does not cross the seam, so
+   *  the overlay cannot work it out from kinds */
+  GARRISON_HELD: 34,
 } as const;
-export const HEADER_LEN = 34;
+export const HEADER_LEN = 35;
 
 /** the sim's scalars, into its own header — after every step, and on reset */
 export function writeHeader(sim: Sim): void {
@@ -145,6 +149,7 @@ export function writeHeader(sim: Sim): void {
   h[HDR.RAZE_UP] = sim.razeUp();
   h[HDR.FAB_KILLED] = sim.fabKilled;
   h[HDR.FAB_TOTAL] = sim.fabTotal;
+  h[HDR.GARRISON_HELD] = sim.garrisonHeldMask();
   h[HDR.CONVOY_DONE] = sim.convoyDone;
   h[HDR.CONVOY_LOST] = sim.convoyLost;
   {

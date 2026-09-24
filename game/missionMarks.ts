@@ -8,7 +8,7 @@
  * that knows both, so adding a mission's furniture is one entry here
  * rather than an edit to the editor, the loader and the panel.
  */
-import { FABRICATOR_KINDS, FABRICATOR_TILES, type Mission, type UnitKind } from "./levels";
+import { FABRICATOR_KINDS, FABRICATOR_TILES, GARRISON_LEVELS, type Mission, type UnitKind } from "./levels";
 import type { TowerKind } from "./types";
 import { TOWERS } from "./constants";
 
@@ -128,9 +128,8 @@ export function parseWaves(raw: string | number | undefined): number[] {
  *  wave the mission never sends simply never comes */
 export const WAVE_CEIL = 40;
 
-/** THE ONE FIELD EVERY RISING THING SHARES: when it comes up, as a count
- *  on its kind's clock — a wave for a fabricator, a section for a railgun.
- *  One label so the editor reads the same for all of them */
+/** when a thing comes up, as a count on its kind's clock — a section for
+ *  a railgun. One label so the editor reads the same for all of them */
 export const risesAt = (max: number, def: number): MarkField => ({
   key: "wave",
   label: "Rises at",
@@ -201,8 +200,8 @@ const RAILGUN: MarkKind = {
 
 /**
  * A FABRICATOR — one house the sweep has to bring down (levels.ts
- * SweepMission). It rises on its wave and stands DORMANT, a mine: the first
- * hit sets it off (Sim.triggerHouse) — a blast on every structure round it,
+ * SweepMission). It is standing from the first frame (Sim.raiseHouses)
+ * and stands DORMANT, a mine: the first hit sets it off (Sim.triggerHouse) — a blast on every structure round it,
  * which sets off every house inside that, a burst of the swarm, and from
  * then on a body a tick of its clock (FABRICATOR_RATES): the small one rolls a
  * tier from T1-T3, the large one from T4-T5. Any number may be drawn.
@@ -241,8 +240,26 @@ const FABRICATOR: MarkKind = {
       ],
       def: "medium",
     },
-    risesAt(WAVE_CEIL, 1),
   ],
+};
+
+/**
+ * A BRANDER — the laser tower an escort map stands over its road
+ * (levels.ts brander, Sim.raiseBranders). Up from the first frame, bolted
+ * down, and its held beam burns the Hauler and nothing else, out to
+ * twenty tiles: where it stands is a leg of road the board has to hold
+ * before the cart gets there.
+ */
+const BRANDER: MarkKind = {
+  id: "brander",
+  label: "Brander",
+  missions: ["escort"],
+  geom: "point",
+  size: 4,
+  color: "#ff5c73",
+  unit: "brander",
+  pad: 1,
+  fields: [],
 };
 
 /**
@@ -276,7 +293,34 @@ const ROAD: MarkKind = {
   fields: [{ key: "name", label: "Name", kind: "text", def: "the line" }],
 };
 
-export const MARK_KINDS: readonly MarkKind[] = [BUFF_TOWER, RAILGUN, FABRICATOR, ROAD];
+/**
+ * A GARRISON — a circle of ground the swarm HOLDS, and the Wardens that
+ * hold it (levels.ts GARRISON_LEVELS). It belongs to no mission: a force
+ * dug in somewhere is a fact about a PLACE, so every map may carry one.
+ *
+ * `radius` is exactly the circle Sim.garrisonUnit holds every body to and
+ * exactly the ring the board draws. Every garrison is manned at reset and
+ * never again: clearing one is permanent. One kind per preset, so the
+ * palette offers the five as five swatches.
+ */
+export const GARRISON_KIND_PREFIX = "garrison";
+export const GARRISONS: readonly MarkKind[] = GARRISON_LEVELS.map((roster, i) => ({
+  id: `${GARRISON_KIND_PREFIX}${i + 1}`,
+  label: `T${i + 1} garrison circle`,
+  geom: "point",
+  size: 4,
+  color: "#ffb44a",
+  // the face is the heaviest body the preset stands
+  unit: (["juggernaut", "halberd", "bulwark", "lance"] as const).find((k) => (roster[k] ?? 0) > 0) ?? "bulwark",
+  pad: 0,
+  radiusField: "radius",
+  fields: [{ key: "radius", label: "Range", kind: "int", min: 8, max: 90, def: 44 }],
+}));
+/** the preset a garrison mark stands, 1-based, or 0 for any other kind */
+export const garrisonLevel = (kind: string): number =>
+  kind.startsWith(GARRISON_KIND_PREFIX) ? Number(kind.slice(GARRISON_KIND_PREFIX.length)) || 0 : 0;
+
+export const MARK_KINDS: readonly MarkKind[] = [BUFF_TOWER, RAILGUN, FABRICATOR, BRANDER, ...GARRISONS, ROAD];
 
 /** the turret a mark stands up, where it stands one — the TowerKind twin
  *  of markUnit */

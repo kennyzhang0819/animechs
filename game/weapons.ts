@@ -627,6 +627,13 @@ const WARDEN_LASER = laserStyle({
   lifetime: t(16),
 });
 
+/** the Brander's held beam (UNIT_WEAPONS brander): the Wardens' red over
+ *  black, in the four washes a held beam is drawn in */
+const BRANDER_BEAM = beamStyle({
+  colors: [[WARDEN_SHOT_BACK, 0.25], [WARDEN_SHOT_BACK, 0.55], [WARDEN_SHOT, 1], [WHITE, 1]],
+  width: 7,
+});
+
 export const TOWER_LASER_STYLE: Partial<Record<TowerKind, number>> = {
   tether: TETHER_LASER.id,
 };
@@ -1642,6 +1649,18 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // ...and neither does a fabricator: it sends bodies, and they shoot
   fabricatorSmall: [],
   fabricatorLarge: [],
+  // THE BRANDER'S BEAM is CONSTANT: a held beam that bites the Hauler
+  // (levels.ts huntsConvoy) every tenth of a second, no charge, and a
+  // reload of nothing so the next burn opens the tick the last goes out.
+  // Twenty tiles of reach against the cart's twelve-tile box, and 150 a
+  // bite over the cart's forty plating is ~1,100 a second — a leg past
+  // one tower costs the cart what one halt mends
+  brander: [
+    {
+      name: "brander-beam", reload: 0, mounts: 1, damage: 150, range: u(160), speed: 0, fx: "laser",
+      beam: { duration: 2, interval: t(6) }, beamStyle: BRANDER_BEAM,
+    },
+  ],
 };
 
 /**

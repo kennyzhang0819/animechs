@@ -145,6 +145,7 @@ import {
   GOAD_SPEED_MUL,
   pylonRamp,
   ACTIVE_FAMILIES,
+  GARRISON_LEVELS,
   FABRICATOR_BLAST,
   FABRICATOR_BLAST_TILES,
   FABRICATOR_BURST,
@@ -269,8 +270,8 @@ import {
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
 import { markKind, markOpts, markSize } from "./missionMarks";
 import {
-  levelWithMarks, postProblems, postsFor, roadAt, roadProblems, roadsFor,
-  siegeFromMarks, type MarkSiege, type Post, type Road,
+  garrisonsFor, levelWithMarks, postProblems, postsFor, roadAt, roadProblems, roadsFor,
+  siegeFromMarks, type MarkGarrison, type MarkSiege, type Post, type Road,
 } from "./missions";
 import { NO_UPGRADES, skilledTower, upgradedTower, type TechState } from "./tech";
 
@@ -799,6 +800,9 @@ const KIND_SEEK = Float64Array.from(UNIT_KINDS, (k) =>
  */
 const KIND_BOMBARD = Uint8Array.from(UNIT_KINDS, (k) => (UNIT_STATS[k].bombard ? 1 : 0));
 const HAS_BOMBARD = KIND_BOMBARD.some((b) => b === 1);
+/** shoots the escort's cart and nothing else (levels.ts huntsConvoy) */
+const KIND_HUNTS_CONVOY = Uint8Array.from(UNIT_KINDS, (k) => (UNIT_STATS[k].huntsConvoy ? 1 : 0));
+const HAS_HUNTS_CONVOY = KIND_HUNTS_CONVOY.some((b) => b === 1);
 /**
  * THE STARBURST (levels.ts UnitStats.starburst), the Grapnels' trait, and
  * the stars it throws (weapons.ts GRAPNEL_STARS) resolved per KIND — the
@@ -1555,9 +1559,15 @@ export class Sim {
    * come back, so what a run pays to clear a leg of road it pays once.
    */
   private towerSpots: { x: number; y: number }[] = [];
-  /** the fabricators the map carries (missionMarks.ts FABRICATOR), each
-   *  spent once when its wave comes round (runFabricators) */
-  private fabSpots: { x: number; y: number; kind: UnitKind; wave: number; every: number; up: boolean }[] = [];
+  /** where the escort map's laser towers stand (missionMarks.ts BRANDER),
+   *  all up at reset (raiseBranders) */
+  private branderSpots: { x: number; y: number }[] = [];
+  /** the ground the swarm holds on this map (missions.ts garrisonsFor),
+   *  manned once at reset (manGarrisons) and never again */
+  private garrisons: readonly MarkGarrison[] = [];
+  /** the fabricators the map carries (missionMarks.ts FABRICATOR), all
+   *  stood up at reset (raiseHouses) */
+  private fabSpots: { x: number; y: number; kind: UnitKind; every: number }[] = [];
   /** a standing house's clock: seconds to its next body, and the gap */
   private readonly ufabT = new Float32Array(MAX_UNITS);
   private readonly ufabEvery = new Float32Array(MAX_UNITS);
@@ -2711,8 +2721,20 @@ export class Sim {
         const half = (MARK_TOWER_SIZE * CELL) / 2;
         this.towerSpots.push({ x: mk.x * CELL + half, y: mk.y * CELL + half });
       }
+    this.branderSpots = [];
+    if (this.level.mission.kind === "escort")
+      for (const mk of this.terrain.marks) {
+        if (mk.kind !== "brander") continue;
+        const half = (markSize(mk) * CELL) / 2;
+        this.branderSpots.push({ x: mk.x * CELL + half, y: mk.y * CELL + half });
+      }
+    this.garrisons = garrisonsFor(this.terrain.marks);
+    for (const g of this.garrisons) {
+      const bad = postProblems(g.post);
+      if (bad.length > 0) throw new Error(`${this.level.name}: ${bad.join("; ")}`);
+    }
     // THE FABRICATORS AN AUTHOR PLACED (missionMarks.ts FABRICATOR), on
-    // any mission; nothing is put down yet (runFabricators)
+    // any mission; they stand up at the foot of this method (raiseHouses)
     const fabKind = markKind("fabricator");
     if (fabKind)
       for (const mk of this.terrain.marks) {
@@ -2723,9 +2745,7 @@ export class Sim {
           x: mk.x * CELL + half,
           y: mk.y * CELL + half,
           kind: o.house as UnitKind,
-          wave: Number(o.wave),
           every: FABRICATOR_RATES[o.rate as FabricatorRate],
-          up: false,
         });
       }
     this.fabTotal = this.fabSpots.length;
@@ -2853,6 +2873,12 @@ export class Sim {
         );
     this.stageScript();
     this.aliveByKind.fill(0);
+    // ...AND WHAT IS STANDING BEFORE THE CLOCK STARTS, last: these are real
+    // bodies, so the census above has to be zeroed before they are counted,
+    // and clearNear needs the field solved a few lines up
+    this.raiseHouses();
+    this.manGarrisons();
+    this.raiseBranders();
   }
 
   loadLevel(spec: LevelSpec): void {
@@ -5015,9 +5041,8 @@ export class Sim {
       this.removeUnit(i);
     }
     this.crossSweeping = false;
-    // a swept house comes back up with the moment jumped to, like every
-    // launch the jump passed over (runFabricators)
-    for (const f of this.fabSpots) f.up = false;
+    // a swept house comes back up with the moment jumped to (raiseHouses)
+    this.raiseHouses();
     // ...and the corpses go with them, or Reconstruction stands a skipped
     // wave back up in the middle of the one jumped to (updateCorpses). A
     // corpse is a body its wave is still owed (killUnit un-books it), so
@@ -5433,17 +5458,14 @@ export class Sim {
   }
 
   /**
-   * THE FABRICATORS AN AUTHOR PLACED (missionMarks.ts FABRICATOR): each
-   * rises on the wave its mark names and stands DORMANT until the first
-   * hit lands on it (damageUnit), goes off (triggerHouse), and from then on
-   * sends a batch every `every` seconds drawn from the run's own
-   * families (runFamilies). On the wave clock, so a jump raises what it
-   * passed.
+   * THE FABRICATORS AN AUTHOR PLACED (missionMarks.ts FABRICATOR), all up
+   * from the first frame. Each stands DORMANT until the first hit lands on
+   * it (damageUnit), goes off (triggerHouse), and from then on sends a
+   * batch every `every` seconds drawn from the run's own families
+   * (runFamilies).
    */
-  private runFabricators(dt: number): void {
+  private raiseHouses(): void {
     for (const f of this.fabSpots) {
-      if (f.up || this.wavesStarted < f.wave) continue;
-      f.up = true;
       if (!this.spawnUnit(f.kind, { x: f.x, y: f.y, exact: true }, 0)) continue;
       const i = this.n - 1;
       this.plantUnit(i);
@@ -5455,6 +5477,22 @@ export class Sim {
       this.ubrot[i] = -Math.PI / 2;
       this.uheldRot[i] = -Math.PI / 2;
     }
+  }
+
+  /** the escort map's laser towers, where the author put them, up from the
+   *  first frame and facing up until a cart is in reach (pickConvoyAim) */
+  private raiseBranders(): void {
+    for (const s of this.branderSpots) {
+      if (!this.spawnUnit("brander", { x: s.x, y: s.y, exact: true }, 0)) continue;
+      const i = this.n - 1;
+      this.plantUnit(i);
+      this.urot[i] = -Math.PI / 2;
+      this.ubrot[i] = -Math.PI / 2;
+      this.uheldRot[i] = -Math.PI / 2;
+    }
+  }
+
+  private runFabricators(dt: number): void {
     let standing = 0;
     for (const id of FABRICATOR_IDS) standing += this.aliveByKind[id];
     if (standing === 0) return;
@@ -5571,8 +5609,21 @@ export class Sim {
       const spot = this.clearNear(wantX, wantY, HB_OUTER[UNIT_ID.railgun]);
       this.raiseGun(spot.x, spot.y);
     }
-    for (const [kind, n] of Object.entries(sec.guards) as [UnitKind, number][]) {
-      for (let g = 0; g < Math.max(0, Math.floor(n)); g++) {
+    this.raiseGarrison(post, sec.guards);
+  }
+
+  /** every garrison the map carries, manned once at reset (missionMarks.ts
+   *  GARRISONS): ground the swarm already holds, so clearing one is
+   *  permanent */
+  private manGarrisons(): void {
+    for (const g of this.garrisons)
+      this.raiseGarrison(g.post, GARRISON_LEVELS[clamp(g.level, 1, GARRISON_LEVELS.length) - 1]);
+  }
+
+  /** a roster scattered inside a post and leashed to it */
+  private raiseGarrison(post: Post, guards: Readonly<Partial<Record<UnitKind, number>>>): void {
+    for (const [kind, n] of Object.entries(guards) as [UnitKind, number][]) {
+      for (let g = 0; g < Math.max(0, Math.floor(n ?? 0)); g++) {
         // anywhere inside the post, biased outward: sqrt of a uniform roll
         // spreads them evenly over the AREA rather than piling them at the
         // middle, which is where the railguns already are
@@ -5583,6 +5634,20 @@ export class Sim {
         this.garrisonUnit(this.n - 1, post.x, post.y, post.r);
       }
     }
+  }
+
+  /** which garrison circles are still held, one bit each in document order
+   *  (simreport.ts GARRISON_HELD) — read off the leash, not the kind */
+  garrisonHeldMask(): number {
+    let mask = 0;
+    for (let i = 0; i < this.n; i++) {
+      if (this.ugar[i] !== 1 || this.uhp[i] <= 0) continue;
+      for (let r = 0; r < this.garrisons.length && r < 30; r++) {
+        const post = this.garrisons[r].post;
+        if (this.ugarx[i] === post.x && this.ugary[i] === post.y) mask |= 1 << r;
+      }
+    }
+    return mask;
   }
 
   /**
@@ -6780,6 +6845,19 @@ export class Sim {
    * updateUnitWeapons); without it, the nearest in reach, and whether the
    * body may FIRE at that is a separate question asked once per decision.
    */
+  /** the cart in reach, for a body that shoots nothing else (huntsConvoy) */
+  private pickConvoyAim(x: number, y: number, reach: number): Aim | null {
+    for (const c of this.convoys) {
+      if (c.dead || c.home || c.struct.hp <= 0) continue;
+      const t = c.struct;
+      const half = (t.size * CELL) / 2;
+      const dx = t.x - x, dy = t.y - y;
+      if (Math.sqrt(dx * dx + dy * dy) - half > reach) continue;
+      return { x: t.x, y: t.y, half, s: t };
+    }
+    return null;
+  }
+
   private pickAim(x: number, y: number, reach: number, sighted: boolean): Aim | null {
     this.picks++;
     const s = this.nearestStructure(x, y, reach, sighted);
@@ -6886,7 +6964,10 @@ export class Sim {
         // so what it picks must be a thing it can walk straight at, and
         // its reach is a few tiles — a ray a candidate costs nothing there.
         const seek = HAS_CHARGE && KIND_CHARGE[ukind[i]] > 0;
-        tgt = this.pickAim(x, y, reach, sighted && seek);
+        tgt =
+          HAS_HUNTS_CONVOY && KIND_HUNTS_CONVOY[ukind[i]]
+            ? this.pickConvoyAim(x, y, reach)
+            : this.pickAim(x, y, reach, sighted && seek);
         // A POSTED BODY SEES ONLY ITS OWN GROUND (see ugar). The pick is
         // the ordinary one and then it is CLIPPED to the post's circle:
         // anything standing outside the leash is not a target, however
@@ -6906,6 +6987,16 @@ export class Sim {
           if (gx * gx + gy * gy > this.ugarr[i] * this.ugarr[i]) tgt = null;
         }
         utgt[i] = tgt;
+        utcell[i] = -1;
+      }
+      // a cart moves between re-picks, so a hunter's aim follows it and
+      // the hull (a planted body, never turned by the drive) turns with it
+      if (tgt && HAS_HUNTS_CONVOY && KIND_HUNTS_CONVOY[ukind[i]]) {
+        tgt.x = tgt.s.x;
+        tgt.y = tgt.s.y;
+        const a = Math.atan2(tgt.y - y, tgt.x - x);
+        urot[i] = a;
+        this.ubrot[i] = a;
         utcell[i] = -1;
       }
       // THE SIGHT, ONCE PER DECISION. A ground or naval body asks whether it
@@ -8090,10 +8181,8 @@ export class Sim {
    *
    * Two dials, and they are the run's rather than the body's: the LEVEL
    * curve (the spec's enemyLevel plus whatever the loop has added), and
-   * the OBJECTIVE BODIES' SHARE OF THE SIZE RAMP (ladder.ts
-   * tierObjectiveHpScale) — a quarter of their health at Incursion and all
-   * of it from Nemesis up, because a mission puts down one body whatever
-   * the difficulty. Both come off the level document; unset is 1.
+   * the objective bodies' scale (ladder.ts tierObjectiveHpScale), which is
+   * 1 on every rung today. Both come off the level document; unset is 1.
    */
   private baseHpOf(kind: UnitKind): number {
     return unitHpOnRung(kind, (this.level.enemyLevel ?? 0) + this.loopLevel, this.level.objectiveHpScale ?? 1);

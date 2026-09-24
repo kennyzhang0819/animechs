@@ -599,16 +599,16 @@ for (const w of L.WORLDS) {
   } else {
     say(`mission kind "${m.kind}" has no objective the sim knows how to meet`);
   }
-  // ...and the fabricators, which any mission may carry (missionMarks.ts
-  // FABRICATOR): a house dropped in rock is one nothing can see to shoot
+  // ...and the fabricators and branders (missionMarks.ts FABRICATOR,
+  // BRANDER): a body dropped in rock is one nothing can see to shoot
   for (const mk of sim.terrain.marks) {
-    if (mk.kind !== "fabricator") continue;
+    if (mk.kind !== "fabricator" && mk.kind !== "brander") continue;
     const size = MK.markSize(mk);
     let rock = 0;
     for (let y = mk.y; y < mk.y + size; y++)
       for (let x = mk.x; x < mk.x + size; x++)
         if (sim.terrain.blocked[y * COLS + x]) rock++;
-    if (rock > 0) say(`a fabricator at ${mk.x},${mk.y} stands on ${rock} cells of rock`);
+    if (rock > 0) say(`a ${mk.kind} at ${mk.x},${mk.y} stands on ${rock} cells of rock`);
   }
 }
 report(

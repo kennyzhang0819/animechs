@@ -9,7 +9,7 @@ import {
   refreshMap,
   SPAWN_STYLE,
 } from "./maps";
-import { postsFor, roadAt, roadsFor, siegeFor } from "./missions";
+import { garrisonsFor, postsFor, roadAt, roadsFor, siegeFor } from "./missions";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { towerBaseIcon, towerGhostIcon } from "./towerIcons";
 import {
@@ -626,16 +626,13 @@ const MM_SCALE = 1;
  * ground under it. Bodies read a touch smaller than structures: a line of
  * turrets is what the map is read for, and it wins the overdraw.
  *
- * Both numbers are ONE AND A HALF times what they first were (2.5 and 3).
- * A mark at those sizes was two or three screen px on a 13rem canvas —
- * legible only if you already knew where to look, which is not what a
- * corner map is for. Double read as blobs: a handful of bodies merged
- * into one red smear and the line swallowed the ground it stood on. At
- * three and a half a body is a clear speck and the line is a clear bar,
- * with the ground still visible between them.
+ * They were 2.5 and 3 (two or three screen px on a 13rem canvas, legible
+ * only if you knew where to look), then 3.75 and 4.5, which ran a handful
+ * of bodies into one smear. A touch under that keeps a body a clear speck
+ * and the line a clear bar with ground still visible between them.
  */
-const MM_UNIT_PX = 3.75;
-const MM_STRUCT_PX = 4.5;
+const MM_UNIT_PX = 3.25;
+const MM_STRUCT_PX = 4;
 /**
  * ...AND THE PINS, which are not bodies on this map, they are the
  * OBJECTIVES. On the intercept mission the one question a glance at the
@@ -4007,6 +4004,31 @@ export class Game {
    * — nothing about the line is a question for the sim, because nothing
    * about it ever changes during a run.
    */
+  /**
+   * THE GROUND THE SWARM HOLDS (missionMarks.ts GARRISONS), ringed while it
+   * is held: the circle is exactly the leash (Sim.garrisonUnit), and a
+   * cleared one is not drawn — it is ground that has been taken.
+   */
+  private drawGarrisons(c: CanvasRenderingContext2D): void {
+    const rings = garrisonsFor(this.world.terrain.marks);
+    if (rings.length === 0) return;
+    const mask = this.world.garrisonHeld;
+    c.save();
+    c.beginPath();
+    c.rect(0, 0, W, H);
+    c.clip();
+    c.strokeStyle = SPAWN_STYLE.css;
+    c.globalAlpha = 0.16;
+    c.lineWidth = 2;
+    for (const [n, g] of rings.entries()) {
+      if ((mask & (1 << n)) === 0) continue;
+      c.beginPath();
+      c.arc(g.post.x, g.post.y, g.post.r, 0, Math.PI * 2);
+      c.stroke();
+    }
+    c.restore();
+  }
+
   private drawMissionRoads(c: CanvasRenderingContext2D): void {
     const level = this.world.level;
     const m = level.mission;
@@ -4239,6 +4261,7 @@ export class Game {
     // mission. So it is drawn thin and dark under everything — a line on
     // the ground, not a marker over it.
     this.drawMissionRoads(c);
+    this.drawGarrisons(c);
     // ...and the siege's batteries, on the same layer and for the same
     // reason: the mission's geometry belongs under the fight
     this.drawMissionPosts(c);

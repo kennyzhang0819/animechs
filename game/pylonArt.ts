@@ -1,6 +1,7 @@
 /**
  * THE PYLONS — the two buff towers a mission plants over its road
- * (levels.ts `goad`, `bastion`; docs/mission-marks.md).
+ * (levels.ts `goad`, `bastion`; docs/mission-marks.md), and the BRANDER,
+ * the escort's laser tower, on the same rig (levels.ts `brander`).
  *
  * They are the siege's machines' cousins and are drawn out of the same
  * plate, bore and crux (wardenArt.ts ARMOUR / CRUX): a body that was BUILT
@@ -35,6 +36,7 @@ const ARMOUR_R = rev(ARMOUR);
  *  the footprint both towers are authored to (levels.ts, UR x 4) */
 export const GOAD_TIER: WardenTier = { n: 128, stride: 0 };
 export const BASTION_TIER: WardenTier = { n: 128, stride: 0 };
+export const BRANDER_TIER: WardenTier = { n: 128, stride: 0 };
 
 // ── the Goad ───────────────────────────────────────────────────────────
 //
@@ -94,6 +96,34 @@ function bastionBody(P: Pen, T: WardenTier): void {
   bars(P, q(11), n - q(11), n - q(9), 2, w(3), w(2));
 }
 
+// ── the Brander ────────────────────────────────────────────────────────
+//
+// A LENS ON A TUBE. The one of the three that IS a gun (levels.ts
+// brander, a held beam on the Hauler), so unlike the pair above it has a
+// barrel: one emitter tube up the middle with the crux lens at its tip, a
+// steel coil round the tube where it leaves the housing, and a low plated
+// housing behind. Its outline is a T where the Goad is a fork and the
+// Bastion a wedge.
+function branderBody(P: Pen, T: WardenTier): void {
+  const { n } = T;
+  const { q, w } = scaler(n);
+  const c = n / 2;
+  // the housing: squat and wide, chamfered
+  P.octa(q(6), q(14), n - q(6), n - q(6), w(5), ARMOUR);
+  P.octa(q(6), q(14), q(6) + w(4), n - q(6), w(5), ARMOUR_R);
+  // the tube, from the housing to the top of the grid
+  P.box(c - w(4), q(1), c + w(4), q(22), ARMOUR);
+  P.box(c - w(4), q(1), c - w(4) + w(3), q(22), ARMOUR_R);
+  // THE LENS at the tip: the one accent, and the thing the beam comes out of
+  P.box(c - w(4), q(1), c + w(4), q(5), CRUX);
+  P.box(c - w(4), q(1), c + w(4), q(1) + w(2), rev(CRUX));
+  // the coil where the tube leaves the housing
+  P.ring(c, q(16), w(5), w(2), STEEL);
+  // the sink at the back, vented
+  P.octa(q(9), n - q(11), n - q(9), n - q(5), w(3), GUN);
+  bars(P, q(12), n - q(12), n - q(10), 2, w(3), w(2));
+}
+
 /** THE PLATE EACH STANDS ON — the turrets' own gunmetal (turretArt.ts GUN),
  *  which is what says "somebody built this here" on a body that is not a
  *  turret. It covers the BACK and no more, like the railgun's: a plate that
@@ -130,6 +160,7 @@ const pylonMech = (T: WardenTier, body: (P: Pen, T: WardenTier) => void): MechPa
 
 export const goadMech = (T: WardenTier = GOAD_TIER): MechParts => pylonMech(T, goadBody);
 export const bastionMech = (T: WardenTier = BASTION_TIER): MechParts => pylonMech(T, bastionBody);
+export const branderMech = (T: WardenTier = BRANDER_TIER): MechParts => pylonMech(T, branderBody);
 
 /** the materials this file draws with, for the concept sheets and the
  *  check that every team cell has pixels in it (scripts/check.mjs) */
