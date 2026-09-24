@@ -2571,29 +2571,29 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // so the audit and the mutators that read a tier (ARMORED_MAX_TIER)
   // treat them as the heavies they are.
 
-  // THE BULWARK — the wall. A Tusker apex's pool and a Tusker apex's
+  // THE BULWARK — the wall. A little under a Tusker apex's pool and
   // plating on a body whose whole reach is its ram: it CHARGES like the
   // elephants do and for the same reason, and everything it costs a board
   // is paid at arm's length.
   bulwark: {
-    hp: 25000,
+    hp: 21000,
     speed: 2.6 * CELL,
-    armor: 104,
+    armor: 85,
     radius: UR * 4,
     tier: 5,
     rotateSpeed: 1.6,
     charge: { range: 22 * CELL },
   },
 
-  // THE LANCE — the needle. The Starlight apex's pool and the Starlight
-  // apex's bite (weapons.ts) on the quickest heavy body in the game: five
+  // THE LANCE — the needle. A little under the Starlight apex's pool, with
+  // its bite (weapons.ts), on the quickest heavy body in the game: five
   // tiles a second, twice the Bulwark and faster than anything else this
   // size. One of them is a wall you cannot get past and the other is a
   // gun you cannot get away from.
   lance: {
-    hp: 17000,
+    hp: 14500,
     speed: 5 * CELL,
-    armor: 14,
+    armor: 12,
     radius: UR * 2.25,
     tier: 5,
     rotateSpeed: 4.5,
@@ -2604,9 +2604,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // pull and a bubble that has to come down before any of it can be
   // answered.
   halberd: {
-    hp: 55000,
+    hp: 46000,
     speed: 2.2 * CELL,
-    armor: 115,
+    armor: 95,
     radius: UR * 5,
     tier: 5,
     rotateSpeed: 1.4,
@@ -2617,9 +2617,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // this game, slower than anything else that walks, throwing missiles
   // out of both flanks the whole way in.
   juggernaut: {
-    hp: 200000,
+    hp: 170000,
     speed: 1.6 * CELL,
-    armor: 150,
+    armor: 125,
     radius: UR * 7,
     tier: 5,
     rotateSpeed: 0.9,
