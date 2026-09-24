@@ -3445,24 +3445,29 @@ export default function Animechs() {
                     the full height the stack was a wall across the top of
                     the board. Ten px still carries the light and dark
                     rows that make it a trough */}
-                <div className="ms-bar h-[10px] w-full">
-                  <div
-                    className="transition-[width] duration-150 ease-linear"
-                    style={{
-                      width: `${Math.max(0, Math.min(100, (100 * b.hp) / Math.max(1, b.max)))}%`,
-                      background: b.ally ? "#EDEDEF" : "#e55454",
-                    }}
-                  />
-                  {/* the shield as GLASS over the bar: a translucent pane
-                      its pool's share wide, so the layer is seen thinning
-                      while the health under it stays legible through it */}
+                <div className="relative">
+                  <div className="ms-bar h-[10px] w-full">
+                    <div
+                      className="transition-[width] duration-150 ease-linear"
+                      style={{
+                        width: `${Math.max(0, Math.min(100, (100 * b.hp) / Math.max(1, b.max)))}%`,
+                        background: b.ally ? "#EDEDEF" : "#e55454",
+                      }}
+                    />
+                  </div>
+                  {/* the shield as a CASING round the bar: a bold frame
+                      reaching past the trough on every side with glass
+                      inside it, the pool's share wide, so the box is seen
+                      shortening from the right as the pool burns down */}
                   {b.shieldMax > 0 && b.shield > 0 && (
                     <div
-                      className="absolute inset-y-0 left-0 transition-[width] duration-150 ease-linear"
+                      className="pointer-events-none absolute -inset-y-[4px] -left-[4px] transition-[width] duration-150 ease-linear"
                       style={{
-                        width: `${Math.max(0, Math.min(100, (100 * b.shield) / b.shieldMax))}%`,
-                        background: "rgba(200,236,255,0.5)",
-                        boxShadow: "inset 0 2px 0 rgba(255,255,255,0.6)",
+                        width: `calc(${Math.max(0, Math.min(100, (100 * b.shield) / b.shieldMax))}% + 8px)`,
+                        maxWidth: "calc(100% + 8px)",
+                        background: "rgba(160,220,255,0.35)",
+                        border: "2px solid rgba(210,242,255,0.95)",
+                        boxSizing: "border-box",
                       }}
                     />
                   )}

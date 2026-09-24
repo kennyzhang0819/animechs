@@ -178,16 +178,24 @@ function HealthBar({ hp, max, shield = 0, shieldMax = 0 }: { hp: number; max: nu
   const color = f > 2 / 3 ? "#7BE58A" : f > 1 / 3 ? "#FFD37F" : "#e55454";
   return (
     <div className="flex items-center gap-2">
-      <div className="relative h-[10px] w-[9rem] overflow-hidden border border-[#26262b] bg-[#101013]">
-        <div
-          className="absolute inset-y-0 left-0 transition-[width] duration-150"
-          style={{ width: `${f * 100}%`, background: color }}
-        />
-        {/* the shield as glass over the bar — see the objective stack */}
-        {g > 0 && (
+      <div className="relative">
+        <div className="relative h-[10px] w-[9rem] overflow-hidden border border-[#26262b] bg-[#101013]">
           <div
             className="absolute inset-y-0 left-0 transition-[width] duration-150"
-            style={{ width: `${g * 100}%`, background: "rgba(200,236,255,0.5)", boxShadow: "inset 0 2px 0 rgba(255,255,255,0.6)" }}
+            style={{ width: `${f * 100}%`, background: color }}
+          />
+        </div>
+        {/* the shield as a casing round the bar — see the objective stack */}
+        {g > 0 && (
+          <div
+            className="pointer-events-none absolute -inset-y-[3px] -left-[3px] transition-[width] duration-150"
+            style={{
+              width: `calc(${g * 100}% + 6px)`,
+              maxWidth: "calc(100% + 6px)",
+              background: "rgba(160,220,255,0.35)",
+              border: "2px solid rgba(210,242,255,0.95)",
+              boxSizing: "border-box",
+            }}
           />
         )}
       </div>

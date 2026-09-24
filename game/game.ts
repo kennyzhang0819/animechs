@@ -989,9 +989,12 @@ const ENEMY_HP = "#FF5A5A";
 /** the soak band: health already forfeit, drawn from the left of the bar
  *  (docs/elements.md — a body breaks down the moment hp falls under it) */
 const BAR_SOAK = "#7FC4FF";
-/** the shield's pane over a bar (drawBars), and the light along its top */
-const BAR_GLASS = "rgba(200,236,255,0.5)";
-const BAR_GLASS_EDGE = "rgba(255,255,255,0.55)";
+/** the shield's casing round a bar (drawBars): the glass inside the frame,
+ *  the frame's line, how far past the bar it reaches and how thick it is */
+const BAR_GLASS = "rgba(160,220,255,0.45)";
+const BAR_GLASS_EDGE = "rgba(210,242,255,0.95)";
+const BAR_GLASS_PAD = 1.25;
+const BAR_GLASS_LINE = 1;
 
 /**
  * THE PLACEMENT GHOST'S WASHES — refused, and taxed by the Hydrophobic
@@ -3647,6 +3650,7 @@ export class Game {
     const x = cx - w / 2;
     let y = topY - BAR_GAP;
     for (const b of bars) {
+      if ((b.shield ?? 0) > 0) y -= BAR_GLASS_PAD * 2;
       y -= BAR_H;
       c.fillStyle = BAR_BACK;
       c.fillRect(x, y, w, BAR_H);
@@ -3663,19 +3667,22 @@ export class Game {
         c.fillStyle = BAR_SOAK;
         c.fillRect(x, y, w * d, BAR_H);
       }
-      // the shield, as GLASS over the whole bar: a translucent layer the
-      // pool's share wide, so what shrinks is the pane and the health
-      // under it stays legible through it
-      const g = clamp(b.shield ?? 0, 0, 1);
-      if (g > 0) {
-        c.fillStyle = BAR_GLASS;
-        c.fillRect(x, y, w * g, BAR_H);
-        c.fillStyle = BAR_GLASS_EDGE;
-        c.fillRect(x, y, w * g, BAR_H * 0.3);
-      }
       c.strokeStyle = BAR_EDGE;
       c.lineWidth = 0.5;
       c.strokeRect(x, y, w, BAR_H);
+      // the shield, as a CASING round the bar: a bold frame a little
+      // larger than the bar on every side, glass inside it, the pool's
+      // share wide — so a shielded bar reads as boxed in, and the box is
+      // seen shortening from the right as the pool burns down
+      const g = clamp(b.shield ?? 0, 0, 1);
+      if (g > 0) {
+        const fw = (w + BAR_GLASS_PAD * 2) * g;
+        c.fillStyle = BAR_GLASS;
+        c.fillRect(x - BAR_GLASS_PAD, y - BAR_GLASS_PAD, fw, BAR_H + BAR_GLASS_PAD * 2);
+        c.strokeStyle = BAR_GLASS_EDGE;
+        c.lineWidth = BAR_GLASS_LINE;
+        c.strokeRect(x - BAR_GLASS_PAD, y - BAR_GLASS_PAD, fw, BAR_H + BAR_GLASS_PAD * 2);
+      }
       y -= BAR_GAP;
     }
     c.lineWidth = 1;
