@@ -218,7 +218,7 @@ export const PAL = {
   carrion: pal(0xc06a3e),
   carrionDark: pal(0x7a3420),
   tuskDark: pal(0x8a7a5e),
-  /** the Storks' frost: the sling, the cold seat the note above leaves free (game/storkArt.ts) */
+  /** the Whales' frost: the hatch and the rocket flames, the cold seat the note above leaves free (game/whaleArt.ts) */
   frost: pal(0xd6f2ff),
   frostDark: pal(0x3f86c4),
   /** the Ratkings' bare-skin pink: the knot of tails (game/ratkingArt.ts). Between the
