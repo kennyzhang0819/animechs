@@ -183,24 +183,73 @@ function canopy(s: Sheet, rng: () => number, cx: number, cy: number, R: number, 
   s.disc(cx, cy, t, t, DEEP);
 }
 
+/** how a stone is detailed — the options under review, chosen from a script */
+export type StoneDetail = "none" | "fissure" | "facet" | "pits" | "stratum" | "chip";
+let stoneDetail: StoneDetail = "fissure";
+export const setStoneDetail = (d: StoneDetail): void => { stoneDetail = d; };
+// a shade below the body, for marks that are part of the stone rather than on it
+const SOFT = "#b8b8b8", SOFTER = "#c6c6c6";
+
 /** one stone: a rounded lump, shaded, seamed dark over any stone under it */
-function stone(s: Sheet, rng: () => number, cx: number, cy: number, rx: number, ry: number, crack = true): void {
+function stone(s: Sheet, rng: () => number, cx: number, cy: number, rx: number, ry: number, detail = true): void {
   s.disc(cx, cy, rx + 3, ry + 3, (x, y) => (s.at(x, y) ? DEEP : null));
   const shade = bands(rng, cx, cy, Math.max(rx, ry), 0.24, -0.26);
   // a big stone is not an ellipse: a few lobes off its rim make it a lump
   const lobes = rx >= 20 ? 4 + ((rng() * 3) | 0) : 0;
   const a0 = rng() * 6.28;
+  const inside: [number, number, number, number][] = [[cx, cy, rx, ry]];
   for (let i = 0; i < lobes; i++) {
     const b = a0 + (i / lobes) * 6.28 + (rng() - 0.5) * 0.5, r = rx * (0.3 + rng() * 0.15);
-    s.disc(cx + Math.cos(b) * (rx - r * 0.9), cy + Math.sin(b) * (ry - r * 0.9), r, r * 0.9, shade);
+    const lx = cx + Math.cos(b) * (rx - r * 0.9), ly = cy + Math.sin(b) * (ry - r * 0.9);
+    inside.push([lx, ly, r, r * 0.9]);
+    s.disc(lx, ly, r, r * 0.9, shade);
   }
   s.disc(cx, cy, rx, ry, shade);
-  const cracks = crack ? (rx >= 30 ? 2 : rx >= 10 ? 1 : 0) : 0;
-  for (let i = 0; i < cracks; i++) {
-    const a = rng() * 6.28, l = rx * 0.4;
-    const x0 = cx + Math.cos(a) * rx * 0.3, y0 = cy + Math.sin(a) * ry * 0.3;
-    s.bar([x0, y0], [x0 + Math.cos(a + 2.2) * l, y0 + Math.sin(a + 2.2) * l], 4, DEEP);
-    s.bar([x0 + Math.cos(a + 2.2) * l, y0 + Math.sin(a + 2.2) * l], [x0 + Math.cos(a + 2.2) * l + Math.cos(a + 1.1) * l * 0.5, y0 + Math.sin(a + 2.2) * l + Math.sin(a + 1.1) * l * 0.5], 4, DEEP);
+  if (!detail || rx < 14) return;
+  const on = (x: number, y: number): boolean => inside.some(([ex, ey, er, fr]) => ((x + 0.5 - ex) / er) ** 2 + ((y + 0.5 - ey) / fr) ** 2 <= 1);
+  const only = (c: Col) => (x: number, y: number): Col | null => (on(x, y) ? c : null);
+  const big = rx >= 30;
+  switch (stoneDetail) {
+    case "none":
+      return;
+    case "fissure": {
+      // a groove as wide as it is long is short: two thick bars, a shade down
+      const a = rng() * 6.28, l = rx * 0.38, w = Math.max(8, rx * 0.22);
+      const x0 = cx + Math.cos(a) * rx * 0.3, y0 = cy + Math.sin(a) * ry * 0.3;
+      const x1 = x0 + Math.cos(a + 2.2) * l, y1 = y0 + Math.sin(a + 2.2) * l;
+      s.bar([x0, y0], [x1, y1], w, only(SOFT));
+      if (big) s.bar([x1, y1], [x1 + Math.cos(a + 1.1) * l * 0.6, y1 + Math.sin(a + 1.1) * l * 0.6], w, only(SOFT));
+      return;
+    }
+    case "facet": {
+      // one flat face catching the light: a broad lobe a shade up, top-right
+      const b = -0.79 + (rng() - 0.5) * 0.6, d = rx * 0.35;
+      s.disc(cx + Math.cos(b) * d, cy + Math.sin(b) * d * (ry / rx), rx * 0.42, ry * 0.36, only(LIGHT));
+      return;
+    }
+    case "pits": {
+      // hollows on the shaded side, round and a shade down
+      const n = big ? 3 : 2;
+      for (let i = 0; i < n; i++) {
+        const b = 2.36 + (i - (n - 1) / 2) * 0.8 + (rng() - 0.5) * 0.3, d = rx * (0.35 + rng() * 0.25);
+        const r = Math.max(5, rx * (0.13 + rng() * 0.05));
+        s.disc(cx + Math.cos(b) * d, cy + Math.sin(b) * d * (ry / rx), r, r * 0.9, only(SOFT));
+      }
+      return;
+    }
+    case "stratum": {
+      // a layer running through the stone: one wide diagonal band a shade down
+      const w = Math.max(8, rx * 0.26), off = (rng() - 0.5) * rx * 0.5;
+      s.bar([cx - rx - 4 + off, cy + ry * 0.35 + off * 0.3], [cx + rx + 4 + off, cy - ry * 0.35 + off * 0.3], w, only(SOFTER));
+      return;
+    }
+    case "chip": {
+      // a corner knocked off: a flat dark break on the shaded side, wide
+      const b = 2.36 + (rng() - 0.5) * 0.8;
+      s.disc(cx + Math.cos(b) * rx * 0.62, cy + Math.sin(b) * ry * 0.62, rx * 0.34, ry * 0.3, only(SOFT));
+      s.disc(cx + Math.cos(b) * rx * 0.62, cy + Math.sin(b) * ry * 0.62, rx * 0.2, ry * 0.18, only(SOFTER));
+      return;
+    }
   }
 }
 
