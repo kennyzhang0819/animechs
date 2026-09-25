@@ -3445,12 +3445,10 @@ export const FAMILIES_PER_RUN = 4;
  * already hands over the difficulty and the mutators; the swarm's cast is
  * the same kind of dial.
  *
- * TEN IS HEADROOM, not a promise. The roster fields nine families today
- * (ACTIVE_FAMILIES) and a hand cannot name one that does not exist, so
- * the picker fills at nine and this number does nothing until a tenth
- * family ships. It is here so that the day one does, the only thing that
- * has to change is the table — which is exactly what happened when the
- * Grapnels and then the Kettles went on.
+ * IT IS THE WHOLE ROSTER. It was a flat ten while the roster was nine, and
+ * the eleventh family made ten a cap a hand could hit: a player could no
+ * longer ask for every family at once. The picker already clamps to what
+ * is offered, so the number follows the table.
  *
  * THE FLOOR IS ONE, and one is a real answer: a hand of a single family
  * plays every wave of the campaign in that family (transformScript), which
@@ -3458,7 +3456,7 @@ export const FAMILIES_PER_RUN = 4;
  * hand is not zero families — it is the absence of a hand, and means
  * rolled (see rollFamilies `chosen`).
  */
-export const FAMILIES_MAX = 10;
+export const FAMILIES_MAX = FAMILIES.length;
 
 /**
  * THE MOST FAMILIES ONE WAVE MAY SEND, however many the run rolled.
