@@ -697,8 +697,10 @@ type MmIcon = readonly string[];
  *
  * The eyes are the whole of the expression: two gaps that step INWARD as
  * they go down, so the dilation lays them in as slanted slits (see
- * MmIcon). Nothing else here is doing any work — the mouth is one wide
- * gap with a tooth in it, and at a fingernail's width it is a dark band.
+ * MmIcon). Below them it is the T5 Fabricator's skull (fabricatorArt.ts):
+ * a nose hole, the jaw stepped in under the cheekbones, and three fangs
+ * with the dark showing between them, which at a fingernail's width is a
+ * dark band with teeth in it.
  */
 const MM_ICON_FOE: MmIcon = [
   "               ",
@@ -709,11 +711,11 @@ const MM_ICON_FOE: MmIcon = [
   " ###  ###  ### ",
   " ####  #  #### ",
   " ############# ",
-  " ############# ",
-  "  ##       ##  ",
-  "  ## ##### ##  ",
+  "  ####   ####  ",
   "  ###########  ",
-  "   #########   ",
+  "  ###########  ",
+  "  ##  ###  ##  ",
+  "  ##  ###  ##  ",
   "               ",
   "               ",
 ];
