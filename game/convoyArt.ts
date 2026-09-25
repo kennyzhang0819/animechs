@@ -62,13 +62,6 @@ function haulerArt(P: Pen): void {
   const n = CONVOY_N;
   const c = n / 2;
 
-  // ---- the legs first, so the body sits over their roots: a stub at
-  // each corner, rubber with a steel hoof, tucked in the way a T3's are ----
-  for (const y0 of [74, 138]) {
-    P.box(14, y0, 38, y0 + 34, TRACK);
-    P.box(14, y0 + 24, 38, y0 + 34, STEEL);
-  }
-
   // ---- the body: one long chamfered barrel, widest across the shoulders ----
   P.octa(30, 64, n - 30, n - 18, 18, HAUL);
   // the fold along the flank, in the reversed pair
@@ -112,3 +105,18 @@ function haulerArt(P: Pen): void {
 }
 
 export const hauler = (): Art => draw(CONVOY_N, haulerArt);
+
+/** the leg cell's grid, and where each leg's root sits on the body's 192
+ *  grid: (lateral, forward) from the centre, in native px */
+export const CONVOY_LEG_N = 48;
+export const CONVOY_LEGS: ReadonlyArray<readonly [number, number]> = [
+  [-70, 5], [70, 5], [-70, -59], [70, -59],
+];
+
+/** one leg, the renderer places four (Renderer.drawConvoy): a rubber
+ *  stub with a steel hoof at the rear, drawn once and never mirrored */
+function haulerLegArt(P: Pen): void {
+  P.box(12, 7, 36, 41, TRACK);
+  P.box(12, 31, 36, 41, STEEL);
+}
+export const haulerLeg = (): Art => draw(CONVOY_LEG_N, haulerLegArt, false);

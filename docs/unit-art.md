@@ -6,7 +6,7 @@ family is drawn to the same rules without re-running the trial. All nine
 families are on the turrets' grammar now (section 1b): the Ironhide rhino
 in `game/ironhideArt.ts`, the Starhart stag, Stoop bat, Dartback poison frog,
 Skate manta and Livewire narwhal in `game/familyArt.ts`, the Tusker
-elephant in `game/tuskerArt.ts`, the Grapnel starfish in
+elephant in `game/tuskerArt.ts`, the Sunstar starfish in
 `game/grapnelArt.ts`, the Kettle vulture in `game/kettleArt.ts`, on the turret
 engine in `game/turretArt.ts`, with what they share in
 `game/animalArt.ts` and the packing in `game/atlas.ts`.
@@ -18,7 +18,7 @@ on the sheet is in the same conversation (section 2).
 The Tusker is the first family drawn from nothing rather than over a
 Mindustry tree — there is no upstream hull under it and no sprite file to
 fall back to — so it is also the first proof that section 3 below is
-enough to add a family with. The Grapnel starfish is the second, and it
+enough to add a family with. The Sunstar starfish is the second, and it
 is the one that tested the rules from the other end: a RADIALLY symmetric
 animal, where every other body on the sheet is bilateral.
 
@@ -302,7 +302,7 @@ footprint gets.
 | Skate, the manta | `game/familyArt.ts` | body and two fins, wider than tall, tapered to the tip | 40, 52, 80, 156, 232 |
 | Livewire, the narwhal | `game/familyArt.ts` | body and two flippers | 44, 56, 80, 176, 232 |
 | Tusker, the elephant | `game/tuskerArt.ts` | mech to T3, four legs from T4 | 56, 72, 96, 136, 176 |
-| Grapnel, the starfish | `game/grapnelArt.ts` | mech at every tier, and the leg cell is the rowing arms | 36, 52, 72, 116, 148 |
+| Sunstar, the starfish (kind ids `grapnel1`..`5`) | `game/grapnelArt.ts` | mech at every tier, and the leg cell is the rowing arms | 36, 52, 72, 116, 148 |
 | Kettle, the vulture | `game/kettleArt.ts` | body and two wings, one chord out to the wrist and slotted into fingers | 40, 56, 88, 168, 216 |
 | Sovereign, the sea eagle (the BOSS, one body) | `game/kingArt.ts` | body and two wings | 512 |
 | Borer, the crosser (the MISSION's, three pieces) | `game/wormArt.ts` | none — one flat quad a piece, shown at 1.5x | 96, 96, 96 |

@@ -53,7 +53,9 @@ import {
   UV_TOWER_BASE4,
   UV_SHIELD_TOWER,
   UV_CONVOY,
+  UV_CONVOY_LEG,
   CONVOY_QUAD,
+  CONVOY_LEG_QUAD,
   UV_DISC_BIG,
   UV_TORCH,
   UV_COIL,
@@ -84,6 +86,7 @@ import {
   WATER_UV_UNIT,
   type UVRect,
 } from "./atlas";
+import { CONVOY_LEGS } from "./convoyArt";
 import {
   BASE,
   CELL as CELL_IMPORT,
@@ -738,6 +741,10 @@ const SHADOW_TY = 13 * MU;
 const SIDE_SWAY = 0.54 * 2.5;
 const FRONT_SWAY = 0.1 * 2.5;
 const LEG_SHADE = 0.14;
+/** the hauler's gait (drawConvoy): a stride in world px, and how far a leg
+ *  swings from its root on the body's 192 grid, in native px */
+const CONVOY_STRIDE = 28;
+const CONVOY_LEG_SWING = 14;
 /** how much of its own length the swinging leg loses — Mindustry's mech
  *  draws it at half. A rig may ask for less (MechArt.legLift) */
 const LEG_LIFT = 0.5;
@@ -3272,6 +3279,23 @@ export class Renderer {
       ) {
         const t3 = (cv.hp * 3) / Math.max(1, cv.hpMax);
         const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
+        // the legs under the body, striding on the road's own clock: the
+        // diagonal pairs swing against each other, and the pair planted
+        // takes the same shade a mech's planted leg does
+        const st = CONVOY_STRIDE;
+        const raw = cv.walk % (st * 4);
+        const ext = (raw > st * 3 ? raw - st * 4 : raw > st ? st * 2 - raw : raw) / st;
+        const cr = Math.cos(cv.rot), sr = Math.sin(cv.rot);
+        const k = CONVOY_QUAD / 256;
+        for (let l = 0; l < CONVOY_LEGS.length; l++) {
+          const side = (l === 0 || l === 3) ? 1 : -1;
+          const f = (CONVOY_LEGS[l][1] + ext * side * CONVOY_LEG_SWING) * k;
+          const lat = CONVOY_LEGS[l][0] * k;
+          const dk = 1 - Math.max(0, -ext * side) * LEG_SHADE;
+          this.push(dyn, cv.x + cr * f - sr * lat, cv.y + sr * f + cr * lat,
+            CONVOY_LEG_QUAD, CONVOY_LEG_QUAD, cv.rot, UV_CONVOY_LEG,
+            tint[0] * dk, tint[1] * dk, tint[2] * dk, 1);
+        }
         this.push(dyn, cv.x, cv.y, CONVOY_QUAD, CONVOY_QUAD, cv.rot, UV_CONVOY, tint[0], tint[1], tint[2], 1);
       }
     }

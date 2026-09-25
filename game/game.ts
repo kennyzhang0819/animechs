@@ -3862,7 +3862,7 @@ export class Game {
         // would have hidden
         const doomed = clamp(usoak[i] / Math.max(1, uhpmax[i]), 0, 1);
         const shield = ushieldMax[i] > 0 ? clamp(ushield[i] / ushieldMax[i], 0, 1) : 0;
-        if (this.barsOn(false, f, false) || ((doomed > 0 || shield > 0) && this.enemyBars !== "never"))
+        if (this.barsOn(false, f, false) || ((doomed > 0 || (shield > 0 && shield < 1)) && this.enemyBars !== "never"))
           bars.push({ v: f, col: ENEMY_HP, doomed, shield });
       }
       // THE GATE, and why this is affordable over eight hundred bodies:

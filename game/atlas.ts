@@ -48,7 +48,7 @@ import {
 import { IRON_TIERS, ironLegged, ironMech, type IronTier } from "./ironhideArt";
 import { TUSK_TIERS, tuskLegged, tuskMech } from "./tuskerArt";
 import { WORM_N, wormCar, wormHead, wormTail } from "./wormArt";
-import { CONVOY_N, hauler } from "./convoyArt";
+import { CONVOY_LEG_N, CONVOY_N, hauler, haulerLeg } from "./convoyArt";
 import { RAIL_CELL, RAIL_INSET, RAIL_PIECES, RAIL_STYLES, railCanvas } from "./railArt";
 import { GRAPNEL_TIERS, grapnelMech } from "./grapnelArt";
 import {
@@ -1360,6 +1360,9 @@ export const UV_CONVOY = sprite("convoy", 256, CONVOY_N);
  * downsampled anyway.
  */
 export const CONVOY_QUAD = (256 / CONVOY_N) * CONVOY_SIZE * CELL;
+export const UV_CONVOY_LEG = sprite("convoyLeg", 64, CONVOY_LEG_N);
+/** the leg's quad on the same world-per-native scale as the body's */
+export const CONVOY_LEG_QUAD = (64 * CONVOY_QUAD) / 256;
 
 const WORM_CELLS = {
   head: sprite("wormhead", 128, WORM_N),
@@ -3095,6 +3098,26 @@ async function carveUnit(
   const fc = flat.getContext("2d");
   if (!fc) throw new Error(`2d context unavailable for the ${kind} icon`);
   fc.imageSmoothingEnabled = false;
+  // a mech-rigged body is its whole rig on the board, and every part rides
+  // the same quad (Renderer.pushMech): the legs, both sides, the base,
+  // then the body over them — a starfish's body cell alone is a disc
+  const rig = MECH_ART[kind];
+  if (rig) {
+    const part = (uv: UVRect, flip: boolean): void => {
+      const px = Math.round(uv[0] * ATLAS_W), py = Math.round(uv[1] * ATLAS_H);
+      const pw = Math.round((uv[2] - uv[0]) * ATLAS_W), ph = Math.round((uv[3] - uv[1]) * ATLAS_H);
+      fc.save();
+      if (flip) {
+        fc.translate(0, size);
+        fc.scale(1, -1);
+      }
+      fc.drawImage(sheet, px, py, pw, ph, 0, 0, size, size);
+      fc.restore();
+    };
+    part(rig.leg, false);
+    part(rig.leg, true);
+    part(rig.base, false);
+  }
   fc.drawImage(sheet, x, y, size, size, 0, 0, size, size);
 
   // ...and the team cell over it, in the family's colour. The renderer
@@ -3248,6 +3271,7 @@ function packWormArt(c: CanvasRenderingContext2D): void {
   // the same kind of thing on the sheet: a mission's own body, packed
   // whichever way the animal switch is thrown
   pack(UV_CONVOY, hauler());
+  pack(UV_CONVOY_LEG, haulerLeg());
 }
 
 /**

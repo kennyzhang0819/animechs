@@ -115,7 +115,7 @@ const CORE_F = 8;
  * fields two is the day this becomes a list — and until then a list would
  * be a count to read and a loop to write for one item.
  */
-const CONVOY_F = 7;
+const CONVOY_F = 8;
 
 /**
  * grow a float buffer to hold at least `need`, keeping it a power of two.
@@ -178,7 +178,7 @@ export interface Snapshot {
   shotN: number;
   shots: Float32Array;
   core: Float32Array;
-  /** the escort's hauler, CONVOY_F wide: [live, x, y, rot, hp, hpMax, halted] */
+  /** the escort's hauler, CONVOY_F wide: [live, x, y, rot, hp, hpMax, halted, walk] */
   convoy: Float32Array;
   /** one per unit slot: is this body holding a target (see SimView.utgt) */
   aiming: Uint8Array;
@@ -246,7 +246,7 @@ export interface Packable extends Omit<ShotsView, "projs" | "projPacked" | "proj
   readonly inspectedTower: unknown;
   inspectMark(): { x: number; y: number; top: number } | null;
   /** the escort's hauler, or null on every map that does not field one */
-  liveConvoy(): { struct: { x: number; y: number; hp: number; hpMax: number }; rot: number; halted: boolean } | null;
+  liveConvoy(): { struct: { x: number; y: number; hp: number; hpMax: number }; rot: number; halted: boolean; walk: number } | null;
 }
 
 /** a turret as the SIM has one: the view's fields, minus the two flags that
@@ -349,6 +349,7 @@ export function packSnapshot(w: Packable, out: Snapshot, withPts = false): Snaps
     V[4] = cv.struct.hp;
     V[5] = cv.struct.hpMax;
     V[6] = cv.halted ? 1 : 0;
+    V[7] = cv.walk;
   }
 
   // ---- ours in the air ----
@@ -574,12 +575,13 @@ class ShotMirror implements ShotView {
 }
 
 class ConvoyMirror implements ConvoyView {
-  live = false; x = 0; y = 0; rot = 0; hp = 0; hpMax = 0; halted = false;
+  live = false; x = 0; y = 0; rot = 0; hp = 0; hpMax = 0; halted = false; walk = 0;
   read(V: Float32Array): void {
     this.live = V[0] !== 0;
     this.x = V[1]; this.y = V[2]; this.rot = V[3];
     this.hp = V[4]; this.hpMax = V[5];
     this.halted = V[6] !== 0;
+    this.walk = V[7];
   }
 }
 

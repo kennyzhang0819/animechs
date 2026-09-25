@@ -251,10 +251,11 @@ What Coldline does with it, and what the shape turned out to need:
   on that silhouette is a mission about hitting a nose; twenty is a
   mission about how much of a road you have under fire, which is the
   thing the archetype is actually asking the player to pay for.
-- **NOTHING SLOWS IT AND NOTHING BLOCKS IT.** A Borer is `unslowable`
-  (`UnitStats`): a douser on the line still soaks it, still douses a fire
-  on it and still hands the electric ammunition its bonus, but it buys no
-  seconds. And it obstructs nothing either — a footprint may be dropped
+- **NOTHING SLOWS IT AND NOTHING BLOCKS IT.** A Borer is `unstoppable`
+  (`UnitStats`): rock, water, the crowd and a knockback round never move
+  it, and no slow reaches it — a douser on the line still soaks it, still
+  douses a fire on it and still hands the electric ammunition its bonus,
+  but it buys no seconds. The Hauler rides the same way (`CONVOY_UNSTOPPABLE`). And it obstructs nothing either — a footprint may be dropped
   on a train that is passing over the spot (`board.ts bodiesClear`),
   because the train walks through buildings and would otherwise be
   refusing the player ground on the one map about buying ground. The

@@ -119,8 +119,8 @@ export const FAMILY_NAMES = {
   // switch too (there is no upstream weapon to name it for)
   tusker: { name: "Tuskers", body: "Tusker" },
   // the eighth family, and the second with no upstream hull under it: the
-  // starfish (game/grapnelArt.ts), named for the thing on its back
-  grapnel: { name: "Grapnels", body: "Grapnel" },
+  // starfish (game/grapnelArt.ts). The kind ids stay `grapnel1`..`grapnel5`
+  grapnel: { name: "Sunstars", body: "Sunstar" },
   // the ninth line, the third with no upstream hull under it, and the
   // SECOND thing in the sky: the vulture (game/kettleArt.ts), named for
   // what a flock of them wheeling is called — a flight word like the
@@ -922,6 +922,10 @@ export interface UnitStats {
    * rewrite it.
    */
   unslowable?: boolean;
+  /** nothing on the ground moves or holds it: rock and water do not
+   *  stop it, no crowd shoves it, no hit knocks it, no slow reaches it.
+   *  It goes exactly where its road or drive says */
+  unstoppable?: boolean;
   /**
    * A walking unit with real legs rather than a mech's sliding pair. Its
    * presence is what puts a kind on the legged draw path — see LEG_ART in
@@ -2491,12 +2495,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     // tangent, written straight onto the body (Sim.updateCrosser), so
     // nothing here is ever asked to catch up with a corner
     rotateSpeed: 30,
-    // ...and NOTHING MOVES ITS CLOCK. See UnitStats.unslowable: a douser
-    // on the line can still soak a Borer, and the soak is still worth
-    // what electric ammunition pays for it — it simply buys no seconds,
-    // and a dartback3's pace stamp buys none in the other direction
-    // (Sim.updateCrosser reads no multiplier at all)
-    unslowable: true,
+    unstoppable: true,
   },
   wormcar: {
     hp: 12000,
@@ -2506,7 +2505,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     hitbox: { long: 84, wide: 66 },
     tier: 4,
     rotateSpeed: 30,
-    unslowable: true,
+    unstoppable: true,
   },
   wormtail: {
     hp: 12000,
@@ -2516,7 +2515,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     hitbox: { long: 84, wide: 66 },
     tier: 4,
     rotateSpeed: 30,
-    unslowable: true,
+    unstoppable: true,
   },
 
   // ── THE SIEGE: the railgun ───────────────────────────────────────────
@@ -2740,6 +2739,10 @@ export const CONVOY_SPEED = 1.38 * CELL;
  *  mends a second while it stands there */
 export const CONVOY_HALT = 45;
 export const CONVOY_MEND = 2000;
+/** the cart is UnitStats.unstoppable in all but the type: it rides the
+ *  road by arc length (Sim.updateConvoys), so rock, water and the crowd
+ *  never hold it and the halts are the only stops it makes */
+export const CONVOY_UNSTOPPABLE = true;
 
 /**
  * EVERY TRAIN IS TOUGHER THAN THE ONE BEFORE IT — what launch `n` (0 for

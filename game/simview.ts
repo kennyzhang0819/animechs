@@ -265,6 +265,8 @@ export interface ConvoyView {
   readonly hpMax: number;
   /** is it standing at a halt, mending? (EscortMission.halts) */
   readonly halted: boolean;
+  /** how far along its road it has rolled, world px — the walk cycle's clock */
+  readonly walk: number;
 }
 
 /** one of the player's shots in flight */

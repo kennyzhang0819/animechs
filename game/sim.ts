@@ -108,6 +108,11 @@ const TOWERS = TOWERS_IMPORT;
 const W = W_IMPORT;
 const WALL_R = WALL_R_IMPORT;
 import { FlowField, type Footprint, type Vec2 } from "./flowfield";
+
+type PostRoute = {
+  gx0: number; gy0: number; w: number; h: number;
+  dist: Float32Array; dirX: Float32Array; dirY: Float32Array;
+};
 import { makeFieldPort, type FieldLink, type FieldPort } from "./fieldport";
 import {
   buildHash,
@@ -987,8 +992,11 @@ const KIND_WET_IMMUNE = Uint8Array.from(UNIT_KINDS, (k) =>
  * multiplier of any kind (updateCrosser).
  */
 const KIND_NO_SLOW = Uint8Array.from(UNIT_KINDS, (k) =>
-  UNIT_STATS[k].unslowable ? 1 : 0,
+  UNIT_STATS[k].unslowable || UNIT_STATS[k].unstoppable ? 1 : 0,
 );
+/** UnitStats.unstoppable: no wall veto, no crowd shove, no impulse, never
+ *  unstuck — the body is exactly where its drive or its road put it */
+const KIND_UNSTOPPABLE = Uint8Array.from(UNIT_KINDS, (k) => (UNIT_STATS[k].unstoppable ? 1 : 0));
 /**
  * UnitType.drag per kind — the fraction of an external shove a unit sheds
  * per tick. It bleeds the pull channel, which a repeater round's knockback
@@ -1530,6 +1538,8 @@ export class Sim {
   private readonly ugarx = new Float32Array(MAX_UNITS);
   private readonly ugary = new Float32Array(MAX_UNITS);
   private readonly ugarr = new Float32Array(MAX_UNITS);
+  private readonly ugarRoute: (PostRoute | null)[] = new Array(MAX_UNITS).fill(null);
+  private readonly postRoutes = new Map<string, PostRoute>();
   /**
    * THE CROSSERS THIS RUN HAS LAUNCHED, in launch order and never
    * reordered — `ucross` is an index into this, and an index that moved
@@ -2743,6 +2753,7 @@ export class Sim {
         const half = (markSize(mk) * CELL) / 2;
         this.branderSpots.push({ x: mk.x * CELL + half, y: mk.y * CELL + half });
       }
+    this.postRoutes.clear();
     this.garrisons = garrisonsFor(this.terrain.marks);
     for (const g of this.garrisons) {
       const bad = postProblems(g.post);
@@ -5711,6 +5722,7 @@ export class Sim {
     this.ugarx[i] = x;
     this.ugary[i] = y;
     this.ugarr[i] = r;
+    this.ugarRoute[i] = this.postRoute(x, y, r);
     // it drops whatever the spawn's target clock happened to leave on it:
     // a pick made before the leash was written is a pick from the whole
     // board, and the clip only runs at the next re-pick
@@ -5726,6 +5738,95 @@ export class Sim {
     this.ugarx[i] = this.upx[i];
     this.ugary[i] = this.upy[i];
     this.ugarr[i] = 0;
+  }
+
+  /** the way back to a post's middle from every cell inside its circle,
+   *  round the rock: a straight line at home walks a guard into a hill */
+  private postRoute(x: number, y: number, r: number): PostRoute | null {
+    const key = `${x},${y},${r}`;
+    const had = this.postRoutes.get(key);
+    if (had) return had;
+    const rc = Math.ceil(r / CELL) + 1;
+    const cx = clamp((x / CELL) | 0, 0, COLS - 1), cy = clamp((y / CELL) | 0, 0, ROWS - 1);
+    const gx0 = Math.max(0, cx - rc), gy0 = Math.max(0, cy - rc);
+    const w = Math.min(COLS - 1, cx + rc) - gx0 + 1, h = Math.min(ROWS - 1, cy + rc) - gy0 + 1;
+    const dist = new Float32Array(w * h).fill(Infinity);
+    const dirX = new Float32Array(w * h), dirY = new Float32Array(w * h);
+    const blocked = this.terrain.blocked;
+    const open = (lx: number, ly: number): boolean =>
+      lx >= 0 && ly >= 0 && lx < w && ly < h && !blocked[(gy0 + ly) * COLS + gx0 + lx];
+    const start = (cy - gy0) * w + (cx - gx0);
+    if (!open(cx - gx0, cy - gy0)) return null;
+    dist[start] = 0;
+    const heapK: number[] = [0], heapV: number[] = [start];
+    const push = (k: number, v: number): void => {
+      let i = heapK.length;
+      heapK.push(k); heapV.push(v);
+      while (i > 0) {
+        const p = (i - 1) >> 1;
+        if (heapK[p] <= heapK[i]) break;
+        [heapK[p], heapK[i]] = [heapK[i], heapK[p]];
+        [heapV[p], heapV[i]] = [heapV[i], heapV[p]];
+        i = p;
+      }
+    };
+    const pop = (): number => {
+      const v = heapV[0];
+      const lk = heapK.pop()!, lv = heapV.pop()!;
+      if (heapK.length > 0) {
+        heapK[0] = lk; heapV[0] = lv;
+        let i = 0;
+        for (;;) {
+          const l = 2 * i + 1, rr = l + 1;
+          let m = i;
+          if (l < heapK.length && heapK[l] < heapK[m]) m = l;
+          if (rr < heapK.length && heapK[rr] < heapK[m]) m = rr;
+          if (m === i) break;
+          [heapK[m], heapK[i]] = [heapK[i], heapK[m]];
+          [heapV[m], heapV[i]] = [heapV[i], heapV[m]];
+          i = m;
+        }
+      }
+      return v;
+    };
+    const r2 = (rc * rc);
+    while (heapK.length > 0) {
+      const c = pop();
+      const lx = c % w, ly = (c / w) | 0;
+      const d0 = dist[c];
+      for (let oy = -1; oy <= 1; oy++)
+        for (let ox = -1; ox <= 1; ox++) {
+          if (ox === 0 && oy === 0) continue;
+          const nx = lx + ox, ny = ly + oy;
+          if (!open(nx, ny)) continue;
+          const ex = nx + gx0 - cx, ey = ny + gy0 - cy;
+          if (ex * ex + ey * ey > r2) continue;
+          // a diagonal step never cuts a rock's corner
+          if (ox !== 0 && oy !== 0 && (!open(lx + ox, ly) || !open(lx, ly + oy))) continue;
+          const nd = d0 + (ox !== 0 && oy !== 0 ? Math.SQRT2 : 1);
+          const ni = ny * w + nx;
+          if (nd >= dist[ni]) continue;
+          dist[ni] = nd;
+          const l = Math.sqrt(ox * ox + oy * oy);
+          dirX[ni] = -ox / l;
+          dirY[ni] = -oy / l;
+          push(nd, ni);
+        }
+    }
+    const route: PostRoute = { gx0, gy0, w, h, dist, dirX, dirY };
+    this.postRoutes.set(key, route);
+    return route;
+  }
+
+  /** the route's heading under a point, or false where the route does not reach */
+  private postHeading(route: PostRoute, x: number, y: number, out: Vec2): boolean {
+    const lx = ((x / CELL) | 0) - route.gx0, ly = ((y / CELL) | 0) - route.gy0;
+    if (lx < 0 || ly < 0 || lx >= route.w || ly >= route.h) return false;
+    const i = ly * route.w + lx;
+    if (route.dist[i] === Infinity) return false;
+    out.x = route.dirX[i];
+    out.y = route.dirY[i];
+    return true;
   }
 
   /**
@@ -5876,7 +5977,7 @@ export class Sim {
    *
    * WHAT STILL REACHES IT is everything that is done TO a body rather than
    * by it — damage lands, statuses land — BUT NOTHING THAT MOVES THE
-   * CLOCK. A Borer is `unslowable` (levels.ts) and it is un-hastenable
+   * CLOCK. A Borer is `unstoppable` (levels.ts) and it is un-hastenable
    * with it: the advance below reads neither the wet slow nor the
    * dartback3's pace stamp, and it reads the WORM's arc rather than this
    * piece's, so the train is one body at one speed however many of its
@@ -6230,7 +6331,7 @@ export class Sim {
 
   /** the cart on the road, for the HUD and the renderer — null when there
    *  is none (before the first departure, between two, or after a loss) */
-  liveConvoy(): { struct: Tower; rot: number; halted: boolean; halts: number; at: number } | null {
+  liveConvoy(): { struct: Tower; rot: number; halted: boolean; halts: number; at: number; walk: number } | null {
     const m = this.level.mission;
     if (m.kind !== "escort") return null;
     for (const c of this.convoys) {
@@ -6241,6 +6342,7 @@ export class Sim {
         halted: c.holdT > 0,
         halts: m.halts.length - 1 - c.halt,
         at: this.convoyAt(),
+        walk: c.s,
       };
     }
     return null;
@@ -6988,7 +7090,7 @@ export class Sim {
         tgt =
           HAS_HUNTS_CONVOY && KIND_HUNTS_CONVOY[ukind[i]]
             ? this.pickConvoyAim(x, y, reach)
-            : this.pickAim(x, y, reach, sighted && seek);
+            : this.pickAim(x, y, reach, sighted && (seek || this.ugar[i] === 1));
         // A POSTED BODY SEES ONLY ITS OWN GROUND (see ugar). The pick is
         // the ordinary one and then it is CLIPPED to the post's circle:
         // anything standing outside the leash is not a target, however
@@ -9012,6 +9114,7 @@ export class Sim {
       this.ugarx[i] = 0;
       this.ugary[i] = 0;
       this.ugarr[i] = 0;
+      this.ugarRoute[i] = null;
       this.uid[i] = this.nextId++;
       this.ukind[i] = UNIT_ID[kind];
       this.ufly[i] = fly ? 1 : 0;
@@ -10197,6 +10300,8 @@ export class Sim {
     this.ugarx[i] = this.ugarx[n];
     this.ugary[i] = this.ugary[n];
     this.ugarr[i] = this.ugarr[n];
+    this.ugarRoute[i] = this.ugarRoute[n];
+    this.ugarRoute[n] = null;
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
     this.ufly[i] = this.ufly[n];
@@ -10657,15 +10762,20 @@ export class Sim {
         // dead zone is a fifth of the radius so a guard that is nearly
         // home does not jitter on the spot.
         const tgt = this.ugar[i] === 1 ? this.utgt[i] : null;
-        const gx = tgt ? tgt.x : this.ugarx[i];
-        const gy = tgt ? tgt.y : this.ugary[i];
+        // a target it cannot walk straight at (rock or water on the line)
+        // is one it holds the post against rather than grinds a hill for
+        const rush = tgt && this.canWalkTo(upx[i], upy[i], tgt.x, tgt.y, mf) ? tgt : null;
+        const gx = rush ? rush.x : this.ugarx[i];
+        const gy = rush ? rush.y : this.ugary[i];
         const dx = gx - upx[i], dy = gy - upy[i];
         const dl = Math.sqrt(dx * dx + dy * dy);
-        const home = !tgt && dl < this.ugarr[i] * 0.2;
+        const home = !rush && dl < this.ugarr[i] * 0.2;
+        const route = this.ugarRoute[i];
         if (this.ugar[i] === 2 || home || dl < 1) {
           flowTmp.x = 0;
           flowTmp.y = 0;
-        } else {
+        } else if (rush || this.canWalkTo(upx[i], upy[i], gx, gy, mf)
+          || !route || !this.postHeading(route, upx[i], upy[i], flowTmp)) {
           flowTmp.x = dx / dl;
           flowTmp.y = dy / dl;
         }
@@ -10778,7 +10888,7 @@ export class Sim {
       // crowd goes round it — it is only this side of the pair that is
       // refused, so a railgun cannot be walked off the spot the mission
       // put it on by a wave filing past.
-      const planted = this.ugar[i] === 2;
+      const planted = this.ugar[i] === 2 || KIND_UNSTOPPABLE[ukind[i]] === 1;
       const shx = planted ? 0 : ushx[i], shy = planted ? 0 : ushy[i];
       let fx = 0, fy = 0;
       // ...and the doorway jitter, kept apart from the rest of the steering
@@ -10952,7 +11062,7 @@ export class Sim {
       // what keeps a hill from becoming a trap for anything a shove, a
       // spawn or a pull has managed to put inside one — airHeading hands it
       // a straight line out of the peak and this lets it take it
-      const wedged = cf.hitsWall(upx[i], upy[i], WALL_R);
+      const wedged = KIND_UNSTOPPABLE[ukind[i]] === 1 || cf.hitsWall(upx[i], upy[i], WALL_R);
       let nx = upx[i] + dxT;
       if (!wedged && cf.hitsWall(nx, upy[i], WALL_R)) {
         const cX =
@@ -11104,7 +11214,7 @@ export class Sim {
   private unstickUnits(): void {
     const { upx, upy, ukind, unav } = this;
     for (let i = 0; i < this.n; i++) {
-      if (KIND_FLYING[ukind[i]]) continue;
+      if (KIND_FLYING[ukind[i]] || KIND_UNSTOPPABLE[ukind[i]]) continue;
       const field = unav[i] !== 0 ? this.navalField : this.field;
       if (!field.hitsWall(upx[i], upy[i], WALL_R)) continue;
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
@@ -13060,7 +13170,7 @@ export class Sim {
   private impulse(i: number, wx: number, wy: number): void {
     // ...AND A PLANTED BODY TAKES NONE OF IT (see ugar). The mission put
     // the thing where it is; a repeater round is not allowed to move it.
-    if (this.ugar[i] === 2) return;
+    if (this.ugar[i] === 2 || KIND_UNSTOPPABLE[this.ukind[i]] === 1) return;
     const hitSize = (this.urad[i] * 2) / MU;
     const mass = hitSize * hitSize * Math.PI;
     // world units per tick -> px per second
