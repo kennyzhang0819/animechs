@@ -183,15 +183,13 @@ function canopy(s: Sheet, rng: () => number, cx: number, cy: number, R: number, 
   s.disc(cx, cy, t, t, DEEP);
 }
 
-/** how a stone is detailed — the options under review, chosen from a script */
-export type StoneDetail = "none" | "fissure" | "facet" | "pits" | "stratum" | "chip";
-let stoneDetail: StoneDetail = "fissure";
-export const setStoneDetail = (d: StoneDetail): void => { stoneDetail = d; };
 // a shade below the body, for marks that are part of the stone rather than on it
-const SOFT = "#b8b8b8", SOFTER = "#c6c6c6";
+const SOFT = "#b8b8b8";
+/** a stone's three paintings: plain, one lit facet, hollows on its shaded side */
+const STONE_VARIANTS = 3;
 
 /** one stone: a rounded lump, shaded, seamed dark over any stone under it */
-function stone(s: Sheet, rng: () => number, cx: number, cy: number, rx: number, ry: number, detail = true): void {
+function stone(s: Sheet, rng: () => number, cx: number, cy: number, rx: number, ry: number, variant = 0): void {
   s.disc(cx, cy, rx + 3, ry + 3, (x, y) => (s.at(x, y) ? DEEP : null));
   const shade = bands(rng, cx, cy, Math.max(rx, ry), 0.24, -0.26);
   // a big stone is not an ellipse: a few lobes off its rim make it a lump
@@ -205,50 +203,21 @@ function stone(s: Sheet, rng: () => number, cx: number, cy: number, rx: number, 
     s.disc(lx, ly, r, r * 0.9, shade);
   }
   s.disc(cx, cy, rx, ry, shade);
-  if (!detail || rx < 14) return;
+  if (rx < 14) return;
   const on = (x: number, y: number): boolean => inside.some(([ex, ey, er, fr]) => ((x + 0.5 - ex) / er) ** 2 + ((y + 0.5 - ey) / fr) ** 2 <= 1);
   const only = (c: Col) => (x: number, y: number): Col | null => (on(x, y) ? c : null);
   const big = rx >= 30;
-  switch (stoneDetail) {
-    case "none":
-      return;
-    case "fissure": {
-      // a groove as wide as it is long is short: two thick bars, a shade down
-      const a = rng() * 6.28, l = rx * 0.38, w = Math.max(8, rx * 0.22);
-      const x0 = cx + Math.cos(a) * rx * 0.3, y0 = cy + Math.sin(a) * ry * 0.3;
-      const x1 = x0 + Math.cos(a + 2.2) * l, y1 = y0 + Math.sin(a + 2.2) * l;
-      s.bar([x0, y0], [x1, y1], w, only(SOFT));
-      if (big) s.bar([x1, y1], [x1 + Math.cos(a + 1.1) * l * 0.6, y1 + Math.sin(a + 1.1) * l * 0.6], w, only(SOFT));
-      return;
-    }
-    case "facet": {
-      // one flat face catching the light: a broad lobe a shade up, top-right
-      const b = -0.79 + (rng() - 0.5) * 0.6, d = rx * 0.35;
-      s.disc(cx + Math.cos(b) * d, cy + Math.sin(b) * d * (ry / rx), rx * 0.42, ry * 0.36, only(LIGHT));
-      return;
-    }
-    case "pits": {
-      // hollows on the shaded side, round and a shade down
-      const n = big ? 3 : 2;
-      for (let i = 0; i < n; i++) {
-        const b = 2.36 + (i - (n - 1) / 2) * 0.8 + (rng() - 0.5) * 0.3, d = rx * (0.35 + rng() * 0.25);
-        const r = Math.max(5, rx * (0.13 + rng() * 0.05));
-        s.disc(cx + Math.cos(b) * d, cy + Math.sin(b) * d * (ry / rx), r, r * 0.9, only(SOFT));
-      }
-      return;
-    }
-    case "stratum": {
-      // a layer running through the stone: one wide diagonal band a shade down
-      const w = Math.max(8, rx * 0.26), off = (rng() - 0.5) * rx * 0.5;
-      s.bar([cx - rx - 4 + off, cy + ry * 0.35 + off * 0.3], [cx + rx + 4 + off, cy - ry * 0.35 + off * 0.3], w, only(SOFTER));
-      return;
-    }
-    case "chip": {
-      // a corner knocked off: a flat dark break on the shaded side, wide
-      const b = 2.36 + (rng() - 0.5) * 0.8;
-      s.disc(cx + Math.cos(b) * rx * 0.62, cy + Math.sin(b) * ry * 0.62, rx * 0.34, ry * 0.3, only(SOFT));
-      s.disc(cx + Math.cos(b) * rx * 0.62, cy + Math.sin(b) * ry * 0.62, rx * 0.2, ry * 0.18, only(SOFTER));
-      return;
+  if (variant === 1) {
+    // one flat face catching the light: a broad lobe a shade up, top-right
+    const b = -0.79 + (rng() - 0.5) * 0.6, d = rx * 0.35;
+    s.disc(cx + Math.cos(b) * d, cy + Math.sin(b) * d * (ry / rx), rx * 0.42, ry * 0.36, only(LIGHT));
+  } else if (variant === 2) {
+    // hollows on the shaded side, round and a shade down
+    const n = big ? 3 : 2;
+    for (let i = 0; i < n; i++) {
+      const b = 2.36 + (i - (n - 1) / 2) * 0.8 + (rng() - 0.5) * 0.3, d = rx * (0.35 + rng() * 0.25);
+      const r = Math.max(5, rx * (0.13 + rng() * 0.05));
+      s.disc(cx + Math.cos(b) * d, cy + Math.sin(b) * d * (ry / rx), r, r * 0.9, only(SOFT));
     }
   }
 }
@@ -282,6 +251,9 @@ export interface PropDef {
   /** may it be set down at any quarter turn? A made thing may; a growing
    *  or lying thing keeps the one light every prop shares */
   turns: boolean;
+  /** how many paintings it has. A kind that does not turn reads Prop.rot
+   *  as which painting instead */
+  variants: number;
   /** tinted: painted in greys, multiplied by the tone. Otherwise its own
    *  paint, and the tone is a weathering tint */
   tinted: boolean;
@@ -289,13 +261,13 @@ export interface PropDef {
   tones: readonly number[];
   /** the corner map's colour for a made prop (a tinted one reads its tone) */
   mini?: string;
-  paint: (s: Sheet, rng: () => number) => void;
+  paint: (s: Sheet, rng: () => number, variant: number) => void;
 }
 
-const nature = (id: string, label: string, tiles: PropTiles, reach: number, tones: readonly number[], paint: PropDef["paint"]): PropDef =>
-  ({ id, label, tiles, reach, turns: false, tinted: true, tones, paint });
+const nature = (id: string, label: string, tiles: PropTiles, reach: number, tones: readonly number[], paint: PropDef["paint"], variants = 1): PropDef =>
+  ({ id, label, tiles, reach, turns: false, variants, tinted: true, tones, paint });
 const made = (id: string, label: string, tiles: PropTiles, mini: string, paint: PropDef["paint"]): PropDef =>
-  ({ id, label, tiles, reach: tiles, turns: true, tinted: false, tones: WEATHER_TONES, mini, paint });
+  ({ id, label, tiles, reach: tiles, turns: true, variants: 1, tinted: false, tones: WEATHER_TONES, mini, paint });
 
 /**
  * THE KINDS. APPEND ONLY — a prop's kind is its index here, in every
@@ -315,9 +287,9 @@ export const PROP_KINDS: readonly PropDef[] = [
     }
     s.disc(20, 28, 7, 4, DEEP);
   }),
-  nature("boulder", "Boulder", 1, 1.75, ROCK_TONES, (s, rng) => {
-    stone(s, rng, 28 + (rng() - 0.5) * 2, 28.5, 23, 20);
-  }),
+  nature("boulder", "Boulder", 1, 1.75, ROCK_TONES, (s, rng, v) => {
+    stone(s, rng, 28 + (rng() - 0.5) * 2, 28.5, 23, 20, v);
+  }, STONE_VARIANTS),
   nature("stump", "Stump", 1, 1, WOOD_TONES, (s, rng) => {
     const a0 = rng() * 6.28;
     for (let i = 0; i < 3; i++) {
@@ -332,9 +304,9 @@ export const PROP_KINDS: readonly PropDef[] = [
   nature("tree", "Tree", 2, 2.5, LEAF_TONES, (s, rng) => {
     canopy(s, rng, 40, 40, 35, 7);
   }),
-  nature("rock", "Rock", 2, 3, ROCK_TONES, (s, rng) => {
-    stone(s, rng, 48, 49, 42, 36);
-  }),
+  nature("rock", "Rock", 2, 3, ROCK_TONES, (s, rng, v) => {
+    stone(s, rng, 48, 49, 42, 36, v);
+  }, STONE_VARIANTS),
   nature("log", "Fallen log", 2, 2.25, WOOD_TONES, (s, rng) => {
     const y0 = 28, h = 18;
     s.rect(8, y0, 58, h, MID);
@@ -351,9 +323,9 @@ export const PROP_KINDS: readonly PropDef[] = [
   nature("oak", "Oak", 3, 3.5, LEAF_TONES, (s, rng) => {
     canopy(s, rng, 56, 56, 49, 9, 5);
   }),
-  nature("outcrop", "Outcrop", 3, 4, ROCK_TONES, (s, rng) => {
-    stone(s, rng, 64, 65, 57, 49);
-  }),
+  nature("outcrop", "Outcrop", 3, 4, ROCK_TONES, (s, rng, v) => {
+    stone(s, rng, 64, 65, 57, 49, v);
+  }, STONE_VARIANTS),
   nature("grove", "Grove", 4, 4.5, LEAF_TONES, (s, rng) => {
     clump(s, rng, 20, 113, 12, 4);
     clump(s, rng, 122, 110, 11, 4);
@@ -553,7 +525,26 @@ export const PROP_KINDS: readonly PropDef[] = [
   nature("thicket", "Thicket", 3, 4, LEAF_TONES, (s, rng) => {
     canopy(s, rng, 64, 64, 58, 10, 5, false);
   }),
+  // a dead tree from above: a trunk and its bare limbs, each forking once
+  nature("snag", "Dead tree", 2, 2.5, WOOD_TONES, (s, rng) => {
+    const c = 40, n = 5 + ((rng() * 2) | 0), a0 = rng() * 6.28;
+    for (let i = 0; i < n; i++) {
+      const a = a0 + (i / n) * 6.28 + (rng() - 0.5) * 0.5, l = 22 + rng() * 10;
+      const x1 = c + Math.cos(a) * l, y1 = c + Math.sin(a) * l;
+      s.bar([c, c], [x1, y1], 7, MID);
+      const b = a + (rng() < 0.5 ? 0.7 : -0.7), l2 = 8 + rng() * 6;
+      s.bar([c + Math.cos(a) * l * 0.55, c + Math.sin(a) * l * 0.55], [c + Math.cos(a) * l * 0.55 + Math.cos(b) * l2, c + Math.sin(a) * l * 0.55 + Math.sin(b) * l2], 5, MID);
+      s.disc(x1, y1, 3, 3, DARK);
+    }
+    s.disc(c, c, 9, 9, DARK);
+    s.disc(c, c, 5, 5, DEEP);
+  }),
 ];
+/** what a fresh prop's `rot` rolls to: a quarter turn for a kind that turns, a painting otherwise */
+export const rollRot = (kind: number, r: number): number => {
+  const def = PROP_KINDS[kind];
+  return (r * (def.turns ? 4 : def.variants)) | 0;
+};
 export const PROP_KIND_INDEX: Readonly<Record<string, number>> = Object.fromEntries(PROP_KINDS.map((k, i) => [k.id, i]));
 /** a kind by its id; throws on a name the table does not have */
 export const propKind = (id: string): number => {
@@ -571,11 +562,11 @@ export function propMini(kind: number, tone: number): string {
 }
 
 /** paint one kind: `reach * PROP_PX` square RGBA, transparent where nothing is */
-export function paintProp(kind: number, tint?: number): Uint8ClampedArray<ArrayBuffer> {
+export function paintProp(kind: number, tint?: number, variant = 0): Uint8ClampedArray<ArrayBuffer> {
   const def = PROP_KINDS[kind];
   const n = Math.round(def.reach * PROP_PX);
   const s = new Sheet(n);
-  def.paint(s, mulberry32(7000 + kind * 331));
+  def.paint(s, mulberry32(7000 + kind * 331 + variant * 17), variant);
   const out = new Uint8ClampedArray(new ArrayBuffer(n * n * 4));
   const t = tint === undefined ? null : PROP_TINT[tint];
   for (let i = 0; i < n * n; i++) {
@@ -590,14 +581,14 @@ export function paintProp(kind: number, tint?: number): Uint8ClampedArray<ArrayB
   return out;
 }
 
-/** the painted kind as a canvas at its native size, untinted */
-export function propCanvas(kind: number): HTMLCanvasElement {
+/** one painting of a kind as a canvas at its native size, untinted */
+export function propCanvas(kind: number, variant = 0): HTMLCanvasElement {
   const n = Math.round(PROP_KINDS[kind].reach * PROP_PX);
   const c = document.createElement("canvas");
   c.width = c.height = n;
   const g = c.getContext("2d");
   if (!g) throw new Error("2d context unavailable for prop");
-  g.putImageData(new ImageData(paintProp(kind), n, n), 0, 0);
+  g.putImageData(new ImageData(paintProp(kind, undefined, variant), n, n), 0, 0);
   return c;
 }
 

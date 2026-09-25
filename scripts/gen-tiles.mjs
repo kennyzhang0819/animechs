@@ -65,7 +65,7 @@ for (const kind of WALL_KINDS)
     writeFileSync(file, png(paintWall(kind, v), TILE_PX, TILE_PX));
     console.log("wrote", file);
   }
-// one icon a kind and tone it may wear (propArt.ts propIcon)
+// one icon a kind and tone it may wear, its first painting (propArt.ts propIcon)
 PROP_KINDS.forEach((def, k) => {
   for (const tone of def.tones) {
     const file = `public/tiles/prop-${def.id}-${PROP_TONES[tone].id}.png`;

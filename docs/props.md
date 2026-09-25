@@ -45,6 +45,7 @@ reorder.**
 | oak, outcrop | 3 | a broad canopy, the biggest stone |
 | grove | 4 | three canopies and their brush |
 | brush, thicket | 2, 3 | the bushes a thicket is made of: a canopy with no trunk |
+| snag | 2 | a dead tree: a trunk and its bare limbs, for the barren lands |
 | crate | 1 | a supply crate |
 | barrels, scrap, mast | 2 | drums, a scrap heap, a fallen radio mast |
 | hull, silo | 3 | a wrecked mech hull, a fuel tank |
@@ -66,7 +67,10 @@ bottom-left, a mid band between. Nothing under four px, no outline —
 the silhouette is the shading's own edge, as on the tiles. A nature
 prop is never turned (`turns`): every one keeps the one light, which is
 what lets a thicket read as one thing. A made prop lands at any quarter
-turn.
+turn. A kind may have several PAINTINGS (`variants`): the three stones
+have three each — plain, one lit facet, hollows on the shaded side —
+and a kind that does not turn reads `Prop.rot` as which painting it
+wears (`rollRot`).
 
 ## How a board is decorated
 

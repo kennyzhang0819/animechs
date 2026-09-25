@@ -6,7 +6,7 @@ import { COLS, ROWS } from "./constants";
 import { RANDOM_MAP_ID, type MapData } from "./maps";
 import { forestOf, type Prop } from "./terrain";
 import { WALL_GROUP, WALL_GROUP_KINDS } from "./atlas";
-import { PROP_KINDS, propKind, rockTone, TONE } from "./propArt";
+import { PROP_KINDS, propKind, rockTone, rollRot, TONE } from "./propArt";
 
 export const SIZE = 512;
 export const SCALE = 2;
@@ -837,7 +837,7 @@ export function build(spec: MapSpec): Built {
   const props: Prop[] = [];
   const pp = spec.props;
   const claim = new Uint8Array(N);
-  const stand = (x0: number, y0: number, k: number, tone: number, rot = PROP_KINDS[k].turns ? (rnd() * 4) | 0 : 0): void => {
+  const stand = (x0: number, y0: number, k: number, tone: number, rot = rollRot(k, rnd())): void => {
     const t = PROP_KINDS[k].tiles;
     for (let y = y0; y < y0 + t; y++)
       for (let x = x0; x < x0 + t; x++) {
@@ -1235,10 +1235,10 @@ const THEMES: Theme[] = [
     ruins: 3,
     props: {
       canopy: [TONE.scrub], wood: TONE.ash, weather: TONE.dust,
-      flora: ["shrub", "shrub", "shrub", "reeds", "reeds", "brush", "brush", "brush", "tree", "thicket", "stump"],
+      flora: ["shrub", "shrub", "shrub", "brush", "brush", "snag", "snag", "snag", "stump", "log"],
       stones: ["boulder", "boulder", "boulder", "rock", "rock", "outcrop"],
       litter: DRY_LITTER, sites: ["silo", "wreck", "bunker", "wreck"],
-      growth: 0.45, stone: 1.3, siteCount: [1, 3],
+      growth: 0.35, stone: 2.4, siteCount: [1, 3],
     },
     names: [["Salt", "Dune", "Ashen", "Sun", "Bleached"], ["Basin", "Reach", "Flats", "Verge", "Hollow"]],
   },
@@ -1255,10 +1255,10 @@ const THEMES: Theme[] = [
     ruins: 2,
     props: {
       canopy: [TONE.pine, TONE.scrub], wood: TONE.bark, weather: TONE.plain,
-      flora: ["shrub", "shrub", "shrub", "shrub", "brush", "brush", "brush", "tree", "tree", "thicket", "log", "stump"],
+      flora: ["shrub", "shrub", "shrub", "brush", "brush", "tree", "snag", "snag", "log", "stump"],
       stones: ["boulder", "boulder", "rock", "rock", "outcrop", "outcrop"],
       litter: DRY_LITTER, sites: ["bunker", "walker", "bunker", "colossus"],
-      growth: 0.55, stone: 1.6, siteCount: [1, 2],
+      growth: 0.5, stone: 2.2, siteCount: [1, 2],
     },
     names: [["Grey", "Storm", "Broken", "Iron", "Flint"], ["Coast", "Shelf", "Bank", "Fold", "Fell"]],
   },
@@ -1335,10 +1335,10 @@ const THEMES: Theme[] = [
     ruins: 3,
     props: {
       canopy: [TONE.scrub], wood: TONE.ash, weather: TONE.ochre,
-      flora: ["shrub", "shrub", "shrub", "shrub", "brush", "brush", "thicket", "tree", "stump"],
+      flora: ["shrub", "shrub", "shrub", "brush", "brush", "snag", "snag", "snag", "stump", "log"],
       stones: ["boulder", "boulder", "rock", "rock", "outcrop", "outcrop"],
       litter: DRY_LITTER, sites: ["wreck", "bunker", "colossus", "silo"],
-      growth: 0.45, stone: 1.7, siteCount: [1, 3],
+      growth: 0.35, stone: 2.6, siteCount: [1, 3],
     },
     names: [["Red", "Rust", "Kiln", "Ochre", "Brick"], ["Badlands", "Mesa", "Gulch", "Bluff", "Terrace"]],
   },
@@ -1355,10 +1355,10 @@ const THEMES: Theme[] = [
     ruins: 2,
     props: {
       canopy: [TONE.ash], wood: TONE.ash, weather: TONE.soot,
-      flora: ["shrub", "shrub", "brush", "brush", "stump", "stump", "log", "tree", "tree"],
+      flora: ["shrub", "brush", "snag", "snag", "snag", "snag", "stump", "stump", "log", "log"],
       stones: ["boulder", "boulder", "rock", "outcrop"],
       litter: ["scrap", "scrap", "hull", "hull", "barrels", "mast"], sites: ["walker", "colossus", "wreck", "walker"],
-      growth: 0.5, stone: 1.2, siteCount: [2, 3],
+      growth: 0.4, stone: 2.2, siteCount: [2, 3],
     },
     names: [["Ash", "Black", "Soot", "Ember", "Burnt"], ["Fall", "Reach", "Waste", "Field", "Cinders"]],
   },

@@ -1,5 +1,5 @@
 import { buildAtlas, FLOOR_SHALLOW_WATER, SHALLOW_FOR_DEEP, towerIcon, unitIcon } from "./atlas";
-import { PROP_KINDS } from "./propArt";
+import { PROP_KINDS, rollRot } from "./propArt";
 import { towerBaseIcon } from "./towerIcons";
 import { fitZoom } from "./fit";
 import {
@@ -421,7 +421,7 @@ export class MapEditor {
         T.wall[i] = WALL_PROP;
         T.spawn[i] = 0;
       }
-    T.props.push({ x: x0, y: y0, kind, tone, rot: this.randomize && def.turns ? (Math.random() * 4) | 0 : 0 });
+    T.props.push({ x: x0, y: y0, kind, tone, rot: this.randomize ? rollRot(kind, Math.random()) : 0 });
   }
 
   private paintCell(gx: number, gy: number): void {

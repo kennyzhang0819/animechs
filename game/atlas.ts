@@ -589,10 +589,12 @@ export const UV_WALL_LARGE: ReadonlyArray<ReadonlyArray<readonly UVRect[]> | nul
  * painting keeps three native px clear of its rim (propArt.ts).
  */
 const PROP_INSET = 4;
-/** one cell a kind, its 32px-a-tile art at 2x (propArt.ts PROP_KINDS),
- *  indexed by a prop's `kind`; the renderer maps the whole cell onto a
- *  `reach * CELL` quad centred on the footprint */
-export const UV_PROPS: readonly UVRect[] = PROP_KINDS.map((k) => tile(`prop-${k.id}`, Math.round(k.reach * 64), PROP_INSET));
+/** one cell a painting of a kind, its 32px-a-tile art at 2x (propArt.ts
+ *  PROP_KINDS), indexed by a prop's `kind` then its painting; the renderer
+ *  maps the whole cell onto a `reach * CELL` quad centred on the footprint */
+export const UV_PROPS: readonly (readonly UVRect[])[] = PROP_KINDS.map((k) =>
+  Array.from({ length: k.variants }, (_, v) => tile(`prop-${k.id}-${v}`, Math.round(k.reach * 64), PROP_INSET)),
+);
 
 // ---------------------------------------------------------------------
 // STRUCTURES, EFFECTS AND THE ODD SHAPES
@@ -3527,7 +3529,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
 
   // THE PROPS ARE PAINTED TOO (game/propArt.ts): each at its native size,
   // 2x into a cell cut to it, through the same antialias pass
-  PROP_KINDS.forEach((_k, i) => draw(UV_PROPS[i], antialiased(propCanvas(i))));
+  PROP_KINDS.forEach((_k, i) => UV_PROPS[i].forEach((cell, v) => draw(cell, antialiased(propCanvas(i, v)))));
   draw(UV_SPAWN, antialiased(img.spawnPad));
   draw(UV_MARK_PAD, antialiased(markPadCanvas()));
   // THE RAIL PIECES, painted like the floors and through the same filter

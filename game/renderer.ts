@@ -2300,7 +2300,9 @@ export class Renderer {
         if (!def) continue;
         const half = (def.tiles * CELL) / 2, side = def.reach * CELL;
         const tint = PROP_TINT[p.tone] ?? PROP_TINT[0];
-        this.push(w, p.x * CELL + half, p.y * CELL + half, side, side, p.rot * (Math.PI / 2), UV_PROPS[p.kind], tint[0], tint[1], tint[2], 1);
+        const cells = UV_PROPS[p.kind];
+        const uv = def.turns ? cells[0] : cells[p.rot % cells.length];
+        this.push(w, p.x * CELL + half, p.y * CELL + half, side, side, def.turns ? p.rot * (Math.PI / 2) : 0, uv, tint[0], tint[1], tint[2], 1);
       }
     }
     for (const b of [t, wt, sh, w, dq]) {

@@ -2,7 +2,7 @@ import { BASE, clamp, COLS, NCELLS, ROWS } from "./constants";
 import { forEachMarkPadCell, type MapMark } from "./missionMarks";
 import type { RailTile } from "./missions";
 import { WATER_FLOOR_GROUPS } from "./atlas";
-import { PROP_KINDS, TONE } from "./propArt";
+import { PROP_KINDS, rollRot, TONE } from "./propArt";
 
 /** a prop on the board — see docs/props.md */
 export interface Prop {
@@ -13,7 +13,7 @@ export interface Prop {
   kind: number;
   /** index into PROP_TONES: the tint a nature prop wears, the weathering on a made one */
   tone: number;
-  /** quarter turns, 0..3 */
+  /** quarter turns, 0..3, for a kind that turns; which painting, for one that does not */
   rot: number;
 }
 
@@ -77,7 +77,7 @@ export function forestOf(
       if (!ok) continue;
       for (let y = y0; y < y0 + t; y++) for (let x = x0; x < x0 + t; x++) free[y * COLS + x] = 0;
       const kind = pick[(rng() * pick.length) | 0].kind;
-      out.push({ x: x0, y: y0, kind, tone: tone(i), rot: PROP_KINDS[kind].turns ? (rng() * 4) | 0 : 0 });
+      out.push({ x: x0, y: y0, kind, tone: tone(i), rot: rollRot(kind, rng()) });
     }
   }
   return out;
