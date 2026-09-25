@@ -1,7 +1,8 @@
 import { BUILD } from "./version";
 import { ADMIN_ENABLED } from "./env";
 import { atlasReady, buildAtlas } from "./atlas";
-import {
+import { PROP_KINDS } from "./propArt";
+import { repaintThumbCells,
   loadOfficialMaps,
   OFFICIAL_MAP_IDS,
   OFFICIAL_MAPS,
@@ -850,30 +851,10 @@ const MM_CROSS_EDGE = mmColor(0x00, 0x00, 0x00);
 const MM_PIN_FOE = Uint8Array.from(UNIT_KINDS, (k) =>
   k === "wormhead" || k === "railgun" || k === "goad" || k === "bastion" || k === "boss" ? 1 : 0,
 );
-/**
- * HOW DARK A HILL IS ON THE MINIMAP, as a factor on the rock's true tone.
- *
- * The wall art is painted a shade LIGHTER than the floor of its own family,
- * which is correct on the board — a hill there has an outline, a cast
- * shadow and a dark interior, and its face is the lit top of all that. The
- * corner map has room for none of those: at a pixel a cell a hill was a
- * slightly paler patch of ground, and the one question the map is read for
- * after "where are they" is "what can they not walk through". Multiplying
- * the rock down restates the height with the only channel left, and it is
- * a MULTIPLY rather than a fixed grey so every family keeps its own hue —
- * a snow map's hills stay white-blue and a spore map's stay violet.
- *
- * It is an EIGHTH of the true tone. Two thirds was tried first and told a
- * snow map's hills from its snow and very little else; a third was better
- * and still left the pale grounds' rock bright enough to read as more
- * ground. At an eighth the rock is very nearly black, and that is the
- * point: the corner map is not a picture, it is an answer to "where can
- * they walk", and the strongest mark a one-pixel cell has is to be the
- * darkest thing on the canvas. A trace of hue survives the multiply — a
- * snow map's hills are a blue-black and a spore map's a violet one — so
- * the map is still recognisably its own place at a glance.
- */
-const MM_HILL_SHADE = 0.12;
+/** how dark a hill is on the minimap, as a factor on the rock's true tone:
+ *  1 draws the rock as painted (it was an eighth, near black, until the
+ *  board's hills stopped going dark too) */
+const MM_HILL_SHADE = 1;
 /** how often the minimap's CSS width is measured, in draws. Reading
  *  clientWidth is a layout read, and one per frame is a reflow per frame;
  *  the width only moves when the window or the HUD's zoom does */
@@ -1105,6 +1086,9 @@ export class Game {
    */
   private allyBars: HealthBarMode = HEALTH_BARS_DEFAULT;
   private enemyBars: HealthBarMode = HEALTH_BARS_DEFAULT;
+  /** ...and the props' bars (drawPropBars), the same three ways */
+  private propBars: HealthBarMode = HEALTH_BARS_DEFAULT;
+  private readonly propBarBuf: { v: number; col: string }[] = [];
   /**
    * ...AND WHO WEARS THE ROW OF STATUS SYMBOLS over that (setStatusMarks).
    * One knob for both sides, because what is being done to a thing reads
@@ -1118,6 +1102,8 @@ export class Game {
   private mmCanvas: HTMLCanvasElement | null = null;
   /** the ground at 1px a cell (paintThumb), painted once per map */
   private mmBase: HTMLCanvasElement | null = null;
+  /** the ground version the terrain batch and the minimap were last built at, and when */
+  private terrainDrawn = -1;
   /** the per-frame layer over the ground: bodies and structures */
   private mmLayer: HTMLCanvasElement | null = null;
   /** ...and the pixels it is painted into, kept between frames. A 512-cell
@@ -1157,6 +1143,7 @@ export class Game {
   private readonly mmPingSeen = new Set<number>();
   private mmCssW = 0;
   private mmCssTick = 0;
+  private mmEdge = 1;
   /** frames until the minimap's marks are painted again (MM_LAYER_EVERY) */
   private mmLayerTick = 0;
   private mmDrag = false;
@@ -2711,6 +2698,9 @@ export class Game {
     this.allyBars = ally;
     this.enemyBars = enemy;
   }
+  setPropBars(mode: HealthBarMode): void {
+    this.propBars = mode;
+  }
 
   /**
    * The Interface tab's status-symbol knob, read the same way and as
@@ -3153,6 +3143,27 @@ export class Game {
     // across, which is the whole point of the exercise.
     this.publish();
 
+    // THE GROUND CHANGED (simreads.ts take). A prop that came down leaves
+    // the picture on its own — its quad, its shadow, its cells on the
+    // corner map — because rebuilding the board for a shrub is a hitch a
+    // player feels. Props that came BACK are a reset, and that is the one
+    // case the whole terrain is rebuilt for
+    if (this.world.terrainSeen !== this.terrainDrawn) {
+      this.terrainDrawn = this.world.terrainSeen;
+      const w = this.world;
+      if (w.propsRevived) {
+        this.mmBase = null;
+        this.soakLayer = null;
+        this.renderer.rebuildTerrain(this.view, GAME_LAYERS);
+      } else
+        for (const p of w.propsJustDied) {
+          this.renderer.killProp(this.view, p);
+          if (this.mmBase) repaintThumbCells(w.terrain, w.terrain.rows, this.mmBase, MM_HILL_SHADE, this.mmEdge, p);
+        }
+      w.propsRevived = false;
+      w.propsJustDied.length = 0;
+    }
+
     if (this.diagZooms.length) {
       // each scan looks at the middle of the map, not wherever the camera
       // happened to be — the spawn corner at a close zoom is mostly void
@@ -3295,7 +3306,8 @@ export class Game {
     if (!c) return;
     if (!this.mmBase) {
       this.mmBase = document.createElement("canvas");
-      paintThumb(T, rows, this.mmBase, MM_HILL_SHADE);
+      this.mmEdge = this.mmEdgeFor(mm, cols);
+      paintThumb(T, rows, this.mmBase, MM_HILL_SHADE, this.mmEdge);
     }
     if (!this.mmLayer) {
       this.mmLayer = document.createElement("canvas");
@@ -3379,6 +3391,7 @@ export class Game {
     if (this.mmCssTick-- <= 0) {
       this.mmCssTick = MM_CSS_EVERY;
       this.mmCssW = mm.clientWidth || w;
+      if (this.mmEdgeFor(mm, cols) !== this.mmEdge) this.mmBase = null;
     }
     const perCell = (this.mmCssW || w) / cols;
     const unitSz = Math.max(1, Math.round(MM_UNIT_PX / perCell));
@@ -3587,6 +3600,13 @@ export class Game {
   /** the minimap as shown: the ground, the marks layer as last painted, and
    *  the viewport's frame — every frame, so the frame never lags the camera
    *  even when the marks under it are a few frames old (MM_LAYER_EVERY) */
+  /** how many cells wide a hill's outline must be to survive the minimap's
+   *  shrink to its on-screen device pixels */
+  private mmEdgeFor(mm: HTMLCanvasElement, cols: number): number {
+    const px = mm.getBoundingClientRect().width * (window.devicePixelRatio || 1);
+    return px > 0 ? Math.max(1, Math.ceil(cols / px)) : 1;
+  }
+
   private compositeMinimap(c: CanvasRenderingContext2D, cols: number, rows: number, w: number, h: number): void {
     if (!this.mmBase || !this.mmLayer || !this.mmTowerLayer || !this.mmMarkLayer) return;
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -3941,6 +3961,36 @@ export class Game {
    * THE CORE gets the mining bar too, since it ships on the same clock
    * (Sim.coreMineT) — it is the run's first and largest earner, and a bar
    */
+  /**
+   * THE PROPS' BARS (docs/props.md, under fire), under the buildings' and
+   * the bodies'. `damaged` walks only the hurt ones the sim listed this
+   * frame; `always` walks every standing prop and lets the window cull
+   * it, which is what the buildings' pass does with a three-hundred
+   * turret line.
+   */
+  private drawPropBars(c: CanvasRenderingContext2D): void {
+    if (this.propBars === "never" || !this.barsLegible()) return;
+    const w = this.world;
+    const all = w.allProps;
+    const x0 = this.tlx - VIEW_PAD, y0 = this.tly - VIEW_PAD;
+    const x1 = this.tlx + this.visW() + VIEW_PAD, y1 = this.tly + this.visH() + VIEW_PAD;
+    const bars = this.propBarBuf;
+    const one = (k: number, f: number): void => {
+      const p = all[k];
+      if (!p) return;
+      const n = PROP_KINDS[p.kind]?.tiles ?? 1;
+      const cx = (p.x + n / 2) * CELL, cy = (p.y + n / 2) * CELL;
+      if (cx < x0 || cx > x1 || cy < y0 || cy > y1) return;
+      bars.length = 0;
+      bars.push({ v: f, col: hpColor(f) });
+      this.drawBars(c, cx, cy - (n * CELL) / 2, n * CELL - 2, bars);
+    };
+    if (this.propBars === "damaged") {
+      const h = w.propHurt;
+      for (let i = 0; i < h.length; i += 2) one(h[i], h[i + 1]);
+    } else for (let k = 0; k < all.length; k++) if (!w.isPropDead(k)) one(k, w.propFrac[k]);
+  }
+
   private drawStructureBars(view: SimView, c: CanvasRenderingContext2D): void {
     // nothing on this pass is legible — the bars, the symbols above them
     // or the pips — so the walk over the line is not made at all
@@ -4392,6 +4442,7 @@ export class Game {
     }
 
     // WHAT EVERY STRUCTURE IS DOING, as a stack of bars over it (drawBars)
+    this.drawPropBars(c);
     this.drawStructureBars(view, c);
     // ...and what every BODY has left, on the Interface tab's terms
     this.drawUnitBars(c);

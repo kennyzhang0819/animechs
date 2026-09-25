@@ -9,7 +9,7 @@ This is a design document. None of it is built.
 ## Why bother
 
 The board already has real estate: towers build on **open ground only**
-(`Sim.canPlace`) — never on a hill — so a map's open floor is the whole of
+(`Sim.canPlace`) — or on a hill, whole footprint on rock — so a map's open floor is the whole of
 where a defence can go. Today that geography decides *how many* turrets fit and *what they can
 see*, and nothing else. A rock shelf against the water plays the same as a
 rock shelf in the middle of a plain.

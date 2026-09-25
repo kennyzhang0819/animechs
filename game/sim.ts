@@ -310,7 +310,8 @@ import {
   type RelicsHeld,
 } from "./relics";
 import { coreIncomeRate, RICH_SCRAP, SCRAP_START, sellValue } from "./economy";
-import { airWalkMask, isWaterFloor, navalWalkMask, type Terrain } from "./terrain";
+import { PROP_KINDS } from "./propArt";
+import { airWalkMask, hillMask, isWaterFloor, navalWalkMask, openPropCells, propHpFor, type Terrain } from "./terrain";
 import {
   BOMBLET_LOOK,
   MAX_WEAPONS,
@@ -2258,6 +2259,8 @@ export class Sim {
    * stands. Null in every run without the rule.
    */
   private inspectTower: Tower | null = null;
+  /** ...or a PROP the last tap marked, by the map's index, or -1 (docs/props.md) */
+  private inspectProp = -1;
 
   /** is the Volatile mutator in force this run? (see reset) */
   private volatileOn = false;
@@ -2500,11 +2503,30 @@ export class Sim {
    */
   readonly airField = new FlowField();
   /**
-   * WHERE THE HILLS ARE (airWalkMask), kept because two different questions
-   * ask it: what a flyer routes around, and what a shot cannot be taken
-   * through (hasSight). Rebuilt with the terrain and never after.
+   * WHERE THE HILLS ARE (airWalkMask): what a shot cannot be taken through
+   * (hasSight) and what a ground body cannot hit a building on (onHill).
+   * Rebuilt with the terrain and never after. `hillOpen` is the same less
+   * the cells under a prop: the rock a turret may stand on (boardGrids).
    */
   private hills: Uint8Array = new Uint8Array(NCELLS);
+  private hillOpen: Uint8Array = new Uint8Array(NCELLS);
+  /**
+   * THE PROPS AS TARGETS (docs/props.md): the prop index under every cell
+   * or -1, each prop's health, the dead by index since the reset, and a
+   * version the other side of the seam catches up with (simreport.ts
+   * TERRAIN, simreads.ts take). Not the structure index: a prop is on
+   * nobody's side, and the swarm never looks for one.
+   */
+  private propAt: Int32Array = new Int32Array(NCELLS).fill(-1);
+  private propHp: Float32Array = new Float32Array(0);
+  propsDead: number[] = [];
+  terrainVersion = 0;
+  /** firstPropAlong's answer, beside the distance it returns */
+  private propHitK = -1;
+  /** the standing props that have taken damage, for their bars (propsHurt) */
+  private propHurt: number[] = [];
+  private readonly splashProps: number[] = [];
+  private readonly seenProps = new Set<number>();
   /** the player's BUILDINGS currently selected — a gathered row to sell or inspect */
   private readonly selStructs = new Set<Structure>();
   // seal-test cache: hover asks canPlace every frame, and the test costs two
@@ -2875,6 +2897,21 @@ export class Sim {
     // on purpose — see airField — so it is solved once here and never
     // again, however much is built or sold during the run.
     this.hills = airWalkMask(this.terrain);
+    this.hillOpen = hillMask(this.terrain);
+    this.propAt.fill(-1);
+    {
+      const props = this.terrain.props;
+      this.propHp = new Float32Array(props.length);
+      for (let k = 0; k < props.length; k++) {
+        const p = props[k], n = PROP_KINDS[p.kind].tiles;
+        this.propHp[k] = propHpFor(p.kind);
+        for (let y = p.y; y < p.y + n; y++)
+          for (let x = p.x; x < p.x + n; x++) this.propAt[y * COLS + x] = k;
+      }
+      this.propsDead = [];
+      this.propHurt.length = 0;
+      this.terrainVersion++;
+    }
     this.airField.rebuildWalk([], this.hills, this.padMaskFor("air"), this.coreGoal());
     this.buildGoalPts();
     this.field.compute();
@@ -3314,31 +3351,15 @@ export class Sim {
   /** spawnMouths' answer for the terrain currently loaded — null until asked */
   private mouths: number[] | null = null;
 
-  /**
-   * One flyer's road from a point to the core, as flat x,y pairs: step
-   * along airHeading until the hold radius, exactly as updateUnits does.
-   *
-   * The step is a cell and a half — long enough that a 256-cell crossing is
-   * a couple of hundred points rather than a couple of thousand, short
-   * enough that a turn round a headland still reads as a curve. The cap is
-   * the safety net for a field that somehow circulates: an overlay must not
-   * be able to hang the frame.
-   */
+  /** one flyer's road from a point to the core, as flat x,y pairs: the
+   *  straight line to the hold radius, exactly as updateUnits flies it */
   private airTrace(x: number, y: number): number[] {
     const g = this.nearestGoal(x, y);
     const hold = (this.core.size * CELL) / 2 + CELL * 1.5;
-    const step = CELL * 1.5;
     const pts = [x, y];
-    const dir: Vec2 = { x: 0, y: 0 };
-    for (let n = 0; n < 400; n++) {
-      const dx = g.x - x, dy = g.y - y;
-      const d = Math.sqrt(dx * dx + dy * dy);
-      if (d <= hold) break;
-      this.airHeading(x, y, dx / d, dy / d, dir);
-      x += dir.x * Math.min(step, d);
-      y += dir.y * Math.min(step, d);
-      pts.push(x, y);
-    }
+    const dx = g.x - x, dy = g.y - y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d > hold) pts.push(x + (dx / d) * (d - hold), y + (dy / d) * (d - hold));
     return pts;
   }
 
@@ -4268,6 +4289,7 @@ export class Sim {
       boostT: 0,
       aimShieldTower: -1,
       aimTower: null,
+      aimProp: -1,
       cd: Math.random() * 0.1,
       // Hydrophobic (mutation.ts): read the ground once, here, and carry it
       fireRate: this.isWaterlogged(gx, gy, kind, sz) ? HYDROPHOBIC_RATE : 1,
@@ -4304,7 +4326,7 @@ export class Sim {
 
 
   /** the structure standing on a world point, if it is `team`'s */
-  private structureAt(px: number, py: number, team: Team = "player"): Structure | null {
+  private structureAt(px: number, py: number, team: Team = "player", ground = false): Structure | null {
     if (px < 0 || py < 0 || px >= W || py >= H) return null;
     // THE CART FIRST, because it is not on the grid this reads (levels.ts
     // CONVOY_HP) and this is the function every arriving round comes
@@ -4332,7 +4354,7 @@ export class Sim {
     const t = this.cellTower[((py / CELL) | 0) * COLS + ((px / CELL) | 0)];
     // the team test costs nothing in a run without Conquest, where every
     // building on the board is the player's and `enemyTowers` is 0
-    return t && (this.enemyTowers === 0 ? team === "player" : teamOf(t) === team) ? t : null;
+    return t && (this.enemyTowers === 0 ? team === "player" : teamOf(t) === team) && !(ground && this.onHill(t)) ? t : null;
   }
 
 
@@ -6579,6 +6601,8 @@ export class Sim {
     reach: number,
     sighted: boolean,
     team: Team = "player",
+    /** a ground attacker: a building on a hill is not one it can hit */
+    ground = false,
   ): Structure | null {
     // THE CART IS OFFERED HERE AND ONLY HERE (levels.ts CONVOY_HP), and it
     // has to be offered BEFORE the box. It is not in the building index
@@ -6632,6 +6656,7 @@ export class Sim {
         // only the OTHER side's buildings are targets: a body walks past the
         // swarm's own conquered turret, and that turret never fires on it
         if (this.enemyTowers > 0 && teamOf(t) !== team) continue;
+        if (ground && this.onHill(t)) continue;
         const half = (this.sizeOf(t) * CELL) / 2;
         const dx = t.x - x, dy = t.y - y;
         const d = Math.sqrt(dx * dx + dy * dy) - half;
@@ -6717,6 +6742,7 @@ export class Sim {
     r: number,
     out: Structure[],
     team: Team = "player",
+    ground = false,
   ): Structure[] {
     out.length = 0;
     const seen = this.seenStructs;
@@ -6747,6 +6773,7 @@ export class Sim {
         if (!t || seen.has(t)) continue;
         seen.add(t);
         if (this.enemyTowers > 0 && teamOf(t) !== team) continue;
+        if (ground && this.onHill(t)) continue;
         const half = (this.sizeOf(t) * CELL) / 2;
         const dx = t.x - x, dy = t.y - y;
         if (Math.sqrt(dx * dx + dy * dy) - half <= r) out.push(t);
@@ -6802,6 +6829,7 @@ export class Sim {
     halfW: number,
     out: Structure[],
     team: Team = "player",
+    ground = false,
   ): Structure[] {
     out.length = 0;
     const seen = this.seenStructs;
@@ -6823,6 +6851,7 @@ export class Sim {
         if (!t || seen.has(t)) continue;
         seen.add(t);
         if (this.enemyTowers > 0 && teamOf(t) !== team) continue;
+        if (ground && this.onHill(t)) continue;
         out.push(t);
       }
     }
@@ -6846,8 +6875,9 @@ export class Sim {
     cone: number,
     sighted: boolean,
     out: Structure[],
+    ground = false,
   ): Structure[] {
-    this.structuresWithin(x, y, reach, out);
+    this.structuresWithin(x, y, reach, out, "player", ground);
     if (cone < Math.PI) {
       let w = 0;
       for (let k = 0; k < out.length; k++) {
@@ -6968,9 +6998,10 @@ export class Sim {
     radius: number,
     poison = 0,
     poisonChance = 1,
+    ground = false,
   ): void {
     if (splash <= 0 || radius <= 0) return;
-    for (const t of this.structuresWithin(x, y, radius, this.splashOut))
+    for (const t of this.structuresWithin(x, y, radius, this.splashOut, "player", ground))
       this.hitStructure(t, splash, poison, poisonChance);
   }
 
@@ -6992,6 +7023,130 @@ export class Sim {
     else this.damageTower(s, dmg);
     const half = (this.sizeOf(s) * CELL) / 2;
     this.bulletFx(fx, s.x - Math.cos(angle) * half, s.y - Math.sin(angle) * half, angle, col);
+  }
+
+  // ---- props under fire (docs/props.md) ----
+  private propX(k: number): number {
+    const p = this.terrain.props[k];
+    return (p.x + PROP_KINDS[p.kind].tiles / 2) * CELL;
+  }
+  private propY(k: number): number {
+    const p = this.terrain.props[k];
+    return (p.y + PROP_KINDS[p.kind].tiles / 2) * CELL;
+  }
+  private propHalf(k: number): number {
+    return (PROP_KINDS[this.terrain.props[k].kind].tiles * CELL) / 2;
+  }
+  /** the standing prop under a world point, or -1 */
+  private propAtPoint(x: number, y: number): number {
+    if (x < 0 || y < 0 || x >= W || y >= H) return -1;
+    const k = this.propAt[((y / CELL) | 0) * COLS + ((x / CELL) | 0)];
+    return k >= 0 && this.propHp[k] > 0 ? k : -1;
+  }
+  /** how far a point is from a prop's footprint — its square, not a circle
+   *  round it, so a corner is as far as it really is */
+  private propDist(k: number, x: number, y: number): number {
+    const half = this.propHalf(k);
+    return Math.hypot(Math.max(0, Math.abs(this.propX(k) - x) - half), Math.max(0, Math.abs(this.propY(k) - y) - half));
+  }
+  /** is the prop still standing, and within this reach of the point, by its edge? */
+  private propReach(k: number, x: number, y: number, reach: number): boolean {
+    return this.propHp[k] > 0 && this.propDist(k, x, y) <= reach;
+  }
+  /** the standing prop nearest a point by its edge, within reach, or -1:
+   *  rings of cells outward, stopped once a ring cannot beat the best */
+  private nearestProp(x: number, y: number, reach: number): number {
+    const cx = (x / CELL) | 0, cy = (y / CELL) | 0;
+    const R = Math.ceil(reach / CELL) + 1;
+    let best = -1, bd = reach;
+    const look = (xx: number, yy: number): void => {
+      if (xx < 0 || yy < 0 || xx >= COLS || yy >= ROWS) return;
+      const k = this.propAt[yy * COLS + xx];
+      if (k < 0 || k === best || this.propHp[k] <= 0) return;
+      const d = this.propDist(k, x, y);
+      if (d <= bd) { bd = d; best = k; }
+    };
+    for (let r = 0; r <= R; r++) {
+      if (best >= 0 && (r - 0.5) * CELL - 3 * CELL > bd) break;
+      if (r === 0) { look(cx, cy); continue; }
+      for (let xx = cx - r; xx <= cx + r; xx++) { look(xx, cy - r); look(xx, cy + r); }
+      for (let yy = cy - r + 1; yy <= cy + r - 1; yy++) { look(cx - r, yy); look(cx + r, yy); }
+    }
+    return best;
+  }
+  /** the first standing prop on a segment, sampled every half cell like
+   *  sweepShot: its distance along the segment, or -1; the prop is left in
+   *  propHitK */
+  private firstPropAlong(x0: number, y0: number, dx: number, dy: number): number {
+    const len = Math.hypot(dx, dy);
+    const steps = len > SHOT_SWEEP ? Math.ceil(len / SHOT_SWEEP) : 1;
+    for (let s = 1; s <= steps; s++) {
+      const f = s / steps, px = x0 + dx * f, py = y0 + dy * f;
+      if (px < 0 || py < 0 || px >= W || py >= H) return -1;
+      const k = this.propAt[((py / CELL) | 0) * COLS + ((px / CELL) | 0)];
+      if (k >= 0 && this.propHp[k] > 0) { this.propHitK = k; return len * f; }
+    }
+    return -1;
+  }
+  /** every standing prop whose footprint's edge is within r of the point */
+  private propsWithin(x: number, y: number, r: number, out: number[]): number[] {
+    out.length = 0;
+    const seen = this.seenProps;
+    seen.clear();
+    const R = Math.ceil(r / CELL) + 1, cx = (x / CELL) | 0, cy = (y / CELL) | 0;
+    for (let yy = Math.max(0, cy - R); yy <= Math.min(ROWS - 1, cy + R); yy++)
+      for (let xx = Math.max(0, cx - R); xx <= Math.min(COLS - 1, cx + R); xx++) {
+        const k = this.propAt[yy * COLS + xx];
+        if (k < 0 || seen.has(k) || this.propHp[k] <= 0) continue;
+        seen.add(k);
+        if (this.propDist(k, x, y) <= r) out.push(k);
+      }
+    return out;
+  }
+  /** a hit on a prop: no armour, no reward; at zero it comes down */
+  private propHit(k: number, dmg: number, fx: BulletFx | undefined, angle: number, col?: RGB): void {
+    if (this.propHp[k] <= 0) return;
+    if (this.propHp[k] >= propHpFor(this.terrain.props[k].kind)) this.propHurt.push(k);
+    this.propHp[k] -= dmg;
+    const half = this.propHalf(k);
+    this.bulletFx(fx, this.propX(k) - Math.cos(angle) * half, this.propY(k) - Math.sin(angle) * half, angle, col);
+    if (this.propHp[k] <= 0) this.killProp(k);
+  }
+  /**
+   * A PROP COMES DOWN: its own cells open to the walkers and the hulls
+   * (a hill's rock under one stays, and turns buildable), the fields are
+   * queued for a solve the way a sold turret queues one, and the other
+   * side of the seam is told by the terrain version (simreport.ts).
+   */
+  private killProp(k: number): void {
+    const p = this.terrain.props[k], n = PROP_KINDS[p.kind].tiles;
+    openPropCells(this.terrain, p);
+    const { blocked } = this.terrain;
+    const { walk, soft } = this.field;
+    const nWalk = this.navalField.walk, nSoft = this.navalField.soft;
+    for (let y = p.y; y < p.y + n; y++)
+      for (let x = p.x; x < p.x + n; x++) {
+        const i = y * COLS + x;
+        this.propAt[i] = -1;
+        if (!blocked[i]) { walk[i] = 0; soft[i] = 0; nWalk[i] = 0; nSoft[i] = 0; }
+        else if (this.hills[i]) this.hillOpen[i] = 1;
+      }
+    this.fieldDirty = true;
+    this.navalDirty = true;
+    this.unstickPending = true;
+    this.fieldQuiet = 0;
+    this.postRoutes.clear();
+    this.propsDead.push(k);
+    const at = this.propHurt.indexOf(k);
+    if (at >= 0) this.propHurt.splice(at, 1);
+    this.terrainVersion++;
+  }
+
+  /** every hurt, standing prop with what is left of it: flat [index, fraction, ...] pairs (simreport.ts) */
+  propsHurt(): number[] {
+    const out: number[] = [];
+    for (const k of this.propHurt) out.push(k, Math.max(0, this.propHp[k]) / propHpFor(this.terrain.props[k].kind));
+    return out;
   }
 
   /** is the structure still standing — and within this reach of the point? */
@@ -7029,9 +7184,16 @@ export class Sim {
     return null;
   }
 
-  private pickAim(x: number, y: number, reach: number, sighted: boolean): Aim | null {
+  /** does this building stand on a hill? A footprint is all hill or all
+   *  floor (board.ts groundClear), so its anchor cell answers for it. A
+   *  ground body cannot hit one; a flyer can */
+  private onHill(t: Structure): boolean {
+    return this.hills[t.gy * COLS + t.gx] === 1;
+  }
+
+  private pickAim(x: number, y: number, reach: number, sighted: boolean, ground = false): Aim | null {
     this.picks++;
-    const s = this.nearestStructure(x, y, reach, sighted);
+    const s = this.nearestStructure(x, y, reach, sighted, "player", ground);
     if (!s) return null;
     return { x: s.x, y: s.y, half: (this.sizeOf(s) * CELL) / 2, s };
   }
@@ -7138,7 +7300,7 @@ export class Sim {
         tgt =
           HAS_HUNTS_CONVOY && KIND_HUNTS_CONVOY[ukind[i]]
             ? this.pickConvoyAim(x, y, reach)
-            : this.pickAim(x, y, reach, sighted && (seek || this.ugar[i] === 1));
+            : this.pickAim(x, y, reach, sighted && (seek || this.ugar[i] === 1), this.ufly[i] === 0);
         // A POSTED BODY SEES ONLY ITS OWN GROUND (see ugar). The pick is
         // the ordinary one and then it is CLIPPED to the post's circle:
         // anything standing outside the leash is not a target, however
@@ -7257,7 +7419,7 @@ export class Sim {
                 // THE STARLIGHT RULE: a held beam bites everything under
                 // it, every interval, the width of its own washes
                 const halfW = ((wp.beamStyle?.width ?? 4) * MU) / 2;
-                const hit = this.structuresAlong(x, y, uheldRot[i], wspan, halfW, this.alongOut);
+                const hit = this.structuresAlong(x, y, uheldRot[i], wspan, halfW, this.alongOut, "player", this.ufly[i] === 0);
                 for (let k = 0; k < hit.length; k++) {
                   this.hitStructure(hit[k], wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
                   if (k < 4) this.pushFxCol(hit[k].x, hit[k].y, 12 / 60, FxKind.HitMeltHeal, 0, 0, wp.beamStyle?.colors[2][0] ?? PAL.heal);
@@ -7297,7 +7459,7 @@ export class Sim {
           if (ucharge[i] > 0) {
             ucharge[i] -= dt;
             if (ucharge[i] <= 0) {
-              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp, wreach, true, fed, wspan);
+              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp, wreach, true, fed, wspan, this.ufly[i] === 0);
               ucd[slot] = wp.reload - wp.charge;
             }
             continue;
@@ -7324,7 +7486,7 @@ export class Sim {
           case "bullet":
           case "missile":
           case "shell": {
-            for (let k = 0; k < shots; k++) this.fireUnitShot(x, y, tgt, wp, k, fed);
+            for (let k = 0; k < shots; k++) this.fireUnitShot(x, y, tgt, wp, k, fed, this.ufly[i] === 0);
             break;
           }
           case "gun": {
@@ -7337,7 +7499,7 @@ export class Sim {
             for (let k = 0; k < shots; k++) {
               this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
               if (wpSplash)
-                this.splashStructures(tgt.x, tgt.y, wpSplash, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1);
+                this.splashStructures(tgt.x, tgt.y, wpSplash, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1, this.ufly[i] === 0);
               this.fireUnitGun(x, y, aim + (k - (shots - 1) / 2) * 0.06, wp);
             }
             break;
@@ -7358,7 +7520,7 @@ export class Sim {
             for (let k = 0; k < shots; k++) {
               this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1, wp.rend ?? 0);
               if (wpSplash)
-                this.splashStructures(tgt.x, tgt.y, wpSplash, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1);
+                this.splashStructures(tgt.x, tgt.y, wpSplash, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1, this.ufly[i] === 0);
             }
             const fx = tgt.x - Math.cos(aim) * tgt.half, fy = tgt.y - Math.sin(aim) * tgt.half;
             this.pushFx(fx, fy, 24 / 60, FxKind.Pulverize, 0, 0, (Math.random() * 0x7fffffff) | 0);
@@ -7368,7 +7530,7 @@ export class Sim {
           case "laser": {
             // a volley of them fans by ShootSpread (the starhart2's three)
             for (let k = 0; k < shots; k++)
-              this.fireUnitLaser(x, y, aim + (k - (shots - 1) / 2) * (wp.spread ?? 0), tgt, wp, wreach, KIND_TIER[ukind[i]] >= 4, fed, wspan);
+              this.fireUnitLaser(x, y, aim + (k - (shots - 1) / 2) * (wp.spread ?? 0), tgt, wp, wreach, KIND_TIER[ukind[i]] >= 4, fed, wspan, this.ufly[i] === 0);
             break;
           }
           case "sap": {
@@ -7437,7 +7599,7 @@ export class Sim {
                 this.detonate(i);
               } else {
                 this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
-                this.splashStructures(x, y, wpSplash, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1);
+                this.splashStructures(x, y, wpSplash, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1, this.ufly[i] === 0);
                 // the burst is the whole of the bomb: weapon lane
                 this.pushFx(x, y, 40 / 60, FxKind.Pulverize, 0, 0, (Math.random() * 0x7fffffff) | 0, 0, true);
               }
@@ -7457,6 +7619,7 @@ export class Sim {
                 x, y, vx: Math.cos(urot[i]) * bs, vy: Math.sin(urot[i]) * bs,
                 life: wp.look.lifetime ?? 0.5, age: 0,
                 damage: wpDamage, splash: wpSplash, splashRadius: wp.splashRadius ?? 0,
+                ground: this.ufly[i] === 0,
                 look: wp.look, collide: wp.look.collide !== false, trailT: 0,
                 poison: wp.poison ?? 0,
                 poisonChance: wp.poisonChance ?? 1,
@@ -7492,7 +7655,7 @@ export class Sim {
             // tiers (`big`)
             const big = KIND_TIER[ukind[i]] >= 4;
             if (wp.pierce) {
-              const hit = this.structuresAlong(x, y, aim, wspan, CELL * 0.5, this.alongOut);
+              const hit = this.structuresAlong(x, y, aim, wspan, CELL * 0.5, this.alongOut, "player", this.ufly[i] === 0);
               for (let k = 0; k < hit.length; k++) {
                 this.hitStructure(hit[k], wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
                 if (k < 6) this.pushFxCol(hit[k].x, hit[k].y, 14 / 60, FxKind.RailHit, aim, 0, rc, 0, big);
@@ -7513,7 +7676,7 @@ export class Sim {
             // the cap; the fan out of the muzzle is the whole of what is
             // drawn (FxKind.Scatter), plus the sparks on what it struck
             const cone = wp.cone ?? Math.PI;
-            const hit = this.structuresInCone(x, y, aim, wspan, cone, sighted, this.splashOut);
+            const hit = this.structuresInCone(x, y, aim, wspan, cone, sighted, this.splashOut, this.ufly[i] === 0);
             const max = wp.maxTargets ?? hit.length;
             const fall = wp.falloff ?? 1;
             const col = wp.scatterColor ?? PAL.bomber;
@@ -7550,7 +7713,7 @@ export class Sim {
             // untouched ones in reach — so a volley fans across a patch
             // rather than four bolts retracing one path
             const nearestUnseen = (cx: number, cy: number, r: number): Structure | null => {
-              const near = this.structuresWithin(cx, cy, r, this.arcNear);
+              const near = this.structuresWithin(cx, cy, r, this.arcNear, "player", this.ufly[i] === 0);
               let best: Structure | null = null;
               let bd = Infinity;
               for (let k = 0; k < near.length; k++) {
@@ -7603,7 +7766,7 @@ export class Sim {
             // targets, same damage on every one of them — the hop order is
             // the only thing the walk decides, and it decides it so the
             // line is short and legible rather than so the chain is fair
-            const hit = this.structuresWithin(x, y, wspan, this.splashOut);
+            const hit = this.structuresWithin(x, y, wspan, this.splashOut, "player", this.ufly[i] === 0);
             const max = Math.min(hit.length, wp.maxTargets ?? hit.length);
             const col = wp.fieldColor ?? PAL.heal;
             let cx = x, cy = y;
@@ -7655,7 +7818,7 @@ export class Sim {
   }
 
   /** a bullet, missile or shell leaves the unit for the structure */
-  private fireUnitShot(x: number, y: number, tgt: Aim, wp: UnitWeapon, k: number, fed = 1): void {
+  private fireUnitShot(x: number, y: number, tgt: Aim, wp: UnitWeapon, k: number, fed = 1, ground = false): void {
     if (!wp.look) return;
     const half = tgt.half;
     // aim at the footprint, with a little spread so a burst is a burst
@@ -7666,7 +7829,7 @@ export class Sim {
     const a = Math.atan2(dy, dx) + (Math.random() * 2 - 1) * 0.05 + (k - ((wp.shots ?? 1) - 1) / 2) * 0.06;
     // a shell lives exactly long enough to reach where it was aimed; a
     // bullet flies its full range and stops at what it hits on the way
-    this.fireUnitShotAt(x, y, a, wp, fed, wp.fx === "shell" ? d / wp.speed : undefined);
+    this.fireUnitShotAt(x, y, a, wp, fed, wp.fx === "shell" ? d / wp.speed : undefined, ground);
   }
 
   /**
@@ -7676,7 +7839,7 @@ export class Sim {
    * `life` overrides the flight time for a shell, which lives exactly long
    * enough to reach where it was lobbed.
    */
-  private fireUnitShotAt(x: number, y: number, a: number, wp: UnitWeapon, fed = 1, life?: number): void {
+  private fireUnitShotAt(x: number, y: number, a: number, wp: UnitWeapon, fed = 1, life?: number, ground = false): void {
     const look = wp.look;
     if (!look) return;
     const sp = wp.speed;
@@ -7692,6 +7855,7 @@ export class Sim {
       splashRadius: wp.splashRadius ?? 0,
       look,
       collide: look.collide !== false,
+      ground,
       trailT: 0,
       // the venom line's rot rides the shot, so a bomb still in the air
       // poisons what it lands on rather than what its shooter was aiming at
@@ -7756,7 +7920,7 @@ export class Sim {
     const first = count >= 5 ? 0 : (Math.floor(Math.random() * 5) * Math.PI * 2) / 5;
     for (let k = 0; k < count; k++) {
       const sp = stars.length === 1 ? stars[0] : stars[(Math.random() * stars.length) | 0];
-      this.fireStar(x, y, this.urot[i] + first + (k * Math.PI * 2) / 5, sp, fed);
+      this.fireStar(x, y, this.urot[i] + first + (k * Math.PI * 2) / 5, sp, fed, this.ufly[i] === 0);
     }
   }
 
@@ -7772,7 +7936,7 @@ export class Sim {
    * looks once more if the building comes down under it, and it is spent
    * wherever it happens to be when its travel runs out.
    */
-  private fireStar(x: number, y: number, a: number, sp: StarSpec, fed: number): void {
+  private fireStar(x: number, y: number, a: number, sp: StarSpec, fed: number, ground = false): void {
     const look = sp.look;
     this.shots.push({
       x, y,
@@ -7785,13 +7949,14 @@ export class Sim {
       splashRadius: sp.splashRadius,
       look,
       collide: true,
+      ground,
       trailT: 0,
       poison: sp.poison,
       // a star never misses by a roll — the element IS the round, so what
       // it carries lands every time it connects
       poisonChance: 1,
       homing: sp.homing,
-      seek: this.nearestStructure(x, y, sp.range, true),
+      seek: this.nearestStructure(x, y, sp.range, true, "player", ground),
       soakT: sp.soak,
       soakRate: sp.soakRate,
       burn: sp.burn,
@@ -7854,7 +8019,7 @@ export class Sim {
         if (this.ucharge[i] > 0) {
           this.ucharge[i] -= dt;
           if (this.ucharge[i] <= 0) {
-            this.fireUnitLaser(x, y, this.uheldRot[i], this.bombardAim, wp, wp.range, true, 1, dist);
+            this.fireUnitLaser(x, y, this.uheldRot[i], this.bombardAim, wp, wp.range, true, 1, dist, this.ufly[i] === 0);
             this.ucd[slot] = wp.reload - wp.charge;
           }
           continue;
@@ -7869,7 +8034,7 @@ export class Sim {
       this.ucd[slot] -= dt;
       if (this.ucd[slot] > 0) continue;
       this.ucd[slot] = wp.reload / wp.mounts;
-      this.fireUnitLaser(x, y, aim, this.bombardAim, wp, wp.range, true, 1, dist);
+      this.fireUnitLaser(x, y, aim, this.bombardAim, wp, wp.range, true, 1, dist, this.ufly[i] === 0);
     }
   }
 
@@ -7880,14 +8045,14 @@ export class Sim {
 
   private fireUnitLaser(
     x: number, y: number, aim: number, tgt: Aim | null, wp: UnitWeapon, range = wp.range, big = true,
-    fed = 1, span = range,
+    fed = 1, span = range, ground = false,
   ): void {
     const st = wp.laser;
     if (wp.pierce) {
       // THE STARLIGHT RULE (UnitWeapon.pierce): everything the beam
       // crosses takes the hit, the corridor the style's own width
       const halfW = ((st?.width ?? 6) * MU) / 2;
-      const hit = this.structuresAlong(x, y, aim, span, halfW, this.alongOut);
+      const hit = this.structuresAlong(x, y, aim, span, halfW, this.alongOut, "player", ground);
       for (let k = 0; k < hit.length; k++) {
         this.hitStructure(hit[k], wp.damage * fed, wp.poison ?? 0, wp.poisonChance ?? 1);
         if (wp.short) this.shortTower(hit[k], wp.short, wp.shortChance ?? 1);
@@ -8014,7 +8179,7 @@ export class Sim {
       const f = k / steps;
       const sx = x0 + dx * f, sy = y0 + dy * f;
       if (sx < 0 || sy < 0 || sx >= W || sy >= H) break;
-      const t = this.structureAt(sx, sy);
+      const t = this.structureAt(sx, sy, "player", sh.ground);
       if (!t) continue;
       this.sweepHitX = sx;
       this.sweepHitY = sy;
@@ -8055,7 +8220,7 @@ export class Sim {
         // never on the grid, so without the guard every star thrown at one
         // would drop its quarry on the tick after it was thrown
         if (sh.seek && !this.isConvoy(sh.seek) && this.cellTower[sh.seek.gy * COLS + sh.seek.gx] !== sh.seek) {
-          sh.seek = this.nearestStructure(sh.x, sh.y, sh.life * sp, true);
+          sh.seek = this.nearestStructure(sh.x, sh.y, sh.life * sp, true, "player", sh.ground);
           if (!sh.seek) sh.homing = 0;
         }
         if (sh.seek) {
@@ -8110,7 +8275,7 @@ export class Sim {
         sh.y = this.sweepHitY;
         this.hitStructure(t, sh.damage, sh.poison, sh.poisonChance);
         if (sh.splash > 0)
-          this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison, sh.poisonChance);
+          this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison, sh.poisonChance, sh.ground);
         this.starStatus(sh, t);
         this.shotHitFx(sh);
       } else if (sh.life <= 0 && !off) {
@@ -8122,10 +8287,10 @@ export class Sim {
         // first half a lobbed row's `damage` was a number nothing read: the
         // naval shells landed at a fraction of their rows and the venom
         // line's thrown bombs at their splash alone
-        const under = sh.collide ? null : this.structureAt(sh.x, sh.y);
+        const under = sh.collide ? null : this.structureAt(sh.x, sh.y, "player", sh.ground);
         if (under) this.hitStructure(under, sh.damage, sh.poison, sh.poisonChance);
         if (sh.splash > 0) {
-          this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison, sh.poisonChance);
+          this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison, sh.poisonChance, sh.ground);
           // ...and a burst that went off in the open still soaks and still
           // lights whatever happened to be standing inside it
           this.starStatus(sh, under);
@@ -8165,7 +8330,7 @@ export class Sim {
       this.burnTower(t, sh.burn);
     }
     if (sh.splash <= 0 || sh.splashRadius <= 0) return;
-    for (const s of this.structuresWithin(sh.x, sh.y, sh.splashRadius, this.splashOut)) {
+    for (const s of this.structuresWithin(sh.x, sh.y, sh.splashRadius, this.splashOut, "player", sh.ground)) {
       if (s === t) continue;
       this.soakTower(s, sh.soakT, sh.soakRate);
       this.burnTower(s, sh.burn);
@@ -8487,6 +8652,7 @@ export class Sim {
       isGoal: this.field.isGoal,
       occupied: this.occupied,
       waterlogged: this.waterlogged,
+      hill: this.hillOpen,
     };
   }
 
@@ -9299,7 +9465,7 @@ export class Sim {
       // pulse, a timer and a rate written onto each. It rides the same
       // clock as the rest and shares a ring with them below
       if (jamF) {
-        const hit = this.structuresWithin(upx[i], upy[i], jamF.range, this.splashOut);
+        const hit = this.structuresWithin(upx[i], upy[i], jamF.range, this.splashOut, "player", this.ufly[i] === 0);
         for (let q = 0; q < hit.length; q++) {
           const t = hit[q];
           if (isCore(t)) continue;
@@ -10885,10 +11051,10 @@ export class Sim {
           flowTmp.y = dy / dl;
         }
       } else if (fly) {
-        // flyers take the air field's route round the hills and HOLD over
-        // the core's edge once there — Mindustry's FlyingAI circles what it
-        // attacks; this one hovers, and its guns do the rest
-        // (updateUnitWeapons)
+        // flyers fly the straight line to the core over whatever is under
+        // them and HOLD over the core's edge once there — Mindustry's
+        // FlyingAI circles what it attacks; this one hovers, and its guns
+        // do the rest (updateUnitWeapons)
         const gdx = this.ugx[i] - upx[i], gdy = this.ugy[i] - upy[i];
         const gl = Math.sqrt(gdx * gdx + gdy * gdy) || 1;
         const hold = this.coreHold();
@@ -10904,7 +11070,10 @@ export class Sim {
         } else if (gl <= hold) {
           flowTmp.x = 0;
           flowTmp.y = 0;
-        } else this.airHeading(upx[i], upy[i], gdx / gl, gdy / gl, flowTmp, this.airField);
+        } else {
+          flowTmp.x = gdx / gl;
+          flowTmp.y = gdy / gl;
+        }
       } else {
         // A TUSKER CHARGES (levels.ts charge): with a structure picked
         // inside its charge range (updateUnitWeapons, which scans out to
@@ -11150,16 +11319,9 @@ export class Sim {
       // a unit already overlapping a wall (crowd shoves) skips the veto
       // entirely so it can always walk back out.
       //
-      // A FLYER COLLIDES TOO, AND WITH THE HILLS ONLY. It used to skip this
-      // wholesale — `wedged` was forced true for anything airborne — which
-      // meant the air field's careful route round a mountain was advice a
-      // flyer could be shoved straight through: the crowd pushes on the air
-      // layer like any other, and the push landed bodies inside peaks with
-      // no heading to read (see airField). A mountain stops a flyer now.
-      // What it collides WITH is airField, not the walkers' field, and the
-      // difference is the whole point of using it: its mask is the hills
-      // (airWalkMask) and its footprint list is empty, so a flyer still
-      // crosses water, still crosses a turret, and is stopped by rock.
+      // A FLYER NEVER COLLIDES: it flies the straight line to the core over
+      // everything (the branch above), so it is always `wedged` here and
+      // the slide below is a walker's only.
       const x0 = upx[i], y0 = upy[i];
       const cf = fly ? this.airField : mf;
       // ...and the escape is the same one a walker gets: a body ALREADY
@@ -11167,7 +11329,7 @@ export class Sim {
       // what keeps a hill from becoming a trap for anything a shove, a
       // spawn or a pull has managed to put inside one — airHeading hands it
       // a straight line out of the peak and this lets it take it
-      const wedged = KIND_UNSTOPPABLE[ukind[i]] === 1 || cf.hitsWall(upx[i], upy[i], WALL_R);
+      const wedged = fly || KIND_UNSTOPPABLE[ukind[i]] === 1 || cf.hitsWall(upx[i], upy[i], WALL_R);
       let nx = upx[i] + dxT;
       if (!wedged && cf.hitsWall(nx, upy[i], WALL_R)) {
         const cX =
@@ -11440,7 +11602,7 @@ export class Sim {
       // built is theirs: a mutator that buried it would be a mutator that
       // undid their choices, so a roll that lands on one is thrown away
       // and a map with no free ground left raises nothing this period.
-      if (!groundClear(grids, gx, gy, SHIELD_TOWER_SIZE)) continue;
+      if (!groundClear(grids, gx, gy, SHIELD_TOWER_SIZE, false)) continue;
       // ...and never on top of another shield tower — the same test the
       // player's own placement is refused by, read off the same array, so
       // a dome's ground is a dome's ground whoever is asking for it
@@ -11696,6 +11858,7 @@ export class Sim {
     t.targetT = Math.random() * TARGET_INTERVAL;
     t.aimShieldTower = -1;
     t.aimTower = null;
+    t.aimProp = -1;
     t.burstLeft = 0;
     t.chargeT = -1;
     t.beamT = -1;
@@ -11901,6 +12064,7 @@ export class Sim {
     this.inspectIdx = idx;
     this.inspectShieldTower = -1;
     this.inspectTower = null;
+    this.inspectProp = -1;
   }
 
   /** mark one shield tower for the panel — same contract, the other kind */
@@ -11910,6 +12074,7 @@ export class Sim {
     this.inspectUid = -1;
     this.inspectIdx = -1;
     this.inspectTower = null;
+    this.inspectProp = -1;
   }
 
   /**
@@ -11923,6 +12088,7 @@ export class Sim {
     this.inspectUid = -1;
     this.inspectIdx = -1;
     this.inspectShieldTower = -1;
+    this.inspectProp = -1;
   }
 
   /** the SWARM's building under a world point, if one stands there —
@@ -11939,6 +12105,29 @@ export class Sim {
     this.inspectIdx = -1;
     this.inspectShieldTower = -1;
     this.inspectTower = null;
+    this.inspectProp = -1;
+  }
+
+  /** mark one prop for the panel — the same contract, the ground's own kind */
+  setInspectProp(k: number): void {
+    if (k < 0 || k >= this.propHp.length || this.propHp[k] <= 0) return;
+    this.inspectProp = k;
+    this.inspectUid = -1;
+    this.inspectIdx = -1;
+    this.inspectShieldTower = -1;
+    this.inspectTower = null;
+  }
+
+  /** the marked PROP, or -1: one that came down is not a mark any more */
+  get inspectedProp(): number {
+    const k = this.inspectProp;
+    return k >= 0 && this.propHp[k] > 0 ? k : -1;
+  }
+
+  /** what the panel prints of the marked prop (simreport.ts inspectPanel) */
+  propPanel(k: number): { kind: number; tone: number; label: string; hp: number; hpMax: number } {
+    const p = this.terrain.props[k];
+    return { kind: p.kind, tone: p.tone, label: PROP_KINDS[p.kind].label, hp: Math.ceil(Math.max(0, this.propHp[k])), hpMax: propHpFor(p.kind) };
   }
 
   /**
@@ -12017,6 +12206,14 @@ export class Sim {
       this.setInspectUnit(lui);
       return;
     }
+    // ...and the ground itself: a prop under the click is a thing with a
+    // name and a pool, and the panel reads it like anything else
+    const pk = this.propAtPoint(px, py);
+    if (pk >= 0 && this.propHp[pk] > 0) {
+      replaced();
+      this.setInspectProp(pk);
+      return;
+    }
     if (add) return; // a shift-click on bare ground is not a change of mind
     this.clearAllSelection();
     this.clearInspect();
@@ -12081,6 +12278,8 @@ export class Sim {
       const i = this.inspectIdx;
       return { x: this.upx[i], y: this.upy[i], top: this.upy[i] - this.urad[i] * 2.4 - 6 };
     }
+    const pk = this.inspectedProp;
+    if (pk >= 0) return { x: this.propX(pk), y: this.propY(pk), top: this.propY(pk) - this.propHalf(pk) - 4 };
     return null;
   }
 
@@ -12493,6 +12692,7 @@ export class Sim {
       let best = -1;
       let shr: ShieldTower | null = null;
       let aimT: Structure | null = null;
+      let scan = false;
       if (hostile) {
         // THE SWARM'S TURRET (Conquest, mutation.ts). It has no bodies to
         // shoot — the player fields none — so it holds on the nearest of
@@ -12507,7 +12707,7 @@ export class Sim {
         t.targetT -= dt;
         if (t.targetT <= 0) {
           t.targetT = TARGET_INTERVAL;
-          aimT = this.nearestStructure(t.x, t.y, st.range, false, "player");
+          aimT = this.nearestStructure(t.x, t.y, st.range, false, "player", !this.onHill(t));
         }
       }
       // A TAP MARKS NOTHING FOR THE GUNS. Clicking an enemy used to
@@ -12527,7 +12727,7 @@ export class Sim {
         t.targetT -= dt;
         // the scan runs on the clock and nowhere else — see the note on
         // the swarm's branch above
-        const scan = t.targetT <= 0;
+        scan = t.targetT <= 0;
         if (scan) {
           const hasTargets =
             (st.targetAir && this.nAliveAir > 0) ||
@@ -12578,10 +12778,20 @@ export class Sim {
           else shr = null;
         }
       }
+      // ...AND WITH NOTHING ELSE IN RANGE, A PROP (docs/props.md): the
+      // idle gun clears the ground round it. A body always wins, so this
+      // is asked only once the three above came up empty
+      let aimP = -1;
+      if (!hostile && best < 0 && !shr && !aimT && st.targetGround) {
+        const held = t.aimProp;
+        if (held >= 0 && this.propReach(held, t.x, t.y, st.range)) aimP = held;
+        else if (scan) aimP = this.nearestProp(t.x, t.y, st.range);
+      }
       t.targetIdx = best;
       t.aimShieldTower = shr ? this.shieldTowers.indexOf(shr) : -1;
       t.aimTower = aimT;
-      if (best < 0 && !shr && !aimT) {
+      t.aimProp = aimP;
+      if (best < 0 && !shr && !aimT && aimP < 0) {
         // nothing in range: a beam already lit keeps burning down its
         // duration where it is, exactly as Mindustry's held bullet does
         continue;
@@ -12592,11 +12802,11 @@ export class Sim {
       // predictTarget guard (bullet.speed >= 0.01 or no lead at all).
       // A shield tower is a building: no velocity, no lead, aim at the centre
       // A structure is a building: no velocity, no lead, aim at the centre
-      const bx = shr ? shr.x : aimT ? aimT.x : upx[best];
-      const by = shr ? shr.y : aimT ? aimT.y : upy[best];
+      const bx = shr ? shr.x : aimT ? aimT.x : aimP >= 0 ? this.propX(aimP) : upx[best];
+      const by = shr ? shr.y : aimT ? aimT.y : aimP >= 0 ? this.propY(aimP) : upy[best];
       const dx = bx - t.x, dy = by - t.y;
       let aimX = dx, aimY = dy;
-      if (!shr && !aimT && st.bullet.speed >= 1) {
+      if (!shr && !aimT && aimP < 0 && st.bullet.speed >= 1) {
         const tvx = uvx[best], tvy = uvy[best];
         const s2 = st.bullet.speed * st.bullet.speed;
         const qa = tvx * tvx + tvy * tvy - s2;
@@ -12838,9 +13048,11 @@ export class Sim {
     const shrT = t.aimShieldTower >= 0 ? this.shieldTowers[t.aimShieldTower] : null;
     // ...and the same for a BUILDING either side is aiming at (Tower.aimTower)
     const aimT = t.aimTower;
+    const aimP = t.aimProp;
     const hitAimed = (): void => {
       if (shrT) this.shieldTowerHit(shrT, bul.damage, bul.hitFx, a, bul.fxColor);
       if (aimT) this.structureHit(aimT, bul.damage, bul.hitFx, a, bul.fxColor);
+      if (aimP >= 0) this.propHit(aimP, bul.damage, bul.hitFx, a, bul.fxColor);
     };
     // THE SWARM'S OWN INSTANT WEAPONS SWEEP NOTHING (Conquest): every
     // sweep below walks the swarm's BODIES, and a conquered turret has
@@ -13101,10 +13313,19 @@ export class Sim {
     const { upx, upy, uhp } = this;
     const dirx = Math.cos(angle), diry = Math.sin(angle);
     const hits = this.boltHits, dists = this.boltDists;
-    this.collideLine(x, y, dirx, diry, spec.length, b.collidesAir, b.collidesGround, hits, dists);
+    // a prop on the line ends it there and takes the rail (docs/props.md)
+    let len = spec.length;
+    if (b.collidesGround) {
+      const pd = this.firstPropAlong(x, y, dirx * len, diry * len);
+      if (pd >= 0) {
+        len = Math.max(6 * MU, pd);
+        this.propHit(this.propHitK, b.damage, b.hitFx, angle, b.fxColor);
+      }
+    }
+    this.collideLine(x, y, dirx, diry, len, b.collidesAir, b.collidesGround, hits, dists);
     const order = hits.map((_, k) => k).sort((p, q) => dists[p] - dists[q]);
     let left = b.damage;
-    let reached = spec.length;
+    let reached = len;
     const dead: number[] = [];
     for (const k of order) {
       if (left <= 0) {
@@ -13476,6 +13697,14 @@ export class Sim {
     const { upx, upy, uhp } = this;
     const dirx = Math.cos(angle), diry = Math.sin(angle);
     const hits = this.boltHits, dists = this.boltDists;
+    // a prop on the line ends it there and takes the beam (docs/props.md)
+    if (ground) {
+      const pd = this.firstPropAlong(x, y, dirx * length, diry * length);
+      if (pd >= 0) {
+        length = Math.max(6 * MU, pd);
+        this.propHit(this.propHitK, damage, hitFx, angle, fxColor);
+      }
+    }
     this.collideLine(x, y, dirx, diry, length, air, ground, hits, dists);
     // nearest first, so the cap keeps the units the beam reaches first
     const order = hits.map((_, k) => k).sort((a, b) => dists[a] - dists[b]);
@@ -13581,9 +13810,18 @@ export class Sim {
       t.beamDmgT += cont.damageInterval;
       const { upx, upy, uhp } = this;
       const hits = this.boltHits, dists = this.boltDists;
+      // a prop under the beam ends it there and burns (docs/props.md)
+      let beamLen = reach;
+      if (b.collidesGround) {
+        const pd = this.firstPropAlong(t.beamOX, t.beamOY, Math.cos(t.beamRot) * reach, Math.sin(t.beamRot) * reach);
+        if (pd >= 0) {
+          beamLen = Math.max(6 * MU, pd);
+          this.propHit(this.propHitK, b.damage, b.hitFx, t.beamRot, b.fxColor);
+        }
+      }
       this.collideLine(
         t.beamOX, t.beamOY, Math.cos(t.beamRot), Math.sin(t.beamRot),
-        reach, b.collidesAir, b.collidesGround, hits, dists,
+        beamLen, b.collidesAir, b.collidesGround, hits, dists,
       );
       const dead: number[] = [];
       // every body under the beam takes the tick's damage; the dead are
@@ -13615,6 +13853,7 @@ export class Sim {
       // damage a conquered furnace ever does: the sweep above walks the
       // swarm's bodies, and the swarm's own gun has none to walk
       if (t.aimTower) this.structureHit(t.aimTower, b.damage, b.hitFx, t.beamRot, b.fxColor);
+      if (t.aimProp >= 0) this.propHit(t.aimProp, b.damage, b.hitFx, t.beamRot, b.fxColor);
     }
     t.beamT -= dt;
     if (t.beamT <= 0) {
@@ -14133,7 +14372,7 @@ export class Sim {
         this.shots.push({
           x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
           life: 0.5, age: 0, damage: 0, splash: b.splash * stack, splashRadius: b.radius,
-          look: BOMBLET_LOOK, collide: false, trailT: 0, poison: 0, poisonChance: 1,
+          look: BOMBLET_LOOK, collide: false, ground: false, trailT: 0, poison: 0, poisonChance: 1,
           homing: 0, seek: null, soakT: 0, soakRate: 1, burn: 0,
         });
       }
@@ -14141,7 +14380,7 @@ export class Sim {
     if (pl.fuse) {
       this.shots.push({
         x, y, vx: 0, vy: 0,
-        life: pl.fuse, age: 0, damage: 0, splash: pl.splash * stack, splashRadius: pl.radius,
+        life: pl.fuse, age: 0, damage: 0, splash: pl.splash * stack, splashRadius: pl.radius, ground: false,
         look: NUKE_LOOK, collide: false, trailT: 0, poison: 0, poisonChance: 1,
         homing: 0, seek: null, soakT: 0, soakRate: 1, burn: 0,
       });
@@ -14550,8 +14789,13 @@ export class Sim {
       // Artillery shells overfly units too: they only die on target, where
       // the splash below is their whole damage — and a cloud never
       // collides at all
-      let dead = P.life[p] <= 0;
-      if (!dead && !(bf & (BF_ARTILLERY | BF_CLOUD))) {
+      // A ROUND THAT RUNS OUT THIS TICK STILL FLEW THIS TICK: what it
+      // crossed on the way is hit before it goes, so a target picked at
+      // the very edge of the range is a target reached — the torch's
+      // flame used to die a step short of a prop standing exactly there
+      const expired = P.life[p] <= 0;
+      let dead = false;
+      if (!(bf & (BF_ARTILLERY | BF_CLOUD))) {
         const pier = PIER[p];
         const brad = brt[ti];
         const sp = spt[ti];
@@ -14704,7 +14948,23 @@ export class Sim {
             }
           }
         }
+        // ...AND A PROP STOPS A ROUND (docs/props.md): the flight since the
+        // last tick is walked half a cell at a time and the first standing
+        // prop on it takes the hit where the round met it — a piercing
+        // round too, since a shrub is not a body it can pass through
+        if (!dead && b.collidesGround !== false) {
+          const ox = px - P.vx[p] * dt, oy = py - P.vy[p] * dt;
+          const pd = this.firstPropAlong(ox, oy, px - ox, py - oy);
+          if (pd >= 0) {
+            const f = pd / Math.max(1e-6, Math.hypot(px - ox, py - oy));
+            P.x[p] = ox + (px - ox) * f;
+            P.y[p] = oy + (py - oy) * f;
+            this.propHit(this.propHitK, b.damage, b.splash <= 0 ? b.hitFx : undefined, Math.atan2(P.vy[p], P.vx[p]), b.fxColor);
+            dead = true;
+          }
+        }
       }
+      if (expired) dead = true;
       if (dead) {
         const rot = Math.atan2(P.vy[p], P.vx[p]);
         // BulletType.hit: the blast, and the hit effect a splash bullet
@@ -14859,6 +15119,13 @@ export class Sim {
           const d = Math.max(0, Math.hypot(es.x - x, es.y - y) - half);
           this.damageTower(es, dmg * Math.max(0, 0.4 + 0.6 * (1 - d / radius)));
         }
+      // ...and the PROPS in the blast (docs/props.md), by their edge and at
+      // the same falloff — what a shell, a flak burst or a stopped round
+      // does to the ground round where it went off
+      for (const k of this.propsWithin(x, y, radius, this.splashProps)) {
+        const d = this.propDist(k, x, y);
+        this.propHit(k, dmg * Math.max(0, 0.4 + 0.6 * (1 - d / radius)), undefined, 0);
+      }
     }
     // damage first (indices stay stable), then remove the dead from the
     // highest index down so swap-remove can't disturb pending removals

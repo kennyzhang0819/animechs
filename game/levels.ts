@@ -3506,6 +3506,8 @@ export const AIR_FAMILIES: readonly FamilyKey[] = FAMILIES.filter((f) =>
 
 /** does this family put anything in the sky? */
 export const familyFlies = (key: FamilyKey): boolean => AIR_FAMILIES.includes(key);
+/** ...and is it a water family — one every rolled run is dealt (rollFamilies) */
+export const familySwims = (key: FamilyKey): boolean => familyByKey(key).layer === "water";
 
 /** the family a kind belongs to, or null for the boss */
 const FAMILY_OF: Partial<Record<UnitKind, FamilyKey>> = {};
@@ -3805,6 +3807,12 @@ export function rollFamilies(
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
   const picked = hand.length > 0 ? hand : pool.slice(0, FAMILIES_PER_RUN);
+  // A ROLLED RUN ALWAYS HAS A WATER FAMILY: if the cut missed every one
+  // the pool holds, the first past the cut takes a random slot in it
+  if (hand.length === 0 && !picked.some(familySwims)) {
+    const wet = pool.findIndex(familySwims);
+    if (wet >= 0) picked[Math.floor(rand() * picked.length)] = pool[wet];
+  }
   const opening = Math.min(script ? openingDeal(script) : 1, picked.length);
   if (opening <= 0) return picked;
   // the front first, each position taking the earliest WALKING family

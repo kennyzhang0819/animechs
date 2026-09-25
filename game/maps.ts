@@ -12,6 +12,7 @@ import { railsFor } from "./missions";
 import {
   canHoldSpawn,
   forestOf,
+  isBuildableWall,
   spawnClearOfCore,
   LEGACY_PINE_TONES,
   propMask,
@@ -841,7 +842,8 @@ function propsOf(m: MapData, blocked: Uint8Array, wall: Uint8Array): Prop[] {
     let ok = p.x >= 0 && p.y >= 0 && p.x + def.tiles <= COLS && p.y + def.tiles <= ROWS;
     for (let y = p.y; ok && y < p.y + def.tiles; y++)
       for (let x = p.x; x < p.x + def.tiles; x++)
-        if (!blocked[y * COLS + x] || wall[y * COLS + x] !== WALL_PROP) { ok = false; break; }
+        // a prop stands on its own cell (WALL_PROP) or on a hill's rock
+        if (!blocked[y * COLS + x] || !(wall[y * COLS + x] === WALL_PROP || isBuildableWall(wall[y * COLS + x]))) { ok = false; break; }
     if (!ok) continue;
     const tone = PROP_TONES[p.tone] ? p.tone : def.tones[0];
     out.push({ x: p.x, y: p.y, kind: p.kind, tone, rot: ((p.rot | 0) % 4 + 4) % 4 });
@@ -985,11 +987,15 @@ const BARE_PROP_SHADE = 0.55;
  * pulled toward black when it is not; deep water is drawn as the water it
  * is.
  */
+/** how dark a hill's edge cell is on the corner map, as a factor on its tone */
+const HILL_EDGE_SHADE = 0.4;
+
 export function paintThumb(
   cells: { floor: ArrayLike<number>; blocked: ArrayLike<number>; wall: ArrayLike<number>; props?: readonly Prop[] },
   rows: number,
   canvas: HTMLCanvasElement,
   hillShade = 1,
+  edge = 1,
 ): void {
   canvas.width = COLS;
   canvas.height = rows;
@@ -1036,7 +1042,99 @@ export function paintThumb(
         d[o + 2] = col[2];
       }
   }
+  // a hill's outer `edge` cells go dark, so a range reads as a shape
+  // whatever tone its rock is drawn in; a picture shrunk below a pixel a
+  // cell wants the band as wide as the shrink or it drops out
+  const depth = new Uint8Array(COLS * rows);
+  for (let i = 0; i < depth.length; i++)
+    if (cells.blocked[i] !== 0 && cells.wall[i] !== WALL_DEEP && cells.wall[i] !== WALL_PROP) depth[i] = 255;
+  const at = (x: number, y: number): number => (x < 0 || y < 0 || x >= COLS || y >= rows ? 0 : depth[y * COLS + x]);
+  for (let k = 1; k <= edge; k++)
+    for (let y = 0; y < rows; y++)
+      for (let x = 0; x < COLS; x++) {
+        const i = y * COLS + x;
+        if (depth[i] === 255 && Math.min(at(x - 1, y), at(x + 1, y), at(x, y - 1), at(x, y + 1)) < k) depth[i] = k;
+      }
+  for (let i = 0; i < depth.length; i++) {
+    if (depth[i] === 0 || depth[i] === 255) continue;
+    const o = i * 4;
+    d[o] = (d[o] * HILL_EDGE_SHADE) | 0;
+    d[o + 1] = (d[o + 1] * HILL_EDGE_SHADE) | 0;
+    d[o + 2] = (d[o + 2] * HILL_EDGE_SHADE) | 0;
+  }
   c.putImageData(img, 0, 0);
+}
+
+/**
+ * ONE PROP'S CELLS OF THE CORNER MAP, REPAINTED after it came down: the
+ * floor or rock under them by paintThumb's rule, and the hill edge band
+ * read locally — the nearest non-hill cell within `edge` steps, four ways.
+ */
+export function repaintThumbCells(
+  cells: { floor: ArrayLike<number>; blocked: ArrayLike<number>; wall: ArrayLike<number> },
+  rows: number,
+  canvas: HTMLCanvasElement,
+  hillShade: number,
+  edge: number,
+  p: Prop,
+): void {
+  const c = canvas.getContext("2d");
+  if (!c) return;
+  const n = PROP_KINDS[p.kind]?.tiles ?? 1;
+  const x0 = Math.max(0, p.x), y0 = Math.max(0, p.y);
+  const x1 = Math.min(COLS - 1, p.x + n - 1), y1 = Math.min(rows - 1, p.y + n - 1);
+  if (x1 < x0 || y1 < y0) return;
+  const img = c.createImageData(x1 - x0 + 1, y1 - y0 + 1);
+  const d = img.data;
+  const rgb = (css: string): [number, number, number] => [
+    parseInt(css.slice(1, 3), 16),
+    parseInt(css.slice(3, 5), 16),
+    parseInt(css.slice(5, 7), 16),
+  ];
+  const hill = (x: number, y: number): boolean =>
+    x >= 0 && y >= 0 && x < COLS && y < rows &&
+    cells.blocked[y * COLS + x] !== 0 && cells.wall[y * COLS + x] !== WALL_DEEP && cells.wall[y * COLS + x] !== WALL_PROP;
+  // the hill edge band's depth at a cell: steps to the nearest non-hill
+  // cell along the four ways, or 0 past `edge`
+  const depthAt = (x: number, y: number): number => {
+    if (!hill(x, y)) return 0;
+    let ring = [[x, y]];
+    const seen = new Set<number>([y * COLS + x]);
+    for (let k = 1; k <= edge; k++) {
+      const next: number[][] = [];
+      for (const [cx, cy] of ring)
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = cx + dx, ny = cy + dy;
+          if (!hill(nx, ny)) return k;
+          const j = ny * COLS + nx;
+          if (seen.has(j)) continue;
+          seen.add(j);
+          next.push([nx, ny]);
+        }
+      ring = next;
+    }
+    return 0;
+  };
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++) {
+      const i = y * COLS + x;
+      const floorCol = rgb(FLOOR_TONES[cells.floor[i]] ?? FLOOR_TONES[0]);
+      let col: [number, number, number];
+      if (cells.blocked[i] && cells.wall[i] !== WALL_DEEP) {
+        if (cells.wall[i] === WALL_PROP) col = floorCol.map((v) => (v * BARE_PROP_SHADE) | 0) as [number, number, number];
+        else {
+          const w = rgb(WALL_TONES[cells.wall[i]] ?? WALL_TONES[0]);
+          col = w.map((v) => (v * hillShade) | 0) as [number, number, number];
+          if (depthAt(x, y) > 0) col = col.map((v) => (v * HILL_EDGE_SHADE) | 0) as [number, number, number];
+        }
+      } else col = floorCol;
+      const o = ((y - y0) * (x1 - x0 + 1) + (x - x0)) * 4;
+      d[o] = col[0];
+      d[o + 1] = col[1];
+      d[o + 2] = col[2];
+      d[o + 3] = 255;
+    }
+  c.putImageData(img, x0, y0);
 }
 
 /** paint a MapData into a canvas at 1px per cell (scale it up with CSS) */

@@ -73,6 +73,8 @@ export interface BoardGrids {
   readonly occupied: Uint8Array;
   /** the Hydrophobic rule's mask, or null where the rule is not in force */
   readonly waterlogged: Uint8Array | null;
+  /** the hills a turret may stand on: rock, not under a prop (terrain.ts hillMask) */
+  readonly hill: Uint8Array;
 }
 
 /**
@@ -157,20 +159,27 @@ export function bodiesClear(b: BoardBodies, gx: number, gy: number, sz: number):
 }
 
 /**
- * GROUND LEVEL ONLY. A structure stands on open ground, in the swarm's way,
- * where it is a wall as well as a gun — never on a hill, a forest or deep
- * water (every blocked cell), never on another structure (the core
- * included), never on a spawn tile. Shallow water is ground, as it is in
- * Mindustry: a naval map's shallows are most of the floor it has.
+ * A structure stands on open ground, in the swarm's way, where it is a wall
+ * as well as a gun — or on a HILL, with its whole footprint on rock, where
+ * only a flyer can reach it (Sim.onHill). Never half and half, never on a
+ * prop or deep water, never on another structure (the core included),
+ * never on a spawn tile. Shallow water is ground, as it is in Mindustry: a
+ * naval map's shallows are most of the floor it has. `hills` false keeps
+ * the old rule for what rises on its own (the shield domes).
  */
-export function groundClear(g: BoardGrids, gx: number, gy: number, sz: number): boolean {
+export function groundClear(g: BoardGrids, gx: number, gy: number, sz: number, hills = true): boolean {
   if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
+  let rock = 0;
   for (let y = gy; y < gy + sz; y++)
     for (let x = gx; x < gx + sz; x++) {
       const i = y * COLS + x;
-      if (g.blocked[i] || g.isGoal[i] || g.spawn[i] || g.occupied[i] || g.reserved[i]) return false;
+      if (g.isGoal[i] || g.spawn[i] || g.occupied[i] || g.reserved[i]) return false;
+      if (g.blocked[i]) {
+        if (!hills || !g.hill[i]) return false;
+        rock++;
+      }
     }
-  return true;
+  return rock === 0 || rock === sz * sz;
 }
 
 /** a LIVE dome owns its ground: it rose on free rock and holds it */

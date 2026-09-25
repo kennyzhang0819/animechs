@@ -539,6 +539,67 @@ export const PROP_KINDS: readonly PropDef[] = [
     s.disc(c, c, 9, 9, DARK);
     s.disc(c, c, 5, 5, DEEP);
   }),
+  // ---- the water's edge (mapgen.ts, the shore pass) ----
+  // lily pads from straight above: flat discs, no shadow and no lit side,
+  // a notch cut to the middle, veins running out from it, a dark stem dot
+  nature("lily", "Lily pads", 1, 1.25, LEAF_TONES, (s, rng) => {
+    const pads: [number, number, number][] = [[20, 19, 11], [11, 28, 7], [30, 28, 6.5], [29, 10, 5.5]];
+    for (const [cx, cy, r] of pads) {
+      const a = rng() * 6.28;
+      const wedge = (x: number, y: number): boolean => {
+        const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+        let d = Math.atan2(dy, dx) - a;
+        while (d > Math.PI) d -= 6.28;
+        while (d < -Math.PI) d += 6.28;
+        return Math.abs(d) < 0.3 && Math.hypot(dx, dy) > r * 0.25;
+      };
+      s.disc(cx, cy, r, r, (x, y) => (wedge(x, y) ? null : MID));
+      if (r >= 7)
+        for (let k = 0; k < 6; k++) {
+          const b = a + 0.6 + (k / 6) * (6.28 - 1.2);
+          s.bar([cx, cy], [cx + Math.cos(b) * (r - 1.5), cy + Math.sin(b) * (r - 1.5)], 1.2, (x, y) => (wedge(x, y) ? null : LIGHT));
+        }
+      s.disc(cx, cy, r >= 7 ? 1.8 : 1.3, r >= 7 ? 1.8 : 1.3, DARK);
+    }
+  }),
+  // a bleached log lying across the cell: a root flare one end, splinters the other
+  nature("driftwood", "Driftwood", 1, 1.5, WOOD_TONES, (s, rng) => {
+    const a = -0.5 + rng(), c = 24, l = 18;
+    const p = (t: number, w: number): Pt => [c + Math.cos(a) * t - Math.sin(a) * w, c + Math.sin(a) * t + Math.cos(a) * w];
+    s.bar(p(-l, 0), p(l, 0), 9, MID);
+    s.bar(p(-l, -2.5), p(l, -2.5), 3, LIGHT);
+    s.bar(p(-l + 2, 3), p(l - 2, 3), 2.5, DARK);
+    const [rx, ry] = p(-l, 0);
+    s.disc(rx, ry, 5.5, 5, DARK);
+    s.bar(p(-l, 0), p(-l - 5, -5), 3.5, DARK);
+    s.bar(p(-l, 0), p(-l - 4, 5), 3.5, DARK);
+    s.poly([p(l, -4.5), p(l + 4, -2), p(l + 1, 1), p(l + 4, 3), p(l, 4.5)], MID);
+    const [kx, ky] = p(4 + rng() * 6, 0);
+    s.disc(kx, ky, 2, 2, DEEP);
+  }),
+  // a reed bed standing in the water: stems out of a dark pool, cattail heads on half of them
+  nature("rushes", "Rushes", 2, 2.25, LEAF_TONES, (s, rng) => {
+    const c = 36;
+    s.disc(c, c + 4, 24, 15, DEEP);
+    s.disc(c, c + 2, 20, 12, DARK);
+    const n = 14, a0 = rng() * 6.28;
+    for (let i = 0; i < n; i++) {
+      const b = a0 + (i / n) * 6.28 + (rng() - 0.5) * 0.5, d = 4 + rng() * 14;
+      const x0 = c + Math.cos(b) * d, y0 = c + 5 + Math.sin(b) * d * 0.6;
+      const h = 16 + rng() * 12, lean = (rng() - 0.5) * 8;
+      s.bar([x0, y0], [x0 + lean, y0 - h], 3, i % 3 === 0 ? LIGHT : MID);
+      if (i % 2 === 0) s.disc(x0 + lean, y0 - h - 2, 2.2, 3.2, DEEP);
+    }
+  }),
+  // wet stones strewn at the waterline
+  nature("shingle", "Shingle", 1, 1.25, ROCK_TONES, (s, rng) => {
+    const n = 6 + ((rng() * 3) | 0);
+    for (let i = 0; i < n; i++) {
+      const x = 9 + rng() * 22, y = 9 + rng() * 22, r = 3 + rng() * 3;
+      s.disc(x + 1, y + 1, r, r * 0.8, DEEP);
+      s.disc(x, y, r, r * 0.8, (px, py) => (px + 0.5 - x - (py + 0.5 - y) > r * 0.3 ? LIGHT : MID));
+    }
+  }),
 ];
 /** what a fresh prop's `rot` rolls to: a quarter turn for a kind that turns, a painting otherwise */
 export const rollRot = (kind: number, r: number): number => {

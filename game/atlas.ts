@@ -255,19 +255,8 @@ function place(name: string, w: number, h: number): Rect {
   return r;
 }
 
-/**
- * HOW FULL THE SHEET IS RIGHT NOW — the cells handed out, the px they
- * cover and that as a percentage of the whole.
- *
- * It is exported because the ONE THING that can overflow this sheet is
- * invisible to `npm run check`: the team cells are cut to art that has to
- * be drawn first, so they are reserved inside the pack pass, and the pack
- * pass needs a canvas that Node does not have (see the `atlas` stage in
- * scripts/check.mjs). What Node CAN run is everything declared at module
- * scope, which is most of the sheet — so the check reads this after the
- * import and prints the trend. A gate cannot catch the last cell; a
- * number that says 85% on the run before is what would have.
- */
+/** how full the sheet is: the cells handed out, the px they cover and
+ *  that as a percentage of the whole — for the atlas stage of scripts/check.mjs */
 export function atlasFill(): { cells: number; px: number; pct: number } {
   let px = 0;
   for (const cell of CELLS.values()) px += cell.w * cell.h;
@@ -792,10 +781,9 @@ export const UV_LASER = flat("laser", 4, 48);
 // cell draws at UNIT_SPRITE, a 128 at UNIT_SPRITE * 2 and a 256 at
 // UNIT_SPRITE * 4. A part takes the smallest cell that holds its art, and
 // every part of one unit takes the same size because the unit draws them
-// all at one scale. A `-sil` cell is the same part as a solid #565666
-// silhouette: pushMech lays these under the whole walking assembly so one
-// rim traces the unit's outer silhouette, where per-part baked outlines
-// drew a line at every seam of the animated mech.
+// all at one scale. The rim under a walking assembly is these same cells
+// drawn flat in the outline colour (the renderer's flat mode), so no part
+// carries a silhouette cell of its own.
 //
 // A leg SEGMENT breaks the rule on purpose: it is stretched corner to
 // corner between two moving points (Mindustry Lines.line), so its cell is
@@ -811,54 +799,30 @@ export const UV_IRONHIDE2_LEG = sprite("ironhide2-leg", 64, 64);
 export const UV_IRONHIDE2_BASE = sprite("ironhide2-base", 64, 64);
 export const UV_IRONHIDE2_BODY = sprite("ironhide2", 64, 64);
 export const UV_FLAMETHROWER = sprite("flamethrower", 64, [48, 56]);
-export const UV_IRONHIDE1_LEG_SIL = sprite("ironhide1-leg-sil", 64, 48);
-export const UV_IRONHIDE1_BASE_SIL = sprite("ironhide1-base-sil", 64, 48);
-export const UV_IRONHIDE1_BODY_SIL = sprite("ironhide1-sil", 64, 48);
-export const UV_LARGE_WEAPON_SIL = sprite("large-weapon-sil", 64, 48);
-export const UV_IRONHIDE2_LEG_SIL = sprite("ironhide2-leg-sil", 64, 64);
-export const UV_IRONHIDE2_BASE_SIL = sprite("ironhide2-base-sil", 64, 64);
-export const UV_IRONHIDE2_BODY_SIL = sprite("ironhide2-sil", 64, 64);
-export const UV_FLAMETHROWER_SIL = sprite("flamethrower-sil", 64, [48, 56]);
 // the T3 outgrows 64px cells (body 100x80, leg 80x60 at native scale)
 export const UV_IRONHIDE3_LEG = sprite("ironhide3-leg", 128, [80, 60]);
 export const UV_IRONHIDE3_BASE = sprite("ironhide3-base", 128, 64);
 export const UV_IRONHIDE3_BODY = sprite("ironhide3", 128, [100, 80]);
 export const UV_ARTILLERY = sprite("artillery", 128, [48, 56]);
-export const UV_IRONHIDE3_LEG_SIL = sprite("ironhide3-leg-sil", 128, [80, 60]);
-export const UV_IRONHIDE3_BASE_SIL = sprite("ironhide3-base-sil", 128, 64);
-export const UV_IRONHIDE3_BODY_SIL = sprite("ironhide3-sil", 128, [100, 80]);
-export const UV_ARTILLERY_SIL = sprite("artillery-sil", 128, [48, 56]);
 /**
  * The T4: ironhide4's hull alone is a 170x140 source, half again as wide as
  * the 128px cells the T3s sit in, so the whole line rides 256px cells.
  */
 export const UV_IRONHIDE4_BODY = sprite("ironhide4", 256, [170, 140]);
-export const UV_IRONHIDE4_BODY_SIL = sprite("ironhide4-sil", 256, [170, 140]);
 export const UV_IRONHIDE4_LEG = sprite("ironhide4-leg", 256, 128);
-export const UV_IRONHIDE4_LEG_SIL = sprite("ironhide4-leg-sil", 256, 128);
 export const UV_IRONHIDE4_BASE = sprite("ironhide4-base", 256, 128);
-export const UV_IRONHIDE4_BASE_SIL = sprite("ironhide4-base-sil", 256, 128);
 export const UV_IRONHIDE4_WEAPON = sprite("ironhide4-weapon", 256, [56, 102]);
-export const UV_IRONHIDE4_WEAPON_SIL = sprite("ironhide4-weapon-sil", 256, [56, 102]);
 export const UV_IRONHIDE4_MOUNT = sprite("ironhide4-mount", 256, 48);
-export const UV_IRONHIDE4_MOUNT_SIL = sprite("ironhide4-mount-sil", 256, 48);
 // the T5: the same four-part mech, one tier heavier
 export const UV_IRONHIDE5_BODY = sprite("ironhide5", 256, [214, 140]);
-export const UV_IRONHIDE5_BODY_SIL = sprite("ironhide5-sil", 256, [214, 140]);
 export const UV_IRONHIDE5_BASE = sprite("ironhide5-base", 256, [152, 124]);
-export const UV_IRONHIDE5_BASE_SIL = sprite("ironhide5-base-sil", 256, [152, 124]);
 export const UV_IRONHIDE5_LEG = sprite("ironhide5-leg", 256, [152, 124]);
-export const UV_IRONHIDE5_LEG_SIL = sprite("ironhide5-leg-sil", 256, [152, 124]);
 export const UV_IRONHIDE5_WEAPON = sprite("ironhide5-weapon", 256, [83, 138]);
-export const UV_IRONHIDE5_WEAPON_SIL = sprite("ironhide5-weapon-sil", 256, [83, 138]);
 
 // the dartback1 line: the T1 a mech, the rest legged
 export const UV_DARTBACK1_LEG = sprite("dartback1-leg", 64, 48);
 export const UV_DARTBACK1_BASE = sprite("dartback1-base", 64, 48);
 export const UV_DARTBACK1_BODY = sprite("dartback1", 64, 48);
-export const UV_DARTBACK1_LEG_SIL = sprite("dartback1-leg-sil", 64, 48);
-export const UV_DARTBACK1_BASE_SIL = sprite("dartback1-base-sil", 64, 48);
-export const UV_DARTBACK1_BODY_SIL = sprite("dartback1-sil", 64, 48);
 /**
  * The legged T2 and T3: body, mount plate and guns face +x on 128px
  * cells, feet the same on 64px ones. A JOINT is drawn with no rotation at
@@ -871,25 +835,15 @@ export const UV_DARTBACK1_BODY_SIL = sprite("dartback1-sil", 64, 48);
 export const UV_DARTBACK2_BODY = sprite("dartback2", 128, [88, 64]);
 export const UV_DARTBACK2_BASE = sprite("dartback2-base", 128, 64);
 export const UV_DARTBACK2_WEAPON = sprite("dartback2-weapon", 128, [48, 56]);
-export const UV_DARTBACK2_BODY_SIL = sprite("dartback2-sil", 128, [88, 64]);
-export const UV_DARTBACK2_BASE_SIL = sprite("dartback2-base-sil", 128, 64);
-export const UV_DARTBACK2_WEAPON_SIL = sprite("dartback2-weapon-sil", 128, [48, 56]);
 export const UV_DARTBACK2_JOINT = upright("dartback2-joint", 64, 26);
 export const UV_DARTBACK2_FOOT = sprite("dartback2-foot", 64, 40);
-export const UV_DARTBACK2_JOINT_SIL = upright("dartback2-joint-sil", 64, 26);
-export const UV_DARTBACK2_FOOT_SIL = sprite("dartback2-foot-sil", 64, 40);
 export const UV_DARTBACK2_LEG = flat("dartback2-leg", 36, 26);
 export const UV_DARTBACK2_LEG_BASE = flat("dartback2-leg-base", 36, 26);
 export const UV_DARTBACK3_BODY = sprite("dartback3", 128, [94, 75]);
 export const UV_DARTBACK3_WEAPON = sprite("dartback3-weapon", 128, [48, 56]);
 export const UV_DARTBACK3_MOUNT = sprite("dartback3-mount", 128, 48);
-export const UV_DARTBACK3_BODY_SIL = sprite("dartback3-sil", 128, [94, 75]);
-export const UV_DARTBACK3_WEAPON_SIL = sprite("dartback3-weapon-sil", 128, [48, 56]);
-export const UV_DARTBACK3_MOUNT_SIL = sprite("dartback3-mount-sil", 128, 48);
 export const UV_DARTBACK3_JOINT = upright("dartback3-joint", 64, 32);
 export const UV_DARTBACK3_FOOT = sprite("dartback3-foot", 64, 46);
-export const UV_DARTBACK3_JOINT_SIL = upright("dartback3-joint-sil", 64, 32);
-export const UV_DARTBACK3_FOOT_SIL = sprite("dartback3-foot-sil", 64, 46);
 export const UV_DARTBACK3_LEG = flat("dartback3-leg", 48, 34);
 export const UV_DARTBACK3_LEG_BASE = flat("dartback3-leg-base", 48, 34);
 /**
@@ -900,28 +854,19 @@ export const UV_DARTBACK3_LEG_BASE = flat("dartback3-leg-base", 48, 34);
  * and its two leg segments the exact rects their art occupies.
  */
 export const UV_DARTBACK4_BODY = sprite("dartback4", 256, 128);
-export const UV_DARTBACK4_BODY_SIL = sprite("dartback4-sil", 256, 128);
 export const UV_DARTBACK4_WEAPON = sprite("dartback4-weapon", 256, [48, 56]);
-export const UV_DARTBACK4_WEAPON_SIL = sprite("dartback4-weapon-sil", 256, [48, 56]);
 export const UV_DARTBACK4_MOUNT = sprite("dartback4-mount", 256, [70, 97]);
-export const UV_DARTBACK4_MOUNT_SIL = sprite("dartback4-mount-sil", 256, [70, 97]);
 export const UV_DARTBACK4_FOOT = sprite("dartback4-foot", 128, 70);
-export const UV_DARTBACK4_FOOT_SIL = sprite("dartback4-foot-sil", 128, 70);
 export const UV_DARTBACK4_JOINT_BASE = sprite("dartback4-joint-base", 128, 70);
-export const UV_DARTBACK4_JOINT_BASE_SIL = sprite("dartback4-joint-base-sil", 128, 70);
 export const UV_DARTBACK4_LEG = flat("dartback4-leg", 56, 56);
 export const UV_DARTBACK4_LEG_BASE = flat("dartback4-leg-base", 104, 64);
 // the T5: the dartback4's frame with two more legs, and the one centred
 // cannon. dartback5's lower segment is 270px of art for a 150px upper one:
 // legExtension 20 runs it back over its own knee
 export const UV_DARTBACK5_BODY = sprite("dartback5", 256, [160, 190]);
-export const UV_DARTBACK5_BODY_SIL = sprite("dartback5-sil", 256, [160, 190]);
 export const UV_DARTBACK5_CANNON = sprite("dartback5-cannon", 256, [206, 220]);
-export const UV_DARTBACK5_CANNON_SIL = sprite("dartback5-cannon-sil", 256, [206, 220]);
 export const UV_DARTBACK5_JOINT_BASE = sprite("dartback5-joint-base", 128, 70);
-export const UV_DARTBACK5_JOINT_BASE_SIL = sprite("dartback5-joint-base-sil", 128, 70);
 export const UV_DARTBACK5_FOOT = sprite("dartback5-foot", 128, 90);
-export const UV_DARTBACK5_FOOT_SIL = sprite("dartback5-foot-sil", 128, 90);
 export const UV_DARTBACK5_LEG = flat("dartback5-leg", 150, 72);
 export const UV_DARTBACK5_LEG_BASE = flat("dartback5-leg-base", 270, 64);
 
@@ -932,38 +877,22 @@ export const UV_STARHART1_LEG = sprite("starhart1-leg", 64, 48);
 export const UV_STARHART1_BASE = sprite("starhart1-base", 64, 48);
 export const UV_STARHART1_BODY = sprite("starhart1", 64, 56);
 export const UV_HEAL_WEAPON = sprite("heal-weapon", 64, 48);
-export const UV_STARHART1_LEG_SIL = sprite("starhart1-leg-sil", 64, 48);
-export const UV_STARHART1_BASE_SIL = sprite("starhart1-base-sil", 64, 48);
-export const UV_STARHART1_BODY_SIL = sprite("starhart1-sil", 64, 56);
-export const UV_HEAL_WEAPON_SIL = sprite("heal-weapon-sil", 64, 48);
 export const UV_STARHART2_LEG = sprite("starhart2-leg", 64, 64);
 export const UV_STARHART2_BASE = sprite("starhart2-base", 64, 48);
 export const UV_STARHART2_BODY = sprite("starhart2", 64, [68, 58]);
 export const UV_HEAL_SHOTGUN = sprite("heal-shotgun", 64, 50);
-export const UV_STARHART2_LEG_SIL = sprite("starhart2-leg-sil", 64, 64);
-export const UV_STARHART2_BASE_SIL = sprite("starhart2-base-sil", 64, 48);
-export const UV_STARHART2_BODY_SIL = sprite("starhart2-sil", 64, [68, 58]);
-export const UV_HEAL_SHOTGUN_SIL = sprite("heal-shotgun-sil", 64, 50);
 // the T3 outgrows those: every starhart3 part ships on an 80x80 source (its
 // leg alone reaches 35px off centre, past the 32px a 64 cell can hold)
 export const UV_STARHART3_LEG = sprite("starhart3-leg", 128, 80);
 export const UV_STARHART3_BASE = sprite("starhart3-base", 128, 80);
 export const UV_STARHART3_BODY = sprite("starhart3", 128, 80);
 export const UV_BEAM_WEAPON = sprite("beam-weapon", 128, 80);
-export const UV_STARHART3_LEG_SIL = sprite("starhart3-leg-sil", 128, 80);
-export const UV_STARHART3_BASE_SIL = sprite("starhart3-base-sil", 128, 80);
-export const UV_STARHART3_BODY_SIL = sprite("starhart3-sil", 128, 80);
-export const UV_BEAM_WEAPON_SIL = sprite("beam-weapon-sil", 128, 80);
 // the T4. Its main gun has NO sprite (see the MECH_ART note) — the pair
 // of repair-beam pods is all there is to bolt on
 export const UV_STARHART4_BODY = sprite("starhart4", 256, [170, 140]);
-export const UV_STARHART4_BODY_SIL = sprite("starhart4-sil", 256, [170, 140]);
 export const UV_STARHART4_LEG = sprite("starhart4-leg", 256, 128);
-export const UV_STARHART4_LEG_SIL = sprite("starhart4-leg-sil", 256, 128);
 export const UV_STARHART4_BASE = sprite("starhart4-base", 256, 128);
-export const UV_STARHART4_BASE_SIL = sprite("starhart4-base-sil", 256, 128);
 export const UV_REPAIR_BEAM = sprite("repair-beam", 256, 48);
-export const UV_REPAIR_BEAM_SIL = sprite("repair-beam-sil", 256, 48);
 /**
  * The T5, the only legged unit wearing the full set of leg parts: a mount
  * plate like the dartback2, a knee cap like the dartback2 and dartback3, AND a
@@ -972,15 +901,10 @@ export const UV_REPAIR_BEAM_SIL = sprite("repair-beam-sil", 256, 48);
  * segments are stubby and very broad — a 68px stroke on a 30px segment.
  */
 export const UV_STARHART5_BODY = sprite("starhart5", 256, [214, 140]);
-export const UV_STARHART5_BODY_SIL = sprite("starhart5-sil", 256, [214, 140]);
 export const UV_STARHART5_BASE = sprite("starhart5-base", 256, [152, 124]);
-export const UV_STARHART5_BASE_SIL = sprite("starhart5-base-sil", 256, [152, 124]);
 export const UV_STARHART5_JOINT = upright("starhart5-joint", 128, 60);
-export const UV_STARHART5_JOINT_SIL = upright("starhart5-joint-sil", 128, 60);
 export const UV_STARHART5_JOINT_BASE = sprite("starhart5-joint-base", 128, 70);
-export const UV_STARHART5_JOINT_BASE_SIL = sprite("starhart5-joint-base-sil", 128, 70);
 export const UV_STARHART5_FOOT = sprite("starhart5-foot", 128, 90);
-export const UV_STARHART5_FOOT_SIL = sprite("starhart5-foot-sil", 128, 90);
 export const UV_STARHART5_LEG = flat("starhart5-leg", 30, 68);
 export const UV_STARHART5_LEG_BASE = flat("starhart5-leg-base", 30, 64);
 
@@ -1038,14 +962,11 @@ export const UV_LIVEWIRE5 = sprite("livewire5", 384, [258, 366]);
  */
 const TUSK1 = TUSK_TIERS[0], TUSK2 = TUSK_TIERS[1], TUSK3 = TUSK_TIERS[2];
 const TUSK4 = TUSK_TIERS[3], TUSK5 = TUSK_TIERS[4];
-/** one mech tier's three parts and their silhouettes, on one cell size */
+/** one mech tier's three parts, on one cell size */
 const tuskMechCells = (t: number, n: number, cell: number) => ({
   body: sprite(`tusker${t}`, cell, n),
   base: sprite(`tusker${t}-base`, cell, n),
   leg: sprite(`tusker${t}-leg`, cell, n),
-  bodySil: sprite(`tusker${t}-sil`, cell, n),
-  baseSil: sprite(`tusker${t}-base-sil`, cell, n),
-  legSil: sprite(`tusker${t}-leg-sil`, cell, n),
 });
 export const TUSK1_CELLS = tuskMechCells(1, TUSK1.n, 64);
 export const TUSK2_CELLS = tuskMechCells(2, TUSK2.n, 128);
@@ -1055,14 +976,9 @@ export const TUSK3_CELLS = tuskMechCells(3, TUSK3.n, 128);
 const tuskLegCells = (t: number, T: (typeof TUSK_TIERS)[number], cell: number, small: number) => ({
   body: sprite(`tusker${t}`, cell, T.n),
   base: sprite(`tusker${t}-base`, cell, T.n),
-  bodySil: sprite(`tusker${t}-sil`, cell, T.n),
-  baseSil: sprite(`tusker${t}-base-sil`, cell, T.n),
   foot: sprite(`tusker${t}-foot`, small, T.small),
-  footSil: sprite(`tusker${t}-foot-sil`, small, T.small),
   joint: upright(`tusker${t}-joint`, small, T.small),
-  jointSil: upright(`tusker${t}-joint-sil`, small, T.small),
   baseJoint: sprite(`tusker${t}-joint-base`, small, T.small),
-  baseJointSil: sprite(`tusker${t}-joint-base-sil`, small, T.small),
   leg: flat(`tusker${t}-leg-seg`, 64, T.th),
   legBase: flat(`tusker${t}-leg-base-seg`, 64, T.sh),
 });
@@ -1088,9 +1004,6 @@ const sfMechCells = (t: number, n: number, cell: number) => ({
   body: sprite(`grapnel${t}`, cell, n),
   base: sprite(`grapnel${t}-base`, cell, n),
   leg: sprite(`grapnel${t}-leg`, cell, n),
-  bodySil: sprite(`grapnel${t}-sil`, cell, n),
-  baseSil: sprite(`grapnel${t}-base-sil`, cell, n),
-  legSil: sprite(`grapnel${t}-leg-sil`, cell, n),
 });
 export const SF1_CELLS = sfMechCells(1, GRAPNEL_TIERS[0].n, 64);
 export const SF2_CELLS = sfMechCells(2, GRAPNEL_TIERS[1].n, 64);
@@ -1104,8 +1017,8 @@ export const SF5_CELLS = sfMechCells(5, GRAPNEL_TIERS[4].n, 256);
  * Mindustry tree. The two Pylons below share the rig; the four Wardens are
  * turrets now and are packed as heads instead (packAtlas).
  *
- * Six cells a body, like every other thing on the mech rig: the body, the
- * base plate and one side's legs, each with its silhouette beside it. The
+ * Three cells a body, like every other thing on the mech rig: the body,
+ * the base plate and one side's legs. The
  * cell is the smallest 64-multiple that holds the hitbox in native px
  * (192 for the railgun and 128 for the two Pylons — see WardenTier), so
  * the world px per native px is the same 0.625 the rest of the sheet has.
@@ -1126,11 +1039,6 @@ const wardenCells = (name: string, n: number, cell: number) => ({
   body: sprite(name, cell, n),
   base: sprite(`${name}-base`, cell, n),
   leg: sprite(`${name}-leg`, cell, n),
-  sil: {
-    body: sprite(`${name}-sil`, cell, n),
-    base: sprite(`${name}-base-sil`, cell, n),
-    leg: sprite(`${name}-leg-sil`, cell, n),
-  },
 });
 /** the railgun on a 192 cell: six tiles of turret plate (wardenArt.ts
  *  RAZE_PLATE_TILES) does not fit a 128 */
@@ -1186,9 +1094,6 @@ const rkMechCells = (t: number, n: number, cell: number) => ({
   body: sprite(`ratking${t}`, cell, n),
   base: sprite(`ratking${t}-base`, cell, n),
   leg: sprite(`ratking${t}-leg`, cell, n),
-  bodySil: sprite(`ratking${t}-sil`, cell, n),
-  baseSil: sprite(`ratking${t}-base-sil`, cell, n),
-  legSil: sprite(`ratking${t}-leg-sil`, cell, n),
 });
 const RK_CELLS = [64, 64, 128, 128, 192].map((cell, i) => rkMechCells(i + 1, RATKING_TIERS[i].n, cell));
 
@@ -1504,8 +1409,6 @@ export interface MechArt {
   /** sideways body/gun bob px — Mindustry mechSideSway (default 0.54) x 2.5 */
   sideSway?: number;
   sprite: number; // world px of every part quad (same 64px cell scale)
-  /** solid-color silhouette cells, drawn under all parts as the outer rim */
-  sil: { leg: UVRect; base: UVRect; body: UVRect };
 }
 
 // stride is Mindustry's default 4 + (hitSize - 8) / 2.1 world units; gun
@@ -1516,19 +1419,17 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     leg: UV_IRONHIDE1_LEG,
     base: UV_IRONHIDE1_BASE,
     body: UV_IRONHIDE1_BODY,
-    guns: [{ uv: UV_LARGE_WEAPON, sil: UV_LARGE_WEAPON_SIL, x: 4 * MU, y: 2 * MU, top: false }],
+    guns: [{ uv: UV_LARGE_WEAPON, x: 4 * MU, y: 2 * MU, top: false }],
     stride: 4 * MU,
     sprite: UNIT_SPRITE,
-    sil: { leg: UV_IRONHIDE1_LEG_SIL, base: UV_IRONHIDE1_BASE_SIL, body: UV_IRONHIDE1_BODY_SIL },
   },
   ironhide2: {
     leg: UV_IRONHIDE2_LEG,
     base: UV_IRONHIDE2_BASE,
     body: UV_IRONHIDE2_BODY,
-    guns: [{ uv: UV_FLAMETHROWER, sil: UV_FLAMETHROWER_SIL, x: 5 * MU, y: 0, top: false }],
+    guns: [{ uv: UV_FLAMETHROWER, x: 5 * MU, y: 0, top: false }],
     stride: (4 + (10 - 8) / 2.1) * MU,
     sprite: UNIT_SPRITE,
-    sil: { leg: UV_IRONHIDE2_LEG_SIL, base: UV_IRONHIDE2_BASE_SIL, body: UV_IRONHIDE2_BODY_SIL },
   },
   // artillery weapon x=9 y=1, mirrored; mechFrontSway 0.55 is 5.5x the
   // default — the heavy visibly lumbers nose-first with every stride
@@ -1536,11 +1437,10 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     leg: UV_IRONHIDE3_LEG,
     base: UV_IRONHIDE3_BASE,
     body: UV_IRONHIDE3_BODY,
-    guns: [{ uv: UV_ARTILLERY, sil: UV_ARTILLERY_SIL, x: 9 * MU, y: 1 * MU, top: false }],
+    guns: [{ uv: UV_ARTILLERY, x: 9 * MU, y: 1 * MU, top: false }],
     stride: (4 + (13 - 8) / 2.1) * MU,
     frontSway: 0.55 * MU,
     sprite: UNIT_SPRITE * 2,
-    sil: { leg: UV_IRONHIDE3_LEG_SIL, base: UV_IRONHIDE3_BASE_SIL, body: UV_IRONHIDE3_BODY_SIL },
   },
   /**
    * The T4: the first hull on the roster carrying more than one kind of
@@ -1557,14 +1457,13 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     base: UV_IRONHIDE4_BASE,
     body: UV_IRONHIDE4_BODY,
     guns: [
-      { uv: UV_IRONHIDE4_WEAPON, sil: UV_IRONHIDE4_WEAPON_SIL, x: 16 * MU, y: 1 * MU, top: false },
-      { uv: UV_IRONHIDE4_MOUNT, sil: UV_IRONHIDE4_MOUNT_SIL, x: 8.5 * MU, y: 6 * MU, top: true },
-      { uv: UV_IRONHIDE4_MOUNT, sil: UV_IRONHIDE4_MOUNT_SIL, x: 8.5 * MU, y: -7 * MU, top: true },
+      { uv: UV_IRONHIDE4_WEAPON, x: 16 * MU, y: 1 * MU, top: false },
+      { uv: UV_IRONHIDE4_MOUNT, x: 8.5 * MU, y: 6 * MU, top: true },
+      { uv: UV_IRONHIDE4_MOUNT, x: 8.5 * MU, y: -7 * MU, top: true },
     ],
     stride: (4 + (22 - 8) / 2.1) * MU,
     frontSway: 1 * MU,
     sprite: UNIT_SPRITE * 4,
-    sil: { leg: UV_IRONHIDE4_LEG_SIL, base: UV_IRONHIDE4_BASE_SIL, body: UV_IRONHIDE4_BODY_SIL },
   },
   // support T1: heal-weapon x=4.5 mirrored, top=false so it rides under the
   // body like the ironhide1's. hitSize 8 gives it the ironhide1's 4-unit stride
@@ -1572,20 +1471,18 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     leg: UV_STARHART1_LEG,
     base: UV_STARHART1_BASE,
     body: UV_STARHART1_BODY,
-    guns: [{ uv: UV_HEAL_WEAPON, sil: UV_HEAL_WEAPON_SIL, x: 4.5 * MU, y: 0, top: false }],
+    guns: [{ uv: UV_HEAL_WEAPON, x: 4.5 * MU, y: 0, top: false }],
     stride: 4 * MU,
     sprite: UNIT_SPRITE,
-    sil: { leg: UV_STARHART1_LEG_SIL, base: UV_STARHART1_BASE_SIL, body: UV_STARHART1_BODY_SIL },
   },
   // support T2: heal-shotgun-weapon x=5 y=0.5, mirrored and under the body
   starhart2: {
     leg: UV_STARHART2_LEG,
     base: UV_STARHART2_BASE,
     body: UV_STARHART2_BODY,
-    guns: [{ uv: UV_HEAL_SHOTGUN, sil: UV_HEAL_SHOTGUN_SIL, x: 5 * MU, y: 0.5 * MU, top: false }],
+    guns: [{ uv: UV_HEAL_SHOTGUN, x: 5 * MU, y: 0.5 * MU, top: false }],
     stride: (4 + (11 - 8) / 2.1) * MU,
     sprite: UNIT_SPRITE,
-    sil: { leg: UV_STARHART2_LEG_SIL, base: UV_STARHART2_BASE_SIL, body: UV_STARHART2_BODY_SIL },
   },
   // support T3: beam-weapon x=6.5, top=false, and mechFrontSway 0.55 — the
   // same nose-first lumber the ironhide3 walks with. hitSize 13 gives it the
@@ -1594,11 +1491,10 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     leg: UV_STARHART3_LEG,
     base: UV_STARHART3_BASE,
     body: UV_STARHART3_BODY,
-    guns: [{ uv: UV_BEAM_WEAPON, sil: UV_BEAM_WEAPON_SIL, x: 6.5 * MU, y: 0, top: false }],
+    guns: [{ uv: UV_BEAM_WEAPON, x: 6.5 * MU, y: 0, top: false }],
     stride: (4 + (13 - 8) / 2.1) * MU,
     frontSway: 0.55 * MU,
     sprite: UNIT_SPRITE * 2,
-    sil: { leg: UV_STARHART3_LEG_SIL, base: UV_STARHART3_BASE_SIL, body: UV_STARHART3_BODY_SIL },
   },
   /**
    * The support T4. Its main gun has NO sprite at all: Mindustry's
@@ -1615,11 +1511,10 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     leg: UV_STARHART4_LEG,
     base: UV_STARHART4_BASE,
     body: UV_STARHART4_BODY,
-    guns: [{ uv: UV_REPAIR_BEAM, sil: UV_REPAIR_BEAM_SIL, x: 11 * MU, y: -7.5 * MU, top: true }],
+    guns: [{ uv: UV_REPAIR_BEAM, x: 11 * MU, y: -7.5 * MU, top: true }],
     stride: (4 + (24 - 8) / 2.1) * MU,
     frontSway: 1 * MU,
     sprite: UNIT_SPRITE * 4,
-    sil: { leg: UV_STARHART4_LEG_SIL, base: UV_STARHART4_BASE_SIL, body: UV_STARHART4_BODY_SIL },
   },
   /**
    * The ground line's T5 — the same four-part mech as the ironhide4, one
@@ -1636,12 +1531,11 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     leg: UV_IRONHIDE5_LEG,
     base: UV_IRONHIDE5_BASE,
     body: UV_IRONHIDE5_BODY,
-    guns: [{ uv: UV_IRONHIDE5_WEAPON, sil: UV_IRONHIDE5_WEAPON_SIL, x: 21.5 * MU, y: 1 * MU, top: false }],
+    guns: [{ uv: UV_IRONHIDE5_WEAPON, x: 21.5 * MU, y: 1 * MU, top: false }],
     stride: (4 + (30 - 8) / 2.1) * MU,
     frontSway: 1.9 * MU,
     sideSway: 0.6 * MU,
     sprite: UNIT_SPRITE * 4,
-    sil: { leg: UV_IRONHIDE5_LEG_SIL, base: UV_IRONHIDE5_BASE_SIL, body: UV_IRONHIDE5_BODY_SIL },
   },
   // no gun sprite — its Weapon fires only via shootOnDeath. mechSideSway
   // 0.25 is under half the default: it scuttles rather than swaggers
@@ -1653,7 +1547,6 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     stride: 4 * MU,
     sideSway: 0.25 * MU,
     sprite: UNIT_SPRITE,
-    sil: { leg: UV_DARTBACK1_LEG_SIL, base: UV_DARTBACK1_BASE_SIL, body: UV_DARTBACK1_BODY_SIL },
   },
 };
 
@@ -1663,7 +1556,6 @@ const PX = UNIT_SPRITE / 64;
 /** one gun mount: Mindustry's Weapon, mirrored to both sides of the body */
 export interface LegGun {
   uv: UVRect;
-  sil: UVRect;
   /** sideways mount offset px, mirrored; forward offset px */
   x: number;
   y: number;
@@ -1708,7 +1600,6 @@ export interface LegArt {
   sprite: number;
   /** the same for the joint and foot quads, which ride a smaller cell */
   small: number;
-  sil: { body: UVRect; base?: UVRect; joint?: UVRect; baseJoint?: UVRect; foot: UVRect };
 }
 
 export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
@@ -1722,15 +1613,9 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
     legBase: UV_DARTBACK2_LEG_BASE,
     legStroke: 26 * PX,
     legBaseStroke: 26 * PX,
-    guns: [{ uv: UV_DARTBACK2_WEAPON, sil: UV_DARTBACK2_WEAPON_SIL, x: 7 * MU, y: 0, top: false }],
+    guns: [{ uv: UV_DARTBACK2_WEAPON, x: 7 * MU, y: 0, top: false }],
     sprite: UNIT_SPRITE * 2,
     small: UNIT_SPRITE,
-    sil: {
-      body: UV_DARTBACK2_BODY_SIL,
-      base: UV_DARTBACK2_BASE_SIL,
-      joint: UV_DARTBACK2_JOINT_SIL,
-      foot: UV_DARTBACK2_FOOT_SIL,
-    },
   },
   // two weapon pairs over the body: the long sap gun (x=8.5, y=-1.5) and
   // the small purple mount (x=4, y=3). Both rotate to track a target in
@@ -1744,12 +1629,11 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
     legStroke: 34 * PX,
     legBaseStroke: 34 * PX,
     guns: [
-      { uv: UV_DARTBACK3_WEAPON, sil: UV_DARTBACK3_WEAPON_SIL, x: 8.5 * MU, y: -1.5 * MU, top: true },
-      { uv: UV_DARTBACK3_MOUNT, sil: UV_DARTBACK3_MOUNT_SIL, x: 4 * MU, y: 3 * MU, top: true },
+      { uv: UV_DARTBACK3_WEAPON, x: 8.5 * MU, y: -1.5 * MU, top: true },
+      { uv: UV_DARTBACK3_MOUNT, x: 4 * MU, y: 3 * MU, top: true },
     ],
     sprite: UNIT_SPRITE * 2,
     small: UNIT_SPRITE,
-    sil: { body: UV_DARTBACK3_BODY_SIL, joint: UV_DARTBACK3_JOINT_SIL, foot: UV_DARTBACK3_FOOT_SIL },
   },
   /**
    * The dartback1 line's T4 — the same six-leg frame as the dartback3 at more
@@ -1770,18 +1654,13 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
     legStroke: 56 * PX,
     legBaseStroke: 64 * PX,
     guns: [
-      { uv: UV_DARTBACK4_WEAPON, sil: UV_DARTBACK4_WEAPON_SIL, x: 4 * MU, y: 8 * MU, top: true },
-      { uv: UV_DARTBACK4_WEAPON, sil: UV_DARTBACK4_WEAPON_SIL, x: 9 * MU, y: 6 * MU, top: true },
-      { uv: UV_DARTBACK4_WEAPON, sil: UV_DARTBACK4_WEAPON_SIL, x: 14 * MU, y: 0, top: true },
-      { uv: UV_DARTBACK4_MOUNT, sil: UV_DARTBACK4_MOUNT_SIL, x: 9 * MU, y: -7 * MU, top: true },
+      { uv: UV_DARTBACK4_WEAPON, x: 4 * MU, y: 8 * MU, top: true },
+      { uv: UV_DARTBACK4_WEAPON, x: 9 * MU, y: 6 * MU, top: true },
+      { uv: UV_DARTBACK4_WEAPON, x: 14 * MU, y: 0, top: true },
+      { uv: UV_DARTBACK4_MOUNT, x: 9 * MU, y: -7 * MU, top: true },
     ],
     sprite: UNIT_SPRITE * 4,
     small: UNIT_SPRITE * 2,
-    sil: {
-      body: UV_DARTBACK4_BODY_SIL,
-      baseJoint: UV_DARTBACK4_JOINT_BASE_SIL,
-      foot: UV_DARTBACK4_FOOT_SIL,
-    },
   },
   /**
    * The dartback1 line's T5 — the dartback4's frame with two more legs and two
@@ -1804,10 +1683,9 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
     legStroke: 72 * PX,
     legBaseStroke: 64 * PX,
     guns: [
-      { uv: UV_DARTBACK4_MOUNT, sil: UV_DARTBACK4_MOUNT_SIL, x: 11 * MU, y: -5 * MU, top: true },
+      { uv: UV_DARTBACK4_MOUNT, x: 11 * MU, y: -5 * MU, top: true },
       {
         uv: UV_DARTBACK5_CANNON,
-        sil: UV_DARTBACK5_CANNON_SIL,
         x: 0,
         y: -14 * MU,
         top: true,
@@ -1816,11 +1694,6 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
     ],
     sprite: UNIT_SPRITE * 4,
     small: UNIT_SPRITE * 2,
-    sil: {
-      body: UV_DARTBACK5_BODY_SIL,
-      baseJoint: UV_DARTBACK5_JOINT_BASE_SIL,
-      foot: UV_DARTBACK5_FOOT_SIL,
-    },
   },
   /**
    * The support line's T5, and the only legged unit on the roster wearing
@@ -1850,13 +1723,6 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
     guns: [],
     sprite: UNIT_SPRITE * 4,
     small: UNIT_SPRITE * 2,
-    sil: {
-      body: UV_STARHART5_BODY_SIL,
-      base: UV_STARHART5_BASE_SIL,
-      joint: UV_STARHART5_JOINT_SIL,
-      baseJoint: UV_STARHART5_JOINT_BASE_SIL,
-      foot: UV_STARHART5_FOOT_SIL,
-    },
   },
 };
 
@@ -1871,11 +1737,8 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
 /** starhart4's legged parts, the ones its mech rig never had: caps and a hoof
  *  small enough for 64px cells (HART_TIERS small) */
 export const UV_STARHART4_FOOT = sprite("starhart4-foot", 64, 64);
-export const UV_STARHART4_FOOT_SIL = sprite("starhart4-foot-sil", 64, 64);
 export const UV_STARHART4_JOINT = upright("starhart4-joint", 64, 64);
-export const UV_STARHART4_JOINT_SIL = upright("starhart4-joint-sil", 64, 64);
 export const UV_STARHART4_JOINT_BASE = sprite("starhart4-joint-base", 64, 64);
-export const UV_STARHART4_JOINT_BASE_SIL = sprite("starhart4-joint-base-sil", 64, 64);
 /** the stag's leg segments on exact rects: thigh then shin, T4 then T5.
  *  A stretched segment samples its rect corner to corner, mount on the
  *  left, so the height IS the stroke */
@@ -1890,15 +1753,9 @@ export const UV_STARHART5_LEG_BASE_SEG = flat("starhart5-leg-base-seg", 64, HART
 export const UV_IRONHIDE4_FOOT = sprite("ironhide4-foot", 64, 64);
 export const UV_IRONHIDE4_JOINT = upright("ironhide4-joint", 64, 64);
 export const UV_IRONHIDE4_JOINT_BASE = sprite("ironhide4-joint-base", 64, 64);
-export const UV_IRONHIDE4_FOOT_SIL = sprite("ironhide4-foot-sil", 64, 64);
-export const UV_IRONHIDE4_JOINT_SIL = upright("ironhide4-joint-sil", 64, 64);
-export const UV_IRONHIDE4_JOINT_BASE_SIL = sprite("ironhide4-joint-base-sil", 64, 64);
 export const UV_IRONHIDE5_FOOT = sprite("ironhide5-foot", 128, 128);
 export const UV_IRONHIDE5_JOINT = upright("ironhide5-joint", 128, 128);
 export const UV_IRONHIDE5_JOINT_BASE = sprite("ironhide5-joint-base", 128, 128);
-export const UV_IRONHIDE5_FOOT_SIL = sprite("ironhide5-foot-sil", 128, 128);
-export const UV_IRONHIDE5_JOINT_SIL = upright("ironhide5-joint-sil", 128, 128);
-export const UV_IRONHIDE5_JOINT_BASE_SIL = sprite("ironhide5-joint-base-sil", 128, 128);
 const IRON4 = IRON_TIERS[3], IRON5 = IRON_TIERS[4];
 export const UV_IRONHIDE4_LEG_SEG = flat("ironhide4-leg-seg", 64, IRON4.th);
 export const UV_IRONHIDE4_LEG_BASE_SEG = flat("ironhide4-leg-base-seg", 64, IRON4.sh);
@@ -1909,9 +1766,7 @@ export const UV_IRONHIDE5_LEG_BASE_SEG = flat("ironhide5-leg-base-seg", 64, IRON
  *  rest of its parts go on in the venom line's own cells, the runt's on
  *  the dartback1 mech's */
 export const UV_DARTBACK4_JOINT = upright("dartback4-joint", 128, 128);
-export const UV_DARTBACK4_JOINT_SIL = upright("dartback4-joint-sil", 128, 128);
 export const UV_DARTBACK5_JOINT = upright("dartback5-joint", 128, 128);
-export const UV_DARTBACK5_JOINT_SIL = upright("dartback5-joint-sil", 128, 128);
 export const UV_DARTBACK2_LEG_SEG = flat("dartback2-leg-seg", 64, FROG_TIERS[1].th);
 export const UV_DARTBACK2_LEG_BASE_SEG = flat("dartback2-leg-base-seg", 64, FROG_TIERS[1].sh);
 export const UV_DARTBACK3_LEG_SEG = flat("dartback3-leg-seg", 64, FROG_TIERS[2].th);
@@ -2011,13 +1866,6 @@ if (ANIMAL_ART) {
     guns: [],
     sprite: UNIT_SPRITE * 4,
     small: UNIT_SPRITE,
-    sil: {
-      body: UV_STARHART4_BODY_SIL,
-      base: UV_STARHART4_BASE_SIL,
-      joint: UV_STARHART4_JOINT_SIL,
-      baseJoint: UV_STARHART4_JOINT_BASE_SIL,
-      foot: UV_STARHART4_FOOT_SIL,
-    },
   };
   LEG_ART.starhart5 = {
     ...LEG_ART.starhart5!,
@@ -2055,13 +1903,6 @@ if (ANIMAL_ART) {
     guns: [],
     sprite: UNIT_SPRITE * 4,
     small: UNIT_SPRITE,
-    sil: {
-      body: UV_IRONHIDE4_BODY_SIL,
-      base: UV_IRONHIDE4_BASE_SIL,
-      joint: UV_IRONHIDE4_JOINT_SIL,
-      baseJoint: UV_IRONHIDE4_JOINT_BASE_SIL,
-      foot: UV_IRONHIDE4_FOOT_SIL,
-    },
   };
   LEG_ART.ironhide5 = {
     body: UV_IRONHIDE5_BODY,
@@ -2076,13 +1917,6 @@ if (ANIMAL_ART) {
     guns: [],
     sprite: UNIT_SPRITE * 4,
     small: UNIT_SPRITE * 2,
-    sil: {
-      body: UV_IRONHIDE5_BODY_SIL,
-      base: UV_IRONHIDE5_BASE_SIL,
-      joint: UV_IRONHIDE5_JOINT_SIL,
-      baseJoint: UV_IRONHIDE5_JOINT_BASE_SIL,
-      foot: UV_IRONHIDE5_FOOT_SIL,
-    },
   };
 
   // ---- Dartback ----
@@ -2106,15 +1940,12 @@ if (ANIMAL_ART) {
   };
   frogLegArt("dartback2", 1, {
     body: UV_DARTBACK2_BODY, base: UV_DARTBACK2_BASE, foot: UV_DARTBACK2_FOOT, leg: UV_DARTBACK2_LEG_SEG, legBase: UV_DARTBACK2_LEG_BASE_SEG,
-    sil: { body: UV_DARTBACK2_BODY_SIL, base: UV_DARTBACK2_BASE_SIL, foot: UV_DARTBACK2_FOOT_SIL },
   }, 2);
   frogLegArt("dartback3", 2, {
     body: UV_DARTBACK3_BODY, foot: UV_DARTBACK3_FOOT, leg: UV_DARTBACK3_LEG_SEG, legBase: UV_DARTBACK3_LEG_BASE_SEG,
-    sil: { body: UV_DARTBACK3_BODY_SIL, foot: UV_DARTBACK3_FOOT_SIL },
   }, 2);
   frogLegArt("dartback4", 3, {
     body: UV_DARTBACK4_BODY, foot: UV_DARTBACK4_FOOT, leg: UV_DARTBACK4_LEG_SEG, legBase: UV_DARTBACK4_LEG_BASE_SEG,
-    sil: { body: UV_DARTBACK4_BODY_SIL, foot: UV_DARTBACK4_FOOT_SIL },
   }, 4);
   // ---- Stoop, Skate, Livewire ----
   // the bat, the manta and the narwhal on the wing rig — and the boss
@@ -2166,7 +1997,6 @@ if (ANIMAL_ART) {
   wingPart("boss", KING_TIER, [KING_CELLS.body, KING_CELLS.wing], kingGeom(), false, BOSS_SCALE);
   frogLegArt("dartback5", 4, {
     body: UV_DARTBACK5_BODY, foot: UV_DARTBACK5_FOOT, leg: UV_DARTBACK5_LEG_SEG, legBase: UV_DARTBACK5_LEG_BASE_SEG,
-    sil: { body: UV_DARTBACK5_BODY_SIL, foot: UV_DARTBACK5_FOOT_SIL },
   }, 4);
 
   // ---- Tusker ----
@@ -2189,7 +2019,6 @@ if (ANIMAL_ART) {
     stride: T.stride * PX,
     frontSway: sway * MU,
     sprite: UNIT_SPRITE * cellScale,
-    sil: { leg: c.legSil, base: c.baseSil, body: c.bodySil },
   });
   MECH_ART.tusker1 = tuskMechArt(TUSK1_CELLS, TUSK1, 1, 0.9);
   MECH_ART.tusker2 = tuskMechArt(TUSK2_CELLS, TUSK2, 2, 1.2);
@@ -2208,7 +2037,6 @@ if (ANIMAL_ART) {
       guns: [],
       sprite: UNIT_SPRITE * 4,
       small: UNIT_SPRITE * smallScale,
-      sil: { body: c.bodySil, base: c.baseSil, joint: c.jointSil, baseJoint: c.baseJointSil, foot: c.footSil },
     };
   };
   tuskLegArt("tusker4", TUSK4_CELLS, TUSK4, 1);
@@ -2230,7 +2058,6 @@ if (ANIMAL_ART) {
     stride: T.stride * PX,
     legLift: 0.1,
     sprite: UNIT_SPRITE * cellScale,
-    sil: { leg: c.legSil, base: c.baseSil, body: c.bodySil },
   });
   MECH_ART.grapnel1 = sfMechArt(SF1_CELLS, GRAPNEL_TIERS[0], 1);
   MECH_ART.grapnel2 = sfMechArt(SF2_CELLS, GRAPNEL_TIERS[1], 1);
@@ -2249,7 +2076,6 @@ if (ANIMAL_ART) {
     guns: [],
     stride: T.stride * PX,
     sprite: UNIT_SPRITE * cellScale,
-    sil: { leg: c.legSil, base: c.baseSil, body: c.bodySil },
   });
   [1, 1, 2, 2, 3].forEach((scale, i) => {
     MECH_ART[`ratking${i + 1}` as UnitKind] = rkMechArt(RK_CELLS[i], RATKING_TIERS[i], scale);
@@ -2269,7 +2095,6 @@ if (ANIMAL_ART) {
     guns: [],
     stride: T.stride * PX,
     sprite: (UNIT_SPRITE * cell) / 64,
-    sil: { leg: c.sil.leg, base: c.sil.base, body: c.sil.body },
   });
   // the plate under it is a turret's and is laid square to the grid, not
   // on the gun's heading (MechArt.flatBase)
@@ -2572,9 +2397,9 @@ function outlined(src: HTMLImageElement | HTMLCanvasElement, color: string, radi
     plain.drawImage(src, 0, 0);
     return cv;
   }
-  // read-back canvas: both this pass and silhouetted() pull the pixels out
-  // with getImageData, and a GPU-backed canvas has to stall and copy back
-  // every time. Say so up front and the browser keeps it in system memory
+  // read-back canvas: the pixels are pulled out with getImageData, and a
+  // GPU-backed canvas has to stall and copy back every time. Say so up
+  // front and the browser keeps it in system memory
   const cc = cv.getContext("2d", { willReadFrequently: true });
   if (!cc) throw new Error("2d context unavailable for outline");
   cc.imageSmoothingEnabled = false;
@@ -2669,28 +2494,6 @@ function opaqueBounds(src: HTMLCanvasElement): { x: number; y: number; w: number
     }
   }
   return x1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
-}
-
-/**
- * A part's alpha shape dilated by the official outline radius and filled
- * solid with the unit outline color. Drawn under the whole walking assembly
- * (see pushMech), the union of these reads as a single rim around the
- * unit's outer silhouette, with no line at any part seam.
- */
-function silhouetted(src: Src): HTMLCanvasElement {
-  const cv = outlined(src, UNIT_OUTLINE, UNIT_OUTLINE_R);
-  const cc = cv.getContext("2d");
-  if (!cc) throw new Error("2d context unavailable for silhouette");
-  const id = cc.getImageData(0, 0, cv.width, cv.height);
-  const d = id.data;
-  for (let i = 0; i < d.length; i += 4) {
-    if (d[i + 3] === 0) continue;
-    d[i] = 0x56;
-    d[i + 1] = 0x56;
-    d[i + 2] = 0x66;
-  }
-  cc.putImageData(id, 0, 0);
-  return antialiased(cv);
 }
 
 /** Liquids.water.color — the tint baked into the liquid turrets' windows */
@@ -3255,8 +3058,8 @@ function packWormArt(c: CanvasRenderingContext2D): void {
 
 /**
  * THE ANIMAL ART INTO THE SHEET, after every stock cell is drawn: each
- * part cleared and redrawn at native size, through the same antialias and
- * silhouette passes as the sprite files, and each body's team cell
+ * part cleared and redrawn at native size, through the same antialias
+ * pass as the sprite files, and each body's team cell
  * requeued off the animal's own glow. Nothing under public/ is touched;
  * with the switch off this is never called and the sheet is the stock one.
  */
@@ -3267,9 +3070,9 @@ function packAnimalArt(
 ): void {
   // a part into its cell at native size, the way the cell is declared
   // (a knee cap's cell is upright, because it is drawn unrotated)
-  const part = (u: UVRect, art: HTMLCanvasElement, sil = false): void => {
+  const part = (u: UVRect, art: HTMLCanvasElement): void => {
     clearCell(c, u);
-    drawCell(c, u, sil ? silhouetted(art) : antialiased(art), [art.width, art.height]);
+    drawCell(c, u, antialiased(art), [art.width, art.height]);
   };
   // a stretched segment on its exact rect
   const seg = (u: UVRect, art: HTMLCanvasElement): void => {
@@ -3281,102 +3084,85 @@ function packAnimalArt(
   // two rigs, packed by one pair of helpers: a mech tier is body, base
   // and the near-side legs; a legged tier is body, foot, the caps and
   // segments it has cells for, and a base where the stock rig kept one
-  interface MechCells { kind: UnitKind; body: UVRect; base: UVRect; leg: UVRect; sil: { body: UVRect; base: UVRect; leg: UVRect } }
+  interface MechCells { kind: UnitKind; body: UVRect; base: UVRect; leg: UVRect }
   interface LegCells {
     kind: UnitKind; body: UVRect; base?: UVRect; joint?: UVRect; baseJoint?: UVRect; foot: UVRect; leg: UVRect; legBase: UVRect;
-    sil: { body: UVRect; base?: UVRect; joint?: UVRect; baseJoint?: UVRect; foot: UVRect };
   }
   const packMech = (cells: MechCells, a: MechParts, n: number): void => {
     const body = toCanvas(a.body), base = toCanvas(a.base), leg = toCanvas(a.leg);
     part(cells.body, body); part(cells.base, base); part(cells.leg, leg);
-    part(cells.sil.body, body, true); part(cells.sil.base, base, true); part(cells.sil.leg, leg, true);
     dropCell(cells.kind);
     teamCell(cells.kind, body, toCanvas(a.cell), cells.body, n);
   };
   const packLegged = (cells: LegCells, a: LegParts, n: number): void => {
     const body = toCanvas(a.body), foot = toCanvas(a.foot);
-    part(cells.body, body); part(cells.sil.body, body, true);
-    part(cells.foot, foot); part(cells.sil.foot, foot, true);
-    if (cells.base && cells.sil.base) { const base = toCanvas(a.base); part(cells.base, base); part(cells.sil.base, base, true); }
-    if (a.joint && cells.joint && cells.sil.joint) { const joint = toCanvas(a.joint); part(cells.joint, joint); part(cells.sil.joint, joint, true); }
-    if (a.baseJoint && cells.baseJoint && cells.sil.baseJoint) { const bj = toCanvas(a.baseJoint); part(cells.baseJoint, bj); part(cells.sil.baseJoint, bj, true); }
+    part(cells.body, body);
+    part(cells.foot, foot);
+    if (cells.base) part(cells.base, toCanvas(a.base));
+    if (a.joint && cells.joint) part(cells.joint, toCanvas(a.joint));
+    if (a.baseJoint && cells.baseJoint) part(cells.baseJoint, toCanvas(a.baseJoint));
     seg(cells.leg, toCanvasRect(a.leg.px, a.leg.w, a.leg.h));
     seg(cells.legBase, toCanvasRect(a.legBase.px, a.legBase.w, a.legBase.h));
     dropCell(cells.kind);
     teamCell(cells.kind, body, toCanvas(a.cell), cells.body, n);
   };
   const hartMechCells: readonly MechCells[] = [
-    { kind: "starhart1", body: UV_STARHART1_BODY, base: UV_STARHART1_BASE, leg: UV_STARHART1_LEG, sil: { body: UV_STARHART1_BODY_SIL, base: UV_STARHART1_BASE_SIL, leg: UV_STARHART1_LEG_SIL } },
-    { kind: "starhart2", body: UV_STARHART2_BODY, base: UV_STARHART2_BASE, leg: UV_STARHART2_LEG, sil: { body: UV_STARHART2_BODY_SIL, base: UV_STARHART2_BASE_SIL, leg: UV_STARHART2_LEG_SIL } },
-    { kind: "starhart3", body: UV_STARHART3_BODY, base: UV_STARHART3_BASE, leg: UV_STARHART3_LEG, sil: { body: UV_STARHART3_BODY_SIL, base: UV_STARHART3_BASE_SIL, leg: UV_STARHART3_LEG_SIL } },
+    { kind: "starhart1", body: UV_STARHART1_BODY, base: UV_STARHART1_BASE, leg: UV_STARHART1_LEG },
+    { kind: "starhart2", body: UV_STARHART2_BODY, base: UV_STARHART2_BASE, leg: UV_STARHART2_LEG },
+    { kind: "starhart3", body: UV_STARHART3_BODY, base: UV_STARHART3_BASE, leg: UV_STARHART3_LEG },
   ];
   hartMechCells.forEach((cells, i) => packMech(cells, hartMech(HART_TIERS[i]), HART_TIERS[i].n));
   const hartLegCells: readonly LegCells[] = [
-    { kind: "starhart4", body: UV_STARHART4_BODY, base: UV_STARHART4_BASE, joint: UV_STARHART4_JOINT, baseJoint: UV_STARHART4_JOINT_BASE, foot: UV_STARHART4_FOOT, leg: UV_STARHART4_LEG_SEG, legBase: UV_STARHART4_LEG_BASE_SEG,
-      sil: { body: UV_STARHART4_BODY_SIL, base: UV_STARHART4_BASE_SIL, joint: UV_STARHART4_JOINT_SIL, baseJoint: UV_STARHART4_JOINT_BASE_SIL, foot: UV_STARHART4_FOOT_SIL } },
-    { kind: "starhart5", body: UV_STARHART5_BODY, base: UV_STARHART5_BASE, joint: UV_STARHART5_JOINT, baseJoint: UV_STARHART5_JOINT_BASE, foot: UV_STARHART5_FOOT, leg: UV_STARHART5_LEG_SEG, legBase: UV_STARHART5_LEG_BASE_SEG,
-      sil: { body: UV_STARHART5_BODY_SIL, base: UV_STARHART5_BASE_SIL, joint: UV_STARHART5_JOINT_SIL, baseJoint: UV_STARHART5_JOINT_BASE_SIL, foot: UV_STARHART5_FOOT_SIL } },
+    { kind: "starhart4", body: UV_STARHART4_BODY, base: UV_STARHART4_BASE, joint: UV_STARHART4_JOINT, baseJoint: UV_STARHART4_JOINT_BASE, foot: UV_STARHART4_FOOT, leg: UV_STARHART4_LEG_SEG, legBase: UV_STARHART4_LEG_BASE_SEG },
+    { kind: "starhart5", body: UV_STARHART5_BODY, base: UV_STARHART5_BASE, joint: UV_STARHART5_JOINT, baseJoint: UV_STARHART5_JOINT_BASE, foot: UV_STARHART5_FOOT, leg: UV_STARHART5_LEG_SEG, legBase: UV_STARHART5_LEG_BASE_SEG },
   ];
   hartLegCells.forEach((cells, i) => packLegged(cells, hartLegged(HART_TIERS[3 + i]), HART_TIERS[3 + i].n));
   const rhinoMechCells: readonly MechCells[] = [
-    { kind: "ironhide1", body: UV_IRONHIDE1_BODY, base: UV_IRONHIDE1_BASE, leg: UV_IRONHIDE1_LEG, sil: { body: UV_IRONHIDE1_BODY_SIL, base: UV_IRONHIDE1_BASE_SIL, leg: UV_IRONHIDE1_LEG_SIL } },
-    { kind: "ironhide2", body: UV_IRONHIDE2_BODY, base: UV_IRONHIDE2_BASE, leg: UV_IRONHIDE2_LEG, sil: { body: UV_IRONHIDE2_BODY_SIL, base: UV_IRONHIDE2_BASE_SIL, leg: UV_IRONHIDE2_LEG_SIL } },
-    { kind: "ironhide3", body: UV_IRONHIDE3_BODY, base: UV_IRONHIDE3_BASE, leg: UV_IRONHIDE3_LEG, sil: { body: UV_IRONHIDE3_BODY_SIL, base: UV_IRONHIDE3_BASE_SIL, leg: UV_IRONHIDE3_LEG_SIL } },
+    { kind: "ironhide1", body: UV_IRONHIDE1_BODY, base: UV_IRONHIDE1_BASE, leg: UV_IRONHIDE1_LEG },
+    { kind: "ironhide2", body: UV_IRONHIDE2_BODY, base: UV_IRONHIDE2_BASE, leg: UV_IRONHIDE2_LEG },
+    { kind: "ironhide3", body: UV_IRONHIDE3_BODY, base: UV_IRONHIDE3_BASE, leg: UV_IRONHIDE3_LEG },
   ];
   rhinoMechCells.forEach((cells, i) => packMech(cells, ironMech(IRON_TIERS[i]), IRON_TIERS[i].n));
   const rhinoLegCells: readonly LegCells[] = [
-    { kind: "ironhide4", body: UV_IRONHIDE4_BODY, base: UV_IRONHIDE4_BASE, joint: UV_IRONHIDE4_JOINT, baseJoint: UV_IRONHIDE4_JOINT_BASE, foot: UV_IRONHIDE4_FOOT, leg: UV_IRONHIDE4_LEG_SEG, legBase: UV_IRONHIDE4_LEG_BASE_SEG,
-      sil: { body: UV_IRONHIDE4_BODY_SIL, base: UV_IRONHIDE4_BASE_SIL, joint: UV_IRONHIDE4_JOINT_SIL, baseJoint: UV_IRONHIDE4_JOINT_BASE_SIL, foot: UV_IRONHIDE4_FOOT_SIL } },
-    { kind: "ironhide5", body: UV_IRONHIDE5_BODY, base: UV_IRONHIDE5_BASE, joint: UV_IRONHIDE5_JOINT, baseJoint: UV_IRONHIDE5_JOINT_BASE, foot: UV_IRONHIDE5_FOOT, leg: UV_IRONHIDE5_LEG_SEG, legBase: UV_IRONHIDE5_LEG_BASE_SEG,
-      sil: { body: UV_IRONHIDE5_BODY_SIL, base: UV_IRONHIDE5_BASE_SIL, joint: UV_IRONHIDE5_JOINT_SIL, baseJoint: UV_IRONHIDE5_JOINT_BASE_SIL, foot: UV_IRONHIDE5_FOOT_SIL } },
+    { kind: "ironhide4", body: UV_IRONHIDE4_BODY, base: UV_IRONHIDE4_BASE, joint: UV_IRONHIDE4_JOINT, baseJoint: UV_IRONHIDE4_JOINT_BASE, foot: UV_IRONHIDE4_FOOT, leg: UV_IRONHIDE4_LEG_SEG, legBase: UV_IRONHIDE4_LEG_BASE_SEG },
+    { kind: "ironhide5", body: UV_IRONHIDE5_BODY, base: UV_IRONHIDE5_BASE, joint: UV_IRONHIDE5_JOINT, baseJoint: UV_IRONHIDE5_JOINT_BASE, foot: UV_IRONHIDE5_FOOT, leg: UV_IRONHIDE5_LEG_SEG, legBase: UV_IRONHIDE5_LEG_BASE_SEG },
   ];
   rhinoLegCells.forEach((cells, i) => packLegged(cells, ironLegged(IRON_TIERS[3 + i]), IRON_TIERS[3 + i].n));
   packMech(
-    { kind: "dartback1", body: UV_DARTBACK1_BODY, base: UV_DARTBACK1_BASE, leg: UV_DARTBACK1_LEG, sil: { body: UV_DARTBACK1_BODY_SIL, base: UV_DARTBACK1_BASE_SIL, leg: UV_DARTBACK1_LEG_SIL } },
+    { kind: "dartback1", body: UV_DARTBACK1_BODY, base: UV_DARTBACK1_BASE, leg: UV_DARTBACK1_LEG },
     frogMech(FROG_TIERS[0]), FROG_TIERS[0].n,
   );
   const frogLegCells: readonly LegCells[] = [
-    { kind: "dartback2", body: UV_DARTBACK2_BODY, base: UV_DARTBACK2_BASE, foot: UV_DARTBACK2_FOOT, leg: UV_DARTBACK2_LEG_SEG, legBase: UV_DARTBACK2_LEG_BASE_SEG,
-      sil: { body: UV_DARTBACK2_BODY_SIL, base: UV_DARTBACK2_BASE_SIL, foot: UV_DARTBACK2_FOOT_SIL } },
-    { kind: "dartback3", body: UV_DARTBACK3_BODY, foot: UV_DARTBACK3_FOOT, leg: UV_DARTBACK3_LEG_SEG, legBase: UV_DARTBACK3_LEG_BASE_SEG,
-      sil: { body: UV_DARTBACK3_BODY_SIL, foot: UV_DARTBACK3_FOOT_SIL } },
-    { kind: "dartback4", body: UV_DARTBACK4_BODY, foot: UV_DARTBACK4_FOOT, leg: UV_DARTBACK4_LEG_SEG, legBase: UV_DARTBACK4_LEG_BASE_SEG,
-      sil: { body: UV_DARTBACK4_BODY_SIL, foot: UV_DARTBACK4_FOOT_SIL } },
-    { kind: "dartback5", body: UV_DARTBACK5_BODY, foot: UV_DARTBACK5_FOOT, leg: UV_DARTBACK5_LEG_SEG, legBase: UV_DARTBACK5_LEG_BASE_SEG,
-      sil: { body: UV_DARTBACK5_BODY_SIL, foot: UV_DARTBACK5_FOOT_SIL } },
+    { kind: "dartback2", body: UV_DARTBACK2_BODY, base: UV_DARTBACK2_BASE, foot: UV_DARTBACK2_FOOT, leg: UV_DARTBACK2_LEG_SEG, legBase: UV_DARTBACK2_LEG_BASE_SEG },
+    { kind: "dartback3", body: UV_DARTBACK3_BODY, foot: UV_DARTBACK3_FOOT, leg: UV_DARTBACK3_LEG_SEG, legBase: UV_DARTBACK3_LEG_BASE_SEG },
+    { kind: "dartback4", body: UV_DARTBACK4_BODY, foot: UV_DARTBACK4_FOOT, leg: UV_DARTBACK4_LEG_SEG, legBase: UV_DARTBACK4_LEG_BASE_SEG },
+    { kind: "dartback5", body: UV_DARTBACK5_BODY, foot: UV_DARTBACK5_FOOT, leg: UV_DARTBACK5_LEG_SEG, legBase: UV_DARTBACK5_LEG_BASE_SEG },
   ];
   frogLegCells.forEach((cells, i) => packLegged(cells, frogLegged(FROG_TIERS[1 + i]), FROG_TIERS[1 + i].n));
   // the elephants, into cells nobody else owns (see THE TUSKERS' CELLS).
   // `part` clears before it draws like everywhere else — here there is
   // simply nothing under it to clear
   const tuskMechCellSets: readonly MechCells[] = [
-    { kind: "tusker1", body: TUSK1_CELLS.body, base: TUSK1_CELLS.base, leg: TUSK1_CELLS.leg,
-      sil: { body: TUSK1_CELLS.bodySil, base: TUSK1_CELLS.baseSil, leg: TUSK1_CELLS.legSil } },
-    { kind: "tusker2", body: TUSK2_CELLS.body, base: TUSK2_CELLS.base, leg: TUSK2_CELLS.leg,
-      sil: { body: TUSK2_CELLS.bodySil, base: TUSK2_CELLS.baseSil, leg: TUSK2_CELLS.legSil } },
-    { kind: "tusker3", body: TUSK3_CELLS.body, base: TUSK3_CELLS.base, leg: TUSK3_CELLS.leg,
-      sil: { body: TUSK3_CELLS.bodySil, base: TUSK3_CELLS.baseSil, leg: TUSK3_CELLS.legSil } },
+    { kind: "tusker1", body: TUSK1_CELLS.body, base: TUSK1_CELLS.base, leg: TUSK1_CELLS.leg },
+    { kind: "tusker2", body: TUSK2_CELLS.body, base: TUSK2_CELLS.base, leg: TUSK2_CELLS.leg },
+    { kind: "tusker3", body: TUSK3_CELLS.body, base: TUSK3_CELLS.base, leg: TUSK3_CELLS.leg },
   ];
   tuskMechCellSets.forEach((cells, i) => packMech(cells, tuskMech(TUSK_TIERS[i]), TUSK_TIERS[i].n));
   const tuskLegCellSets: readonly LegCells[] = [
-    { kind: "tusker4", body: TUSK4_CELLS.body, base: TUSK4_CELLS.base, joint: TUSK4_CELLS.joint, baseJoint: TUSK4_CELLS.baseJoint, foot: TUSK4_CELLS.foot, leg: TUSK4_CELLS.leg, legBase: TUSK4_CELLS.legBase,
-      sil: { body: TUSK4_CELLS.bodySil, base: TUSK4_CELLS.baseSil, joint: TUSK4_CELLS.jointSil, baseJoint: TUSK4_CELLS.baseJointSil, foot: TUSK4_CELLS.footSil } },
-    { kind: "tusker5", body: TUSK5_CELLS.body, base: TUSK5_CELLS.base, joint: TUSK5_CELLS.joint, baseJoint: TUSK5_CELLS.baseJoint, foot: TUSK5_CELLS.foot, leg: TUSK5_CELLS.leg, legBase: TUSK5_CELLS.legBase,
-      sil: { body: TUSK5_CELLS.bodySil, base: TUSK5_CELLS.baseSil, joint: TUSK5_CELLS.jointSil, baseJoint: TUSK5_CELLS.baseJointSil, foot: TUSK5_CELLS.footSil } },
+    { kind: "tusker4", body: TUSK4_CELLS.body, base: TUSK4_CELLS.base, joint: TUSK4_CELLS.joint, baseJoint: TUSK4_CELLS.baseJoint, foot: TUSK4_CELLS.foot, leg: TUSK4_CELLS.leg, legBase: TUSK4_CELLS.legBase },
+    { kind: "tusker5", body: TUSK5_CELLS.body, base: TUSK5_CELLS.base, joint: TUSK5_CELLS.joint, baseJoint: TUSK5_CELLS.baseJoint, foot: TUSK5_CELLS.foot, leg: TUSK5_CELLS.leg, legBase: TUSK5_CELLS.legBase },
   ];
   tuskLegCellSets.forEach((cells, i) => packLegged(cells, tuskLegged(TUSK_TIERS[3 + i]), TUSK_TIERS[3 + i].n));
   // ---- the Grapnels: five mech tiers, body, base plate and rowing arms ----
   const sfCellSets: readonly MechCells[] = [SF1_CELLS, SF2_CELLS, SF3_CELLS, SF4_CELLS, SF5_CELLS].map((c, i) => ({
     kind: `grapnel${i + 1}` as UnitKind,
     body: c.body, base: c.base, leg: c.leg,
-    sil: { body: c.bodySil, base: c.baseSil, leg: c.legSil },
   }));
   sfCellSets.forEach((cells, i) => packMech(cells, grapnelMech(GRAPNEL_TIERS[i]), GRAPNEL_TIERS[i].n));
   // ---- the Ratkings: the same three parts a tier ----
   RK_CELLS.forEach((c, i) => packMech({
     kind: `ratking${i + 1}` as UnitKind,
     body: c.body, base: c.base, leg: c.leg,
-    sil: { body: c.bodySil, base: c.baseSil, leg: c.legSil },
   }, ratkingMech(RATKING_TIERS[i]), RATKING_TIERS[i].n));
   // ---- the siege: the railgun on the mech rig, into cells nobody else
   // owns (see THE SIEGE'S CELLS) ----
@@ -3434,6 +3220,17 @@ function packAnimalArt(
 /** transparent margin round every packed team cell — the sheet's mip-3
  *  texel is eight px, so this keeps a shrunken read inside its own cell */
 const TEAM_CELL_PAD = 8;
+
+/**
+ * For scripts/check.mjs, which has no canvas to pack the team cells with:
+ * a team cell reserved the way packTeamCells reserves it, from the crop
+ * of its art (`w` x `h` in the sprite's frame). Throws like reserve when
+ * the sheet cannot hold it, which is the check's gate.
+ */
+export function reserveTeamCellBound(kind: string, w: number, h: number): void {
+  const pw = Math.ceil(h) + TEAM_CELL_PAD * 2, ph = Math.ceil(w) + TEAM_CELL_PAD * 2;
+  reserve(`${kind}-cell`, pw, ph, { art: [pw - TEAM_CELL_PAD * 2, ph - TEAM_CELL_PAD * 2] });
+}
 
 /**
  * Composites the Mindustry sprites (GPL-3.0, github.com/Anuken/Mindustry)
@@ -3607,39 +3404,35 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
 
   // ---------- the units ----------
   // Every part is drawn at its native size into the cell declared for
-  // it, facing +x; the silhouette cells get the same part through
-  // silhouetted() instead of antialiased(). The leg sprite of a mech is
-  // pre-offset to one side — the renderer mirrors it for the other leg.
-  const parts = (pairs: readonly (readonly [UVRect, UVRect, HTMLImageElement])[]): void => {
-    for (const [art, sil, src] of pairs) {
-      draw(art, antialiased(src));
-      draw(sil, silhouetted(src));
-    }
+  // it, facing +x. The leg sprite of a mech is pre-offset to one side —
+  // the renderer mirrors it for the other leg.
+  const parts = (pairs: readonly (readonly [UVRect, HTMLImageElement])[]): void => {
+    for (const [art, src] of pairs) draw(art, antialiased(src));
   };
 
   // the ground line
   parts([
-    [UV_IRONHIDE1_LEG, UV_IRONHIDE1_LEG_SIL, img.ironhide1Leg],
-    [UV_IRONHIDE1_BASE, UV_IRONHIDE1_BASE_SIL, img.ironhide1Base],
-    [UV_IRONHIDE1_BODY, UV_IRONHIDE1_BODY_SIL, img.ironhide1],
-    [UV_LARGE_WEAPON, UV_LARGE_WEAPON_SIL, img.largeWeapon],
-    [UV_IRONHIDE2_LEG, UV_IRONHIDE2_LEG_SIL, img.ironhide2Leg],
-    [UV_IRONHIDE2_BASE, UV_IRONHIDE2_BASE_SIL, img.ironhide2Base],
-    [UV_IRONHIDE2_BODY, UV_IRONHIDE2_BODY_SIL, img.ironhide2],
-    [UV_FLAMETHROWER, UV_FLAMETHROWER_SIL, img.flamethrower],
-    [UV_IRONHIDE3_LEG, UV_IRONHIDE3_LEG_SIL, img.ironhide3Leg],
-    [UV_IRONHIDE3_BASE, UV_IRONHIDE3_BASE_SIL, img.ironhide3Base],
-    [UV_IRONHIDE3_BODY, UV_IRONHIDE3_BODY_SIL, img.ironhide3],
-    [UV_ARTILLERY, UV_ARTILLERY_SIL, img.artillery],
-    [UV_IRONHIDE4_BODY, UV_IRONHIDE4_BODY_SIL, img.ironhide4],
-    [UV_IRONHIDE4_LEG, UV_IRONHIDE4_LEG_SIL, img.ironhide4Leg],
-    [UV_IRONHIDE4_BASE, UV_IRONHIDE4_BASE_SIL, img.ironhide4Base],
-    [UV_IRONHIDE4_WEAPON, UV_IRONHIDE4_WEAPON_SIL, img.ironhide4Weapon],
-    [UV_IRONHIDE4_MOUNT, UV_IRONHIDE4_MOUNT_SIL, img.ironhide4Mount],
-    [UV_IRONHIDE5_BODY, UV_IRONHIDE5_BODY_SIL, img.ironhide5],
-    [UV_IRONHIDE5_BASE, UV_IRONHIDE5_BASE_SIL, img.ironhide5Base],
-    [UV_IRONHIDE5_LEG, UV_IRONHIDE5_LEG_SIL, img.ironhide5Leg],
-    [UV_IRONHIDE5_WEAPON, UV_IRONHIDE5_WEAPON_SIL, img.ironhide5Weapon],
+    [UV_IRONHIDE1_LEG, img.ironhide1Leg],
+    [UV_IRONHIDE1_BASE, img.ironhide1Base],
+    [UV_IRONHIDE1_BODY, img.ironhide1],
+    [UV_LARGE_WEAPON, img.largeWeapon],
+    [UV_IRONHIDE2_LEG, img.ironhide2Leg],
+    [UV_IRONHIDE2_BASE, img.ironhide2Base],
+    [UV_IRONHIDE2_BODY, img.ironhide2],
+    [UV_FLAMETHROWER, img.flamethrower],
+    [UV_IRONHIDE3_LEG, img.ironhide3Leg],
+    [UV_IRONHIDE3_BASE, img.ironhide3Base],
+    [UV_IRONHIDE3_BODY, img.ironhide3],
+    [UV_ARTILLERY, img.artillery],
+    [UV_IRONHIDE4_BODY, img.ironhide4],
+    [UV_IRONHIDE4_LEG, img.ironhide4Leg],
+    [UV_IRONHIDE4_BASE, img.ironhide4Base],
+    [UV_IRONHIDE4_WEAPON, img.ironhide4Weapon],
+    [UV_IRONHIDE4_MOUNT, img.ironhide4Mount],
+    [UV_IRONHIDE5_BODY, img.ironhide5],
+    [UV_IRONHIDE5_BASE, img.ironhide5Base],
+    [UV_IRONHIDE5_LEG, img.ironhide5Leg],
+    [UV_IRONHIDE5_WEAPON, img.ironhide5Weapon],
   ]);
   teamCell("ironhide1", img.ironhide1, img.powerCell, UV_IRONHIDE1_BODY, 48);
   teamCell("ironhide2", img.ironhide2, img.ironhide2Cell, UV_IRONHIDE2_BODY, 64);
@@ -3651,28 +3444,28 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // native size onto rects that ARE the art (see the UV note), and a
   // knee cap is packed upright because it is drawn unrotated
   parts([
-    [UV_DARTBACK1_LEG, UV_DARTBACK1_LEG_SIL, img.dartback1Leg],
-    [UV_DARTBACK1_BASE, UV_DARTBACK1_BASE_SIL, img.dartback1Base],
-    [UV_DARTBACK1_BODY, UV_DARTBACK1_BODY_SIL, img.dartback1],
-    [UV_DARTBACK2_BODY, UV_DARTBACK2_BODY_SIL, img.dartback2],
-    [UV_DARTBACK2_BASE, UV_DARTBACK2_BASE_SIL, img.dartback2Base],
-    [UV_DARTBACK2_WEAPON, UV_DARTBACK2_WEAPON_SIL, img.dartback2Weapon],
-    [UV_DARTBACK2_JOINT, UV_DARTBACK2_JOINT_SIL, img.dartback2Joint],
-    [UV_DARTBACK2_FOOT, UV_DARTBACK2_FOOT_SIL, img.dartback2Foot],
-    [UV_DARTBACK3_BODY, UV_DARTBACK3_BODY_SIL, img.dartback3],
-    [UV_DARTBACK3_WEAPON, UV_DARTBACK3_WEAPON_SIL, img.dartback3Weapon],
-    [UV_DARTBACK3_MOUNT, UV_DARTBACK3_MOUNT_SIL, img.dartback3Mount],
-    [UV_DARTBACK3_JOINT, UV_DARTBACK3_JOINT_SIL, img.dartback3Joint],
-    [UV_DARTBACK3_FOOT, UV_DARTBACK3_FOOT_SIL, img.dartback3Foot],
-    [UV_DARTBACK4_BODY, UV_DARTBACK4_BODY_SIL, img.dartback4],
-    [UV_DARTBACK4_WEAPON, UV_DARTBACK4_WEAPON_SIL, img.dartback3Weapon],
-    [UV_DARTBACK4_MOUNT, UV_DARTBACK4_MOUNT_SIL, img.purpleMount],
-    [UV_DARTBACK4_FOOT, UV_DARTBACK4_FOOT_SIL, img.dartback4Foot],
-    [UV_DARTBACK4_JOINT_BASE, UV_DARTBACK4_JOINT_BASE_SIL, img.dartback4JointBase],
-    [UV_DARTBACK5_BODY, UV_DARTBACK5_BODY_SIL, img.dartback5],
-    [UV_DARTBACK5_CANNON, UV_DARTBACK5_CANNON_SIL, img.dartback5Cannon],
-    [UV_DARTBACK5_JOINT_BASE, UV_DARTBACK5_JOINT_BASE_SIL, img.dartback5JointBase],
-    [UV_DARTBACK5_FOOT, UV_DARTBACK5_FOOT_SIL, img.dartback5Foot],
+    [UV_DARTBACK1_LEG, img.dartback1Leg],
+    [UV_DARTBACK1_BASE, img.dartback1Base],
+    [UV_DARTBACK1_BODY, img.dartback1],
+    [UV_DARTBACK2_BODY, img.dartback2],
+    [UV_DARTBACK2_BASE, img.dartback2Base],
+    [UV_DARTBACK2_WEAPON, img.dartback2Weapon],
+    [UV_DARTBACK2_JOINT, img.dartback2Joint],
+    [UV_DARTBACK2_FOOT, img.dartback2Foot],
+    [UV_DARTBACK3_BODY, img.dartback3],
+    [UV_DARTBACK3_WEAPON, img.dartback3Weapon],
+    [UV_DARTBACK3_MOUNT, img.dartback3Mount],
+    [UV_DARTBACK3_JOINT, img.dartback3Joint],
+    [UV_DARTBACK3_FOOT, img.dartback3Foot],
+    [UV_DARTBACK4_BODY, img.dartback4],
+    [UV_DARTBACK4_WEAPON, img.dartback3Weapon],
+    [UV_DARTBACK4_MOUNT, img.purpleMount],
+    [UV_DARTBACK4_FOOT, img.dartback4Foot],
+    [UV_DARTBACK4_JOINT_BASE, img.dartback4JointBase],
+    [UV_DARTBACK5_BODY, img.dartback5],
+    [UV_DARTBACK5_CANNON, img.dartback5Cannon],
+    [UV_DARTBACK5_JOINT_BASE, img.dartback5JointBase],
+    [UV_DARTBACK5_FOOT, img.dartback5Foot],
   ]);
   draw(UV_DARTBACK2_LEG, antialiased(img.dartback2Leg));
   draw(UV_DARTBACK2_LEG_BASE, antialiased(img.dartback2LegBase));
@@ -3690,27 +3483,27 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
 
   // the support line
   parts([
-    [UV_STARHART1_LEG, UV_STARHART1_LEG_SIL, img.starhart1Leg],
-    [UV_STARHART1_BASE, UV_STARHART1_BASE_SIL, img.starhart1Base],
-    [UV_STARHART1_BODY, UV_STARHART1_BODY_SIL, img.starhart1],
-    [UV_HEAL_WEAPON, UV_HEAL_WEAPON_SIL, img.healWeapon],
-    [UV_STARHART2_LEG, UV_STARHART2_LEG_SIL, img.starhart2Leg],
-    [UV_STARHART2_BASE, UV_STARHART2_BASE_SIL, img.starhart2Base],
-    [UV_STARHART2_BODY, UV_STARHART2_BODY_SIL, img.starhart2],
-    [UV_HEAL_SHOTGUN, UV_HEAL_SHOTGUN_SIL, img.healShotgun],
-    [UV_STARHART3_LEG, UV_STARHART3_LEG_SIL, img.starhart3Leg],
-    [UV_STARHART3_BASE, UV_STARHART3_BASE_SIL, img.starhart3Base],
-    [UV_STARHART3_BODY, UV_STARHART3_BODY_SIL, img.starhart3],
-    [UV_BEAM_WEAPON, UV_BEAM_WEAPON_SIL, img.beamWeapon],
-    [UV_STARHART4_BODY, UV_STARHART4_BODY_SIL, img.starhart4],
-    [UV_STARHART4_LEG, UV_STARHART4_LEG_SIL, img.starhart4Leg],
-    [UV_STARHART4_BASE, UV_STARHART4_BASE_SIL, img.starhart4Base],
-    [UV_REPAIR_BEAM, UV_REPAIR_BEAM_SIL, img.repairBeam],
-    [UV_STARHART5_BODY, UV_STARHART5_BODY_SIL, img.starhart5],
-    [UV_STARHART5_BASE, UV_STARHART5_BASE_SIL, img.starhart5Base],
-    [UV_STARHART5_JOINT, UV_STARHART5_JOINT_SIL, img.starhart5Joint],
-    [UV_STARHART5_JOINT_BASE, UV_STARHART5_JOINT_BASE_SIL, img.starhart5JointBase],
-    [UV_STARHART5_FOOT, UV_STARHART5_FOOT_SIL, img.starhart5Foot],
+    [UV_STARHART1_LEG, img.starhart1Leg],
+    [UV_STARHART1_BASE, img.starhart1Base],
+    [UV_STARHART1_BODY, img.starhart1],
+    [UV_HEAL_WEAPON, img.healWeapon],
+    [UV_STARHART2_LEG, img.starhart2Leg],
+    [UV_STARHART2_BASE, img.starhart2Base],
+    [UV_STARHART2_BODY, img.starhart2],
+    [UV_HEAL_SHOTGUN, img.healShotgun],
+    [UV_STARHART3_LEG, img.starhart3Leg],
+    [UV_STARHART3_BASE, img.starhart3Base],
+    [UV_STARHART3_BODY, img.starhart3],
+    [UV_BEAM_WEAPON, img.beamWeapon],
+    [UV_STARHART4_BODY, img.starhart4],
+    [UV_STARHART4_LEG, img.starhart4Leg],
+    [UV_STARHART4_BASE, img.starhart4Base],
+    [UV_REPAIR_BEAM, img.repairBeam],
+    [UV_STARHART5_BODY, img.starhart5],
+    [UV_STARHART5_BASE, img.starhart5Base],
+    [UV_STARHART5_JOINT, img.starhart5Joint],
+    [UV_STARHART5_JOINT_BASE, img.starhart5JointBase],
+    [UV_STARHART5_FOOT, img.starhart5Foot],
   ]);
   draw(UV_STARHART5_LEG, antialiased(img.starhart5Leg));
   draw(UV_STARHART5_LEG_BASE, antialiased(img.starhart5LegBase));

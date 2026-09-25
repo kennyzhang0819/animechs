@@ -34,6 +34,8 @@ export interface PropSpec {
   flora: string[];
   /** the stone kinds by name */
   stones: string[];
+  /** the water's-edge kinds by name, on the shallows and the ground a cell off them */
+  shore?: string[];
   /** the small made kinds scattered round a site */
   litter: string[];
   /** the sites' own kinds: the 4x4s and the 6x6s */
@@ -169,9 +171,11 @@ export const GAP_WATER = 11;
 const SPAWN_CLEAR = 6;
 /** the spawn layer is the nearest such ground inward from every edge cell,
  *  however deep, and this many cells of it */
-const SPAWN_DEPTH = 3;
+const SPAWN_DEPTH = 10;
 const ROUTE_MIN_GROUND = 12;
 const ROUTE_MIN_WATER = 16;
+/** rock this far over the threshold keeps its head above the water */
+const SEA_ROCK = 0.06;
 
 // ---------- raster helpers (scripts/maps/geom.mjs) ----------
 
@@ -517,6 +521,7 @@ export function build(spec: MapSpec): Built {
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
         const h = wN(x, y) + bias(x, y);
+        if (kind[y * W + x] === WALL && rockN(x, y) + rockBias(x, y) > spec.rock.threshold + SEA_ROCK) continue;
         if (h < spec.water.level - spec.water.shore) kind[y * W + x] = DEEP;
         else if (h < spec.water.level) kind[y * W + x] = SHALLOW;
       }
@@ -994,13 +999,13 @@ export function build(spec: MapSpec): Built {
     let no = 0;
     for (let i = 0; i < N; i++) if (open(i) && !claim[i]) order[no++] = i;
     for (let k = no - 1; k > 0; k--) { const j = (rnd() * (k + 1)) | 0; const t = order[k]; order[k] = order[j]; order[j] = t; }
-    const tryStand = (i: number, table: Map<number, number[]>, wantT: number, tone: (k: number) => number): boolean => {
+    const tryStand = (i: number, table: Map<number, number[]>, wantT: number, tone: (k: number) => number, ok: Pass = open): boolean => {
       const x = i % W, y = (i / W) | 0;
       for (let t = wantT; t >= 1; t--) {
         const kinds = table.get(t);
         if (!kinds) continue;
         const k = pick(kinds), off = (t - 1) >> 1;
-        if (fits(x - off, y - off, t, open)) { stand(x - off, y - off, k, tone(k)); return true; }
+        if (fits(x - off, y - off, t, ok)) { stand(x - off, y - off, k, tone(k)); return true; }
       }
       return false;
     };
@@ -1023,6 +1028,41 @@ export function build(spec: MapSpec): Built {
         tryStand(i, stones, wantT, () => rockToneAt(i));
       }
     }
+
+    // THE SHORE: the water within two cells of land — dry ground or a
+    // cliff foot — and the dry ground a cell off the water take the
+    // water's-edge kinds (spec shore), off the routes. The growing kinds
+    // stand on deep water too (pads and reeds off a bank); the wood and
+    // the stones only on the shallows and the ground. A bed on the water
+    // blocks like any other prop, and deep water was blocked already
+    if (pp.shore?.length) {
+      const grows = (n: string): boolean => PROP_KINDS[propKind(n)].tones.includes(TONE.pine);
+      const shoreKinds = bySize(pp.shore), wetKinds = bySize(pp.shore.filter(grows));
+      const dryKinds = bySize(pp.shore.filter((n) => !grows(n)));
+      const dLand = clearance((i) => isWater(i));
+      const dWet = clearance((i) => !isWater(i));
+      const shoreCell = (i: number): boolean =>
+        (isWater(i) && dLand[i] <= 2) || (kind[i] === OPEN && dWet[i] <= 1.5);
+      const shoreOk: Pass = (i) => (isWater(i) || kind[i] === OPEN) && !keep[i];
+      const band: number[] = [];
+      for (let i = 0; i < N; i++) if (shoreCell(i) && !keep[i] && !claim[i]) band.push(i);
+      for (let k = band.length - 1; k > 0; k--) { const j = (rnd() * (k + 1)) | 0; const t = band[k]; band[k] = band[j]; band[j] = t; }
+      let shore = 0;
+      for (const i of band) {
+        if (claim[i] || rnd() > (isWater(i) ? 0.1 : 0.06)) continue;
+        const table = kind[i] === DEEP ? wetKinds : kind[i] === OPEN && dryKinds.size ? dryKinds : shoreKinds;
+        if (!table.size) continue;
+        const wantT = isWater(i) && rnd() < 0.35 ? 2 : 1;
+        if (tryStand(i, table, wantT, (k) => toneFor(k, i), shoreOk)) shore++;
+      }
+      say(`shore props: ${shore} of ${band.length} shore cells`);
+    }
+
+    /** the kind a cell had under a lifted prop: its floor remembers the water */
+    const wasWater = (f: number): number => {
+      const base = f - (f % 3);
+      return base === FLOOR_DEEP_WATER || base === FLOOR_DEEP_TAINTED_WATER ? DEEP : WATER_FLOORS.includes(base) ? SHALLOW : OPEN;
+    };
 
     // NO ROOM IS LEFT TO THE SMALL BODIES ONLY. Every room was reachable by
     // a body GAP_GROUND wide before the props; one that is not any more
@@ -1070,7 +1110,7 @@ export function build(spec: MapSpec): Built {
           for (let y = q.y; y < q.y + qt && !hit; y++) for (let x = q.x; x < q.x + qt; x++) if (near[y * W + x]) { hit = true; break; }
           if (!hit) continue;
           for (let y = q.y; y < q.y + qt; y++)
-            for (let x = q.x; x < q.x + qt; x++) { const i = y * W + x; blocked[i] = 0; wall[i] = 0; kind[i] = OPEN; claim[i] = 0; }
+            for (let x = q.x; x < q.x + qt; x++) { const i = y * W + x; blocked[i] = 0; wall[i] = 0; kind[i] = wasWater(floor[i]); claim[i] = 0; }
           props.splice(k, 1);
           took++;
         }
@@ -1096,20 +1136,63 @@ export function build(spec: MapSpec): Built {
       // ...and a wet pocket, or one the flora could not take, is sealed as before
       for (const i of sealWalk()) { blocked[i] = 1; wall[i] = variant(fams[fam[i]].wall, 2); }
     }
+    // ...AND THE HILLS: over every rock cell in a random order, the same
+    // flora and stones at a fraction of the ground's density. The rock
+    // stays rock under them — only the claim and the prop are written —
+    // so nothing here opens a hill, and it comes after the room pass so
+    // nothing lifts one
+    {
+      const rock: Pass = (i) => kind[i] === WALL && wall[i] !== WALL_PROP && blocked[i] === 1;
+      const standOnRock = (x0: number, y0: number, k: number, tone: number): void => {
+        const t = PROP_KINDS[k].tiles;
+        for (let y = y0; y < y0 + t; y++) for (let x = x0; x < x0 + t; x++) claim[y * W + x] = 1;
+        props.push({ x: x0, y: y0, kind: k, tone, rot: rollRot(k, rnd()) });
+      };
+      const rim = 6; // the map's edge goes to black (renderer DARK_RIM)
+      const order: number[] = [];
+      for (let i = 0; i < N; i++) {
+        const x = i % W, y = (i / W) | 0;
+        if (rock(i) && !claim[i] && x >= rim && y >= rim && x < W - rim && y < H - rim) order.push(i);
+      }
+      for (let k = order.length - 1; k > 0; k--) { const j = (rnd() * (k + 1)) | 0; const t = order[k]; order[k] = order[j]; order[j] = t; }
+      let hillProps = 0;
+      for (const i of order) {
+        if (claim[i]) continue;
+        const x = i % W, y = (i / W) | 0;
+        const g = gN(x / gs, y / gs);
+        const pg = pp.growth * (g > 0.6 ? 0.06 : g > 0.5 ? 0.02 : 0.004);
+        const ps = pp.stone * 0.012;
+        const r = rnd();
+        const table = r < pg ? flora : r < pg + ps ? stones : null;
+        if (!table) continue;
+        const wantT = table === flora ? (g > 0.6 ? (rnd() < 0.3 ? 3 : 2) : 1) : rnd() < 0.3 ? 2 : 1;
+        for (let t = wantT; t >= 1; t--) {
+          const kinds = table.get(t);
+          if (!kinds) continue;
+          const k = pick(kinds), off = (t - 1) >> 1;
+          if (fits(x - off, y - off, t, rock)) {
+            standOnRock(x - off, y - off, k, table === flora ? toneFor(k, i) : rockToneAt(i));
+            hillProps++;
+            break;
+          }
+        }
+      }
+      say(`hill props: ${hillProps}`);
+    }
     say(`props: ${props.length} (${sites.length} sites)`);
   }
 
-  // THE SPAWN LAYER: the doors, and the nearest ground inward from every
-  // edge cell — the first cell, however deep, whose ground reaches the
-  // core through corridors at least 2 x SPAWN_CLEAR wide (the walk mask
-  // opened at that radius, in the core's piece of it), and SPAWN_DEPTH
-  // cells of it. The terrain is left as the noise drew it: on an open
-  // side the door is the edge itself, behind a mountain it is the
-  // mountain's inner foot. Water tiles the same way over the water mask
+  // THE SPAWN LAYER: the nearest ground inward from every edge cell — the
+  // first cell, however deep, whose ground reaches the core through
+  // corridors at least 2 x SPAWN_CLEAR wide (the walk mask opened at that
+  // radius, in the core's piece of it), and SPAWN_DEPTH cells of it. The
+  // door circles are not in it: they only carve. The terrain is left as
+  // the noise drew it: on an open side the door is the edge itself, behind
+  // a mountain it is the mountain's inner foot. Water tiles the same way
+  // over the water mask
   const spawnTiles: number[] = [];
   {
     const mark = new Uint8Array(N);
-    for (const z of spec.spawns) disc(z.x, z.y, z.r, (i) => { mark[i] = 1; });
     const wide = (mask: Uint8Array, seed: number): Uint8Array => {
       const o = dilate(erode(mask, SPAWN_CLEAR, 1), SPAWN_CLEAR);
       const { lab } = label(o);
@@ -1119,8 +1202,12 @@ export function build(spec: MapSpec): Built {
       return out;
     };
     const gm = new Uint8Array(N), wm = new Uint8Array(N);
-    for (let i = 0; i < N; i++) { gm[i] = isWalk(i) && !blocked[i] ? 1 : 0; wm[i] = isWater(i) ? 1 : 0; }
+    // a prop is an obstacle, not a wall: it does not narrow a room for
+    // the width test, and the sim's own pad filter drops what a body
+    // cannot leave. The prop's cell itself is never a door
+    for (let i = 0; i < N; i++) { gm[i] = (isWalk(i) && !blocked[i]) || wall[i] === WALL_PROP ? 1 : 0; wm[i] = isWater(i) ? 1 : 0; }
     const ok = wide(gm, core.y * W + core.x);
+    for (let i = 0; i < N; i++) if (wall[i] === WALL_PROP) ok[i] = 0;
     if (waterZones.length) {
       const z = waterZones[0];
       const ww = wide(wm, Math.round(z.y) * W + Math.round(z.x));
@@ -1301,6 +1388,7 @@ const THEMES: Theme[] = [
       canopy: [TONE.scrub], wood: TONE.ash, weather: TONE.dust,
       flora: ["shrub", "shrub", "shrub", "brush", "brush", "snag", "snag", "snag", "stump", "log"],
       stones: ["boulder", "boulder", "boulder", "rock", "rock", "outcrop"],
+      shore: ["shingle", "shingle", "shingle", "driftwood", "driftwood", "rushes"],
       litter: DRY_LITTER, sites: ["silo", "wreck", "bunker", "wreck"],
       growth: 0.35, stone: 2.4, siteCount: [1, 3],
     },
@@ -1321,6 +1409,7 @@ const THEMES: Theme[] = [
       canopy: [TONE.pine, TONE.scrub], wood: TONE.bark, weather: TONE.plain,
       flora: ["shrub", "shrub", "shrub", "brush", "brush", "tree", "snag", "snag", "log", "stump"],
       stones: ["boulder", "boulder", "rock", "rock", "outcrop", "outcrop"],
+      shore: ["shingle", "shingle", "shingle", "driftwood", "driftwood", "rushes"],
       litter: DRY_LITTER, sites: ["bunker", "walker", "bunker", "colossus"],
       growth: 0.5, stone: 2.2, siteCount: [1, 2],
     },
@@ -1342,6 +1431,7 @@ const THEMES: Theme[] = [
       canopy: [TONE.mangrove, TONE.pine], wood: TONE.bark, weather: TONE.film,
       flora: ["shrub", "shrub", "reeds", "reeds", "reeds", "brush", "brush", "brush", "tree", "tree", "tree", "thicket", "thicket", "oak", "oak", "grove", "log", "stump"],
       stones: ["boulder", "rock"],
+      shore: ["rushes", "rushes", "rushes", "lily", "lily", "driftwood", "shingle"],
       litter: WET_LITTER, sites: ["wreck", "walker", "colossus"],
       growth: 1, stone: 0.5, siteCount: [0, 2],
     },
@@ -1362,6 +1452,7 @@ const THEMES: Theme[] = [
       canopy: [TONE.frost], wood: TONE.ash, weather: TONE.rime,
       flora: ["shrub", "shrub", "shrub", "brush", "brush", "tree", "tree", "tree", "thicket", "oak", "log", "stump"],
       stones: ["boulder", "boulder", "rock", "outcrop"],
+      shore: ["shingle", "shingle", "shingle", "driftwood", "driftwood", "rushes"],
       litter: COLD_LITTER, sites: ["bunker", "wreck", "colossus", "wreck"],
       growth: 0.55, stone: 1, siteCount: [1, 2],
     },
@@ -1381,6 +1472,7 @@ const THEMES: Theme[] = [
       canopy: [TONE.pine, TONE.scrub], wood: TONE.bark, weather: TONE.plain,
       flora: ["shrub", "shrub", "shrub", "reeds", "reeds", "brush", "brush", "brush", "tree", "tree", "tree", "thicket", "thicket", "oak", "oak", "grove", "stump", "log"],
       stones: ["boulder", "rock"],
+      shore: ["rushes", "rushes", "rushes", "lily", "lily", "driftwood", "shingle"],
       litter: DRY_LITTER, sites: ["walker", "colossus", "bunker", "wreck"],
       growth: 1, stone: 0.6, siteCount: [1, 2],
     },
@@ -1401,6 +1493,7 @@ const THEMES: Theme[] = [
       canopy: [TONE.scrub], wood: TONE.ash, weather: TONE.ochre,
       flora: ["shrub", "shrub", "shrub", "brush", "brush", "snag", "snag", "snag", "stump", "log"],
       stones: ["boulder", "boulder", "rock", "rock", "outcrop", "outcrop"],
+      shore: ["shingle", "shingle", "shingle", "driftwood", "driftwood", "rushes"],
       litter: DRY_LITTER, sites: ["wreck", "bunker", "colossus", "silo"],
       growth: 0.35, stone: 2.6, siteCount: [1, 3],
     },
@@ -1421,6 +1514,7 @@ const THEMES: Theme[] = [
       canopy: [TONE.ash], wood: TONE.ash, weather: TONE.soot,
       flora: ["shrub", "brush", "snag", "snag", "snag", "snag", "stump", "stump", "log", "log"],
       stones: ["boulder", "boulder", "rock", "outcrop"],
+      shore: ["shingle", "shingle", "shingle", "driftwood", "driftwood", "rushes"],
       litter: ["scrap", "scrap", "hull", "hull", "barrels", "mast"], sites: ["walker", "colossus", "wreck", "walker"],
       growth: 0.4, stone: 2.2, siteCount: [2, 3],
     },
@@ -1441,6 +1535,7 @@ const THEMES: Theme[] = [
       canopy: [TONE.pine, TONE.scrub], wood: TONE.bark, weather: TONE.dust,
       flora: ["shrub", "shrub", "shrub", "reeds", "reeds", "brush", "brush", "brush", "tree", "tree", "thicket", "oak"],
       stones: ["boulder", "boulder", "rock", "outcrop"],
+      shore: ["rushes", "rushes", "rushes", "lily", "lily", "driftwood", "shingle"],
       litter: COLD_LITTER, sites: ["bunker", "wreck", "walker"],
       growth: 0.7, stone: 0.9, siteCount: [1, 2],
     },
@@ -1477,17 +1572,17 @@ interface Archetype {
 }
 const ARCHETYPES: Archetype[] = [
   // the highlands: the board as it was — rooms and lanes through thick rock
-  { nouns: ["Highlands", "Reach", "Hollow", "Fold"], rock: [0.43, 0.47], scale: [20, 28], warp: [10, 14], patch: [30, 42], coreR: [10, 11], room: [11, 16], rooms: [1, 2], links: 4, holes: [5, 9], lumps: [8, 16], distort: 3, bays: 0.56 },
+  { nouns: ["Highlands", "Reach", "Hollow", "Fold"], rock: [0.50, 0.54], scale: [20, 28], warp: [10, 14], patch: [30, 42], coreR: [10, 11], room: [11, 16], rooms: [1, 2], links: 4, holes: [5, 9], lumps: [8, 16], distort: 3, bays: 0.56 },
   // the canyons: rock everywhere, fine and twisting, cut by narrow ways
-  { nouns: ["Canyons", "Gorge", "Rifts", "Cut"], rock: [0.34, 0.38], scale: [15, 19], warp: [12, 16], patch: [24, 34], coreR: [10, 11], room: [9, 12], rooms: [1, 2], links: 4, holes: [9, 13], lumps: [3, 7], distort: 3, bays: 0.5 },
+  { nouns: ["Canyons", "Gorge", "Rifts", "Cut"], rock: [0.41, 0.45], scale: [15, 19], warp: [12, 16], patch: [24, 34], coreR: [10, 11], room: [9, 12], rooms: [1, 2], links: 4, holes: [9, 13], lumps: [3, 7], distort: 3, bays: 0.5 },
   // the plains: open ground with rock in lumps, big soft features
-  { nouns: ["Plains", "Flats", "Expanse", "Steppe"], rock: [0.53, 0.57], scale: [34, 44], warp: [8, 12], patch: [40, 60], coreR: [12, 14], room: [14, 18], rooms: [2, 3], links: 2, holes: [2, 4], lumps: [20, 28], distort: 2, bays: 0.62 },
+  { nouns: ["Plains", "Flats", "Expanse", "Steppe"], rock: [0.60, 0.64], scale: [34, 44], warp: [8, 12], patch: [40, 60], coreR: [12, 14], room: [14, 18], rooms: [2, 3], links: 2, holes: [2, 4], lumps: [20, 28], distort: 2, bays: 0.62 },
   // the isles: the sea everywhere, the land in islands with fords between
-  { nouns: ["Isles", "Shoals", "Archipelago", "Sound"], rock: [0.44, 0.48], scale: [22, 30], warp: [10, 14], patch: [28, 40], coreR: [11, 13], room: [11, 15], rooms: [1, 3], links: 3, holes: [4, 7], lumps: [6, 12], distort: 3, bays: 0.56, sea: true, seaLevel: 0.56 },
+  { nouns: ["Isles", "Shoals", "Archipelago", "Sound"], rock: [0.51, 0.55], scale: [22, 30], warp: [10, 14], patch: [28, 40], coreR: [11, 13], room: [11, 15], rooms: [1, 3], links: 3, holes: [4, 7], lumps: [6, 12], distort: 3, bays: 0.56, sea: true, seaLevel: 0.56 },
   // the crater: one great open bowl round the core, its rim the fight
-  { nouns: ["Crater", "Caldera", "Basin", "Bowl"], rock: [0.4, 0.44], scale: [22, 26], warp: [10, 14], patch: [30, 44], coreR: [30, 38], room: [10, 14], rooms: [1, 2], links: 3, holes: [5, 8], lumps: [10, 16], distort: 3, bays: 0.54 },
+  { nouns: ["Crater", "Caldera", "Basin", "Bowl"], rock: [0.47, 0.51], scale: [22, 26], warp: [10, 14], patch: [30, 44], coreR: [30, 38], room: [10, 14], rooms: [1, 2], links: 3, holes: [5, 8], lumps: [10, 16], distort: 3, bays: 0.54 },
   // the warren: a fine maze of small rooms and many cuts between them
-  { nouns: ["Warren", "Maze", "Burrows", "Tangle"], rock: [0.39, 0.43], scale: [11, 14], warp: [6, 9], patch: [22, 30], coreR: [10, 11], room: [8, 10], rooms: [3, 4], links: 4, holes: [12, 16], lumps: [4, 8], distort: 2, bays: 0.52 },
+  { nouns: ["Warren", "Maze", "Burrows", "Tangle"], rock: [0.46, 0.50], scale: [11, 14], warp: [6, 9], patch: [22, 30], coreR: [10, 11], room: [8, 10], rooms: [3, 4], links: 4, holes: [12, 16], lumps: [4, 8], distort: 2, bays: 0.52 },
 ];
 
 /** the forty-odd numbers an author would write, rolled from a seed on the 256 board */

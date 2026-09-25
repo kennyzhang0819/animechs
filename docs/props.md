@@ -46,6 +46,8 @@ reorder.**
 | grove | 4 | three canopies and their brush |
 | brush, thicket | 2, 3 | the bushes a thicket is made of: a canopy with no trunk |
 | snag | 2 | a dead tree: a trunk and its bare limbs, for the barren lands |
+| lily, driftwood, shingle | 1 | the water's edge: pads on the shallows, a bleached log, wet stones |
+| rushes | 2 | a reed bed standing in the shallows |
 | crate | 1 | a supply crate |
 | barrels, scrap, mast | 2 | drums, a scrap heap, a fallen radio mast |
 | hull, silo | 3 | a wrecked mech hull, a fuel tank |
@@ -114,6 +116,45 @@ may wear. A click stamps the footprint (the cursor at its middle) on
 open ground, and any floor, wall, water or erase stroke on a cell takes
 the whole prop off it and opens the cells it stood on. The icons are
 written by `npm run gen:tiles` (`public/tiles/prop-<kind>-<tone>.png`).
+
+## At the shore
+
+A theme names its water's-edge kinds (`PropSpec.shore`), and the shore pass
+stands them on the shallows within two cells of dry ground and on the dry
+ground a cell off the water, off the routes. A bed on the shallows blocks
+like any other prop; one that shuts a room is lifted with the rest, and a
+lifted shallow cell gets its water back.
+
+## Under fire
+
+Every prop can be shot, and only the player's guns shoot them. A turret
+always prefers a body; only with no body, dome or enemy building in range
+does it turn on the nearest prop in range (`Sim.nearestProp`, held in
+`Tower.aimProp`). A round in flight is stopped by the first prop on its
+path and hits it there (`firstPropAlong`), a beam or rail ends at one, and a
+blast reaches the props round it at the blast's falloff. Artillery arcs
+over them and reaches them only where it lands.
+
+A prop's health is the turret band of its footprint, 2,800 for one tile up
+to 130,000 for six (`terrain.ts PROP_HP`), with no armour. One that comes
+down pays nothing: its own cells open to the walkers and the hulls, a
+hill's rock under one stays and turns buildable, and the fields re-solve
+the way they do for a sold turret. The other side of the seam learns of it
+by the terrain version (`simreport.ts TERRAIN`), catches its own copy of
+the ground up in place, and takes the one prop out of the picture — its quad,
+its shadow, its cells on the corner map (`renderer.killProp`,
+`maps.ts repaintThumbCells`) — rather than rebuilding the board. A prop
+wears a health bar like a building does, under the Interface tab's own
+knob for props: always, damaged or never.
+
+## On the hills
+
+The generator also stands props on rock, at a fraction of the ground's
+density (`mapgen.ts`, the hill pass after the room pass): the same flora
+and stones, the rock kept under them. A hill prop's cells stay rock in the
+document — only the prop list carries it — so the loader accepts a prop on
+rock as well as on `WALL_PROP`, the wall art draws beneath it and a
+turret may not stand on its cells (`terrain.ts hillMask`).
 
 ## On the corner map
 

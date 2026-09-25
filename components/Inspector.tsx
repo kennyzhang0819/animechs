@@ -3,6 +3,7 @@
 import type { RefObject } from "react";
 
 import { modBlurb, modDef, modName, type ModId } from "@/game/mods";
+import { propIcon } from "@/game/propArt";
 import { RARITY } from "@/game/rarity";
 import type { UiState } from "@/game/game";
 import { statusDef, type StatusChip as Chip } from "@/game/status";
@@ -215,7 +216,7 @@ export function Inspector({
   inspect: NonNullable<UiState["inspect"]>;
   icons: Partial<Record<TowerKind, string>>;
 }) {
-  const { n, kind, unit, name, hp, hpMax, shield, shieldMax, statuses, mods } = inspect;
+  const { n, kind, unit, name, hp, hpMax, shield, shieldMax, statuses, mods, prop } = inspect;
   const many = n > 1;
   const carved = useUnitIcon(unit);
   // the picture, and ONLY when the whole selection is one thing — a tacker
@@ -225,7 +226,9 @@ export function Inspector({
     ? carved
     : kind
       ? (icons[kind] ?? TOWER_ICONS[kind])
-      : null;
+      : prop
+        ? propIcon(prop.kind, prop.tone)
+        : null;
   return (
     <div
       className="ms-pane pointer-events-auto flex max-w-[calc(100vw-30rem)] items-center gap-3 px-3 py-2"

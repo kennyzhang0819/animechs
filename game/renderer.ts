@@ -75,6 +75,7 @@ import {
   UV_TETHER_LASER_END,
   UV_TRI,
   UV_TURRET,
+  FLOOR_GROUPS,
   UV_WALLS,
   UV_WALL_LARGE,
   WALL_GROUP,
@@ -152,7 +153,7 @@ import {
   type BeamStyle,
   type ShotRegion,
 } from "./weapons";
-import { isWaterFloor, showsFloorCell, WALL_DEEP, WALL_PROP, type Terrain } from "./terrain";
+import { isWaterFloor, showsFloorCell, WALL_DEEP, WALL_PROP, type Prop, type Terrain } from "./terrain";
 import { PROP_KINDS, PROP_TINT } from "./propArt";
 import { SPAWN_STYLE } from "./maps";
 import {
@@ -791,11 +792,27 @@ const waterVariant = (x: number, y: number): number => {
 const FLOOR_MARK_KEEP = 4;
 const floorVariant = (floor: number, x: number, y: number): number =>
   floor % 3 === 0 && (cellHash(x, y) >>> 8) % FLOOR_MARK_KEEP !== 0 ? floor + 1 : floor;
-// wall shadow strength: BlockRenderer.shadowColor is black at 0.71 — the
+/** the eight neighbours, sides first */
+const DIRS8: readonly (readonly [number, number])[] = [
+  [0, -1], [1, 0], [0, 1], [-1, 0],
+  [-1, -1], [1, -1], [1, 1], [-1, 1],
+];
+/** the coverage array's layers: one a floor group, then the rock */
+const ROCK_LAYER = FLOOR_GROUPS.length;
+const COVER_LAYERS = ROCK_LAYER + 1;
+/** a ground quad's rotation slot names its coverage layer, or this */
+const NO_CLIP = -1;
+// wall shadow strength: lighter than BlockRenderer.shadowColor's 0.71 — the
 // premultiplied blend of a black quad at this alpha equals its multiply
-export const WALL_SHADOW_A = 0.71;
+export const WALL_SHADOW_A = 0.35;
 /** what a prop's cell stamps into the shadow mask, out of a hill's 255 */
 const PROP_SHADOW = 115;
+/** how far a hill's shadow reaches onto the floor round it, in cells, and
+ *  the distance in cells over which it fades from full to nothing past the
+ *  first cell. The same on every side: it is the mass's weight on the
+ *  ground, not a light. Renderer.recast tries other values live */
+const WALL_CAST = 3;
+const WALL_CAST_FADE = 3;
 /**
  * THE INSIDE OF A HILL IS DARK — Mindustry's darkness buffer, reproduced
  * exactly (World.addDarkness for the numbers, BlockRenderer.updateDarkness
@@ -835,8 +852,10 @@ const DARK_RADIUS = 4;
  * units and shots that are the thing actually being looked at.
  *
  * It is the one number to turn if the hills want to be darker or lighter.
+ * At 0 the hills are not darkened at all and only the map's rim (DARK_RIM)
+ * still goes to black, so the world keeps ending in the void.
  */
-const DARK_MAX = 0.8;
+const DARK_MAX = 0;
 /**
  * ...EXCEPT AT THE MAP'S RIM, WHICH STILL GOES TO BLACK.
  *
@@ -1044,6 +1063,9 @@ const LOD_QUAD_PX = 0.75;
  *  unit, MU world px — around every part, and under LOD_QUAD_PX of it on
  *  screen the layer is a second copy of the body under the body (rimOn) */
 const RIM_WORLD_PX = MU;
+/** the rim's colour (Mindustry's unit outline), laid under a body's parts
+ *  as their own cells drawn flat — see the sprite shader's flat mode */
+const RIM_R = 0x56 / 255, RIM_G = 0x56 / 255, RIM_B = 0x66 / 255;
 
 /**
  * A reused view of one slot of the sim's struct-of-arrays effect pool.
@@ -1072,7 +1094,6 @@ const FX_VIEW_COL: [number, number, number] = [0, 0, 0];
 /** pushMech's reusable part records — see the note at its call site */
 interface MechPart {
   uv: UVRect;
-  sil: UVRect;
   x: number;
   y: number;
   w: number;
@@ -1169,7 +1190,75 @@ void main() {
   vec2 inset = min(exp2(lod), 6.0) * uTexel;
   vec2 mid = (vRect.xy + vRect.zw) * 0.5;
   vec2 lo = min(vRect.xy + inset, mid), hi = max(vRect.zw - inset, mid);
-  o = textureGrad(uTex, clamp(vUV, lo, hi), dx, dy) * vec4(vTint.rgb * vTint.a, vTint.a);
+  vec4 t = textureGrad(uTex, clamp(vUV, lo, hi), dx, dy);
+  // a tint alpha below zero is the flat mode: the cell's alpha in the tint's
+  // colour, which is how a body's own cell draws the rim under it
+  float a = abs(vTint.a);
+  o = vTint.a < 0.0 ? vec4(vTint.rgb, 1.0) * (t.a * a) : t * vec4(vTint.rgb * a, a);
+}`;
+
+/** the ground's vertex stage: VS with the rotation slot carrying the quad's
+ *  coverage layer instead (the ground never turns), and the fragment's world
+ *  position, where it reads that layer */
+const CLIP_VS = `#version 300 es
+layout(location=0) in vec2 aCorner;
+layout(location=1) in vec2 aPos;
+layout(location=2) in vec2 aSize;
+layout(location=3) in float aRot;
+layout(location=4) in vec4 aUV;
+layout(location=5) in vec4 aTint;
+uniform vec2 uRes;
+uniform float uZoom;
+uniform vec2 uOff;
+out vec2 vUV;
+out vec2 vWorld;
+flat out vec4 vRect;
+flat out float vLayer;
+out vec4 vTint;
+void main() {
+  vec2 p = aCorner * aSize + aPos;
+  vec2 view = p * uZoom + uOff;
+  vec2 clip = view / uRes * 2.0 - 1.0;
+  gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+  vUV = mix(aUV.xy, aUV.zw, aCorner + 0.5);
+  vWorld = p;
+  vRect = vec4(min(aUV.xy, aUV.zw), max(aUV.xy, aUV.zw));
+  vLayer = aRot;
+  vTint = aTint;
+}`;
+
+/**
+ * THE GROUND'S CLIP: FS, then the fragment is kept where its layer of the
+ * coverage array (one byte a cell, read bilinear) is over a half, with a
+ * pixel of smoothstep on the line. The bilinear ramp between cell centres
+ * is straight, so the half-line cuts every stair-step of the cell grid
+ * into a diagonal and rounds a lone cell into a diamond. A layer below
+ * zero draws unclipped.
+ */
+const CLIP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uTex;
+uniform mediump sampler2DArray uCover;
+uniform vec2 uTexel;
+uniform vec2 uWorld;  // the map in world px
+in vec2 vUV;
+in vec2 vWorld;
+flat in vec4 vRect;
+flat in float vLayer;
+in vec4 vTint;
+out vec4 o;
+void main() {
+  vec2 dx = dFdx(vUV), dy = dFdy(vUV);
+  float rho = max(length(dx / uTexel), length(dy / uTexel));
+  float lod = clamp(log2(max(rho, 1.0)), 0.0, 3.0);
+  vec2 inset = min(exp2(lod), 6.0) * uTexel;
+  vec2 mid = (vRect.xy + vRect.zw) * 0.5;
+  vec2 lo = min(vRect.xy + inset, mid), hi = max(vRect.zw - inset, mid);
+  vec4 t = textureGrad(uTex, clamp(vUV, lo, hi), dx, dy);
+  float c = texture(uCover, vec3(vWorld / uWorld, max(vLayer, 0.0))).r;
+  float w = max(fwidth(c), 0.001) * 0.5;
+  float k = vLayer < 0.0 ? 1.0 : smoothstep(0.5 - w, 0.5 + w, c);
+  o = t * vec4(vTint.rgb * vTint.a, vTint.a) * k;
 }`;
 
 /**
@@ -1297,6 +1386,18 @@ export class Renderer {
   // walls (and props) draw in their own batch so the shadow quad can slot
   // between floors and walls with a different texture bound
   private readonly walls: Batch;
+  /** the rock: after the shadow, through the clip program */
+  private readonly rock: Batch;
+  /** the ground's program: the floors and the rock, each quad clipped by
+   *  its layer of the coverage array (CLIP_FS) — see docs/terrain-directions.md */
+  private readonly clipProg: WebGLProgram;
+  private readonly uClipRes: WebGLUniformLocation;
+  private readonly uClipZoom: WebGLUniformLocation;
+  private readonly uClipOff: WebGLUniformLocation;
+  /** COVER_LAYERS of one byte a cell, 255 where the cell shows that floor
+   *  (or is rock), LINEAR; lives on texture unit 1 */
+  private readonly coverTex: WebGLTexture;
+  private readonly cover = new Uint8Array(NCELLS * COVER_LAYERS);
   private readonly shadow: Batch;
   /** the map-covering quad that draws darkTex (see DARK_RADIUS) */
   private readonly dark: Batch;
@@ -1467,12 +1568,15 @@ export class Renderer {
       gl.STATIC_DRAW,
     );
 
-    // one floor tile a cell: the seams are sharp, nothing fades over them
-    this.terrain = this.makeBatch(NCELLS + 512, false);
+    // a floor tile a cell, and one more for each different floor among its
+    // neighbours — two a cell covers any map that is not a chessboard
+    this.terrain = this.makeBatch(NCELLS * 3 + 512, false);
     // one quad per water cell — a map that is all sea is the worst case
     this.water = this.makeBatch(NCELLS + 64, false);
-    // wall tiles + props
+    // rails, pads and props
     this.walls = this.makeBatch(NCELLS * 2 + 2048, false);
+    // a rock cell, or a floor cell beside rock — one quad either way
+    this.rock = this.makeBatch(NCELLS + 64, false);
     this.shadow = this.makeBatch(4, false);
     this.dark = this.makeBatch(4);
     // a swarm budget, not a worst case: 12 quads is a walking mech with one
@@ -1502,6 +1606,21 @@ export class Renderer {
     this.uWaterOff = needWater("uOff");
     this.uWaterTime = needWater("uTime");
     this.uWaterUnit = needWater("uUnit");
+
+    this.clipProg = this.link(CLIP_VS, CLIP_FS);
+    const needClip = (name: string): WebGLUniformLocation => {
+      const loc = gl.getUniformLocation(this.clipProg, name);
+      if (!loc) throw new Error(`${name} uniform missing`);
+      return loc;
+    };
+    this.uClipRes = needClip("uRes");
+    this.uClipZoom = needClip("uZoom");
+    this.uClipOff = needClip("uOff");
+    gl.useProgram(this.clipProg);
+    gl.uniform2f(needClip("uTexel"), 1 / atlas.width, 1 / atlas.height);
+    gl.uniform2f(needClip("uWorld"), W, H);
+    gl.uniform1i(needClip("uCover"), 1);
+    gl.useProgram(this.prog);
 
     this.shieldProg = this.link(SHIELD_VS, SHIELD_FS);
     const needIn = (name: string): WebGLUniformLocation => {
@@ -1546,6 +1665,19 @@ export class Renderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    // the coverage array keeps unit 1 for itself; everything else binds on 0
+    const ctex = gl.createTexture();
+    if (!ctex) throw new Error("coverage texture alloc failed");
+    this.coverTex = ctex;
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, ctex);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.R8, COLS, ROWS, COVER_LAYERS, 0, gl.RED, gl.UNSIGNED_BYTE, null);
+    gl.activeTexture(gl.TEXTURE0);
 
     const tex = gl.createTexture();
     if (!tex) throw new Error("texture alloc failed");
@@ -1663,25 +1795,24 @@ export class Renderer {
     const cr = Math.cos(rot), sr = Math.sin(rot);
     // the assembly in draw order: legs → base → under-slung guns → body →
     // guns that ride ON the body (Weapon.top). Each entry carries its own
-    // art and silhouette cells, which is what lets a hull mix gun sprites.
+    // art cell, which is what lets a hull mix gun sprites.
     // `dk` is the planted-leg darkening, applied on the art pass only.
     // The records live in a module-scratch pool reused call to call — a
     // fresh array of tuples here was tens of thousands of allocations a
     // frame with a swarm on screen, which is GC-hitch territory
     let np = 0;
     const part = (
-      uv: UVRect, sil: UVRect, px: number, py: number,
+      uv: UVRect, px: number, py: number,
       w: number, h: number, r: number, dk: number,
     ): void => {
-      const p = MECH_PARTS[np] ?? (MECH_PARTS[np] = { uv, sil, x: 0, y: 0, w: 0, h: 0, r: 0, dk: 1 });
-      p.uv = uv; p.sil = sil; p.x = px; p.y = py; p.w = w; p.h = h; p.r = r; p.dk = dk;
+      const p = MECH_PARTS[np] ?? (MECH_PARTS[np] = { uv, x: 0, y: 0, w: 0, h: 0, r: 0, dk: 1 });
+      p.uv = uv; p.x = px; p.y = py; p.w = w; p.h = h; p.r = r; p.dk = dk;
       np++;
     };
     for (let side = -1; side <= 1; side += 2) {
       const dk = st > 0 ? 1 - Math.max(0, (side * ext) / st) * LEG_SHADE : 1;
       part(
         m.leg,
-        m.sil.leg,
         x + cb * ext * side,
         y + sb * ext * side,
         s * (1 - Math.max(-lift * side, 0) * (m.legLift ?? LEG_LIFT)),
@@ -1690,7 +1821,7 @@ export class Renderer {
         dk,
       );
     }
-    part(m.base, m.sil.base, x, y, s, s, m.flatBase ? 0 : brot, 1);
+    part(m.base, x, y, s, s, m.flatBase ? 0 : brot, 1);
     const gunParts = (top: boolean): void => {
       for (const g of m.guns) {
         if (g.top !== top) continue;
@@ -1698,7 +1829,6 @@ export class Renderer {
         for (let side = g.mirror === false ? 1 : -1; side <= 1; side += 2) {
           part(
             g.uv,
-            g.sil,
             x + ox + cr * g.y - sr * g.x * side,
             y + oy + sr * g.y + cr * g.x * side,
             s,
@@ -1711,16 +1841,16 @@ export class Renderer {
     };
     gunParts(false);
     const bodyPart = np;
-    part(m.body, m.sil.body, x + ox, y + oy, s, s, rot, 1);
+    part(m.body, x + ox, y + oy, s, s, rot, 1);
     gunParts(true);
-    // silhouette pass: every part as a solid dilated shape, drawn first so
-    // the art covers all of it but a single rim around the assembly — the
-    // outer border without a line at every seam of the walking mech
+    // rim pass: every part flat in the rim colour, drawn first so the art
+    // covers all of it but a single rim around the assembly — the outer
+    // border without a line at every seam of the walking mech
     // ...while the rim is a pixel or more (rimOn, LOD)
     if (this.rimOn)
       for (let k = 0; k < np; k++) {
         const p = MECH_PARTS[k];
-        this.push(b, p.x, p.y, p.w, p.h, p.r, p.sil, tint[0], tint[1], tint[2], 1);
+        this.push(b, p.x, p.y, p.w, p.h, p.r, p.uv, tint[0] * RIM_R, tint[1] * RIM_G, tint[2] * RIM_B, -1);
       }
     for (let k = 0; k < np; k++) {
       const p = MECH_PARTS[k];
@@ -1740,7 +1870,7 @@ export class Renderer {
    * Nothing here is animated — the sim owns every joint and foot position
    * (Sim.updateLegs), so this only decides what covers what. Legs run
    * outside-in so a near leg never draws under a far one, and everything
-   * but the stretched segments gets the silhouette under-layer pushMech
+   * but the stretched segments gets the flat rim under-layer pushMech
    * uses, which leaves one rim around the whole assembly instead of a line
    * at every seam.
    */
@@ -1783,7 +1913,9 @@ export class Renderer {
 
     // the under-layer only while its rim would show (rimOn, LOD)
     for (let pass = this.rimOn ? 0 : 1; pass < 2; pass++) {
-      const painted = pass === 1; // 0 = silhouette under-layer, 1 = the art
+      const painted = pass === 1; // 0 = the rim under-layer, 1 = the art
+      const pr = painted ? tr : tr * RIM_R, pg = painted ? tg : tg * RIM_G, pb = painted ? tb : tb * RIM_B;
+      const pa = painted ? 1 : -1;
       for (let j = n - 1; j >= 0; j--) {
         // Mindustry's draw order: 0, n-1, 1, n-2, … — outermost pair last
         const k = j % 2 === 0 ? j / 2 : n - 1 - ((j / 2) | 0);
@@ -1793,7 +1925,7 @@ export class Renderer {
         const mx = x + ca * L.baseOffset, my = y + sa * L.baseOffset;
         const fx = ulegFX[p], fy = ulegFY[p], jx = ulegJX[p], jy = ulegJY[p];
         this.push(b, fx, fy, sm, sm, Math.atan2(fy - my, fx - mx),
-          painted ? art.foot : art.sil.foot, tr, tg, tb, 1);
+          art.foot, pr, pg, pb, pa);
         if (painted) {
           // the segment sprites are asymmetric: one half of the ring draws
           // them mirrored (Mindustry's negative Lines.stroke) so every knee
@@ -1815,20 +1947,20 @@ export class Renderer {
         // the knee cap is never rotated — Mindustry draws it upright. Not
         // every legged unit has one: dartback4 leaves its elbow as the bare
         // overlap of the two segments and caps the shoulder instead
-        const joint = painted ? art.joint : art.sil.joint;
-        if (joint) this.push(b, jx, jy, sm, sm, 0, joint, tr, tg, tb, 1);
+        const joint = art.joint;
+        if (joint) this.push(b, jx, jy, sm, sm, 0, joint, pr, pg, pb, pa);
       }
       // the shoulder plates go on after EVERY leg (UnitType.drawLegs draws
       // base joints in their own pass) — one drawn leg by leg would be
       // buried by the next leg round the ring. They ride the CHASSIS
       // angle, like the mount ring they cap and unlike the body over them
-      const baseJoint = painted ? art.baseJoint : art.sil.baseJoint;
+      const baseJoint = art.baseJoint;
       if (baseJoint) {
         for (let k = 0; k < n; k++) {
           const ca = cb * trig[k * 2] - sb * trig[k * 2 + 1];
           const sa = sb * trig[k * 2] + cb * trig[k * 2 + 1];
           this.push(b, x + ca * L.baseOffset, y + sa * L.baseOffset,
-            sm, sm, brot, baseJoint, tr, tg, tb, 1);
+            sm, sm, brot, baseJoint, pr, pg, pb, pa);
         }
       }
       // the plate the legs hang off turns with the chassis, the body and its
@@ -1838,13 +1970,13 @@ export class Renderer {
       const gun = (g: LegGun): void => {
         for (let side = g.mirror === false ? 1 : -1; side <= 1; side += 2) {
           this.push(b, x + cr * g.y - sr * g.x * side, y + sr * g.y + cr * g.x * side,
-            sz, sz * side, rot, painted ? g.uv : g.sil, tr, tg, tb, 1);
+            sz, sz * side, rot, g.uv, pr, pg, pb, pa);
         }
       };
-      const base = painted ? art.base : art.sil.base;
-      if (base) this.push(b, x, y, sz, sz, brot, base, tr, tg, tb, 1);
+      const base = art.base;
+      if (base) this.push(b, x, y, sz, sz, brot, base, pr, pg, pb, pa);
       for (const g of art.guns) if (!g.top) gun(g);
-      this.push(b, x, y, sz, sz, rot, painted ? art.body : art.sil.body, tr, tg, tb, 1);
+      this.push(b, x, y, sz, sz, rot, art.body, pr, pg, pb, pa);
       // the cell is art, not silhouette: it goes on the painted pass only,
       // over the hull and under the guns that ride on top of it
       if (painted && cell) this.pushCell(b, cell, x, y, sz, rot, cellCol);
@@ -2036,7 +2168,81 @@ export class Renderer {
    * to see the floor underneath and for the game, which never shows it
    * (GAME_LAYERS): in a match the mouths are the routes overlay's job.
    */
+  private castReach = WALL_CAST;
+  private castFade = WALL_CAST_FADE;
+  /** each prop's instance in the walls batch, so one can be taken out
+   *  of the picture without rebuilding the terrain (killProp) */
+  private readonly propSlots = new Map<Prop, number>();
+
+  /**
+   * A PROP CAME DOWN (game.ts, on the terrain version): its quad in the
+   * walls batch collapses to nothing and its cells' shadow is what the
+   * terrain alone casts there now, uploaded as one small window — the
+   * whole board is not rebuilt for a shrub. The terrain handed in is the
+   * copy the batch was built from, already opened where the prop stood.
+   */
+  killProp(src: { terrain: Terrain }, p: Prop): void {
+    const slot = this.propSlots.get(p);
+    if (slot === undefined) return;
+    this.propSlots.delete(p);
+    const gl = this.gl;
+    const w = this.walls;
+    const o = slot * FLOATS;
+    w.data[o + 2] = 0;
+    w.data[o + 3] = 0;
+    gl.bindVertexArray(w.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, w.vbo);
+    gl.bufferSubData(gl.ARRAY_BUFFER, o * 4, w.data, o, FLOATS);
+    // the shadow under where it stood: nothing of its own any more, only
+    // the neighbouring rock's cast (the same rule rebuildTerrain applies)
+    const T = src.terrain;
+    const n = PROP_KINDS[p.kind]?.tiles ?? 1;
+    const isRock = (j: number): boolean => T.blocked[j] !== 0 && T.wall[j] !== WALL_DEEP && T.wall[j] !== WALL_PROP;
+    const R = Math.ceil(this.castReach);
+    const mask = this.shadowMask;
+    const x0 = Math.max(0, p.x), y0 = Math.max(0, p.y);
+    const x1 = Math.min(COLS - 1, p.x + n - 1), y1 = Math.min(ROWS - 1, p.y + n - 1);
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++) {
+        const i = y * COLS + x;
+        let v = isRock(i) ? 255 : 0;
+        if (!isRock(i))
+          for (let dy = -R; dy <= R; dy++)
+            for (let dx = -R; dx <= R; dx++) {
+              const nx = x + dx, ny = y + dy;
+              if ((dx === 0 && dy === 0) || nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+              const dist = Math.hypot(dx, dy);
+              if (dist > this.castReach || !isRock(ny * COLS + nx)) continue;
+              const cw = 255 * Math.min(1, 1 - (dist - 1) / this.castFade);
+              if (cw > v) v = cw;
+            }
+        const a = Math.round(v);
+        this.shadowStatic[i] = a;
+        mask[i * 4] = mask[i * 4 + 1] = mask[i * 4 + 2] = mask[i * 4 + 3] = a;
+        this.shade[i] = a / 255;
+      }
+    gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, COLS);
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, x0);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, y0);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, x0, y0, x1 - x0 + 1, y1 - y0 + 1, gl.RGBA, gl.UNSIGNED_BYTE, mask);
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+  }
+  private lastTerrain: { terrain: Terrain } | null = null;
+  private lastLayers: TerrainLayers = ALL_LAYERS;
+  /** a debug dial: the hill shadow's reach and fade, the terrain rebuilt on the spot */
+  recast(reach: number, fade: number): void {
+    this.castReach = reach;
+    this.castFade = fade;
+    if (this.lastTerrain) this.rebuildTerrain(this.lastTerrain, this.lastLayers);
+  }
+
   rebuildTerrain(src: { terrain: Terrain }, layers: TerrainLayers = ALL_LAYERS): void {
+    this.lastTerrain = src;
+    this.lastLayers = layers;
     const gl = this.gl;
     const t = this.terrain;
     const wt = this.water;
@@ -2069,14 +2275,19 @@ export class Renderer {
     // editor re-reads the height (see MapEditor.mapRows).
     const mapRows = Math.max(1, Math.min(ROWS, T.rows));
     const mapCols = Math.max(1, Math.min(COLS, T.cols));
-    // pass 1: floors, one tile a cell and a sharp seam between any two
-    for (let y = 0; y < mapRows; y++) {
-      for (let x = 0; x < mapCols; x++) {
-        const i = y * COLS + x;
-        if (!showsFloor(i)) continue;
+    const inMap = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < mapCols && y < mapRows;
+    // pass 1: floors. Every cell draws its own tile unclipped, then each
+    // different floor among its eight neighbours draws its tile over it,
+    // clipped to that floor's coverage layer (CLIP_FS): the two sides of a
+    // seam share one contour, and a lone cell rounds into a diamond. A rim
+    // rock cell takes the floor of the open ground beside it, since its
+    // clipped corner (pass 3) shows it
+    const pushFloor = (x: number, y: number, floor: number, layer: number): void => {
         const cx = (x + 0.5) * CELL, cy = (y + 0.5) * CELL;
-        // the sea goes to its own batch and its own program
-        const wet = isWaterFloor(T.floor[i]);
+        // a cell's own water goes to the sea's batch and program; water
+        // laid over a neighbour is a still tile in the ground batch, whose
+        // program has the clip
+        const wet = isWaterFloor(floor);
         // A WATER CELL PICKS ITS OWN VARIANT. Every map on disk paints one
         // water index for a whole lake — a brush has a single water entry —
         // so taking the art straight from the index would draw the same
@@ -2084,10 +2295,51 @@ export class Renderer {
         // FLOOR_CELLS). The three cells of the group are the same water
         // with the wave on one, and this hash scatters them: a third of the
         // lake carries a wave, fixed per cell so it does not crawl.
-        const fi = wet ? ((T.floor[i] / 3) | 0) * 3 + waterVariant(x, y) : floorVariant(T.floor[i], x, y);
-        this.push(wet ? wt : t, cx, cy, CELL, CELL, 0, UV_FLOORS[fi], 1, 1, 1, 1);
+        const fi = wet ? ((floor / 3) | 0) * 3 + waterVariant(x, y) : floorVariant(floor, x, y);
+        const sea = wet && layer === NO_CLIP;
+        this.push(sea ? wt : t, cx, cy, CELL, CELL, sea ? 0 : layer, UV_FLOORS[fi], 1, 1, 1, 1);
+    };
+    /** the floor index each cell shows, or -1 for rock past the rim */
+    const shown = new Int16Array(NCELLS).fill(-1);
+    const cover = this.cover;
+    cover.fill(0);
+    for (let y = 0; y < mapRows; y++)
+      for (let x = 0; x < mapCols; x++) {
+        const i = y * COLS + x;
+        let floor = -1;
+        if (showsFloor(i)) floor = T.floor[i];
+        else
+          for (const [dx, dy] of DIRS8) {
+            const nx = x + dx, ny = y + dy;
+            if (!inMap(nx, ny)) continue;
+            const j = ny * COLS + nx;
+            if (showsFloor(j)) {
+              floor = T.floor[j];
+              break;
+            }
+          }
+        if (floor < 0) continue;
+        shown[i] = floor;
+        cover[((floor / 3) | 0) * NCELLS + i] = 255;
+        pushFloor(x, y, floor, NO_CLIP);
       }
-    }
+    for (let y = 0; y < mapRows; y++)
+      for (let x = 0; x < mapCols; x++) {
+        const i = y * COLS + x;
+        if (shown[i] < 0) continue;
+        const g = (shown[i] / 3) | 0;
+        let seen = 0;
+        for (const [dx, dy] of DIRS8) {
+          const nx = x + dx, ny = y + dy;
+          if (!inMap(nx, ny)) continue;
+          const j = ny * COLS + nx;
+          if (shown[j] < 0) continue;
+          const gn = (shown[j] / 3) | 0;
+          if (gn === g || seen & (1 << gn)) continue;
+          seen |= 1 << gn;
+          pushFloor(x, y, shown[j], gn);
+        }
+      }
 
     // pass 2: the wall shadow — Mindustry's shadow buffer, exactly. Every
     // static wall is one texel in a COLS x ROWS mask on its own LINEAR-
@@ -2096,7 +2348,8 @@ export class Renderer {
     // that puts a texel's centre on its cell's centre); one map-covering
     // quad stretches it 20x, and the bilinear ramp between a wall cell's
     // centre and the next floor cell's — half a cell of falloff, shadowColor's
-    // 0.71 at the wall down to nothing — is the whole rim. Walls draw after
+    // 0.71 at the wall down to nothing — is the rim on every side; the cast
+    // shadow stamped after it is the lit-from-up-left side. Walls draw after
     // this quad, so the hills themselves stay clean and only the floor
     // around them darkens; what the hill does INSIDE is pass 2b
     const mask = this.shadowMask;
@@ -2116,6 +2369,29 @@ export class Renderer {
           const i = y * COLS + x;
           if (T.blocked[i] && T.wall[i] !== WALL_DEEP) stamp(i, T.wall[i] === WALL_PROP ? PROP_SHADOW : 255);
         }
+    // ...and the hill's shadow on the floor round it, the same on every
+    // side: full on the cells touching rock, fading over castFade cells
+    // past that, out to castReach. Rock only, not props
+    if (layers.wall) {
+      const isRock = (j: number): boolean => T.blocked[j] !== 0 && T.wall[j] !== WALL_DEEP && T.wall[j] !== WALL_PROP;
+      const R = Math.ceil(this.castReach);
+      for (let y = 0; y < mapRows; y++)
+        for (let x = 0; x < mapCols; x++) {
+          const i = y * COLS + x;
+          if (isRock(i)) continue;
+          let v = mask[i * 4 + 3];
+          for (let dy = -R; dy <= R; dy++)
+            for (let dx = -R; dx <= R; dx++) {
+              const nx = x + dx, ny = y + dy;
+              if ((dx === 0 && dy === 0) || nx < 0 || ny < 0 || nx >= mapCols || ny >= mapRows) continue;
+              const dist = Math.hypot(dx, dy);
+              if (dist > this.castReach || !isRock(ny * COLS + nx)) continue;
+              const w = 255 * Math.min(1, 1 - (dist - 1) / this.castFade);
+              if (w > v) v = w;
+            }
+          if (v > mask[i * 4 + 3]) stamp(i, Math.round(v));
+        }
+    }
     // buildings on the ground stamp their footprint too, like Mindustry's
     // displayShadow blocks — the base sprite covers the middle, so what
     // shows is the rim hugging its sides. The core is the one building the
@@ -2191,8 +2467,8 @@ export class Renderer {
     dq.n = 0;
     this.push(dq, W / 2, H / 2, W, H, 0, [0, 0, 1, 1], 0, 0, 0, 1);
 
-    // pass 3: the spawn pads, then the wall sprites over their
-    // (shadow-darkened) cells, then the props
+    // pass 3: the rail bed, the pads, the spawn tiles, then the props —
+    // and the rock, in its own batch, after the pads
     const w = this.walls;
     w.n = 0;
     // THE SPAWN LAYER, one pad tile a painted cell (Terrain.spawn).
@@ -2271,10 +2547,28 @@ export class Renderer {
       h ^= h >>> 16;
       return (h >>> 0) / 4294967296 < 0.5;
     };
+    // THE ROCK is clipped to its coverage layer like a floor, so a floor
+    // cell beside rock draws its neighbour's rock over itself too: the clip
+    // leaves only the corner the contour rounds into. The layer covers the
+    // padding past the map's edge as well, so the boundary stays square
+    const rk = this.rock;
+    rk.n = 0;
+    const rockBase = ROCK_LAYER * NCELLS;
+    if (layers.wall) for (let i = 0; i < NCELLS; i++) if (!showsFloorCell(T.blocked[i], T.wall[i])) cover[rockBase + i] = 255;
     if (layers.wall) for (let y = 0; y < mapRows; y++) {
       for (let x = 0; x < mapCols; x++) {
         const i = y * COLS + x;
-        if (showsFloor(i)) continue;
+        if (showsFloor(i)) {
+          for (const [dx, dy] of DIRS8) {
+            const nx = x + dx, ny = y + dy;
+            if (!inMap(nx, ny)) continue;
+            const j = ny * COLS + nx;
+            if (showsFloor(j)) continue;
+            this.push(rk, (x + 0.5) * CELL, (y + 0.5) * CELL, CELL, CELL, ROCK_LAYER, UV_WALLS[T.wall[j]], 1, 1, 1, 1);
+            break;
+          }
+          continue;
+        }
         let uvr = UV_WALLS[T.wall[i]];
         const g = WALL_GROUP[T.wall[i]] ?? -1;
         const quads = g >= 0 ? UV_WALL_LARGE[g] : null;
@@ -2289,12 +2583,20 @@ export class Renderer {
           )
             uvr = quads[y & 1][x & 1];
         }
-        this.push(w, (x + 0.5) * CELL, (y + 0.5) * CELL, CELL, CELL, 0, uvr, 1, 1, 1, 1);
+        this.push(rk, (x + 0.5) * CELL, (y + 0.5) * CELL, CELL, CELL, ROCK_LAYER, uvr, 1, 1, 1, 1);
       }
     }
+    // a 3D upload is refused outright while the premultiply flag the atlas
+    // needs is up
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.R8, COLS, ROWS, COVER_LAYERS, 0, gl.RED, gl.UNSIGNED_BYTE, cover);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     if (layers.props) {
       // a prop's own cells cast the rim shadow (pass 2), so it is not shaded
       // by it: its tone is the whole of its colour (propArt.ts PROP_TINT)
+      this.propSlots.clear();
       for (const p of T.props) {
         const def = PROP_KINDS[p.kind];
         if (!def) continue;
@@ -2302,10 +2604,11 @@ export class Renderer {
         const tint = PROP_TINT[p.tone] ?? PROP_TINT[0];
         const cells = UV_PROPS[p.kind];
         const uv = def.turns ? cells[0] : cells[p.rot % cells.length];
+        this.propSlots.set(p, w.n);
         this.push(w, p.x * CELL + half, p.y * CELL + half, side, side, def.turns ? p.rot * (Math.PI / 2) : 0, uv, tint[0], tint[1], tint[2], 1);
       }
     }
-    for (const b of [t, wt, sh, w, dq]) {
+    for (const b of [t, wt, sh, rk, w, dq]) {
       gl.bindVertexArray(b.vao);
       gl.bindBuffer(gl.ARRAY_BUFFER, b.vbo);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, b.data, 0, b.n * FLOATS);
@@ -2416,8 +2719,8 @@ export class Renderer {
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
   }
 
-  /** the sea, then the land floors and their shore fades over it, then
-   *  the shadow rim on its own texture, then walls and props */
+  /** the sea, then the floors through the clip, then the shadow rim on its
+   *  own texture, the rock through the clip, then the rails, pads and props */
   private drawWorld(): void {
     const gl = this.gl;
     if (this.water.n > 0) {
@@ -2432,10 +2735,21 @@ export class Renderer {
       this.draw(this.water, false);
       gl.useProgram(this.prog);
     }
-    this.draw(this.terrain, false);
-    gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
-    this.draw(this.shadow, false);
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    {
+      const { zoom, offX, offY, kPx } = this.view;
+      gl.useProgram(this.clipProg);
+      gl.uniform2f(this.uClipRes, this.canvas.width / kPx, this.canvas.height / kPx);
+      gl.uniform1f(this.uClipZoom, zoom);
+      gl.uniform2f(this.uClipOff, offX, offY);
+      this.draw(this.terrain, false);
+      gl.useProgram(this.prog);
+      gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
+      this.draw(this.shadow, false);
+      gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      gl.useProgram(this.clipProg);
+      this.draw(this.rock, false);
+      gl.useProgram(this.prog);
+    }
     this.draw(this.walls, false);
   }
 

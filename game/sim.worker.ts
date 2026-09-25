@@ -104,6 +104,7 @@ const snaps: [Snapshot, Snapshot] = [emptySnapshot(), emptySnapshot()];
 let flip = 0;
 /** the spec table version the host last received (simreport.ts) */
 let specsSent = -1;
+let terrainSent = -1;
 
 /** one tick of the worker's own clock: step what is owed, then publish */
 function tick(): void {
@@ -137,8 +138,9 @@ function publish(): void {
   writeHeader(sim);
   flip ^= 1;
   const snapshot = packSnapshot(sim, snaps[flip], true);
-  const report = reportOf(sim, specsSent);
+  const report = reportOf(sim, specsSent, terrainSent);
   if (report.specs) specsSent = sim.specsVersion;
+  if (report.terrain) terrainSent = sim.terrainVersion;
   post({ t: "frame", snapshot, report });
 }
 

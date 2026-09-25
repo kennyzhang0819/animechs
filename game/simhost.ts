@@ -177,7 +177,7 @@ export class LocalHost implements SimHost {
     // the bolt paths stay by reference here: the flat half of the world
     // IS the sim's own arrays, fxPts included
     packSnapshot(this.sim, this.snapshot);
-    this.world.take(this.snapshot, reportOf(this.sim, this.world.specsSeen));
+    this.world.take(this.snapshot, reportOf(this.sim, this.world.specsSeen, this.world.terrainSeen));
   }
   reset(): void {
     this.sim.reset();

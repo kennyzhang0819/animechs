@@ -94,8 +94,8 @@ export const LEGACY_PINE_TONES: readonly number[] = [TONE.pine, TONE.mangrove, T
  * wall[] value meaning "this blocked cell is DEEP WATER" — the second
  * sentinel, and the mirror image of the first.
  *
- * A blocked cell is normally a hill: nothing walks across it and nothing
- * builds on it either (board.ts groundClear refuses every blocked cell).
+ * A blocked cell is normally a hill: nothing walks across it, and a turret
+ * stands on it only with its whole footprint (board.ts groundClear).
  * The two sentinels are the blocked cells that are NOT hills, for opposite
  * reasons — a prop is a thing on the ground a flyer crosses, and deep water
  * is the naval layer's own road — so both keep their floor showing instead
@@ -119,13 +119,9 @@ export const WALL_DEEP = 7;
  * whole rule when pines were the only exception, and a second exception is
  * exactly the kind of thing a scattered comparison misses.
  *
- * IT USED TO BE "CAN A TOWER STAND HERE", and it is worth saying why it is
- * not any more: turrets stood on the highground once, so "rock standing
- * above the floor" and "somewhere to build" were the same sentence. They
- * are not — a structure stands on the FLOOR now (board.ts groundClear) —
- * and anything asking this one where to put a building is asking the wrong
- * question. What it still answers is what a FLYER routes around and what
- * SIGHT stops at (airWalkMask, Sim.hasSight).
+ * It answers what SIGHT stops at (airWalkMask, Sim.hasSight), what a
+ * ground body cannot hit a building on (Sim.onHill) and, less the cells
+ * under a prop, where a turret may stand (hillMask, board.ts groundClear).
  */
 export const isBuildableWall = (wall: number): boolean =>
   wall !== WALL_PROP && wall !== WALL_DEEP;
@@ -237,8 +233,9 @@ export interface Terrain {
    * raises rock takes its tiles back.
    */
   spawn: Uint8Array;
-  /** everything standing on the ground (docs/props.md): every cell under
-   *  one is blocked and wears WALL_PROP, and the list is what is drawn */
+  /** everything standing on the ground or the hills (docs/props.md): every
+   *  cell under one is blocked and wears WALL_PROP or its hill's rock, and
+   *  the list is what is drawn */
   props: Prop[];
   valleyY: Float32Array; // carved main-valley centerline per column
   /** the mission furniture placed on this map (missionMarks.ts MapMark):
@@ -548,4 +545,43 @@ export function rebuildReserved(t: Terrain): void {
     forEachMarkPadCell(m, t.cols, t.rows, (x, y) => {
       t.reserved[y * COLS + x] = 1;
     });
+}
+
+/** the rock a turret may stand on (board.ts groundClear): every hill cell
+ *  that is not under a listed prop */
+export function hillMask(t: Terrain): Uint8Array {
+  const under = propMask(t.props);
+  const m = airWalkMask(t);
+  for (let i = 0; i < NCELLS; i++) if (under[i]) m[i] = 0;
+  return m;
+}
+
+/** a prop's health by its footprint: seven tenths of the turret band of the
+ *  same size, times the turret scale (constants.ts towerMaxHp); no armour */
+export const PROP_HP: Readonly<Record<number, number>> = { 1: 2000, 2: 6000, 3: 17000, 4: 42000, 6: 90000 };
+export const propHpFor = (kind: number): number => PROP_HP[PROP_KINDS[kind]?.tiles ?? 1] ?? 2000;
+
+/** a prop comes down: its own cells open; a hill's rock under one stays */
+export function openPropCells(t: Terrain, p: Prop): void {
+  const n = PROP_KINDS[p.kind]?.tiles ?? 1;
+  for (let y = p.y; y < p.y + n; y++)
+    for (let x = p.x; x < p.x + n; x++) {
+      if (x < 0 || y < 0 || x >= COLS || y >= ROWS) continue;
+      const i = y * COLS + x;
+      if (t.wall[i] === WALL_PROP) { t.blocked[i] = 0; t.wall[i] = 0; }
+    }
+}
+/** ...and the reverse, for a copy of the terrain catching up with a reset */
+export function closePropCells(t: Terrain, p: Prop): void {
+  const n = PROP_KINDS[p.kind]?.tiles ?? 1;
+  for (let y = p.y; y < p.y + n; y++)
+    for (let x = p.x; x < p.x + n; x++) {
+      if (x < 0 || y < 0 || x >= COLS || y >= ROWS) continue;
+      const i = y * COLS + x;
+      if (t.blocked[i] === 0) { t.blocked[i] = 1; t.wall[i] = WALL_PROP; }
+    }
+}
+/** hillMask, into an array something already holds by reference */
+export function hillMaskInto(t: Terrain, out: Uint8Array): void {
+  out.set(hillMask(t));
 }

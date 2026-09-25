@@ -58,6 +58,8 @@ export const HDR = {
   INSPECTED_UNIT: 16,
   /** goes up every time the live spec table is recomposed (Sim.refreshSpecs) */
   SPECS: 17,
+  /** goes up every time the ground changes — a prop down, a reset (Sim.killProp) */
+  TERRAIN: 35,
   /**
    * THE INTERCEPT MISSION'S LEDGER (levels.ts InterceptMission): crossers
    * destroyed whole, crossers that got across, and how many are on the
@@ -116,7 +118,7 @@ export const HDR = {
    *  the overlay cannot work it out from kinds */
   GARRISON_HELD: 34,
 } as const;
-export const HEADER_LEN = 35;
+export const HEADER_LEN = 36;
 
 /** the sim's scalars, into its own header — after every step, and on reset */
 export function writeHeader(sim: Sim): void {
@@ -139,6 +141,7 @@ export function writeHeader(sim: Sim): void {
   h[HDR.CHARGING] = sim.charging ? 1 : 0;
   h[HDR.INSPECTED_UNIT] = sim.inspectedUnit;
   h[HDR.SPECS] = sim.specsVersion;
+  h[HDR.TERRAIN] = sim.terrainVersion;
   h[HDR.CROSS_KILLED] = sim.crossKilled;
   h[HDR.CROSS_LEAKED] = sim.crossLeaked;
   h[HDR.CROSS_LIVE] = sim.crossersLive();
@@ -476,6 +479,8 @@ export interface InspectPanel {
   shieldMax?: number;
   statuses: StatusChip[];
   mods: { id: ModId; n: number }[];
+  /** a PROP's own picture, when the panel is answering for one (propArt.ts propIcon) */
+  prop?: { kind: number; tone: number };
 }
 
 export interface WorldReport {
@@ -499,6 +504,11 @@ export interface WorldReport {
    * times a second. Null means "what you have is still right".
    */
   specs: [TowerKind, TowerStats][] | null;
+  /** the props down since the reset, by index into the map's list, when the
+   *  ground moved since the reader last took it (Sim.propsDead) */
+  terrain: number[] | null;
+  /** the hurt props, as [index, fraction, ...] pairs — tens at most (Sim.propsHurt) */
+  propHurt: number[];
   /**
    * THE PHASE CLOCK'S WHOLE READING while it is armed (Sim.profile), else
    * null. It rides the report rather than the header because it is the
@@ -514,7 +524,7 @@ export interface WorldReport {
  * version the reader last took, so the table rides along only when it
  * has moved.
  */
-export function reportOf(sim: Sim, specsSeen: number): WorldReport {
+export function reportOf(sim: Sim, specsSeen: number, terrainSeen = -1): WorldReport {
   return {
     objectives: sim.objectiveBars(),
     counts: sim.towerCounts(),
@@ -522,6 +532,8 @@ export function reportOf(sim: Sim, specsSeen: number): WorldReport {
     relics: sim.ownedRelics(),
     inspect: inspectPanel(sim),
     specs: sim.specsVersion !== specsSeen ? sim.specTable() : null,
+    terrain: sim.terrainVersion !== terrainSeen ? sim.propsDead.slice() : null,
+    propHurt: sim.propsHurt(),
     profile: sim.profiling ? sim.profileFull() : null,
   };
 }
@@ -569,6 +581,13 @@ export function inspectPanel(sim: Sim): InspectPanel | null {
   // that it has changed sides, which is a status of its own
   const et = sim.inspectedTower;
   if (et) return inspectStructs([et]);
+  // ...and a prop: a name, a pool and its own picture, nothing on it and
+  // nothing built into it
+  const pk = sim.inspectedProp;
+  if (pk >= 0) {
+    const p = sim.propPanel(pk);
+    return { n: 1, kind: null, unit: null, name: p.label, hp: p.hp, hpMax: p.hpMax, statuses: [], mods: [], prop: { kind: p.kind, tone: p.tone } };
+  }
   const st = sim.inspectedShieldTower;
   if (st) {
     return {

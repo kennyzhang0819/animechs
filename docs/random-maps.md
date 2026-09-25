@@ -93,6 +93,11 @@ there rather than on the deploy screen.
 
 ## The seal and the spawn layer
 
+**Rock in the water.** Rock that clears the threshold by `SEA_ROCK` keeps
+its head above the water: stacks in the sea, islands in a lake. The water
+routes are carved through whatever stands in their way, so a channel is
+never shut by one.
+
 **The seal.** No pocket survives. Every water body that is not the sea
 is drained (a deep cell to rock, a shallow one to ground), and every
 walkable cell the core cannot reach is turned to rock — once before the
@@ -104,10 +109,11 @@ the terrain is left exactly as the noise drew it. From every cell of the
 board's edge the generator looks inward, as deep as it takes, for the
 first cell whose ground reaches the core through corridors at least
 twelve cells wide (the walk mask opened at `SPAWN_CLEAR`, in the core's
-piece of it), and takes it and the two cells behind it (`SPAWN_DEPTH`);
+piece of it), and takes it and the nine cells behind it (`SPAWN_DEPTH`);
 water tiles the same way over the water mask. So on an open side the
 door is the edge itself, behind a mountain it is the mountain's inner
-foot, and the doors' discs are in the layer as before. The seal above is
+foot. The door circles are NOT in the layer: they carve the routes and
+clear or flood their discs, and that is all. The seal above is
 what makes every such cell a real door: no pocket and no dead lake
 survives it, so the first spawnable floor is always on the way to the
 core. The

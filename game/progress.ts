@@ -215,6 +215,8 @@ export interface Progress {
    */
   allyBars?: HealthBarMode;
   enemyBars?: HealthBarMode;
+  /** ...and the props' (docs/props.md, under fire) */
+  propBars?: HealthBarMode;
   /**
    * WHEN THE STATUS SYMBOLS RIDE OVER A BODY on the field — one knob for
    * both sides, unlike the bars, because "what is happening to that" is
@@ -376,6 +378,7 @@ export function loadProgress(): Progress {
       // absent means ON — only an explicit false switches it off
       allyBars: readBars(p.allyBars),
       enemyBars: readBars(p.enemyBars),
+      propBars: readBars(p.propBars),
       statusMarks: readStatusMode(p.statusMarks),
       skills: readSkills(p.skills),
       ...(p.devGrantOff === true ? { devGrantOff: true } : null),
@@ -502,6 +505,12 @@ export function saveEnemyBars(mode: HealthBarMode): void {
   const p = loadProgress();
   if ((p.enemyBars ?? HEALTH_BARS_DEFAULT) === mode) return;
   saveProgress({ ...p, enemyBars: mode });
+}
+
+export function savePropBars(mode: HealthBarMode): void {
+  const p = loadProgress();
+  if ((p.propBars ?? HEALTH_BARS_DEFAULT) === mode) return;
+  saveProgress({ ...p, propBars: mode });
 }
 
 /** the Interface tab's status-symbol knob — one setting for both sides */

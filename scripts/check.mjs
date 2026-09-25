@@ -317,50 +317,6 @@ const artMissing = artWanted
   .map(([what, url]) => `${what}: ${url} has no ${path.relative(ROOT, drawingFor(url)).replace(/\\/g, "/")}`);
 report("art", artMissing, `${artWanted.length} drawings`);
 
-// ---------- atlas: how much room is left on the sheet ----------
-
-// THE SHEET IS THE ONE THING THIS CHECK CANNOT FULLY RUN, and the outage
-// that put this stage here is the reason to say so out loud rather than
-// leave the gap where somebody has to rediscover it.
-//
-// Importing game/atlas.ts runs the packer over every cell declared at
-// module scope — the floors, the walls, the bullets, every hull and every
-// part of one — which is the great majority of the sheet, and it is pure
-// arithmetic that Node runs happily. What it does NOT run is the last
-// step: a body's TEAM CELL is cut to art that has to be drawn before its
-// size is known, so those are reserved inside buildAtlas, which needs a
-// canvas. Node has none. The Kettles landed, the sheet went past what
-// MaxRects could pack, and the cell that threw was a team cell — the one
-// class of cell no gate could see — so `check` was green and the game
-// would not boot.
-//
-// SO THIS IS A TREND LINE, NOT A GATE. It prints how full the static pass
-// leaves the sheet and how big the largest free rectangle still is, and
-// it fails only on the thing it can actually prove: that the static pass
-// itself did not overflow. A packer that fails on SHAPE cannot be
-// predicted from an area figure (at 2560 the sheet was 85% spoken for and
-// had 1.5M px free — in the wrong shapes), so what this buys is a number
-// that climbs in front of you run after run instead of a cliff.
-const atlasProblems = [];
-let atlasDetail = "";
-try {
-  const A = R("atlas.js");
-  const fill = A.atlasFill();
-  const room = A.atlasLargestFree();
-  atlasDetail =
-    `${fill.cells} static cells, ${fill.pct}% of ${A.ATLAS_SIZE[0]}x${A.ATLAS_SIZE[1]}` +
-    `, biggest free rect ${room.w}x${room.h}` +
-    ` (team cells are packed at runtime and are NOT counted — see this stage)`;
-  if (fill.pct > 80)
-    atlasProblems.push(
-      `the static pass alone fills ${fill.pct}% of the sheet; the team cells go on top of that at load. ` +
-        `Raise ATLAS_W in game/atlas.ts before it throws in the browser (ceiling 4096)`,
-    );
-} catch (e) {
-  atlasProblems.push(`game/atlas.ts did not import: ${e.message}`);
-}
-report("atlas", atlasProblems, atlasDetail);
-
 // ---------- cells: a body whose TEAM CELL is empty takes the game down ----------
 
 // Every drawn body hands the packer a team cell as well as a drawing: the
@@ -369,7 +325,8 @@ report("atlas", atlasProblems, atlasDetail);
 // its family's colour produces an empty mask, and the packer throws — "the
 // grapnel1 team cell has no pixels in it" — WHILE A LEVEL IS LOADING,
 // which is as late as a failure can be found and the one place none of the
-// other stages look: the atlas needs a canvas, so nothing here packs it.
+// other stages look. The mask's bounds also size the team cell the atlas
+// stage below packs.
 //
 // The rule is one line and it belongs on this side of that: a tier that
 // wears no accent is a tier that cannot ship. The runt is the one that
@@ -414,14 +371,63 @@ const cellFamilies = (() => {
 })();
 const cellProblems = [];
 let bodiesChecked = 0;
+/** each team cell's crop, for the atlas stage: the accent's bounds plus
+ *  the pixel the antialias pass can spread it by on every side */
+const cellBounds = [];
 for (const [family, tiers, art] of cellFamilies)
   for (const T of tiers) {
     bodiesChecked++;
     const cell = art(T).cell;
-    if (!cell.px.some((p) => p !== null))
+    const n = cell.n;
+    let x0 = n, y0 = n, x1 = -1, y1 = -1;
+    for (let i = 0; i < cell.px.length; i++) {
+      if (cell.px[i] === null) continue;
+      const x = i % n, y = (i / n) | 0;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+    if (x1 < 0)
       cellProblems.push(`${family}${T.t}: its team cell has no pixels — it wears none of its family's accent, and the atlas refuses that at level load`);
+    else cellBounds.push({ kind: `${family}${T.t}`, w: x1 - x0 + 3, h: y1 - y0 + 3 });
   }
 report("cells", cellProblems, `${bodiesChecked} team cells`);
+
+// ---------- atlas: the whole sheet packs ----------
+
+// Importing game/atlas.ts runs the packer over every cell declared at
+// module scope. The team cells are the exception — they are cut to art
+// at pack time, in the browser — so the cells stage above measured each
+// one's bounds and they are reserved here at that worst case, in the same
+// order the pack pass takes. The packer fails on SHAPE, not area, so the
+// only gate that means anything is reserving every cell and seeing the
+// last one land; the percentage is the trend to watch between runs.
+const atlasProblems = [];
+let atlasDetail = "";
+try {
+  const A = R("atlas.js");
+  const fixed = A.atlasFill();
+  let packed = 0;
+  for (const c of cellBounds) {
+    try {
+      A.reserveTeamCellBound(c.kind, c.w, c.h);
+      packed++;
+    } catch (e) {
+      atlasProblems.push(`the ${c.kind} team cell does not fit: ${e.message.split("\n")[0]}`);
+      break;
+    }
+  }
+  const fill = A.atlasFill();
+  const room = A.atlasLargestFree();
+  atlasDetail =
+    `${fixed.cells} static cells at ${fixed.pct}%, ${packed} team cells at their worst case on top: ` +
+    `${fill.pct}% of ${A.ATLAS_SIZE[0]}x${A.ATLAS_SIZE[1]}, biggest free rect ${room.w}x${room.h}`;
+  if (fill.pct > 85) notes.push(`the sheet is ${fill.pct}% full; the next family may not pack (game/atlas.ts, ATLAS_W is at its 4096 ceiling)`);
+} catch (e) {
+  atlasProblems.push(`game/atlas.ts did not import: ${e.message}`);
+}
+report("atlas", atlasProblems, atlasDetail);
 
 // ---------- docs: the JSON on disk, which nothing typechecks ----------
 

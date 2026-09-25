@@ -372,6 +372,9 @@ export interface Tower {
    * a building whose cells no longer point at it.
    */
   aimTower: Structure | null;
+  /** the PROP an idle gun is clearing (Sim.nearestProp), or -1: asked for
+   *  only once no body, dome or building is in range */
+  aimProp: number;
   cd: number; // reload: seconds until the next volley is ready
   /**
    * How fast this tower's reload runs: 1 everywhere, HYDROPHOBIC_RATE on
@@ -477,6 +480,9 @@ export interface EnemyShot {
   /** a bomb (BombBulletType, collides = false) falls where it was dropped
    *  and bursts when its fuse runs out; nothing it passes over is hit */
   collide: boolean;
+  /** fired by a ground body: it passes over a building on a hill and its
+   *  burst spares one (Sim.onHill) */
+  ground: boolean;
   /** ArtilleryBulletType.update's trail clock, and the missiles' chance
    *  roll — see Sim.updateEnemyShots */
   trailT: number;

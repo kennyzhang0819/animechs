@@ -92,6 +92,7 @@ import {
   saveInvertZoom,
   saveAllyBars,
   saveEnemyBars,
+  savePropBars,
   saveStatusMarks,
   HEALTH_BAR_MODES,
   HEALTH_BARS_DEFAULT,
@@ -2086,6 +2087,7 @@ export default function Animechs() {
    */
   const [allyBars, setAllyBars] = useState<HealthBarMode>(HEALTH_BARS_DEFAULT);
   const [enemyBars, setEnemyBars] = useState<HealthBarMode>(HEALTH_BARS_DEFAULT);
+  const [propBars, setPropBars] = useState<HealthBarMode>(HEALTH_BARS_DEFAULT);
   /**
    * ...AND WHO WEARS THE ROW OF STATUS SYMBOLS over that
    * (Progress.statusMarks, Game.setStatusMarks). One knob for both sides,
@@ -2210,6 +2212,7 @@ export default function Animechs() {
     setInvertZoom(p.invertZoom ?? INVERT_ZOOM_DEFAULT);
     setAllyBars(p.allyBars ?? HEALTH_BARS_DEFAULT);
     setEnemyBars(p.enemyBars ?? HEALTH_BARS_DEFAULT);
+    setPropBars(p.propBars ?? HEALTH_BARS_DEFAULT);
     setStatusMarks(p.statusMarks ?? STATUS_MARKS_DEFAULT);
   }, []);
 
@@ -2380,6 +2383,7 @@ export default function Animechs() {
         g.setPanSpeed(save.panSpeed ?? PAN_SPEED_DEFAULT);
         g.setInvertZoom(save.invertZoom ?? INVERT_ZOOM_DEFAULT);
         g.setHealthBars(save.allyBars ?? HEALTH_BARS_DEFAULT, save.enemyBars ?? HEALTH_BARS_DEFAULT);
+        g.setPropBars(save.propBars ?? HEALTH_BARS_DEFAULT);
         g.setStatusMarks(save.statusMarks ?? STATUS_MARKS_DEFAULT);
         // the minimap's canvas is already mounted under the loading screen
         g.attachMinimap(mmRef.current);
@@ -2927,6 +2931,16 @@ export default function Animechs() {
                 setEnemyBars(mode);
                 saveEnemyBars(mode);
                 gameRef.current?.setHealthBars(allyBars, mode);
+              }}
+            />
+            <ChoiceRow
+              label="Prop health bars"
+              choices={HEALTH_BAR_MODES}
+              value={propBars}
+              onPick={(mode) => {
+                setPropBars(mode);
+                savePropBars(mode);
+                gameRef.current?.setPropBars(mode);
               }}
             />
             {/* WHEN A BODY WEARS WHAT IS HAPPENING TO IT (status.ts): the

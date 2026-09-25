@@ -25,7 +25,7 @@
  * static one, and the renderer asks for it once a projectile. So the
  * table is held here and refreshed when the report says it moved.
  */
-import { structStats, type BulletStats, type TowerStats } from "./constants";
+import { COLS, structStats, type BulletStats, type TowerStats } from "./constants";
 import type { LevelSpec } from "./levels";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
 import { levelWithMarks } from "./missions";
@@ -33,7 +33,8 @@ import type { RelicId } from "./relics";
 import type { BoardBodies, BoardGrids } from "./board";
 import { emptySnapshot, type FlatWorld, type Snapshot } from "./snapshot";
 import { HDR, type WorldReport } from "./simreport";
-import type { Terrain } from "./terrain";
+import { closePropCells, hillMask, isBuildableWall, openPropCells, type Prop, type Terrain } from "./terrain";
+import { PROP_KINDS } from "./propArt";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
 /** everything a World is stood up from — the host gathers it from wherever the sim is */
@@ -59,6 +60,8 @@ const emptyReport = (): WorldReport => ({
   relics: [],
   inspect: null,
   specs: null,
+  terrain: null,
+  propHurt: [],
   profile: null,
 });
 
@@ -87,11 +90,29 @@ export class World {
   private readonly specs = new Map<TowerKind, TowerStats>();
   /** the table version the copy above was taken at (simreport.ts) */
   specsSeen = -1;
+  /** the ground version this copy of the terrain is at (simreport.ts TERRAIN) */
+  terrainSeen = -1;
+  /** the map's props as loaded, the index space the sim's kill list is in */
+  private propsAll: readonly Prop[] = [];
+  private deadProps = new Set<number>();
+  /** the props that came down since the last take, for the picture to
+   *  take out one by one (renderer.killProp), and whether any came BACK —
+   *  a reset — which is the one case the whole terrain is rebuilt for */
+  readonly propsJustDied: Prop[] = [];
+  propsRevived = false;
+  /** what is left of every prop, by the map's index — 1 until hurt — and
+   *  the hurt ones as the sim listed them this frame (the bars) */
+  propFrac: Float32Array = new Float32Array(0);
+  propHurt: number[] = [];
+  get allProps(): readonly Prop[] { return this.propsAll; }
+  isPropDead(k: number): boolean { return this.deadProps.has(k); }
 
   constructor(src: WorldSource) {
     const doc = (src.level.map ? loadMap(src.level.map) : null) ?? OFFICIAL_MAPS[0];
     if (!doc) throw new Error("official maps not loaded — await loadOfficialMaps() first");
     this.terrain = terrainFromMap(doc);
+    this.propsAll = this.terrain.props;
+    this.propFrac = new Float32Array(this.propsAll.length).fill(1);
     // the same substitution the sim makes on its own copy (Sim.reset): a
     // raze played on a map that carries batteries is played on THOSE, and
     // the two sides have to agree about how many guns that is
@@ -126,6 +147,45 @@ export class World {
       for (const [k, s] of report.specs) this.specs.set(k, s);
       this.specsSeen = this.header[HDR.SPECS];
     }
+    // THE GROUND, CAUGHT UP IN PLACE: this copy is held by reference (the
+    // draw view, the placement grids), so its cells are edited, never
+    // swapped. Props back from an earlier list are a reset's — they close
+    // again; the new dead open, by the same rule the sim used (terrain.ts)
+    if (report.terrain) {
+      const dead = new Set(report.terrain);
+      for (const k of this.deadProps)
+        if (!dead.has(k)) {
+          closePropCells(this.terrain, this.propsAll[k]);
+          this.propsRevived = true;
+        }
+      for (const k of dead)
+        if (!this.deadProps.has(k)) {
+          openPropCells(this.terrain, this.propsAll[k]);
+          this.propsJustDied.push(this.propsAll[k]);
+        }
+      this.deadProps = dead;
+      this.terrain.props = this.propsAll.filter((_, k) => !dead.has(k));
+      // the placement mask follows, cell by cell: a dead prop's rock is
+      // buildable, a revived prop's is not
+      if (this.hillMem) {
+        const T = this.terrain, m = this.hillMem;
+        const touch = (p: Prop, on: boolean): void => {
+          const n = PROP_KINDS[p.kind]?.tiles ?? 1;
+          for (let y = p.y; y < p.y + n; y++)
+            for (let x = p.x; x < p.x + n; x++) {
+              const i = y * COLS + x;
+              m[i] = on && T.blocked[i] !== 0 && isBuildableWall(T.wall[i]) ? 1 : 0;
+            }
+        };
+        for (const p of this.propsJustDied) touch(p, true);
+        if (this.propsRevived) for (const k of dead) touch(this.propsAll[k], false);
+        if (this.propsRevived) for (let k = 0; k < this.propsAll.length; k++) if (!dead.has(k)) touch(this.propsAll[k], false);
+      }
+      this.terrainSeen = this.header[HDR.TERRAIN];
+    }
+    for (let i = 0; i < this.propHurt.length; i += 2) this.propFrac[this.propHurt[i]] = 1;
+    this.propHurt = report.propHurt;
+    for (let i = 0; i < this.propHurt.length; i += 2) this.propFrac[this.propHurt[i]] = this.propHurt[i + 1];
     this.relicsHeld = new Set(report.relics);
   }
 
@@ -286,6 +346,7 @@ export class World {
     return Array.from(this.flat.aliveByKind);
   }
 
+  private hillMem: Uint8Array | null = null;
   /** the masks a placement reads (board.ts) */
   grids(): BoardGrids {
     return {
@@ -295,6 +356,7 @@ export class World {
       isGoal: this.isGoal,
       occupied: this.occupied,
       waterlogged: this.waterlogged,
+      hill: (this.hillMem ??= hillMask(this.terrain)),
     };
   }
 }

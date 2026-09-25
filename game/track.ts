@@ -253,17 +253,18 @@ const PLACED: readonly { level: number; reward: Reward }[] = [
  *
  * THE FOUR ARE THE FOUR PROBLEMS THE OPENING ROSTER CAN ANSWER: a line
  * that walks (Ironhides), rot that ignores armour (Dartbacks), a crowd
- * that mends itself (Starhart), and something in the sky (Stoop) — which
- * the starting four turrets all shoot at. The rest arrive in the order
- * they ask for something the board has to go and buy: the long guns for
- * the Skates, burst for the Livewires, reach for the rest.
+ * that mends itself (Starhart), something in the sky (Stoop) — which
+ * the starting four turrets all shoot at — and the Skates, because every
+ * run is dealt a water family (levels.ts rollFamilies) and level 1 has to
+ * hold one. The rest arrive in the order they ask for something the
+ * board has to go and buy: burst for the Livewires, reach for the rest.
  *
  * THE TABLE IS WHOLE AND THE SHELF IS APPLIED AT THE READ, exactly as the
  * maps are: a family on the shelf (levels.ts SHELVED_FAMILIES) keeps the
  * level it was always promised, and comes back on it.
  */
 export const STARTING_FAMILIES: readonly FamilyKey[] = [
-  "ground", "dartback", "groundSupport", "air",
+  "ground", "dartback", "groundSupport", "air", "naval",
 ];
 
 /** how many levels apart the rest arrive — 5, 10, 15, … */
@@ -271,7 +272,7 @@ export const FAMILY_STEP = 5;
 
 /** ...and the order they arrive in; the nth opens at (n + 1) * FAMILY_STEP */
 const FAMILY_ORDER: readonly FamilyKey[] = [
-  "naval", "navalSupport", "tusker", "grapnel", "kettle", "ratking", "whale",
+  "navalSupport", "tusker", "grapnel", "kettle", "ratking", "whale",
 ];
 
 /** the level a faction joins the hat — 1 for the opening four */

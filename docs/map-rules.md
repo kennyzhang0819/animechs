@@ -47,7 +47,7 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 
 ## Room to build
 
-- Towers stand on open ground (`board.ts groundClear`), never on rock, a prop, deep water or a spawn tile. The rock counts below are a measure of the board, not of build room.
+- Towers stand on open ground or on a hill with their whole footprint on rock (`board.ts groundClear`), never half and half, never on a prop, deep water or a spawn tile. A turret on a hill can be hit only by flyers (`Sim.onHill`).
 - More than 200 4x4 footprints; more than 8,000 rock cells.
 
 ## Rules of play a map must respect

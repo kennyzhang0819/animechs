@@ -47,15 +47,17 @@ Two rules keep a wave readable:
 ## The hat is what the track has opened
 
 A faction is a **campaign unlock** like a gun or a rule (`game/track.ts`
-`STARTING_FAMILIES`, `FAMILY_ORDER`): a fresh save meets four — the line, the
-rot, the self-mending crowd and the one thing in the sky, which the starting
-four turrets can all shoot at — and every `FAMILY_STEP` levels (5, 10, 15, …)
-puts one more in the hat, in the order they ask for something the board has to
-go and buy. `familiesAt` is the pool the deploy hands `rollFamilies`, so
+`STARTING_FAMILIES`, `FAMILY_ORDER`): a fresh save meets five — the line, the
+rot, the self-mending crowd, the one thing in the sky, which the starting
+four turrets can all shoot at, and the Skates — and every `FAMILY_STEP` levels
+(5, 10, 15, …) puts one more in the hat, in the order they ask for something
+the board has to go and buy. **Every rolled run is dealt at least one water
+family**: if the die's four hold none, one from the pool takes a random slot
+(`rollFamilies`). A named hand in custom mode is played as given. `familiesAt` is the pool the deploy hands `rollFamilies`, so
 **regular mode can only be sent what the save has earned**; custom mode draws
 from the whole roster, as it does with maps, rungs and rules.
 
-That is why level 1 opens exactly `FAMILIES_PER_RUN` of them, and an import
+That is why level 1 opens at least `FAMILIES_PER_RUN` of them, and an import
 check enforces it: a fresh save whose hat holds fewer factions than a run is
 dealt would be a run padded with nothing. Each family carries a one-line
 `gimmick` (`FAMILIES` in `game/levels.ts`) — what makes it its own problem,
