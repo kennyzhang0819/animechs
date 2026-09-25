@@ -244,8 +244,8 @@ const made = (id: string, label: string, tiles: PropTiles, mini: string, paint: 
  * three px clear of its rim (the atlas crops two, PROP_INSET).
  */
 export const PROP_KINDS: readonly PropDef[] = [
-  nature("shrub", "Shrub", 1, 1.5, LEAF_TONES, (s, rng) => {
-    clump(s, rng, 24, 24.5, 19, 5);
+  nature("shrub", "Shrub", 1, 1.75, LEAF_TONES, (s, rng) => {
+    clump(s, rng, 28, 28.5, 23, 6);
   }),
   nature("reeds", "Reeds", 1, 1.25, LEAF_TONES, (s, rng) => {
     s.disc(20, 25, 12, 7, DARK);
@@ -492,11 +492,11 @@ export const PROP_KINDS: readonly PropDef[] = [
     s.rect(88, 66, 16, 4, STEEL.deep);
   }),
   // the bushes a thicket is made of: a canopy's lobes with no trunk under them
-  nature("brush", "Brush", 2, 2.5, LEAF_TONES, (s, rng) => {
-    canopy(s, rng, 40, 40, 35, 8, 0, false);
+  nature("brush", "Brush", 2, 3, LEAF_TONES, (s, rng) => {
+    canopy(s, rng, 48, 48, 43, 8, 0, false);
   }),
-  nature("thicket", "Thicket", 3, 3.5, LEAF_TONES, (s, rng) => {
-    canopy(s, rng, 56, 56, 49, 10, 5, false);
+  nature("thicket", "Thicket", 3, 4, LEAF_TONES, (s, rng) => {
+    canopy(s, rng, 64, 64, 58, 10, 5, false);
   }),
 ];
 export const PROP_KIND_INDEX: Readonly<Record<string, number>> = Object.fromEntries(PROP_KINDS.map((k, i) => [k.id, i]));
