@@ -1,24 +1,93 @@
-import { BASE, CELL, clamp, COLS, NCELLS, ROWS } from "./constants";
+import { BASE, clamp, COLS, NCELLS, ROWS } from "./constants";
 import { forEachMarkPadCell, type MapMark } from "./missionMarks";
 import type { RailTile } from "./missions";
-import { DECOR_TILES, WATER_FLOOR_GROUPS } from "./atlas";
+import { WATER_FLOOR_GROUPS } from "./atlas";
+import { PROP_KINDS, TONE } from "./propArt";
 
+/** a prop on the board — see docs/props.md */
 export interface Prop {
-  x: number; // world px, sprite center
+  /** the top-left cell of its footprint; the footprint is PROP_KINDS[kind].tiles square */
+  x: number;
   y: number;
-  size: number; // fixed per sprite type — native tile scale, never randomized
-  rot: number; // radians, quarter-turn steps so the pixel art stays crisp
-  /** which sprite: an index into UV_DECOR for decor, into UV_PINES for a
-   *  pine. 0 is the original of each, so props saved before either table
-   *  had a second row keep drawing what they drew */
+  /** index into PROP_KINDS */
   kind: number;
+  /** index into PROP_TONES: the tint a nature prop wears, the weathering on a made one */
+  tone: number;
+  /** quarter turns, 0..3 */
+  rot: number;
 }
 
-/** random quarter-turn — props vary by rotation, never by size */
-const quarterTurn = (rng: () => number): number => ((rng() * 4) | 0) * (Math.PI / 2);
+/** wall[] value meaning "this blocked cell is under a prop": its floor shows,
+ *  the prop is drawn over it, a flyer crosses it. It was the pine sentinel,
+ *  and the value is what every document on disk carries */
+export const WALL_PROP = 4;
 
-/** wall[] value meaning "grass floor with a pine tree prop on top" */
-export const WALL_PINE = 4;
+/** the props of a map, as the cells under them: 1 where a listed prop stands */
+export function propMask(props: readonly Prop[], cols = COLS, rows = ROWS): Uint8Array {
+  const m = new Uint8Array(NCELLS);
+  for (const p of props) {
+    const t = PROP_KINDS[p.kind]?.tiles ?? 1;
+    for (let y = p.y; y < p.y + t; y++)
+      for (let x = p.x; x < p.x + t; x++)
+        if (x >= 0 && y >= 0 && x < cols && y < rows) m[y * COLS + x] = 1;
+  }
+  return m;
+}
+
+/** a small deterministic rng for whatever lays props down without a seed of its own */
+const mulberry32 = (seed: number) => (): number => {
+  seed |= 0;
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+/**
+ * COVER A MASK OF CELLS WITH PROPS, the biggest that fit first: a forest
+ * is oaks where three cells square are free, trees where two are, shrubs
+ * on what is left, so every cell of the mask ends up under something. The
+ * generator's fringe forests and the loader's legacy pine cells both come
+ * through here. `tone` answers per cell.
+ */
+export function forestOf(
+  mask: Uint8Array,
+  tone: (i: number) => number,
+  seed: number,
+  kinds: { tiles: number; kind: number }[] = FOREST_KINDS,
+): Prop[] {
+  const rng = mulberry32(seed);
+  const free = Uint8Array.from(mask);
+  const cells: number[] = [];
+  for (let i = 0; i < NCELLS; i++) if (mask[i]) cells.push(i);
+  for (let k = cells.length - 1; k > 0; k--) {
+    const j = (rng() * (k + 1)) | 0;
+    [cells[k], cells[j]] = [cells[j], cells[k]];
+  }
+  const out: Prop[] = [];
+  const sizes = [...new Set(kinds.map((k) => k.tiles))].sort((a, b) => b - a);
+  for (const t of sizes) {
+    const pick = kinds.filter((k) => k.tiles === t);
+    for (const i of cells) {
+      const x0 = i % COLS, y0 = (i / COLS) | 0;
+      if (x0 + t > COLS || y0 + t > ROWS) continue;
+      let ok = true;
+      for (let y = y0; y < y0 + t && ok; y++)
+        for (let x = x0; x < x0 + t; x++) if (!free[y * COLS + x]) { ok = false; break; }
+      if (!ok) continue;
+      for (let y = y0; y < y0 + t; y++) for (let x = x0; x < x0 + t; x++) free[y * COLS + x] = 0;
+      out.push({ x: x0, y: y0, kind: pick[(rng() * pick.length) | 0].kind, tone: tone(i), rot: (rng() * 4) | 0 });
+    }
+  }
+  return out;
+}
+const FOREST_KINDS = [
+  { tiles: 3, kind: PROP_KINDS.findIndex((k) => k.id === "oak") },
+  { tiles: 2, kind: PROP_KINDS.findIndex((k) => k.id === "tree") },
+  { tiles: 1, kind: PROP_KINDS.findIndex((k) => k.id === "shrub") },
+];
+/** the tree a legacy pine of each forest kind grows into */
+export const LEGACY_PINE_TONES: readonly number[] = [TONE.pine, TONE.mangrove, TONE.frost];
 
 /**
  * wall[] value meaning "this blocked cell is DEEP WATER" — the second
@@ -27,9 +96,9 @@ export const WALL_PINE = 4;
  * A blocked cell is normally a hill: nothing walks across it and nothing
  * builds on it either (board.ts groundClear refuses every blocked cell).
  * The two sentinels are the blocked cells that are NOT hills, for opposite
- * reasons — a pine forest is a canopy a flyer crosses, and deep water is
- * the naval layer's own road — so both keep their floor showing instead of
- * a wall sprite (see the renderer's showsFloor) and neither is in the
+ * reasons — a prop is a thing on the ground a flyer crosses, and deep water
+ * is the naval layer's own road — so both keep their floor showing instead
+ * of a wall sprite (see the renderer's showsFloor) and neither is in the
  * flyers' mask.
  *
  * SHALLOW WATER HAS NO SENTINEL AND WANTS NONE. It is an ordinary floor
@@ -45,7 +114,7 @@ export const WALL_DEEP = 7;
 
 /**
  * IS THIS BLOCKED CELL A HILL? Every rock family is; the two sentinels are
- * not. Read this rather than testing WALL_PINE by hand — that test was the
+ * not. Read this rather than testing WALL_PROP by hand — that test was the
  * whole rule when pines were the only exception, and a second exception is
  * exactly the kind of thing a scattered comparison misses.
  *
@@ -58,7 +127,7 @@ export const WALL_DEEP = 7;
  * SIGHT stops at (airWalkMask, Sim.hasSight).
  */
 export const isBuildableWall = (wall: number): boolean =>
-  wall !== WALL_PINE && wall !== WALL_DEEP;
+  wall !== WALL_PROP && wall !== WALL_DEEP;
 
 /**
  * MAY A SPAWN TILE BE PAINTED HERE? Open ground, and deep water.
@@ -66,7 +135,7 @@ export const isBuildableWall = (wall: number): boolean =>
  * "Enemies cannot spawn on hills" is the whole rule, and the deep is not
  * one: it is the naval layer's own road (navalWalkMask), so a fleet coming
  * in out at sea is a door and not a body dropped inside a wall. Rock and
- * forest are walls to everything that walks and a place no flyer should
+ * props are walls to everything that walks and a place no flyer should
  * ever be dropped into, so they hold no pads.
  *
  * Read by the loader (maps.ts clampSpawn), by the brush (MapEditor) and by
@@ -76,10 +145,10 @@ export const canHoldSpawn = (blocked: number, wall: number): boolean =>
   !blocked || wall === WALL_DEEP;
 
 /** does this cell show its floor rather than a wall sprite? true for open
- *  ground and for both sentinels — a pine's prop and the water's surface
- *  are drawn over the floor, never instead of it */
+ *  ground and for both sentinels — a prop and the water's surface are
+ *  drawn over the floor, never instead of it */
 export const showsFloorCell = (blocked: number, wall: number): boolean =>
-  !blocked || wall === WALL_PINE || wall === WALL_DEEP;
+  !blocked || wall === WALL_PROP || wall === WALL_DEEP;
 
 /**
  * Is this floor index water of any kind? It is the whole definition of
@@ -127,8 +196,8 @@ export function navalWalkMask(t: Terrain): Uint8Array {
  * field over this mask exactly as a walker reads one over `blocked`, so
  * the swarm comes over the same saddles and gaps a player can see on the
  * map instead of cutting one invisible straight line from its door to the
- * core. The two sentinels are open sky: a pine canopy is something to fly
- * over, and deep water is the whole reason air and naval exist.
+ * core. The two sentinels are open sky: a prop is something to fly over,
+ * and deep water is the whole reason air and naval exist.
  *
  * It is `isBuildableWall` that decides what a hill is, and not by accident
  * — "rock standing above the floor" is one idea, and a second predicate
@@ -143,9 +212,9 @@ export function airWalkMask(t: Terrain): Uint8Array {
 }
 
 export interface Terrain {
-  blocked: Uint8Array; // mountains, forests, rocks — everything units can't cross
-  floor: Uint8Array; // UV_FLOORS index per cell (pine cells: the grass underneath)
-  wall: Uint8Array; // per blocked cell: UV_WALLS index, or WALL_PINE
+  blocked: Uint8Array; // mountains, props, deep water — everything units can't cross
+  floor: Uint8Array; // UV_FLOORS index per cell (prop cells: the ground underneath)
+  wall: Uint8Array; // per blocked cell: UV_WALLS index, or a sentinel
   /**
    * WHERE THE SWARM ENTERS: the painted spawn layer, 1 a cell.
    *
@@ -160,8 +229,9 @@ export interface Terrain {
    * raises rock takes its tiles back.
    */
   spawn: Uint8Array;
-  pines: Prop[]; // blocking tree cells, drawn as overhanging props
-  decor: Prop[]; // non-blocking props: boulders, shrubs
+  /** everything standing on the ground (docs/props.md): every cell under
+   *  one is blocked and wears WALL_PROP, and the list is what is drawn */
+  props: Prop[];
   valleyY: Float32Array; // carved main-valley centerline per column
   /** the mission furniture placed on this map (missionMarks.ts MapMark):
    *  where a mission's own things stand, and nothing about when */
@@ -201,14 +271,6 @@ export interface Terrain {
   rows: number;
 }
 
-const mulberry32 = (seed: number) => (): number => {
-  seed |= 0;
-  seed = (seed + 0x6d2b79f5) | 0;
-  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-};
-
 /** 3-octave value noise in [0,1] — a fresh random lattice per call */
 function makeNoise(rng: () => number): (x: number, y: number) => number {
   const seed = (rng() * 0x7fffffff) | 0;
@@ -243,8 +305,7 @@ export function generateTerrain(seed: number): Terrain {
   const floor = new Uint8Array(NCELLS);
   const wall = new Uint8Array(NCELLS);
   const mountain = new Uint8Array(NCELLS); // blocked minus forests/rocks, for floor fringes
-  const pines: Prop[] = [];
-  const decor: Prop[] = [];
+  const forest = new Uint8Array(NCELLS);
 
   // mountains: noise elevation plus a hard bias toward the top/bottom rims.
   // the threshold is low enough that the interior is properly mountainous —
@@ -358,14 +419,8 @@ export function generateTerrain(seed: number): Terrain {
         const i = yy * COLS + xx;
         if (blocked[i]) continue;
         blocked[i] = 1;
-        wall[i] = WALL_PINE;
-        pines.push({
-          x: (xx + 0.5) * CELL,
-          y: (yy + 0.5) * CELL,
-          size: CELL * 1.5, // 48px art on a 32px tile, like Mindustry
-          rot: quarterTurn(rng),
-          kind: 0,
-        });
+        wall[i] = WALL_PROP;
+        forest[i] = 1;
       }
   }
 
@@ -418,12 +473,9 @@ export function generateTerrain(seed: number): Terrain {
   for (let y = Math.max(0, BASE.y - 4); y < Math.min(ROWS, BASE.y + BASE.size + 4); y++)
     for (let x = BASE.x - 6; x < COLS; x++) blocked[y * COLS + x] = 0;
 
-  for (let i = 0; i < NCELLS; i++)
-    if (blocked[i] && wall[i] !== WALL_PINE && !mountain[i]) mountain[i] = 1;
-  // a cleared cell may keep a stale pine entry — drop props whose cell opened
-  for (let k = pines.length - 1; k >= 0; k--) {
-    const i = clamp((pines[k].y / CELL) | 0, 0, ROWS - 1) * COLS + clamp((pines[k].x / CELL) | 0, 0, COLS - 1);
-    if (!blocked[i]) pines.splice(k, 1);
+  for (let i = 0; i < NCELLS; i++) {
+    if (blocked[i] && wall[i] !== WALL_PROP && !mountain[i]) mountain[i] = 1;
+    if (forest[i] && !blocked[i]) forest[i] = 0; // a clearing took the tree
   }
 
   // floors: grass base with random meadow patches of dirt, then stone/dirt
@@ -449,7 +501,7 @@ export function generateTerrain(seed: number): Terrain {
   for (let y = 0; y < ROWS; y++)
     for (let x = 0; x < COLS; x++) {
       const i = y * COLS + x;
-      if (!blocked[i] || wall[i] === WALL_PINE) continue;
+      if (!blocked[i] || wall[i] === WALL_PROP) continue;
       let fringe = false;
       for (let yy = Math.max(0, y - 1); yy <= Math.min(ROWS - 1, y + 1) && !fringe; yy++)
         for (let xx = Math.max(0, x - 1); xx <= Math.min(COLS - 1, x + 1); xx++)
@@ -458,26 +510,7 @@ export function generateTerrain(seed: number): Terrain {
       wall[i] = fringe && mountain[i] === 1 && rng() < 0.6 ? 2 + h : h;
     }
 
-  // shrubs sprinkled on open ground (purely decorative). It sowed
-  // boulders on the cells that were not grass too; the stones are off
-  // (atlas.ts DECOR_DRAWN), so a generated board grows things or it grows
-  // nothing
-  const propTries = 130;
-  for (let n = 0; n < propTries; n++) {
-    const x = 7 + ((rng() * (COLS - 14)) | 0), y = 1 + ((rng() * (ROWS - 2)) | 0);
-    const i = y * COLS + x;
-    if (blocked[i]) continue;
-    if (x >= BASE.x - 6 && y >= BASE.y - 4 && y < BASE.y + BASE.size + 4) continue;
-    if (floor[i] >= 3 || rng() >= 0.45) continue; // shrubs only look right on grass
-    const kind = rng() < 0.5 ? 2 : 11;
-    decor.push({
-      x: (x + 0.5) * CELL,
-      y: (y + 0.5) * CELL,
-      size: CELL * DECOR_TILES[kind], // native scale, per sprite
-      rot: quarterTurn(rng),
-      kind,
-    });
-  }
+  const props = forestOf(forest, () => LEGACY_PINE_TONES[0], seed);
 
   // the spawn tiles: the open ground of the western strip, the same mouth
   // the spawner has always used — paint more of them in the editor
@@ -489,7 +522,7 @@ export function generateTerrain(seed: number): Terrain {
     }
 
   return {
-    blocked, floor, wall, spawn, reserved: new Uint8Array(NCELLS), pines, decor, valleyY,
+    blocked, floor, wall, spawn, reserved: new Uint8Array(NCELLS), props, valleyY,
     // the generated fallback board carries no marks: they are authored,
     // and a board nobody authored has no mission furniture on it
     marks: [],

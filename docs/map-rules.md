@@ -7,7 +7,7 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 - A map is `public/maps/<id>.json`, listed in `OFFICIAL_MAP_IDS`; a world claims it by name in `WORLDS[].map`.
 - Layers are flat arrays indexed `y * w + x`; height is `floor.length / w`.
 - `blocked` is the only thing pathfinding reads.
-- `wall` sentinels: `WALL_PINE` (4) and `WALL_DEEP` (7) are blocked, show their floor, and take no tower.
+- `wall` sentinels: `WALL_PROP` (4) and `WALL_DEEP` (7) are blocked, show their floor, and take no tower. Every cell under a prop wears the first (`props.md`).
 - Water floors are a list (`WATER_FLOOR_GROUPS`), not a range. Append floor families; never insert.
 - Atlas indices are copied into `mapgen.mjs`, named identically. When a family moves, grep both.
 
@@ -27,7 +27,7 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 - **A mouth to the core, not a wall round it.** Where a map names a `funnel` the ground routes cross it and the choke there is ruled straight from the core through it. Nothing rings the core: the ground round it is whatever the noise and the rooms left, and how tight the approach is, is how tight the author set the choke.
 - **The wall is the floor's wall.** Two to four floor families, the first dominant (55% to 80%); rock over a family wears that family's wall. Nothing outlines a road.
 - **Water has a shore.** Deep in the heart, shallow at the edge; a road across water is a ford. A naval map's sea is along an edge. Water is where the naval line is FAST, not the only place it can go: a naval tank crosses deep water and land alike, at half pace ashore.
-- **Forests, clutter, ruins.** Pines only on rock beside their floors; boulders and bushes by family, thick along the rock, never in a drop zone or round the core; ruins only where a route's width of open ground surrounds them.
+- **Forests, props, ruins.** Trees only on rock beside their floors; on the open ground the theme's props, thick along the rock and in the thickets, never on a door's shortest walk, its checked lane, a drop zone or the core's yard (`props.md`); ruins only where a route's width of open ground surrounds them.
 - **One landmark** per map.
 
 ## Widths
@@ -47,7 +47,7 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 
 ## Room to build
 
-- Towers stand only on blocked cells that are not sentinels. Count the rock.
+- Towers stand on open ground (`board.ts groundClear`), never on rock, a prop, deep water or a spawn tile. The rock counts below are a measure of the board, not of build room.
 - More than 200 4x4 footprints; more than 8,000 rock cells.
 
 ## Rules of play a map must respect

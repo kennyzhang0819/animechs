@@ -1,4 +1,5 @@
-import { buildAtlas, DECOR_TILES, FLOOR_SHALLOW_WATER, SHALLOW_FOR_DEEP, towerIcon, unitIcon } from "./atlas";
+import { buildAtlas, FLOOR_SHALLOW_WATER, SHALLOW_FOR_DEEP, towerIcon, unitIcon } from "./atlas";
+import { PROP_KINDS } from "./propArt";
 import { towerBaseIcon } from "./towerIcons";
 import { fitZoom } from "./fit";
 import {
@@ -29,7 +30,7 @@ import {
 import { CONVOY_SIZE, WORLDS, unitAccent } from "./levels";
 import { MIN_RUN, pathProblems } from "./missions";
 import { canHoldSpawn, isWaterFloor, rebuildReserved } from "./terrain";
-import { WALL_DEEP, WALL_PINE, type Prop, type Terrain } from "./terrain";
+import { WALL_DEEP, WALL_PROP, type Prop, type Terrain } from "./terrain";
 
 // THE ZOOM FLOOR IS NO LONGER COVER. It used to be 1 — "the world fills
 // the viewport" — which meant the one view an author needs most, the whole
@@ -56,13 +57,10 @@ interface Snapshot {
   wall: Uint8Array;
   blocked: Uint8Array;
   spawn: Uint8Array;
-  pines: Prop[];
-  decor: Prop[];
+  props: Prop[];
   marks: MapMark[];
   base: { x: number; y: number; size: number };
 }
-
-const quarterTurn = (): number => ((Math.random() * 4) | 0) * (Math.PI / 2);
 
 
 /** how wide the path tool carves, in tiles across (see PATH_WOBBLE) */
@@ -352,8 +350,7 @@ export class MapEditor {
     this.terrain.wall.set(s.wall);
     this.terrain.blocked.set(s.blocked);
     this.terrain.spawn.set(s.spawn);
-    this.terrain.pines = s.pines;
-    this.terrain.decor = s.decor;
+    this.terrain.props = s.props;
     this.terrain.marks = s.marks;
     rebuildReserved(this.terrain);
     this.terrain.base = s.base;
@@ -378,19 +375,53 @@ export class MapEditor {
       wall: this.terrain.wall.slice(),
       blocked: this.terrain.blocked.slice(),
       spawn: this.terrain.spawn.slice(),
-      pines: this.terrain.pines.map((p) => ({ ...p })),
-      decor: this.terrain.decor.map((p) => ({ ...p })),
+      props: this.terrain.props.map((p) => ({ ...p })),
       marks: this.terrain.marks.map((r) => ({ ...r, pts: r.pts?.map((p) => [p[0], p[1]] as [number, number]), opts: { ...r.opts } })),
       base: { ...this.terrain.base },
     });
     if (this.undoStack.length > UNDO_CAP) this.undoStack.shift();
   }
 
+  /** take off every prop whose footprint covers this cell, and open the
+   *  cells it stood on that still wear its sentinel — the brush that
+   *  called sets the cell it is painting afterwards, or already has */
   private removePropsAt(gx: number, gy: number): void {
-    const inCell = (p: Prop): boolean =>
-      ((p.x / CELL) | 0) === gx && ((p.y / CELL) | 0) === gy;
-    this.terrain.pines = this.terrain.pines.filter((p) => !inCell(p));
-    this.terrain.decor = this.terrain.decor.filter((p) => !inCell(p));
+    const T = this.terrain;
+    T.props = T.props.filter((p) => {
+      const t = PROP_KINDS[p.kind]?.tiles ?? 1;
+      if (gx < p.x || gx >= p.x + t || gy < p.y || gy >= p.y + t) return true;
+      for (let y = p.y; y < p.y + t; y++)
+        for (let x = p.x; x < p.x + t; x++) {
+          const i = y * COLS + x;
+          if (T.wall[i] === WALL_PROP) { T.blocked[i] = 0; T.wall[i] = 0; }
+        }
+      return false;
+    });
+  }
+
+  /** the footprint a prop stamp on this cell would take: the cursor at
+   *  the middle of it, or the cell up and left of the middle on an even side */
+  private propAnchor(gx: number, gy: number, tiles: number): [number, number] {
+    const off = (tiles - 1) >> 1;
+    return [clamp(gx - off, 0, COLS - tiles), clamp(gy - off, 0, this.rows - tiles)];
+  }
+
+  /** stamp a prop: every cell of its footprint must be open ground on the map */
+  private stampProp(gx: number, gy: number, kind: number, tone: number): void {
+    const T = this.terrain;
+    const def = PROP_KINDS[kind];
+    if (!def || !this.layers.props) return;
+    const [x0, y0] = this.propAnchor(gx, gy, def.tiles);
+    for (let y = y0; y < y0 + def.tiles; y++)
+      for (let x = x0; x < x0 + def.tiles; x++) if (T.blocked[y * COLS + x]) return;
+    for (let y = y0; y < y0 + def.tiles; y++)
+      for (let x = x0; x < x0 + def.tiles; x++) {
+        const i = y * COLS + x;
+        T.blocked[i] = 1;
+        T.wall[i] = WALL_PROP;
+        T.spawn[i] = 0;
+      }
+    T.props.push({ x: x0, y: y0, kind, tone, rot: this.randomize ? (Math.random() * 4) | 0 : 0 });
   }
 
   private paintCell(gx: number, gy: number): void {
@@ -401,8 +432,6 @@ export class MapEditor {
     const pick = this.randomize && !set.noRandom
       ? set.variants[(Math.random() * set.variants.length) | 0]
       : set.variants[this.variant];
-    const rot = this.randomize ? quarterTurn() : 0;
-    const cx = (gx + 0.5) * CELL, cy = (gy + 0.5) * CELL;
 
     // a hidden layer is not just invisible, it is out of reach: these
     // guards are what make "hide it and edit underneath" work
@@ -439,24 +468,8 @@ export class MapEditor {
         // so a door out at sea is a door (terrain.ts canHoldSpawn)
       }
       if (L.props) this.removePropsAt(gx, gy);
-    } else if (set.kind === "pine") {
-      T.blocked[i] = 1;
-      T.wall[i] = WALL_PINE;
-      T.spawn[i] = 0;
-      this.removePropsAt(gx, gy);
-      // the variant is the forest (UV_PINES) — every pine is 48px art on a
-      // 32px tile, so they all overhang by the same half tile
-      T.pines.push({ x: cx, y: cy, size: CELL * 1.5, rot, kind: pick });
-    } else if (set.kind === "decor") {
-      if (T.blocked[i]) return; // props live on open ground, like the generator's
-      this.removePropsAt(gx, gy);
-      T.decor.push({
-        x: cx,
-        y: cy,
-        size: CELL * DECOR_TILES[pick], // native scale, per sprite
-        rot,
-        kind: pick,
-      });
+    } else if (set.kind === "prop") {
+      this.stampProp(gx, gy, set.prop ?? 0, pick);
     } else {
       // erase: strip the VISIBLE layers, keep the floor. Hiding a layer
       // therefore also shields it from the eraser. The ore goes with them
@@ -1507,6 +1520,19 @@ export class MapEditor {
       c.strokeStyle = "rgba(255,211,127,0.9)";
       c.lineWidth = 2 / s;
       c.strokeRect(x0, y0, side, side);
+      return;
+    }
+    // THE PROP GHOST: its footprint, where the stamp would put it
+    if (this.set.kind === "prop") {
+      const def = PROP_KINDS[this.set.prop ?? 0];
+      if (!def) return;
+      const [x0, y0] = this.propAnchor(this.hoverGx, this.hoverGy, def.tiles);
+      const side = def.tiles * CELL;
+      c.fillStyle = "rgba(255,211,127,0.14)";
+      c.fillRect(x0 * CELL, y0 * CELL, side, side);
+      c.strokeStyle = "rgba(255,211,127,0.9)";
+      c.lineWidth = 2 / s;
+      c.strokeRect(x0 * CELL, y0 * CELL, side, side);
       return;
     }
     if (this.set.kind === "path") {

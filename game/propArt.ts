@@ -1,0 +1,537 @@
+// THE PROPS — the things that stand on the ground and stop the swarm:
+// twenty kinds, 1x1 to 6x6 tiles, painted here in code at 32 px a tile the
+// way the floors are (tiles.ts). See docs/props.md for the system: the
+// footprint rule, the tones, how a map is decorated.
+//
+// A NATURE prop is painted in FOUR GREYS and tinted at draw time by its
+// tone (PROP_TONES), so one painting is a pine, a mangrove or a snow tree
+// and a boulder wears whichever rock family it lies against. A MADE prop
+// carries its own paint — steel, rust, concrete — and its tone is a
+// weathering tint that nudges it toward the ground it has been lying on.
+
+import { ellipse, hex, INK, mix, mulberry32, WALL_KINDS, WALL_STYLE, type WallKind } from "./tiles";
+import { LINOCUT_TERRAIN } from "./terrainFlag";
+
+export type PropTiles = 1 | 2 | 3 | 4 | 6;
+/** px a tile, the floors' own grid */
+export const PROP_PX = 32;
+
+// the four greys a tinted prop is painted in: multiplied by the tone
+const LIGHT = "#ffffff", MID = "#d2d2d2", DARK = "#9e9e9e", DEEP = "#6c6c6c";
+
+// the made props' paint
+const STEEL = { hi: "#9aa3aa", mid: "#6e777e", lo: "#4a5158", deep: "#2c3035" } as const;
+const RUST = { hi: "#b86a3f", mid: "#8f4f2e", lo: "#673621" } as const;
+const CONCRETE = { hi: "#b3aea3", mid: "#938e84", lo: "#6d6960", deep: "#4a4741" } as const;
+const CRATE = { hi: "#8d895f", mid: "#6e6a49", lo: "#4f4c34" } as const;
+const GLASS = "#3b4a55", GLINT = "#c7d6df", HAZARD = "#b8983a", EYE = "#8a7030", SCORCH = "#33302d", SPILL = "#2b2d2f";
+
+const leaf = (c: string): string => (LINOCUT_TERRAIN ? mix(c, INK.canopy, 0.3) : c);
+
+export interface PropTone {
+  id: string;
+  label: string;
+  hex: string;
+}
+/**
+ * THE TONES, indexed by a prop's `tone`. APPEND ONLY: the index is written
+ * into every map document that carries a prop. The rock tones are one per
+ * wall family in WALL_KINDS order, from ROCK_TONE0 on.
+ */
+export const PROP_TONES: readonly PropTone[] = [
+  { id: "pine", label: "Pine", hex: leaf("#7dbd68") },
+  { id: "mangrove", label: "Mangrove", hex: leaf("#b3ad62") },
+  { id: "frost", label: "Frost", hex: "#f2f5f8" },
+  { id: "scrub", label: "Scrub", hex: leaf("#c4b979") },
+  { id: "ash", label: "Ash", hex: "#8c7e78" },
+  { id: "bark", label: "Bark", hex: "#a8805a" },
+  { id: "plain", label: "Plain", hex: "#ffffff" },
+  { id: "dust", label: "Dusted", hex: "#f2e6d0" },
+  { id: "rime", label: "Rimed", hex: "#e2ebf4" },
+  { id: "soot", label: "Sooted", hex: "#b5aeaa" },
+  { id: "film", label: "Mossed", hex: "#dbe2c7" },
+  { id: "ochre", label: "Ochre dust", hex: "#efd8c2" },
+  ...WALL_KINDS.map((k) => ({ id: `rock-${k}`, label: `${k} rock`, hex: mix(WALL_STYLE[k].face, WALL_STYLE[k].light, 0.6) })),
+];
+export const TONE = {
+  pine: 0, mangrove: 1, frost: 2, scrub: 3, ash: 4, bark: 5,
+  plain: 6, dust: 7, rime: 8, soot: 9, film: 10, ochre: 11,
+} as const;
+export const ROCK_TONE0 = 12;
+export const rockTone = (k: WallKind): number => ROCK_TONE0 + WALL_KINDS.indexOf(k);
+const LEAF_TONES = [TONE.pine, TONE.mangrove, TONE.frost, TONE.scrub, TONE.ash];
+const WOOD_TONES = [TONE.bark, TONE.ash];
+const WEATHER_TONES = [TONE.plain, TONE.dust, TONE.rime, TONE.soot, TONE.film, TONE.ochre];
+const ROCK_TONES = WALL_KINDS.map((_, i) => ROCK_TONE0 + i);
+
+/** a tone as the renderer multiplies it in, 0..1 a channel */
+export const PROP_TINT: readonly (readonly [number, number, number])[] = PROP_TONES.map((t) => {
+  const [r, g, b] = hex(t.hex);
+  return [r / 255, g / 255, b / 255] as const;
+});
+
+// ---------- the painter ----------
+
+type Col = string;
+type Pt = readonly [number, number];
+
+class Sheet {
+  readonly px: (Col | null)[];
+  constructor(readonly n: number) {
+    this.px = new Array<Col | null>(n * n).fill(null);
+  }
+  at(x: number, y: number): Col | null {
+    return x >= 0 && y >= 0 && x < this.n && y < this.n ? this.px[y * this.n + x] : null;
+  }
+  put(x: number, y: number, c: Col | null): void {
+    if (c !== null && x >= 0 && y >= 0 && x < this.n && y < this.n) this.px[y * this.n + x] = c;
+  }
+  disc(cx: number, cy: number, rx: number, ry: number, c: Col | ((x: number, y: number, u: number, v: number) => Col | null)): void {
+    ellipse(cx, cy, rx, ry, (x, y, u, v) => this.put(x, y, typeof c === "string" ? c : c(x, y, u, v)));
+  }
+  rect(x0: number, y0: number, w: number, h: number, c: Col): void {
+    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) this.put(x, y, c);
+  }
+  /** even-odd scanline fill, tested at pixel centres */
+  poly(pts: readonly Pt[], c: Col | ((x: number, y: number) => Col | null)): void {
+    let y0 = Infinity, y1 = -Infinity;
+    for (const [, y] of pts) { y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    for (let y = Math.max(0, Math.floor(y0)); y <= Math.min(this.n - 1, Math.ceil(y1)); y++) {
+      const sy = y + 0.5, xs: number[] = [];
+      for (let i = 0; i < pts.length; i++) {
+        const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length];
+        if (ay === by || sy < Math.min(ay, by) || sy >= Math.max(ay, by)) continue;
+        xs.push(ax + ((sy - ay) * (bx - ax)) / (by - ay));
+      }
+      xs.sort((a, b) => a - b);
+      for (let k = 0; k + 1 < xs.length; k += 2)
+        for (let x = Math.ceil(xs[k] - 0.5); x < xs[k + 1] - 0.5; x++)
+          this.put(x, y, typeof c === "string" ? c : c(x, y));
+    }
+  }
+  /** a thick segment: the quad `w` wide from a to b */
+  bar(a: Pt, b: Pt, w: number, c: Col | ((x: number, y: number) => Col | null)): void {
+    const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+    const nx = (-dy / l) * (w / 2), ny = (dx / l) * (w / 2);
+    this.poly([[a[0] + nx, a[1] + ny], [b[0] + nx, b[1] + ny], [b[0] - nx, b[1] - ny], [a[0] - nx, a[1] - ny]], c);
+  }
+  /** a rectangle `w` x `h` centred on (cx, cy), turned by `ang` */
+  box(cx: number, cy: number, w: number, h: number, ang: number, c: Col | ((x: number, y: number) => Col | null)): void {
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const p = (u: number, v: number): Pt => [cx + u * ca - v * sa, cy + u * sa + v * ca];
+    this.poly([p(-w / 2, -h / 2), p(w / 2, -h / 2), p(w / 2, h / 2), p(-w / 2, h / 2)], c);
+  }
+  ring(cx: number, cy: number, r: number, t: number, c: Col): void {
+    ellipse(cx, cy, r, r, (x, y, u, v) => { if (u * u + v * v >= ((r - t) / r) ** 2) this.put(x, y, c); });
+  }
+  /** an ellipse turned by `ang`, as a 48-gon */
+  oval(cx: number, cy: number, rx: number, ry: number, ang: number, c: Col): void {
+    const pts: Pt[] = [];
+    for (let i = 0; i < 48; i++) {
+      const a = (i / 48) * Math.PI * 2, u = Math.cos(a) * rx, v = Math.sin(a) * ry;
+      pts.push([cx + u * Math.cos(ang) - v * Math.sin(ang), cy + u * Math.sin(ang) + v * Math.cos(ang)]);
+    }
+    this.poly(pts, c);
+  }
+}
+
+/**
+ * THE SHADING OF A TINTED PIECE — the hills' rule (tiles.ts paintWall): the
+ * top-right of a shape is light, the bottom-left dark, a band of mid between,
+ * the two boundaries wandering. `r` is the piece's reach, so a small stone
+ * and a big canopy split in the same proportions.
+ */
+const bands = (rng: () => number, cx: number, cy: number, r: number, lit = 0.22, dark = -0.22) => {
+  const w1 = rng() * 6.28, w2 = rng() * 6.28;
+  return (x: number, y: number): Col => {
+    const t = ((x + 0.5 - cx) - (y + 0.5 - cy)) / (2 * r);
+    const along = (x + y) / (2 * r);
+    const v = t + 0.07 * Math.sin(along * 6.3 + w1) + 0.05 * Math.sin(along * 15.7 + w2);
+    return v > lit ? LIGHT : v < dark ? DARK : MID;
+  };
+};
+
+/** a canopy: a ring of lobes round a crown, shaded as one shape, a lit
+ *  cluster on its bright side, a few dark gaps on its shaded side and a
+ *  trunk at the heart */
+function canopy(s: Sheet, rng: () => number, cx: number, cy: number, R: number, lobes: number, inner = 0): void {
+  const shade = bands(rng, cx, cy, R * 0.95, 0.2, -0.2);
+  const a0 = rng() * 6.28;
+  const lobe = (x: number, y: number, r: number, c: Col | ((x: number, y: number) => Col) = shade): void => s.disc(x, y, r, r, c);
+  for (let i = 0; i < lobes; i++) {
+    const b = a0 + (i / lobes) * 6.28;
+    lobe(cx + Math.cos(b) * R * 0.56, cy + Math.sin(b) * R * 0.56, R * 0.44);
+  }
+  for (let i = 0; i < inner; i++) {
+    const b = a0 + 0.35 + (i / inner) * 6.28;
+    lobe(cx + Math.cos(b) * R * 0.3, cy + Math.sin(b) * R * 0.3, R * 0.36);
+  }
+  lobe(cx, cy, R * 0.58);
+  // the lit cluster, up and to the right, and the gaps down and to the left
+  for (let i = 0; i < 2; i++) {
+    const b = -0.79 + (i - 0.5) * 0.7 + (rng() - 0.5) * 0.3, d = R * (0.3 + rng() * 0.2);
+    lobe(cx + Math.cos(b) * d, cy + Math.sin(b) * d, R * (0.2 + rng() * 0.08), LIGHT);
+  }
+  const gaps = R >= 36 ? 4 : 3;
+  for (let i = 0; i < gaps; i++) {
+    const b = 2.36 + (i - (gaps - 1) / 2) * 0.75 + (rng() - 0.5) * 0.3, d = R * (0.42 + rng() * 0.2);
+    const g = Math.max(2.2, R * 0.085);
+    s.disc(cx + Math.cos(b) * d, cy + Math.sin(b) * d, g, g * 0.9, DEEP);
+  }
+  const t = Math.max(2.2, R * 0.1);
+  s.disc(cx, cy, t, t, DEEP);
+}
+
+/** one stone: a rounded lump, shaded, seamed dark over any stone under it */
+function stone(s: Sheet, rng: () => number, cx: number, cy: number, rx: number, ry: number, crack = true): void {
+  s.disc(cx, cy, rx + 3, ry + 3, (x, y) => (s.at(x, y) ? DEEP : null));
+  s.disc(cx, cy, rx, ry, bands(rng, cx, cy, Math.max(rx, ry), 0.24, -0.26));
+  if (crack && rx >= 10) {
+    const a = rng() * 6.28, l = rx * 0.45;
+    const x0 = cx + Math.cos(a) * rx * 0.25, y0 = cy + Math.sin(a) * ry * 0.25;
+    s.bar([x0, y0], [x0 + Math.cos(a + 2.2) * l, y0 + Math.sin(a + 2.2) * l], 4, DEEP);
+  }
+}
+
+/** a low clump of lobes, one shade split over the lot */
+function clump(s: Sheet, rng: () => number, cx: number, cy: number, R: number, n: number): void {
+  const shade = bands(rng, cx, cy, R, 0.18, -0.2);
+  const a0 = rng() * 6.28;
+  for (let i = 0; i < n; i++) {
+    const b = a0 + (i / n) * 6.28 + (rng() - 0.5) * 0.4, d = R * (0.36 + rng() * 0.16);
+    const r = R * (0.42 + rng() * 0.1);
+    s.disc(cx + Math.cos(b) * d, cy + Math.sin(b) * d, r, r * 0.88, shade);
+  }
+  s.disc(cx, cy, R * 0.5, R * 0.46, shade);
+}
+
+/** a plated hull: the body, its lit and shaded crescents, its seams */
+function plate(s: Sheet, cx: number, cy: number, rx: number, ry: number, hi: Col, mid: Col, lo: Col, lit = 0.45): void {
+  s.disc(cx, cy, rx, ry, (_x, _y, u, v) => (u - v > lit ? hi : u - v < -lit - 0.15 ? lo : mid));
+}
+
+// ---------- the kinds ----------
+
+export interface PropDef {
+  id: string;
+  label: string;
+  tiles: PropTiles;
+  /** tinted: painted in greys, multiplied by the tone. Otherwise its own
+   *  paint, and the tone is a weathering tint */
+  tinted: boolean;
+  /** the tones this kind may wear; the first is its default */
+  tones: readonly number[];
+  /** the corner map's colour for a made prop (a tinted one reads its tone) */
+  mini?: string;
+  paint: (s: Sheet, rng: () => number) => void;
+}
+
+const nature = (id: string, label: string, tiles: PropTiles, tones: readonly number[], paint: PropDef["paint"]): PropDef =>
+  ({ id, label, tiles, tinted: true, tones, paint });
+const made = (id: string, label: string, tiles: PropTiles, mini: string, paint: PropDef["paint"]): PropDef =>
+  ({ id, label, tiles, tinted: false, tones: WEATHER_TONES, mini, paint });
+
+/**
+ * THE TWENTY. APPEND ONLY — a prop's kind is its index here, in every
+ * document on disk. Every painting stays three px clear of its square's
+ * rim (the atlas crops two, PROP_INSET).
+ */
+export const PROP_KINDS: readonly PropDef[] = [
+  nature("shrub", "Shrub", 1, LEAF_TONES, (s, rng) => {
+    clump(s, rng, 16, 16.5, 12.5, 5);
+  }),
+  nature("reeds", "Reeds", 1, LEAF_TONES, (s, rng) => {
+    s.disc(16, 20, 10, 6, DARK);
+    for (let i = 0; i < 4; i++) {
+      const x = 3 + i * 8, top = 4 + ((rng() * 5) | 0), bottom = 20 + ((rng() * 4) | 0);
+      s.rect(x, top, 4, bottom - top, i % 2 ? LIGHT : MID);
+      s.rect(x, top, 4, 4, LIGHT);
+    }
+    s.disc(16, 22, 6, 3.5, DEEP);
+  }),
+  nature("boulder", "Boulder", 1, ROCK_TONES, (s, rng) => {
+    stone(s, rng, 16 + (rng() - 0.5) * 2, 16.5, 12, 10.5);
+  }),
+  nature("stump", "Stump", 1, WOOD_TONES, (s, rng) => {
+    const a0 = rng() * 6.28;
+    for (let i = 0; i < 3; i++) {
+      const b = a0 + (i / 3) * 6.28;
+      s.disc(16 + Math.cos(b) * 9, 16 + Math.sin(b) * 9, 4.5, 4, DARK);
+    }
+    s.disc(16, 16, 11, 11, DARK);
+    s.disc(16, 16, 8, 8, MID);
+    s.disc(16, 16, 4.5, 4.5, LIGHT);
+    s.bar([16, 16], [16 + Math.cos(a0) * 10, 16 + Math.sin(a0) * 10], 4, DEEP);
+  }),
+  nature("tree", "Tree", 2, LEAF_TONES, (s, rng) => {
+    canopy(s, rng, 32, 32, 27, 7);
+  }),
+  nature("rock", "Rock", 2, ROCK_TONES, (s, rng) => {
+    stone(s, rng, 30, 35, 24, 19);
+    stone(s, rng, 45, 23, 13, 11, false);
+  }),
+  nature("log", "Fallen log", 2, WOOD_TONES, (s, rng) => {
+    const y0 = 25, h = 16;
+    s.rect(8, y0, 50, h, MID);
+    s.rect(8, y0, 50, 5, LIGHT);
+    s.rect(8, y0 + h - 5, 50, 5, DARK);
+    s.disc(8, y0 + h / 2, 4, h / 2, DARK);
+    // the broken end: splinters
+    s.poly([[58, y0], [61, y0 + 5], [57, y0 + 8], [61, y0 + 12], [58, y0 + h]], MID);
+    s.bar([38, y0 + 2], [46, 11], 6, MID);
+    s.bar([22, y0 + h - 2], [15, 53], 6, DARK);
+    s.rect(28, y0 + 5, 5, 5, DEEP);
+    s.rect(46 + ((rng() * 4) | 0), y0 + 8, 4, 4, DEEP);
+  }),
+  nature("oak", "Oak", 3, LEAF_TONES, (s, rng) => {
+    canopy(s, rng, 48, 48, 41, 9, 5);
+  }),
+  nature("outcrop", "Outcrop", 3, ROCK_TONES, (s, rng) => {
+    stone(s, rng, 42, 52, 26, 21);
+    stone(s, rng, 68, 36, 15, 13);
+    stone(s, rng, 30, 25, 12, 10, false);
+    stone(s, rng, 68, 66, 10, 8, false);
+  }),
+  nature("grove", "Grove", 4, LEAF_TONES, (s, rng) => {
+    clump(s, rng, 18, 100, 11, 4);
+    clump(s, rng, 108, 98, 10, 4);
+    clump(s, rng, 106, 20, 9, 4);
+    canopy(s, rng, 44, 52, 30, 8);
+    canopy(s, rng, 84, 42, 26, 7);
+    canopy(s, rng, 70, 88, 28, 8);
+  }),
+  made("crate", "Crate", 1, "#6e6a49", (s) => {
+    s.rect(4, 4, 24, 24, CRATE.mid);
+    s.rect(4, 4, 24, 4, CRATE.hi);
+    s.rect(24, 4, 4, 24, CRATE.hi);
+    s.rect(4, 24, 24, 4, CRATE.lo);
+    s.rect(4, 4, 4, 24, CRATE.lo);
+    s.rect(14, 4, 4, 24, STEEL.lo);
+    s.rect(4, 14, 24, 4, STEEL.lo);
+  }),
+  made("barrels", "Barrels", 2, "#7a4a30", (s) => {
+    s.disc(46, 50, 10, 6, SPILL);
+    const drum = (cx: number, cy: number, body: Col, hi: Col): void => {
+      s.disc(cx, cy, 13, 13, STEEL.lo);
+      s.disc(cx, cy, 10, 10, (_x, _y, u, v) => (u - v > 0.5 ? hi : body));
+      s.disc(cx, cy, 3.5, 3.5, STEEL.deep);
+    };
+    drum(22, 22, RUST.mid, RUST.hi);
+    drum(44, 27, STEEL.mid, STEEL.hi);
+    drum(29, 46, RUST.mid, RUST.hi);
+  }),
+  made("scrap", "Scrap pile", 2, "#4a5158", (s) => {
+    s.disc(32, 35, 26, 21, STEEL.lo);
+    s.disc(20, 44, 8, 5, RUST.lo);
+    s.box(26, 30, 24, 12, 0.35, STEEL.mid);
+    s.box(41, 37, 18, 10, -0.6, STEEL.hi);
+    s.box(31, 44, 16, 9, 1.2, RUST.mid);
+    s.bar([13, 22], [50, 15], 6, STEEL.hi);
+    s.ring(46, 26, 8, 4, STEEL.hi);
+    for (const [dx, dy] of [[0, -9], [9, 0], [0, 9], [-9, 0]] as const) s.rect(46 + dx - 2, 26 + dy - 2, 4, 4, STEEL.hi);
+    s.rect(26, 27, 5, 5, STEEL.deep);
+  }),
+  made("mast", "Fallen mast", 2, "#6e777e", (s) => {
+    s.rect(6, 42, 16, 16, CONCRETE.mid);
+    s.rect(6, 42, 16, 4, CONCRETE.hi);
+    s.rect(18, 42, 4, 16, CONCRETE.hi);
+    s.rect(6, 54, 16, 4, CONCRETE.lo);
+    const a: Pt = [14, 50], b: Pt = [50, 14];
+    s.bar(a, b, 9, STEEL.mid);
+    for (const t of [0.25, 0.45, 0.65, 0.85]) {
+      const x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t;
+      s.bar([x - 4.5, y - 4.5], [x + 4.5, y + 4.5], 4, STEEL.deep);
+    }
+    s.disc(50, 14, 10, 10, STEEL.lo);
+    s.disc(50, 14, 7, 7, STEEL.hi);
+    s.rect(48, 12, 4, 4, STEEL.deep);
+  }),
+  made("hull", "Wrecked hull", 3, "#5a6068", (s) => {
+    s.disc(50, 50, 40, 33, SCORCH);
+    s.bar([24, 58], [10, 74], 8, STEEL.lo);
+    s.bar([72, 56], [86, 70], 8, STEEL.lo);
+    s.disc(10, 74, 6, 6, STEEL.deep);
+    s.disc(86, 70, 6, 6, STEEL.deep);
+    plate(s, 48, 46, 30, 24, STEEL.hi, STEEL.mid, STEEL.lo);
+    s.bar([30, 30], [44, 44], 4, STEEL.deep);
+    s.bar([44, 44], [40, 60], 4, STEEL.deep);
+    s.bar([40, 60], [56, 68], 4, STEEL.deep);
+    s.disc(46, 42, 7, 6, RUST.mid);
+    s.disc(38, 58, 6, 5, RUST.lo);
+    s.disc(48, 30, 9, 9, STEEL.lo);
+    s.disc(48, 30, 6, 6, GLASS);
+    s.rect(49, 26, 4, 4, GLINT);
+  }),
+  made("silo", "Silo", 3, "#6e777e", (s) => {
+    s.disc(46, 48, 36, 36, STEEL.lo);
+    plate(s, 46, 48, 32, 32, STEEL.hi, STEEL.mid, STEEL.lo, 0.5);
+    s.ring(46, 48, 22, 4, STEEL.deep);
+    s.bar([46, 58], [50, 78], 6, RUST.mid);
+    s.rect(38, 40, 16, 16, STEEL.deep);
+    s.rect(40, 42, 12, 12, STEEL.hi);
+    s.bar([76, 62], [86, 84], 8, STEEL.lo);
+    s.disc(86, 84, 6, 6, RUST.hi);
+  }),
+  made("walker", "Dead walker", 4, "#5a6068", (s) => {
+    s.disc(64, 68, 52, 44, SCORCH);
+    const leg = (hip: Pt, knee: Pt, foot: Pt): void => {
+      s.bar(hip, knee, 10, STEEL.lo);
+      s.bar(knee, foot, 10, STEEL.lo);
+      s.disc(knee[0], knee[1], 6, 6, STEEL.mid);
+      s.disc(foot[0], foot[1], 7, 7, STEEL.deep);
+    };
+    leg([44, 50], [24, 34], [18, 14]);
+    leg([84, 50], [104, 36], [112, 16]);
+    leg([44, 86], [26, 100], [16, 112]);
+    s.bar([84, 86], [98, 98], 10, STEEL.lo);
+    s.disc(98, 98, 6, 6, RUST.lo);
+    s.bar([104, 110], [120, 104], 10, STEEL.lo);
+    s.disc(104, 110, 6, 6, RUST.mid);
+    plate(s, 64, 68, 30, 26, STEEL.hi, STEEL.mid, STEEL.lo);
+    s.bar([40, 60], [88, 76], 4, STEEL.deep);
+    s.bar([52, 88], [76, 48], 4, STEEL.deep);
+    s.disc(46, 54, 7, 6, RUST.mid);
+    s.disc(84, 80, 6, 5, RUST.lo);
+    s.disc(64, 38, 12, 12, STEEL.lo);
+    s.rect(56, 36, 16, 4, STEEL.deep);
+    s.rect(62, 36, 4, 4, EYE);
+    s.bar([86, 60], [118, 44], 8, STEEL.lo);
+    s.ring(118, 44, 6, 3, STEEL.deep);
+  }),
+  made("bunker", "Ruined bunker", 4, "#8a857c", (s) => {
+    s.rect(8, 8, 112, 112, CONCRETE.mid);
+    s.rect(8, 8, 112, 4, CONCRETE.hi);
+    s.rect(116, 8, 4, 112, CONCRETE.hi);
+    s.rect(8, 116, 112, 4, CONCRETE.lo);
+    s.rect(8, 8, 4, 112, CONCRETE.lo);
+    s.rect(24, 24, 80, 80, CONCRETE.deep);
+    s.rect(24, 24, 80, 4, "#3d3a35");
+    s.rect(100, 24, 4, 80, "#3d3a35");
+    // the breach in the south wall, and what fell out of it
+    s.rect(56, 104, 28, 16, CONCRETE.deep);
+    for (const [x, y, r, c] of [[60, 110, 6, CONCRETE.hi], [72, 114, 5, CONCRETE.lo], [82, 108, 5, CONCRETE.hi], [66, 100, 4, CONCRETE.lo]] as const)
+      s.disc(x, y, r, r * 0.85, c);
+    s.rect(40, 12, 16, 4, CONCRETE.deep);
+    s.rect(72, 12, 16, 4, CONCRETE.deep);
+    s.bar([14, 60], [21, 92], 4, CONCRETE.deep);
+    s.ring(52, 64, 12, 4, STEEL.lo);
+    s.disc(52, 64, 8, 8, RUST.mid);
+    s.rect(86, 82, 10, 10, CRATE.mid);
+    s.rect(86, 82, 10, 3, CRATE.hi);
+  }),
+  made("wreck", "Crashed gunship", 6, "#5a6068", (s) => {
+    const ang = -0.49, ca = Math.cos(ang), sa = Math.sin(ang);
+    const cx = 96, cy = 98;
+    // along the axis (u, from tail to nose) and across it (v, left is -)
+    const P = (u: number, v: number): Pt => [cx + u * ca - v * sa, cy + u * sa + v * ca];
+    s.oval(cx, cy, 92, 48, ang, SCORCH);
+    // debris thrown clear
+    for (const [u, v, w, c] of [[-60, -44, 9, STEEL.mid], [20, 44, 8, RUST.mid], [66, -30, 7, STEEL.lo], [-84, 20, 8, STEEL.hi], [50, 40, 6, STEEL.mid]] as const)
+      s.box(P(u, v)[0], P(u, v)[1], w, w * 0.6, ang + u * 0.05, c);
+    // the snapped wing lying off the right side
+    s.poly([P(-14, 26), P(-2, 26), P(-30, 60), P(-46, 60), P(-34, 34)], STEEL.mid);
+    s.poly([P(-30, 60), P(-46, 60), P(-40, 48)], RUST.lo);
+    // the wing still on, swept back to the left, scorched at the tip
+    s.poly([P(6, -18), P(26, -18), P(-4, -66), P(-30, -66), P(-16, -30)], STEEL.mid);
+    s.poly([P(-4, -66), P(-30, -66), P(-18, -50)], RUST.lo);
+    s.bar(P(-2, -36), P(10, -36), 5, HAZARD);
+    s.bar(P(-10, -50), P(2, -50), 5, HAZARD);
+    s.disc(P(12, -30)[0], P(12, -30)[1], 11, 11, STEEL.lo);
+    s.disc(P(12, -30)[0], P(12, -30)[1], 6, 6, STEEL.deep);
+    // the tail fins
+    s.poly([P(-70, -8), P(-58, -8), P(-78, -30), P(-84, -28)], STEEL.lo);
+    s.poly([P(-70, 8), P(-58, 8), P(-76, 26), P(-82, 24)], STEEL.lo);
+    // the fuselage: lit along its top-right side, shaded along the other
+    s.poly([P(-76, -19), P(56, -19), P(76, -8), P(76, 8), P(56, 19), P(-76, 19)], STEEL.mid);
+    s.poly([P(-76, -19), P(56, -19), P(70, -11), P(-76, -8)], STEEL.hi);
+    s.poly([P(-76, 8), P(70, 11), P(56, 19), P(-76, 19)], STEEL.lo);
+    s.bar(P(-40, -19), P(-40, 19), 4, STEEL.deep);
+    s.bar(P(0, -19), P(0, 19), 4, STEEL.deep);
+    s.bar(P(-60, 0), P(-20, 4), 4, STEEL.deep);
+    s.disc(P(-26, 4)[0], P(-26, 4)[1], 8, 6, RUST.mid);
+    s.disc(P(40, -6)[0], P(40, -6)[1], 6, 5, RUST.lo);
+    s.disc(P(58, 0)[0], P(58, 0)[1], 9, 7, GLASS);
+    s.rect(P(60, -3)[0] - 2, P(60, -3)[1] - 2, 4, 4, GLINT);
+  }),
+  made("colossus", "Fallen colossus", 6, "#4a5158", (s) => {
+    s.disc(96, 100, 84, 74, SCORCH);
+    s.disc(96, 100, 74, 64, "#3d3936");
+    const leg = (hip: Pt, knee: Pt, foot: Pt): void => {
+      s.bar(hip, knee, 18, STEEL.lo);
+      s.bar(knee, foot, 16, STEEL.lo);
+      s.disc(knee[0], knee[1], 11, 11, STEEL.mid);
+      s.disc(knee[0], knee[1], 5, 5, STEEL.deep);
+      s.disc(foot[0], foot[1], 12, 12, STEEL.deep);
+      s.disc(foot[0], foot[1], 7, 7, STEEL.lo);
+    };
+    leg([60, 76], [30, 50], [22, 20]);
+    leg([132, 76], [160, 52], [168, 22]);
+    leg([60, 126], [28, 146], [24, 172]);
+    leg([132, 126], [158, 150], [166, 172]);
+    s.bar([138, 90], [176, 62], 14, STEEL.mid);
+    s.ring(176, 62, 9, 4, STEEL.lo);
+    plate(s, 96, 100, 46, 36, STEEL.mid, STEEL.lo, STEEL.deep, 0.55);
+    s.box(84, 92, 30, 18, 0.2, STEEL.mid);
+    s.box(112, 106, 26, 16, -0.4, STEEL.mid);
+    s.bar([60, 112], [130, 122], 4, STEEL.deep);
+    s.bar([70, 80], [126, 84], 4, STEEL.deep);
+    s.disc(70, 100, 10, 8, RUST.mid);
+    s.disc(118, 92, 8, 7, RUST.lo);
+    s.disc(126, 74, 7, 6, RUST.mid);
+    s.disc(96, 52, 20, 20, STEEL.mid);
+    s.disc(96, 52, 20, 20, (_x, _y, u, v) => (u - v > 0.6 ? STEEL.hi : null));
+    s.rect(78, 48, 36, 8, STEEL.deep);
+    s.rect(92, 48, 6, 6, EYE);
+    s.rect(88, 66, 16, 4, STEEL.deep);
+  }),
+];
+export const PROP_KIND_INDEX: Readonly<Record<string, number>> = Object.fromEntries(PROP_KINDS.map((k, i) => [k.id, i]));
+/** a kind by its id; throws on a name the table does not have */
+export const propKind = (id: string): number => {
+  const k = PROP_KIND_INDEX[id];
+  if (k === undefined) throw new Error(`no prop kind "${id}"`);
+  return k;
+};
+
+/** the colour a prop's cells wear on the corner map */
+export function propMini(kind: number, tone: number): string {
+  const def = PROP_KINDS[kind];
+  if (!def) return "#000000";
+  if (!def.tinted) return def.mini ?? "#555555";
+  return mix(PROP_TONES[tone]?.hex ?? "#ffffff", "#000000", 0.42);
+}
+
+/** paint one kind: `tiles * PROP_PX` square RGBA, transparent where nothing is */
+export function paintProp(kind: number, tint?: number): Uint8ClampedArray<ArrayBuffer> {
+  const def = PROP_KINDS[kind];
+  const n = def.tiles * PROP_PX;
+  const s = new Sheet(n);
+  def.paint(s, mulberry32(7000 + kind * 331));
+  const out = new Uint8ClampedArray(new ArrayBuffer(n * n * 4));
+  const t = tint === undefined ? null : PROP_TINT[tint];
+  for (let i = 0; i < n * n; i++) {
+    const c = s.px[i];
+    if (c === null) continue;
+    const [r, g, b] = hex(c);
+    out[i * 4] = t ? r * t[0] : r;
+    out[i * 4 + 1] = t ? g * t[1] : g;
+    out[i * 4 + 2] = t ? b * t[2] : b;
+    out[i * 4 + 3] = 255;
+  }
+  return out;
+}
+
+/** the painted kind as a canvas at its native size, untinted */
+export function propCanvas(kind: number): HTMLCanvasElement {
+  const n = PROP_KINDS[kind].tiles * PROP_PX;
+  const c = document.createElement("canvas");
+  c.width = c.height = n;
+  const g = c.getContext("2d");
+  if (!g) throw new Error("2d context unavailable for prop");
+  g.putImageData(new ImageData(paintProp(kind), n, n), 0, 0);
+  return c;
+}
+
+/** where the editor's palette icons are written (scripts/gen-tiles.mjs) */
+export const propIcon = (kind: number, tone: number): string =>
+  `/tiles/prop-${PROP_KINDS[kind].id}-${PROP_TONES[tone].id}.png`;

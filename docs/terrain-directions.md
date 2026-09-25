@@ -79,7 +79,7 @@ it costs the player nothing to learn.
 What it needs: neighbour-aware rock tiles. A rock cell picks its art
 from which of its four sides is open (a 4-bit mask, sixteen tiles a
 family, plus two convex corners), which is the plumbing the floor edge
-fades already have (`UV_FLOOR_EDGES` is a 3x3 of sub-cells chosen by
+fades had before the seams went sharp (a 3x3 of sub-cells chosen by
 neighbour) and the large-wall rule already reads (`WALL_GROUP`). The
 cliff is the south sub-tile; the lips are strips. The floor shadow is
 the existing shadow mask with an offset. Medium work, all in

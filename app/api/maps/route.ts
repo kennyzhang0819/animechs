@@ -77,7 +77,7 @@ export async function POST(req: Request): Promise<NextResponse> {
           { status: 400 },
         );
   }
-  if (!Array.isArray(map.pines) || !Array.isArray(map.decor))
+  if (map.props !== undefined && !Array.isArray(map.props))
     return NextResponse.json({ error: "bad props" }, { status: 400 });
 
   // THE MISSION MARKS (missionMarks.ts). The loader already drops a mark

@@ -28,7 +28,8 @@
  *   line, and the answer is usually to move the line.
  * */
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { WALL_DEEP, WALL_PINE } from "../../game/terrain.ts";
+import { WALL_DEEP, WALL_PROP } from "../../game/terrain.ts";
+import { PROP_KINDS } from "../../game/propArt.ts";
 
 /** cells cleared either side of the line: the bed is under three, and a
  *  margin of two beyond it is what stops the bed touching a wall */
@@ -70,7 +71,7 @@ for (const f of readdirSync("public/maps")) {
   for (const i of corridor) {
     if (!m.blocked[i]) continue;
     if (m.wall[i] === WALL_DEEP) { sea++; continue; }
-    if (m.wall[i] === WALL_PINE) trees++;
+    if (m.wall[i] === WALL_PROP) trees++;
     m.blocked[i] = 0;
     m.wall[i] = 0;
     cut++;
@@ -81,13 +82,20 @@ for (const f of readdirSync("public/maps")) {
     const x = Math.round(px / 20 - 0.5), y = Math.round(py / 20 - 0.5);
     return corridor.has(y * w + x);
   };
-  const pines0 = m.pines.length, decor0 = m.decor.length;
-  m.pines = m.pines.filter((p) => !inCorridor(p.x, p.y));
-  m.decor = m.decor.filter((p) => !inCorridor(p.x, p.y));
+  const pines0 = (m.pines ?? []).length, props0 = (m.props ?? []).length;
+  if (m.pines) m.pines = m.pines.filter((p) => !inCorridor(p.x, p.y));
+  // ...and a prop of the new kind by its footprint (game/propArt.ts)
+  if (m.props)
+    m.props = m.props.filter((p) => {
+      const t = PROP_KINDS[p.kind]?.tiles ?? 1;
+      for (let y = p.y; y < p.y + t; y++)
+        for (let x = p.x; x < p.x + t; x++) if (corridor.has(y * w + x)) return false;
+      return true;
+    });
 
   console.log(
-    `${id}: cut ${cut} cells of rock (${trees} of them forest), ` +
-      `pulled ${pines0 - m.pines.length} pines and ${decor0 - m.decor.length} props` +
+    `${id}: cut ${cut} cells of rock (${trees} of them props), ` +
+      `pulled ${pines0 - (m.pines ?? []).length} pines and ${props0 - (m.props ?? []).length} props` +
       (sea ? ` — ${sea} cells of DEEP WATER left standing in the line` : ""),
   );
   if (write) {

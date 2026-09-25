@@ -3,14 +3,13 @@ import { LINOCUT_TERRAIN } from "./terrainFlag";
 import {
   floorCanvas,
   markPadCanvas,
-  propCanvas,
   waterCanvas,
-  type PropKind,
   wallCanvas,
   WALL_VARIANTS,
   type FloorKind,
   type WallKind,
 } from "./tiles";
+import { PROP_KINDS, propCanvas } from "./propArt";
 import { CONVOY_SIZE, FABRICATOR_KINDS, type UnitKind } from "./levels";
 import { ANIMAL_ART } from "./animalFlag";
 import { FOUNDRY_ART } from "./turretFlag";
@@ -364,8 +363,8 @@ const WATER_TILE = 192;
  * the arithmetic holds and a hand-edited document cannot index past the
  * table.
  */
-type WaterKey = "shallowWater" | "deepWater" | "taintedWater" | "deepTaintedWater";
-const FLOOR_GROUPS: readonly ({ kind: FloorKind; slots: number } | { water: WaterKey })[] = [
+export type WaterKey = "shallowWater" | "deepWater" | "taintedWater" | "deepTaintedWater";
+export const FLOOR_GROUPS: readonly ({ kind: FloorKind; slots: number } | { water: WaterKey })[] = [
   { kind: "grass", slots: 3 },
   { kind: "stone", slots: 3 },
   { kind: "dirt", slots: 3 },
@@ -482,59 +481,6 @@ export const SHALLOW_FOR_DEEP: Readonly<Record<number, number>> = {
 };
 
 // ---------------------------------------------------------------------
-// THE FLOOR EDGE FADES
-// ---------------------------------------------------------------------
-
-/**
- * Per-group floor edge fades (Mindustry's generated <floor>-edge sprites):
- * a 192px block per land family, a 3x3 of 64px sub-cells in image space.
- * A tile bordered by a higher-priority floor gets that floor's sub-cell
- * (col 1-dx, row 1-dy) overlaid, so the neighbour's texture fades across
- * the tile seam exactly like Floor.drawEdges.
- *
- * THE FADES ARE INSET ON THE BLOCK'S OUTER EDGES ONLY. A fade sub-cell is
- * drawn over a whole tile, so its outer edge lands on the tile's FAR
- * border, where the sampler would otherwise read the gutter. The outer
- * sides take the floors' inset, which crops the transparent tail of the
- * fade and nothing else; the inner seams between sub-cells and the side
- * that meets the centre stay as they are, so the fade still reaches the
- * shared border at full strength.
- */
-const EDGE_INSET = FLOOR_INSET;
-const edgeQuads = (uv: UVRect): ReadonlyArray<readonly UVRect[]> => {
-  const { x: bx, y: by } = cellOf(uv);
-  return [0, 1, 2].map((ry) =>
-    [0, 1, 2].map((rx): UVRect => [
-      (bx + rx * 64 + (rx === 0 ? EDGE_INSET : 0)) / ATLAS_W,
-      (by + ry * 64 + (ry === 0 ? EDGE_INSET : 0)) / ATLAS_H,
-      (bx + rx * 64 + 64 - (rx === 2 ? EDGE_INSET : 0)) / ATLAS_W,
-      (by + ry * 64 + 64 - (ry === 2 ? EDGE_INSET : 0)) / ATLAS_H,
-    ]),
-  );
-};
-/**
- * Which land family each group's fade is generated from, in FLOOR_GROUPS
- * order. null is a group with no fade art: the waters, which sit at the
- * BOTTOM of the blend order (GROUP_PRI in renderer.ts) and never overlay
- * anything, and sand, whose only inferior floor (stone) shares no map
- * with it yet. Those take stone's block as a stand-in to keep the group
- * indices aligned — stone is the lowest land priority and its fade is
- * never drawn either.
- */
-const EDGE_KINDS: readonly (FloorKind | null)[] = [
-  "grass", "stone", "dirt", null, "darksand", null, null,
-  "moss", "sporeMoss", "mud", "shale", "snow", "salt", "ice", "basalt", null, null,
-  "loam", "dust", "flint", "clay", "peat", "bog", "cinder", "chalk",
-];
-const EDGE_CELLS: readonly (UVRect | null)[] = EDGE_KINDS.map((k) =>
-  k ? reserve(`edge-${k}`, 192, 192, { upright: true }) : null,
-);
-const STONE_EDGE = EDGE_CELLS[1]!;
-export const UV_FLOOR_EDGES: ReadonlyArray<ReadonlyArray<readonly UVRect[]>> = EDGE_CELLS.map((c) =>
-  edgeQuads(c ?? STONE_EDGE),
-);
-
-// ---------------------------------------------------------------------
 // THE WALLS
 // ---------------------------------------------------------------------
 
@@ -548,11 +494,11 @@ export const UV_FLOOR_EDGES: ReadonlyArray<ReadonlyArray<readonly UVRect[]>> = E
 const WALL_INSET = 8;
 /**
  * The wall families in UV_WALLS order, two variants each. The two nulls
- * are the SENTINELS — WALL_PINE at 4 and WALL_DEEP at 7 — whose slots are
+ * are the SENTINELS — WALL_PROP at 4 and WALL_DEEP at 7 — whose slots are
  * never-drawn placeholders (stone's first cell), since everything tests
- * those values explicitly and draws the cell's floor (plus, for a pine,
- * its prop) instead of a wall sprite. Past them every family is ordinary
- * buildable rock (isBuildableWall names only the sentinels).
+ * those values explicitly and draws the cell's floor (plus, under a prop,
+ * the prop) instead of a wall sprite. Past them every family is ordinary
+ * rock (isBuildableWall names only the sentinels).
  */
 const WALL_KINDS_IN_ORDER: readonly (WallKind | null)[] = [
   "stone", "dirt", null, "dark", null,
@@ -567,7 +513,7 @@ export const UV_WALLS: readonly UVRect[] = WALL_CELLS.flatMap((cells) => cells ?
  *  family's own colours (the renderer's carved bands under the ink) */
 export const WALL_GROUP_KINDS: readonly WallKind[] = WALL_KINDS_IN_ORDER.filter((k): k is WallKind => k !== null);
 // which wall family each UV_WALLS index belongs to (0 stone, 1 dirt,
-// 2 dark rock, then the second band's eight; -1 the pine and deep-water
+// 2 dark rock, then the second band's eight; -1 the prop and deep-water
 // sentinels) — StaticWall's large-draw rule works per block type, so 2x2
 // detection must ignore the variant within a family
 export const WALL_GROUP: readonly number[] = [
@@ -636,75 +582,13 @@ export const UV_WALL_LARGE: ReadonlyArray<ReadonlyArray<readonly UVRect[]> | nul
  * transparent ground and its cell is cut to its art with nothing round
  * it, so the quad's edge sampled half a texel of whatever was packed
  * beside it. Four px is enough for the mips a prop is drawn at, and every
- * painted prop keeps its shape well clear of the rim (the tightest, a
- * pine's canopy, stops six px short of a 96px cell).
+ * painting keeps three native px clear of its rim (propArt.ts).
  */
 const PROP_INSET = 4;
-/** a prop's cell is its 48/40/32px art at 2x, and nothing more: the
- *  renderer maps the whole cell onto a DECOR_TILES-sized quad */
-const prop = (kind: PropKind, cell: number): UVRect => tile(`prop-${kind}`, cell, PROP_INSET);
-/**
- * THE FOREST KINDS, indexed by a pine prop's `kind`.
- *
- * A pine used to be the one prop with no variation at all — WALL_PINE
- * meant "the pine", and Prop.kind was documented as unused on one. It is
- * the index into this table now, so a map can be forested in the tree that
- * belongs to its biome; kind 0 is the original, so every pine already on
- * disk keeps drawing exactly what it drew.
- */
-const PINE_KINDS: readonly PropKind[] = ["pine", "sporePine", "snowPine"];
-export const UV_PINES: readonly UVRect[] = PINE_KINDS.map((k) => prop(k, 96));
-export const UV_PINE = UV_PINES[0];
-/**
- * Ground clutter, indexed by a decor prop's `kind`, with the cell each
- * takes: its source at 2x. DECOR_TILES below is the other half of that:
- * how many TILES across each one is at native scale.
- */
-const DECOR_KINDS: readonly (readonly [PropKind, number])[] = [
-  ["boulder0", 96],
-  ["boulder1", 96],
-  ["shrubs", 64],
-  ["sporeCluster0", 80],
-  ["sporeCluster1", 80],
-  ["sporeCluster2", 80],
-  ["purBush", 64],
-  ["shaleBoulder0", 64],
-  ["shaleBoulder1", 64],
-  ["snowBoulder0", 96],
-  ["snowBoulder1", 96],
-  ["shrubs2", 64],
-  ["sandBoulder0", 64],
-  ["sandBoulder1", 64],
-];
-export const UV_DECOR: readonly UVRect[] = DECOR_KINDS.map(([k, cell]) => prop(k, cell));
-/**
- * How wide each decor sprite is IN TILES at Mindustry's own scale — a
- * 32px prop covers one 32px tile, a 48px boulder overhangs to 1.5, a 40px
- * spore cluster to 1.25. Multiply by CELL for the world size to draw it
- * at. This was a conditional on the shrub's index while there were three
- * props and two sizes between them; a table is what stops the fourth size
- * from having to be another branch.
- */
-export const DECOR_TILES: readonly number[] = [
-  1.5, 1.5, 1, 1.25, 1.25, 1.25, 1, 1, 1, 1.5, 1.5, 1, 1, 1,
-];
-/**
- * WHICH GROUND CLUTTER IS STILL DRAWN. The boulders of every family and
- * the spore clusters are OFF: a board strewn with stones and crystals was
- * reading as scatter over the ground rather than as ground, and what is
- * wanted on it is the growing things — the shrubs and the purple bush.
- *
- * It is a mask over DECOR_KINDS rather than a deletion, because a decor
- * kind is an INDEX baked into every saved map document: dropping the
- * boulders out of the table would renumber the shrubs and turn every
- * shrub on disk into something else. The maps keep their stones, the
- * renderer skips them (pushTerrain), the generator stops sowing them
- * (terrain.ts) and the editor stops offering them (maps.ts PALETTE), and
- * turning one back on is one `true` here.
- */
-export const DECOR_DRAWN: readonly boolean[] = DECOR_KINDS.map(
-  ([k]) => !/^(?:.*[Bb]oulder\d|sporeCluster\d)$/.test(k),
-);
+/** one cell a kind, its 32px-a-tile art at 2x (propArt.ts PROP_KINDS),
+ *  indexed by a prop's `kind`; the renderer maps the whole cell onto a
+ *  `tiles * CELL` quad */
+export const UV_PROPS: readonly UVRect[] = PROP_KINDS.map((k) => tile(`prop-${k.id}`, k.tiles * 64, PROP_INSET));
 
 // ---------------------------------------------------------------------
 // STRUCTURES, EFFECTS AND THE ODD SHAPES
@@ -2349,7 +2233,6 @@ const SPRITES = {
   shallowWater: `${ENV}/shallow-water.png`,
   deepWater: `${ENV}/deep-water.png`,
   // (the walls are painted from game/tiles.ts too — see packAtlas)
-  edgeStencil: `${ENV}/edge-stencil.png`,
   // ---- the second environment band (see the ENV2 note) ----
   // Mindustry's "moss" IS the purple spore growth, not a green one; the
   // two moss families and the spore waters are one palette, which is what
@@ -3628,28 +3511,6 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
     else cells.forEach((cell, slot) => draw(cell, antialiased(floor(g.kind, slot))));
   });
 
-  // floor edge fades, generated exactly like the game's sprite packer
-  // (tools Generators.java "edge stencils"): the floor texture tiled 3x3 at
-  // native 32px, multiplied per-pixel by the 96px edge-stencil alpha ring,
-  // then upscaled 2x into the atlas like every other tile
-  const makeEdge = (floorImg: HTMLImageElement | HTMLCanvasElement): HTMLCanvasElement => {
-    const e = document.createElement("canvas");
-    e.width = e.height = 96;
-    const ec = e.getContext("2d");
-    if (!ec) throw new Error("2d context unavailable for edge build");
-    ec.imageSmoothingEnabled = false;
-    for (let ty = 0; ty < 3; ty++)
-      for (let tx = 0; tx < 3; tx++) ec.drawImage(floorImg, tx * 32, ty * 32, 32, 32);
-    ec.globalCompositeOperation = "multiply";
-    ec.drawImage(img.edgeStencil, 0, 0);
-    ec.globalCompositeOperation = "destination-in";
-    ec.drawImage(img.edgeStencil, 0, 0);
-    return e;
-  };
-  EDGE_KINDS.forEach((k, i) => {
-    if (k) draw(EDGE_CELLS[i]!, antialiased(makeEdge(floor(k, 0))));
-  });
-
   // THE WALLS ARE PAINTED TOO (game/tiles.ts): two blocks a family, and a
   // 2×2 block where the family has a large cell, through the same
   // antialias pass the floors take
@@ -3660,10 +3521,9 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
     if (k) draw(LARGE_CELLS[i]!, antialiased(wallCanvas(k, 0, 2)));
   });
 
-  // THE PROPS ARE PAINTED TOO (game/tiles.ts): each at its native size, 2x
-  // into a cell cut to it, through the same antialias pass
-  PINE_KINDS.forEach((k, i) => draw(UV_PINES[i], antialiased(propCanvas(k))));
-  DECOR_KINDS.forEach(([k], i) => draw(UV_DECOR[i], antialiased(propCanvas(k))));
+  // THE PROPS ARE PAINTED TOO (game/propArt.ts): each at its native size,
+  // 2x into a cell cut to it, through the same antialias pass
+  PROP_KINDS.forEach((_k, i) => draw(UV_PROPS[i], antialiased(propCanvas(i))));
   draw(UV_SPAWN, antialiased(img.spawnPad));
   draw(UV_MARK_PAD, antialiased(markPadCanvas()));
   // THE RAIL PIECES, painted like the floors and through the same filter

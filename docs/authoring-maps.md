@@ -78,11 +78,11 @@ common, and what the generator is built to reproduce:
   ground it has — a naval tank crosses deep water AND land — so a map with
   no sea in it plays the naval factions perfectly well, at the pace of an
   army that has to drive.
-- **Forests, clutter and ruins.** Pines in noise-shaped stands beside the
-  floors they grow on (up to 40% of a forest map), boulders of the
-  floor's own stone scattered thickest along the rock, bushes and spore
-  clusters by family, and derelict buildings — rectangles of dark floor
-  with broken walls — in the rooms.
+- **Forests, props and ruins.** Trees in noise-shaped stands on the rock
+  beside the floors they grow on (up to 40% of a forest map), stones of
+  the floor's own rock thickest along the hills, thickets, wrecks and
+  litter on the open ground (`props.md`), and derelict buildings —
+  rectangles of dark floor with broken walls — in the rooms.
 - **One landmark.** A salt basin, a crater, a lake in the middle, a bay
   under the core. Every map has one thing the eye goes to.
 
@@ -144,13 +144,14 @@ on this game's document shape:
    so a `weight` is the fraction of the board that family covers; the
    wall over a rock cell is its family's `wall`. A `beach` floor rings the
    water; a `flats` floor fills the cells of the big rooms furthest from
-   any rock. A `forest` turns rock beside the named floors into pines in
+   any rock. A `forest` turns rock beside the named floors into trees in
    noise-shaped stands within `depth` of open ground — never a cell a
    walker uses, so the routes are unchanged. `ruins` are rectangles of
    basalt with broken dark walls, placed only where a route's width of
-   open ground surrounds them. Clutter is each family's own boulder and
-   bush, thick along the rock, thin in the open, never in a drop zone and
-   never round the core.
+   open ground surrounds them. The in-game generator then stands the
+   theme's props on the open ground, clear of every lane (`props.md`);
+   the authoring script still writes the old clutter, which the loader
+   ignores.
 9. **Checks**, then the document.
 
 ## The campaign maps
@@ -198,7 +199,7 @@ A spec is forty-odd numbers. Confluence's, as a guide:
 | `chokes` | `{ x, y, w, reach }` — pinch to `w` within `reach` |
 | `funnel` | `{ x, y, r }` — the one mouth every ground route crosses |
 | `holes`, `lumps`, `ruins` | how many of each |
-| `forest` | `{ kind, on: [floors], threshold, depth }` |
+| `forest` | `{ on: [floors], threshold, depth }` (the authoring script's `kind` is read as a legacy pine kind) |
 
 Widths are in cells and are the brush's diameter; the smoothing passes
 shave about one, so a route's `width[0]` of 8 is a corridor of 7, which
@@ -231,8 +232,8 @@ broken map. Every one of these is printed on every run:
   15%-50% is noted as a smell, not a failure), the floor families'
   shares, forest, water, holes, lumps, ruins, props.
 - **Room to build.** More than 8,000 rock cells and more than 200 4x4
-  footprints, because towers stand on rock and the biggest needs sixteen
-  contiguous cells of it.
+  footprints — a check from when towers stood on rock, kept as a
+  measure of how much of the board is hill.
 
 Print the numbers on every run. `widest way through 6.0 cells — pinched at
 (70,188)` is a fact you can act on; "looks fine" is not.
@@ -260,7 +261,8 @@ document was saved at; **height falls out of `floor.length / w`**.
 | field | what |
 | --- | --- |
 | `blocked` | 0/1 — the only thing pathfinding reads |
-| `wall` | `UV_WALLS` index; `WALL_PINE` (4) and `WALL_DEEP` (7) are blocked but still show their floor |
+| `wall` | `UV_WALLS` index; `WALL_PROP` (4) and `WALL_DEEP` (7) are blocked but still show their floor |
+| `props` | the props standing on the map, `{x, y, kind, tone, rot}` in cells (`props.md`); `pines` is the legacy form, grown into trees on load, and `decor` is ignored |
 | `floor` | `UV_FLOORS` index; `FLOOR_SHALLOW_WATER` 15, `FLOOR_DEEP_WATER` 18, the spore pair 45 and 48 |
 | `spawnTiles` | the SPAWN LAYER: a sorted list of cell indices, painted in the map editor. Sparse, because it is (a few thousand cells at most) |
 | `spawns` | LEGACY: drop zone circles `{x, y, r, zone}`. Still what the generator writes; the loader burns them down to spawn tiles (`spawnTilesOf`) — the union of all of them, clipped to open ground |

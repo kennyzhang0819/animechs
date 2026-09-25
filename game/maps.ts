@@ -1,4 +1,4 @@
-import { BASE, COLS, NCELLS, RANDOM_MAP_ID, ROWS } from "./constants";
+import { BASE, CELL, COLS, NCELLS, RANDOM_MAP_ID, ROWS } from "./constants";
 export { RANDOM_MAP_ID };
 
 /**
@@ -11,9 +11,12 @@ import { MARK_KINDS, markOpts, markSize, type MapMark } from "./missionMarks";
 import { railsFor } from "./missions";
 import {
   canHoldSpawn,
+  forestOf,
+  LEGACY_PINE_TONES,
+  propMask,
   rebuildReserved,
   WALL_DEEP,
-  WALL_PINE,
+  WALL_PROP,
   type Prop,
   type Terrain,
 } from "./terrain";
@@ -21,6 +24,7 @@ import {
   FLOOR_BASALT,
   FLOOR_DEEP_TAINTED_WATER,
   FLOOR_DEEP_WATER,
+  FLOOR_GROUPS,
   FLOOR_ICE,
   FLOOR_MOSS,
   FLOOR_MUD,
@@ -32,6 +36,8 @@ import {
   FLOOR_TAINTED_WATER,
   WALL_DACITE,
   WALL_DUNE,
+  WALL_GROUP,
+  WALL_GROUP_KINDS,
   WALL_ICE,
   WALL_SALT,
   WALL_SAND,
@@ -39,8 +45,8 @@ import {
   WALL_SNOW,
   WALL_SPORE,
 } from "./atlas";
-import { FLOOR_STYLE, propIcon, tileIcon, wallIcon, WALL_STYLE } from "./tiles";
-import { LINOCUT_TERRAIN } from "./terrainFlag";
+import { FLOOR_STYLE, tileIcon, wallIcon, WALL_STYLE, waterTone } from "./tiles";
+import { PROP_KINDS, PROP_TONES, propIcon, propMini } from "./propArt";
 import { explain, type SaveResult } from "./types";
 
 /**
@@ -68,7 +74,7 @@ export interface MapData {
    */
   w?: number;
   floor: number[]; // NCELLS, UV_FLOORS index
-  wall: number[]; // NCELLS, UV_WALLS index or WALL_PINE where blocked
+  wall: number[]; // NCELLS, UV_WALLS index or a sentinel where blocked
   blocked: number[]; // NCELLS, 0/1
   /**
    * WHERE THE SWARM COMES IN: spawn tiles, painted cell by cell, as a
@@ -99,8 +105,19 @@ export interface MapData {
    * from before drop zones existed. Any non-zero cell is a spawn tile.
    */
   spawn?: number[];
-  pines: Prop[];
-  decor: Prop[];
+  /** the props standing on this map (docs/props.md); every cell under one
+   *  is blocked and wears WALL_PROP */
+  props?: Prop[];
+  /**
+   * LEGACY, read but never written: the pines of a document from before
+   * the props — one 48px tree a cell, at its centre in world px. Their
+   * cells already wear the sentinel; the loader grows them into trees
+   * (terrainFromMap).
+   */
+  pines?: LegacyProp[];
+  /** LEGACY, ignored: the old non-blocking clutter — boulders and shrubs
+   *  the swarm walked through. Nothing reads it; the scripts still write it */
+  decor?: unknown[];
   // carved-valley centerline per column — generator metadata the sim's
   // seed-tower search reads; older documents fall back to a flat line
   valleyY?: number[];
@@ -129,6 +146,15 @@ export interface MapData {
    * public/maps and in players' exported files, so the reader still takes
    * it. Nothing writes it: mapFromTerrain emits `base` only. */
   core?: { x: number; y: number };
+}
+
+/** the shape a legacy pine was saved in (MapData.pines) */
+export interface LegacyProp {
+  x: number;
+  y: number;
+  size: number;
+  rot: number;
+  kind: number;
 }
 
 /**
@@ -242,8 +268,9 @@ export type PaintKind =
   | "select"
   | "floor"
   | "wall"
-  | "pine"
-  | "decor"
+  /** a prop (propArt.ts PROP_KINDS): a click stamps one, footprint and
+   *  all, on open ground; the variants are the tones it may wear */
+  | "prop"
   | "spawn"
   | "erase"
   | "path"
@@ -298,6 +325,8 @@ export interface PaletteSet {
    *  MarkKind.id), and the missions that understand it — the editor hides
    *  a swatch no world on this map could use */
   mark?: string;
+  /** for kind "prop": the kind it stamps (an index into PROP_KINDS) */
+  prop?: number;
   /** for kind "mark": the body or turret each variant's swatch WEARS, so
    *  a kind with a choice on it is four pictures in the tray rather than
    *  one picture and a dropdown (see the note by the mark swatches) */
@@ -444,19 +473,19 @@ export const PALETTE: readonly PaletteSet[] = [
   { id: "path-mud", label: "Mud path", kind: "path",
     variants: [FLOOR_MUD, FLOOR_MUD + 1, FLOOR_MUD + 2],
     icons: [0, 1, 2].map((v) => tileIcon("mud", v)) },
-  // ONE PINE SET, THREE FORESTS: the variant is the tree (UV_PINES), not a
-  // reshuffle of the same one, so a marsh is forested in spore pines and a
-  // snowfield in snow pines without a second blocking brush
-  { id: "pine", label: "Pine", kind: "pine", variants: [0, 1, 2], noRandom: true,
-    icons: [propIcon("pine"), propIcon("sporePine"), propIcon("snowPine")] },
-  // THE ONLY CLUTTER LEFT IS WHAT GROWS. The boulder, spore-cluster,
-  // shale/snow/sand-boulder brushes were deleted with the art they paint
-  // (atlas.ts DECOR_DRAWN); their decor INDICES are still in the table
-  // there, so the maps that carry stones carry them undisturbed
-  { id: "shrub", label: "Shrub", kind: "decor", variants: [2, 11],
-    icons: [propIcon("shrubs"), propIcon("shrubs2")] },
-  { id: "pur-bush", label: "Purple bush", kind: "decor", variants: [6],
-    icons: [propIcon("purBush")] },
+  // THE PROPS, one set a kind (propArt.ts PROP_KINDS): the variants are
+  // the tones a kind may wear, so a boulder is painted in the rock it lies
+  // against and a tree in its biome's leaf, and never at random
+  ...PROP_KINDS.map((k, i) => ({
+    id: `prop-${k.id}`,
+    label: k.label,
+    kind: "prop" as const,
+    variants: [...k.tones],
+    icons: k.tones.map((t) => propIcon(i, t)),
+    noRandom: true,
+    prop: i,
+    variantLabels: k.tones.map((t) => PROP_TONES[t].label),
+  })),
   // SPAWN TILES: ONE brush, painted like a floor — the brush size and the
   // round/square shape are the ordinary ones, so a mouth is a stroke and a
   // shoreline of doors is a drag along it.
@@ -527,12 +556,9 @@ export const PALETTE_SECTIONS: readonly { label: string; ids: readonly string[] 
     "mud", "shale", "basalt", "snow", "ice", "salt"] },
   { label: "Water", ids: ["water", "deep-water", "spore-water", "deep-spore-water"] },
   { label: "Walls", ids: ["stone-wall", "dirt-wall", "dark-wall", "spore-wall", "shale-wall",
-    "dacite-wall", "sand-wall", "dune-wall", "snow-wall", "ice-wall", "salt-wall", "pine"] },
+    "dacite-wall", "sand-wall", "dune-wall", "snow-wall", "ice-wall", "salt-wall"] },
   { label: "Paths", ids: ["path-dirt", "path-darksand", "path-mud"] },
-  // the boulders and the spore clusters are gone from the palette with the
-  // art (atlas.ts DECOR_DRAWN): a brush that paints something the renderer
-  // will not draw is a brush that does nothing
-  { label: "Props", ids: ["shrub", "pur-bush"] },
+  { label: "Props", ids: PROP_KINDS.map((k) => `prop-${k.id}`) },
   // the veins are their own group rather than a stray swatch among the
   // floors: ore is not a floor tile at all but a layer over one (T.ore),
   // and it is the only brush that decides what a run EARNS
@@ -663,7 +689,7 @@ function isPadRow(t: Terrain, y: number): boolean {
     const i = y * COLS + x;
     if (t.blocked[i] !== 1 || t.floor[i] !== 3 || t.wall[i] !== 5 || t.spawn[i] !== 0) return false;
   }
-  return !t.pines.some((p) => p.y === y) && !t.decor.some((p) => p.y === y);
+  return !t.props.some((p) => p.y <= y && y < p.y + (PROP_KINDS[p.kind]?.tiles ?? 1));
 }
 
 /**
@@ -729,8 +755,7 @@ export function mapFromTerrain(
     // the tiles ARE the layer now, and a document holding both would have
     // two answers to one question (spawnTilesOf reads the tiles first)
     spawnTiles: spawnTileList(t.spawn, n),
-    pines: t.pines.map((p) => ({ ...p })),
-    decor: t.decor.map((p) => ({ ...p })),
+    props: t.props.map((p) => ({ ...p })),
     // ...through each kind's own reader, so a field half-typed in the
     // editor ("2-") is cleaned on the way out rather than written to the
     // repo file and quietly read as a default next load
@@ -797,6 +822,49 @@ function marksOf(raw: readonly MapMark[] | undefined): MapMark[] {
   return out;
 }
 
+/**
+ * THE PROPS A DOCUMENT MEANS. A listed prop stands only where every cell
+ * of its footprint wears the sentinel — a hand-edited entry over open
+ * ground would be a picture the swarm walks through, so it is dropped.
+ * Every sentinel cell no listed prop covers is then grown over
+ * (terrain.ts forestOf): a legacy pine in the tree its forest kind meant,
+ * a stray cell in a shrub, so nothing on the board blocks the swarm
+ * invisibly. Deterministic, so both threads read one list.
+ */
+function propsOf(m: MapData, blocked: Uint8Array, wall: Uint8Array): Prop[] {
+  const out: Prop[] = [];
+  for (const p of m.props ?? []) {
+    const def = PROP_KINDS[p?.kind];
+    if (!def || !Number.isInteger(p.x) || !Number.isInteger(p.y)) continue;
+    let ok = p.x >= 0 && p.y >= 0 && p.x + def.tiles <= COLS && p.y + def.tiles <= ROWS;
+    for (let y = p.y; ok && y < p.y + def.tiles; y++)
+      for (let x = p.x; x < p.x + def.tiles; x++)
+        if (!blocked[y * COLS + x] || wall[y * COLS + x] !== WALL_PROP) { ok = false; break; }
+    if (!ok) continue;
+    const tone = PROP_TONES[p.tone] ? p.tone : def.tones[0];
+    out.push({ x: p.x, y: p.y, kind: p.kind, tone, rot: ((p.rot | 0) % 4 + 4) % 4 });
+  }
+  const covered = propMask(out);
+  const bare = new Uint8Array(NCELLS);
+  let any = false;
+  for (let i = 0; i < NCELLS; i++)
+    if (blocked[i] && wall[i] === WALL_PROP && !covered[i]) { bare[i] = 1; any = true; }
+  if (!any) return out;
+  // the legacy pines' tones, by cell: which forest each was
+  const sw = m.w ?? LEGACY_COLS;
+  const pineTone = new Uint8Array(NCELLS).fill(255);
+  for (const p of m.pines ?? []) {
+    const x = Math.floor(p.x / CELL), y = Math.floor(p.y / CELL);
+    if (x >= 0 && y >= 0 && x < Math.min(COLS, sw) && y < ROWS) pineTone[y * COLS + x] = LEGACY_PINE_TONES[p.kind] ?? LEGACY_PINE_TONES[0];
+  }
+  let seed = 0x9e37;
+  for (let i = 0; i < m.id.length; i++) seed = (Math.imul(seed, 31) + m.id.charCodeAt(i)) | 0;
+  const grown = forestOf(bare, (i) => (pineTone[i] === 255 ? LEGACY_PINE_TONES[0] : pineTone[i]), seed);
+  // a grown tree takes the tone of most of its cells' pines: one look-up at
+  // its corner is close enough for a forest one kind deep
+  return out.concat(grown);
+}
+
 export function terrainFromMap(m: MapData): Terrain {
   // pad short documents with rock (blocked 1) wearing the dark carbon wall
   // sprite, over stone floor that never shows
@@ -812,11 +880,7 @@ export function terrainFromMap(m: MapData): Terrain {
     wall,
     blocked,
     spawn: spawnTilesOf(m, blocked, wall),
-    pines: m.pines.map((p) => ({ ...p })),
-    decor: m.decor.map((p) => ({ ...p })),
-    // only a kind the roster knows, on a whole cell: a hand-edited
-    // document's stray entry — or one from the old enemy-only roster,
-    // breach and the scrap walls — is dropped here rather than crashing a run
+    props: propsOf(m, blocked, wall),
     valleyY: m.valleyY
       ? Float32Array.from(m.valleyY)
       : new Float32Array(COLS).fill(base.y + base.size / 2),
@@ -878,42 +942,22 @@ export async function saveMap(map: MapData): Promise<SaveResult> {
 
 // ---------- thumbnails ----------
 
-/** per-cell preview colors, mirroring the atlas art's average tones */
-// the land tones are the tiles' own base colours, so a thumbnail is the
-// map in miniature rather than a chart of it
-const FLOOR_TONES = [
-  ...(["grass", "stone", "dirt", "sand", "darksand"] as const).flatMap((k) => {
-    const t = FLOOR_STYLE[k].base;
-    return [t, t, t];
-  }),
-  ...(LINOCUT_TERRAIN ? ["#2f6b74", "#2f6b74", "#2f6b74"] : ["#4c6b9c", "#4c6b9c", "#4c6b9c"]), // shallow water
-  ...(LINOCUT_TERRAIN ? ["#1f4a55", "#1f4a55", "#1f4a55"] : ["#2f4d7a", "#2f4d7a", "#2f4d7a"]), // deep water
-  // the second environment band (see the ENV2 note in atlas.ts)
-  ...(["moss", "sporeMoss", "mud", "shale", "snow", "salt", "ice", "basalt"] as const).flatMap(
-    (k) => {
-      const t = FLOOR_STYLE[k].base;
-      return [t, t, t];
-    },
-  ),
-  ...(LINOCUT_TERRAIN ? ["#245459", "#245459", "#245459"] : ["#604b94", "#604b94", "#604b94"]), // shallow spore water
-  ...(LINOCUT_TERRAIN ? ["#173840", "#173840", "#173840"] : ["#44356b", "#44356b", "#44356b"]), // deep spore water
-];
-// Neither SENTINEL reaches this table: drawThumb tests both first. The
-// pine slot (4) is a placeholder that keeps 5-6 (dark carbon rock)
-// aligned, and so is the deep-water slot (7) — a deep cell is blocked, but
-// its colour is the WATER it is, which only its floor index knows. Reading
-// it from here instead is what painted a spore lake in clear-water blue.
-const WALL_TONES = [
-  WALL_STYLE.stone.face, WALL_STYLE.stone.face,
-  WALL_STYLE.dirt.face, WALL_STYLE.dirt.face,
-  "#000000", // WALL_PINE placeholder
-  WALL_STYLE.dark.face, WALL_STYLE.dark.face,
-  "#000000", // WALL_DEEP placeholder
-  ...(["spore", "shale", "snow", "ice", "salt", "sand", "dune", "dacite"] as const).flatMap(
-    (k) => [WALL_STYLE[k].face, WALL_STYLE[k].face],
-  ),
-];
-const PINE_TONE = "#2e6e35";
+/**
+ * THE CORNER MAP'S COLOURS, one a floor index and one a wall index, read
+ * off the same tables the atlas paints from (FLOOR_GROUPS, WALL_GROUP) so a
+ * family added or repainted there shows here without a second edit. A
+ * land floor is its tile's base; a water is the tone its painted tile is
+ * (tiles.ts waterTone); a rock is its family's face. The two sentinel
+ * slots in the wall table are placeholders: drawThumb tests both first.
+ */
+const FLOOR_TONES: readonly string[] = FLOOR_GROUPS.flatMap((g) => {
+  const t = "water" in g ? waterTone(g.water) : FLOOR_STYLE[g.kind].base;
+  return [t, t, t];
+});
+const WALL_TONES: readonly string[] = WALL_GROUP.map((g) => (g < 0 ? "#000000" : WALL_STYLE[WALL_GROUP_KINDS[g]].face));
+/** how far a prop's cell is pulled toward black when its prop is not
+ *  known (a legacy document's card): dark enough to read as "not ground" */
+const BARE_PROP_SHADE = 0.55;
 
 /**
  * The thumbnail's painter, over any set of cell layers on the COLS-wide
@@ -933,12 +977,14 @@ const PINE_TONE = "#2e6e35";
  * default is 1, which is the true tone — a map card is a picture of the
  * place, and that is what it should keep showing.
  *
- * Pines are not shaded: a pine is not a hill (it is blocked, but nothing
- * flies around it — see airWalkMask), and neither is deep water, which is
- * blocked and is drawn as the water it is.
+ * Props are not shaded like hills: a prop is not one (it is blocked, but
+ * nothing flies around it — see airWalkMask). Its cells wear the prop's
+ * own colour (propArt.ts propMini) when the list is to hand, and the floor
+ * pulled toward black when it is not; deep water is drawn as the water it
+ * is.
  */
 export function paintThumb(
-  cells: { floor: ArrayLike<number>; blocked: ArrayLike<number>; wall: ArrayLike<number> },
+  cells: { floor: ArrayLike<number>; blocked: ArrayLike<number>; wall: ArrayLike<number>; props?: readonly Prop[] },
   rows: number,
   canvas: HTMLCanvasElement,
   hillShade = 1,
@@ -958,22 +1004,36 @@ export function paintThumb(
   const shade = (c: [number, number, number]): [number, number, number] =>
     hillShade === 1 ? c : [(c[0] * hillShade) | 0, (c[1] * hillShade) | 0, (c[2] * hillShade) | 0];
   const wallRgb = WALL_TONES.map((t) => shade(rgb(t)));
-  const pineRgb = rgb(PINE_TONE);
+  const bare = (col: [number, number, number]): [number, number, number] =>
+    [(col[0] * BARE_PROP_SHADE) | 0, (col[1] * BARE_PROP_SHADE) | 0, (col[2] * BARE_PROP_SHADE) | 0];
   for (let y = 0; y < rows; y++)
     for (let x = 0; x < COLS; x++) {
       const i = y * COLS + x;
+      const floorCol = floorRgb[cells.floor[i]] ?? floorRgb[0];
       const col =
         cells.blocked[i] && cells.wall[i] !== WALL_DEEP
-          ? cells.wall[i] === WALL_PINE
-            ? pineRgb
+          ? cells.wall[i] === WALL_PROP
+            ? bare(floorCol)
             : wallRgb[cells.wall[i]] ?? wallRgb[0]
-          : floorRgb[cells.floor[i]] ?? floorRgb[0];
+          : floorCol;
       const o = i * 4;
       d[o] = col[0];
       d[o + 1] = col[1];
       d[o + 2] = col[2];
       d[o + 3] = 255;
     }
+  for (const p of cells.props ?? []) {
+    const t = PROP_KINDS[p.kind]?.tiles ?? 1;
+    const col = rgb(propMini(p.kind, p.tone));
+    for (let y = p.y; y < p.y + t; y++)
+      for (let x = p.x; x < p.x + t; x++) {
+        if (x < 0 || y < 0 || x >= COLS || y >= rows) continue;
+        const o = (y * COLS + x) * 4;
+        d[o] = col[0];
+        d[o + 1] = col[1];
+        d[o + 2] = col[2];
+      }
+  }
   c.putImageData(img, 0, 0);
 }
 

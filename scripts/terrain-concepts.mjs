@@ -17,7 +17,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { GUN, draw, drawCore, drawHead, plate } from "../game/turretArt.ts";
-import { paintFloor, paintProp, paintWall } from "../game/tiles.ts";
+import { paintFloor, paintWall } from "../game/tiles.ts";
+import { paintProp, PROP_KINDS, propKind, rockTone, TONE } from "../game/propArt.ts";
 import { HART_TIERS, RHINO_TIERS, STOOP_TIERS, hartMech, rhinoLegged, rhinoMech, rhinoSeg, stoop } from "../game/animalArt.ts";
 import { inflateSync } from "node:zlib";
 
@@ -462,9 +463,10 @@ function paintCurrent(B) {
       put(wx, wy, c);
     }
   }
-  const props = { boulder: "boulder0", pine: "pine", shrub: "shrubs" };
+  const props = { boulder: [propKind("boulder"), rockTone("stone")], pine: [propKind("tree"), TONE.pine], shrub: [propKind("shrub"), TONE.pine] };
   for (const [kind, cx, cy] of PROPS) {
-    const src = paintProp(props[kind]); const S = kind === "shrub" ? 32 : 48; const Ls = S / 2;
+    const [pk, tone] = props[kind];
+    const src = paintProp(pk, tone); const S = PROP_KINDS[pk].tiles * 32; const Ls = S / 2;
     for (let y = 0; y < Ls; y++) for (let x = 0; x < Ls; x++) { const o = ((y * 2) * S + x * 2) * 4; if (!src[o + 3]) continue; const ox = Math.round(cx * L - Ls / 2) + x, oy = Math.round(cy * L - Ls / 2) + y; if (ox < 0 || oy < 0 || ox >= B.LW || oy >= B.LH) continue; put(ox, oy, rgb(src[o], src[o + 1], src[o + 2])); }
   }
   return { px: out, W: B.LW, H: B.LH };

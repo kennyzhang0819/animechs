@@ -15,18 +15,14 @@ import {
   UNIT_CELL,
   UV_SOLID,
   UV_BASE,
-  DECOR_DRAWN,
-  UV_DECOR,
   UV_FLOORS,
-  UV_PINE,
-  UV_PINES,
+  UV_PROPS,
   UV_RAILS,
   UV_MARK_PAD,
   UV_SPAWN,
   UV_RING,
   UV_CLEAVER,
   UV_AIRBURST,
-  UV_FLOOR_EDGES,
   UV_BULLET,
   UV_BULLET_BACK,
   UV_SHELL,
@@ -156,7 +152,8 @@ import {
   type BeamStyle,
   type ShotRegion,
 } from "./weapons";
-import { isWaterFloor, showsFloorCell, WALL_DEEP, type Terrain } from "./terrain";
+import { isWaterFloor, showsFloorCell, WALL_DEEP, WALL_PROP, type Terrain } from "./terrain";
+import { PROP_KINDS, PROP_TINT } from "./propArt";
 import { SPAWN_STYLE } from "./maps";
 import {
   FxKind,
@@ -744,51 +741,6 @@ const CONVOY_LEG_SWING = 14;
 /** how much of its own length the swinging leg loses — Mindustry's mech
  *  draws it at half. A rig may ask for less (MechArt.legLift) */
 const LEG_LIFT = 0.5;
-// floor blend priority by group id (grass, stone, dirt, sand, darksand,
-// shallow water, deep water): Blocks.java definition order — water <
-// stone < sand < darksand < dirt < grass, higher fades over lower.
-//
-// THE WATER GROUPS SIT BELOW EVERYTHING, which is what draws a shoreline.
-// Mindustry declares its water floors before any land floor, so land
-// blends over water and never the reverse — the fade you see at a lake's
-// rim is the BEACH reaching into the water. Give water a high priority
-// instead and the lake grows a rim over the sand, which reads as a puddle
-// on top of the ground rather than a hole in it.
-//
-// The second environment band's eight land families continue upward from
-// the first band's top (grass, 4) in Mindustry's own rough order: the bare
-// rocks first, then the frozen pair with snow drifting over ice, then the
-// marsh, where moss creeps over mud and the spore growth creeps over the
-// moss. The spore waters join the clear ones at the bottom.
-const GROUP_PRI = [
-  4, 0, 3, 1, 2, -1, -2,
-  11, // moss
-  12, // spore moss
-  10, // mud
-  5, // shale
-  9, // snow
-  7, // salt
-  8, // ice
-  6, // basalt
-  -3, // shallow spore water
-  -4, // deep spore water
-  // the third batch, continuing upward: the greys low, the earths and
-  // the marsh over them
-  14, // loam
-  13, // dust
-  15, // flint
-  16, // clay
-  18, // peat
-  17, // bog
-  19, // cinder
-  20, // chalk
-] as const;
-// overlaying groups in ascending priority — darksand, dirt, grass, then
-// the second band's eight. Stone never overlays (lowest of the land
-// floors), and sand's only inferior — stone floor — shares no map with it
-// yet, so its edge art isn't baked either. The water groups are never in
-// here: nothing is beneath them to fade over.
-const EDGE_ORDER = [4, 2, 0, 10, 14, 12, 13, 11, 9, 7, 8] as const;
 /**
  * Which painted cell of a water group a map cell draws — see the floor
  * pass. A cheap integer hash of the cell, so the choice is fixed for a
@@ -1327,13 +1279,8 @@ export class Renderer {
   private readonly quadVBO: WebGLBuffer;
   private readonly tex: WebGLTexture;
   private readonly terrain: Batch;
-  /**
-   * The sea, split out of the terrain batch because it is the one floor
-   * drawn through a shader of its own. It holds nothing but the base tile
-   * of every water cell — the land's edge fades over a shoreline stay in
-   * `terrain` and draw on top, which is the blend order water has always
-   * had (GROUP_PRI puts it at the bottom)
-   */
+  /** the sea, split out of the terrain batch because it is the one floor
+   *  drawn through a shader of its own: the base tile of every water cell */
   private readonly water: Batch;
   private readonly waterProg: WebGLProgram;
   private readonly uWaterRes: WebGLUniformLocation;
@@ -1518,11 +1465,11 @@ export class Renderer {
       gl.STATIC_DRAW,
     );
 
-    // floor tile + up to 8 floor-edge fades per cell (worst-case borders)
-    this.terrain = this.makeBatch(NCELLS * 6 + 512, false);
+    // one floor tile a cell: the seams are sharp, nothing fades over them
+    this.terrain = this.makeBatch(NCELLS + 512, false);
     // one quad per water cell — a map that is all sea is the worst case
     this.water = this.makeBatch(NCELLS + 64, false);
-    // wall tiles + decor/pine props
+    // wall tiles + props
     this.walls = this.makeBatch(NCELLS * 2 + 2048, false);
     this.shadow = this.makeBatch(4, false);
     this.dark = this.makeBatch(4);
@@ -2120,17 +2067,13 @@ export class Renderer {
     // editor re-reads the height (see MapEditor.mapRows).
     const mapRows = Math.max(1, Math.min(ROWS, T.rows));
     const mapCols = Math.max(1, Math.min(COLS, T.cols));
-    // pass 1: floors, with Floor.drawEdges fades — a neighboring floor of
-    // higher blend priority overlays its edge sub-cell for that direction.
-    // Lower-priority groups overlay first, like the blenders id sort
+    // pass 1: floors, one tile a cell and a sharp seam between any two
     for (let y = 0; y < mapRows; y++) {
       for (let x = 0; x < mapCols; x++) {
         const i = y * COLS + x;
         if (!showsFloor(i)) continue;
         const cx = (x + 0.5) * CELL, cy = (y + 0.5) * CELL;
-        // the sea goes to its own batch and its own program; every other
-        // floor, and EVERY edge fade including the ones that overlay a
-        // water cell, stays here and draws over it
+        // the sea goes to its own batch and its own program
         const wet = isWaterFloor(T.floor[i]);
         // A WATER CELL PICKS ITS OWN VARIANT. Every map on disk paints one
         // water index for a whole lake — a brush has a single water entry —
@@ -2141,21 +2084,6 @@ export class Renderer {
         // lake carries a wave, fixed per cell so it does not crawl.
         const fi = wet ? ((T.floor[i] / 3) | 0) * 3 + waterVariant(x, y) : floorVariant(T.floor[i], x, y);
         this.push(wet ? wt : t, cx, cy, CELL, CELL, 0, UV_FLOORS[fi], 1, 1, 1, 1);
-        const pri = GROUP_PRI[(T.floor[i] / 3) | 0];
-        for (const og of EDGE_ORDER) {
-          if (GROUP_PRI[og] <= pri) continue;
-          for (let dy = -1; dy <= 1; dy++) {
-            const ny = y + dy;
-            if (ny < 0 || ny >= mapRows) continue;
-            for (let dx = -1; dx <= 1; dx++) {
-              const nx = x + dx;
-              if (nx < 0 || nx >= mapCols || (dx === 0 && dy === 0)) continue;
-              const j = ny * COLS + nx;
-              if (!showsFloor(j) || ((T.floor[j] / 3) | 0) !== og) continue;
-              this.push(t, cx, cy, CELL, CELL, 0, UV_FLOOR_EDGES[og][1 - dy][1 - dx], 1, 1, 1, 1);
-            }
-          }
-        }
       }
     }
 
@@ -2204,14 +2132,15 @@ export class Renderer {
     this.push(sh, W / 2, H / 2, W, H, 0, [0, 0, 1, 1], 0, 0, 0, WALL_SHADOW_A);
 
     // pass 2b: the darkness INSIDE the walls (World.addDarkness, see
-    // DARK_RADIUS). Same static walls as the shadow — rock and pine, never
-    // deep water — over the map's own cells; the padding past its edge is
-    // outside the map the way the world's edge is outside Mindustry's, so
-    // a neighbour there is no neighbour at all
+    // DARK_RADIUS). Rock only — a prop casts the rim shadow like a hill
+    // but is a thing on the ground, not a mass to go dark inside — over
+    // the map's own cells; the padding past its edge is outside the map
+    // the way the world's edge is outside Mindustry's, so a neighbour
+    // there is no neighbour at all
     const n = COLS * ROWS;
     const dark = new Uint8Array(n);
     if (layers.wall) {
-      const isDark = (i: number): boolean => T.blocked[i] !== 0 && T.wall[i] !== WALL_DEEP;
+      const isDark = (i: number): boolean => T.blocked[i] !== 0 && T.wall[i] !== WALL_DEEP && T.wall[i] !== WALL_PROP;
       for (let y = 0; y < mapRows; y++)
         for (let x = 0; x < mapCols; x++) {
           const i = y * COLS + x;
@@ -2360,19 +2289,15 @@ export class Renderer {
       }
     }
     if (layers.props) {
-      // a boulder stands in the hill's shadow like anything else on the
-      // ground; a pine is the hill (its cell casts), so it is not shaded
-      for (const d of T.decor) {
-        // the stones and the spore crystals are off (atlas.ts DECOR_DRAWN);
-        // a map that has them keeps them, they are simply not drawn
-        if (!DECOR_DRAWN[d.kind]) continue;
-        const lit = this.litAt(d.x, d.y);
-        this.push(w, d.x, d.y, d.size, d.size, d.rot, UV_DECOR[d.kind], lit, lit, lit, 1);
+      // a prop's own cells cast the rim shadow (pass 2), so it is not shaded
+      // by it: its tone is the whole of its colour (propArt.ts PROP_TINT)
+      for (const p of T.props) {
+        const def = PROP_KINDS[p.kind];
+        if (!def) continue;
+        const side = def.tiles * CELL;
+        const tint = PROP_TINT[p.tone] ?? PROP_TINT[0];
+        this.push(w, p.x * CELL + side / 2, p.y * CELL + side / 2, side, side, p.rot * (Math.PI / 2), UV_PROPS[p.kind], tint[0], tint[1], tint[2], 1);
       }
-      // a pine's kind picks its forest (UV_PINES); kind 0 is the original
-      // tree, which is what every pine saved before the table existed is
-      for (const p of T.pines)
-        this.push(w, p.x, p.y, p.size, p.size, p.rot, UV_PINES[p.kind] ?? UV_PINE, 1, 1, 1, 1);
     }
     for (const b of [t, wt, sh, w, dq]) {
       gl.bindVertexArray(b.vao);

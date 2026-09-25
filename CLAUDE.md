@@ -78,7 +78,7 @@ public/maps/*.json public/levels/*.json     authored data, no rules
 scripts/check.mjs playtest.mjs maps/*.mjs   checks and generators
 docs/                  the SYSTEMS live here, not in the files: mutators,
                        difficulty, economy, mission-design, authoring-maps,
-                       authoring-waves, unit-art, …
+                       authoring-waves, unit-art, props, …
 ```
 
 ## Things that will bite you

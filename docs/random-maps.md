@@ -52,6 +52,9 @@ every spec:
 - **One or two more clearings**, up to four links between clearings 36
   to 110 apart, five to nine holes, eight to sixteen lumps, and the
   theme's ruins.
+- **The props** (`props.md`): the theme's forest on the rock fringe, its
+  thickets, stones, wrecks and litter on the open ground, clear of every
+  lane the checks measure.
 
 ## What a roll is held to
 

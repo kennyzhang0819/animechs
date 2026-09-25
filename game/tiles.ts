@@ -116,7 +116,7 @@ const STOCK_FLOOR_STYLE: Readonly<Record<FloorKind, FloorStyle>> = {
 };
 
 
-const mulberry32 = (seed: number) => (): number => {
+export const mulberry32 = (seed: number) => (): number => {
   seed |= 0;
   seed = (seed + 0x6d2b79f5) | 0;
   let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
@@ -124,14 +124,14 @@ const mulberry32 = (seed: number) => (): number => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
-const hex = (c: string): [number, number, number] => [
+export const hex = (c: string): [number, number, number] => [
   parseInt(c.slice(1, 3), 16),
   parseInt(c.slice(3, 5), 16),
   parseInt(c.slice(5, 7), 16),
 ];
 
 /** a colour part way from `a` to `b` */
-const mix = (a: string, b: string, t: number): string => {
+export const mix = (a: string, b: string, t: number): string => {
   const [ar, ag, ab] = hex(a), [br, bg, bb] = hex(b);
   const ch = (x: number, y: number): string =>
     Math.round(x + (y - x) * t)
@@ -140,8 +140,8 @@ const mix = (a: string, b: string, t: number): string => {
   return `#${ch(ar, br)}${ch(ag, bg)}${ch(ab, bb)}`;
 };
 
-const lit = (c: string, t: number): string => mix(c, "#ffffff", t);
-const shd = (c: string, t: number): string => mix(c, "#000000", t);
+export const lit = (c: string, t: number): string => mix(c, "#ffffff", t);
+export const shd = (c: string, t: number): string => mix(c, "#000000", t);
 
 /* ======================================================================
  * THE LINOCUT INK — ochre. One carved hand for the whole board: floors
@@ -151,7 +151,7 @@ const shd = (c: string, t: number): string => mix(c, "#000000", t);
  * LINOCUT_PALETTES.ochre); a floor or wall family keeps its own hue
  * underneath, so a desert is still a desert and a tundra a tundra.
  * ====================================================================== */
-const INK = {
+export const INK = {
   warm: "#c9a45a",
   umber: "#8a5a34",
   umberDeep: "#5a3a20",
@@ -201,7 +201,7 @@ export const FLOOR_KINDS = Object.keys(FLOOR_STYLE) as FloorKind[];
  * ellipse is tested at cell centres, which at this size gives the soft,
  * slightly lumpy outline pixel art wants rather than a hard geometric one.
  */
-const ellipse = (
+export const ellipse = (
   cx: number,
   cy: number,
   rx: number,
@@ -336,8 +336,7 @@ export const tileIcon = (kind: FloorKind, variant: number): string =>
  * dark tone, and a wide band of the mid tone runs diagonally between
  * them, its two boundaries wandering a little so the bands are not
  * ruled lines. Every tile carries the same corners, so an outcrop reads
- * as stacked stones each lit from the same side — the boulder props use
- * the same rule on a rounded silhouette. On top of the bands the first
+ * as stacked stones each lit from the same side. On top of the bands the first
  * painting carries one pale patch and the second nothing, as before.
  * Nothing else: no lumps, no marks, and nothing that reads as a sphere.
  *
@@ -565,6 +564,15 @@ export function paintWater(kind: WaterKind, variant = WATER_WAVE_VARIANT): Uint8
   }
   return toRgba(grid, N, TILE_PX);
 }
+/** the flat colour a water kind reads as at a pixel a cell (the minimap,
+ *  the map cards): the painted tile's own base, or the stock file's mean */
+export function waterTone(kind: WaterKind): string {
+  const deep = kind === "deepWater" || kind === "deepTaintedWater";
+  const tainted = kind === "taintedWater" || kind === "deepTaintedWater";
+  if (LINOCUT_TERRAIN)
+    return tainted ? (deep ? INK.taintedDeep : INK.taintedShallow) : deep ? INK.deep : INK.shallow;
+  return tainted ? (deep ? "#44356b" : "#604b94") : deep ? "#2f4d7a" : "#4c6b9c";
+}
 export function waterCanvas(kind: WaterKind, variant = WATER_WAVE_VARIANT): HTMLCanvasElement {
   const c = document.createElement("canvas");
   c.width = c.height = TILE_PX;
@@ -644,204 +652,3 @@ export function markPadCanvas(): HTMLCanvasElement {
   g.putImageData(new ImageData(paintMarkPad(), TILE_PX, TILE_PX), 0, 0);
   return c;
 }
-
-// ---------------------------------------------------------------------------
-// THE PROPS: the things that stand on the ground — trees, boulders, shrubs,
-// spore pods. Painted the way the turrets are: round shapes in ONE PAIR of
-// tones, the dark on the left half of the square and the light on the
-// right, and nothing that reads as a sphere. Each one is a square of
-// `size` native pixels (a 48 boulder overhangs its tile to 1.5, a 32 shrub
-// sits inside one, a 40 spore cluster to 1.25) with a transparent ground,
-// on the tiles' own 32-a-tile grid.
-// ---------------------------------------------------------------------------
-
-/** three tones: the body, the lit side and the shaded side. The pair
- *  drawn is the lit and the shaded eased toward the body; the body itself
- *  is what a floor tone or a wall tone is keyed off */
-interface PropTones {
-  mid: string;
-  light: string;
-  dark: string;
-}
-
-/** what a prop is, and how big its square is in native pixels */
-interface PropStyle {
-  size: 32 | 40 | 48;
-  /** thicket is the one square: a patch of ground, not a thing on it */
-  shape: "tree" | "boulder" | "shrub" | "pods" | "thicket";
-  tones: PropTones;
-  /** the seed, so a family's second boulder is a different boulder */
-  seed: number;
-}
-
-const rock = (w: WallKind, seed: number, size: 32 | 48 = 48): PropStyle => ({
-  size,
-  shape: "boulder",
-  tones: { mid: WALL_STYLE[w].face, light: WALL_STYLE[w].light, dark: WALL_STYLE[w].dark },
-  seed,
-});
-
-/** a growing thing's tone under the ink: pulled toward the canopy olive */
-const leaf = (c: string): string => (LINOCUT_TERRAIN ? mix(c, INK.canopy, 0.3) : c);
-export const PROP_STYLE = {
-  pine: { size: 48, shape: "tree", seed: 1, tones: { mid: leaf("#5a9c4c"), light: leaf("#7dbd68"), dark: leaf("#3d7238") } },
-  sporePine: { size: 48, shape: "tree", seed: 2, tones: { mid: leaf("#8f5aa8"), light: leaf("#ad7cc4"), dark: leaf("#6a3f82") } },
-  snowPine: { size: 48, shape: "tree", seed: 3, tones: { mid: "#e4ebf2", light: "#ffffff", dark: "#b6c5d6" } },
-  boulder0: rock("stone", 11),
-  boulder1: rock("stone", 12),
-  snowBoulder0: rock("snow", 21),
-  snowBoulder1: rock("snow", 22),
-  basaltBoulder0: rock("dark", 31),
-  basaltBoulder1: rock("dark", 32),
-  shaleBoulder0: rock("shale", 41, 32),
-  shaleBoulder1: rock("shale", 42, 32),
-  sandBoulder0: rock("sand", 51, 32),
-  sandBoulder1: rock("sand", 52, 32),
-  shrubs: { size: 32, shape: "thicket", seed: 61, tones: { mid: leaf("#5f9e45"), light: leaf("#7fbd5c"), dark: leaf("#4a833a") } },
-  shrubs2: { size: 32, shape: "thicket", seed: 62, tones: { mid: leaf("#5f9e45"), light: leaf("#7fbd5c"), dark: leaf("#4a833a") } },
-  purBush: { size: 32, shape: "shrub", seed: 71, tones: { mid: "#7561bd", light: "#9a89d9", dark: "#54459a" } },
-  sporeCluster0: { size: 40, shape: "pods", seed: 81, tones: { mid: "#7b5bd1", light: "#a48ff0", dark: "#57409c" } },
-  sporeCluster1: { size: 40, shape: "pods", seed: 82, tones: { mid: "#7b5bd1", light: "#a48ff0", dark: "#57409c" } },
-  sporeCluster2: { size: 40, shape: "pods", seed: 83, tones: { mid: "#7b5bd1", light: "#a48ff0", dark: "#57409c" } },
-} as const satisfies Record<string, PropStyle>;
-
-export type PropKind = keyof typeof PROP_STYLE;
-export const PROP_KINDS = Object.keys(PROP_STYLE) as PropKind[];
-
-/**
- * Paint one prop: `size`×`size` RGBA, row-major, transparent where there is
- * nothing. The silhouette is a few discs overlapping, so the outline is
- * lumpy; the whole of it is then shaded the turrets' way — the pair's dark
- * on the left half, its light on the right, nothing between — so a canopy
- * is a flat shape and never a pile of spheres. There is no outline: the
- * silhouette is the shading's own edge, as on the tiles.
- */
-export function paintProp(kind: PropKind): Uint8ClampedArray<ArrayBuffer> {
-  const st: PropStyle = PROP_STYLE[kind];
-  const N = st.size / TILE_SCALE;
-  const rng = mulberry32(5000 + st.seed * 331);
-  // which cells the shape covers (0 is nothing)
-  const piece = new Uint8Array(N * N);
-  const lump = (cx: number, cy: number, r: number, squash = 1): void =>
-    ellipse(cx, cy, r, r * squash, (x, y) => {
-      if (x >= 0 && y >= 0 && x < N && y < N) piece[y * N + x] = 1;
-    });
-  const c = N / 2;
-  let trunk = false;
-
-  switch (st.shape) {
-    case "boulder": {
-      // ONE ROUND STONE. It was two or three lumps once, for a lumpy
-      // outline, and at the size a boulder is drawn the lumps read as a
-      // ragged edge rather than as a rock. A single ellipse, a shade
-      // wider than tall and set a little off centre, is round at every
-      // zoom; the diagonal shading below is what makes it a stone
-      const R = N * 0.36;
-      const a = rng() * Math.PI * 2;
-      lump(c + Math.cos(a) * N * 0.04, c + Math.sin(a) * N * 0.04, R, 0.86 + rng() * 0.1);
-      break;
-    }
-    case "tree": {
-      // a canopy seen from above: a ring of lobes round a crown, and the
-      // trunk a dark dot at the heart. The corners take more of a tree
-      // than of a rock: a canopy is all edge
-      const R = N * 0.42;
-      const lobes = 6 + Math.floor(rng() * 2);
-      const a0 = rng() * Math.PI * 2;
-      for (let i = 0; i < lobes; i++) {
-        const b = a0 + (i / lobes) * Math.PI * 2;
-        lump(c + Math.cos(b) * R * 0.58, c + Math.sin(b) * R * 0.58, R * 0.46);
-      }
-      lump(c, c, R * 0.62);
-      trunk = true;
-      break;
-    }
-    case "shrub": {
-      // a low tuft: four or five small lumps in a loose cluster, sitting
-      // inside the tile so ground shows round it
-      const n = 4 + Math.floor(rng() * 2);
-      const a0 = rng() * Math.PI * 2;
-      for (let i = 0; i < n; i++) {
-        const b = a0 + (i / n) * Math.PI * 2 + rng() * 0.5;
-        const d = N * (0.12 + rng() * 0.12);
-        lump(c + Math.cos(b) * d, c + Math.sin(b) * d, N * (0.16 + rng() * 0.06), 0.8 + rng() * 0.2);
-      }
-      break;
-    }
-    case "thicket": {
-      // not a prop but a patch: the whole square is ground
-      piece.fill(1);
-      break;
-    }
-    case "pods": {
-      // three pods of three sizes leaning together
-      const a0 = rng() * Math.PI * 2;
-      const rs = [0.26, 0.2, 0.16].map((r) => N * r);
-      for (let i = 0; i < 3; i++) {
-        const b = a0 + (i / 3) * Math.PI * 2;
-        lump(c + Math.cos(b) * N * 0.17, c + Math.sin(b) * N * 0.17, rs[i]);
-      }
-      break;
-    }
-  }
-
-  // THE SHADING: the turrets' split, the pair's dark on the left half and
-  // its light on the right, both eased toward the body so a prop set down
-  // at any quarter turn does not read as lit from a different side than
-  // its neighbour
-  const { mid, light: lightTone, dark } = st.tones;
-  const light = mix(lightTone, mid, 0.4);
-  const shade = mix(dark, mid, 0.45);
-  const grid = new Array<string | null>(N * N).fill(null);
-  for (let y = 0; y < N; y++)
-    for (let x = 0; x < N; x++) {
-      if (!piece[y * N + x]) continue;
-      grid[y * N + x] = x < c ? shade : light;
-    }
-
-  if (st.shape === "thicket") {
-    // a few round tussocks in the light over the shade, like a floor
-    // tile that grew thicker; none under four px across
-    for (let i = 0; i < N * N; i++) grid[i] = shade;
-    const n = 4 + Math.floor(rng() * 2);
-    for (let i = 0; i < n; i++) {
-      const r = 3 + rng() * 2;
-      const x = 4 + r + rng() * (N - 8 - r * 2), y = 4 + r + rng() * (N - 8 - r * 2);
-      ellipse(x, y, r, r * 0.85, (px, py) => {
-        if (px >= 0 && py >= 0 && px < N && py < N) grid[py * N + px] = light;
-      });
-    }
-  } else if (trunk) {
-    // the trunk seen from above: a block in the shade, four px across
-    for (let y = c - 2; y < c + 2; y++) for (let x = c - 2; x < c + 2; x++) grid[y * N + x] = shade;
-  }
-
-  const P = st.size;
-  const out = new Uint8ClampedArray(new ArrayBuffer(P * P * 4));
-  for (let y = 0; y < P; y++)
-    for (let x = 0; x < P; x++) {
-      const col = grid[Math.floor(y / TILE_SCALE) * N + Math.floor(x / TILE_SCALE)];
-      if (col === null) continue;
-      const [r, g, b] = hex(col);
-      const o = (y * P + x) * 4;
-      out[o] = r;
-      out[o + 1] = g;
-      out[o + 2] = b;
-      out[o + 3] = 255;
-    }
-  return out;
-}
-
-/** the painted prop as a canvas at its native size, transparent round it */
-export function propCanvas(kind: PropKind): HTMLCanvasElement {
-  const st: PropStyle = PROP_STYLE[kind];
-  const c = document.createElement("canvas");
-  c.width = c.height = st.size;
-  const g = c.getContext("2d");
-  if (!g) throw new Error("2d context unavailable for prop");
-  g.putImageData(new ImageData(paintProp(kind), st.size, st.size), 0, 0);
-  return c;
-}
-
-/** where the editor's palette icons for props are written */
-export const propIcon = (kind: PropKind): string => `/tiles/prop-${kind}.png`;

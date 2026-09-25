@@ -6,6 +6,7 @@ import { CELL, clamp, COLS } from "@/game/constants";
 import { loadMap, terrainFromMap } from "@/game/maps";
 import { Renderer } from "@/game/renderer";
 import { isWaterFloor, type Terrain } from "@/game/terrain";
+import { PROP_KINDS } from "@/game/propArt";
 
 /**
  * THE MENU'S GROUND — the campaign's own country, with nothing standing on
@@ -145,8 +146,10 @@ function shotsFor(t: Terrain, rng: () => number): Shot[] {
   const at = (gx: number, gy: number): number =>
     clamp((gy / BUCKET) | 0, 0, by - 1) * bx + clamp((gx / BUCKET) | 0, 0, bx - 1);
 
-  for (const p of t.pines) score[at(p.x / CELL, p.y / CELL)] += W_PROP;
-  for (const p of t.decor) score[at(p.x / CELL, p.y / CELL)] += W_PROP;
+  for (const p of t.props) {
+    const half = (PROP_KINDS[p.kind]?.tiles ?? 1) / 2;
+    score[at(p.x + half, p.y + half)] += W_PROP;
+  }
   for (let gy = 0; gy < t.rows; gy++)
     for (let gx = 0; gx < t.cols; gx++) {
       const i = gy * COLS + gx;
