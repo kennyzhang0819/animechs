@@ -15,6 +15,8 @@ export const CELL = 20; // one Mindustry ground tile
 export const W = COLS * CELL;
 export const H = ROWS * CELL;
 export const NCELLS = COLS * ROWS;
+/** the map id a world names to play a board generated at start (mapgen.ts) */
+export const RANDOM_MAP_ID = "random";
 
 /**
  * THE BROAD PHASE'S CELL, in world px, and the grid it makes (Sim.buildHash).

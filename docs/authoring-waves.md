@@ -86,12 +86,13 @@ one answer at a time, and air is fair.
 
 `public/levels/campaign.json` is the script every map plays — a
 `LevelDoc`, `{ id, waveGap, script }`, of raw per-kind counts per wave.
-`waveGap` is the seconds held between waves (20.5 as authored — the clock
+`waveGap` is the seconds held between waves (21 as authored — the clock
 starts when the previous wave has finished ENTERING, not when it dies).
 **Fifty waves**, forty bodies on wave 1 and thousands by the end, at
 Mindustry's own unit numbers. `index.json` beside it lists the documents.
-Fifty is the document's length and not the run's — past it the tide takes
-over (below). Edit a script in the admin
+Fifty is the run's length too, for now: every swarm map is a hold of the
+whole script, which stops the tide at the fiftieth wave (below), and that
+wave brings the Sovereign. Edit a script in the admin
 level editor (**Edit level** on the map's card in `/admin`) or by hand in
 the JSON; the dev save API (`/api/levels`) writes the campaign document and
 refuses everything else.
@@ -105,10 +106,10 @@ at every rung up to the count.
 
 **Wave n lands at `WAVE_GAP_OPENING + (n-1) x (waveGap + WAVE_RELEASE_SECONDS)`
 seconds of run time, and nothing about the board can move it**
-(`Sim.waveStartTime`). At the shipped 20.5-second gap that is a wave every
-**24s** — so the fifty-wave script is 1,179s of schedule whatever map it
+(`Sim.waveStartTime`). At the shipped 21-second gap that is a wave every
+**24.5s** — so the fifty-wave script is 1,204s of schedule whatever map it
 is played on and whatever difficulty it is played at, wave 1 at 3s and
-wave 50 at 1,179s (19:39).
+wave 50 at 1,204s (20:03).
 
 It used to be a lower bound rather than a schedule. One wave was loaded at a
 time and the next waited for the last to finish spawning, so a map whose drop
@@ -134,6 +135,15 @@ What that means when you author:
   and the sandbox's jump (`Sim.skipToTime`, `time M:SS` in the console).
 
 ## The tide: the script is infinite
+
+**Switched off for now, by the mission rather than by a flag.** Every
+swarm map (the swarm world and the bank, `game/levels.ts` `SWARM_HOLD`)
+is a hold of the script's own length, and a hold that has staged its
+count does not turn the tide (`Sim.tideTurns`): wave 50 is the last
+wave, the run is won when it is down, and the fiftieth wave brings the
+Sovereign (`HoldMission.finale`, staged by `Sim.stageOne` — the one place
+an objective body rides a wave). The machinery below is intact and any
+mission that is not a finished hold still plays it.
 
 A script is a finite document and a run is not. **When the cursor reaches
 the last wave and the mission is still open, the last `TIDE_CYCLE_WAVES`
@@ -169,9 +179,10 @@ each of them:
 
 - **hold** — break `waves` waves with the core standing; a wave counts
   when every body it sent is down (`Sim.wavesCleared`). Unset, the target
-  is the script's own length, which is what Confluence plays. **Ask for
-  more waves than the document holds and the hold plays the tide** — that
-  is how a hold map gets the infinite climb.
+  is the script's own length, which is what every swarm map plays. **Ask
+  for more waves than the document holds and the hold plays the tide** —
+  that is how a hold map gets the infinite climb. A `finale` names an
+  objective body the last wave brings; the swarm maps name the Sovereign.
 - **survive** — last `minutes` on the clock. The tide is what keeps the
   board honest for however long that is.
 - **intercept** — destroy `kills` crossers before they leave. The waves

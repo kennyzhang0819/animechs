@@ -1,4 +1,4 @@
-import { cleanFamilies, VISIBLE_WORLDS, WORLD, WORLDS, type FamilyKey } from "./levels";
+import { BANK_WORLDS, cleanFamilies, VISIBLE_WORLDS, WORLD, WORLDS, type FamilyKey } from "./levels";
 import { cleanMutations, type MutationId } from "./mutation";
 import {
   tierClearNeeded,
@@ -403,7 +403,7 @@ function readDifficulty(p: { difficulty?: unknown }): number | undefined {
  *  offer today */
 function readMapPick(p: { map?: unknown }): string | undefined {
   const m = p.map;
-  return typeof m === "string" && VISIBLE_WORLDS.some((w) => w.id === m) ? m : undefined;
+  return typeof m === "string" && [...VISIBLE_WORLDS, ...BANK_WORLDS].some((w) => w.id === m) ? m : undefined;
 }
 
 /** the remembered mode; anything the game does not recognise reads regular */

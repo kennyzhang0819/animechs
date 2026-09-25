@@ -21,6 +21,14 @@ Fabricator, a Brander, a garrison circle of Wardens) puts those down. Their heal
 same on every rung. A mission can also POST a body instead of sending it
 (`Sim.garrisonUnit` / `plantUnit`): it holds a circle and never walks at the core.
 
+**Maps — rolled, not picked** (`game/mapgen.ts`, `docs/random-maps.md`). A regular run
+draws its board at start from a seed: the node generator's pipeline ported into the game,
+with `randomSpec` rolling the numbers an author would write. The authored maps are **the
+bank** (`BANK_WORLDS`): playable by name in custom mode, never rolled, and their spec
+files and documents stay. Missions are parked: every swarm map is a hold of the whole
+script with the Sovereign on wave 50 (`HoldMission.finale`), the tide stops there, and
+the mission logic (`raze`, `escort`, …) stays in the code unused.
+
 **Mutators** (`game/mutation.ts`). The rules a run is played *under*, rolled rather
 than chosen. Each costs points; a rung carries a budget and a count. Mandatory from
 Nemesis +1 up. Custom mode may name a hand instead of rolling.
@@ -60,6 +68,7 @@ game/weapons.ts status.ts upgrades.ts       shots, statuses, stat dials
 game/skills.ts         the skill tree — ten nodes a turret, spent with the track's points
 game/projs.ts          the player's shots in flight, as lanes — read its header before touching the shot loop
 game/terrain.ts maps.ts board.ts tiles.ts   the ground
+game/mapgen.ts         the map generator in the game — a run's board, from a seed
 game/*Art.ts + atlas.ts                     art is CODE, drawn into an atlas at runtime
 game/snapshot.ts simreport.ts simreads.ts simview.ts   THE SEAM (see below)
 game/renderer.ts       WebGL2 instanced draw
@@ -80,7 +89,8 @@ docs/                  the SYSTEMS live here, not in the files: mutators,
    silently reads zero.
 2. **The tide.** Past its last wave a script loops forever, heavier each cycle, so no
    map can be finished by outlasting it — **every map owes a `Mission`**. See
-   `docs/mission-design.md`.
+   `docs/mission-design.md`. A hold of the script's own length is what stops it at
+   wave 50 today; a mission of any other kind puts it back.
 3. **A moving structure fails every test written for a stationary one, silently.**
    `cellTower` is an "is this still standing" check in `nearestStructure`, `inReach`
    and `structureAt`, and `nearestStructure` also early-outs on `structBox`. Anything

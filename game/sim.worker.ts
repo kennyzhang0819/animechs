@@ -37,7 +37,7 @@ import { emptySnapshot, flatOf, packSnapshot, type Snapshot } from "./snapshot";
 import { reportOf, writeHeader } from "./simreport";
 import { loadBalanceDoc } from "./balance";
 import { loadLevelDocs, type LevelSpec } from "./levels";
-import { OFFICIAL_MAP_IDS, refreshMap } from "./maps";
+import { OFFICIAL_MAP_IDS, refreshMap, setGeneratedMap, type MapData } from "./maps";
 import { ADMIN_ENABLED } from "./env";
 import type { FromWorker, ToWorker } from "./workerhost";
 
@@ -142,7 +142,13 @@ function publish(): void {
   post({ t: "frame", snapshot, report });
 }
 
-async function init(spec: LevelSpec, field: MessagePort | null, phys: MessagePort | null): Promise<void> {
+async function init(
+  spec: LevelSpec,
+  mapDoc: MapData | null,
+  field: MessagePort | null,
+  phys: MessagePort | null,
+): Promise<void> {
+  if (mapDoc) setGeneratedMap(mapDoc);
   await Promise.all([
     refreshMap(spec.map ?? OFFICIAL_MAP_IDS[0]),
     loadLevelDocs(),
@@ -178,7 +184,7 @@ port.addEventListener("message", (e) => {
   const m = e.data;
   switch (m.t) {
     case "init":
-      init(m.spec, m.field, m.phys).catch((err: unknown) => post({ t: "error", message: String(err) }));
+      init(m.spec, m.mapDoc, m.field, m.phys).catch((err: unknown) => post({ t: "error", message: String(err) }));
       break;
     case "run":
       running = m.on;

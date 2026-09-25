@@ -32,6 +32,7 @@
  */
 import { SHARED_MEMORY } from "./shared";
 import { Sim } from "./sim";
+import { loadMap, RANDOM_MAP_ID, type MapData } from "./maps";
 import type { LevelSpec, UnitKind } from "./levels";
 import type { ModId } from "./mods";
 import type { RelicId } from "./relics";
@@ -55,6 +56,8 @@ export type ToWorker =
   | {
       t: "init";
       spec: LevelSpec;
+      /** the board a RANDOM_MAP_ID level plays, drawn on the page (maps.ts setGeneratedMap) */
+      mapDoc: MapData | null;
       /** the sim's end of the line to the route solver (fieldport.ts), or
        *  null to solve in slices */
       field: MessagePort | null;
@@ -187,7 +190,8 @@ export class WorkerHost implements SimHost {
       const transfer: Transferable[] = [];
       if (field) transfer.push(field);
       if (phys) transfer.push(phys);
-      worker.postMessage({ t: "init", spec: level, field, phys } satisfies ToWorker, transfer);
+      const mapDoc = level.map === RANDOM_MAP_ID ? loadMap(RANDOM_MAP_ID) : null;
+      worker.postMessage({ t: "init", spec: level, mapDoc, field, phys } satisfies ToWorker, transfer);
     });
   }
 

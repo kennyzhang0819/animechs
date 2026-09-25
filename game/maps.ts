@@ -1,4 +1,5 @@
-import { BASE, COLS, NCELLS, ROWS } from "./constants";
+import { BASE, COLS, NCELLS, RANDOM_MAP_ID, ROWS } from "./constants";
+export { RANDOM_MAP_ID };
 
 /**
  * The grid width every map was authored at before the board grew. Documents
@@ -172,6 +173,13 @@ export const OFFICIAL_MAP_IDS: readonly string[] = [
  */
 export const OFFICIAL_MAPS: MapData[] = [];
 
+// one at a time, set by the run that generated it — on both threads, since
+// the worker gets the document in its init message rather than fetching it
+let generated: MapData | null = null;
+export function setGeneratedMap(doc: MapData | null): void {
+  generated = doc;
+}
+
 /** fetch one official map document, bypassing the HTTP cache */
 async function fetchMap(id: string): Promise<MapData> {
   const res = await fetch(`/maps/${id}.json`, { cache: "no-store" });
@@ -201,6 +209,7 @@ export async function loadOfficialMaps(): Promise<MapData[]> {
  * stale map beats no map at all.
  */
 export async function refreshMap(id: string): Promise<MapData | null> {
+  if (id === RANDOM_MAP_ID) return generated;
   try {
     const doc = await fetchMap(id);
     const at = OFFICIAL_MAPS.findIndex((m) => m.id === id);
@@ -836,6 +845,7 @@ export function terrainFromMap(m: MapData): Terrain {
 // ---------- storage ----------
 
 export function loadMap(id: string): MapData | null {
+  if (id === RANDOM_MAP_ID) return generated;
   return OFFICIAL_MAPS.find((m) => m.id === id) ?? null;
 }
 

@@ -6,9 +6,12 @@ import {
   OFFICIAL_MAP_IDS,
   OFFICIAL_MAPS,
   paintThumb,
+  RANDOM_MAP_ID,
   refreshMap,
+  setGeneratedMap,
   SPAWN_STYLE,
 } from "./maps";
+import { generateRandomMap, rollMapSeed } from "./mapgen";
 import { garrisonsFor, postsFor, roadAt, roadsFor, siegeFor } from "./missions";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { towerBaseIcon, towerGhostIcon } from "./towerIcons";
@@ -2317,6 +2320,17 @@ export class Game {
     // this spec already points at, so the sim built below picks it up
     await begin("map");
     const mapId = spec.map ?? OFFICIAL_MAP_IDS[0];
+    // a random map is drawn here, once, and handed to the worker with the
+    // spec (workerhost.ts) — the two threads must play the same board
+    if (mapId === RANDOM_MAP_ID) {
+      const seed = spec.mapSeed ?? rollMapSeed();
+      const t0 = performance.now();
+      const gen = generateRandomMap(seed);
+      setGeneratedMap(gen.doc);
+      console.info(
+        `random map "${gen.doc.name}" from seed ${gen.seed.toString(16)} in ${Math.round(performance.now() - t0)}ms (${gen.tries} ${gen.tries === 1 ? "try" : "tries"})`,
+      );
+    }
     await Promise.all([
       OFFICIAL_MAPS.length === 0 ? loadOfficialMaps() : refreshMap(mapId),
       loadLevelDocs(),

@@ -180,7 +180,7 @@ const transpileJob = stale
       "tsc",
       // the entry points; everything else the checks touch is pulled in
       // behind these through their own imports
-      "game/sim.ts", "game/ladder.ts", "game/track.ts", "game/foundryArt.ts", "game/atlas.ts",
+      "game/sim.ts", "game/ladder.ts", "game/track.ts", "game/foundryArt.ts", "game/atlas.ts", "game/mapgen.ts",
       "--outDir", DIST, "--module", "commonjs", "--target", "es2022",
       "--moduleResolution", "node", "--esModuleInterop", "--skipLibCheck",
       // the transpile is for RUNNING the sim, not for judging it: the
@@ -446,6 +446,24 @@ for (const id of M.OFFICIAL_MAP_IDS) {
   }
 }
 report("docs", docProblems, `${docCount} documents`);
+
+// ---------- mapgen: a random board draws, passes its own checks, and is the swarm world's ----------
+
+// The map a run plays is generated at start (game/mapgen.ts); one fixed
+// seed here stands in for it, so the worlds check below constructs the
+// swarm world on a real board and the generator's own rules are exercised
+const MG = R("mapgen.js");
+const genProblems = [];
+let genDetail = "";
+try {
+  const t0 = Date.now();
+  const gen = MG.generateRandomMap(0x5eed);
+  M.setGeneratedMap(gen.doc);
+  genDetail = `"${gen.doc.name}" from seed ${gen.seed.toString(16)} in ${Date.now() - t0}ms, ${gen.tries} ${gen.tries === 1 ? "try" : "tries"}`;
+} catch (e) {
+  genProblems.push(e.message.split("\n")[0]);
+}
+report("mapgen", genProblems, genDetail);
 
 // ---------- worlds: every PLAYABLE one boots, and can be finished ----------
 

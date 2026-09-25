@@ -10,7 +10,7 @@ import {
 } from "react";
 import { levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
 import { familyByKey, WORLDS, type FamilyKey } from "@/game/levels";
-import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
+import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS, RANDOM_MAP_ID } from "@/game/maps";
 import { modDef } from "@/game/mods";
 import { relicDef } from "@/game/relics";
 import { mutationById } from "@/game/mutation";
@@ -127,6 +127,8 @@ function MapThumb({ mapId }: { mapId: string }) {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     let alive = true;
+    // a random map has no picture until a run draws one; never refetch for it
+    if (mapId === RANDOM_MAP_ID) return;
     const map = loadMap(mapId);
     if (map) {
       if (ref.current) drawThumb(map, ref.current);
@@ -139,6 +141,19 @@ function MapThumb({ mapId }: { mapId: string }) {
       alive = false;
     };
   }, [mapId, tick]);
+  if (mapId === RANDOM_MAP_ID)
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[#0b0b0d] text-[#FFD37F]">
+        <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
+          <circle cx="8" cy="8" r="1.7" fill="currentColor" />
+          <circle cx="16" cy="8" r="1.7" fill="currentColor" />
+          <circle cx="12" cy="12" r="1.7" fill="currentColor" />
+          <circle cx="8" cy="16" r="1.7" fill="currentColor" />
+          <circle cx="16" cy="16" r="1.7" fill="currentColor" />
+        </svg>
+      </div>
+    );
   return <canvas ref={ref} className="h-full w-full object-cover [image-rendering:pixelated]" />;
 }
 

@@ -3402,6 +3402,14 @@ export class Sim {
     return missionTarget(this.level.mission, this.scriptWaves);
   }
 
+  /** the UNIT_KINDS index of the body the hold's last wave brings, or null */
+  private finaleKind(): number | null {
+    const m = this.level.mission;
+    if (m.kind !== "hold" || !m.finale) return null;
+    const at = UNIT_KINDS.indexOf(m.finale);
+    return at >= 0 ? at : null;
+  }
+
   /**
    * DOES THE SCRIPT GO ROUND AGAIN when the cursor reaches its end? — the
    * one question loadStep asks before it turns the tide.
@@ -4877,6 +4885,7 @@ export class Sim {
     // totalWaves (see scriptWaves) — a hold with no number of its own is
     // measured against this one
     this.scriptWaves = this.totalWaves;
+    if (this.finaleKind() !== null && this.holdTarget() > 0) this.totalEnemies++;
     this.stepIdx = 0;
     this.live.length = 0;
     this.wavesStarted = 0;
@@ -4970,6 +4979,14 @@ export class Sim {
       let total = 0;
       for (const e of entries) total += e.total;
       this.wavesStarted++;
+      // the hold's finale rides its last wave — the one body waveGroups
+      // strips from every document (levels.ts OBJECTIVE_KINDS), put back
+      // here by the mission and nowhere else
+      const finale = this.finaleKind();
+      if (finale !== null && this.wavesStarted === this.holdTarget()) {
+        entries.push({ kind: finale, left: 1, total: 1 });
+        total++;
+      }
       // ...and staging it pays NOTHING. It used to pay a bonus here; every
       // scrap comes off the swarm now (economy.ts)
       this.live.push({ wave: this.wavesStarted, entries, rate: waveSpawnRate(total), acc: 0 });

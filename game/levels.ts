@@ -1,4 +1,4 @@
-import { CELL, HP0, PAL, TEAM_CRUX_RGB, UNIT_SPEED, UR, type MoveLayer } from "./constants";
+import { CELL, HP0, PAL, RANDOM_MAP_ID, TEAM_CRUX_RGB, UNIT_SPEED, UR, type MoveLayer } from "./constants";
 import { ANIMAL_ART } from "./animalFlag";
 import { explain, type RGB, type SaveResult } from "./types";
 import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
@@ -3813,6 +3813,8 @@ export interface HoldMission {
   kind: "hold";
   /** how many waves must be cleared; unset is the script's own count */
   waves?: number;
+  /** an objective body the last wave brings with it — the Sovereign on wave 50 (Sim.stageOne) */
+  finale?: UnitKind;
 }
 
 /** how many NON-EMPTY waves a script holds — the number a hold defaults to,
@@ -4114,9 +4116,10 @@ export function missionText(spec: LevelSpec): { title: string; detail: string } 
         `${m.leaks === 1 ? "One may reach the far side" : `${m.leaks} may reach the far side`}; ` +
         `the next one that does ends the run. The core must stand.`,
     };
+  const finale = m.finale ? ` The last of them brings the ${UNIT_NAMES[m.finale]}.` : "";
   return {
     title: `Hold the line — ${holdWaves(spec)} waves`,
-    detail: "Break that many waves, with the core standing. What comes after them does not stop.",
+    detail: `Break that many waves, with the core standing.${finale}`,
   };
 }
 
@@ -4363,6 +4366,8 @@ export interface LevelSpec {
   name: string;
   /** official map id this level plays on; the first official map when unset */
   map?: string;
+  /** the seed a RANDOM_MAP_ID map is generated from (mapgen.ts); set per run */
+  mapSeed?: number;
   /**
    * WHAT THIS MAP ASKS OF A RUN — the mission (see Mission). Every map is
    * its own assignment, the way a co-op map is: hold the line for every
@@ -4491,7 +4496,7 @@ export interface LevelDoc {
  * walk and die on the end a mission comes in a little past twenty minutes, which
  * is the sitting one is meant to be.
  */
-export const WAVE_GAP_DEFAULT = 20.5;
+export const WAVE_GAP_DEFAULT = 21;
 
 /** The OPENING gap only, in seconds: wave 1 is not made to wait a full
  *  cadence, because the first thing a run does is build and there is
@@ -4557,12 +4562,17 @@ export function levelDocOf(_worldId?: string): LevelDoc {
  * reason to know what a wave asks: debutViolations() in ladder.ts prints
  * the multiplier so the choice is deliberate.
  */
+/** every swarm map's assignment: the whole script, and the Sovereign on its last wave */
+const SWARM_HOLD: HoldMission = { kind: "hold", finale: "boss" };
+
+export const SWARM_WORLD_ID = "swarm";
+
 export const WORLDS: LevelSpec[] = [
   {
     id: "1",
     name: "Confluence",
     map: "confluence",
-    mission: { kind: "hold" },
+    mission: SWARM_HOLD,
     waveGap: WAVE_GAP_DEFAULT,
     // ================= HOW TO AUTHOR A WAVE ========================
     //
@@ -4595,7 +4605,7 @@ export const WORLDS: LevelSpec[] = [
     // EVERY RUNG PLAYS THIS WHOLE LIST. There is one run per map and ten
     // difficulties to play it at, and a rung only scales the counts
     // (COUNT_SCALE in ladder.ts) — no wave is ever cut. THE SCRIPT IS
-    // FIFTY WAVES, 24 seconds apart on a clock nothing about the board
+    // FIFTY WAVES, 24.5 seconds apart on a clock nothing about the board
     // can move (Sim.waveStartTime), each stronger than the last: a few
     // dozen runts on wave 1, the first heavies by wave 10, waves in the
     // thousands by the end. The waves overlap — the gap is shorter than a
@@ -4647,7 +4657,7 @@ export const WORLDS: LevelSpec[] = [
     name: "Maelstrom",
     map: "maelstrom",
     // THE NAVAL FRONT: hold the eight, tanks off the sea where the die deals them
-    mission: { kind: "hold" },
+    mission: SWARM_HOLD,
     waveGap: WAVE_GAP_DEFAULT,
     script: [],
   },
@@ -4659,7 +4669,7 @@ export const WORLDS: LevelSpec[] = [
     // its bodies wade in heavier than they spawned. It plays the campaign's
     // eight like every map; its doors decide which families the die may
     // deal it.
-    mission: { kind: "hold" },
+    mission: SWARM_HOLD,
     waveGap: WAVE_GAP_DEFAULT,
     script: [],
   },
@@ -4668,7 +4678,7 @@ export const WORLDS: LevelSpec[] = [
     name: "Shoals",
     map: "shoals",
     // THE ARCHIPELAGO: two thirds of the board is sea, every road between the sand islands is a bar of shallow the swarm wades, the hulls come from the north and south seas, the core on the west island behind one causeway
-    mission: { kind: "hold" },
+    mission: SWARM_HOLD,
     waveGap: WAVE_GAP_DEFAULT,
     script: [],
   },
@@ -4934,6 +4944,16 @@ export const WORLDS: LevelSpec[] = [
     waveGap: WAVE_GAP_DEFAULT,
     script: [],
   },
+  // THE SWARM WORLD: the one regular mode plays. Its map is drawn at start
+  // from a seed (mapgen.ts) and its assignment is every other swarm map's
+  {
+    id: SWARM_WORLD_ID,
+    name: "Swarm",
+    map: RANDOM_MAP_ID,
+    mission: SWARM_HOLD,
+    waveGap: WAVE_GAP_DEFAULT,
+    script: [],
+  },
 ];
 
 /**
@@ -4968,25 +4988,21 @@ export function worldById(id: string): LevelSpec | null {
  * level 8" (worldLock, progress.ts) and it is printed as a promise; this
  * is the map not being in the game today.
  *
- * IT IS A LIST OF WHAT IS IN RATHER THAN OF WHAT IS OUT, and it was the
- * other way round until the shelf got longer than the game. Seventeen
- * boards are drawn and THREE are in the game: the three that carry a
- * built mission — Coldline's intercept, Thornway's escort and Crater's
- * siege (docs/mission-design.md). Everything else is terrain with a hold
- * mission on it and no reason yet to be played, so naming the fourteen
- * would be writing the catalog down twice and forgetting one of them the
- * next time a board lands.
- *
- * CONFLUENCE CAME OFF THE LIST with the rest of the holds. It is still the
- * board the campaign's numbers are tuned against, still world 1, still
- * what the menu backdrop is drawn from, and still constructed by
- * scripts/check.mjs — what it is not is a MISSION. Its assignment is
- * "clear the script", and the script does not run out any more (see
- * Mission and the tide): so it is a map that can only be played until the
- * player gets bored, offered in a picker that now names each row after the
- * thing it asks for. It comes back the day it is given one.
+ * IT IS A LIST OF WHAT IS IN RATHER THAN OF WHAT IS OUT, and today that is
+ * the swarm world alone: a fresh board every run, the whole script, the
+ * Sovereign on wave 50. The authored swarm maps are the bank
+ * (BANK_WORLD_IDS), and the mission boards — Coldline's intercept,
+ * Thornway's escort, Sear's siege — are shelved with their missions
+ * intact until missions come back.
  */
-export const PLAYABLE_WORLD_IDS: readonly string[] = ["10", "11", "12", "13"];
+export const PLAYABLE_WORLD_IDS: readonly string[] = [SWARM_WORLD_ID];
+
+/**
+ * THE BANK: the authored swarm maps, playable in custom mode by name and
+ * never rolled — a regular run always draws a fresh board (see the swarm
+ * world). The mission maps stay shelved with their missions intact.
+ */
+export const BANK_WORLD_IDS: readonly string[] = ["1", "2", "3", "7"];
 
 /** is this world off the menu? — everything the list above does not name */
 export const worldHidden = (id: string): boolean => !PLAYABLE_WORLD_IDS.includes(id);
@@ -4998,6 +5014,9 @@ export const worldHidden = (id: string): boolean => !PLAYABLE_WORLD_IDS.includes
  * copy here would be a second world that never gets its script.
  */
 export const VISIBLE_WORLDS: LevelSpec[] = WORLDS.filter((w) => !worldHidden(w.id));
+export const BANK_WORLDS: LevelSpec[] = WORLDS.filter((w) => BANK_WORLD_IDS.includes(w.id));
+/** the world every regular run plays: a map generated on start (docs/random-maps.md) */
+export const SWARM_WORLD: LevelSpec = WORLDS.find((w) => w.id === SWARM_WORLD_ID)!;
 
 // ---------- level documents ----------
 

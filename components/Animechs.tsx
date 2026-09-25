@@ -49,7 +49,8 @@ import {
   waveGroups,
   WORLD,
   worldById,
-  VISIBLE_WORLDS,
+  BANK_WORLDS,
+  SWARM_WORLD,
   WORM_NAME,
   type FamilyKey,
   type LevelSpec,
@@ -77,6 +78,7 @@ import {
   tierXpBonus,
 } from "@/game/ladder";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
+import { rollMapSeed } from "@/game/mapgen";
 import {
   bestClearOn,
   effectiveLevel,
@@ -795,7 +797,7 @@ function MapPicker({
       <PickRow selected={pick == null} focused={focus === null} onPick={() => setFocus(null)}>
         <span className={`${rowText} text-[#EDEDEF]`}>Random</span>
       </PickRow>
-      {VISIBLE_WORLDS.map((w) => (
+      {BANK_WORLDS.map((w) => (
         <PickRow
           key={w.id}
           selected={pick === w.id}
@@ -831,7 +833,7 @@ function MapPicker({
         <div className="font-display text-[17px] font-bold uppercase tracking-widest text-[#EDEDEF]">
           Random
         </div>
-        <p className="text-[14px] text-[#A6A6AF]">Any mission, picked on start.</p>
+        <p className="text-[14px] text-[#A6A6AF]">A new map, drawn on start.</p>
         <SelectButton onClick={() => onPick(null)} />
       </>
     );
@@ -2684,14 +2686,12 @@ export default function Animechs() {
   const startRun = (): void => {
     const p = progress ?? loadProgress();
     const custom = mode === "custom";
-    // the hat Random draws from: the campaign's own maps, or every map
-    // there is when the run pays nothing for reaching one early
-    const hat = custom ? VISIBLE_WORLDS : VISIBLE_WORLDS.filter((w) => worldLock(p, w.id) == null);
-    // REGULAR NEVER READS THE MAP MACRO — its map is rolled, always. In
-    // custom a remembered pick is taken as it stands, locks and all
+    // REGULAR NEVER READS THE MAP MACRO — its board is drawn fresh, always
+    // (the swarm world). In custom a remembered bank pick is taken as it
+    // stands, locks and all; Random there is the same fresh board
     const picked = custom ? pickedWorld : null;
     const random = picked == null;
-    const w = picked ?? hat[Math.floor(Math.random() * hat.length)] ?? WORLD;
+    const w: LevelSpec = picked ?? { ...SWARM_WORLD, mapSeed: rollMapSeed() };
     const rules = tierMutationCount(tier);
     const named = custom ? cleanMutations(mutators) : [];
     const roll =
