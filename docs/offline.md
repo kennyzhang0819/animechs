@@ -73,6 +73,40 @@ the app on the iPad and reopen it.
 `next.config.ts`, minus the paths the build itself writes (`public/foundry/`,
 `public/icon-*.png`) — watching those would rebuild forever.
 
+## The debug doors on a machine with no keyboard
+
+Every door into the debug switches is a keyboard chord — backquote for the console
+(`components/Console.tsx`), `Ctrl+Shift+S` for the sandbox, `Ctrl+Shift+M` for the admin
+page — so on the tablet the offline build is *for*, there was no door at all.
+
+**Ten taps on the Settings heading opens the console**, from the front of house or from the
+pause overlay (both draw the same `settingsBody`). Taps more than 1.5s apart start the count
+over. It is in every build, for the same reason the console is: it opens the console and
+nothing else, and the console was already there on backquote. From there `sandbox`, `time`,
+`admin`, `profile`, `routes` and the rest are typed, which is what the chords reached.
+
+iOS raises its keyboard for a focus inside a gesture and not for the one the console does on
+open, so the prompt row is a tap target of its own — tap the `>` line if the keyboard does
+not come up by itself.
+
+### The admin page needs the build to carry it, and cannot save
+
+`ADMIN_ENABLED` is compiled in at build time (`game/env.ts`) and `build:static` never sets
+it, so in the shipping bundle `/admin` is a refusal screen. **`npm run ipad` sets
+`NEXT_PUBLIC_ADMIN=1`**, so the tablet build has the editors, the `window.__animechs` and
+`__ladder` handles and the dev unlock; `npm run ipad --no-admin` builds what ships instead.
+Steam's bundle comes from `build:static`/`desktop:pack` on its own and is untouched.
+
+**The editors open there but cannot write.** `build-static.sh` deletes `app/api` from the
+stage — those POST handlers make `output: "export"` fail outright — so every Save is a 404.
+It fails loudly rather than silently, and the Save tab still works because it writes
+localStorage rather than the repo. Map, level, balance, rarity and hitbox edits are a
+desktop job.
+
+One trap: the service worker answers **any** navigation with the app shell (`gen-sw.mjs`),
+so on the installed home-screen app a reload while on `/admin` lands back on the game. The
+console's `admin` is a client-side route change and is unaffected.
+
 ## THE ORIGIN HAS TO BE SECURE, and a LAN address is not
 
 **This is the one that bites.** A service worker is secure-context only, and only two things

@@ -59,7 +59,7 @@ import {
 import { KETTLE_TIERS, kettle, kettleGeom } from "./kettleArt";
 import { BASTION_TIER, BRANDER_TIER, GOAD_TIER, bastionMech, branderMech, goadMech } from "./pylonArt";
 import { FABRICATOR_TIERS, fabricatorMech } from "./fabricatorArt";
-import { KING_TIER, king, kingGeom } from "./kingArt";
+import { EMBER, GILT, KING_TIER, PLUME, king, kingGeom } from "./kingArt";
 
 /**
  * THE SHEET IS PACKED AT LOAD. Nothing in this file names a pixel
@@ -818,9 +818,9 @@ export const UV_BASE = flat("base", 160);
  * exactly that ratio.
  *
  * The `-back` sprite is the larger of each pair, so drawn into the same
- * box it sticks out as a rim. `bullet` is drawn here (boltBullet), a
- * capsule with a nose; shell and missile are still Mindustry's lozenges
- * on disk. All face +x, like the other rotated art.
+ * box it sticks out as a rim. All three pairs are drawn here (boltBullet):
+ * one capsule with a nose, at 52 and at 36, the missile with fins on its
+ * back. All face +x, like the other rotated art.
  */
 export const UV_BULLET = sprite("bullet", 52, 52);
 export const UV_BULLET_BACK = sprite("bullet-back", 52, 52);
@@ -844,11 +844,9 @@ export const UV_CANISTER_BACK = sprite("canister-back", 36, 36);
  * THE SWARM'S OWN BULLET SPRITES, on the same rule — white, source size,
  * facing +x, the `-back` beside its front:
  *
- *   - circle-bullet (48): livewire5's emp round;
- *   - mine-bullet (64): the livewire1's torpedo;
- *   - missile-large (56): livewire3's plasma missile;
- *   - boss-missile (39x60): the boss's missile UNIT, which is drawn as
- *     itself — coloured art with Pal.darkOutline, so it takes the outline
+ *   - circle-bullet (48): livewire5's emp round, a disc (discRound);
+ *   - boss-missile (39x60): the boss's missile UNIT, drawn as itself in
+ *     the Sovereign's materials (bossMissileArt), so it takes the outline
  *     pass a unit sprite does and is pushed untinted;
  *   - laser (4x48) and laser-end (72): what Drawf.laser draws a sap beam
  *     with — the strip is the beam's cross-section (4 along, 48 across,
@@ -857,10 +855,6 @@ export const UV_CANISTER_BACK = sprite("canister-back", 36, 36);
  */
 export const UV_CIRCLE_BULLET = sprite("circle-bullet", 48, 48);
 export const UV_CIRCLE_BULLET_BACK = sprite("circle-bullet-back", 48, 48);
-export const UV_MINE_BULLET = sprite("mine-bullet", 64, 64);
-export const UV_MINE_BULLET_BACK = sprite("mine-bullet-back", 64, 64);
-export const UV_MISSILE_LARGE = sprite("missile-large", 56, 56);
-export const UV_MISSILE_LARGE_BACK = sprite("missile-large-back", 56, 56);
 export const UV_BOSS_MISSILE = sprite("boss-missile", 64, [39, 60]);
 export const UV_LASER_END = flat("laser-end", 72);
 export const UV_LASER = flat("laser", 4, 48);
@@ -2497,24 +2491,11 @@ const SPRITES = {
   railhead: "/stock/sprites/blocks/turrets/foreshadow.png",
   // the walls, 1x1 block art at Mindustry's 32px
   // ...and the 2x2 large walls, 64px block art
-  missile: "/stock/sprites/effects/missile.png",
-  missileBack: "/stock/sprites/effects/missile-back.png",
   tetherLaser: "/stock/sprites/effects/parallax-laser.png",
   tetherLaserEnd: "/stock/sprites/effects/parallax-laser-end.png",
-  shell: "/stock/sprites/effects/shell.png",
-  shellBack: "/stock/sprites/effects/shell-back.png",
   base: "/stock/sprites/blocks/storage/core-nucleus.png",
   baseTeam: "/stock/sprites/blocks/storage/core-nucleus-team.png",
-  // the swarm's own bullet sprites beyond the turrets' three pairs (see
-  // UV_CIRCLE_BULLET): the emp round, the livewire1 torpedo, livewire3's plasma
-  // missile, the boss's missile unit, and the sap beam's line and cap
-  circleBullet: "/stock/sprites/effects/circle-bullet.png",
-  circleBulletBack: "/stock/sprites/effects/circle-bullet-back.png",
-  mineBullet: "/stock/sprites/effects/mine-bullet.png",
-  mineBulletBack: "/stock/sprites/effects/mine-bullet-back.png",
-  missileLarge: "/stock/sprites/effects/missile-large.png",
-  missileLargeBack: "/stock/sprites/effects/missile-large-back.png",
-  bossMissile: "/stock/sprites/units/weapons/disrupt-missile.png",
+  // the sap beam's line and cap (see UV_LASER)
   laser: "/stock/sprites/effects/laser.png",
   laserEnd: "/stock/sprites/effects/laser-end.png",
   // THE TEAM CELLS: every unit's `-cell` region, the part of its hull
@@ -2776,14 +2757,16 @@ function liquidTurret(
  * block's own silhouette, and outlining it would draw a black ring in the
  * middle of the sprite.
  */
-// the bullet pair: a capsule, round nose up and flat tail, the back a
-// rim wider and longer aft. See docs/bullet-concepts.html for the choice
-function boltBullet(back: boolean): HTMLCanvasElement {
-  const S = 52;
+// the bullet pairs: a capsule, round nose up and flat tail, the back a
+// rim wider and longer aft, drawn at 52 for `bullet` and scaled to 36 for
+// `shell` and `missile`; the missile's back grows two fins. See
+// docs/bullet-concepts.html for the choice
+function boltBullet(back: boolean, S = 52, fins = false): HTMLCanvasElement {
   const cv = document.createElement("canvas");
   cv.width = cv.height = S;
   const c = cv.getContext("2d");
   if (!c) throw new Error("2d context unavailable for the bullet round");
+  c.scale(S / 52, S / 52);
   const b = back ? 2.5 : 0;
   const x0 = 16 - b, x1 = 36 + b, y0 = 8 - b, y1 = 42 + b + (back ? 3 : 0);
   const rn = 10 + b, rt = 4 + b;
@@ -2797,6 +2780,64 @@ function boltBullet(back: boolean): HTMLCanvasElement {
   c.arcTo(x0, y1, x0, y1 - rt, rt);
   c.closePath();
   c.fill();
+  if (fins && back) {
+    c.beginPath();
+    c.moveTo(x0, y1 - 14); c.lineTo(x0 - 8, y1 + 1); c.lineTo(x0, y1 + 1);
+    c.moveTo(x1, y1 - 14); c.lineTo(x1 + 8, y1 + 1); c.lineTo(x1, y1 + 1);
+    c.closePath();
+    c.fill();
+  }
+  return cv;
+}
+
+// livewire5's emp round: a disc, the back half again as wide
+function discRound(back: boolean): HTMLCanvasElement {
+  const S = 48;
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = S;
+  const c = cv.getContext("2d");
+  if (!c) throw new Error("2d context unavailable for the emp round");
+  c.fillStyle = "#ffffff";
+  c.beginPath();
+  c.arc(24, 24, back ? 22 : 15, 0, Math.PI * 2);
+  c.fill();
+  return cv;
+}
+
+// the boss's missile unit, 39x60 nose up in the Sovereign's materials
+// (kingArt.ts): plume body, gilt fins, ember nose. Coloured, not tinted
+function bossMissileArt(): HTMLCanvasElement {
+  const cv = document.createElement("canvas");
+  cv.width = 39;
+  cv.height = 60;
+  const c = cv.getContext("2d");
+  if (!c) throw new Error("2d context unavailable for the boss missile");
+  const x0 = 11, x1 = 28, y0 = 4, y1 = 52, rn = 8.5, rt = 3;
+  c.fillStyle = GILT[1];
+  c.beginPath();
+  c.moveTo(x0, 36); c.lineTo(4, 56); c.lineTo(x0, 56);
+  c.moveTo(x1, 36); c.lineTo(35, 56); c.lineTo(x1, 56);
+  c.closePath();
+  c.fill();
+  c.beginPath();
+  c.moveTo(x0, y0 + rn);
+  c.arc(19.5, y0 + rn, rn, Math.PI, 0);
+  c.lineTo(x1, y1 - rt);
+  c.arcTo(x1, y1, x1 - rt, y1, rt);
+  c.lineTo(x0 + rt, y1);
+  c.arcTo(x0, y1, x0, y1 - rt, rt);
+  c.closePath();
+  c.fillStyle = PLUME[1];
+  c.fill();
+  c.save();
+  c.clip();
+  c.fillStyle = PLUME[0];
+  c.fillRect(17, 18, 5, 34);
+  c.fillStyle = EMBER[1];
+  c.fillRect(0, 0, 39, 15);
+  c.fillStyle = EMBER[0];
+  c.fillRect(0, 14, 39, 4);
+  c.restore();
   return cv;
 }
 
@@ -3723,20 +3764,16 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // does
   draw(UV_BULLET, antialiased(boltBullet(false)));
   draw(UV_BULLET_BACK, antialiased(boltBullet(true)));
-  draw(UV_SHELL, antialiased(img.shell));
-  draw(UV_SHELL_BACK, antialiased(img.shellBack));
-  draw(UV_MISSILE, antialiased(img.missile));
-  draw(UV_MISSILE_BACK, antialiased(img.missileBack));
+  draw(UV_SHELL, antialiased(boltBullet(false, 36)));
+  draw(UV_SHELL_BACK, antialiased(boltBullet(true, 36)));
+  draw(UV_MISSILE, antialiased(boltBullet(false, 36, true)));
+  draw(UV_MISSILE_BACK, antialiased(boltBullet(true, 36, true)));
   draw(UV_CANISTER, antialiased(canisterBullet(false)));
   draw(UV_CANISTER_BACK, antialiased(canisterBullet(true)));
-  draw(UV_CIRCLE_BULLET, antialiased(img.circleBullet));
-  draw(UV_CIRCLE_BULLET_BACK, antialiased(img.circleBulletBack));
-  draw(UV_MINE_BULLET, antialiased(img.mineBullet));
-  draw(UV_MINE_BULLET_BACK, antialiased(img.mineBulletBack));
-  draw(UV_MISSILE_LARGE, antialiased(img.missileLarge));
-  draw(UV_MISSILE_LARGE_BACK, antialiased(img.missileLargeBack));
+  draw(UV_CIRCLE_BULLET, antialiased(discRound(false)));
+  draw(UV_CIRCLE_BULLET_BACK, antialiased(discRound(true)));
   // the boss missile is a unit: outlined like one
-  draw(UV_BOSS_MISSILE, antialiased(outlined(img.bossMissile, "#2d2f39", UNIT_OUTLINE_R)));
+  draw(UV_BOSS_MISSILE, antialiased(outlined(bossMissileArt(), "#2d2f39", UNIT_OUTLINE_R)));
   // the sap beam's cap, unrotated — a disc — and its 4x48 cross-section
   // strip exactly on its rect
   draw(UV_LASER_END, antialiased(img.laserEnd));

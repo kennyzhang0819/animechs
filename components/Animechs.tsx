@@ -1840,6 +1840,23 @@ export default function Animechs() {
   const router = useRouter();
   const pathname = usePathname();
   /**
+   * THE TOUCH DOOR TO THE CONSOLE: ten taps on the Settings heading. Every
+   * other way in is a keyboard chord (backquote, Ctrl+Shift+S, Ctrl+Shift+M)
+   * and a tablet has none of them, so on the machine the offline build is
+   * FOR there was no door at all. It is in every build for the same reason
+   * the console is (Console.tsx) — it opens the console and nothing else.
+   */
+  const settingsTaps = useRef(0);
+  const settingsTapAt = useRef(0);
+  const tapSettingsHeading = useCallback(() => {
+    const now = Date.now();
+    settingsTaps.current = now - settingsTapAt.current < 1500 ? settingsTaps.current + 1 : 1;
+    settingsTapAt.current = now;
+    if (settingsTaps.current < 10) return;
+    settingsTaps.current = 0;
+    window.dispatchEvent(new Event("animechs:console"));
+  }, []);
+  /**
    * WHERE IN THE FRONT-OF-HOUSE THE PLAYER IS. The menu screen is three
    * panels, not one: a title card, settings, and the DEPLOY screen behind
    * Start — the mode, the macros that mode offers, and the button that
@@ -2996,7 +3013,9 @@ export default function Animechs() {
    */
   const settingsBody = (inGame: boolean) => (
     <>
-      <h2 className="ms-heading text-[17px]">Settings</h2>
+      <h2 className="ms-heading select-none text-[17px]" onClick={tapSettingsHeading}>
+        Settings
+      </h2>
       {settingsPanel(inGame)}
     </>
   );
@@ -3371,6 +3390,26 @@ export default function Animechs() {
             quit. Last, outside the zoom wrapper and over everything: a
             question stands in front of whatever asked it */}
         {confirmDialog}
+        {/* the console stands on the front of house too, or the ten-tap
+            door on this screen's own Settings heading would open nothing.
+            The wrapper is fixed because this screen is the scroll
+            container, and a console that scrolls away is not a console */}
+        <div className="fixed inset-x-0 top-0 z-50">
+          <GameConsole
+            host={{
+              game: () => gameRef.current,
+              hud,
+              sandbox: admin,
+              setSandbox: setAdmin,
+              admin: () => router.push(pathname.startsWith("/admin") ? "/" : "/admin"),
+              fps: showFps,
+              setFps: (on) => {
+                setShowFps(on);
+                saveShowFps(on);
+              },
+            }}
+          />
+        </div>
       </div>
     );
   }

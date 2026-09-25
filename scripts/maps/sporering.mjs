@@ -71,8 +71,9 @@ export const spec = {
     { x: 228, y: 27, r: 22 }, // 16
     { x: 234, y: 189, r: 16 }, // 17
     { x: 26, y: 72, r: 16 }, // 18
-    { x: 84, y: 24, r: 17 }, // 19
-    { x: 126, y: 126, r: 10, wobble: 0.2 }, // 20 the core's own ground
+    { x: 78, y: 24, r: 17 }, // 19
+    { x: 239, y: 81, r: 20 }, // 20
+    { x: 126, y: 126, r: 10, wobble: 0.2 }, // 21 the core's own ground
   ],
   core: { x: 126, y: 126, r: 10 },
   spawns: [],
@@ -80,11 +81,11 @@ export const spec = {
   links: [
     { rooms: [14, 9], width: [17, 23], layer: "water" },
     { rooms: [10, 1], width: [8, 14] },
-    { rooms: [1, 20], width: [8, 14] },
+    { rooms: [1, 21], width: [8, 14] },
     { rooms: [11, 2], width: [8, 14] },
-    { rooms: [2, 20], width: [8, 14] },
+    { rooms: [2, 21], width: [8, 14] },
     { rooms: [12, 3], width: [8, 14] },
-    { rooms: [3, 20], width: [8, 14] },
+    { rooms: [3, 21], width: [8, 14] },
     { rooms: [13, 4], width: [8, 14] },
     { rooms: [1, 4], width: [7, 10] },
     { rooms: [2, 5], width: [7, 10] },
@@ -97,7 +98,6 @@ export const spec = {
     { rooms: [9, 0], width: [8, 12], layer: "water" },
     { rooms: [6, 9], width: [8, 12], layer: "water" },
     { rooms: [7, 16], width: [8, 12] },
-    { rooms: [12, 16], width: [8, 12] },
     { rooms: [15, 6], width: [8, 12], layer: "water" },
   ],
   chokes: [{ x: 128, y: 100, w: 10, reach: 7 }, { x: 128, y: 156, w: 10, reach: 7 }, { x: 100, y: 128, w: 10, reach: 7 }, { x: 156, y: 126, w: 10, reach: 8 }],

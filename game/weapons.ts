@@ -97,9 +97,7 @@ export type ShotRegion =
   | "bullet"
   | "shell"
   | "missile"
-  | "missile-large"
   | "circle-bullet"
-  | "mine-bullet"
   | "boss-missile"
   | "orb"
   // the Grapnels' round and nothing else: five arms of the sprite laid

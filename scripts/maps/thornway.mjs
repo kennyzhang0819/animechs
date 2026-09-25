@@ -82,7 +82,7 @@ export const spec = {
   ],
   chokes: [],
   funnel: { x: 44, y: 220, r: 8 },
-  holes: 2, lumps: 3, ruins: 2,
+  holes: 4, lumps: 10, ruins: 2,
 };
 
 run(spec);

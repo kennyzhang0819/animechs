@@ -15,6 +15,7 @@
  *   node scripts/push-ipad.mjs                build, serve, print the URL
  *   node scripts/push-ipad.mjs --watch        + rebuild on every source edit
  *   node scripts/push-ipad.mjs --no-build     serve out/ as it stands
+ *   node scripts/push-ipad.mjs --no-admin     build what ships, tools compiled out
  *   node scripts/push-ipad.mjs --port 3120
  */
 import { spawnSync } from "node:child_process";
@@ -35,6 +36,7 @@ const val = (f, d) => {
 const PORT = Number(val("--port", "3120"));
 const WATCH = has("--watch") || has("-w");
 const BUILD = !has("--no-build");
+const ADMIN = !has("--no-admin");
 
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 const bold = (s) => `\x1b[1m${s}\x1b[0m`;
@@ -44,11 +46,17 @@ const log = (...a) => console.log(dim(new Date().toTimeString().slice(0, 8)), ..
 
 function build() {
   const t = Date.now();
-  log("building...");
+  log(`building${ADMIN ? " (admin tools in)" : ""}...`);
   const r = spawnSync("npm", ["run", "build:static"], {
     cwd: ROOT,
     stdio: "inherit",
     shell: process.platform === "win32",
+    // A TABLET TEST BUILD IS NOT A SHIPPED BUILD. The bundle Steam gets
+    // comes from build:static on its own and never sets this, so the
+    // tools stay compiled out there (game/env.ts); what goes over the
+    // tailnet to your own iPad carries them, or the console's `admin`
+    // opens the refusal screen. --no-admin builds what ships instead.
+    env: ADMIN ? { ...process.env, NEXT_PUBLIC_ADMIN: "1" } : process.env,
   });
   if (r.status !== 0) {
     log(red("build FAILED - serving the previous bundle"));

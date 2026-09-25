@@ -10,6 +10,12 @@ import { profileLines } from "@/game/simreport";
  * the same ones the keyboard shortcuts reach (Ctrl+Shift+S for the
  * sandbox, Ctrl+Shift+M for the admin page). Type `help`.
  *
+ * A TABLET HAS NO BACKQUOTE, so the door opens on a
+ * `window.dispatchEvent(new Event("animechs:console"))` too — ten taps on
+ * the Settings heading is what sends it (Animechs.tsx). Every debug
+ * shortcut in this game is a keyboard chord, which on a touch screen is
+ * no door at all.
+ *
  * It is deliberately small: a line of the live numbers, a log, a prompt.
  * Every command is a one-liner over the handles the HUD already holds;
  * anything that needs a Game says so when there is no level running.
@@ -87,15 +93,20 @@ export default function GameConsole({ host }: { host: ConsoleHost }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
-  // the door: backquote, anywhere, any build
+  // the door: backquote, anywhere, any build — and the touch door beside it
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.code !== "Backquote" || e.ctrlKey || e.metaKey || e.altKey) return;
       e.preventDefault();
       setOpen((v) => !v);
     };
+    const onTap = (): void => setOpen((v) => !v);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("animechs:console", onTap);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("animechs:console", onTap);
+    };
   }, []);
   useEffect(() => {
     if (open) inputRef.current?.focus();
@@ -288,6 +299,9 @@ export default function GameConsole({ host }: { host: ConsoleHost }) {
       </div>
       <form
         className="flex items-center gap-2 border-t border-[#27272A] px-3 py-1"
+        // iOS raises its keyboard for a focus inside a gesture and not for
+        // the one the open effect does, so the whole row is a tap target
+        onClick={() => inputRef.current?.focus()}
         onSubmit={(e) => {
           e.preventDefault();
           run(text);

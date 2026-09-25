@@ -94,7 +94,7 @@ pre{background:var(--sunk);border:1px solid var(--rule);padding:14px 16px;font-f
   <section>
     <h2>How it ships</h2>
     <div class="notes">
-      <div class="note"><p><b>Shipped: the plain bolt (02b)</b> is <code>boltBullet</code> in <code>game/atlas.ts</code> next to <code>canisterBullet</code>, and the two lines that pack <code>UV_BULLET</code> and <code>UV_BULLET_BACK</code> draw it instead of loading the PNGs, which are gone. <code>BULLET_REGIONS</code>, every ammo's <code>sprite</code> block, the LOD floors and the swarm's <code>ShotLook</code> all keep working, because the cell is still 52 white pixels facing the same way. The two PNGs come off the manifest. The same treatment then fits <code>shell</code> and <code>missile</code>, which are the same lozenge at 36.</p></div>
+      <div class="note"><p><b>Shipped: the plain bolt (02b)</b> is <code>boltBullet</code> in <code>game/atlas.ts</code> next to <code>canisterBullet</code>, and the two lines that pack <code>UV_BULLET</code> and <code>UV_BULLET_BACK</code> draw it instead of loading the PNGs, which are gone. The same capsule then took over <code>shell</code> and <code>missile</code> at 36 (the missile with fins on its back), the emp round became a drawn disc, and the boss missile is drawn in the Sovereign's materials, so no shot on the field is a Mindustry sprite. <code>BULLET_REGIONS</code>, every ammo's <code>sprite</code> block, the LOD floors and the swarm's <code>ShotLook</code> all keep working, because the cell is still 52 white pixels facing the same way. The two PNGs come off the manifest. The same treatment then fits <code>shell</code> and <code>missile</code>, which are the same lozenge at 36.</p></div>
     </div>
   </section>
 </div>
