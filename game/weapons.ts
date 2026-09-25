@@ -1549,12 +1549,12 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
     pods("kettle5-pod", 36, 110, 54),
     wetBomb("kettle5-bomb", { reload: 210, damage: 32, splash: 70, radius: 48, life: 44, soak: 4.5, size: 20 }),
   ],
-  // the Storks carry no gun: the bundle is the whole family (levels.ts cargo)
-  stork1: [],
-  stork2: [],
-  stork3: [],
-  stork4: [],
-  stork5: [],
+  // the Whales carry no gun: the bundle is the whole family (levels.ts cargo)
+  whale1: [],
+  whale2: [],
+  whale3: [],
+  whale4: [],
+  whale5: [],
   // the Ratkings' bite: the tusks' rule on a small animal — nothing
   // fired, a short reach, and a charge (levels.ts) to bring it to a gun
   ratking1: [

@@ -7,7 +7,7 @@ families are on the turrets' grammar now (section 1b): the Ironhide rhino
 in `game/ironhideArt.ts`, the Starhart stag, Stoop bat, Dartback poison frog,
 Skate manta and Livewire narwhal in `game/familyArt.ts`, the Tusker
 elephant in `game/tuskerArt.ts`, the Sunstar starfish in
-`game/grapnelArt.ts`, the Kettle vulture in `game/kettleArt.ts`, the Stork in `game/storkArt.ts`
+`game/grapnelArt.ts`, the Kettle vulture in `game/kettleArt.ts`, the Whale in `game/whaleArt.ts`
 and the Ratking in `game/ratkingArt.ts`, on the turret
 engine in `game/turretArt.ts`, with what they share in
 `game/animalArt.ts` and the packing in `game/atlas.ts`.
@@ -34,11 +34,13 @@ the animal's real top-down silhouette first, then fit the rig to it, never
 the other way round.
 
 - **One animal per family, one gimmick per family, unchanged.** The
-  families are renamed for the animal, the gimmick stays what it was:
-  Ironhides (rhino) are the ground mechs, Dartbacks (poison frog) the venom
-  spitters, Starhart (stag) the starlight mechs, Stoop (bat) the skyfall
-  bombers, Skates (manta) the harpoon fleet, Livewires (narwhal) the
-  wraith fleet. The family accent colours in `PAL` (`game/constants.ts`)
+  families are renamed for the animal, and the faction name carries it
+  (`FAMILY_NAMES.name`: Ironhide Rhinos, Dartback Frogs, Starhart Deer,
+  Stoop Bats, Skate Mantas, Livewire Narwhals, Tusker Elephants, Sunstar
+  Starfish, Kettle Vultures, Rocket Whales, Rat Kings); the gimmick stays
+  what it was: the rhinos are the ground mechs, the frogs the venom
+  spitters, the deer the starlight mechs, the bats the skyfall bombers,
+  the mantas the harpoon fleet, the narwhals the wraith fleet. The family accent colours in `PAL` (`game/constants.ts`)
   carry across: the stag's glows are star-gold, the bat's charge is
   magenta.
 - **A body is its family and how far up it stands. No proper nouns.** The
@@ -305,7 +307,7 @@ footprint gets.
 | Tusker, the elephant | `game/tuskerArt.ts` | mech to T3, four legs from T4 | 56, 72, 96, 136, 176 |
 | Sunstar, the starfish (kind ids `grapnel1`..`5`) | `game/grapnelArt.ts` | mech at every tier, and the leg cell is the rowing arms | 36, 52, 72, 116, 148 |
 | Kettle, the vulture | `game/kettleArt.ts` | body and two wings, one chord out to the wrist and slotted into fingers | 40, 56, 88, 168, 216 |
-| Stork, the white stork | `game/storkArt.ts` | body and two wings, a plank with black flight feathers along its trailing half | 56, 80, 120, 184, 240 |
+| Whale, the humpback on rocket pods | `game/whaleArt.ts` | body and two fins on the wing rig, engine flames astern (`UNIT_ENGINES`) | 56, 80, 120, 184, 240 |
 | Ratking, the rat king | `game/ratkingArt.ts` | mech at every tier: the leg cell is the outer rat's feet | 32, 48, 72, 112, 144 |
 | Sovereign, the sea eagle (the BOSS, one body) | `game/kingArt.ts` | body and two wings | 512 |
 | Borer, the crosser (the MISSION's, three pieces) | `game/wormArt.ts` | none — one flat quad a piece, shown at 1.5x | 96, 96, 96 |

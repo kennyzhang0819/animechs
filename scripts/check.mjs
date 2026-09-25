@@ -377,7 +377,7 @@ report("atlas", atlasProblems, atlasDetail);
 const cellFamilies = (() => {
   const IA = R("ironhideArt.js"), FAM = R("familyArt.js"), TA = R("tuskerArt.js"), SA = R("grapnelArt.js");
   const KA = R("kingArt.js"), KE = R("kettleArt.js"), PY = R("pylonArt.js"), WA = R("wardenArt.js");
-  const FB = R("fabricatorArt.js"), ST = R("storkArt.js"), RK = R("ratkingArt.js");
+  const FB = R("fabricatorArt.js"), ST = R("whaleArt.js"), RK = R("ratkingArt.js");
   // a ground family's tier is a mech tier or a legged one; the Grapnels
   // ride the mech rig at every tier with no stride at all, so the rig is
   // named per family rather than read off the stride
@@ -392,7 +392,7 @@ const cellFamilies = (() => {
     ["skate", FAM.MANTA_TIERS, FAM.manta],
     ["livewire", FAM.NARWHAL_TIERS, FAM.narwhal],
     ["kettle", KE.KETTLE_TIERS, KE.kettle],
-    ["stork", ST.STORK_TIERS, ST.stork],
+    ["whale", ST.WHALE_TIERS, ST.whale],
     ["ratking", RK.RATKING_TIERS, RK.ratkingMech],
     // the boss is not a family and has exactly one tier, but its cell is
     // packed and refused the same way every other body's is

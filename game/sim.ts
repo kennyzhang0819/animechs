@@ -840,7 +840,7 @@ const HAS_STARBURST = KIND_STARBURST.some(Boolean);
 /** ...as a list of kind ids, so the fold pass can ask the per-kind census
  *  whether any of them is standing before it walks the field at all */
 const STARBURST_KINDS = KIND_STARBURST.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
-/** THE BUNDLE (levels.ts UnitStats.cargo, the Storks) and the kinds a carrier
+/** THE BUNDLE (levels.ts UnitStats.cargo, the Whales) and the kinds a carrier
  *  of each tier may drop: that tier of every active family but a carrier's
  *  own, read once off the roster (ACTIVE_FAMILIES is the shelf applied) */
 const KIND_CARGO = UNIT_KINDS.map((k) => UNIT_STATS[k].cargo ?? null);

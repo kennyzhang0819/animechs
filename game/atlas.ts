@@ -56,7 +56,7 @@ import {
   type WardenTier,
 } from "./wardenArt";
 import { KETTLE_TIERS, kettle, kettleGeom } from "./kettleArt";
-import { STORK_TIERS, stork, storkGeom } from "./storkArt";
+import { WHALE_TIERS, whale, whaleEngines, whaleGeom } from "./whaleArt";
 import { RATKING_TIERS, ratkingMech } from "./ratkingArt";
 import { BASTION_TIER, BRANDER_TIER, GOAD_TIER, bastionMech, branderMech, goadMech } from "./pylonArt";
 import { FABRICATOR_TIERS, fabricatorMech } from "./fabricatorArt";
@@ -113,7 +113,7 @@ import { EMBER, GILT, KING_TIER, PLUME, king, kingGeom } from "./kingArt";
  * is VRAM and it is linear: 42MB of texture became 59, 78 with mipmaps.
  *
  * AND FROM 3584 TO 4096 WHEN THE PROPS REACHED PAST THEIR TILES AND THE
- * STORKS AND RATKINGS LANDED: a canopy cell is its reach squared, and with
+ * WHALES AND RATKINGS LANDED: a canopy cell is its reach squared, and with
  * two more families the static pass alone was past the 80% the check
  * allows. 4096 is the ceiling; the next family has to find its room by
  * shrinking cells, not by widening the sheet.
@@ -1172,13 +1172,13 @@ const KETTLE_FULL_CELLS: readonly UVRect[] = KETTLE_TIERS.map((T, i) =>
   sprite(`kettle${i + 1}`, [64, 64, 128, 256, 256][i], T.n),
 );
 const KETTLE_KINDS: readonly UnitKind[] = ["kettle1", "kettle2", "kettle3", "kettle4", "kettle5"];
-/** the Storks' cells, on the Kettles' terms: three a tier for the wing
- *  rig, the composed sprite in the smallest 64-multiple that holds its
- *  56, 80, 120, 184, 240 px grid (storkArt.ts) */
-const STORK_FULL_CELLS: readonly UVRect[] = STORK_TIERS.map((T, i) =>
-  sprite(`stork${i + 1}`, [64, 128, 128, 192, 256][i], T.n),
+/** the Whales' cells, on the Kettles' terms: three a tier for the wing
+ *  rig (the fins are the wings), the composed sprite in the smallest
+ *  64-multiple that holds its 56, 80, 120, 184, 240 px grid (whaleArt.ts) */
+const WHALE_FULL_CELLS: readonly UVRect[] = WHALE_TIERS.map((T, i) =>
+  sprite(`whale${i + 1}`, [64, 128, 128, 192, 256][i], T.n),
 );
-const STORK_KINDS: readonly UnitKind[] = ["stork1", "stork2", "stork3", "stork4", "stork5"];
+const WHALE_KINDS: readonly UnitKind[] = ["whale1", "whale2", "whale3", "whale4", "whale5"];
 /** the Ratkings' cells, on the Grapnels' terms: the mech rig's three parts
  *  a tier, on the smallest 64-multiple that holds the 32, 48, 72, 112, 144
  *  px grid (ratkingArt.ts) */
@@ -1401,11 +1401,11 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   kettle3: { uv: KETTLE_FULL_CELLS[2], sprite: UNIT_SPRITE * 2 },
   kettle4: { uv: KETTLE_FULL_CELLS[3], sprite: UNIT_SPRITE * 4 },
   kettle5: { uv: KETTLE_FULL_CELLS[4], sprite: UNIT_SPRITE * 4 },
-  stork1: { uv: STORK_FULL_CELLS[0], sprite: UNIT_SPRITE },
-  stork2: { uv: STORK_FULL_CELLS[1], sprite: UNIT_SPRITE * 2 },
-  stork3: { uv: STORK_FULL_CELLS[2], sprite: UNIT_SPRITE * 2 },
-  stork4: { uv: STORK_FULL_CELLS[3], sprite: UNIT_SPRITE * 3 },
-  stork5: { uv: STORK_FULL_CELLS[4], sprite: UNIT_SPRITE * 4 },
+  whale1: { uv: WHALE_FULL_CELLS[0], sprite: UNIT_SPRITE },
+  whale2: { uv: WHALE_FULL_CELLS[1], sprite: UNIT_SPRITE * 2 },
+  whale3: { uv: WHALE_FULL_CELLS[2], sprite: UNIT_SPRITE * 2 },
+  whale4: { uv: WHALE_FULL_CELLS[3], sprite: UNIT_SPRITE * 3 },
+  whale5: { uv: WHALE_FULL_CELLS[4], sprite: UNIT_SPRITE * 4 },
   ratking1: { uv: RK_CELLS[0].body, sprite: UNIT_SPRITE },
   ratking2: { uv: RK_CELLS[1].body, sprite: UNIT_SPRITE },
   ratking3: { uv: RK_CELLS[2].body, sprite: UNIT_SPRITE * 2 },
@@ -1466,6 +1466,12 @@ export const UNIT_ENGINES: Partial<Record<UnitKind, readonly UnitEngine[]>> = {
     ...mirrored(95 / 4, -56 / 4, 5, 330, 1.5),
     ...mirrored(89 / 4, -95 / 4, 4, 315, 1.5),
   ],
+  // the Whales' rocket pods (whaleArt.ts whaleEngines): native px off the
+  // body's centre, so a quarter of that in world units
+  ...(Object.fromEntries(WHALE_TIERS.map((T, i) => [
+    `whale${i + 1}`,
+    whaleEngines(T).map((e) => engine(e.x / 4, e.y / 4, e.r / 4, -90)),
+  ])) as Partial<Record<UnitKind, readonly UnitEngine[]>>),
 };
 
 /** part art + walk-cycle geometry for a ground (mech) unit */
@@ -1924,7 +1930,7 @@ export const UV_STOOP_CELLS: readonly (readonly [UVRect, UVRect])[] = STOOP_TIER
 export const UV_MANTA_CELLS: readonly (readonly [UVRect, UVRect])[] = MANTA_TIERS.map((T) => partCells("manta", T));
 export const UV_NARWHAL_CELLS: readonly (readonly [UVRect, UVRect])[] = NARWHAL_TIERS.map((T) => partCells("narwhal", T));
 export const UV_KETTLE_CELLS: readonly (readonly [UVRect, UVRect])[] = KETTLE_TIERS.map((T) => partCells("kettle", T));
-export const UV_STORK_CELLS: readonly (readonly [UVRect, UVRect])[] = STORK_TIERS.map((T) => partCells("stork", T));
+export const UV_WHALE_CELLS: readonly (readonly [UVRect, UVRect])[] = WHALE_TIERS.map((T) => partCells("whale", T));
 
 /**
  * A flyer drawn in parts: a body quad and one wing quad mirrored to both
@@ -2148,8 +2154,10 @@ if (ANIMAL_ART) {
   // Sovereign makes below — and there is nothing to delete either way,
   // since a kind with no upstream hull was never in UNIT_ENGINES
   wingParts(KETTLE_KINDS, KETTLE_TIERS, UV_KETTLE_CELLS, kettleGeom, false);
-  // ---- the Storks ----
-  wingParts(STORK_KINDS, STORK_TIERS, UV_STORK_CELLS, storkGeom, false);
+  // ---- the Whales ----
+  // the humpback on the same rig, WITH JETS: the rocket pods are what
+  // keep it up, and the flames burn in the family's frost
+  wingParts(WHALE_KINDS, WHALE_TIERS, UV_WHALE_CELLS, whaleGeom, true);
   // ---- the Sovereign ----
   // the boss on the same rig, on cells of its own and at the boss's own
   // scale. Its ENGINES GO: the disrupt's two mirrored pairs of jets were
@@ -3406,7 +3414,7 @@ function packAnimalArt(
   // the same three drawings as any other wing-rig body, with nothing
   // under them to clear
   packWinged(KETTLE_KINDS, KETTLE_TIERS, KETTLE_FULL_CELLS, UV_KETTLE_CELLS, kettle);
-  packWinged(STORK_KINDS, STORK_TIERS, STORK_FULL_CELLS, UV_STORK_CELLS, stork);
+  packWinged(WHALE_KINDS, WHALE_TIERS, WHALE_FULL_CELLS, UV_WHALE_CELLS, whale);
   // ---- the Sovereign ----
   // the boss, into cells nobody else owns (see THE SOVEREIGN'S CELLS): the
   // same three drawings as any other wing-rig body, and the stock hull's
