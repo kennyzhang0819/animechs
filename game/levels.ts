@@ -6,7 +6,7 @@ import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // import must never become a value one or the two files form a cycle
 import type { MutationId } from "./mutation";
 
-export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail", "railgun", "goad", "bastion", "bulwark", "lance", "halberd", "juggernaut", "fabricatorSmall", "fabricatorLarge", "brander"] as const;
+export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail", "railgun", "goad", "bastion", "bulwark", "lance", "halberd", "juggernaut", "fabricatorSmall", "fabricatorLarge", "brander", "stork1", "stork2", "stork3", "stork4", "stork5", "ratking1", "ratking2", "ratking3", "ratking4", "ratking5"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -83,6 +83,16 @@ export const UNIT_ID: Record<UnitKind, number> = {
   // THE BRANDER (BRANDER_NAME): the laser tower an escort map stands over
   // its road, which burns the Hauler and nothing else (Sim.raiseBranders)
   brander: 58,
+  stork1: 59,
+  stork2: 60,
+  stork3: 61,
+  stork4: 62,
+  stork5: 63,
+  ratking1: 64,
+  ratking2: 65,
+  ratking3: 66,
+  ratking4: 67,
+  ratking5: 68,
 };
 
 /**
@@ -126,6 +136,10 @@ export const FAMILY_NAMES = {
   // what a flock of them wheeling is called — a flight word like the
   // bat's Stoop, and not a proper noun
   kettle: { name: "Kettles", body: "Kettle" },
+  // the tenth and eleventh, drawn from nothing like the Tuskers: the
+  // white stork (game/storkArt.ts) and the rat king (game/ratkingArt.ts)
+  stork: { name: "Storks", body: "Stork" },
+  ratking: { name: "Ratkings", body: "Ratking" },
 } as const satisfies Record<string, { name: string; body: string }>;
 
 /**
@@ -782,6 +796,20 @@ export interface UnitStats {
    * shove sorts that out the way it does for everything else.
    */
   charge?: { range: number };
+  /**
+   * THE BUNDLE (the Storks, Sim.dropCargo): when this body comes down —
+   * shot down anywhere, or arrived at the core — it drops `min` to `max`
+   * bodies of its own tier, each rolled from any active family but its
+   * own, where it fell. Arriving is a delivery: the carrier unloads at
+   * the core's edge and is gone (Sim.updateCarriers).
+   */
+  cargo?: { min: number; max: number };
+  /**
+   * THE KNOT (the Ratkings, Sim.splitKnot): a death leaves `brood` bodies
+   * of the rank below, where it fell. Its own rule and not Mitosis's: it
+   * recurses down the ladder to the runt, which leaves nothing.
+   */
+  knot?: { brood: number };
   /**
    * THE BOMBARDMENT — the siege's emplacement, and the one body on the
    * roster that never looks at a turret: IT SHOOTS THE CORE, FROM WHEREVER
@@ -2440,6 +2468,131 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     flying: true,
   },
 
+  // ── THE STORKS, the white stork (game/storkArt.ts) ────────────────────
+  //
+  // THE SLOWEST THING IN THE SKY and the widest short of the Sovereign:
+  // 2.6 tiles/s down to 1.8, on boxes of UR x 1.75 / 2.5 / 3.75 / 5.75 /
+  // 7.5 (the 56, 80, 120, 184, 240 grids). Unarmed. The pool is a kettle's
+  // — it has to survive a crossing at half a kettle's pace — and the body
+  // is a delivery either way: shot down or arrived, it drops `cargo`
+  // (UnitStats.cargo, Sim.dropCargo). First cut; wants a playtest.
+  stork1: {
+    hp: 320,
+    speed: 2.6 * CELL,
+    armor: 2,
+    radius: UR * 1.75,
+    tier: 1,
+    drag: 0.04,
+    rotateSpeed: 2.5,
+    flying: true,
+    cargo: { min: 1, max: 3 },
+  },
+  stork2: {
+    hp: 1100,
+    speed: 2.4 * CELL,
+    armor: 4,
+    radius: UR * 2.5,
+    tier: 2,
+    drag: 0.04,
+    rotateSpeed: 2,
+    flying: true,
+    cargo: { min: 1, max: 3 },
+  },
+  stork3: {
+    hp: 2800,
+    speed: 2.2 * CELL,
+    armor: 8,
+    radius: UR * 3.75,
+    tier: 3,
+    drag: 0.045,
+    rotateSpeed: 1.6,
+    flying: true,
+    cargo: { min: 1, max: 3 },
+  },
+  stork4: {
+    hp: 10500,
+    speed: 2 * CELL,
+    armor: 14,
+    radius: UR * 5.75,
+    tier: 4,
+    drag: 0.05,
+    rotateSpeed: 1.2,
+    flying: true,
+    cargo: { min: 1, max: 3 },
+  },
+  stork5: {
+    hp: 22000,
+    speed: 1.8 * CELL,
+    armor: 18,
+    radius: UR * 7.5,
+    tier: 5,
+    drag: 0.05,
+    rotateSpeed: 0.9,
+    flying: true,
+    cargo: { min: 1, max: 3 },
+  },
+
+  // ── THE RATKINGS, the rat king (game/ratkingArt.ts) ───────────────────
+  //
+  // SOFT AND FAST, AND MORE OF THEM EVERY TIME ONE DIES. The runt is the
+  // quickest walker on the roster (5.5 tiles/s, an ironhide1 does 3.75)
+  // with no plating at all; the knots above it are slower and barely
+  // plated, and each leaves `knot.brood` of the rank below where it dies
+  // (Sim.splitKnot). Counted down the tree an apex is 55 bodies and about
+  // 12,900 hp — a shade under the ironhide5's 24,000 for a body the board
+  // has to kill fifty-five times. Boxes UR x 1 / 1.5 / 2.25 / 3.5 / 4.5.
+  // The bite is melee (weapons.ts) with a short charge, so a knot leaves
+  // the route for a gun it can see. First cut; wants a playtest.
+  ratking1: {
+    hp: 45,
+    speed: 5.5 * CELL,
+    armor: 0,
+    radius: UR,
+    tier: 1,
+    rotateSpeed: 6,
+    charge: { range: 5 * CELL },
+  },
+  ratking2: {
+    hp: 130,
+    speed: 4.6 * CELL,
+    armor: 0,
+    radius: UR * 1.5,
+    tier: 2,
+    rotateSpeed: 4.5,
+    charge: { range: 6 * CELL },
+    knot: { brood: 3 },
+  },
+  ratking3: {
+    hp: 380,
+    speed: 4 * CELL,
+    armor: 1,
+    radius: UR * 2.25,
+    tier: 3,
+    rotateSpeed: 3.5,
+    charge: { range: 7 * CELL },
+    knot: { brood: 3 },
+  },
+  ratking4: {
+    hp: 1600,
+    speed: 3.4 * CELL,
+    armor: 2,
+    radius: UR * 3.5,
+    tier: 4,
+    rotateSpeed: 2.6,
+    charge: { range: 8 * CELL },
+    knot: { brood: 2 },
+  },
+  ratking5: {
+    hp: 5000,
+    speed: 3 * CELL,
+    armor: 4,
+    radius: UR * 4.5,
+    tier: 5,
+    rotateSpeed: 2,
+    charge: { range: 10 * CELL },
+    knot: { brood: 2 },
+  },
+
   // ---- THE CROSSER: ONE WORM, IN TWENTY PIECES ----
   //
   // The train that walks Coldline's two roads (missions.ts) while nothing
@@ -2843,6 +2996,10 @@ export const UNIT_TREES = [
   { key: "grapnel", name: FAMILY_NAMES.grapnel.name, kinds: ["grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5"] },
   // the ninth row: the second air line, on the flyers' layer
   { key: "kettle", name: FAMILY_NAMES.kettle.name, kinds: ["kettle1", "kettle2", "kettle3", "kettle4", "kettle5"] },
+  // the tenth row: the carriers, on the flyers' layer
+  { key: "stork", name: FAMILY_NAMES.stork.name, kinds: ["stork1", "stork2", "stork3", "stork4", "stork5"] },
+  // the eleventh row: the knots, on the walkers' layer
+  { key: "ratking", name: FAMILY_NAMES.ratking.name, kinds: ["ratking1", "ratking2", "ratking3", "ratking4", "ratking5"] },
   // THE LAST TWO ROWS ARE OBJECTIVES AND NOT WAVE UNITS (OBJECTIVE_KINDS
   // below). They are in this table because every kind must be in exactly
   // one tree (see the check under it) and because the codex, the hitbox
@@ -3162,6 +3319,31 @@ export const FAMILIES = [
   { key: "kettle", name: FAMILY_NAMES.kettle.name, gimmick: "Ignores the board, flies the straight line to the core and parks on it.",
     layer: "air", icon: "kettle1",
     kinds: ["kettle1", "kettle2", "kettle3", "kettle4", "kettle5"] },
+  // THE STORKS: the carriers. Slow, huge, unarmed, and every one is a
+  // bundle of the swarm (UnitStats.cargo): shot down, it drops one to
+  // three bodies of its own tier from any family where it fell; arrived,
+  // it unloads them at the core. Nothing about the family is the stork
+  // itself — the question it asks is WHERE the board wants a surprise
+  // wave to start walking, because it starts wherever the stork comes
+  // down.
+  //
+  // WHAT IT POSES: a bird you must shoot down early and far out, over
+  // ground the line already covers, and never over your own guns.
+  { key: "stork", name: FAMILY_NAMES.stork.name, gimmick: "Slow carriers. Shot down or arrived, each drops a bundle of any family's bodies where it falls.",
+    layer: "air", icon: "stork1",
+    kinds: ["stork1", "stork2", "stork3", "stork4", "stork5"] },
+  // THE RATKINGS: the knots. A knot that dies comes apart into the rank
+  // below it (UnitStats.knot) — smaller, faster, and more of them — down
+  // to the single rat, so an apex is a tree of fifty-odd bodies and a
+  // wave of them is a flood. Soft plating at every tier and a bite that
+  // charges the nearest gun (charge) for a few tiles.
+  //
+  // WHAT IT POSES: the Ironhides' problem turned round — volume, not
+  // calibre. A railhead spent on a knot buys a dozen rats; splash and
+  // fire buy the wave.
+  { key: "ratking", name: FAMILY_NAMES.ratking.name, gimmick: "Knots of rats that come apart into smaller, faster knots when killed. Bring splash.",
+    layer: "ground", icon: "ratking1",
+    kinds: ["ratking1", "ratking2", "ratking3", "ratking4", "ratking5"] },
 ] as const satisfies readonly {
   key: string;
   name: string;
@@ -3197,6 +3379,8 @@ export const FAMILY_ACCENT: Readonly<Record<FamilyKey, RGB>> = {
   tusker: PAL.tusk,
   grapnel: PAL.hook,
   kettle: PAL.carrion,
+  stork: PAL.frost,
+  ratking: PAL.knot,
 };
 
 /**
@@ -3221,7 +3405,7 @@ export const FAMILY_ACCENT: Readonly<Record<FamilyKey, RGB>> = {
  * empty sprites. They sit on the shelf instead, which keeps the promise
  * exact: off, the game is the six lines it shipped with.
  */
-export const SHELVED_FAMILIES: readonly FamilyKey[] = ANIMAL_ART ? [] : ["tusker", "grapnel", "kettle"];
+export const SHELVED_FAMILIES: readonly FamilyKey[] = ANIMAL_ART ? [] : ["tusker", "grapnel", "kettle", "stork", "ratking"];
 
 /** the families in play: the table, less the shelf */
 export const ACTIVE_FAMILIES: readonly FamilyKey[] = FAMILIES.map((f) => f.key).filter(
@@ -3386,7 +3570,7 @@ export const UNIT_NAMES: Record<UnitKind, string> = (() => {
     // have no upstream anything to fall back to (they are shelved off the
     // switch, SHELVED_FAMILIES), so they are named off the table either
     // way rather than reading as `Tusker3` in the level editor.
-    if (!ANIMAL_ART && f.key !== "tusker" && f.key !== "grapnel" && f.key !== "kettle") continue;
+    if (!ANIMAL_ART && !(SHELVED_FAMILIES as readonly string[]).includes(f.key)) continue;
     f.kinds.forEach((k, i) => {
       out[k] = `${FAMILY_NAMES[f.key].body} (${UNIT_RANKS[i]})`;
     });

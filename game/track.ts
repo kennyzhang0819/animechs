@@ -271,7 +271,7 @@ export const FAMILY_STEP = 5;
 
 /** ...and the order they arrive in; the nth opens at (n + 1) * FAMILY_STEP */
 const FAMILY_ORDER: readonly FamilyKey[] = [
-  "naval", "navalSupport", "tusker", "grapnel", "kettle",
+  "naval", "navalSupport", "tusker", "grapnel", "kettle", "ratking", "stork",
 ];
 
 /** the level a faction joins the hat — 1 for the opening four */

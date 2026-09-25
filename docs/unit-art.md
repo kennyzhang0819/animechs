@@ -2,12 +2,13 @@
 
 This is the direction the enemy art settled on after the animal trial
 (behind `ANIMAL_ART` in `game/animalFlag.ts`), written down so the next
-family is drawn to the same rules without re-running the trial. All nine
+family is drawn to the same rules without re-running the trial. All eleven
 families are on the turrets' grammar now (section 1b): the Ironhide rhino
 in `game/ironhideArt.ts`, the Starhart stag, Stoop bat, Dartback poison frog,
 Skate manta and Livewire narwhal in `game/familyArt.ts`, the Tusker
 elephant in `game/tuskerArt.ts`, the Sunstar starfish in
-`game/grapnelArt.ts`, the Kettle vulture in `game/kettleArt.ts`, on the turret
+`game/grapnelArt.ts`, the Kettle vulture in `game/kettleArt.ts`, the Stork in `game/storkArt.ts`
+and the Ratking in `game/ratkingArt.ts`, on the turret
 engine in `game/turretArt.ts`, with what they share in
 `game/animalArt.ts` and the packing in `game/atlas.ts`.
 
@@ -304,6 +305,8 @@ footprint gets.
 | Tusker, the elephant | `game/tuskerArt.ts` | mech to T3, four legs from T4 | 56, 72, 96, 136, 176 |
 | Sunstar, the starfish (kind ids `grapnel1`..`5`) | `game/grapnelArt.ts` | mech at every tier, and the leg cell is the rowing arms | 36, 52, 72, 116, 148 |
 | Kettle, the vulture | `game/kettleArt.ts` | body and two wings, one chord out to the wrist and slotted into fingers | 40, 56, 88, 168, 216 |
+| Stork, the white stork | `game/storkArt.ts` | body and two wings, a plank with black flight feathers along its trailing half | 56, 80, 120, 184, 240 |
+| Ratking, the rat king | `game/ratkingArt.ts` | mech at every tier: the leg cell is the outer rat's feet | 32, 48, 72, 112, 144 |
 | Sovereign, the sea eagle (the BOSS, one body) | `game/kingArt.ts` | body and two wings | 512 |
 | Borer, the crosser (the MISSION's, three pieces) | `game/wormArt.ts` | none — one flat quad a piece, shown at 1.5x | 96, 96, 96 |
 | Hauler, the convoy (the MISSION's, and the PLAYER's) | `game/convoyArt.ts` | none — one flat quad | 192 |
