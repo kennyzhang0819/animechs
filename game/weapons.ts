@@ -1549,6 +1549,29 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
     pods("kettle5-pod", 36, 110, 54),
     wetBomb("kettle5-bomb", { reload: 210, damage: 32, splash: 70, radius: 48, life: 44, soak: 4.5, size: 20 }),
   ],
+  // the Storks carry no gun: the bundle is the whole family (levels.ts cargo)
+  stork1: [],
+  stork2: [],
+  stork3: [],
+  stork4: [],
+  stork5: [],
+  // the Ratkings' bite: the tusks' rule on a small animal — nothing
+  // fired, a short reach, and a charge (levels.ts) to bring it to a gun
+  ratking1: [
+    { name: "ratking1-bite", reload: t(30), mounts: 1, damage: 7, range: u(8), speed: 0, fx: "melee", rend: 0.001 },
+  ],
+  ratking2: [
+    { name: "ratking2-bite", reload: t(30), mounts: 1, damage: 16, range: u(11), speed: 0, fx: "melee", rend: 0.0015 },
+  ],
+  ratking3: [
+    { name: "ratking3-bite", reload: t(32), mounts: 1, damage: 34, range: u(14), speed: 0, fx: "melee", rend: 0.002 },
+  ],
+  ratking4: [
+    { name: "ratking4-bite", reload: t(34), mounts: 1, damage: 80, range: u(18), speed: 0, fx: "melee", rend: 0.003 },
+  ],
+  ratking5: [
+    { name: "ratking5-bite", reload: t(36), mounts: 1, damage: 160, range: u(22), speed: 0, fx: "melee", rend: 0.004 },
+  ],
   // THE CROSSER CARRIES NOTHING, and that is the archetype rather than a
   // gap in the table (levels.ts, the worm block): a Borer walks its road
   // and never looks at the base or at anything the player built beside

@@ -219,8 +219,15 @@ so a re-render starts from the same parts the heads were built out of;
 `FORCE=1 npm run gen:turrets` redraws the lot from the code, which is
 the normal way to put an edit to the heads on the sheet.
 
-A faction, when a second comes, is a skin over this one roster, never a
-second roster: the sim, the deal, mods and relics are keyed by
-`TowerKind`, and a faction changes what a tacker looks like, not what it
-does. The head lookup in `atlas.ts` and the plate treatment are the two
-places it plugs in.
+## The two factions
+
+`PLAYER_FACTIONS` (`game/types.ts`) files every turret under exactly one
+faction, checked at the type level the way `UNIT_TREES` checks the swarm.
+**Foundry** is the machine line above, the nineteen guns that fire.
+**Gasworks** is the toxin line (`docs/elements.md`) — duster, blighter,
+drifter, stinger, one a footprint — a faction of four today because more
+are coming to it. The split is a grouping and not yet a mode: the sim, the
+deal, mods and relics are still keyed by `TowerKind`, the press still
+draws over the whole fielded roster, and the card prints the faction's
+name. A per-faction deal, when it comes, filters `FIELDED_KINDS` by
+`factionOf` and nothing else has to move.

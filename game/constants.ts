@@ -218,6 +218,14 @@ export const PAL = {
   carrion: pal(0xc06a3e),
   carrionDark: pal(0x7a3420),
   tuskDark: pal(0x8a7a5e),
+  /** the Storks' frost: the sling, the cold seat the note above leaves free (game/storkArt.ts) */
+  frost: pal(0xd6f2ff),
+  frostDark: pal(0x3f86c4),
+  /** the Ratkings' bare-skin pink: the knot of tails (game/ratkingArt.ts). Between the
+   *  ground mechs' rose and the bombers' magenta, and paler than both; the rats walk and
+   *  the bats fly, the Kettles' layer argument again */
+  knot: pal(0xe8b3b6),
+  knotDark: pal(0x9c5f66),
 } as const;
 
 /**

@@ -80,6 +80,41 @@ export const isRetired = (kind: TowerKind): boolean => RETIRED.has(kind);
  *  the deal draws from and the build card is built out of */
 export const FIELDED_KINDS: readonly TowerKind[] = TOWER_KINDS.filter((k) => !RETIRED.has(k));
 
+/**
+ * THE PLAYER'S FACTIONS, and every turret is in exactly one. Foundry is
+ * the machine line (docs/turret-factions.md); Gasworks is the toxin line
+ * (docs/elements.md), four guns today and a faction because more are
+ * coming. Nothing in a run reads the split yet — the deal still draws
+ * over the whole fielded roster — it is the grouping the codex prints and
+ * a per-faction deal would be built on.
+ */
+export const PLAYER_FACTIONS = [
+  { key: "foundry", name: "Foundry",
+    blurb: "Machine turrets: one metal, an accent per ammo, and every kind its own shape.",
+    kinds: ["tacker", "lobber", "autocannon", "airburst", "cleaver", "torch", "coil", "piercer", "barrage",
+      "douser", "tether", "deluge", "fixer", "restorer", "hive", "whirl", "repeater", "furnace", "railhead"] },
+  { key: "gasworks", name: "Gasworks",
+    blurb: "The toxin line: it vents rather than fires, and the rot ignores plating.",
+    kinds: ["duster", "blighter", "drifter", "stinger"] },
+] as const satisfies readonly { key: string; name: string; blurb: string; kinds: readonly TowerKind[] }[];
+export type PlayerFactionKey = (typeof PLAYER_FACTIONS)[number]["key"];
+
+type UnfactionedKind = Exclude<TowerKind, (typeof PLAYER_FACTIONS)[number]["kinds"][number]>;
+const _everyTurretHasAFaction: UnfactionedKind extends never ? true : never = true;
+void _everyTurretHasAFaction;
+
+const FACTION_OF: Readonly<Record<TowerKind, PlayerFactionKey>> = (() => {
+  const out = {} as Record<TowerKind, PlayerFactionKey>;
+  for (const f of PLAYER_FACTIONS)
+    for (const k of f.kinds) {
+      if (out[k]) throw new Error(`the ${k} turret is in two player factions`);
+      out[k] = f.key;
+    }
+  return out;
+})();
+export const factionOf = (kind: TowerKind): (typeof PLAYER_FACTIONS)[number] =>
+  PLAYER_FACTIONS.find((f) => f.key === FACTION_OF[kind])!;
+
 
 /**
  * THE CORE — the one structure the swarm is on the map to destroy, and the

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode, type RefObject } from "react";
 
 import { TOWER_DESC, TOWERS } from "@/game/constants";
+import { factionOf } from "@/game/types";
 import { TOWER_TIER, TOWER_TIERS, type BuyAmount, type TowerTier } from "@/game/economy";
 import {
   fleetFootprint,
@@ -287,7 +288,7 @@ function TurretCard({
       <span className="max-w-full truncate px-0.5 font-display text-[7px] font-bold uppercase leading-none opacity-70">
         {shape}
       </span>
-      <HoverCard tip={tip} title={`${n}× ${name}`} tag={`Tier ${TOWER_TIER[card.kind]}`} color={r.color} align="right">
+      <HoverCard tip={tip} title={`${n}× ${name}`} tag={`Tier ${TOWER_TIER[card.kind]} · ${factionOf(card.kind).name}`} color={r.color} align="right">
         {TOWER_DESC[card.kind]}
         <span className="mt-1.5 block font-bold" style={{ color: r.color }}>
           {shape} — {n} turrets, {sw}×{sh} tiles

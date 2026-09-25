@@ -56,6 +56,8 @@ import {
   type WardenTier,
 } from "./wardenArt";
 import { KETTLE_TIERS, kettle, kettleGeom } from "./kettleArt";
+import { STORK_TIERS, stork, storkGeom } from "./storkArt";
+import { RATKING_TIERS, ratkingMech } from "./ratkingArt";
 import { BASTION_TIER, BRANDER_TIER, GOAD_TIER, bastionMech, branderMech, goadMech } from "./pylonArt";
 import { FABRICATOR_TIERS, fabricatorMech } from "./fabricatorArt";
 import { EMBER, GILT, KING_TIER, PLUME, king, kingGeom } from "./kingArt";
@@ -86,7 +88,7 @@ import { EMBER, GILT, KING_TIER, PLUME, king, kingGeom } from "./kingArt";
  *     wide enough that a mip-3 texel at its edge reads only its own
  *     transparent margin (MIP_MARGIN), sized from the art it declares.
  *
- * The sheet is 3584x4096. A WebGL2 context only has to guarantee
+ * The sheet is 4096x4096. A WebGL2 context only has to guarantee
  * MAX_TEXTURE_SIZE 2048 and every device that runs the game clears 4096,
  * so 4096 is the longest side allowed. If the roster outgrows it, the
  * packer throws with the name of the cell that did not fit and how full
@@ -110,9 +112,11 @@ import { EMBER, GILT, KING_TIER, PLUME, king, kingGeom } from "./kingArt";
  * packer actually achieves, and 4096 is still in hand after it. The cost
  * is VRAM and it is linear: 42MB of texture became 59, 78 with mipmaps.
  *
- * AND FROM 3584 TO 4096 WHEN THE PROPS REACHED PAST THEIR TILES: a canopy
- * cell is its reach squared, and twenty-two of them put the static pass
- * over the 80% the check allows. This is the ceiling.
+ * AND FROM 3584 TO 4096 WHEN THE PROPS REACHED PAST THEIR TILES AND THE
+ * STORKS AND RATKINGS LANDED: a canopy cell is its reach squared, and with
+ * two more families the static pass alone was past the 80% the check
+ * allows. 4096 is the ceiling; the next family has to find its room by
+ * shrinking cells, not by widening the sheet.
  */
 const ATLAS_W = 4096;
 const ATLAS_H = 4096;
@@ -1168,6 +1172,25 @@ const KETTLE_FULL_CELLS: readonly UVRect[] = KETTLE_TIERS.map((T, i) =>
   sprite(`kettle${i + 1}`, [64, 64, 128, 256, 256][i], T.n),
 );
 const KETTLE_KINDS: readonly UnitKind[] = ["kettle1", "kettle2", "kettle3", "kettle4", "kettle5"];
+/** the Storks' cells, on the Kettles' terms: three a tier for the wing
+ *  rig, the composed sprite in the smallest 64-multiple that holds its
+ *  56, 80, 120, 184, 240 px grid (storkArt.ts) */
+const STORK_FULL_CELLS: readonly UVRect[] = STORK_TIERS.map((T, i) =>
+  sprite(`stork${i + 1}`, [64, 128, 128, 192, 256][i], T.n),
+);
+const STORK_KINDS: readonly UnitKind[] = ["stork1", "stork2", "stork3", "stork4", "stork5"];
+/** the Ratkings' cells, on the Grapnels' terms: the mech rig's three parts
+ *  a tier, on the smallest 64-multiple that holds the 32, 48, 72, 112, 144
+ *  px grid (ratkingArt.ts) */
+const rkMechCells = (t: number, n: number, cell: number) => ({
+  body: sprite(`ratking${t}`, cell, n),
+  base: sprite(`ratking${t}-base`, cell, n),
+  leg: sprite(`ratking${t}-leg`, cell, n),
+  bodySil: sprite(`ratking${t}-sil`, cell, n),
+  baseSil: sprite(`ratking${t}-base-sil`, cell, n),
+  legSil: sprite(`ratking${t}-leg-sil`, cell, n),
+});
+const RK_CELLS = [64, 64, 128, 128, 192].map((cell, i) => rkMechCells(i + 1, RATKING_TIERS[i].n, cell));
 
 /**
  * WHAT THE BOSS DRAWS AT: one and a half world px per native px against
@@ -1378,6 +1401,16 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   kettle3: { uv: KETTLE_FULL_CELLS[2], sprite: UNIT_SPRITE * 2 },
   kettle4: { uv: KETTLE_FULL_CELLS[3], sprite: UNIT_SPRITE * 4 },
   kettle5: { uv: KETTLE_FULL_CELLS[4], sprite: UNIT_SPRITE * 4 },
+  stork1: { uv: STORK_FULL_CELLS[0], sprite: UNIT_SPRITE },
+  stork2: { uv: STORK_FULL_CELLS[1], sprite: UNIT_SPRITE * 2 },
+  stork3: { uv: STORK_FULL_CELLS[2], sprite: UNIT_SPRITE * 2 },
+  stork4: { uv: STORK_FULL_CELLS[3], sprite: UNIT_SPRITE * 3 },
+  stork5: { uv: STORK_FULL_CELLS[4], sprite: UNIT_SPRITE * 4 },
+  ratking1: { uv: RK_CELLS[0].body, sprite: UNIT_SPRITE },
+  ratking2: { uv: RK_CELLS[1].body, sprite: UNIT_SPRITE },
+  ratking3: { uv: RK_CELLS[2].body, sprite: UNIT_SPRITE * 2 },
+  ratking4: { uv: RK_CELLS[3].body, sprite: UNIT_SPRITE * 2 },
+  ratking5: { uv: RK_CELLS[4].body, sprite: UNIT_SPRITE * 3 },
   // the crosser's three pieces, a 96px drawing in a 128 cell apiece —
   // and the SECOND thing on the sheet that breaks the px-per-px rule, at
   // the boss's own 1.5. A 128 cell would be UNIT_SPRITE * 2; it is * 3,
@@ -1891,6 +1924,7 @@ export const UV_STOOP_CELLS: readonly (readonly [UVRect, UVRect])[] = STOOP_TIER
 export const UV_MANTA_CELLS: readonly (readonly [UVRect, UVRect])[] = MANTA_TIERS.map((T) => partCells("manta", T));
 export const UV_NARWHAL_CELLS: readonly (readonly [UVRect, UVRect])[] = NARWHAL_TIERS.map((T) => partCells("narwhal", T));
 export const UV_KETTLE_CELLS: readonly (readonly [UVRect, UVRect])[] = KETTLE_TIERS.map((T) => partCells("kettle", T));
+export const UV_STORK_CELLS: readonly (readonly [UVRect, UVRect])[] = STORK_TIERS.map((T) => partCells("stork", T));
 
 /**
  * A flyer drawn in parts: a body quad and one wing quad mirrored to both
@@ -2114,6 +2148,8 @@ if (ANIMAL_ART) {
   // Sovereign makes below — and there is nothing to delete either way,
   // since a kind with no upstream hull was never in UNIT_ENGINES
   wingParts(KETTLE_KINDS, KETTLE_TIERS, UV_KETTLE_CELLS, kettleGeom, false);
+  // ---- the Storks ----
+  wingParts(STORK_KINDS, STORK_TIERS, UV_STORK_CELLS, storkGeom, false);
   // ---- the Sovereign ----
   // the boss on the same rig, on cells of its own and at the boss's own
   // scale. Its ENGINES GO: the disrupt's two mirrored pairs of jets were
@@ -2193,6 +2229,23 @@ if (ANIMAL_ART) {
   MECH_ART.grapnel3 = sfMechArt(SF3_CELLS, GRAPNEL_TIERS[2], 2);
   MECH_ART.grapnel4 = sfMechArt(SF4_CELLS, GRAPNEL_TIERS[3], 2);
   MECH_ART.grapnel5 = sfMechArt(SF5_CELLS, GRAPNEL_TIERS[4], 4);
+
+  // ---- Ratkings ----
+  // the rat king on the mech rig at every tier: the knot's near-side feet
+  // slide with the walk, nothing else moves, and no guns — the bite is
+  // melee (weapons.ts)
+  const rkMechArt = (c: (typeof RK_CELLS)[number], T: IronTier, cellScale: number): MechArt => ({
+    leg: c.leg,
+    base: c.base,
+    body: c.body,
+    guns: [],
+    stride: T.stride * PX,
+    sprite: UNIT_SPRITE * cellScale,
+    sil: { leg: c.legSil, base: c.baseSil, body: c.bodySil },
+  });
+  [1, 1, 2, 2, 3].forEach((scale, i) => {
+    MECH_ART[`ratking${i + 1}` as UnitKind] = rkMechArt(RK_CELLS[i], RATKING_TIERS[i], scale);
+  });
 
   // ---- the siege: the railgun, and the two Pylons on its rig ----
   // the mech rig again, and the RAILGUN'S STRIDE IS ZERO (wardenArt.ts
@@ -3311,6 +3364,12 @@ function packAnimalArt(
     sil: { body: c.bodySil, base: c.baseSil, leg: c.legSil },
   }));
   sfCellSets.forEach((cells, i) => packMech(cells, grapnelMech(GRAPNEL_TIERS[i]), GRAPNEL_TIERS[i].n));
+  // ---- the Ratkings: the same three parts a tier ----
+  RK_CELLS.forEach((c, i) => packMech({
+    kind: `ratking${i + 1}` as UnitKind,
+    body: c.body, base: c.base, leg: c.leg,
+    sil: { body: c.bodySil, base: c.baseSil, leg: c.legSil },
+  }, ratkingMech(RATKING_TIERS[i]), RATKING_TIERS[i].n));
   // ---- the siege: the railgun on the mech rig, into cells nobody else
   // owns (see THE SIEGE'S CELLS) ----
   packMech(RAZE_CELLS, razeMech(RAZE_TIER), RAZE_TIER.n);
@@ -3347,6 +3406,7 @@ function packAnimalArt(
   // the same three drawings as any other wing-rig body, with nothing
   // under them to clear
   packWinged(KETTLE_KINDS, KETTLE_TIERS, KETTLE_FULL_CELLS, UV_KETTLE_CELLS, kettle);
+  packWinged(STORK_KINDS, STORK_TIERS, STORK_FULL_CELLS, UV_STORK_CELLS, stork);
   // ---- the Sovereign ----
   // the boss, into cells nobody else owns (see THE SOVEREIGN'S CELLS): the
   // same three drawings as any other wing-rig body, and the stock hull's

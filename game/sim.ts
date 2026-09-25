@@ -840,6 +840,32 @@ const HAS_STARBURST = KIND_STARBURST.some(Boolean);
 /** ...as a list of kind ids, so the fold pass can ask the per-kind census
  *  whether any of them is standing before it walks the field at all */
 const STARBURST_KINDS = KIND_STARBURST.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
+/** THE BUNDLE (levels.ts UnitStats.cargo, the Storks) and the kinds a carrier
+ *  of each tier may drop: that tier of every active family but a carrier's
+ *  own, read once off the roster (ACTIVE_FAMILIES is the shelf applied) */
+const KIND_CARGO = UNIT_KINDS.map((k) => UNIT_STATS[k].cargo ?? null);
+const HAS_CARGO = KIND_CARGO.some(Boolean);
+const CARGO_KIND_IDS = KIND_CARGO.map((c, i) => (c ? i : -1)).filter((i) => i >= 0);
+const CARGO_KINDS: readonly (readonly number[])[] = [1, 2, 3, 4, 5].map((tier) =>
+  ACTIVE_FAMILIES.map((key) => familyByKey(key).kinds as readonly UnitKind[])
+    .filter((kinds) => !kinds.some((k) => UNIT_STATS[k].cargo))
+    .map((kinds) => kinds.find((k) => UNIT_STATS[k].tier === tier))
+    .filter((k): k is UnitKind => k !== undefined)
+    .map((k) => UNIT_ID[k]),
+);
+/** THE KNOT (levels.ts UnitStats.knot, the Ratkings): how many of the rank
+ *  below a death leaves, and which kind that rank is — the family's own
+ *  kind one step down the ladder, 0 at the runt and for every other kind */
+const KIND_KNOT = Uint8Array.from(UNIT_KINDS, (k) => UNIT_STATS[k].knot?.brood ?? 0);
+const HAS_KNOT = KIND_KNOT.some((b) => b > 0);
+const KIND_BELOW = (() => {
+  const out = new Int16Array(UNIT_KINDS.length).fill(-1);
+  for (const key of ACTIVE_FAMILIES) {
+    const kinds = familyByKey(key).kinds;
+    for (let i = 1; i < kinds.length; i++) out[UNIT_ID[kinds[i]]] = UNIT_ID[kinds[i - 1]];
+  }
+  return out;
+})();
 /**
  * THE MOST BODIES ONE SURVIVOR MAY STAND FOR, by kind — the squeeze's own
  * MERGE_MAX_STACK for everything, and the Grapnels' own ceiling for a
@@ -945,7 +971,9 @@ const MITOSIS_KINDS: Record<MoveLayer, readonly number[]> = (() => {
   const out = { ground: [], air: [], water: [] } as Record<MoveLayer, number[]>;
   UNIT_KINDS.forEach((k, i) => {
     const s = UNIT_STATS[k];
-    if (s.tier !== 1 || s.boss) return;
+    // ...and a carrier never broods: a brood that drops a bundle is a
+    // brood that broods, which the flag on the body exists to prevent
+    if (s.tier !== 1 || s.boss || s.cargo) return;
     out[s.flying ? "air" : s.naval ? "water" : "ground"].push(i);
   });
   // A LAYER WITH NO T1 KIND WOULD SILENTLY SWALLOW THE RULE on everything
@@ -4788,6 +4816,8 @@ export class Sim {
     // decided what is on the field
     this.updateCorpses(dt);
     this.mark("corpses");
+    this.updateCarriers();
+    this.mark("carriers");
     // THE TABLE THE STEP OWES, paid once against the finished board — after
     // every pass that can kill or conquer (oweCount). Its own
     // phase, so an O(board) re-composition is a line in the profile with a
@@ -10016,7 +10046,10 @@ export class Sim {
     // ...and nothing breaks out of a Borer for the same reason (a brood
     // walks; `wasBrood` is already 1 on a crosser, since launchCrosser
     // spawns through the brood door, so this is belt and braces)
-    if (this.mitosisOn && !wasBrood) this.splitUnit(x, y, kind, wave);
+    // ...a knot has a split of its own and Mitosis leaves it to that
+    if (this.mitosisOn && !wasBrood && !KIND_KNOT[kind]) this.splitUnit(x, y, kind, wave);
+    if (HAS_KNOT && KIND_KNOT[kind]) this.splitKnot(x, y, kind, wave);
+    if (HAS_CARGO && KIND_CARGO[kind]) this.dropCargo(x, y, kind, wave);
   }
 
   /**
@@ -10106,6 +10139,60 @@ export class Sim {
     // what its bodies broke into is still walking
     for (let b = 0; b < want; b++)
       this.spawnUnit(UNIT_KINDS[pool[(Math.random() * pool.length) | 0]], { x, y }, wave);
+  }
+
+  /** THE KNOT COMING APART (levels.ts knot): `brood` of the rank below,
+   *  where it fell, through the brood door — no invincible half-second, and
+   *  the parent's wave answers for them. Spawned after the removal, as
+   *  Mitosis's brood is, for the same reason */
+  private splitKnot(x: number, y: number, kind: number, wave: number): void {
+    const below = KIND_BELOW[kind];
+    if (below < 0) return;
+    for (let b = 0; b < KIND_KNOT[kind]; b++) this.spawnUnit(UNIT_KINDS[below], { x, y }, wave);
+  }
+
+  /** THE BUNDLE DROPPED (levels.ts cargo): one to three bodies of the
+   *  carrier's own tier, each rolled from any family that is not a carrier's,
+   *  where it came down. A walker can land on rock or in a crush and refuse
+   *  the spot, so a body that will not land is re-rolled a few times before
+   *  the bundle is one lighter */
+  private dropCargo(x: number, y: number, kind: number, wave: number): void {
+    const c = KIND_CARGO[kind];
+    const pool = CARGO_KINDS[KIND_TIER[kind] - 1];
+    if (!c || !pool || pool.length === 0) return;
+    const count = c.min + ((Math.random() * (c.max - c.min + 1)) | 0);
+    for (let b = 0; b < count; b++)
+      for (let a = 0; a < 3; a++)
+        if (this.spawnUnit(UNIT_KINDS[pool[(Math.random() * pool.length) | 0]], { x, y }, wave)) break;
+    this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, MITOSIS_SPREAD * 2);
+  }
+
+  /** THE DELIVERY: a carrier that has reached its hold at the core's edge
+   *  (updateUnits, the flyer branch) unloads there and is gone — not a kill,
+   *  so it goes out the bomber's door (exploded). Walked from the top so the
+   *  swap-remove never lands a body this pass has not seen */
+  private updateCarriers(): void {
+    if (!HAS_CARGO) return;
+    let any = false;
+    for (const k of CARGO_KIND_IDS) if (this.aliveByKind[k] > 0) { any = true; break; }
+    if (!any) return;
+    const hold = this.coreHold();
+    for (let i = this.n - 1; i >= 0; i--) {
+      const kind = this.ukind[i];
+      if (!KIND_CARGO[kind] || this.uhp[i] <= 0) continue;
+      const dx = this.ugx[i] - this.upx[i], dy = this.ugy[i] - this.upy[i];
+      if (dx * dx + dy * dy > hold * hold) continue;
+      const x = this.upx[i], y = this.upy[i], wave = this.uwave[i];
+      this.pushDeathFx(x, y);
+      this.exploded += this.ustack[i];
+      this.removeUnit(i);
+      this.dropCargo(x, y, kind, wave);
+    }
+  }
+
+  /** how close a flyer holds to the core's centre once it has arrived */
+  private coreHold(): number {
+    return (this.core.size * CELL) / 2 + CELL * 1.5;
   }
 
   /**
@@ -10804,7 +10891,7 @@ export class Sim {
         // (updateUnitWeapons)
         const gdx = this.ugx[i] - upx[i], gdy = this.ugy[i] - upy[i];
         const gl = Math.sqrt(gdx * gdx + gdy * gdy) || 1;
-        const hold = (this.core.size * CELL) / 2 + CELL * 1.5;
+        const hold = this.coreHold();
         // A BOMBER DIVES (levels.ts payload): with a structure picked
         // inside its seek reach (updateUnitWeapons) it flies straight at
         // that instead of the core, and goes off on contact
