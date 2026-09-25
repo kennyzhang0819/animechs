@@ -837,6 +837,11 @@ export function build(spec: MapSpec): Built {
   const props: Prop[] = [];
   const pp = spec.props;
   const claim = new Uint8Array(N);
+  // the ground a body GAP_GROUND wide could cross before the props, and
+  // how far it is from the core over that ground: the way a room was
+  // reached, kept so a prop that shuts it can be found and lifted
+  const wideBefore = dilate(erode(walkMask(), GAP_GROUND / 2, 1), GAP_GROUND / 2);
+  const dWideBefore = distances(coreCells(), (i) => wideBefore[i] === 1);
   const stand = (x0: number, y0: number, k: number, tone: number, rot = rollRot(k, rnd())): void => {
     const t = PROP_KINDS[k].tiles;
     for (let y = y0; y < y0 + t; y++)
@@ -894,6 +899,8 @@ export function build(spec: MapSpec): Built {
       if (kinds.length)
         for (const f of forestOf(fringe, () => canopyTone(), spec.seed ^ 0x5f0d, kinds)) stand(f.x, f.y, f.kind, f.tone, f.rot);
     }
+    // the fringe stood on rock; everything after it stands on open ground
+    const fringeEnd = props.length;
 
     // WHAT A PROP MAY NOT STAND ON: the core's yard, every door's apron,
     // each ground door's shortest walk, and along the widest way from each
@@ -1015,6 +1022,62 @@ export function build(spec: MapSpec): Built {
         const wantT = hug ? (rnd() < 0.25 ? 3 : rnd() < 0.5 ? 2 : 1) : 1;
         tryStand(i, stones, wantT, () => rockToneAt(i));
       }
+    }
+
+    // NO ROOM IS LEFT TO THE SMALL BODIES ONLY. Every room was reachable by
+    // a body GAP_GROUND wide before the props; one that is not any more
+    // was shut by them, so the way it was reached is walked back and the
+    // props standing on it, or within a gap's width of it (the reach of
+    // the opening), are lifted. A pocket too small to be a room is left
+    // as the thicket it is
+    {
+      const ROOM = 60;
+      let lifted = 0;
+      for (let round = 0; round < 4; round++) {
+        const m = walkMask();
+        const wide = dilate(erode(m, GAP_GROUND / 2, 1), GAP_GROUND / 2);
+        const { lab } = label(wide);
+        const coreL = lab[core.y * W + core.x];
+        const size = new Map<number, number>(), start = new Map<number, number>();
+        for (let i = 0; i < N; i++) {
+          const l = lab[i];
+          if (!l || l === coreL) continue;
+          size.set(l, (size.get(l) ?? 0) + 1);
+          const s0 = start.get(l);
+          if (dWideBefore[i] < (s0 === undefined ? Infinity : dWideBefore[s0])) start.set(l, i);
+        }
+        const near = new Uint8Array(N);
+        let rooms = 0;
+        for (const [l, n] of size) {
+          const s0 = start.get(l);
+          if (n < ROOM || s0 === undefined || dWideBefore[s0] === Infinity) continue;
+          rooms++;
+          // the pinch is where the way stops being wide, or where two wide
+          // pieces meet only at a corner (the way is 8-connected, a body is not)
+          const path = descend(s0, dWideBefore, (j) => wideBefore[j] === 1);
+          const mark = (i: number): void => disc((i % W) + 0.5, ((i / W) | 0) + 0.5, GAP_GROUND, (j) => { near[j] = 1; });
+          for (let k = 0; k < path.length; k++) {
+            const i = path[k];
+            if (!m[i] || !wide[i]) mark(i);
+            else if (k > 0 && lab[path[k - 1]] !== lab[i]) { mark(i); mark(path[k - 1]); }
+          }
+        }
+        if (!rooms) break;
+        let took = 0;
+        for (let k = props.length - 1; k >= fringeEnd; k--) {
+          const q = props[k], qt = PROP_KINDS[q.kind].tiles;
+          let hit = false;
+          for (let y = q.y; y < q.y + qt && !hit; y++) for (let x = q.x; x < q.x + qt; x++) if (near[y * W + x]) { hit = true; break; }
+          if (!hit) continue;
+          for (let y = q.y; y < q.y + qt; y++)
+            for (let x = q.x; x < q.x + qt; x++) { const i = y * W + x; blocked[i] = 0; wall[i] = 0; kind[i] = OPEN; claim[i] = 0; }
+          props.splice(k, 1);
+          took++;
+        }
+        lifted += took;
+        if (!took) break;
+      }
+      say(`rooms reopened: ${lifted} props lifted`);
     }
 
     // a pocket the props closed is grown over rather than turned to rock:
