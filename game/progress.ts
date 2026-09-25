@@ -655,10 +655,9 @@ export type DifficultyLock =
 
 /**
  * WHAT IS STILL STANDING BETWEEN THIS SAVE AND A DIFFICULTY — null when it
- * is open. Two gates, and the climb is reported first because it is the one
- * a player opens by playing: a rung wants the one below it beaten on SOME
- * map (ladder.ts tierClearNeeded), and above Nemesis it also wants the
- * mutator deck the track deals (docs/difficulty.md).
+ * is open. The climb asks for nothing today (ladder.ts tierClearNeeded is
+ * -1 everywhere) but is still checked first, so a rung above Nemesis is
+ * shut only by the mutator deck the track deals (docs/difficulty.md).
  *
  * CUSTOM MODE ASKS NOTHING — it pays nothing, so there is nothing for an
  * unearned rung to be a shortcut to; its callers simply do not ask.

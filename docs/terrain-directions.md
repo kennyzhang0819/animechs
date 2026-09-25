@@ -244,6 +244,18 @@ Off, everything is the flat repaint of Mindustry's set it was, and the
 water is Mindustry's, byte for byte. `npm run gen:tiles` writes the
 editor's palette icons from whichever painter the flag picks.
 
+### The game's own families
+
+The first step named above has shipped, and further: the stone floor and
+rock sit a step lighter and warmer than gunmetal, the marsh is olive and
+tea with mangrove-brown rock, shale is slate rather than violet, and
+eight floor families with six rock families of their own were added
+(`tiles.ts`, appended in `atlas.ts` so every index on disk still means
+what it did): loam, dust, flint, clay, peat, bog, cinder and chalk on the
+floor; flint, clay, peat, cinder, chalk and loam as rock. None is a
+Mindustry floor. The random maps' eight themes are built on them
+(`docs/random-maps.md`).
+
 ### On the turrets' grid
 
 The tiles are painted on the turrets' own 32 px a tile now

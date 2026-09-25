@@ -71,23 +71,33 @@ export type FloorKind =
   | "ice"
   | "basalt"
   | "hotrock"
-  | "magmarock";
+  | "magmarock"
+  // the game's own families (docs/terrain-directions.md): earths, greys
+  // and a marsh in olive, none of them a Mindustry floor
+  | "loam"
+  | "dust"
+  | "flint"
+  | "clay"
+  | "peat"
+  | "bog"
+  | "cinder"
+  | "chalk";
 
 const STOCK_FLOOR_STYLE: Readonly<Record<FloorKind, FloorStyle>> = {
-  grass: { base: "#6a9b52", light: "#78a95c", dark: "#5c8a46", mark: "tussock" },
-  stone: { base: "#7c7c84", light: "#878790", dark: "#6b6b73", mark: "spotted" },
+  grass: { base: "#78995a", light: "#88a866", dark: "#68884c", mark: "tussock" },
+  // stone sits a step lighter and warmer than the turrets' gunmetal, so a
+  // formation on it keeps its plates (docs/terrain-directions.md)
+  stone: { base: "#a19c94", light: "#aea99f", dark: "#8f8a82", mark: "spotted" },
   dirt: { base: "#8f6b4a", light: "#9b7654", dark: "#7d5c3f", mark: "pebbled" },
-  sand: { base: "#cfb488", light: "#d9c095", dark: "#c2a77b", mark: "dune" },
-  darksand: { base: "#4a4644", light: "#54504d", dark: "#3e3a38", mark: "dune" },
-  // THE MARSH. Moss here is the purple spore growth, not a green one — the
-  // spore walls, pines and waters it sits among are all violet, and a
-  // green floor under a violet forest reads as two maps. Spore moss is the
-  // same ground further gone, and mud is the black wet earth between
-  moss: { base: "#6c4774", light: "#785282", dark: "#5e3d66", mark: "soft" },
-  sporeMoss: { base: "#714a88", light: "#7f5697", dark: "#623f78", mark: "pebbled" },
-  mud: { base: "#372220", light: "#432b28", dark: "#2b1a18", mark: "dune" },
+  sand: { base: "#d3b98c", light: "#dcc59a", dark: "#c4aa7c", mark: "dune" },
+  darksand: { base: "#5a524a", light: "#665d54", dark: "#4a433c", mark: "dune" },
+  // THE MARSH, in olive and tea: bog moss, the same ground further gone,
+  // and the black wet earth between. Violet stays the eels'
+  moss: { base: "#6b7a3a", light: "#788844", dark: "#5c6a30", mark: "soft" },
+  sporeMoss: { base: "#5c6630", light: "#69743a", dark: "#4e5728", mark: "pebbled" },
+  mud: { base: "#3e3126", light: "#4a3c2f", dark: "#30251c", mark: "dune" },
   // the bare rocks
-  shale: { base: "#5f5a80", light: "#6a658c", dark: "#524d72", mark: "spotted" },
+  shale: { base: "#5f6678", light: "#6b7286", dark: "#525968", mark: "spotted" },
   basalt: { base: "#413e3e", light: "#4b4848", dark: "#363333", mark: "soft" },
   // the frozen set, toned to the snow and ice walls beside them
   snow: { base: "#e6ecf2", light: "#f1f4f8", dark: "#d8e0e9", mark: "soft" },
@@ -95,6 +105,14 @@ const STOCK_FLOOR_STYLE: Readonly<Record<FloorKind, FloorStyle>> = {
   ice: { base: "#cfcff6", light: "#dcdcfb", dark: "#bcbcea", mark: "spotted" },
   hotrock: { base: "#4e3b35", light: "#5a4640", dark: "#402f2b", accent: "#d86a3a", mark: "ember" },
   magmarock: { base: "#5a3a30", light: "#66443a", dark: "#4a2e26", accent: "#f08a4a", mark: "ember" },
+  loam: { base: "#7a5a3c", light: "#886746", dark: "#6a4c32", mark: "pebbled" },
+  dust: { base: "#b8ab93", light: "#c4b8a1", dark: "#a69a83", mark: "dune" },
+  flint: { base: "#6f7c86", light: "#7c8994", dark: "#606c76", mark: "spotted" },
+  clay: { base: "#a8613f", light: "#b66d49", dark: "#955436", mark: "soft" },
+  peat: { base: "#4f5a2e", light: "#5b6737", dark: "#434d26", mark: "soft" },
+  bog: { base: "#5c5638", light: "#686241", dark: "#4f4a30", mark: "dune" },
+  cinder: { base: "#3a3230", light: "#463d3a", dark: "#2e2826", accent: "#c95a2a", mark: "ember" },
+  chalk: { base: "#e4ddcc", light: "#eee9db", dark: "#d5cdbb", mark: "spotted" },
 };
 
 
@@ -339,7 +357,13 @@ export type WallKind =
   | "salt"
   | "sand"
   | "dune"
-  | "dacite";
+  | "dacite"
+  | "flint"
+  | "clay"
+  | "peat"
+  | "cinder"
+  | "chalk"
+  | "loam";
 
 export interface WallStyle {
   /** the mid tone: the band across the middle of the tile */
@@ -358,17 +382,24 @@ export interface WallStyle {
 }
 
 const STOCK_WALL_STYLE: Readonly<Record<WallKind, WallStyle>> = {
-  stone: { face: "#84848f", light: "#9b9ba6", dark: "#65656f", grain: "rough" },
+  stone: { face: "#9a958a", light: "#b1aca0", dark: "#7a766c", grain: "rough" },
   dirt: { face: "#9a7250", light: "#b08862", dark: "#7a583b", grain: "soft" },
   dark: { face: "#474c53", light: "#5b6169", dark: "#33373d", grain: "rough" },
-  spore: { face: "#84579a", light: "#9d6fb3", dark: "#67407a", grain: "soft" },
-  shale: { face: "#75739a", light: "#8f8db1", dark: "#5a5878", grain: "rough" },
+  // the marsh's rock is a mangrove bank: olive-brown, not violet
+  spore: { face: "#6e6a3c", light: "#88844e", dark: "#54512c", grain: "soft" },
+  shale: { face: "#6d7288", light: "#868ba0", dark: "#555a6c", grain: "rough" },
   snow: { face: "#e9eef4", light: "#ffffff", dark: "#cbd5e0", grain: "soft" },
   ice: { face: "#d4d4fa", light: "#f0f0ff", dark: "#aeaee6", grain: "glassy" },
   salt: { face: "#f1f2f6", light: "#ffffff", dark: "#d3d7df", grain: "glassy" },
   sand: { face: "#dcc39e", light: "#eedbbb", dark: "#bfa47d", grain: "soft" },
-  dune: { face: "#575351", light: "#6a6663", dark: "#403c3a", grain: "soft" },
-  dacite: { face: "#9f9fb4", light: "#b9b9cc", dark: "#82829a", grain: "rough" },
+  dune: { face: "#5f5854", light: "#736b66", dark: "#47413d", grain: "soft" },
+  dacite: { face: "#a9a8a0", light: "#c1c0b8", dark: "#8a8982", grain: "rough" },
+  flint: { face: "#5c6a75", light: "#75838e", dark: "#465158", grain: "rough" },
+  clay: { face: "#8c4e33", light: "#a86444", dark: "#6b3a25", grain: "soft" },
+  peat: { face: "#3f4a26", light: "#556232", dark: "#2c341a", grain: "soft" },
+  cinder: { face: "#2e2826", light: "#413936", dark: "#1e1a18", grain: "rough" },
+  chalk: { face: "#d9d2c2", light: "#f2ede0", dark: "#b8b0a0", grain: "glassy" },
+  loam: { face: "#6a4b30", light: "#83603f", dark: "#4f3722", grain: "soft" },
 };
 
 /** a rock family under the ink: the face burnt umber over the family's

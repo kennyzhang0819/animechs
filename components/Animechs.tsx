@@ -140,8 +140,8 @@ import { familiesAt, lockedMutators, rewardsAt, rewardText } from "@/game/track"
 import { TOWER_DESC, TOWERS } from "@/game/constants";
 import { TOWER_ICONS } from "@/game/towerIcons";
 import { TOWER_KINDS, type RGB } from "@/game/types";
-import { coreIncomeRate, levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
-import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
+import { levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
+import { CurrencyIcon, itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
 import ProgressView from "./Progress";
 import { bandFor, MutationFace } from "./mutationFace";
 import { tile } from "./tile";
@@ -884,12 +884,11 @@ function MapPicker({
  * first frame. The rules themselves are still not spelled out — a player
  * finds those out by playing; only their number is promised.
  *
- * TWO THINGS SHUT A ROW (progress.ts difficultyLock). THE CLIMB: a rung
- * wants the one below it beaten on some map, one named difficulty at a
- * time up to Nemesis, which every rung above it also wants. THE DECK:
- * Nemesis +1 and up promise a number of mutators, and a save below
- * MUTATORS_FROM has none to roll. IN CUSTOM MODE NOTHING IS SHUT (see
- * `custom`): the run pays nothing and the draw is the whole catalog.
+ * ONE THING SHUTS A ROW (progress.ts difficultyLock), THE DECK: Nemesis
+ * +1 and up promise a number of mutators, and a save below MUTATORS_FROM
+ * has none to roll. The named difficulties are open from the first run.
+ * IN CUSTOM MODE NOTHING IS SHUT (see `custom`): the run pays nothing and
+ * the draw is the whole catalog.
  *
  * A SHUT ROW IS GREYED IN THE LIST AND NAMES WHAT OPENS IT IN THE DETAIL
  * — a row a player cannot click is a question, and the answer costs one
@@ -3414,9 +3413,7 @@ export default function Animechs() {
     );
   }
 
-  // how much is on the field right now, as one number — the HUD's enemy
-  // count. byKind is the per-kind census the sim keeps anyway; the panel
-  // only ever wants the total (see the count in the wave panel below).
+  const onField = hud ? hud.byKind.reduce((a, b) => a + b, 0) : 0;
 
   return (
     // select-none keeps a press-and-drag across the field from turning into
@@ -3768,14 +3765,13 @@ export default function Animechs() {
                   className="leading-none tracking-normal"
                 />
               )}
-              {/* WHAT THE CORE IS PAYING RIGHT NOW. The income is the whole
-                  economy (economy.ts) and it climbs on the clock beside it,
-                  so the rate belongs on this row and nowhere else */}
-              {hud.scrap !== null && (
-                <span className="leading-none tracking-normal text-[#6E7480]">
-                  +{Math.round(coreIncomeRate(hud.elapsed)).toLocaleString()}/s
-                </span>
-              )}
+              <span
+                className="inline-flex items-center gap-1 leading-none tracking-normal text-[#6E7480]"
+                title="Enemies on the field"
+              >
+                <CurrencyIcon glyph="hostile" className="h-5 w-5" />
+                {onField.toLocaleString()}
+              </span>
             </div>
             <div className="ms-pane p-1">
               <canvas

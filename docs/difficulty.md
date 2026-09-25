@@ -86,25 +86,19 @@ tier rolls make it a good deal more than a third harder.
 A clear pays the same the first time and the fifth. There is no first-clear bonus: a tier is
 worth exactly what its kills are.
 
-## Climbing it — a rung is earned by the one below it
+## Opening it — the named tiers are open from the start
 
-**A difficulty opens on the one below it cleared, on any map.** A fresh save may deploy
-Incursion and nothing else; clearing it anywhere opens Onslaught, clearing Onslaught opens
-Scourge, Scourge opens Nemesis. **The chain stops asking at Nemesis**: every rung above it
-— Nemesis +1 … +5 — wants that same Nemesis clear and no more, because what separates them
-is the mutator roll rather than the fight, and the roll has its own gate (below).
+**Incursion, Onslaught, Scourge and Nemesis are all open on a fresh save.** No tier asks
+for the one below it to be cleared: a player picks the fight they want from the first run.
+The per-world record (`clearedByMap`) is still kept and the map list still prints it, but
+nothing reads it as a gate.
 
-`tierClearNeeded` is the whole rule — `min(tier - 1, XP_BASE_TIER)`, the rung that must
-have been beaten — and `progress.ts` answers it against the save: `bestClearAnywhere` is
-the best of `clearedByMap`'s per-world rows, and `difficultyLock` returns *why* a rung is
-shut so the picker can say it in one line. **A clear counts wherever it was won**: the
-per-world record stays per-world and the map list still prints it, but the climb reads the
-best row, so a player is never asked to re-clear Incursion on a map the campaign has not
-opened yet.
+`tierClearNeeded` is the dial the old climb hung on — it now answers -1 for every tier —
+and `difficultyLock` still checks it first, so putting a climb back is one function.
 
-**Two gates, and the climb is reported first**, because it is the one a player opens by
-playing. The second is the deck: a difficulty promising three mutators needs three to draw,
-so the rules ramp also stays shut until `MUTATORS_FROM` (`track.ts difficultyOpen`).
+**One gate, the deck**: a difficulty promising mutators needs mutators to draw, so
+Nemesis +1 and up stay shut until level `MUTATORS_FROM` (`track.ts difficultyOpen`),
+which the picker prints beside the shut row.
 
 **Custom mode asks for neither** (`GameMode`): it pays nothing and records nothing, so
 there is nothing for an unearned rung to be a shortcut to — and its draw is the whole

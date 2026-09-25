@@ -1,10 +1,13 @@
 # Random maps
 
 Every regular run is played on a board drawn at start. `game/mapgen.ts` is
-`scripts/maps/mapgen.mjs` ported into the game — the same pipeline, step
-for step (`authoring-maps.md`), the same checks — with one thing added:
-`randomSpec(seed)` rolls the forty-odd numbers an author would otherwise
-write. The authored maps are still in `public/maps/` and still generated
+`scripts/maps/mapgen.mjs` ported into the game — the same pipeline
+(`authoring-maps.md`), the same checks — with `randomSpec(seed)` rolling
+the forty-odd numbers an author would otherwise write, and one departure:
+**no rim**. The authoring script biases the rock noise toward wall near
+the board's edge and silts the outer rows; here the edge is whatever the
+noise makes it, so open floor and sea run off the board wherever they
+reach it, and a side is a mountain only when the roll made it one. The authored maps are still in `public/maps/` and still generated
 by their spec files; in the game they are **the bank** (`BANK_WORLDS` in
 `game/levels.ts`), pickable by name in custom mode and never rolled.
 
@@ -13,10 +16,23 @@ by their spec files; in the game they are **the bank** (`BANK_WORLDS` in
 On the authored 256 board, scaled onto the 512 grid by `scaleSpec` like
 every spec:
 
-- **A theme** — one of five floor palettes (desert, stone coast, spore
-  swamp, snow, grassland), each with its wall pairs, beach and flats
-  floors, forest kind and ruin count. The name is two words from the
-  theme's lists.
+- **A theme** — one of eight floor palettes (salt pan, flint fells,
+  peat moor, tundra, meadow, badlands, ashfall, chalk downs), each with
+  its wall pairs, beach and flats floors, forest kind and ruin count.
+  The families are the game's own (`docs/terrain-directions.md`): eight
+  of them were added for these themes and the stock set was repainted
+  off Mindustry's hues.
+- **A shape** — one of six archetypes (`ARCHETYPES`), rolled apart from
+  the theme: highlands (rooms and lanes through thick rock, the board as
+  it was), canyons (rock everywhere, fine and twisting), plains (open
+  ground with rock in lumps), isles (the sea everywhere, the land in
+  islands), crater (one great bowl round the core) and warren (a fine
+  maze of small rooms). The archetype sets the rock threshold and
+  feature size, the room count and size, the core room, the links,
+  holes and lumps, the water level and the floor patch size. Two boards
+  of different shapes are different places; two of one shape still
+  differ in their theme, doors and rooms. The name is a theme word and,
+  half the time, the shape's noun.
 - **The core**, anywhere in the middle band (64 to 192 on either axis).
   It is not walled in and names no funnel: the swarm comes from every
   side the doors are on.
@@ -72,11 +88,29 @@ constructs the swarm world on it, so the generator's rules are exercised
 by the gate and a change to the pipeline that breaks a roll is caught
 there rather than on the deploy screen.
 
-## The spawn layer
+## The seal and the spawn layer
 
-The document the generator hands over carries `spawns` circles, and the
-loader burns them down to tiles on load (`spawnTilesOf`): every ground
-door is about 1,800 tiles of dry ground, every water door about 1,250 of
-deep water, and the layers pick their own out of them as on any map. A
-door is never a hill and never a puddle: the ground doors are cleared
-dry and the water doors flooded deep before the routes are carved.
+**The seal.** No pocket survives. Every water body that is not the sea
+is drained (a deep cell to rock, a shallow one to ground), and every
+walkable cell the core cannot reach is turned to rock — once before the
+paint and once more after the ruins, whose walls can close a pocket the
+first pass let through. A dropped body always has somewhere to go.
+
+**The spawn layer** is written as tiles (`spawnTiles`), not circles, and
+the terrain is left exactly as the noise drew it. From every cell of the
+board's edge the generator looks inward, as deep as it takes, for the
+first cell whose ground reaches the core through corridors at least
+twelve cells wide (the walk mask opened at `SPAWN_CLEAR`, in the core's
+piece of it), and takes it and the two cells behind it (`SPAWN_DEPTH`);
+water tiles the same way over the water mask. So on an open side the
+door is the edge itself, behind a mountain it is the mountain's inner
+foot, and the doors' discs are in the layer as before. The seal above is
+what makes every such cell a real door: no pocket and no dead lake
+survives it, so the first spawnable floor is always on the way to the
+core. The
+sim picks among the tiles at random (`Sim.spawnPads`), so a wave comes in
+along every open stretch of the rim rather than through three or four
+mouths. The `spawns` circles are still carried for the checks and the
+outline. A door is never a hill and never a puddle: the ground doors are
+cleared dry and the water doors flooded deep before the routes are
+carved.

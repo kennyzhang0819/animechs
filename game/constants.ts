@@ -77,6 +77,8 @@ export const PAL = {
   bulletYellowBack: pal(0xf9c27a),
   copperAmmoFront: pal(0xeac1a8),
   copperAmmoBack: pal(0xd39169),
+  ember: pal(0xec7458), // the flame line's accent (docs/turret-factions.md)
+  emberLite: pal(0xff9c5a),
   graphiteAmmoFront: pal(0xdae1ee),
   graphiteAmmoBack: pal(0x7d89d8),
   thoriumAmmoFront: pal(0xffffff),
@@ -347,8 +349,11 @@ export interface BulletStats {
   // hitscan (Mindustry ShrapnelBulletType): no projectile — the shot is an
   // instant piercing ray damaging everything along it; lifetime is only the
   // draw animation
+  // an instant cleave (Sim.cleaveSweep): everything within `length` of the
+  // muzzle and inside `cone` around the aim takes the damage at once
   ray?: {
     length: number; // px
+    cone: number; // radians, the whole arc
   };
   // Mindustry ArtilleryBulletType: the shell arcs over everything (no
   // mid-flight collision) and its lifetime is scaled at fire time so it
@@ -373,12 +378,11 @@ export interface BulletStats {
     pierceCap: number; // how many units one beam may hit
     width: number; // px — the drawn beam's inner width
   };
-  // Mindustry LightningBulletType: no projectile either. The shot spawns a
-  // bolt that WALKS — `length / 2` nodes, each damaging what it lands on
-  // and then jumping to the furthest enemy in reach, or wandering on when
-  // there is none. See Sim.lightningBolt
+  // an instant chain (Sim.lightningBolt): the target, then the nearest
+  // unstruck enemy within `reach` of the last, `jumps` times
   lightning?: {
-    length: number; // Lightning.create's `length`; the bolt walks half of it
+    jumps: number;
+    reach: number; // px
   };
   // A LOCK-ON BEAM (Sim.updateLockBeam): not a bullet at all. The turret
   // holds a beam on ONE target and damages it continuously, and the beam
@@ -563,6 +567,7 @@ export interface BulletStats {
  */
 export type BulletFx =
   | FxKind.Flame
+  | FxKind.Torch
   | FxKind.FlameHit
   | FxKind.Flak
   | FxKind.BulletHit
@@ -596,6 +601,7 @@ export type BulletFx =
  * which — so it is looked up here rather than passed in.
  */
 export const FX_LIFE: Record<BulletFx, number> = {
+  [FxKind.Torch]: 32 / TICK,
   [FxKind.BulletHit]: 14 / TICK,
   [FxKind.ShootSmall]: 8 / TICK,
   [FxKind.ShootBig]: 9 / TICK,
@@ -1079,9 +1085,8 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.lightOrange,
     },
   },
-  // Cleaver, 1:1 from mindustry/content/Blocks.java with thorium ammo
-  // (ShrapnelBulletType, damage 105): three instant piercing rays fired as
-  // a ShootSpread(3, 20deg) fan, 3 shots / 0.583s = the official 5.14/sec.
+  // Cleaver: one heavy slash, not Mindustry's fan of three rays. Every
+  // body inside a 50-degree arc out to its reach takes the damage at once.
   cleaver: {
     name: "Cleaver",
     size: 3,
@@ -1089,9 +1094,9 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     armor: 9,
     range: 90 * MU,
     reload: 35 / TICK,
-    shots: 3,
+    shots: 1,
     shotDelay: 0,
-    spread: (20 * Math.PI) / 180,
+    spread: 0,
     inaccuracy: 0,
     shootCone: (30 * Math.PI) / 180,
     rotateSpeed: ((5 * Math.PI) / 180) * TICK, // BaseTurret default
@@ -1100,20 +1105,18 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     bullet: {
       speed: 0,
       damage: 105,
-      lifetime: 10 / TICK, // animation only — damage is instant
+      lifetime: 14 / TICK, // animation only — damage is instant
       splash: 0,
       splashRadius: 0,
       collidesAir: true,
       collidesGround: true,
       ray: {
-        length: (90 + 10) * MU, // brange = range + 10
+        length: (90 + 10) * MU,
+        cone: (50 * Math.PI) / 180,
       },
-      // thorium ammo sets shootEffect = smokeEffect = Fx.thoriumShoot, so
-      // the muzzle throws the same spray of pink sparks twice over
       shootFx: FxKind.SparkShoot,
-      smokeFx: FxKind.SparkShoot,
-      hitFx: FxKind.HitPiercer, // ShrapnelBulletType's own
-      fxColor: PAL.thoriumPink,
+      hitFx: FxKind.HitPiercer,
+      fxColor: PAL.ember,
     },
   },
   // Torch, 1:1 from mindustry/content/Blocks.java with coal ammo
@@ -1154,9 +1157,8 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       pierce: true,
       hitRadius: (7 / 2) * MU, // hitSize 7
       burn: 2,
-      // no `sprite`: a bare BulletType draws nothing but its trail and its
-      // parts, and coal ammo has neither. Fx.shootSmallFlame IS the weapon
-      shootFx: FxKind.Flame,
+      // the bullet draws nothing; the tongue at the muzzle IS the weapon
+      shootFx: FxKind.Torch,
       // coal overrides no smokeEffect, so the flame carries BulletType's
       // stock puff along with it
       smokeFx: FxKind.SmokeSmall,
@@ -1165,13 +1167,8 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     },
   },
 
-  // Coil, 1:1 from mindustry/content/Blocks.java (a PowerTurret, so its
-  // one shootType is the whole armament): a LightningBulletType at 20
-  // damage and lightningLength 25. The bolt is not a shot — it walks twelve
-  // nodes out from the muzzle, damaging what each lands on and chaining to
-  // the furthest enemy within reach of it, which is why coil's reach in
-  // a crowd is far longer than the 90 units it targets from. Upstream is
-  // ground only; the bolt takes air here, and chains through it.
+  // Coil: an instant chain, not Mindustry's wandering bolt. It strikes
+  // the target and jumps to the nearest unstruck body three more times.
   coil: {
     name: "Coil",
     size: 1,
@@ -1189,17 +1186,16 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     targetGround: true,
     bullet: {
       speed: 0,
-      damage: 12, // LightningBulletType damage upstream (master)
-      // Fx.lightning's own 10 ticks: the bolt is instant, and this is only
-      // how long the drawn arc lingers
-      lifetime: 10 / TICK,
+      damage: 12,
+      // the chain is instant; this is only how long the drawn arc lingers
+      lifetime: 14 / TICK,
       splash: 0,
       splashRadius: 0,
       collidesAir: true,
       collidesGround: true,
       // the node bullet is a plain BulletType, hitSize 4
       hitRadius: (4 / 2) * MU,
-      lightning: { length: 25 },
+      lightning: { jumps: 3, reach: 30 * MU },
       electric: true, // the blue line conducts (BulletStats.electric)
       // the turret names Fx.lightningShoot but leaves smokeEffect alone,
       // so BulletType's stock puff comes along with the sparks
@@ -1970,7 +1966,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       collidesGround: true,
       rail: { length: 500 * MU, pointSpacing: 20 * MU },
       pierceFx: FxKind.RailHit,
-      pointFx: FxKind.InstTrail,
+      // no pointFx: the shot is drawn as one streak (Sim.railShot)
       shootFx: FxKind.InstShoot,
       smokeFx: FxKind.SmokeCloud,
       hitFx: FxKind.InstHit,
@@ -2228,7 +2224,7 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   piercer: "Charges up, then fires a beam through a line of enemies.",
   barrage: "Lobs six shells at once over a long distance.",
   tether: "Fires one huge armour-piercing lance at the toughest enemy in range, then reloads slowly.",
-  cleaver: "Shoots three heavy rays at very close range.",
+  cleaver: "Cleaves everything in a wide arc at very close range.",
   hive: "Shoots homing missiles that explode on contact.",
   whirl: "Shoots a fast stream of shells that burst in a wide blast.",
   deluge:

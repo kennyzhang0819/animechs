@@ -1691,18 +1691,19 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // reached, because 30 still let a mid-calibre turret through at seventy
   // per cent.
   //
-  // HEALTH IS 720,000 ON EVERY RUNG, five times what the Erekir hull
-  // carried: one boss is one boss at every difficulty, and an objective
-  // body does not read the ladder (ladder.ts tierObjectiveHpScale).
+  // HEALTH IS 576,000 ON EVERY RUNG (four times what the Erekir hull
+  // carried; it was 720,000 until the missiles were made the threat): one
+  // boss is one boss at every difficulty, and an objective body does not
+  // read the ladder (ladder.ts tierObjectiveHpScale).
   //
   // Speed stays at 2.0 tiles/s, the slowest thing in the game, and the
   // turn is slower than anything else that flies: a boss is a deadline the
   // player watches coming, not a sprinter, and a body this wide that
-  // pivots quickly reads as weightless. It carries no weapon — enemies
-  // here do not shoot — so what crosses the map is the hull, the beat, the
-  // looming pace and the plate.
+  // pivots quickly reads as weightless. Its missiles (weapons.ts boss) are
+  // the other half of the fight: the plate makes it slow to kill, and the
+  // volleys make every second it is alive cost the line.
   boss: {
-    hp: 12000 * 60,
+    hp: 12000 * 48,
     speed: 2.0 * CELL,
     armor: 200,
     radius: UR * 22,
@@ -2678,7 +2679,7 @@ export const CONVOY_NAME = "Hauler";
  * THE POOL IS THE MISSION, and it is a BOSS'S POOL rather than a
  * building's. There is one cart on Thornway, it is under fire for
  * fifteen minutes, and it has to arrive — so the number to read it
- * against is the Sovereign's 180,000 to 720,000, not a turret's few
+ * against is the Sovereign's 576,000, not a turret's few
  * thousand. The first cut was 40,000 and a measured run lost it inside
  * four minutes at the FIRST halt: the road leaves the core, so its
  * opening stretch runs straight through the traffic walking at the base,

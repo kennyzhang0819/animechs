@@ -1,6 +1,6 @@
 // The map generator, in the game: scripts/maps/mapgen.mjs ported so a run
-// can build its own board at start. The pipeline is that file's, step for
-// step (docs/authoring-maps.md); what is new is randomSpec, which rolls the
+// can build its own board at start. The pipeline is that file's
+// (docs/authoring-maps.md) less its rim, plus randomSpec, which rolls the
 // forty-odd numbers an author would write. See docs/random-maps.md.
 import { CELL, COLS, ROWS } from "./constants";
 import { RANDOM_MAP_ID, type MapData } from "./maps";
@@ -105,6 +105,14 @@ export const FLOOR_ICE = 39;
 export const FLOOR_BASALT = 42;
 export const FLOOR_TAINTED_WATER = 45;
 export const FLOOR_DEEP_TAINTED_WATER = 48;
+export const FLOOR_LOAM = 51;
+export const FLOOR_DUST = 54;
+export const FLOOR_FLINT = 57;
+export const FLOOR_CLAY = 60;
+export const FLOOR_PEAT = 63;
+export const FLOOR_BOG = 66;
+export const FLOOR_CINDER = 69;
+export const FLOOR_CHALK = 72;
 export const WALL_STONE = 0;
 export const WALL_DIRT = 2;
 export const WALL_PINE = 4;
@@ -118,6 +126,12 @@ export const WALL_SALT = 16;
 export const WALL_SAND = 18;
 export const WALL_DUNE = 20;
 export const WALL_DACITE = 22;
+export const WALL_FLINT = 24;
+export const WALL_CLAY = 26;
+export const WALL_PEAT = 28;
+export const WALL_CINDER = 30;
+export const WALL_CHALK = 32;
+export const WALL_LOAM = 34;
 const WATER_FLOORS = [FLOOR_SHALLOW_WATER, FLOOR_DEEP_WATER, FLOOR_TAINTED_WATER, FLOOR_DEEP_TAINTED_WATER];
 const DECOR = {
   boulder: { kinds: [0, 1], tiles: 1.5 },
@@ -142,10 +156,24 @@ const CLUTTER: Record<number, { kinds: number[]; tiles: number }[]> = {
   [FLOOR_SNOW]: [DECOR.snowBoulder],
   [FLOOR_ICE]: [DECOR.snowBoulder],
   [FLOOR_BASALT]: [DECOR.shaleBoulder, DECOR.boulder],
+  [FLOOR_LOAM]: [DECOR.boulder, DECOR.shrub],
+  [FLOOR_DUST]: [DECOR.sandBoulder],
+  [FLOOR_FLINT]: [DECOR.shaleBoulder, DECOR.boulder],
+  [FLOOR_CLAY]: [DECOR.boulder],
+  [FLOOR_PEAT]: [DECOR.shrub, DECOR.boulder],
+  [FLOOR_BOG]: [DECOR.shrub],
+  [FLOOR_CINDER]: [DECOR.boulder],
+  [FLOOR_CHALK]: [DECOR.boulder],
 };
 const CORE = 5;
 export const GAP_GROUND = 5;
 export const GAP_WATER = 11;
+/** a spawn tile must sit on ground that reaches the core through corridors
+ *  wide enough for the widest body: the walk mask opened at this radius */
+const SPAWN_CLEAR = 6;
+/** the spawn layer is the nearest such ground inward from every edge cell,
+ *  however deep, and this many cells of it */
+const SPAWN_DEPTH = 3;
 const ROUTE_MIN_GROUND = 12;
 const ROUTE_MIN_WATER = 16;
 
@@ -409,7 +437,9 @@ const label = (mask: Uint8Array): { lab: Int32Array; count: number } => {
 
 const openKeepingNotches = (mask: Uint8Array, gap: number): { mask: Uint8Array; restored: number } => {
   const r = gap / 2;
-  const opened = dilate(erode(mask, r), r);
+  // off the board counts as OPEN, so ground that touches the edge is not
+  // read as a gap and silted into a rim
+  const opened = dilate(erode(mask, r, 1), r);
   const { lab } = label(opened);
   const out = Uint8Array.from(opened);
   const lb = Int32Array.from(lab);
@@ -458,6 +488,9 @@ export interface Built {
   pines: Prop[];
   decor: Prop[];
   spawns: SpecZone[];
+  /** the spawn layer, as cell indices: the ring and the doors, on ground
+   *  the core is reachable from with room to spare */
+  spawnTiles: number[];
   base: { x: number; y: number };
   core: { x: number; y: number };
   ruins: number;
@@ -477,20 +510,17 @@ export function build(spec: MapSpec): Built {
 
   const rockN = makeWarped(rnd, spec.rock.scale, spec.rock.warp);
   const rockBias: Bias = spec.rock.bias ?? (() => 0);
+  // no rim bias: the edge is whatever the noise makes it, so a side can
+  // be open ground running off the board as easily as a mountain
   for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) {
-      const e = edgeDist(x, y);
-      const rimW = 14 * SCALE;
-      const rim = e < rimW ? ((rimW - e) / rimW) ** 2 * 0.6 : 0;
-      kind[y * W + x] = rockN(x, y) + rim + rockBias(x, y) > spec.rock.threshold ? WALL : OPEN;
-    }
+    for (let x = 0; x < W; x++)
+      kind[y * W + x] = rockN(x, y) + rockBias(x, y) > spec.rock.threshold ? WALL : OPEN;
 
   if (spec.water) {
     const wN = makeWarped(rnd, spec.water.scale, spec.water.warp ?? spec.water.scale * 0.4, 3);
     const bias: Bias = spec.water.bias ?? (() => 0);
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
-        if (edgeDist(x, y) < 3) continue;
         const h = wN(x, y) + bias(x, y);
         if (h < spec.water.level - spec.water.shore) kind[y * W + x] = DEEP;
         else if (h < spec.water.level) kind[y * W + x] = SHALLOW;
@@ -584,7 +614,7 @@ export function build(spec: MapSpec): Built {
     for (let x = 0; x < W; x++) {
       const sx = Math.round(x + (dN1(x / 11, y / 11) - 0.5) * 2 * amp);
       const sy = Math.round(y + (dN2(x / 11, y / 11) - 0.5) * 2 * amp);
-      warped[y * W + x] = inb(sx, sy) ? kind[sy * W + sx] : WALL;
+      warped[y * W + x] = kind[Math.max(0, Math.min(H - 1, sy)) * W + Math.max(0, Math.min(W - 1, sx))];
     }
   kind.set(warped);
   const bayN = makeNoise(rnd, 2);
@@ -657,8 +687,10 @@ export function build(spec: MapSpec): Built {
   say(`filled ${filled} unreachable cells, dropped ${lumps} lumps`);
 
   const waterZones = spec.spawns.filter((z) => z.zone === "water");
-  let drained = 0;
-  if (waterZones.length) {
+  // EVERY WATER THAT IS NOT THE SEA IS DRAINED — a lake the hulls cannot
+  // reach is a pocket a hull could be dropped in with nowhere to sail
+  const drainPonds = (): number => {
+    if (!waterZones.length) return 0;
     const wetM = new Uint8Array(N);
     for (let i = 0; i < N; i++) wetM[i] = isWater(i) ? 1 : 0;
     const { lab } = label(wetM);
@@ -670,14 +702,18 @@ export function build(spec: MapSpec): Built {
     const dCore = (i: number): number => Math.hypot((i % W) + 0.5 - core.x, ((i / W) | 0) + 0.5 - core.y);
     let seaD = Infinity;
     for (let i = 0; i < N; i++) if (lab[i] === sea) seaD = Math.min(seaD, dCore(i));
-    const size = new Map<number, number>();
-    for (let i = 0; i < N; i++) if (lab[i]) size.set(lab[i], (size.get(lab[i]) ?? 0) + 1);
-    const drain = new Set<number>();
-    for (let i = 0; i < N; i++) if (lab[i] && lab[i] !== sea && dCore(i) < seaD) drain.add(lab[i]);
-    for (const l of drain) if ((size.get(l) ?? 0) > 500) throw new Error(`a lake of ${size.get(l)} cells lies nearer the core than the sea (${seaD.toFixed(0)} cells)`);
-    for (let i = 0; i < N; i++) if (drain.has(lab[i])) { kind[i] = kind[i] === SHALLOW ? OPEN : WALL; drained++; }
-    if (drained) say(`drained ${drained} cells of pond nearer the core than the sea`);
-  }
+    const size = new Map<number, number>(), nearest = new Map<number, number>();
+    for (let i = 0; i < N; i++) if (lab[i] && lab[i] !== sea) {
+      size.set(lab[i], (size.get(lab[i]) ?? 0) + 1);
+      nearest.set(lab[i], Math.min(nearest.get(lab[i]) ?? Infinity, dCore(i)));
+    }
+    for (const [l, n] of size) if (n > 500 && (nearest.get(l) ?? Infinity) < seaD) throw new Error(`a lake of ${n} cells lies nearer the core than the sea (${seaD.toFixed(0)} cells)`);
+    let drained = 0;
+    for (let i = 0; i < N; i++) if (lab[i] && lab[i] !== sea) { kind[i] = kind[i] === SHALLOW ? OPEN : WALL; drained++; }
+    return drained;
+  };
+  const drained = drainPonds();
+  if (drained) say(`drained ${drained} cells of water off the sea`);
 
   const walkMask = (): Uint8Array => { const m = new Uint8Array(N); for (let i = 0; i < N; i++) m[i] = isWalk(i) ? 1 : 0; return m; };
   const groundPads = (z: SpecZone): number[] => { const out: number[] = []; disc(z.x, z.y, z.r, (i) => { if (isWalk(i)) out.push(i); }); return out; };
@@ -722,6 +758,20 @@ export function build(spec: MapSpec): Built {
   for (const z of spec.spawns) {
     if (z.zone === "ground") disc(z.x, z.y, z.r + 1, (i) => { if (kind[i] === WALL) kind[i] = OPEN; else if (kind[i] === DEEP) kind[i] = SHALLOW; });
     if (z.zone === "water") disc(z.x, z.y, z.r + 1, (i) => { if (kind[i] !== DEEP && kind[i] !== SHALLOW) kind[i] = DEEP; });
+  }
+  // THE SEAL: every pond off the sea drained, and every walkable cell the
+  // core cannot reach turned to rock — nothing may be dropped where it
+  // cannot leave
+  const sealWalk = (): number[] => {
+    const seen = flood([core.y * W + core.x], isWalk);
+    const out: number[] = [];
+    for (let i = 0; i < N; i++) if (isWalk(i) && !seen[i]) { kind[i] = kind[i] === SHALLOW ? DEEP : WALL; out.push(i); }
+    return out;
+  };
+  {
+    const d2 = drainPonds();
+    const sealed = sealWalk();
+    say(`sealed ${sealed.length} pocket cells, drained ${d2} more`);
   }
 
   // ---------- paint ----------
@@ -801,6 +851,53 @@ export function build(spec: MapSpec): Built {
         }
       ruins.push({ cx, cy });
     }
+    // a ruin's wall can close a pocket the seal already passed
+    for (const i of sealWalk()) { blocked[i] = 1; wall[i] = variant(fams[fam[i]].wall, 2); }
+  }
+
+  // THE SPAWN LAYER: the doors, and the nearest ground inward from every
+  // edge cell — the first cell, however deep, whose ground reaches the
+  // core through corridors at least 2 x SPAWN_CLEAR wide (the walk mask
+  // opened at that radius, in the core's piece of it), and SPAWN_DEPTH
+  // cells of it. The terrain is left as the noise drew it: on an open
+  // side the door is the edge itself, behind a mountain it is the
+  // mountain's inner foot. Water tiles the same way over the water mask
+  const spawnTiles: number[] = [];
+  {
+    const mark = new Uint8Array(N);
+    for (const z of spec.spawns) disc(z.x, z.y, z.r, (i) => { mark[i] = 1; });
+    const wide = (mask: Uint8Array, seed: number): Uint8Array => {
+      const o = dilate(erode(mask, SPAWN_CLEAR, 1), SPAWN_CLEAR);
+      const { lab } = label(o);
+      const keep = lab[seed];
+      const out = new Uint8Array(N);
+      if (keep) for (let i = 0; i < N; i++) if (lab[i] === keep) out[i] = 1;
+      return out;
+    };
+    const gm = new Uint8Array(N), wm = new Uint8Array(N);
+    for (let i = 0; i < N; i++) { gm[i] = isWalk(i) && !blocked[i] ? 1 : 0; wm[i] = isWater(i) ? 1 : 0; }
+    const ok = wide(gm, core.y * W + core.x);
+    if (waterZones.length) {
+      const z = waterZones[0];
+      const ww = wide(wm, Math.round(z.y) * W + Math.round(z.x));
+      for (let i = 0; i < N; i++) if (ww[i] && kind[i] === DEEP) ok[i] = 1;
+    }
+    const march = (x0: number, y0: number, dx: number, dy: number): void => {
+      for (let d = 0; d < Math.max(W, H); d++) {
+        const x = x0 + dx * d, y = y0 + dy * d;
+        if (!inb(x, y)) return;
+        if (!ok[y * W + x]) continue;
+        for (let k = 0; k < SPAWN_DEPTH; k++) {
+          const px = x + dx * k, py = y + dy * k;
+          if (inb(px, py) && ok[py * W + px]) mark[py * W + px] = 1;
+        }
+        return;
+      }
+    };
+    for (let t = 0; t < W; t++) { march(t, 0, 0, 1); march(t, H - 1, 0, -1); }
+    for (let t = 0; t < H; t++) { march(0, t, 1, 0); march(W - 1, t, -1, 0); }
+    for (let i = 0; i < N; i++) if (mark[i] && ok[i]) spawnTiles.push(i);
+    say(`spawn tiles: ${spawnTiles.length}`);
   }
 
   const decor: Prop[] = [];
@@ -819,7 +916,7 @@ export function build(spec: MapSpec): Built {
     }
 
   const base = { x: core.x - 2, y: core.y - 2 };
-  return { floor, wall, blocked, pines, decor, spawns: spec.spawns.map((z) => ({ x: z.x, y: z.y, r: z.r, zone: z.zone })), base, core, ruins: ruins.length, holes, lumps, log };
+  return { floor, wall, blocked, pines, decor, spawns: spec.spawns.map((z) => ({ x: z.x, y: z.y, r: z.r, zone: z.zone })), spawnTiles, base, core, ruins: ruins.length, holes, lumps, log };
 }
 
 // ---------- checks ----------
@@ -930,6 +1027,7 @@ export function documentOf(spec: MapSpec, m: Built): MapData {
     wall: Array.from(m.wall),
     blocked: Array.from(m.blocked),
     spawns: m.spawns,
+    spawnTiles: m.spawnTiles,
     pines: m.pines,
     decor: m.decor,
   };
@@ -953,46 +1051,50 @@ interface Theme {
 }
 
 const THEMES: Theme[] = [
+  // the salt pan: sand and dust, salt on the open flats
   {
     families: [
-      { floor: FLOOR_SAND, wall: WALL_SAND, weight: 0.6 },
-      { floor: FLOOR_DARKSAND, wall: WALL_DUNE, weight: 0.26 },
-      { floor: FLOOR_STONE, wall: WALL_STONE, weight: 0.14 },
+      { floor: FLOOR_SAND, wall: WALL_SAND, weight: 0.55 },
+      { floor: FLOOR_DUST, wall: WALL_DUNE, weight: 0.3 },
+      { floor: FLOOR_DARKSAND, wall: WALL_DUNE, weight: 0.15 },
     ],
-    beach: { floor: FLOOR_DARKSAND, wall: WALL_DUNE, depth: 2 },
+    beach: { floor: FLOOR_DUST, wall: WALL_DUNE, depth: 2 },
     flats: { floor: FLOOR_SALT, clear: 10 },
     ruins: 3,
-    names: [["Salt", "Dune", "Ember", "Ashen", "Sun"], ["Basin", "Reach", "Flats", "Verge", "Hollow"]],
+    names: [["Salt", "Dune", "Ashen", "Sun", "Bleached"], ["Basin", "Reach", "Flats", "Verge", "Hollow"]],
   },
+  // the flint fells: cold grey-blue stone, basalt on the flats
   {
     families: [
-      { floor: FLOOR_STONE, wall: WALL_STONE, weight: 0.58 },
-      { floor: FLOOR_DARKSAND, wall: WALL_DUNE, weight: 0.24 },
-      { floor: FLOOR_SHALE, wall: WALL_SHALE, weight: 0.18 },
+      { floor: FLOOR_FLINT, wall: WALL_FLINT, weight: 0.55 },
+      { floor: FLOOR_STONE, wall: WALL_STONE, weight: 0.25 },
+      { floor: FLOOR_SHALE, wall: WALL_SHALE, weight: 0.2 },
     ],
-    beach: { floor: FLOOR_DARKSAND, wall: WALL_DUNE, depth: 3 },
+    beach: { floor: FLOOR_DUST, wall: WALL_DUNE, depth: 3 },
     flats: { floor: FLOOR_BASALT, clear: 12 },
     ruins: 2,
-    names: [["Grey", "Storm", "Broken", "Iron", "Black"], ["Coast", "Shelf", "Bank", "Fold", "Point"]],
+    names: [["Grey", "Storm", "Broken", "Iron", "Flint"], ["Coast", "Shelf", "Bank", "Fold", "Fell"]],
   },
+  // the peat moor: bog and peat in olive, mangroves, tea-dark water
   {
     families: [
-      { floor: FLOOR_MOSS, wall: WALL_SPORE, weight: 0.5 },
-      { floor: FLOOR_DARKSAND, wall: WALL_DUNE, weight: 0.25 },
-      { floor: FLOOR_SPORE_MOSS, wall: WALL_SPORE, weight: 0.15 },
-      { floor: FLOOR_SHALE, wall: WALL_SHALE, weight: 0.1 },
+      { floor: FLOOR_PEAT, wall: WALL_PEAT, weight: 0.45 },
+      { floor: FLOOR_BOG, wall: WALL_SPORE, weight: 0.3 },
+      { floor: FLOOR_MUD, wall: WALL_SPORE, weight: 0.15 },
+      { floor: FLOOR_MOSS, wall: WALL_PEAT, weight: 0.1 },
     ],
     beach: { floor: FLOOR_MUD, depth: 2 },
-    forest: { kind: PINE.sporePine, on: [FLOOR_MOSS, FLOOR_SPORE_MOSS], threshold: 0.52, depth: 4 },
+    forest: { kind: PINE.sporePine, on: [FLOOR_PEAT, FLOOR_BOG, FLOOR_MOSS], threshold: 0.5, depth: 4 },
     water: { shallow: FLOOR_TAINTED_WATER, deep: FLOOR_DEEP_TAINTED_WATER },
     ruins: 1,
-    names: [["Spore", "Fen", "Rot", "Pale", "Mire"], ["Marsh", "Sink", "Bog", "Crossing", "Hollow"]],
+    names: [["Peat", "Fen", "Rot", "Pale", "Mire"], ["Marsh", "Sink", "Bog", "Crossing", "Moor"]],
   },
+  // the tundra
   {
     families: [
       { floor: FLOOR_SNOW, wall: WALL_SNOW, weight: 0.56 },
       { floor: FLOOR_ICE, wall: WALL_ICE, weight: 0.26 },
-      { floor: FLOOR_STONE, wall: WALL_DACITE, weight: 0.18 },
+      { floor: FLOOR_FLINT, wall: WALL_DACITE, weight: 0.18 },
     ],
     beach: { floor: FLOOR_ICE, depth: 2 },
     flats: { floor: FLOOR_ICE, clear: 11 },
@@ -1000,17 +1102,97 @@ const THEMES: Theme[] = [
     ruins: 1,
     names: [["White", "Cold", "Frost", "Still", "North"], ["Peak", "Line", "Field", "Pass", "Shelf"]],
   },
+  // the meadow: grass over loam, pines
   {
     families: [
-      { floor: FLOOR_GRASS, wall: WALL_STONE, weight: 0.56 },
-      { floor: FLOOR_DIRT, wall: WALL_DIRT, weight: 0.3 },
-      { floor: FLOOR_MOSS, wall: WALL_SPORE, weight: 0.14 },
+      { floor: FLOOR_GRASS, wall: WALL_LOAM, weight: 0.5 },
+      { floor: FLOOR_LOAM, wall: WALL_LOAM, weight: 0.3 },
+      { floor: FLOOR_DIRT, wall: WALL_DIRT, weight: 0.2 },
     ],
-    beach: { floor: FLOOR_DIRT, depth: 2 },
-    forest: { kind: PINE.pine, on: [FLOOR_GRASS, FLOOR_DIRT], threshold: 0.52, depth: 4 },
+    beach: { floor: FLOOR_LOAM, depth: 2 },
+    forest: { kind: PINE.pine, on: [FLOOR_GRASS, FLOOR_LOAM], threshold: 0.5, depth: 4 },
     ruins: 2,
     names: [["Green", "Thorn", "Old", "Low", "Wild"], ["Wood", "Way", "Meadow", "Ford", "Glen"]],
   },
+  // the badlands: terracotta clay under ochre rock, dust on the flats
+  {
+    families: [
+      { floor: FLOOR_CLAY, wall: WALL_CLAY, weight: 0.55 },
+      { floor: FLOOR_LOAM, wall: WALL_LOAM, weight: 0.25 },
+      { floor: FLOOR_DUST, wall: WALL_CLAY, weight: 0.2 },
+    ],
+    beach: { floor: FLOOR_DUST, wall: WALL_LOAM, depth: 2 },
+    flats: { floor: FLOOR_DUST, clear: 11 },
+    ruins: 3,
+    names: [["Red", "Rust", "Kiln", "Ochre", "Brick"], ["Badlands", "Mesa", "Gulch", "Bluff", "Terrace"]],
+  },
+  // the ashfall: cinder and basalt under near-black rock
+  {
+    families: [
+      { floor: FLOOR_CINDER, wall: WALL_CINDER, weight: 0.5 },
+      { floor: FLOOR_BASALT, wall: WALL_DARK, weight: 0.3 },
+      { floor: FLOOR_DARKSAND, wall: WALL_CINDER, weight: 0.2 },
+    ],
+    beach: { floor: FLOOR_DARKSAND, wall: WALL_DARK, depth: 2 },
+    flats: { floor: FLOOR_BASALT, clear: 12 },
+    ruins: 2,
+    names: [["Ash", "Black", "Soot", "Ember", "Burnt"], ["Fall", "Reach", "Waste", "Field", "Cinders"]],
+  },
+  // the chalk downs: pale chalk and dust, a little grass
+  {
+    families: [
+      { floor: FLOOR_CHALK, wall: WALL_CHALK, weight: 0.5 },
+      { floor: FLOOR_DUST, wall: WALL_SAND, weight: 0.3 },
+      { floor: FLOOR_GRASS, wall: WALL_CHALK, weight: 0.2 },
+    ],
+    beach: { floor: FLOOR_DUST, wall: WALL_SAND, depth: 2 },
+    flats: { floor: FLOOR_CHALK, clear: 12 },
+    forest: { kind: PINE.pine, on: [FLOOR_GRASS], threshold: 0.6, depth: 3 },
+    ruins: 2,
+    names: [["Chalk", "Pale", "Bone", "Down", "Bright"], ["Downs", "Rise", "Scarp", "Edge", "Cliffs"]],
+  },
+];
+
+/**
+ * THE SHAPE OF A BOARD, rolled apart from its theme (docs/random-maps.md):
+ * how thick the rock lies, how big its features are, how open the ground
+ * is, how much water there is. Every dial below is a range the roll draws
+ * from, and each archetype's ranges are far enough apart that two boards
+ * of different shapes read as different places, not two rolls of one.
+ * `rock` is the noise threshold a cell must EXCEED to be rock — lower
+ * means more of it.
+ */
+interface Archetype {
+  nouns: string[];
+  rock: [number, number];
+  scale: [number, number];
+  warp: [number, number];
+  patch: [number, number];
+  coreR: [number, number];
+  room: [number, number];
+  rooms: [number, number];
+  links: number;
+  holes: [number, number];
+  lumps: [number, number];
+  distort: number;
+  bays: number;
+  sea?: boolean;
+  seaLevel?: number;
+  riverLevel?: number;
+}
+const ARCHETYPES: Archetype[] = [
+  // the highlands: the board as it was — rooms and lanes through thick rock
+  { nouns: ["Highlands", "Reach", "Hollow", "Fold"], rock: [0.43, 0.47], scale: [20, 28], warp: [10, 14], patch: [30, 42], coreR: [10, 11], room: [11, 16], rooms: [1, 2], links: 4, holes: [5, 9], lumps: [8, 16], distort: 3, bays: 0.56 },
+  // the canyons: rock everywhere, fine and twisting, cut by narrow ways
+  { nouns: ["Canyons", "Gorge", "Rifts", "Cut"], rock: [0.34, 0.38], scale: [15, 19], warp: [12, 16], patch: [24, 34], coreR: [10, 11], room: [9, 12], rooms: [1, 2], links: 4, holes: [9, 13], lumps: [3, 7], distort: 3, bays: 0.5 },
+  // the plains: open ground with rock in lumps, big soft features
+  { nouns: ["Plains", "Flats", "Expanse", "Steppe"], rock: [0.53, 0.57], scale: [34, 44], warp: [8, 12], patch: [40, 60], coreR: [12, 14], room: [14, 18], rooms: [2, 3], links: 2, holes: [2, 4], lumps: [20, 28], distort: 2, bays: 0.62 },
+  // the isles: the sea everywhere, the land in islands with fords between
+  { nouns: ["Isles", "Shoals", "Archipelago", "Sound"], rock: [0.44, 0.48], scale: [22, 30], warp: [10, 14], patch: [28, 40], coreR: [11, 13], room: [11, 15], rooms: [1, 3], links: 3, holes: [4, 7], lumps: [6, 12], distort: 3, bays: 0.56, sea: true, seaLevel: 0.56 },
+  // the crater: one great open bowl round the core, its rim the fight
+  { nouns: ["Crater", "Caldera", "Basin", "Bowl"], rock: [0.4, 0.44], scale: [22, 26], warp: [10, 14], patch: [30, 44], coreR: [30, 38], room: [10, 14], rooms: [1, 2], links: 3, holes: [5, 8], lumps: [10, 16], distort: 3, bays: 0.54 },
+  // the warren: a fine maze of small rooms and many cuts between them
+  { nouns: ["Warren", "Maze", "Burrows", "Tangle"], rock: [0.39, 0.43], scale: [11, 14], warp: [6, 9], patch: [22, 30], coreR: [10, 11], room: [8, 10], rooms: [3, 4], links: 4, holes: [12, 16], lumps: [4, 8], distort: 2, bays: 0.52 },
 ];
 
 /** the forty-odd numbers an author would write, rolled from a seed on the 256 board */
@@ -1019,9 +1201,11 @@ export function randomSpec(seed: number): MapSpec {
   const between = (a: number, b: number): number => a + rnd() * (b - a);
   const pick = <T>(a: readonly T[]): T => a[(rnd() * a.length) | 0];
   const theme = pick(THEMES);
+  const arch = pick(ARCHETYPES);
   const clampIn = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, Math.round(v)));
+  const roll = (r: [number, number]): number => r[0] + ((rnd() * (r[1] - r[0] + 1)) | 0);
 
-  const core = { x: clampIn(between(64, AUTHORED - 64), 0, AUTHORED), y: clampIn(between(64, AUTHORED - 64), 0, AUTHORED), r: 10 };
+  const core = { x: clampIn(between(64, AUTHORED - 64), 0, AUTHORED), y: clampIn(between(64, AUTHORED - 64), 0, AUTHORED), r: roll(arch.coreR) };
   const dist = (a: { x: number; y: number }, b: { x: number; y: number }): number => Math.hypot(a.x - b.x, a.y - b.y);
 
   // the sea, if there is one, lies along the edge the core is furthest from
@@ -1029,7 +1213,7 @@ export function randomSpec(seed: number): MapSpec {
     { side: "left", d: core.x }, { side: "right", d: AUTHORED - core.x },
     { side: "top", d: core.y }, { side: "bottom", d: AUTHORED - core.y },
   ].sort((a, b) => b.d - a.d);
-  const seaMode = rnd() < 0.6;
+  const seaMode = arch.sea ?? rnd() < 0.6;
   const seaSides: string[] = seaMode ? [edges[0].side] : [];
   if (seaMode && edges[1].d >= 110 && rnd() < 0.4) seaSides.push(edges[1].side);
   const edgeIn = (side: string, x: number, y: number): number =>
@@ -1117,16 +1301,16 @@ export function randomSpec(seed: number): MapSpec {
     const p = { x: clampIn(g.x + (core.x - g.x) * t + nx * lat, 28, AUTHORED - 28), y: clampIn(g.y + (core.y - g.y) * t + ny * lat, 28, AUTHORED - 28) };
     const have = nearRoom(p, 30);
     if (have >= 0) { vias.push(have); continue; }
-    rooms.push({ x: p.x, y: p.y, r: Math.round(between(11, 16)) });
+    rooms.push({ x: p.x, y: p.y, r: Math.round(between(arch.room[0], arch.room[1])) });
     vias.push(rooms.length - 1);
   }
-  const extra = 1 + ((rnd() * 2) | 0);
+  const extra = roll(arch.rooms);
   for (let tries = 0; tries < 40 && rooms.length < vias.length + extra; tries++) {
     const p = { x: clampIn(between(34, AUTHORED - 34), 0, AUTHORED), y: clampIn(between(34, AUTHORED - 34), 0, AUTHORED) };
     if (dist(p, core) < 42 || nearRoom(p, 42) >= 0) continue;
     if (ground.some((g) => dist(g, p) < 36) || water.some((w) => dist(w, p) < 36) || dist(bay, p) < 30) continue;
     if (seaMode && seaIn(p.x, p.y) < 40) continue;
-    rooms.push({ x: p.x, y: p.y, r: Math.round(between(10, 15)) });
+    rooms.push({ x: p.x, y: p.y, r: Math.round(between(arch.room[0] - 1, arch.room[1] - 1)) });
   }
   const bayIdx = rooms.push(bay) - 1;
 
@@ -1135,7 +1319,7 @@ export function randomSpec(seed: number): MapSpec {
   for (let a = 0; a < bayIdx; a++) for (let b = a + 1; b < bayIdx; b++) pairs.push([a, b, dist(rooms[a], rooms[b])]);
   pairs.sort((p, q) => p[2] - q[2]);
   for (const [a, b, d] of pairs) {
-    if (links.length >= 4) break;
+    if (links.length >= arch.links) break;
     if (d < 36 || d > 110) continue;
     links.push({ rooms: [a, b], width: [8, 12] });
   }
@@ -1160,17 +1344,18 @@ export function randomSpec(seed: number): MapSpec {
     }
   }
   const waterSpec: MapSpec["water"] = seaMode
-    ? { scale: 50, level: 0.44, shore: 0.08, warp: 18, bias: (x, y) => (seaIn(x, y) / 130) * 0.7 - 0.24, ...theme.water }
-    : { scale: 60, level: 0.3, shore: 0.07, bias: (x, y) => 0.14 + wells.reduce((a, w) => a + w(x, y), 0), ...theme.water };
+    ? { scale: 50, level: arch.seaLevel ?? 0.44, shore: 0.08, warp: 18, bias: (x, y) => (seaIn(x, y) / 130) * 0.7 - 0.24, ...theme.water }
+    : { scale: 60, level: arch.riverLevel ?? 0.3, shore: 0.07, bias: (x, y) => 0.14 + wells.reduce((a, w) => a + w(x, y), 0), ...theme.water };
 
-  const name = `${pick(theme.names[0])} ${pick(theme.names[1])}`;
+  // the theme names the ground, the archetype the shape
+  const name = `${pick(theme.names[0])} ${rnd() < 0.5 ? pick(arch.nouns) : pick(theme.names[1])}`;
   return {
     id: RANDOM_MAP_ID,
     name,
     seed,
-    rock: { threshold: between(0.43, 0.47), scale: between(20, 28), warp: between(10, 14) },
+    rock: { threshold: between(arch.rock[0], arch.rock[1]), scale: between(arch.scale[0], arch.scale[1]), warp: between(arch.warp[0], arch.warp[1]) },
     water: waterSpec,
-    floors: { scale: 36, warp: 12, families: theme.families },
+    floors: { scale: between(arch.patch[0], arch.patch[1]), warp: 12, families: theme.families },
     beach: theme.beach,
     flats: theme.flats,
     forest: theme.forest,
@@ -1179,8 +1364,11 @@ export function randomSpec(seed: number): MapSpec {
     spawns,
     routes,
     links,
-    holes: 5 + ((rnd() * 5) | 0),
-    lumps: 8 + ((rnd() * 9) | 0),
+    holes: roll(arch.holes),
+    lumps: roll(arch.lumps),
+    distort: arch.distort,
+    bays: arch.bays,
+    clutter: between(0.6, 1.8),
     ruins: (rnd() * (theme.ruins + 1)) | 0,
     routeMin: RANDOM_ROUTE_MIN,
     spreadMax: 0.8,

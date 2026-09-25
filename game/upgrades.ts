@@ -446,10 +446,9 @@ const COIL: readonly TurretUpgradeDef[] = [
     name: "Extended Arcs",
     blurb: "The bolt jumps to 4 more bodies before it dies.",
     glyph: "range",
-    // a lightning length is two per node walked
     apply: (s) =>
       withBullet(s, {
-        lightning: { length: (s.bullet.lightning?.length ?? 0) + 8 },
+        lightning: { jumps: (s.bullet.lightning?.jumps ?? 0) + 4, reach: s.bullet.lightning?.reach ?? 0 },
       }),
   },
   {
@@ -467,7 +466,7 @@ const COIL: readonly TurretUpgradeDef[] = [
     tier: 4,
     name: "Tesla Cascade",
     blurb:
-      "3 bolts a shot instead of 1: +50% damage, +35% attack speed, each bolt chains twice as far, and every node it lands on hits everything within 8 units.",
+      "3 bolts a shot instead of 1: +50% damage, +35% attack speed, each bolt chains to twice as many bodies, and every body it lands on hits everything within 8 units.",
     glyph: "surge",
     apply: (s) =>
       then(
@@ -477,7 +476,7 @@ const COIL: readonly TurretUpgradeDef[] = [
           // the bolt's own catch radius — every node it lands on takes a
           // small cluster with it rather than the one body it touched
           hitRadius: 8 * MU,
-          lightning: { length: (s.bullet.lightning?.length ?? 0) * 2 },
+          lightning: { jumps: (s.bullet.lightning?.jumps ?? 0) * 2, reach: s.bullet.lightning?.reach ?? 0 },
         },
       ),
   },
@@ -773,7 +772,7 @@ const CLEAVER: readonly TurretUpgradeDef[] = [
     id: "cleaver-reach",
     turret: "cleaver",
     tier: 2,
-    name: "Extended Rays",
+    name: "Extended Reach",
     blurb: "+30% range.",
     glyph: "range",
     apply: (s) => reaching(s, 1.3),
@@ -783,9 +782,12 @@ const CLEAVER: readonly TurretUpgradeDef[] = [
     turret: "cleaver",
     tier: 3,
     name: "Surge Shot",
-    blurb: "5 rays a shot instead of 3: +30% damage, and a wider spread.",
+    blurb: "+30% damage, and the cleave sweeps an arc half again as wide.",
     glyph: "spread",
-    apply: (s) => ({ ...stronger(s, 1.3), shots: 5, spread: (16 * Math.PI) / 180 }),
+    apply: (s) =>
+      s.bullet.ray
+        ? withBullet(stronger(s, 1.3), { ray: { ...s.bullet.ray, cone: s.bullet.ray.cone * 1.5 } })
+        : stronger(s, 1.3),
   },
 ];
 

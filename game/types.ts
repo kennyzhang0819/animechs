@@ -595,6 +595,8 @@ export const enum FxKind {
   /** THE NUKE (levels.ts payload.fuse): the flash that fills the whole
    *  blast radius (`len`), white into orange, with the ring on its rim */
   NukeBurst = 64,
+  Cleave = 65, // the cleaver's slash: a thick crescent swept out through its cone
+  Torch = 66, // the torch's tongue: a fat round jet, the whole visible weapon
 }
 
 /** an r,g,b triple in 0..1, the form every draw call wants */

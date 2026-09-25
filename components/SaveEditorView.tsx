@@ -332,10 +332,10 @@ export default function SaveEditorView() {
               })}
             </div>
             <div className="mt-2 text-[13px] text-[#71717C]">
-              Each one opens on the one below it cleared anywhere, up to{" "}
-              {rungLabel(XP_BASE_TIER)} — this save's best is{" "}
+              Every difficulty up to {rungLabel(XP_BASE_TIER)} is open from the start — this
+              save's best clear is{" "}
               {bestClearAnywhere(draft) >= 0 ? rungLabel(bestClearAnywhere(draft)) : "nothing"}.
-              Everything above {rungLabel(XP_BASE_TIER)} rolls rules, so it also stays shut until
+              Everything above {rungLabel(XP_BASE_TIER)} rolls rules, so it stays shut until
               level {MUTATORS_FROM} has rules to roll.
             </div>
 

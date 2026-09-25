@@ -321,6 +321,7 @@ import {
   UNIT_WEAPONS,
   EXPLOSION_STYLES,
   TOWER_LASER_STYLE,
+  LASER_STYLES,
   type StarSpec,
   type UnitWeapon,
 } from "./weapons";
@@ -7450,7 +7451,7 @@ export class Sim {
             // spike on what it struck, every one of them forced past the
             // effect cap — which on a thousand runts was thousands of
             // uncapped quads a second and a frame that stalled. It is ONE
-            // effect now: the whole line as a hair-thin streak carrying its
+            // effect now: the whole line as a streak carrying its
             // length (FxKind.RailShoot, `len`) and a small hit flick. THE
             // LINE IS FORCED FOR EVERY TIER (the weapon lane, FX_WEAPON_CAP):
             // it used to be forced for the top tiers only, and on a late
@@ -12770,14 +12771,19 @@ export class Sim {
     const nature = TOWER_NATURE[t.kind];
     if (bul.lightning) {
       if (hostile) {
-        this.unitBolt(x, y, a, bul.lightning.length, bul.fxColor ?? PAL.piercerLaser);
+        this.unitBolt(x, y, a, 4 * (bul.lightning.jumps + 1), bul.fxColor ?? PAL.piercerLaser);
         hitAimed();
         return;
       }
+      const first =
+        t.targetIdx >= 0 && t.targetIdx < this.n && this.uid[t.targetIdx] === t.target ? t.targetIdx : -1;
       const pts = this.lightningBolt(
         x, y, a,
+        first,
+        st.range,
         bul.damage,
-        bul.lightning.length,
+        bul.lightning.jumps,
+        bul.lightning.reach,
         bul.hitRadius ?? 2.5,
         bul.collidesAir,
         bul.collidesGround,
@@ -12785,7 +12791,7 @@ export class Sim {
         bul.fxColor,
         nature,
       );
-      this.pushBolt(x, y, bul.lifetime, pts, true); // the bolt IS coil's shot
+      this.pushBolt(x, y, bul.lifetime, pts, true, 1); // the chain IS coil's shot
       hitAimed();
       return;
     }
@@ -12816,24 +12822,21 @@ export class Sim {
       return;
     }
     if (bul.rail) {
+      const railStyle = TOWER_LASER_STYLE[t.kind] ?? 0;
       if (hostile) {
-        // the line the player's rail draws, without the sweep behind it
-        const spec = bul.rail;
-        if (bul.pointFx !== undefined)
-          for (let d = 0; d <= spec.length; d += spec.pointSpacing)
-            this.bulletFx(bul.pointFx, x + cos * d, y + sin * d, a, bul.fxColor, true);
+        // the streak the player's rail draws, without the sweep behind it
+        this.pushFx(x, y, LASER_STYLES[railStyle].lifetime, FxKind.Laser, a, bul.rail.length, 0, railStyle, true);
         this.bulletFx(bul.despawnFx, x, y, a, bul.fxColor, true);
-      } else this.railShot(x, y, a, bul, nature);
+      } else this.railShot(x, y, a, bul, nature, railStyle);
       hitAimed();
       return;
     }
     if (bul.ray) {
       if (!hostile)
-        this.hitscanRay(
-          x,
-          y,
-          a,
+        this.cleaveSweep(
+          x, y, a,
           bul.ray.length,
+          bul.ray.cone,
           bul.damage,
           bul.collidesAir,
           bul.collidesGround,
@@ -12841,8 +12844,12 @@ export class Sim {
           bul.fxColor,
           nature,
         );
-      // forced: the ray is cleaver's entire visible shot (damage is instant)
-      this.pushFx(x, y, bul.lifetime, FxKind.Shrapnel, a, bul.ray.length, 0, 0, true);
+      // forced: the slash is cleaver's entire visible shot; the cone rides
+      // the sides lane in degrees
+      this.pushFxCol(
+        x, y, bul.lifetime, FxKind.Cleave, a, bul.ray.length,
+        bul.fxColor ?? PAL.ember, Math.round((bul.ray.cone * 180) / Math.PI), true,
+      );
       hitAimed();
       return;
     }
@@ -13001,6 +13008,7 @@ export class Sim {
     angle: number,
     b: BulletStats,
     nature: number,
+    style: number,
   ): void {
     const spec = b.rail!;
     const { upx, upy, uhp } = this;
@@ -13029,16 +13037,71 @@ export class Sim {
     }
     dead.sort((p, q) => q - p);
     for (const i of dead) if (uhp[i] <= 0) this.killUnit(i);
-    // pointEffect every pointEffectSpace down what the line reached
-    if (b.pointFx !== undefined) {
-      // forced: the trail line is the rail's entire visible shot
+    // one streak down what the line reached — forced: it is the rail's
+    // entire visible shot
+    this.pushFx(x, y, LASER_STYLES[style].lifetime, FxKind.Laser, angle, reached, 0, style, true);
+    if (b.pointFx !== undefined)
       for (let d = 0; d <= reached; d += spec.pointSpacing)
         this.bulletFx(b.pointFx, x + dirx * d, y + diry * d, angle, b.fxColor, true);
-    }
     // BulletType.despawned: a rail bullet has speed 0 and a lifetime of one
     // tick, so it dies where it was fired and its despawn effect is, in
     // practice, the turret's own detonation — forced with the trail
     this.bulletFx(b.despawnFx, x, y, angle, b.fxColor, true);
+  }
+
+  /**
+   * The cleaver's slash: every body whose hitbox lies within `length` of
+   * the muzzle and inside the `cone` about `angle` takes the full damage
+   * at once. No cap, and terrain never blocks it.
+   */
+  private cleaveSweep(
+    x: number,
+    y: number,
+    angle: number,
+    length: number,
+    cone: number,
+    dmg: number,
+    air: boolean,
+    ground: boolean,
+    hitFx: BulletFx | undefined,
+    fxColor: RGB | undefined,
+    nature: number,
+  ): void {
+    const { upx, upy, uhp, urad, ukind, bStart, bUnits, splashHits } = this;
+    const half = cone / 2;
+    const pad = length + this.rmaxAliveFor(air, ground);
+    const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((x + pad) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((y + pad) / HC) | 0, 0, HROWS - 1);
+    splashHits.length = 0;
+    for (let hy = hy0; hy <= hy1; hy++) {
+      const row = hy * HCOLS;
+      const e = bStart[row + hx1 + 1];
+      const e0 = bStart[row + hx0];
+      this.probes += e - e0;
+      for (let k = e0; k < e; k++) {
+        const i = bUnits[k];
+        if (i >= this.n || uhp[i] <= 0) continue;
+        if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
+        const dx = upx[i] - x, dy = upy[i] - y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        const r = urad[i];
+        if (d - r > length) continue;
+        // a body whose edge crosses the arc's edge is inside it
+        let da = Math.atan2(dy, dx) - angle;
+        da = Math.abs(Math.atan2(Math.sin(da), Math.cos(da)));
+        const slack = d > r ? Math.asin(r / d) : Math.PI;
+        if (da > half + slack) continue;
+        splashHits.push(i);
+      }
+    }
+    for (const i of splashHits) {
+      this.damageUnit(i, dmg, false, 1, nature);
+      if (uhp[i] > 0) this.bulletFx(hitFx, upx[i], upy[i], angle, fxColor);
+    }
+    splashHits.sort((a2, b2) => b2 - a2);
+    for (const i of splashHits) if (uhp[i] <= 0) this.killUnit(i);
   }
 
   /**
@@ -13197,34 +13260,21 @@ export class Sim {
   }
 
   /**
-   * Mindustry Lightning.createLightningInternal, ported whole: coil's shot
-   * is not a projectile but a bolt that WALKS.
-   *
-   * It takes `length / 2` steps. At each one it drops a node bullet where
-   * it stands — that is where the damage happens, one victim per node —
-   * then looks for enemies whose hitbox falls inside a 30-unit SQUARE
-   * around it and jumps to the FURTHEST of them, which is what makes the
-   * bolt reach across a crowd rather than nuzzle the nearest body. With
-   * nobody in reach it turns up to 20 degrees and wanders half a square on.
-   *
-   * A unit is only chained ONCE, and only the first `maxChain` of them:
-   * past eight victims the bolt stops looking and just walks out. The
-   * jittered node positions are handed back as the drawn path.
-   *
-   * ONE DIVERGENCE. In Mindustry each node is a real bullet, and a real
-   * bullet is absorbable — a starhart3's force field standing over a node
-   * would eat it. Here the node damages directly and no field sees it, so
-   * a bolt walks through a bubble it should have died in. Coil is a
-   * 90-unit ground turret and the bubble is 7.5 tiles, so the two rarely
-   * meet; wiring it up properly means the absorb pass running before the
-   * turrets rather than after them, which is a change to the tick order.
+   * The coil's chain: the target first (or, with none held, the nearest
+   * body within `firstReach` of the muzzle), then the nearest unstruck
+   * body within `reach` of the last, `jumps` times. Every body struck
+   * takes `damage`, and so does anything whose hitbox lies within `brad`
+   * of its centre. The path handed back is a bowed link per hop.
    */
   private lightningBolt(
     x: number,
     y: number,
     angle: number,
+    first: number,
+    firstReach: number,
     damage: number,
-    length: number,
+    jumps: number,
+    reach: number,
     brad: number,
     air: boolean,
     ground: boolean,
@@ -13233,73 +13283,81 @@ export class Sim {
     nature: number,
   ): number[] {
     const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
-    const HIT_RANGE = 30 * MU; // Lightning.hitRange
-    const MAX_CHAIN = 8; // Lightning.maxChain
-    const half = HIT_RANGE / 2;
-    const pts: number[] = [];
-    const chained = new Set<number>(); // unit IDS — indices move under us
+    const pts: number[] = [x, y];
+    const chained = this.boltChained; // unit IDS — indices move under us
+    chained.length = 0;
     const hits = this.boltHits;
     hits.length = 0;
-    let rot = angle;
-    const nodes = (length / 2) | 0;
-    for (let step = 0; step < nodes; step++) {
-      // the node's own bullet, which is where every point of coil's damage
-      // is actually dealt
-      const victim = this.nearestUnit(x, y, brad, air, ground);
-      if (victim >= 0) {
-        this.damageUnit(victim, damage, false, 1, nature);
-        if (uhp[victim] > 0) this.bulletFx(hitFx, x, y, rot, fxColor);
-        else if (!hits.includes(victim)) hits.push(victim);
-      }
-      pts.push(x + (Math.random() * 2 - 1) * 3 * MU, y + (Math.random() * 2 - 1) * 3 * MU);
-
-      // the chain: the furthest un-hit enemy whose hitbox touches the square
-      let far = -1, fd = -1;
-      if (chained.size < MAX_CHAIN) {
-        const pad = half + this.rmaxAliveFor(air, ground);
-        const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
-        const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
-        const hx1 = clamp(((x + pad) / HC) | 0, 0, HCOLS - 1);
-        const hy1 = clamp(((y + pad) / HC) | 0, 0, HROWS - 1);
-        for (let hy = hy0; hy <= hy1; hy++) {
-          const row = hy * HCOLS;
-          const e = bStart[row + hx1 + 1];
-          const e0 = bStart[row + hx0];
-          this.probes += e - e0;
-          for (let k = e0; k < e; k++) {
-            const j = bUnits[k];
-            if (j >= this.n || uhp[j] <= 0 || chained.has(this.uid[j])) continue;
-            if (KIND_FLYING[ukind[j]] ? !air : !ground) continue;
-            const dx = upx[j] - x, dy = upy[j] - y;
-            // Rect vs hitbox, not a circle — and an axis-aligned one, so
-            // this is the only reach test in the file that reads the
-            // NOMINAL radius rather than the shaped one (Sim.hitR): the
-            // bolt is choosing whom to jump to, and the damage it deals
-            // when it lands goes through nearestUnit, which is shaped
-            const reach = half + urad[j];
-            if (Math.abs(dx) > reach || Math.abs(dy) > reach) continue;
-            const d2 = dx * dx + dy * dy;
-            if (d2 > fd) {
-              fd = d2;
-              far = j;
-            }
+    // damage everything within brad of (x, y) when `strike`, and hand back
+    // the nearest unchained body within `r` of it
+    const sweep = (r: number, strike: boolean): number => {
+      const pad = Math.max(brad, r) + this.rmaxAliveFor(air, ground);
+      const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
+      const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
+      const hx1 = clamp(((x + pad) / HC) | 0, 0, HCOLS - 1);
+      const hy1 = clamp(((y + pad) / HC) | 0, 0, HROWS - 1);
+      let next = -1, nd = Infinity;
+      for (let hy = hy0; hy <= hy1; hy++) {
+        const row = hy * HCOLS;
+        const e = bStart[row + hx1 + 1];
+        const e0 = bStart[row + hx0];
+        this.probes += e - e0;
+        for (let k = e0; k < e; k++) {
+          const j = bUnits[k];
+          if (j >= this.n || uhp[j] <= 0) continue;
+          if (KIND_FLYING[ukind[j]] ? !air : !ground) continue;
+          const dx = upx[j] - x, dy = upy[j] - y;
+          const d = Math.sqrt(dx * dx + dy * dy) - urad[j];
+          if (strike && d <= brad) {
+            this.damageUnit(j, damage, false, 1, nature);
+            if (uhp[j] > 0) this.bulletFx(hitFx, upx[j], upy[j], Math.atan2(dy, dx), fxColor);
+            else if (!hits.includes(j)) hits.push(j);
+          }
+          if (d <= r && d < nd && uhp[j] > 0 && !chained.includes(this.uid[j])) {
+            nd = d;
+            next = j;
           }
         }
       }
-      if (far >= 0) {
-        chained.add(this.uid[far]);
-        x = upx[far];
-        y = upy[far];
-      } else {
-        rot += (Math.random() * 2 - 1) * ((20 * Math.PI) / 180);
-        x += Math.cos(rot) * half;
-        y += Math.sin(rot) * half;
-      }
+      return next;
+    };
+    let cur =
+      first >= 0 && first < this.n && uhp[first] > 0 && (KIND_FLYING[ukind[first]] ? air : ground)
+        ? first
+        : sweep(firstReach, false);
+    for (let hop = 0; cur >= 0 && hop <= jumps; hop++) {
+      const cx = upx[cur], cy = upy[cur];
+      this.bowTo(pts, x, y, cx, cy);
+      x = cx;
+      y = cy;
+      chained.push(this.uid[cur]);
+      cur = sweep(reach, true);
     }
-    // the walk read live positions, so nothing may be removed until it ends
+    // a shot into nothing still shows a stub out of the muzzle
+    if (pts.length === 2) this.bowTo(pts, x, y, x + Math.cos(angle) * 12 * MU, y + Math.sin(angle) * 12 * MU);
+    // the sweeps read live positions, so nothing may be removed until they end
     hits.sort((a, b) => b - a);
     for (const i of hits) if (uhp[i] <= 0) this.killUnit(i);
     return pts;
+  }
+
+  /** one link of a bolt path: a gentle bow from (x0, y0) to (x1, y1), a
+   *  point every ~8 units, so the arc reads round rather than jagged */
+  private bowTo(pts: number[], x0: number, y0: number, x1: number, y1: number): void {
+    const dx = x1 - x0, dy = y1 - y0;
+    const dst = Math.sqrt(dx * dx + dy * dy);
+    if (dst < 1) {
+      pts.push(x1, y1);
+      return;
+    }
+    const segs = Math.min(8, Math.max(2, Math.ceil(dst / (8 * MU))));
+    const amp = Math.min(dst * 0.18, 5 * MU) * (Math.random() < 0.5 ? -1 : 1);
+    const nx = -dy / dst, ny = dx / dst;
+    for (let k = 1; k <= segs; k++) {
+      const f = k / segs;
+      const o = Math.sin(f * Math.PI) * amp;
+      pts.push(x0 + dx * f + nx * o, y0 + dy * f + ny * o);
+    }
   }
 
   /**
@@ -13481,6 +13539,7 @@ export class Sim {
   /** scratch for the instant weapons and the held beam; never nested,
    *  never persisted */
   private readonly boltHits: number[] = [];
+  private readonly boltChained: number[] = [];
   private readonly boltDists: number[] = [];
 
   /**
@@ -14799,8 +14858,8 @@ export class Sim {
 
   /** Fx.lightning: the only effect whose shape is data rather than a seed —
    * Mindustry hands it the very point list the walk built */
-  private pushBolt(x: number, y: number, ttl: number, pts: readonly number[], force = false): void {
-    const i = this.pushSlot(x, y, ttl, FxKind.Lightning, 0, 0, 0, 0, force);
+  private pushBolt(x: number, y: number, ttl: number, pts: readonly number[], force = false, style = 0): void {
+    const i = this.pushSlot(x, y, ttl, FxKind.Lightning, 0, 0, 0, style, force);
     if (i >= 0) this.fxPts[i] = pts;
   }
 

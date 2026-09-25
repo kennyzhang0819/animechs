@@ -386,6 +386,15 @@ const FLOOR_GROUPS: readonly ({ kind: FloorKind; slots: number } | { water: Wate
   { kind: "basalt", slots: 3 },
   { water: "taintedWater" },
   { water: "deepTaintedWater" },
+  // the third batch: the game's own families (tiles.ts)
+  { kind: "loam", slots: 3 },
+  { kind: "dust", slots: 3 },
+  { kind: "flint", slots: 3 },
+  { kind: "clay", slots: 3 },
+  { kind: "peat", slots: 3 },
+  { kind: "bog", slots: 3 },
+  { kind: "cinder", slots: 3 },
+  { kind: "chalk", slots: 3 },
 ];
 /** each group's painted cells: one per variant, or the one water block */
 const FLOOR_CELLS: readonly (readonly UVRect[])[] = FLOOR_GROUPS.map((g) =>
@@ -433,6 +442,15 @@ export const FLOOR_ICE = 39;
 export const FLOOR_BASALT = 42;
 export const FLOOR_TAINTED_WATER = 45;
 export const FLOOR_DEEP_TAINTED_WATER = 48;
+// the third batch
+export const FLOOR_LOAM = 51;
+export const FLOOR_DUST = 54;
+export const FLOOR_FLINT = 57;
+export const FLOOR_CLAY = 60;
+export const FLOOR_PEAT = 63;
+export const FLOOR_BOG = 66;
+export const FLOOR_CINDER = 69;
+export const FLOOR_CHALK = 72;
 
 /**
  * WHICH FLOOR GROUPS ARE WATER — the whole definition of where a walker
@@ -506,6 +524,7 @@ const edgeQuads = (uv: UVRect): ReadonlyArray<readonly UVRect[]> => {
 const EDGE_KINDS: readonly (FloorKind | null)[] = [
   "grass", "stone", "dirt", null, "darksand", null, null,
   "moss", "sporeMoss", "mud", "shale", "snow", "salt", "ice", "basalt", null, null,
+  "loam", "dust", "flint", "clay", "peat", "bog", "cinder", "chalk",
 ];
 const EDGE_CELLS: readonly (UVRect | null)[] = EDGE_KINDS.map((k) =>
   k ? reserve(`edge-${k}`, 192, 192, { upright: true }) : null,
@@ -538,6 +557,7 @@ const WALL_INSET = 8;
 const WALL_KINDS_IN_ORDER: readonly (WallKind | null)[] = [
   "stone", "dirt", null, "dark", null,
   "spore", "shale", "snow", "ice", "salt", "sand", "dune", "dacite",
+  "flint", "clay", "peat", "cinder", "chalk", "loam",
 ];
 const WALL_CELLS: readonly (readonly UVRect[] | null)[] = WALL_KINDS_IN_ORDER.map((k) =>
   k ? Array.from({ length: WALL_VARIANTS }, (_, v) => tile(`wall-${k}-${v}`, 64, WALL_INSET)) : null,
@@ -553,6 +573,7 @@ export const WALL_GROUP_KINDS: readonly WallKind[] = WALL_KINDS_IN_ORDER.filter(
 export const WALL_GROUP: readonly number[] = [
   0, 0, 1, 1, -1, 2, 2, -1,
   3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10,
+  11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 16, 16,
 ];
 /** first index of each second-band wall family */
 export const WALL_SPORE = 8;
@@ -563,6 +584,13 @@ export const WALL_SALT = 16;
 export const WALL_SAND = 18;
 export const WALL_DUNE = 20;
 export const WALL_DACITE = 22;
+// the third band
+export const WALL_FLINT = 24;
+export const WALL_CLAY = 26;
+export const WALL_PEAT = 28;
+export const WALL_CINDER = 30;
+export const WALL_CHALK = 32;
+export const WALL_LOAM = 34;
 /**
  * Mindustry's <wall>-large art: one 2x2-tile block per family, split
  * into per-tile quadrant UVs [row][col] in screen space (y down). null
@@ -590,6 +618,7 @@ const largeQuads = (uv: UVRect): ReadonlyArray<readonly UVRect[]> => {
 /** the families with large art, in WALL_GROUP order */
 const LARGE_KINDS: readonly (WallKind | null)[] = [
   "stone", null, "dark", "spore", "shale", "snow", "ice", "salt", "sand", "dune", "dacite",
+  "flint", "clay", "peat", "cinder", "chalk", "loam",
 ];
 const LARGE_CELLS: readonly (UVRect | null)[] = LARGE_KINDS.map((k) =>
   k ? reserve(`wall-${k}-large`, 128, 128, { upright: true }) : null,

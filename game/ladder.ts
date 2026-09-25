@@ -142,10 +142,10 @@ export const tierCountScale = (tier: number): number => RUNGS[clampTier(tier)].c
 export const tierObjectiveHpScale = (_tier: number): number => 1;
 
 /** the rung a save must have cleared on SOME map to open this one, -1 for
- *  none: the climb is one named difficulty at a time and stops asking at
- *  Nemesis, so every rung above it wants the same clear (docs/difficulty.md) */
-export const tierClearNeeded = (tier: number): number =>
-  Math.min(clampTier(tier) - 1, XP_BASE_TIER);
+ *  none. NO TIER ASKS FOR A CLEAR: Incursion through Nemesis are open from
+ *  the first run, and the rungs above want only the mutator deck's level
+ *  (docs/difficulty.md). The dial stays so the seam does */
+export const tierClearNeeded = (_tier: number): number => -1;
 
 /** does a save whose best clear anywhere is `bestCleared` (0-based, -1 for
  *  none) stand high enough on the climb to deploy this rung? */

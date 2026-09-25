@@ -2242,11 +2242,12 @@ export class Game {
   /**
    * IS THIS TIER OPEN YET, and how long is left if it is not (economy.ts
    * TIER_UNLOCK). A free board — a sandbox or an editor — has no clock on
-   * it at all, because nothing there is being paced.
+   * it at all, because nothing there is being paced, and the admin sandbox
+   * (rich) lifts it while it is on; off again, the clock rules as before.
    */
   private tierGate(tier: TowerTier): { left: number; of: number } {
     const of = TIER_UNLOCK[tier];
-    if (!this.dealing || of <= 0) return { left: 0, of: 0 };
+    if (!this.dealing || this.world.rich || of <= 0) return { left: 0, of: 0 };
     return { left: Math.max(0, of - this.world.time), of };
   }
 
@@ -4376,15 +4377,16 @@ export class Game {
         if (range > 0) {
           c.beginPath();
           c.arc(st.x, st.y, range, 0, Math.PI * 2);
-          c.fillStyle = "rgba(255,211,127,0.06)";
+          c.fillStyle = "rgba(255,211,127,0.08)";
           c.fill();
-          c.strokeStyle = "rgba(255,211,127,0.7)";
-          c.lineWidth = 1.5;
+          c.strokeStyle = "rgba(255,211,127,0.75)";
+          // never under three device px, and a real band once zoomed in
+          c.lineWidth = Math.max(3 / s, 5);
           c.stroke();
         }
       }
-      c.strokeStyle = "rgba(255,211,127,0.7)";
-      c.lineWidth = 1.5;
+      c.strokeStyle = "rgba(255,211,127,0.75)";
+      c.lineWidth = Math.max(2 / s, 4);
       const selPx = size * CELL;
       c.strokeRect(st.gx * CELL + 1, st.gy * CELL + 1, selPx - 2, selPx - 2);
     }

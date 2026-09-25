@@ -632,8 +632,20 @@ const BRANDER_BEAM = beamStyle({
   width: 7,
 });
 
+/** the railhead's shot: the warm slug's yellow, one fat streak the length
+ *  the rail reached */
+export const RAIL_LASER = laserStyle({
+  colors: [[PAL.bulletYellowBack, 0.4], [PAL.bulletYellowBack, 1], [PAL.bulletYellow, 1]],
+  width: 14,
+  sideAngle: 0,
+  sideWidth: 0,
+  sideLength: 0,
+  lifetime: t(22),
+});
+
 export const TOWER_LASER_STYLE: Partial<Record<TowerKind, number>> = {
   tether: TETHER_LASER.id,
+  railhead: RAIL_LASER.id,
 };
 
 /** the furnace's beam, and it is HOT: the deep orange at .33 and .67, the
@@ -673,7 +685,7 @@ const BOSS_EXPLOSION = explosionStyle({
   smokeRad: 23,
   sparkColor: PAL.suppress,
   sparks: 10,
-  sparkStroke: 2,
+  sparkStroke: 3.5,
   sparkRad: 40,
   sparkLen: 6,
 });
@@ -1251,14 +1263,15 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   stoop3: [{ name: "stoop3-charge", reload: t(6), mounts: 1, damage: 0, range: u(96), speed: 0, fx: "bomb", suicide: true }],
   stoop4: [{ name: "stoop4-charge", reload: t(6), mounts: 1, damage: 0, range: u(120), speed: 0, fx: "bomb", suicide: true }],
   stoop5: [{ name: "stoop5-nuke", reload: t(6), mounts: 1, damage: 0, range: u(160), speed: 0, fx: "bomb", suicide: true }],
-  // boss-weapon: three boss-missile UNITS a volley (shoot.shots 3,
-  // inaccuracy 28), each its own sprite with a sapBulletBack engine, going
-  // off as ExplosionBulletType(140, 25) in Pal.sap x 1.8 and Pal.suppress,
-  // Fx.sparkShoot + shootSmokeTitan off the rail. upstream: speed 4.6,
-  // splash 140 in 25. THE BOSS IS IN NO FAMILY and keeps its missiles
+  // boss-weapon: three boss-missile UNITS a volley off each of two rails,
+  // each its own sprite with a sapBulletBack engine, going off as a wide
+  // blast in Pal.sap x 1.8 and Pal.suppress. THE BOSS IS IN NO FAMILY and
+  // keeps its missiles. The volley is the fight's clock: a hull this slow
+  // and this plated has to hurt for every second it is left standing, so
+  // the numbers are far past upstream's (splash 140 in 25, one a shot)
   boss: [
     {
-      name: "boss-weapon", reload: t(70), mounts: 2, damage: 30, splash: 80, splashRadius: u(35),
+      name: "boss-weapon", reload: t(60), mounts: 2, shots: 3, damage: 80, splash: 200, splashRadius: u(45),
       range: rng(3.7, 60), speed: spd(3.7), fx: "missile",
       look: {
         region: "boss-missile", width: u(39 / 4), height: u(60 / 4), shrinkX: 0, shrinkY: 0,
