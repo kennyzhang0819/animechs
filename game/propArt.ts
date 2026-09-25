@@ -186,11 +186,21 @@ function canopy(s: Sheet, rng: () => number, cx: number, cy: number, R: number, 
 /** one stone: a rounded lump, shaded, seamed dark over any stone under it */
 function stone(s: Sheet, rng: () => number, cx: number, cy: number, rx: number, ry: number, crack = true): void {
   s.disc(cx, cy, rx + 3, ry + 3, (x, y) => (s.at(x, y) ? DEEP : null));
-  s.disc(cx, cy, rx, ry, bands(rng, cx, cy, Math.max(rx, ry), 0.24, -0.26));
-  if (crack && rx >= 10) {
-    const a = rng() * 6.28, l = rx * 0.45;
-    const x0 = cx + Math.cos(a) * rx * 0.25, y0 = cy + Math.sin(a) * ry * 0.25;
+  const shade = bands(rng, cx, cy, Math.max(rx, ry), 0.24, -0.26);
+  // a big stone is not an ellipse: a few lobes off its rim make it a lump
+  const lobes = rx >= 20 ? 4 + ((rng() * 3) | 0) : 0;
+  const a0 = rng() * 6.28;
+  for (let i = 0; i < lobes; i++) {
+    const b = a0 + (i / lobes) * 6.28 + (rng() - 0.5) * 0.5, r = rx * (0.3 + rng() * 0.15);
+    s.disc(cx + Math.cos(b) * (rx - r * 0.9), cy + Math.sin(b) * (ry - r * 0.9), r, r * 0.9, shade);
+  }
+  s.disc(cx, cy, rx, ry, shade);
+  const cracks = crack ? (rx >= 30 ? 2 : rx >= 10 ? 1 : 0) : 0;
+  for (let i = 0; i < cracks; i++) {
+    const a = rng() * 6.28, l = rx * 0.4;
+    const x0 = cx + Math.cos(a) * rx * 0.3, y0 = cy + Math.sin(a) * ry * 0.3;
     s.bar([x0, y0], [x0 + Math.cos(a + 2.2) * l, y0 + Math.sin(a + 2.2) * l], 4, DEEP);
+    s.bar([x0 + Math.cos(a + 2.2) * l, y0 + Math.sin(a + 2.2) * l], [x0 + Math.cos(a + 2.2) * l + Math.cos(a + 1.1) * l * 0.5, y0 + Math.sin(a + 2.2) * l + Math.sin(a + 1.1) * l * 0.5], 4, DEEP);
   }
 }
 
@@ -256,8 +266,8 @@ export const PROP_KINDS: readonly PropDef[] = [
     }
     s.disc(20, 28, 7, 4, DEEP);
   }),
-  nature("boulder", "Boulder", 1, 1.25, ROCK_TONES, (s, rng) => {
-    stone(s, rng, 20 + (rng() - 0.5) * 2, 20.5, 15, 13);
+  nature("boulder", "Boulder", 1, 1.75, ROCK_TONES, (s, rng) => {
+    stone(s, rng, 28 + (rng() - 0.5) * 2, 28.5, 23, 20);
   }),
   nature("stump", "Stump", 1, 1, WOOD_TONES, (s, rng) => {
     const a0 = rng() * 6.28;
@@ -273,9 +283,8 @@ export const PROP_KINDS: readonly PropDef[] = [
   nature("tree", "Tree", 2, 2.5, LEAF_TONES, (s, rng) => {
     canopy(s, rng, 40, 40, 35, 7);
   }),
-  nature("rock", "Rock", 2, 2.25, ROCK_TONES, (s, rng) => {
-    stone(s, rng, 34, 40, 27, 21);
-    stone(s, rng, 51, 26, 14, 12, false);
+  nature("rock", "Rock", 2, 3, ROCK_TONES, (s, rng) => {
+    stone(s, rng, 48, 49, 42, 36);
   }),
   nature("log", "Fallen log", 2, 2.25, WOOD_TONES, (s, rng) => {
     const y0 = 28, h = 18;
@@ -293,11 +302,8 @@ export const PROP_KINDS: readonly PropDef[] = [
   nature("oak", "Oak", 3, 3.5, LEAF_TONES, (s, rng) => {
     canopy(s, rng, 56, 56, 49, 9, 5);
   }),
-  nature("outcrop", "Outcrop", 3, 3.25, ROCK_TONES, (s, rng) => {
-    stone(s, rng, 46, 56, 28, 23);
-    stone(s, rng, 74, 39, 16, 14);
-    stone(s, rng, 32, 27, 13, 11, false);
-    stone(s, rng, 74, 72, 11, 9, false);
+  nature("outcrop", "Outcrop", 3, 4, ROCK_TONES, (s, rng) => {
+    stone(s, rng, 64, 65, 57, 49);
   }),
   nature("grove", "Grove", 4, 4.5, LEAF_TONES, (s, rng) => {
     clump(s, rng, 20, 113, 12, 4);

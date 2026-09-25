@@ -33,7 +33,7 @@ is ignored.
 A prop is a square footprint of 1, 2, 3, 4 or 6 tiles, painted at 32 px
 a tile and packed at 2x like the floors. Its art may REACH past the
 footprint (`reach`, in tiles): a shrub's square is one tile and its
-canopy one and a half, so bushes and trees touch and overlap with no
+canopy nearly two; a stone reaches the same way, so bushes and stones touch and overlap with no
 hitbox under the spill. A made prop reaches exactly its footprint. The
 index into `PROP_KINDS` is what a document stores: **append, never
 reorder.**
@@ -42,7 +42,7 @@ reorder.**
 | --- | --- | --- |
 | shrub, reeds, boulder, stump | 1 | the small growth, a stone, a cut trunk |
 | tree, rock, log | 2 | a canopy, a bigger stone, a fallen trunk |
-| oak, outcrop | 3 | a broad canopy, a cluster of stones |
+| oak, outcrop | 3 | a broad canopy, the biggest stone |
 | grove | 4 | three canopies and their brush |
 | brush, thicket | 2, 3 | the bushes a thicket is made of: a canopy with no trunk |
 | crate | 1 | a supply crate |
