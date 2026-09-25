@@ -898,11 +898,11 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // together, a 5-damage pellet each every 22 ticks — the same 0.45 a tick
   tacker: {
     name: "Tacker",
-    size: 1,
+    size: 2,
     health: 280, // common band (300), mid: 50 tiles
     armor: 0,
     range: 160 * MU,
-    reload: 22 / TICK,
+    reload: 36 / TICK,
     shots: 2,
     shotDelay: 0, // both barrels on the same tick — see Sim.fireShot's salvo
     spread: 0,
@@ -914,7 +914,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     barrels: { count: 2, spread: 3.5 * MU },
     bullet: {
       speed: 2.5 * TICK * MU,
-      damage: 5,
+      damage: 33,
       lifetime: (160 + 5 + 10) / 2.5 / TICK, // limitRange(5) + base 10-unit margin
       splash: 0,
       splashRadius: 0,
@@ -942,7 +942,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // Artillery can't touch the air — ground targets only
   lobber: {
     name: "Lobber",
-    size: 1,
+    size: 2,
     health: 250, // common band, the longest reach of the four
     armor: 0,
     range: 235 * MU,
@@ -957,9 +957,9 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     targetGround: true,
     bullet: {
       speed: 3 * TICK * MU,
-      damage: 20, // never lands directly — kept 1:1 with the source
+      damage: 80, // never lands directly — kept 1:1 with the source
       lifetime: (235 + 0 + 10) / 3 / TICK, // limitRange(0) + base 10-unit margin
-      splash: 33,
+      splash: 132,
       splashRadius: 25 * 0.75 * MU,
       collidesAir: false,
       collidesGround: true,
@@ -993,7 +993,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // of 37 side by side on the same clock (111 a volley)
   autocannon: {
     name: "Autocannon",
-    size: 2,
+    size: 3,
     health: 930, // uncommon band
     armor: 4,
     range: 190 * MU,
@@ -1010,7 +1010,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     barrels: { count: 3, spread: 4 * MU },
     bullet: {
       speed: 4 * TICK * MU,
-      damage: 37,
+      damage: 83,
       lifetime: (190 + 9 + 10) / 4 / TICK, // limitRange() default margin 9
       splash: 0,
       splashRadius: 0,
@@ -1046,7 +1046,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // below, and docs/elements.md for what fire is worth.
   airburst: {
     name: "Airburst",
-    size: 2,
+    size: 3,
     health: 870, // uncommon band
     armor: 4,
     range: 220 * MU,
@@ -1061,9 +1061,9 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     targetGround: true,
     bullet: {
       speed: 4.2 * TICK * MU,
-      damage: 2,
+      damage: 4.5,
       lifetime: (220 + 2 + 10) / 4.2 / TICK, // limitRange(2) + base 10-unit margin
-      splash: 27 * 0.5,
+      splash: 27 * 0.5 * 2.25,
       splashRadius: 15 * MU,
       collidesAir: true,
       collidesGround: true,
@@ -1104,7 +1104,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // body inside a 50-degree arc out to its reach takes the damage at once.
   cleaver: {
     name: "Cleaver",
-    size: 3,
+    size: 4,
     health: 2800, // rare band (2,400) ceiling — 28 tiles
     armor: 9,
     range: 90 * MU,
@@ -1119,7 +1119,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     targetGround: true,
     bullet: {
       speed: 0,
-      damage: 105,
+      damage: 187,
       lifetime: 14 / TICK, // animation only — damage is instant
       splash: 0,
       splashRadius: 0,
@@ -1145,7 +1145,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // flame takes flyers too, since a bat over a torch is inside its reach
   torch: {
     name: "Torch",
-    size: 1,
+    size: 2,
     health: 350, // common band ceiling — 19 tiles, planted in the swarm
     armor: 0,
     range: 60 * MU,
@@ -1161,7 +1161,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     shootY: 3 * MU,
     bullet: {
       speed: 3.35 * TICK * MU,
-      damage: 17,
+      damage: 68,
       // no limitRange call: 3.35 units/tick for 18 ticks is 60.3 units,
       // which is exactly the turret's range
       lifetime: 18 / TICK,
@@ -1186,7 +1186,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // the target and jumps to the nearest unstruck body three more times.
   coil: {
     name: "Coil",
-    size: 1,
+    size: 2,
     health: 320, // common band, short reach
     armor: 0,
     range: 90 * MU,
@@ -1201,7 +1201,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     targetGround: true,
     bullet: {
       speed: 0,
-      damage: 12,
+      damage: 48,
       // the chain is instant; this is only how long the drawn arc lingers
       lifetime: 14 / TICK,
       splash: 0,
@@ -1230,7 +1230,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // the 140 that guts an ironhide1 is 104 against an ironhide3. Ground only.
   piercer: {
     name: "Piercer",
-    size: 2,
+    size: 3,
     health: 990, // uncommon band
     armor: 4,
     range: 165 * MU,
@@ -1247,7 +1247,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     targetGround: true,
     bullet: {
       speed: 0,
-      damage: 140,
+      damage: 315,
       lifetime: 16 / TICK, // the beam's fade — the damage is instant
       splash: 0,
       splashRadius: 0,
@@ -1287,7 +1287,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // early is paid for it.
   barrage: {
     name: "Barrage",
-    size: 3,
+    size: 4,
     health: 2000, // rare band floor — 91 tiles
     armor: 9,
     range: 290 * MU,
@@ -1305,9 +1305,9 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     lifeScaleOffset: 1 / 9,
     bullet: {
       speed: 1.5 * TICK * MU, // half upstream's 3 — the shells are slow
-      damage: 40, // never lands directly — an artillery shell arcs over
+      damage: 71, // never lands directly — an artillery shell arcs over
       lifetime: 80 / TICK,
-      splash: 115,
+      splash: 204,
       splashRadius: 53 * 0.75 * MU, // ~40 units, over upstream's 22.5
       collidesAir: false,
       collidesGround: true,
@@ -1372,7 +1372,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // Wet units still drive at 65% speed for 2 s, refreshed on every soak.
   douser: {
     name: "Douser",
-    size: 2,
+    size: 3,
     health: 1050, // uncommon band (900) ceiling — 34 tiles
     armor: 4,
     range: 110 * MU,
@@ -1397,7 +1397,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       // and the splash branch in updateProjectiles), so a shot thrown past
       // a dodging target still wets the ground it was headed for
       lifetime: 34 / TICK,
-      splash: 10,
+      splash: 22.5,
       splashRadius: 30 * MU,
       collidesAir: true,
       collidesGround: true,
@@ -1467,7 +1467,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // without taking the reload back to where it stops being one.
   tether: {
     name: "Tether",
-    size: 2,
+    size: 3,
     health: 750, // uncommon band floor — 94 tiles
     armor: 4,
     range: 300 * MU,
@@ -1485,7 +1485,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     sort: "strongest",
     bullet: {
       speed: 0,
-      damage: 550,
+      damage: 1240,
       // the damage is instant; this is the lance's FADE, a third of a
       // second so a shot that big is still on screen long enough to read
       lifetime: 20 / TICK,
@@ -1568,7 +1568,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // umbrella spends better than twice as long under every other turret.
   deluge: {
     name: "Deluge",
-    size: 3,
+    size: 4,
     health: 2530, // rare band
     armor: 9,
     range: 190 * MU,
@@ -1587,7 +1587,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       speed: 4 * TICK * MU,
       damage: 0, // as douser: every point this shot deals is splash
       lifetime: 49 / TICK, // 196 units of flight over a 190 range
-      splash: 26,
+      splash: 46,
       splashRadius: 46 * MU,
       collidesAir: true,
       collidesGround: true,
@@ -1650,7 +1650,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // the big one.
   fixer: {
     name: "Fixer",
-    size: 1,
+    size: 2,
     health: 300, // common band, flat: retired, and a heal radius is not a range
     armor: 0,
     range: 40 * MU,
@@ -1672,7 +1672,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // to pay a 2x2 footprint and a tier-2 price for a block that fires nothing
   restorer: {
     name: "Restorer",
-    size: 2,
+    size: 3,
     health: 900, // uncommon band, flat: retired (types.ts RETIRED_KINDS)
     armor: 4,
     range: 85 * MU,
@@ -1700,7 +1700,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // being wasted on a target that has already fallen over.
   hive: {
     name: "Hive",
-    size: 2,
+    size: 3,
     health: 810, // uncommon band
     armor: 4,
     range: 240 * MU,
@@ -1718,9 +1718,9 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     barrels: { count: 3, spread: 4 * MU },
     bullet: {
       speed: 3.7 * TICK * MU,
-      damage: 10,
+      damage: 22.5,
       lifetime: (240 + 5 + 10) / 3.7 / TICK, // limitRange(5) + base 10-unit margin
-      splash: 30 * 1.5,
+      splash: 30 * 1.5 * 2.25,
       splashRadius: 30 * 0.75 * MU,
       collidesAir: true,
       collidesGround: true,
@@ -1761,7 +1761,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // layers.
   whirl: {
     name: "Whirl",
-    size: 3,
+    size: 4,
     health: 2270, // rare band
     armor: 9,
     range: 200 * MU,
@@ -1778,9 +1778,9 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     barrels: { count: 3, spread: 3 * MU },
     bullet: {
       speed: 4 * TICK * MU,
-      damage: 8,
+      damage: 14,
       lifetime: (200 + 9 + 10) / 4 / TICK, // limitRange() default margin 9
-      splash: 60,
+      splash: 107,
       splashRadius: 52 * 0.75 * MU,
       collidesAir: true,
       collidesGround: true,
@@ -1820,7 +1820,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // it is clever: it is a wall of heavy shells.
   repeater: {
     name: "Repeater",
-    size: 4,
+    size: 6,
     health: 6000, // ultra band
     armor: 15,
     range: 260 * MU,
@@ -1840,7 +1840,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     barrels: { count: 2, spread: 8 * MU },
     bullet: {
       speed: 8 * TICK * MU,
-      damage: 104, // Mindustry's 80, +30% (see the note above)
+      damage: 234, // Mindustry's 80, +30% (see the note above)
       lifetime: (260 + 9 + 10) / 8 / TICK, // limitRange() default margin 9
       splash: 0,
       splashRadius: 0,
@@ -1885,7 +1885,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // that queue the case it is built for.
   furnace: {
     name: "Furnace",
-    size: 4,
+    size: 6,
     health: 7000, // ultra band (6,000) ceiling — 61 tiles
     armor: 15,
     range: 195 * MU,
@@ -1901,7 +1901,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     shootY: 4 * 4 * MU, // Turret's own default, as repeater's
     bullet: {
       speed: 0,
-      damage: 101, // per damageInterval, NOT per second — stock 78, +30%
+      damage: 227, // per damageInterval, NOT per second — stock 78, +30%
       lifetime: 0, // the beam is turret state, not a projectile
       splash: 0,
       splashRadius: 0,
@@ -1958,7 +1958,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // waste it.
   railhead: {
     name: "Railhead",
-    size: 4,
+    size: 6,
     health: 5000, // ultra band floor — 156 tiles, it is never in reach
     armor: 15,
     range: 500 * MU,
@@ -1975,7 +1975,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     sort: "strongest",
     bullet: {
       speed: 0,
-      damage: 1755, // Mindustry's 1350, +30% (see the note above)
+      damage: 3950, // Mindustry's 1350, +30% (see the note above)
       lifetime: 1 / TICK, // RailBulletType's own: the damage is instant
       splash: 0,
       splashRadius: 0,
@@ -1999,7 +1999,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // these numbers, is docs/elements.md.
   duster: {
     name: "Duster",
-    size: 1,
+    size: 2,
     health: 250, // common band floor — the longest reach on the board bar three
     armor: 0,
     range: 285 * MU,
@@ -2019,7 +2019,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       damage: 0,
       poison: 1.2,
       lifetime: (285 + 10) / 2.2 / TICK,
-      splash: 9,
+      splash: 36,
       splashRadius: 30 * 0.75 * MU,
       collidesAir: false,
       collidesGround: true,
@@ -2037,7 +2037,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   },
   blighter: {
     name: "Blighter",
-    size: 2,
+    size: 3,
     health: 880, // uncommon band, a long lob
     armor: 4,
     range: 225 * MU,
@@ -2057,7 +2057,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       // short of its mark is worth what one bursting on its face is
       damage: 0,
       lifetime: 90 / TICK,
-      splash: 26,
+      splash: 58.5,
       splashRadius: 46 * 0.75 * MU, // the widest blast on the board
       poison: 1.4,
       collidesAir: false,
@@ -2076,7 +2076,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   },
   drifter: {
     name: "Drifter",
-    size: 3,
+    size: 4,
     health: 2400, // rare band ceiling — it stands well back
     armor: 9,
     range: 260 * MU,
@@ -2096,7 +2096,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       // a walking pace: the canister crosses 450 units, over twice what
       // the turret aims inside, and takes fourteen seconds doing it
       speed: 0.53 * TICK * MU,
-      damage: 6, // per pulse, not per second
+      damage: 11, // per pulse, not per second
       lifetime: 850 / TICK,
       splash: 0,
       splashRadius: 0,
@@ -2117,7 +2117,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   },
   stinger: {
     name: "Stinger",
-    size: 4,
+    size: 6,
     health: 6400, // ultra band
     armor: 15,
     range: 340 * MU,
@@ -2134,7 +2134,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     barrels: { count: 2, spread: 7 * MU },
     bullet: {
       speed: 10 * TICK * MU,
-      damage: 80,
+      damage: 180,
       poison: 1.6,
       lifetime: (340 + 9 + 10) / 10 / TICK,
       splash: 0,

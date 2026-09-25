@@ -58,7 +58,7 @@ it takes ~10 minutes there and 40+ anywhere weaker. Narrow it with
   Nemesis +1 up; Custom mode may name a hand instead.
 - **The economy** (`game/economy.ts`). The core trickles scrap on the RUN CLOCK
   and nothing else — no kill pays — and a turret card costs its TIER (the gun's
-  footprint in tiles, 1 to 4) times its shape's cell count. See
+  footprint in tiles, 2/3/4/6) times its shape's cell count. See
   [docs/economy.md](docs/economy.md). Mods and relics (`game/mods.ts`,
   `game/relics.ts`) are out of play: the catalogs are intact, nothing deals them.
 

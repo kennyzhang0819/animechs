@@ -35,7 +35,7 @@ Nemesis +1 up. Custom mode may name a hand instead of rolling.
 
 **The economy** (`game/economy.ts`, `docs/economy.md`). The core pays on the RUN
 CLOCK and nothing else — no kill drops, no wave bonus — so difficulty and income are
-independent. A press costs its TIER (the gun's footprint in tiles, 1 to 4, picked with
+independent. A press costs its TIER (the gun's footprint in tiles, 2/3/4/6, picked with
 1/2/3/4) times `CARD_CELLS`, flat, times the AMOUNT (1/4/9/16, cycled with X); the SHAPE
 it hands over is rolled, 3x3 to 6x6. The bands open on the run clock — tier 1 at once,
 then 5:00, 10:00 and 15:00. **Mods and
@@ -46,13 +46,13 @@ Do not delete them.
 ## Checks — read this before running one
 
 - **`npm run check`** — run this on all your work. Quick crash gate + typecheck.
-- **`npm run check:full`** — **only if you touched units or in-game logic.** Another
-  agent is currently expanding it into something very comprehensive, so a run may take
-  **~10 minutes**. Run it deliberately, never by reflex. It is also **GPU-gated**: run
-  it only on local dev on an Apple Silicon Pro/Max chip (the M3 Pro this repo is
-  developed on, or better). On anything weaker — a base chip, a VM, CI, a cloud box —
-  it takes 40 minutes or more: do not start it, say you skipped it and why, and leave
-  `npm run check` as the gate.
+- **`npm run check:full`** — **only if you touched units or in-game logic.** Two
+  clocks: `battle` (the board a run's income buys, mixed, against the script's late
+  waves, mixed) and `render` (the draw, in a headless browser). A few minutes. Run it
+  deliberately, never by reflex. It is also **GPU-gated**: run it only on local dev on
+  an Apple Silicon Pro/Max chip (the M3 Pro this repo is developed on, or better). On
+  anything weaker — a base chip, a VM, CI, a cloud box — do not start it, say you
+  skipped it and why, and leave `npm run check` as the gate.
 
 ## Where things live
 

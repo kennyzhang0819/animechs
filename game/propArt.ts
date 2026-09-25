@@ -12,7 +12,7 @@
 import { ellipse, hex, INK, mix, mulberry32, WALL_KINDS, WALL_STYLE, type WallKind } from "./tiles";
 import { LINOCUT_TERRAIN } from "./terrainFlag";
 
-export type PropTiles = 1 | 2 | 3 | 4 | 6;
+export type PropTiles = 1 | 2 | 3 | 4 | 6 | 10;
 /** px a tile, the floors' own grid */
 export const PROP_PX = 32;
 
@@ -606,6 +606,20 @@ export const PROP_KINDS: readonly PropDef[] = [
   }),
   nature("lilypad", "Big lily pad", 2, 2.25, LEAF_TONES, (s, rng) => {
     lilypad(s, rng, 36, 36, 29);
+  }),
+  // the big bushes and stones, rare on a board (mapgen.ts, the size rolls)
+  nature("copse", "Copse", 6, 7, LEAF_TONES, (s, rng) => {
+    canopy(s, rng, 112, 112, 102, 12, 7, false);
+  }),
+  nature("brake", "Brake", 10, 11, LEAF_TONES, (s, rng) => {
+    canopy(s, rng, 176, 176, 162, 14, 9, false);
+  }),
+  nature("crag", "Crag", 6, 7, ROCK_TONES, (s, rng, v) => {
+    stone(s, rng, 112, 113, 104, 92, v);
+  }, STONE_VARIANTS),
+  // one painting: three of a cell this size is a tenth of the atlas
+  nature("tor", "Tor", 10, 11, ROCK_TONES, (s, rng) => {
+    stone(s, rng, 176, 177, 166, 148, 1);
   }),
 ];
 /** what a fresh prop's `rot` rolls to: a quarter turn for a kind that turns, a painting otherwise */

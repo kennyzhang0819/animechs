@@ -682,6 +682,7 @@ export const UV_BLIGHTER = top("blighter", 128);
 export const UV_DRIFTER = top("drifter", 96);
 export const UV_STINGER = top("stinger", 128);
 export const UV_TOWER_BASE4 = flat("tower-base-4", 128);
+export const UV_TOWER_BASE6 = flat("tower-base-6", 192);
 /**
  * The blocks that never turn keep the heading they were drawn at: the
  * shield tower (the Shield Towers mutator, Mindustry's force projector,
@@ -2229,6 +2230,7 @@ const SPRITES = {
   foundryBase2: FOUNDRY_BASE_URLS[1],
   foundryBase3: FOUNDRY_BASE_URLS[2],
   foundryBase4: FOUNDRY_BASE_URLS[3],
+  foundryBase6: FOUNDRY_BASE_URLS[4],
   foundryTacker: FOUNDRY_HEAD_URLS.tacker!,
   foundryLobber: FOUNDRY_HEAD_URLS.lobber!,
   foundryTorch: FOUNDRY_HEAD_URLS.torch!,
@@ -3621,6 +3623,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   draw(UV_TOWER_BASE1, plateArt(img.foundryBase1, img.towerBase1));
   draw(UV_TOWER_BASE3, plateArt(img.foundryBase3, img.towerBase3));
   draw(UV_TOWER_BASE4, plateArt(img.foundryBase4, img.towerBase4));
+  draw(UV_TOWER_BASE6, plateArt(img.foundryBase6, img.towerBase4));
   draw(UV_TURRET, headArt("foundryAutocannon", () => outlinedBlock(img.autocannonPreview)));
   draw(UV_AIRBURST, headArt("foundryAirburst", () => outlinedBlock(img.airburstPreview)));
   draw(UV_LOBBER, headArt("foundryLobber", () => outlinedBlock(img.lobber)));

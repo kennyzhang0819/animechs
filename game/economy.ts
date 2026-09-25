@@ -181,10 +181,10 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
  * Per tile that is 12 / 17.5 / 44.4 / 150. docs/economy.md.
  */
 export const TIER_PRICE: Record<TowerTier, number> = {
-  1: 12,
-  2: 70,
-  3: 400,
-  4: 2400,
+  1: 48,
+  2: 158,
+  3: 711,
+  4: 5400,
 };
 
 /** every turret of one tier, in roster order */
@@ -272,18 +272,16 @@ export const TOWER_PRICE: Record<TowerKind, number> = Object.fromEntries(
   TOWER_KINDS.map((k) => [k, TIER_PRICE[TOWER_TIER[k]]]),
 ) as Record<TowerKind, number>;
 
+/** the footprint each tier promises, in tiles — 2x2, 3x3, 4x4, 6x6 (docs/economy.md) */
+export const TIER_SIZE: Record<TowerTier, number> = { 1: 2, 2: 3, 3: 4, 4: 6 };
+
 /**
- * THE TIER IS THE FOOTPRINT, and the corner's four keys promise it.
- *
- * IT IS A PROMISE ABOUT THE BUILD CARD, so it is asked of the kinds the
- * card can offer and no others (types.ts FIELDED_KINDS). The shelved
- * Wardens are never dealt and never bought, and one of them is six tiles
- * — a size the card has no key for, because nothing the player places is
- * ever that big.
+ * THE TIER IS THE FOOTPRINT, and the corner's four keys promise it — asked
+ * of the kinds the card can offer and no others (types.ts FIELDED_KINDS).
  */
 (() => {
   for (const k of FIELDED_KINDS)
-    if (TOWERS[k].size !== TOWER_TIER[k])
+    if (TOWERS[k].size !== TIER_SIZE[TOWER_TIER[k]])
       throw new Error(`${k} is ${TOWERS[k].size}x${TOWERS[k].size} but filed at tier ${TOWER_TIER[k]}`);
 })();
 

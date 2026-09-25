@@ -62,7 +62,10 @@ assumed:
   other, never in more colours: a 3x3 or 4x4 stock top is five colours.
 - **A turret is two sprites**: the base plate that never turns, and the
   head the renderer spins to face its target (`top()` in `game/atlas.ts`),
-  32 px a tile: 32, 64, 96, 128 for a 1x1 to a 4x4. A head must have a
+  32 px a tile: 32, 64, 96, 128 for a 1x1 to a 4x4 — the size each head was
+  drawn at. The footprints were promoted one step on 2026-09-25 (2x2 to 6x6,
+  docs/economy.md), so every head is upscaled on the board until it is redrawn
+  at its new size. A head must have a
   front.
 
 ## The two rules of the faction

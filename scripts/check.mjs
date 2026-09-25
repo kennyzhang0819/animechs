@@ -4,26 +4,20 @@
  * takes a judgment call — in two sizes.
  *
  *   npm run check          quick: does it compile, does it run, does it crash
- *   npm run check:full     ...and does it still fit the frame, at the scale
- *                          the game says it must carry — a minute or two
- *   npm run check:full -- --only siege
- *                          one clock, for iterating on it (frames, siege,
- *                          scale, maps, turrets, enemies, swarmfirst,
- *                          upgrades, render — a comma list)
- *   npm run check:full -- --only turrets --kinds torch,lobber --n 2000
- *                          the isolated clocks narrowed: these kinds, at
- *                          this many of each (the goal is ten thousand)
+ *   npm run check:full     ...and the two clocks: does the board a run can
+ *                          afford still fit the frame against the script's
+ *                          late waves, and does it still draw
+ *   npm run check:full -- --only battle
+ *                          one clock (battle, render)
  *
  * QUICK is the one an agent runs after every edit. It is a CRASH GATE, not
  * a balance gate: every check in it has a right answer that needs no
  * knowledge of what the game is supposed to feel like, it never times
  * anything, and it is over in seconds.
  *
- * FULL is the same plus the clocks — `frames` and the `siege` family below
- * — which are the checks that have to run the game at load to learn
- * anything, and so cost what a late wave costs to simulate, many times
- * over. Run it before a change to the sim is called done, and any time
- * something "feels slow": it reproduces the board that lagged, and it
+ * FULL is the same plus the clocks, which have to run the game at load to
+ * learn anything. Run it before a change to the sim is called done, and any
+ * time something "feels slow": it reproduces the board that lagged, and it
  * fails with the phase table that says why.
  *
  * What it asks:
@@ -41,44 +35,18 @@
  *
  * ...and with --full:
  *
- *   frames   the heaviest three waves the ladder sends, on a board full of
- *            turrets, timed: does one sim step still fit its share of a
- *            60fps frame
- *   siege    the LATE board — nine thousand turrets, a hundred and fifty
- *            modules, the T5s and a boss taking it apart — timed the same
- *            way, with the swarm actually killing turrets while the clock
- *            runs, which `frames` never does (see the check for why that
- *            matters)
- *   scale    the same siege at three, six, nine and twelve thousand
- *            turrets, so the cost of the board is read as a CURVE and not
- *            a point
- *   maps     the siege on every PLAYABLE world, because a choke is a
- *            different fight from an open field and the board that lags is
- *            the one the player happens to be on
- *
- * ...and THE STANDARD, which is what the game is held to at endgame and
- * the reason the rest of these exist: ten thousand turrets on the map,
- * ten thousand bodies, both sides shooting, under a hundred random
- * upgrades — and drawing well at every zoom while it happens. Each clock
- * below asks one part of that in isolation, so a failure names a KIND
- * rather than a fight:
- *
- *   turrets  every fielded turret kind, TEN THOUSAND OF IT ALONE, every
- *            one of them in reach of one body that cannot die — the
- *            heaviest fire a kind can put out, and nothing else on the
- *            step. Timed per kind; a kind over budget is named
- *   enemies  every body kind, ten thousand of it alone, every one in reach
- *            of a core that cannot fall — and once more with the whole
- *            T1-5 roster mixed. Timed per kind
- *   swarmfirst  ten thousand bodies on the field FIRST, then the board
- *            spammed down under them, a card a step — what a late run does
- *            when it panic-builds, with the whole swarm already in reach
- *   upgrades the siege under a hundred random upgrade nodes off the real
- *            trees, on top of its hundred and fifty modules
+ *   battle   the board a run's income has bought by the late waves —
+ *            each stage's scrap spent on its own tier at the mean price
+ *            (ladder.ts stageAudit), the four tiers mixed along the route,
+ *            every fielded kind in its share — against the script's own
+ *            late waves, T1 to T5 mixed: does one sim step still fit its
+ *            share of a 60fps frame. A board of one kind and a board that
+ *            fills the map are both boards nobody plays, so neither is
+ *            timed any more; the old clocks for them are in git history
  *   render   the other half of the frame, which nothing above can time:
- *            the same boards stood in a real Game in a headless browser
- *            (scripts/bench.mjs) and the DRAW read at a ladder of zooms
- *            from the whole map to the closest, against DRAW_GOAL_MS
+ *            the bench's two mixed boards (scripts/bench.mjs battle and
+ *            waves) stood in a real Game in a headless browser and the
+ *            DRAW read at a ladder of zooms, against DRAW_GOAL_MS
  *
  * WHAT IT DELIBERATELY DOES NOT DO IS PLAY THE GAME. It never reports a
  * wave reached or a core percentage, because those are numbers somebody
@@ -102,7 +70,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 /** --full: the clocks as well (see the header) */
 const FULL = process.argv.includes("--full");
-/** --only frames,siege,...: just those clocks, for iterating on one —
+/** --only battle,render: just those clocks, for iterating on one —
  *  the quick checks always run, they are the crash gate and they are cheap */
 const argAfter = (name) => {
   const i = process.argv.indexOf(name);
@@ -113,10 +81,6 @@ const ONLY = (() => {
   return v ? new Set(v.split(",")) : null;
 })();
 /** --kinds a,b: the isolated clocks (turrets, enemies) over these kinds only */
-const KINDS = (() => {
-  const v = argAfter("--kinds");
-  return v ? new Set(v.split(",")) : null;
-})();
 /** --n <count>: how many of one thing the standard stands — ten thousand is
  *  the goal; smaller is for iterating on a clock, never for passing one */
 const N = Number(argAfter("--n") ?? 10000);
@@ -236,7 +200,7 @@ let rand = 7;
  * PUT THE DICE BACK. Every check that rolls any opens with its own call,
  * so a draw taken by one can never move another: without it, adding a
  * single `Math.random()` to the sim check would silently re-roll the whole
- * enemy mix the frames check below is timed against.
+ * enemy mix the battle check below is timed against.
  */
 const reseed = (seed) => { rand = seed >>> 0; };
 Math.random = () => {
@@ -250,7 +214,8 @@ Math.random = () => {
 const R = (m) => require(path.join(DIST, m));
 const L = R("levels.js"), M = R("maps.js"), LA = R("ladder.js"), C = R("constants.js");
 const TR = R("track.js"), FA = R("foundryArt.js"), T = R("types.js"), MK = R("missionMarks.js");
-/** the most turrets the frames check will stand up. Every world we ship runs
+const SR = R("simreport.js"), EC = R("economy.js");
+/** the most turrets the battle check will stand up. Every world we ship runs
  *  out of legal ground long before this, so it is a stop against a future
  *  map that does not, never a target. */
 const MAX_BOARD = 4000;
@@ -744,7 +709,7 @@ try {
 }
 report("sim", simProblems, simDetail);
 
-// ---------- frames: does a late wave still fit in a frame ----------
+// ---------- battle: does a late wave still fit in a frame ----------
 
 /**
  * THE ONE CHECK THAT ASKS HOW FAST, and the reason the whole thing is
@@ -752,13 +717,12 @@ report("sim", simProblems, simDetail);
  *
  * WHAT IT BUILDS is the worst honest hour of a campaign: the heaviest
  * stretch of the script (LOAD_WAVES), at the count the TOP OF THE LADDER
- * sends it at, walking into a board that has been built out as far as the
- * map allows. Every body is rolled independently out of the whole T1-4
- * roster rather than copied — twenty-eight kinds across seven families, so
- * the step being timed is running every drive, every weapon and every
- * hitbox the swarm has, which one kind repeated five thousand times would
- * not. T5 and the boss are left out on purpose: they are authored events,
- * not what a wave is made of.
+ * sends it at, walking into the board a run's income has bought by then
+ * (boardBy: the stage audit's own arithmetic), every fielded kind in its
+ * tier's share. Every body is rolled independently out of the whole T1-5
+ * roster rather than copied, so the step being timed is running every
+ * drive, every weapon and every hitbox the swarm has. The objective trees
+ * are left out: a mission puts those down, never a wave.
  *
  * THE SWARM COMES IN THROUGH THE DOORS AND WALKS. It is not scattered over
  * the map by hand, because the cost of a step is mostly a question of how
@@ -818,60 +782,50 @@ const FRAME_MS = 1000 / 60;
 const DRAW_MS = 5;
 const SIM_BUDGET_MS = FRAME_MS - DRAW_MS;
 
-/** the stretch of the script to load the field with, 1-based and inclusive —
- *  the heaviest three waves of the fifty-wave script, 5.7k bodies */
+/** the stretch of the script to load the field with, 1-based and inclusive */
 const LOAD_WAVES = [34, 36];
-/** how far either side of the road the board is built out, in cells */
+/** how far from the road the belt of turrets reaches, in cells */
 const BELT_REACH = 30;
-/** seconds the swarm walks before the clock starts — long enough that it is
- *  a column in contact with the line rather than a crowd at the doors */
+/** seconds the swarm walks before the clock, and seconds on the clock */
 const MARCH = 4;
-/** ...and seconds of it timed. Every step is recorded and the MIDDLE one is
- *  the verdict: that is the number a frame counter shows, and it does not
- *  move when one step in fifty goes long. */
-const SAMPLE = 2;
-
-const frameProblems = [];
-let frameDetail = "";
-if (wants("frames")) try {
+const SAMPLE = 3;
+/** the board the stage audit says a run has bought by `wave`: each stage's
+ *  scrap on its own tier at the mean price, the stage under way pro rata */
+const boardBy = (spec, wave) => {
+  const quota = new Map();
+  for (const s of LA.stageAudit(spec)) {
+    const played = Math.min(s.to, wave) - s.from + 1;
+    if (played <= 0) continue;
+    const n = Math.round((s.boards * played) / (s.to - s.from + 1));
+    if (n > 0) quota.set(s.tier, n);
+  }
+  return quota;
+};
+const battleProblems = [];
+let battleDetail = "";
+if (wants("battle")) try {
   reseed(29);
-  // the top of the ladder: tierCountScale plateaus at Nemesis, so this is
-  // simply the most the script is ever asked to send.
-  //
-  // THE BOARD IS THE FIRST ONE IN THE GAME and that is now Coldline, not
-  // Confluence — which came off PLAYABLE_WORLD_IDS with the other holds.
-  // SO THE NUMBER HERE MOVED WHEN THE BOARD DID, and a jump in it is not
-  // by itself a sim regression: Coldline stands up about 1,850 turrets
-  // where Confluence stood 1,390, and a third again as many guns is a
-  // third again as much step. It fits the budget on both — but if this
-  // line goes red and nothing in the sim was touched, the board is the
-  // first thing to rule out, and it is STILL a real red line when it
-  // comes, because Coldline is a board people play (see the note on the
-  // FULL clocks at the bottom of this file).
   const spec = LA.specForTier(L.VISIBLE_WORLDS[0], LA.RUNG_COUNT - 1);
   const want = LA.waveGuide(spec)
     .filter((r) => r.wave >= LOAD_WAVES[0] && r.wave <= LOAD_WAVES[1])
     .reduce((a, r) => a + r.units, 0);
+  // one queue of kinds, the tiers interleaved by share so the belt is mixed
+  // from the road outward, kinds round-robin inside a tier
+  const tiers = [...boardBy(spec, LOAD_WAVES[0])].map(([tier, n]) => ({
+    tier, n, put: 0, ki: 0, kinds: T.FIELDED_KINDS.filter((k) => EC.TOWER_TIER[k] === tier),
+  }));
+  const plan = [];
+  for (let left = tiers.reduce((a, t) => a + t.n, 0); left > 0; left--) {
+    let next = null;
+    for (const t of tiers) if (t.put < t.n && (!next || t.put / t.n < next.put / next.n)) next = t;
+    plan.push(next.kinds[next.ki++ % next.kinds.length]);
+    next.put++;
+  }
+  const asked = plan.length;
   const sim = new Sim(spec);
-  // the save that has everything, so the board is built out of the whole
-  // catalogue rather than the opening tier
   sim.setTech(TR.techStateFor(60));
-  // ...and the SHIPPED field budget, deliberately: setFieldBudget(Infinity)
-  // is right for the sim check, which wants one settled field and does not
-  // care what it cost, and wrong here, where a re-route solved whole would
-  // drop a 200ms spike into the sample that no player ever sees —
-  // FIELD_BUDGET_MS spreads that cost over frames instead.
-
   const route = roadToCore(sim, sim.field.spawnPts[0]);
-  if (route.length < 2) frameProblems.push("no road from the spawn to the core");
-
-  // THE BOARD, ring by ring OUT from the road, one pass over the whole road
-  // per ring — so the line thickens evenly end to end instead of piling up
-  // at the spawn and leaving the core bare, which is what a greedy walk
-  // does. The kinds are dealt round-robin so no single turret's targeting
-  // or bullet is the whole of what is being timed.
-  const kinds = T.FIELDED_KINDS;
-  let ki = 0;
+  if (route.length < 2) battleProblems.push("no road from the spawn to the core");
   build:
   for (let ring = 1; ring <= BELT_REACH; ring++)
     for (const c of route) {
@@ -879,20 +833,22 @@ if (wants("frames")) try {
       for (let dy = -ring; dy <= ring; dy++)
         for (let dx = -ring; dx <= ring; dx++) {
           if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
-          const k = kinds[ki % kinds.length];
-          if (!sim.canPlace(cx + dx, cy + dy, k)) continue;
-          sim.placeTower(cx + dx, cy + dy, k);
-          ki++;
-          if (sim.towers.length >= MAX_BOARD) break build;
+          // the first of the next few in the queue that fits, so a big
+          // footprint refused here is not skipped for good
+          for (let t = 0; t < 8 && t < plan.length; t++) {
+            if (!sim.canPlace(cx + dx, cy + dy, plan[t])) continue;
+            sim.placeTower(cx + dx, cy + dy, plan[t]);
+            plan.splice(t, 1);
+            break;
+          }
+          if (plan.length === 0 || sim.towers.length >= MAX_BOARD) break build;
         }
     }
   const built = sim.towers.length;
-
-  // THE SWARM, through the mouths the map paints, as many as they will take
-  // each step. `stuck` is the doors saying no — a pad is crowded, or the
-  // spot a long body wanted is half in rock (Sim.spawnUnit) — and forty
-  // refusals running means let a step pass and come back with room.
-  const pool = L.UNIT_KINDS.filter((k) => k !== "boss" && L.UNIT_STATS[k].tier <= 4);
+  const byTier = new Map();
+  for (const t of sim.towers) byTier.set(EC.TOWER_TIER[t.kind], (byTier.get(EC.TOWER_TIER[t.kind]) ?? 0) + 1);
+  const objective = new Set(L.UNIT_TREES.filter((t) => t.objective).flatMap((t) => t.kinds));
+  const pool = L.UNIT_KINDS.filter((k) => !objective.has(k) && L.UNIT_STATS[k].tier <= 5);
   let fed = 0;
   for (let f = 0; fed < want && f < 60 * 60; f++) {
     for (let stuck = 0; fed < want && stuck < 40; )
@@ -902,148 +858,49 @@ if (wants("frames")) try {
   }
   const onField = new Set();
   for (let i = 0; i < sim.n; i++) onField.add(sim.ukind[i]);
-
   const coreBefore = sim.core.hp;
   for (let f = 0; f < MARCH * 60; f++) sim.update(1 / 60);
-
+  sim.profile(true);
   const ms = [];
   for (let f = 0; f < SAMPLE * 60; f++) {
     const a = performance.now();
     sim.update(1 / 60);
     ms.push(performance.now() - a);
   }
+  const p = sim.profileFull();
+  sim.profile(false);
   ms.sort((a, b) => a - b);
   const step = ms[ms.length >> 1];
   const worst = ms[Math.floor(ms.length * 0.95)];
-
-  // the scenario first: a clock read off a collapsed board says nothing
-  if (fed < want) frameProblems.push(`the doors took only ${fed} of the ${want} bodies`);
-  if (onField.size < pool.length)
-    frameProblems.push(`only ${onField.size} of the ${pool.length} T1-4 kinds reached the field`);
-  if (sim.lost()) frameProblems.push("the core fell — the board was too thin to time anything");
+  if (built < asked * 0.9) battleProblems.push(`the belt took only ${built} of the ${asked} turrets the economy buys`);
+  if (fed < want) battleProblems.push(`the doors took only ${fed} of the ${want} bodies`);
+  if (onField.size < pool.length * 0.8)
+    battleProblems.push(`only ${onField.size} of the ${pool.length} T1-5 kinds reached the field`);
+  if (sim.lost()) battleProblems.push("the core fell — the board was too thin to time anything");
   else if (sim.core.hp < coreBefore)
-    frameProblems.push(
+    battleProblems.push(
       `the core took ${Math.round(coreBefore - sim.core.hp)} damage — the swarm is through the line`,
     );
   if (sim.towers.length * 2 < built)
-    frameProblems.push(`${built - sim.towers.length} of ${built} turrets were eaten — half a board is not the board`);
-  // ...and then the clock
-  if (step > SIM_BUDGET_MS)
-    frameProblems.push(
+    battleProblems.push(`${built - sim.towers.length} of ${built} turrets were eaten — half a board is not the board`);
+  if (step > SIM_BUDGET_MS) {
+    battleProblems.push(
       `a sim step takes ${step.toFixed(1)}ms of the ${SIM_BUDGET_MS.toFixed(1)}ms it has ` +
         `(${(1000 / step).toFixed(0)} fps if the draw were free, and it is not)`,
     );
-
-  frameDetail =
-    `${sim.n} bodies of ${onField.size} kinds, ${sim.towers.length} turrets, ` +
+    for (const line of SR.profileLines(p).slice(5, 11)) battleProblems.push(line);
+  }
+  const tiersLine = [...byTier].sort((a, b) => a[0] - b[0]).map(([t, n]) => `${n} t${t}`).join(" + ");
+  battleDetail =
+    `${built} turrets (${tiersLine}), ${built - sim.towers.length} lost, ${sim.n} bodies of ${onField.size} kinds, ` +
+    `${Math.round(p.census.shots + p.census.hostileShots).toLocaleString("en-US")} shots in flight, ` +
     `${step.toFixed(1)}ms a step (p95 ${worst.toFixed(1)}ms) in a ${SIM_BUDGET_MS.toFixed(1)}ms budget`;
 } catch (e) {
-  frameProblems.push(e.stack?.split("\n").slice(0, 3).join(" / ") ?? e.message);
+  battleProblems.push(e.stack?.split("\n").slice(0, 3).join(" / ") ?? e.message);
 }
-if (wants("frames")) report("frames", frameProblems, frameDetail);
+if (wants("battle")) report("battle", battleProblems, battleDetail);
 
-// ---------- siege: the late board, with the swarm taking it apart ----------
-
-/**
- * THE CHECK `frames` IS NOT, and the reason there are two clocks.
- *
- * `frames` times a board the swarm never breaks: its own scenario test
- * FAILS if the core takes damage or half the turrets are eaten, so a run
- * that passes it is a run where nothing on the board died. That is the
- * right test for "does the loop fit the frame", and it was blind to an
- * entire class of cost — everything the sim does WHEN A TURRET DIES. Two
- * of those got through it and lagged a real wave-50 board to 69% of real
- * time: a death re-composed every standing turret's stats (refreshSpecs,
- * once per death, O(board)), and a death rebuilt the whole aim index the
- * next time anything searched it (structBox). Neither is reachable from a
- * board where nothing dies, and `frames` said 4ms a step while the game
- * said 20.
- *
- * WHAT THIS BUILDS is the run that found them, as the player described it:
- * a board about a third built, a hundred and fifty modules bought off the
- * real M and G tables (so the mix is the game's — mostly commons, a few
- * ultras — and not ten of everything), the late waves' worth of bodies
- * streaming in through the doors at a steady rate — every tier, the T5s
- * and a boss among them — and then, mid-fight, the rest of the board laid
- * down at once, up to the nine thousand turrets a late run stands. A
- * second boss goes in the moment the clock starts, because a boss is the
- * widest thing that flies and the widest live hitbox is what every shot's
- * broad phase pays for (Sim.rmaxAliveFor); one that dies in the march is
- * one the sample never sees.
- *
- * THE SCENARIO IS CHECKED BEFORE THE CLOCK IS BELIEVED, as in `frames` —
- * but the other way round: here the swarm MUST be killing turrets inside
- * the window, the T5s must have reached the field, and a boss must be
- * alive in it, or the sample is timing the board `frames` already times
- * and this check is a duplicate. The clock is read off the sim's own
- * phase profiler rather than a stopwatch, so a failure prints the phase
- * table — which is the only form of the number that says WHY.
- *
- * THE CLOCK IS THE MIN OVER THREE SAMPLES OF THE MEDIAN STEP, against the
- * same budget `frames` uses. This board runs close to that budget on
- * purpose — it is the scale the game says it must carry — and a number
- * that close to its line has to be read carefully: three back-to-back runs
- * of one seed timed 10.4, 12.3 and 11.0ms while `frames` timed 4.1, 6.8
- * and 5.1 on ITS unchanged board, which is the machine and not the game.
- * Machine noise only ever runs one way (something else wanted the core;
- * nothing ever makes a step cheaper than it is), so the least of several
- * medians is the honest reading of what the step costs, and the one that
- * does not flip on a busy laptop.
- *
- * THE SHARE OF STEPS OVER A WHOLE FRAME IS PRINTED, NOT GATED — except at
- * a third, which is unplayable on any machine (the bugs above put it at
- * 30 to 60 per cent). Below that it is what a player feels, and it is also
- * the number most at the mercy of the machine, so it reads beside the
- * step rather than deciding for it.
- *
- * The board is scattered rather than belted: a run this late has built
- * everywhere it could, and a belt along the road would put the whole
- * board in the swarm's teeth at once, which is a different (and easier)
- * scenario than the one that lagged.
- */
-
-/** modules bought before the board goes down — the M and G buttons, pressed */
-const SIEGE_BUYS = 150;
-/** turrets standing when the swarm arrives (a third of the board), and after
- *  the mid-fight fill — the size a late run stands, and the size the gate is
- *  read at. A run is EXPECTED to reach ten thousand; the ladder below is
- *  gated to there and printed past it */
-const SIEGE_PRE = 3000;
-const SIEGE_FULL = 9000;
-/** bodies through the doors per step, the whole window — a wave streaming
- *  in rather than a crowd dropped at once, so the field holds a steady
- *  population that keeps the line under attack for the length of the sample */
-const SIEGE_RATE = 12;
-/** seconds the swarm walks before the fill and the clock */
-const SIEGE_MARCH = 3;
-/** samples timed, and seconds in each: the verdict is the least of their medians */
-const SIEGE_SAMPLES = 3;
-const SIEGE_SAMPLE = 2;
-/** the share of steps over a whole frame (STEP_BUDGET_MS) that fails outright */
-const SIEGE_OVER = 1 / 3;
-/**
- * THE BAR `scale` AND `maps` ARE HELD TO TODAY, in ms a step — and it is
- * NOT the budget. Measured with every fix to date in, the siege at nine
- * thousand turrets runs 15 to 20ms a step on five of the nine worlds
- * (Maelstrom, Quagmire, Confluence, Sear, Coldline) and at the 9k rung
- * whenever a boss is alive, and in every case it is `projectiles`: 17 to
- * 31 thousand shots in flight, each sweeping the hash for bodies, at 70%
- * of the step. That is known and not yet fixed, so those two checks are
- * held to this looser bar rather than failing on a cost nobody is
- * changing today; `siege` itself, on the one world that fits, is still
- * held to SIM_BUDGET_MS.
- *
- * THE PROJECTILE WORK LANDED (2026-09-16: game/projs.ts, the shot loop in
- * Sim.updateProjectiles, and normalizeBullet in constants.ts — the whirl
- * clock went from 20.7ms to 10.7 at ten thousand turrets), so the bar is
- * the budget again and the over-frame share is the siege's own. The
- * names stay so the two call sites read as what they were: the checks
- * that were once held looser than the rest.
- */
-const SIEGE_LENIENT_MS = SIM_BUDGET_MS;
-const SIEGE_LENIENT_OVER = SIEGE_OVER;
-
-/** how many cells a world will take a tacker on — the room a board has */
+/** how many cells a world will take a tier-1 turret on — the room a board has */
 const legalCells = (world) => {
   const s = new Sim(LA.specForTier(world, 0));
   s.setTech(TR.techStateFor(60));
@@ -1051,183 +908,6 @@ const legalCells = (world) => {
   for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (s.canPlace(x, y, "tacker")) n++;
   return n;
 };
-
-/**
- * ONE SIEGE: the scenario above on `world`, filled to `full` turrets, timed.
- * Returns the problems, the step, and a detail line. `gate` false times
- * without judging — the ladder's rungs past what a run is expected to stand.
- */
-function siege({
-  world,
-  full = SIEGE_FULL,
-  pre = SIEGE_PRE,
-  seed = 43,
-  budget = SIM_BUDGET_MS,
-  overMax = SIEGE_OVER,
-  /** the save the board is built under; the whole catalogue unless a clock
-   *  hands one in (upgrades) */
-  tech = null,
-}) {
-  const problems = [];
-  let step = NaN, detail = "";
-  try {
-    reseed(seed);
-    const MO = R("mods.js"), RE = R("relics.js"), SR = R("simreport.js");
-    const spec = LA.specForTier(world, LA.RUNG_COUNT - 1);
-    const sim = new Sim(spec);
-    sim.setTech(tech ?? TR.techStateFor(60));
-  
-    // the purchases, off the game's own tables and odds: every fourth press
-    // is the G button, until the relics run out (a relic is held once —
-    // relics.ts — so a late run's G presses land on nothing and the player
-    // goes back to M, which is what this does too)
-    let bought = 0;
-    for (let i = 0; i < SIEGE_BUYS; i++) {
-      const relic = i % 4 === 3 ? RE.rollRelic(sim.relicsHeld) : null;
-      if (relic) { sim.takeRelic(relic); bought++; continue; }
-      const id = MO.rollMod();
-      if (id) { sim.takeMod(id); bought++; }
-    }
-
-    // the board, scattered over every legal cell: kinds round-robin, and a
-    // tacker where the kind in hand does not fit
-    const kinds = T.FIELDED_KINDS;
-    let ki = 0;
-    const scatter = (target) => {
-      for (let tries = 0; sim.towers.length < target && tries < 4e6; tries++) {
-        const x = (Math.random() * COLS) | 0, y = (Math.random() * ROWS) | 0;
-        const k = kinds[ki % kinds.length];
-        if (sim.canPlace(x, y, k)) { sim.placeTower(x, y, k); ki++; }
-        else if (sim.canPlace(x, y, "tacker")) sim.placeTower(x, y, "tacker");
-      }
-    };
-    scatter(Math.min(pre, full));
-
-    // THE SWARM: every kind on the roster, drawn at random — except for
-    // the first body of every step, which is spent TOPPING UP COVERAGE.
-    //
-    // WHAT THE CLOCK IS FOR is the widest hitboxes and the heaviest
-    // per-body work, so the assertions below require a boss and every T5
-    // kind to have been standing while it ran. A uniform draw over a
-    // fifty-kind roster only manages that by luck: the check failed on
-    // "no boss was alive during the sample" and "only 3 T5 kinds reached
-    // the field" whenever the dice or the pad crowding moved, which is a
-    // gate that cries wolf rather than one that catches anything.
-    //
-    // So slot zero asks for whatever is MISSING FROM THE BOARD RIGHT NOW —
-    // a boss when none is standing, otherwise the first T5 with nothing of
-    // its kind alive — read off the sim's own census rather than off a
-    // tally of what has been asked for. Topping up only what is absent is
-    // what keeps the load honest: it puts one body in, not a stream.
-    //
-    // IT MATTERS MORE SINCE THE BOSS LEFT THE WAVE SCRIPT (levels.ts
-    // OBJECTIVE_KINDS). Nothing in a campaign run fields one until a
-    // mission does, so this is the only place the Sovereign is ever timed.
-    const pool = L.UNIT_KINDS.filter((k) => k !== "boss");
-    const T5 = pool.filter((k) => L.UNIT_STATS[k].tier === 5);
-    const gone = (kind) => sim.aliveByKind[L.UNIT_ID[kind]] === 0;
-    let fed = 0, bosses = 0;
-    // THE DOOR WILL NOT ALWAYS TAKE A BOSS, and on a tight board it never
-    // will. A spawn needs a clear spot at the body's OUTER radius, and the
-    // Sovereign's is the widest on the roster — so on Coldline, whose 875
-    // spawn tiles are carrying twelve thousand bodies by the time the clock
-    // starts, the ask failed every step of the window and the check said
-    // the widest air hitbox went untimed. Which was TRUE and was not a bug:
-    // there genuinely was no room, and the scenario wanted one anyway.
-    // So it is placed EXACTLY at the map's first air mouth when the door
-    // refuses — the same path a Borer's train uses to be laid nose to tail
-    // (Sim.launchCrosser) — because this check is about what a step COSTS
-    // with that silhouette on the board, not about whether a pad was free.
-    const mouth = sim.airRoutes()[0]?.pts;
-    const putBoss = () =>
-      sim.spawnUnit("boss") ||
-      (mouth ? sim.spawnUnit("boss", { x: mouth[0], y: mouth[1], exact: true }) : false);
-    const feed = (keepBoss) => {
-      for (let j = 0; j < SIEGE_RATE; j++) {
-        if (j === 0 && keepBoss && gone("boss")) {
-          if (putBoss()) { fed++; bosses++; }
-          continue;
-        }
-        const k = (j === 0 ? T5.find(gone) : null) ?? pool[(Math.random() * pool.length) | 0];
-        if (sim.spawnUnit(k)) fed++;
-      }
-    };
-    for (let f = 0; f < SIEGE_MARCH * 60; f++) { feed(true); sim.update(1 / 60); }
-
-    // the rest of the board, all at once, with the fight on
-    scatter(full);
-    const standing = sim.towers.length;
-    const kills0 = sim.kills;
-
-    // ...and the clock, with a boss alive under it: the profiler armed once
-    // across every sample for the phases, and each step's own wall time
-    // kept beside it for the medians
-    sim.profile(true);
-    const seenT5 = new Set();
-    let bossAlive = false;
-    const medians = [];
-    for (let n = 0; n < SIEGE_SAMPLES; n++) {
-      const ms = [];
-      for (let f = 0; f < SIEGE_SAMPLE * 60; f++) {
-        feed(true);
-        const a = performance.now();
-        sim.update(1 / 60);
-        ms.push(performance.now() - a);
-        if (f % 30 === 0)
-          for (let i = 0; i < sim.n; i++) {
-            const k = L.UNIT_KINDS[sim.ukind[i]];
-            if (k === "boss") bossAlive = true;
-            else if (L.UNIT_STATS[k].tier === 5) seenT5.add(k);
-          }
-      }
-      ms.sort((a, b) => a - b);
-      medians.push(ms[ms.length >> 1]);
-    }
-    step = Math.min(...medians);
-    const p = sim.profileFull();
-    sim.profile(false);
-    const lost = standing - sim.towers.length;
-    const killed = sim.kills - kills0;
-    let air = 0;
-    for (let i = 0; i < sim.n; i++) if (sim.ufly[i]) air++;
-
-    // the scenario first
-    if (bought < SIEGE_BUYS * 0.9) problems.push(`only ${bought} of ${SIEGE_BUYS} module buys landed`);
-    if (sim.towers.length < full * 0.9)
-      problems.push(`the board reached only ${sim.towers.length} turrets of the ${full} asked for`);
-    if (killed === 0) problems.push("the turrets killed nothing in the window");
-    if (lost === 0) problems.push("the swarm killed no turret in the window — the death path went untimed, which is the one thing this check is for");
-    if (seenT5.size < 4) problems.push(`only ${seenT5.size} T5 kinds reached the field in the window`);
-    if (!bossAlive) problems.push("no boss was alive during the sample — the widest air hitbox went untimed");
-    if (sim.lost()) problems.push("the core fell");
-    // ...then the clock
-    const overShare = p.steps > 0 ? p.over / p.steps : 0;
-    const slow = [];
-    if (step > budget)
-      slow.push(
-        `a sim step takes ${step.toFixed(1)}ms of the ${budget.toFixed(1)}ms it is allowed ` +
-          `(the least of ${SIEGE_SAMPLES} medians: ${medians.map((m) => m.toFixed(1)).join(", ")})`,
-      );
-    if (overShare > overMax)
-      slow.push(
-        `${(overShare * 100).toFixed(0)}% of steps ran over a whole frame (${SR.STEP_BUDGET_MS.toFixed(1)}ms), ` +
-          `averaging ${p.slowMs.toFixed(1)}ms — unplayable on any machine`,
-      );
-    if (slow.length > 0) {
-      problems.push(...slow);
-      // the phase table, because a number without its phases cannot say why
-      for (const line of SR.profileLines(p).slice(5, 11)) problems.push(line);
-    }
-
-    detail =
-      `${sim.towers.length} turrets, ${sim.n} bodies (${air} air, ${seenT5.size} T5 kinds, ${bosses} bosses), ` +
-      `${lost} turrets lost, ${step.toFixed(1)}ms a step (least median of ${SIEGE_SAMPLES}; mean ${p.ms.toFixed(1)}, ` +
-      `worst ${p.worst.toFixed(0)}, ${(overShare * 100).toFixed(0)}% over the frame) against ${budget.toFixed(1)}ms`;
-  } catch (e) {
-    problems.push(e.stack?.split("\n").slice(0, 3).join(" / ") ?? e.message);
-  }
-  return { problems, step, detail };
-}
 
 if (FULL) {
   // THE CLOCKS ARE POINTED AT THE BOARDS PEOPLE PLAY (VISIBLE_WORLDS, and
@@ -1241,265 +921,13 @@ if (FULL) {
     try { return [{ w, cells: legalCells(w) }]; } catch { return []; }
   }).sort((a, b) => b.cells - a.cells);
   const biggest = worlds[0].w;
-  // the gate: the world with the most ground, at the size a late run stands
-  if (wants("siege")) {
-    const main = siege({ world: biggest });
-    report("siege", main.problems, main.detail);
-  }
-
-  // the ladder: the cost of the board as a curve, gated to what a run is
-  // expected to stand and printed past it
-  const rungs = [3000, 6000, 9000, 12000];
-  const scaleProblems = [];
-  const curve = [];
-  if (wants("scale")) for (const full of rungs) {
-    const r = siege({ world: biggest, full, seed: 47, budget: SIEGE_LENIENT_MS, overMax: SIEGE_LENIENT_OVER });
-    curve.push(`${full / 1000}k ${Number.isFinite(r.step) ? r.step.toFixed(1) : "?"}ms`);
-    for (const p of r.problems) scaleProblems.push(`${full / 1000}k: ${p}`);
-  }
-  if (wants("scale")) report("scale", scaleProblems, `${curve.join(" · ")} a step of ${SIEGE_LENIENT_MS.toFixed(1)}`);
-
-  // every playable world: a choke is a different fight from an open field.
-  // A small map takes fewer buildings, so the target is what its ground
-  // will hold
-  const mapProblems = [];
-  const perWorld = [];
-  if (wants("maps")) for (const { w, cells } of worlds) {
-    const full = Math.min(SIEGE_FULL, Math.floor(cells / 8));
-    const r = siege({ world: w, full, seed: 53, budget: SIEGE_LENIENT_MS, overMax: SIEGE_LENIENT_OVER });
-    perWorld.push(`${w.name} ${Number.isFinite(r.step) ? r.step.toFixed(1) : "?"}`);
-    for (const p of r.problems) mapProblems.push(`${w.name}: ${p}`);
-  }
-  if (wants("maps")) report("maps", mapProblems, `ms a step of ${SIEGE_LENIENT_MS.toFixed(1)} — ${perWorld.join(" · ")}`);
-
-  // ---------- the standard: ten thousand of everything ----------
-
-  // ONE ISOLATED CLOCK. `build` stands the board on a fresh sim of `world`
-  // with NOTHING TO SEND (the script emptied, so nothing arrives that the
-  // clock did not put there), with building free and uncapped (tech null —
-  // ten thousand of one kind is a board no save allows, and the cap is not
-  // the question). Then ISO_WARM steps pass, ISO_SAMPLE are timed with the
-  // phase clock armed, and the verdict is the median against the budget,
-  // the p95, the census and the phase table beside it. The sim comes back
-  // too, for the scenario tests that read the board after the clock.
-  const ISO_WARM = 60;
-  const ISO_SAMPLE = 120;
-  /** a reach no cell on the board is outside of (the map's diagonal — the
-   *  sim clamps a longer one to it, setBench), and a pool no shot empties */
-  const EVERYWHERE = Math.hypot(COLS * CELL, ROWS * CELL);
-  const IMMORTAL = 1e12;
-  const isolated = ({ world, build, seed = 61, budget = SIM_BUDGET_MS }) => {
-    reseed(seed);
-    const SR = R("simreport.js");
-    const spec = { ...LA.specForTier(world, LA.RUNG_COUNT - 1), script: [] };
-    const sim = new Sim(spec);
-    sim.setTech(null);
-      const info = build(sim) ?? {};
-    for (let f = 0; f < ISO_WARM; f++) sim.update(1 / 60);
-    sim.profile(true);
-    const ms = [];
-    for (let f = 0; f < ISO_SAMPLE; f++) {
-      const a = performance.now();
-      sim.update(1 / 60);
-      ms.push(performance.now() - a);
-    }
-    const p = sim.profileFull();
-    sim.profile(false);
-    ms.sort((a, b) => a - b);
-    const step = ms[ms.length >> 1], p95 = ms[Math.floor(ms.length * 0.95)];
-    const c = p.census;
-    // the heaviest phase, named — the one line of the table a list can carry
-    const top = p.phases.filter((q) => q.ms > 0).sort((a, b) => b.ms - a.ms)[0];
-    // rounds IN FLIGHT — an instant weapon (a beam, a flame, speed 0) never
-    // has one, so a kind can be firing flat out and read as 0 shots here
-    // ...and the bodies LIVE at the clock, not the count that landed: a
-    // crowd folds into stacks where it squeezes (Sim.mergeSqueezed)
-    const why = `${c.bodies.toLocaleString("en-US")} bodies, ` +
-      `${Math.round(c.shots + c.hostileShots).toLocaleString("en-US")} shots in flight, ${c.fx} fx` +
-      (top ? `; ${top.name} ${top.ms.toFixed(1)}ms` : "");
-    const slow = step > budget
-      ? `${step.toFixed(1)}ms a step (p95 ${p95.toFixed(1)}) of ${budget.toFixed(1)} — ${why}`
-      : null;
-    return { sim, info, step, p95, census: c, why, slow, table: SR.profileLines(p).slice(5, 9) };
-  };
-  /** the open cell nearest the middle of the map — where the dummy stands */
-  const middleOf = (sim) => {
-    const cx = COLS >> 1, cy = ROWS >> 1;
-    for (let r = 0; r < 200; r++)
-      for (let dy = -r; dy <= r; dy++)
-        for (let dx = -r; dx <= r; dx++) {
-          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-          const x = cx + dx, y = cy + dy;
-          if (x < 0 || y < 0 || x >= COLS || y >= ROWS) continue;
-          if (!sim.field.walk[y * COLS + x]) return { x: (x + 0.5) * CELL, y: (y + 0.5) * CELL };
-        }
-    return { x: cx * CELL, y: cy * CELL };
-  };
-  /** the T1-5 roster dealt evenly over `n` bodies, plus one boss */
-  const spawnMixed = (sim, n, opts) => {
-    const pool = L.UNIT_KINDS.filter((k) => k !== "boss");
-    const each = Math.floor(n / pool.length);
-    let made = 0;
-    for (const k of pool) made += sim.spawnMany(k, each, opts);
-    made += sim.spawnMany(pool[0], n - each * pool.length, opts);
-    made += sim.spawnMany("boss", 1, opts);
-    return made;
-  };
-  const kindOk = (k) => !KINDS || KINDS.has(k);
-  const ms1 = (x) => (Number.isFinite(x) ? x.toFixed(1) : "?");
-  /** a line per case as it lands, on stderr — the report is the verdict,
-   *  this is the clock still ticking through a ten-minute run */
-  const tick = (clock, what) => process.stderr.write(`  ${clock.padEnd(10)} ${what}\n`);
-
-  // TURRETS: every fielded kind, ten thousand of it alone, every one of
-  // them in reach of one body that cannot die. The board is the whole
-  // legal map; the dummy is the lightest ground body there is, standing
-  // in the middle, its pool pinned so the step never empties the field.
-  if (wants("turrets")) {
-    const problems = [], line = [];
-    const dummy = L.UNIT_KINDS.find((k) => L.UNIT_STATS[k].tier === 1 && !L.UNIT_STATS[k].flying) ?? L.UNIT_KINDS[0];
-    for (const kind of T.FIELDED_KINDS.filter(kindOk)) {
-      try {
-        const r = isolated({
-          world: biggest,
-          build: (sim) => {
-            // the kind and nothing else: the ground takes what it takes
-            // of a wide footprint, and the count is printed, not judged
-            const built = sim.scatterTowers([kind], N, false);
-            sim.setBench({ towerRange: EVERYWHERE });
-            const made = sim.spawnMany(dummy, 1, { at: middleOf(sim), hp: IMMORTAL });
-            return { built, made };
-          },
-        });
-        line.push(`${kind} ${ms1(r.step)}${r.info.built < N * 0.9 ? ` (${r.info.built} fit)` : ""}`);
-        tick("turrets", `${kind}: ${r.info.built} stood, ${ms1(r.step)}ms a step (p95 ${ms1(r.p95)}) — ${r.why}`);
-        if (r.info.made === 0) problems.push(`${kind}: the dummy could not land — nothing was shot at`);
-        if (r.info.built < N * 0.1) problems.push(`${kind}: the ground took only ${r.info.built} of ${N}`);
-        if (r.sim.n === 0) problems.push(`${kind}: the dummy died — its pool was meant to be bottomless`);
-        if (r.slow) { problems.push(`${kind}: ${r.slow}`); for (const l of r.table) problems.push(`    ${l}`); }
-      } catch (e) {
-        problems.push(`${kind}: ${e.stack?.split("\n").slice(0, 2).join(" / ") ?? e.message}`);
-      }
-    }
-    report("turrets", problems, `${N} of one kind on ${biggest.name}, ms a step of ${SIM_BUDGET_MS.toFixed(1)} — ${line.join(" · ")}`);
-  }
-
-  // ENEMIES: every body kind, ten thousand of it alone, scattered over the
-  // field and every one of them in reach of a core that cannot fall — so
-  // every gun on the field is firing from the first step. The boss is a
-  // hundred, not ten thousand: a body that wide could not land ten
-  // thousand times on any map, and a hundred is more than a run ever sees.
-  // Then the roster mixed, which is the board a wave actually is.
-  if (wants("enemies")) {
-    const problems = [], line = [];
-    const BOSSES = 100;
-    const one = (name, spawn) => {
-      try {
-        const r = isolated({
-          world: biggest,
-          build: (sim) => {
-            sim.setBench({ unitRange: EVERYWHERE, coreHp: IMMORTAL });
-            return { want: 0, ...spawn(sim) };
-          },
-        });
-        line.push(`${name} ${ms1(r.step)}${r.info.made < r.info.want * 0.9 ? ` (${r.info.made} fit)` : ""}`);
-        tick("enemies", `${name}: ${r.info.made} stood, ${ms1(r.step)}ms a step (p95 ${ms1(r.p95)}) — ${r.why}`);
-        if (r.info.made < r.info.want * 0.1) problems.push(`${name}: the field took only ${r.info.made} of ${r.info.want}`);
-        if (r.sim.lost()) problems.push(`${name}: the core fell — its pool was meant to be bottomless`);
-        if (r.slow) { problems.push(`${name}: ${r.slow}`); for (const l of r.table) problems.push(`    ${l}`); }
-      } catch (e) {
-        problems.push(`${name}: ${e.stack?.split("\n").slice(0, 2).join(" / ") ?? e.message}`);
-      }
-    };
-    for (const kind of L.UNIT_KINDS.filter(kindOk)) {
-      const want = kind === "boss" ? BOSSES : N;
-      one(kind, (sim) => ({ want, made: sim.spawnMany(kind, want, { scatter: true }) }));
-    }
-    if (kindOk("mixed")) one("mixed", (sim) => ({ want: N, made: spawnMixed(sim, N, { scatter: true }) }));
-    report("enemies", problems, `${N} of one kind on ${biggest.name}, ms a step of ${SIM_BUDGET_MS.toFixed(1)} — ${line.join(" · ")}`);
-  }
-
-  // SWARM FIRST: ten thousand bodies on the field before a single turret,
-  // then the board spammed down under them, a card's worth a step for the
-  // whole window — the placement path (a batch, the specs re-composed, the
-  // aim index, the ground claimed) timed WITH the swarm already in reach
-  // of everything it lays down, which is the panic-build a late run does.
-  // Under the real save and a bottomless purse, so what goes down is what
-  // a player's card puts down: its mods rolled, its rungs composed.
-  if (wants("swarmfirst")) {
-    const problems = [];
-    let detail = "";
-    try {
-      reseed(67);
-      const SR = R("simreport.js");
-      const spec = { ...LA.specForTier(biggest, LA.RUNG_COUNT - 1), script: [] };
-      const sim = new Sim(spec);
-      sim.setTech(TR.techStateFor(60));
-      sim.setRich(true);
-          sim.setBench({ coreHp: IMMORTAL });
-      const made = spawnMixed(sim, N, { scatter: true });
-      for (let f = 0; f < ISO_WARM; f++) sim.update(1 / 60);
-      const CARD = 300;
-      sim.profile(true);
-      const ms = [];
-      for (let f = 0; f < ISO_SAMPLE; f++) {
-        const a = performance.now();
-        if (sim.towers.length < N) sim.scatterTowers(T.FIELDED_KINDS, Math.min(N, sim.towers.length + CARD));
-        sim.update(1 / 60);
-        ms.push(performance.now() - a);
-      }
-      const p = sim.profileFull();
-      sim.profile(false);
-      ms.sort((a, b) => a - b);
-      const step = ms[ms.length >> 1], p95 = ms[Math.floor(ms.length * 0.95)];
-      if (made < N * 0.9) problems.push(`the field took only ${made} of ${N} bodies`);
-      if (sim.placed === 0) problems.push("nothing was placed in the window");
-      if (step > SIM_BUDGET_MS) {
-        problems.push(`a step with a card on it takes ${step.toFixed(1)}ms (p95 ${p95.toFixed(1)}) of ${SIM_BUDGET_MS.toFixed(1)}`);
-        for (const l of SR.profileLines(p).slice(5, 9)) problems.push(`    ${l}`);
-      }
-      detail = `${made} bodies first, then ${sim.placed} turrets down at ${CARD} a step, ${sim.towers.length} standing, ` +
-        `${sim.kills} kills — ${step.toFixed(1)}ms a step (p95 ${p95.toFixed(1)}) of ${SIM_BUDGET_MS.toFixed(1)}`;
-    } catch (e) {
-      problems.push(e.stack?.split("\n").slice(0, 3).join(" / ") ?? e.message);
-    }
-    tick("swarmfirst", detail);
-    report("swarmfirst", problems, detail);
-  }
-
-  // UPGRADES: the siege — the board, the modules, the swarm killing turrets
-  // — under a hundred random upgrade nodes off the real trees, rather than
-  // the save's own rungs. A rung changes what a turret IS (its bullet, its
-  // reach, its reload), and a hundred of them at once is a table no save
-  // composes, which is the point of rolling it. The trees hold fewer than
-  // a hundred today, so today this is every node there is, in a random
-  // order; the number is the standard's, and the report says how many lit.
-  if (wants("upgrades")) {
-    const UP = R("upgrades.js");
-    const UPGRADE_NODES = 100;
-    reseed(71);
-    const tech = TR.techStateFor(60);
-    const pool = UP.ALL_UPGRADES.slice(), on = new Set();
-    for (let i = 0; i < UPGRADE_NODES && pool.length > 0; i++)
-      on.add(pool.splice((Math.random() * pool.length) | 0, 1)[0].id);
-    const upgrades = {};
-    for (const k of Object.keys(UP.TURRET_UPGRADES))
-      upgrades[k] = UP.TURRET_UPGRADES[k].map((u) => (on.has(u.id) ? 1 : 0));
-    const r = siege({ world: biggest, seed: 73, tech: { ...tech, upgrades } });
-    tick("upgrades", r.detail);
-    report("upgrades", r.problems, `${on.size} random upgrade nodes on — ${r.detail}`);
-  }
-
-  // RENDER: the other half of the frame. The same boards, stood in a real
-  // Game in a headless browser (scripts/bench.mjs, which owns the goal and
-  // the scenes), and the draw read at a ladder of zooms from the whole map
-  // down to the closest. Its JSON is the gate; its table is printed under
-  // the line so the numbers are here without re-running it.
   if (wants("render")) {
     const problems = [];
     let detail = "";
     const r = await run(process.execPath, [
-      path.join(ROOT, "scripts", "bench.mjs"), "--json", "--world", biggest.id, "--n", String(N),
+      // the two mixed scenes: a board of one kind and a board that fills the
+      // map are the bench's to offer, not the gate's (see `battle` above)
+      path.join(ROOT, "scripts", "bench.mjs"), "--json", "--world", biggest.id, "--n", String(N), "--scenes", "battle,waves",
     ]);
     let out = null;
     try {

@@ -47,6 +47,7 @@ import {
   UV_TOWER_BASE1,
   UV_TOWER_BASE3,
   UV_TOWER_BASE4,
+  UV_TOWER_BASE6,
   UV_SHIELD_TOWER,
   UV_CONVOY,
   UV_CONVOY_LEG,
@@ -3468,7 +3469,8 @@ export class Renderer {
       const top = UV_TURRETS[t.kind];
       const angle = t.angle;
       const base =
-        sz >= 4 ? UV_TOWER_BASE4
+        sz >= 6 ? UV_TOWER_BASE6
+        : sz >= 4 ? UV_TOWER_BASE4
         : sz === 3 ? UV_TOWER_BASE3
         : sz === 2 ? UV_TOWER_BASE
         : UV_TOWER_BASE1;
@@ -4408,9 +4410,9 @@ export class Renderer {
   }
 
   /**
-   * A liquid round — the water ball, the gas bubble, the venom orb: a dark
-   * rim round the body, a lit core set off-centre with a glint on it, and
-   * two beads weaving behind the shot. The beams' rule (drawRoundBar) on a
+   * A liquid round — the water ball, the gas bubble, the venom orb: a
+   * darker rim round the body, a lit core in the middle (flat, no glint —
+   * the view is top-down), and two beads weaving behind the shot. The beams' rule (drawRoundBar) on a
    * disc, so a round reads as a thing and not a dot. LOD as the sprite
    * shots': under a pixel nothing, under a few one flat dot a screen cell,
    * under eight the rim and body alone.
@@ -4433,13 +4435,11 @@ export class Renderer {
       if (this.dotFree(x, y)) this.fillCircle(dyn, x, y, r, body, 1);
       return;
     }
-    const rim: RGB = [body[0] * 0.45, body[1] * 0.45, body[2] * 0.45];
+    const rim: RGB = [body[0] * 0.72, body[1] * 0.72, body[2] * 0.72];
     this.fillCircle(dyn, x, y, r, rim, 1);
     this.fillCircle(dyn, x, y, r * 0.76, body, 1);
     if (dpx < LOD_SHOT_ONE_PX) return;
-    const off = r * 0.2;
-    this.fillCircle(dyn, x - off, y - off, r * 0.4, core, 1);
-    this.fillCircle(dyn, x - off * 1.6, y - off * 1.6, r * 0.15, PAL.white, 0.85);
+    this.fillCircle(dyn, x, y, r * 0.45, core, 1);
     const sp = Math.sqrt(vx * vx + vy * vy);
     if (sp < 0.01) return;
     const bx = -vx / sp, by = -vy / sp;

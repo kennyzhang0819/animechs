@@ -558,7 +558,7 @@ export function hillMask(t: Terrain): Uint8Array {
 
 /** a prop's health by its footprint: seven tenths of the turret band of the
  *  same size, times the turret scale (constants.ts towerMaxHp); no armour */
-export const PROP_HP: Readonly<Record<number, number>> = { 1: 2000, 2: 6000, 3: 17000, 4: 42000, 6: 90000 };
+export const PROP_HP: Readonly<Record<number, number>> = { 1: 2000, 2: 6000, 3: 17000, 4: 42000, 6: 90000, 10: 250000 };
 export const propHpFor = (kind: number): number => PROP_HP[PROP_KINDS[kind]?.tiles ?? 1] ?? 2000;
 
 /** a prop comes down: its own cells open; a hill's rock under one stays */

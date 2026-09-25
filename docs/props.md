@@ -1,6 +1,6 @@
 # Props
 
-The things that stand on the ground: twenty-three kinds, painted in code in
+The things that stand on the ground: twenty-seven kinds, painted in code in
 `game/propArt.ts`, placed by the map generator (`game/mapgen.ts`) and by
 the map editor, drawn by the renderer's terrain pass. This page is the
 system; the file headers say only where things are.
@@ -30,7 +30,7 @@ is ignored.
 
 ## The kinds
 
-A prop is a square footprint of 1, 2, 3, 4 or 6 tiles, painted at 32 px
+A prop is a square footprint of 1, 2, 3, 4, 6 or 10 tiles, painted at 32 px
 a tile and packed at 2x like the floors. Its art may REACH past the
 footprint (`reach`, in tiles): a shrub's square is one tile and its
 canopy nearly two; a stone reaches the same way, so bushes and stones touch and overlap with no
@@ -48,6 +48,8 @@ reorder.**
 | snag | 2 | a dead tree: a trunk and its bare limbs, for the barren lands |
 | lily, driftwood, shingle | 1 | the water's edge: a pad on the shallows, a bleached log, wet stones |
 | rushes, lilypad | 2 | a reed bed standing in the shallows, a big pad |
+| copse, crag | 6 | a great bush, a great stone: rare |
+| brake, tor | 10 | the biggest bush and stone on any board: rarer still |
 | crate | 1 | a supply crate |
 | barrels, scrap, mast | 2 | drums, a scrap heap, a fallen radio mast |
 | hull, silo | 3 | a wrecked mech hull, a fuel tank |

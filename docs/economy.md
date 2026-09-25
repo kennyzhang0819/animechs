@@ -100,23 +100,33 @@ number about a purse.
 
 ### The tier is the footprint
 
-`TOWER_TIER` files every turret by its size in tiles, so tier 1 is the 1x1s, tier 2 the 2x2s,
-tier 3 the 3x3s and tier 4 the three 4x4s — checked at import. The corner's **1 / 2 / 3 / 4**
-keys name the tier and the deal rolls uniformly inside it (`rarity.ts rollTurretOfTier`), so
-the number on the button says how much ground the card will want before the roll happens. The
-four rarities ARE the four tiers, which is where the card's border colour comes from.
+`TOWER_TIER` files every turret by its size in tiles (`TIER_SIZE`): tier 1 is the 2x2s, tier 2
+the 3x3s, tier 3 the 4x4s and tier 4 the four 6x6s — checked at import. There is no 1x1: the
+smallest gun is four tiles, so a roll of nine is a 6x6 of ground, which is the patch a player
+was buying anyway (a x4 of a 3x3 roll of 1x1s). The corner's **1 / 2 / 3 / 4** keys name the
+tier and the deal rolls uniformly inside it (`rarity.ts rollTurretOfTier`), so the number on the
+button says how much ground the card will want before the roll happens. The four rarities ARE
+the four tiers, which is where the card's border colour comes from.
 
-| tier | per turret | a press | x4 | x16 | ground at 3x3 | at 6x6 |
-|---|---|---|---|---|---|---|
-| 1 | 12 | 192 | 768 | 3,072 | 3x3 tiles | 6x6 |
-| 2 | 70 | 1,120 | 4,480 | 17,920 | 6x6 | 12x12 |
-| 3 | 400 | 6,400 | 25,600 | 102,400 | 9x9 | 18x18 |
-| 4 | 2,400 | 38,400 | 153,600 | 614,400 | 12x12 | 24x24 |
+| tier | footprint | per turret | a press | x4 | x16 | ground at 3x3 | at 6x6 |
+|---|---|---|---|---|---|---|---|
+| 1 | 2x2 | 48 | 768 | 3,072 | 12,288 | 6x6 tiles | 12x12 |
+| 2 | 3x3 | 158 | 2,528 | 10,112 | 40,448 | 9x9 | 18x18 |
+| 3 | 4x4 | 711 | 11,376 | 45,504 | 182,016 | 12x12 | 24x24 |
+| 4 | 6x6 | 5,400 | 86,400 | 345,600 | 1,382,400 | 18x18 | 36x36 |
 
-**One step, about six times, all the way up** — 5.8x, 5.7x, 6.0x — **200x end to end**, which is
-still far steeper than the per-kind prices this replaced (11 to 950 was 86x). Per TILE it is
-12 / 17.5 / 44.4 / 150, a 12.5x spread: a tier-4 gun is dearer per tile as well as bigger,
-because reach and splash are worth more than raw damage.
+**The price is per TILE and the tile is what stayed put**: 12 / 17.5 / 44.4 / 150 a tile, a
+12.5x spread, the same as before the footprints grew — a tier-4 gun is dearer per tile as well
+as bigger, because reach and splash are worth more than raw damage. The steps between tiers
+are 3.3x, 4.5x and 7.6x per turret, 112x end to end.
+
+**Every kind was promoted one footprint** (2026-09-25) and its damage fused with it: a 2x2
+tacker is four tackers' damage a second, a 3x3 autocannon 2.25 autocannons', and so on, so
+damage a second per tile of ground is what it was. What fell is the bullet count: the reload
+and per-shot damage of each kind are set so shots in flight per tile stay near one at base
+stats (the 1x1 tacker stood at six), which is the whole reason for the change — the sim's
+projectile phase was the frame. The heads are still drawn at their old native size and scaled
+up on the board until they are redrawn.
 
 **Tier 4 used to steepen to eight**, on the argument that the 4x4 is the thing worth gating and
 a gap at the bottom gates nothing except whether the run gets started. The gate is the run
@@ -136,9 +146,8 @@ square so "the price of a 4x4" is a thing a player can hold in their head. Draw 
 paid over the odds; draw well and you got a 6x6 for the price of a 4x4.
 
 **What the numbers buy**, measured as SECONDS OF INCOME at the rate in force *when the band
-opens*. Tier 1 is three seconds from the first frame; tier 2 about seven at 5:00; tier 3 about
-fifteen at 10:00; tier 4 about thirty-four at 15:00. Counted as presses the bank can already
-cover on the minute the band opens, that is 6 / 28 / 17 / 8. A whole run banks about
+opens*. Tier 1 is thirteen seconds from the first frame; tier 2 about sixteen at 5:00; tier 3
+about twenty-seven at 10:00; tier 4 about seventy-six at 15:00. A whole run banks about
 911,000.
 
 ### The shape is the roll
@@ -155,10 +164,10 @@ tackers in a block", and the question it asks is where nine of anything can go.
 **X is the AMOUNT, not the shape.** It cycles **1 / 4 / 9 / 16** as a standing setting and
 multiplies all four prices flat, **with no bulk discount**. What it buys is the rolled shape
 TILED that many times (`fleetLayout`) — one gun, one roll, that much more ground — and every
-amount is a square so the copies butt with no gap. A x16 at tier 4 is 614,400 — a whole run's
-income within about twenty seconds, so only a purse that has spent nothing all game reaches
-one, and only on the last wave. The top of the ladder is very nearly a ceiling rather than an
-offer, and it is the number to watch if income rises again.
+amount is a square so the copies butt with no gap. A x16 at tier 4 is 1,382,400, more than a
+whole run banks, so the top of the ladder is a ceiling rather than an offer. Since the
+footprints grew, x1 is the ground x4 used to be (nine 2x2s on a 6x6), which is the patch
+players were buying as their floor.
 
 ### The bands open on the clock
 

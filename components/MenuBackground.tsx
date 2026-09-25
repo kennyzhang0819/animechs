@@ -29,11 +29,12 @@ import { PROP_KINDS } from "@/game/propArt";
  * and nothing else.
  *
  * A SCENE IS A SHOT, AND A MAP IS A HANDFUL OF THEM. The camera holds one
- * framing dead still for SHOT_HOLD seconds, dips to black over SHOT_FADE,
- * moves while nothing can be seen and comes back up somewhere else — it
+ * framing dead still for SHOT_HOLD seconds, then the next one dissolves in
+ * over SHOT_FADE: the outgoing picture is copied to a canvas over the
+ * ground and faded out over the new framing, never through black. It
  * never pans, because ground sliding under a menu nobody is reading it
  * through is a distraction rather than an atmosphere. After SHOTS_PER_MAP
- * of them the next map is carved, under the same black.
+ * of them the next map is carved, under the copy.
  *
  * WHERE IT LOOKS is chosen off the ground itself (`shotsFor`): the country
  * is scored in coarse buckets by how much is IN them — trees and boulders,
@@ -57,9 +58,9 @@ import { PROP_KINDS } from "@/game/propArt";
  * back from costing anything at all.
  */
 
-/** seconds one framing is held, and the black it is changed through */
+/** seconds one framing is held, and seconds the next dissolves in over */
 const SHOT_HOLD = 11;
-const SHOT_FADE = 0.7;
+const SHOT_FADE = 1.2;
 /** framings taken off one map before the next one is carved */
 const SHOTS_PER_MAP = 3;
 
@@ -218,6 +219,8 @@ export default function MenuBackground({
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const washRef = useRef<HTMLDivElement>(null);
+  /** the outgoing shot, held while the next dissolves in under it */
+  const holdRef = useRef<HTMLCanvasElement>(null);
   // read by the draw loop every frame: changing any of them only changes
   // the next frame, and none of them rebuilds anything
   const dimRef = useRef(dim);
@@ -230,7 +233,9 @@ export default function MenuBackground({
   useEffect(() => {
     const canvas = ref.current;
     const wash = washRef.current;
-    if (!canvas || !wash) return;
+    const held = holdRef.current;
+    const heldCtx = held?.getContext("2d");
+    if (!canvas || !wash || !held || !heldCtx) return;
 
     let alive = true;
     let raf = 0;
@@ -271,11 +276,10 @@ export default function MenuBackground({
     /** the framings left on the map being shown, and the one on screen */
     let shots: Shot[] = [];
     let shot: Shot | null = null;
-    /** 1 is black, 0 is the ground at its own wash */
-    let fade = 1;
-    /** seconds left on the shot, and whether it is on its way out */
+    /** the held copy of the last shot, 1 opaque to 0 gone */
+    let cross = 0;
+    /** seconds left on the shot */
     let hold = 0;
-    let leaving = false;
     /** has the shot on show been painted? */
     let drawn = false;
     /** onReady is a one-shot: the FIRST shot is the one the page waits on */
@@ -315,8 +319,27 @@ export default function MenuBackground({
       if (shots.length === 0) nextMap();
       shot = shots.shift() ?? null;
       hold = SHOT_HOLD;
-      leaving = false;
       drawn = false;
+    };
+    /** is there a next framing to go to right now? */
+    const nextReady = (): boolean => shots.length > 0 || rolled !== null;
+
+    const draw = (s: Shot, t: Terrain, r: Renderer, now: number, dpr: number, vw: number): void => {
+      const cellPx = clamp(vw / s.across, CELL_PX_MIN, CELL_PX_MAX);
+      // a slow breath on the zoom, so a still camera is never quite still
+      const k = (cellPx / CELL) * (1 + Math.sin(now / 14000) * 0.04) * dpr;
+      // THE VIEW STAYS ON THE MAP. The world ends in rock and darkness, so
+      // a sliver of void past it would read as a hole rather than as an
+      // edge — where the map is narrower than the view, it is centred
+      const halfW = canvas.width / (2 * k);
+      const halfH = canvas.height / (2 * k);
+      const worldW = t.cols * CELL;
+      const worldH = t.rows * CELL;
+      const cx = worldW > halfW * 2 ? clamp(s.x, halfW, worldW - halfW) : worldW / 2;
+      const cy = worldH > halfH * 2 ? clamp(s.y, halfH, worldH - halfH) : worldH / 2;
+      // kPx 1 makes `zoom` device px per world px outright, and the offset
+      // is what puts the camera's point in the middle of the canvas
+      r.renderTerrain(k, canvas.width / 2 - cx * k, canvas.height / 2 - cy * k, 1);
     };
 
     const frame = (now: number, dt: number): void => {
@@ -330,6 +353,10 @@ export default function MenuBackground({
       if (canvas.width !== bw || canvas.height !== bh) {
         canvas.width = bw;
         canvas.height = bh;
+        held.width = bw;
+        held.height = bh;
+        // a held copy at the old size would smear; it is simply dropped
+        cross = 0;
         resized = true;
       }
 
@@ -344,54 +371,41 @@ export default function MenuBackground({
       // its one shot and keeps it; a covered one is frozen where it stands,
       // so the progress board hands the menu back exactly the picture it
       // took away
-      if (still.matches) fade = Math.max(0, fade - dt / SHOT_FADE);
-      else if (!hiddenRef.current) {
-        if (leaving) {
-          fade = Math.min(1, fade + dt / SHOT_FADE);
-          if (fade >= 1) nextShot();
-        } else {
-          fade = Math.max(0, fade - dt / SHOT_FADE);
-          hold -= dt;
-          if (hold <= 0) leaving = true;
-        }
+      let change = false;
+      if (!still.matches && !hiddenRef.current) {
+        if (cross > 0) cross = Math.max(0, cross - dt / SHOT_FADE);
+        hold -= dt;
+        // the change waits for the next framing to be ready rather than
+        // going anywhere through black
+        if (hold <= 0 && nextReady()) change = true;
       }
 
       const s = shot;
       // a still page draws until it is up and then leaves the canvas alone;
       // a covered one draws nothing at all
-      if (
-        s &&
-        terrain &&
-        renderer &&
-        !hiddenRef.current &&
-        (!still.matches || !drawn || fade > 0 || resized)
-      ) {
+      if (s && terrain && renderer && !hiddenRef.current && (!still.matches || !drawn || resized)) {
         drawn = true;
-        const cellPx = clamp(vw / s.across, CELL_PX_MIN, CELL_PX_MAX);
-        // a slow breath on the zoom, so a still camera is never quite still
-        const k = (cellPx / CELL) * (1 + Math.sin(now / 14000) * 0.04) * dpr;
-        // THE VIEW STAYS ON THE MAP. The world ends in rock and darkness, so
-        // a sliver of void past it would read as a hole rather than as an
-        // edge — where the map is narrower than the view, it is centred
-        const halfW = canvas.width / (2 * k);
-        const halfH = canvas.height / (2 * k);
-        const worldW = terrain.cols * CELL;
-        const worldH = terrain.rows * CELL;
-        const cx = worldW > halfW * 2 ? clamp(s.x, halfW, worldW - halfW) : worldW / 2;
-        const cy = worldH > halfH * 2 ? clamp(s.y, halfH, worldH - halfH) : worldH / 2;
-        // kPx 1 makes `zoom` device px per world px outright, and the offset
-        // is what puts the camera's point in the middle of the canvas
-        renderer.renderTerrain(k, canvas.width / 2 - cx * k, canvas.height / 2 - cy * k, 1);
+        draw(s, terrain, renderer, now, dpr, vw);
+        // THE DISSOLVE: the picture just drawn is copied over the ground
+        // (the GL buffer is only good until this task ends, so the copy is
+        // taken here, in the same frame) and the next framing is drawn
+        // under it; the copy then fades out over SHOT_FADE
+        if (change) {
+          heldCtx.drawImage(canvas, 0, 0);
+          cross = 1;
+          nextShot();
+          if (shot && terrain) draw(shot, terrain, renderer, now, dpr, vw);
+        }
       }
 
-      wash.style.opacity = String(clamp(dimRef.current + (1 - dimRef.current) * fade, 0, 1));
+      held.style.opacity = String(cross);
+      wash.style.opacity = String(clamp(dimRef.current, 0, 1));
 
       // THE PAGE IS SHOWN WHEN THE GROUND IS — not when the map is merely
-      // carved. A shot comes up under a full black and takes SHOT_FADE to
-      // lift out of it, so reporting any earlier would hand the menu a
-      // screen of black that fills in a second later, which is the thing
-      // the boot screen exists to stop
-      if (drawn && fade <= 0) report();
+      // carved: reporting any earlier would hand the menu a screen of
+      // black that fills in later, which is the thing the boot screen
+      // exists to stop
+      if (drawn) report();
     };
 
     let last = performance.now();
@@ -446,10 +460,11 @@ export default function MenuBackground({
   return (
     <div className="pointer-events-none fixed inset-0" aria-hidden="true">
       <canvas ref={ref} className="block h-full w-full" />
-      {/* the wash: one div rather than a fill on the canvas, so a shot
-          change can take the whole picture to black without the renderer
-          knowing anything about it */}
-      <div ref={washRef} className="absolute inset-0 bg-black" style={{ opacity: 1 }} />
+      {/* the outgoing shot, dissolving over the ground */}
+      <canvas ref={holdRef} className="absolute inset-0 h-full w-full" style={{ opacity: 0 }} />
+      {/* the wash: one div rather than a fill on the canvas, so the menu's
+          own dim never involves the renderer */}
+      <div ref={washRef} className="absolute inset-0 bg-black" style={{ opacity: 0 }} />
       {/* the vignette: the corners fall away so the eye lands on the middle
           of the screen, where the title and the buttons are */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,rgba(0,0,0,0.55)_100%)]" />

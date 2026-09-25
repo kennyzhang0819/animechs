@@ -12895,10 +12895,10 @@ export class Sim {
       t.aimShieldTower = shr ? this.shieldTowers.indexOf(shr) : -1;
       t.aimTower = aimT;
       t.aimProp = aimP;
-      // a lit beam is never let go while a body, a dome or a building stands
-      // in reach: its duration is refilled here and only burns down over an
-      // emptied lane, so a furnace holds a queue rather than cycling on it
-      if (cont && t.beamT > cont.fade && (best >= 0 || shr || aimT)) t.beamT = cont.duration + cont.fade;
+      // a lit beam is never let go while anything it may shoot stands in
+      // reach — a body, a dome, a building, a prop: its duration is refilled
+      // here and only burns down over an emptied lane
+      if (cont && t.beamT > cont.fade && (best >= 0 || shr || aimT || aimP >= 0)) t.beamT = cont.duration + cont.fade;
       if (best < 0 && !shr && !aimT && aimP < 0) {
         // nothing in range: a beam already lit keeps burning down its
         // duration where it is, exactly as Mindustry's held bullet does
