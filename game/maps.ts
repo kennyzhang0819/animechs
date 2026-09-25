@@ -12,6 +12,7 @@ import { railsFor } from "./missions";
 import {
   canHoldSpawn,
   forestOf,
+  spawnClearOfCore,
   LEGACY_PINE_TONES,
   propMask,
   rebuildReserved,
@@ -615,7 +616,7 @@ export function paletteSections(): { label: string; sets: PaletteSet[] }[] {
  * massif drop flyers inside the rock), and clipping it at the read means a
  * hand-edited document cannot get around it either.
  */
-export function spawnTilesOf(m: MapData, blocked: Uint8Array, wall: Uint8Array): Uint8Array {
+export function spawnTilesOf(m: MapData, blocked: Uint8Array, wall: Uint8Array, base: { x: number; y: number; size: number }): Uint8Array {
   const spawn = new Uint8Array(NCELLS);
   const w = m.w ?? LEGACY_COLS;
   if (m.spawnTiles) {
@@ -634,7 +635,7 @@ export function spawnTilesOf(m: MapData, blocked: Uint8Array, wall: Uint8Array):
     for (let y = 1; y < ROWS - 1; y++)
       for (let x = 0; x < 6; x++) spawn[y * COLS + x] = 1;
   }
-  clampSpawn(spawn, blocked, wall);
+  clampSpawn(spawn, blocked, wall, base);
   return spawn;
 }
 
@@ -652,17 +653,18 @@ function paintCircle(spawn: Uint8Array, c: SpawnCircle): void {
 
 /**
  * THE INVARIANT: a spawn tile stands where something can stand — open
- * ground or deep water (terrain.ts canHoldSpawn). Rock and forest take
- * their tiles back, in place.
+ * ground or deep water (terrain.ts canHoldSpawn) — and never within
+ * SPAWN_CORE_CLEAR cells of the core. Rock, props and the core's ground
+ * take their tiles back, in place.
  *
  * Run wherever either layer moves — the loader, and every editor stroke
  * that raises rock (MapEditor.paintCell). A pad under a hill is not a door
  * the swarm cannot use, it is a door that would drop a body INSIDE the
  * hill, since nothing about a flyer stops it standing there.
  */
-export function clampSpawn(spawn: Uint8Array, blocked: Uint8Array, wall: Uint8Array): void {
+export function clampSpawn(spawn: Uint8Array, blocked: Uint8Array, wall: Uint8Array, base: { x: number; y: number; size: number }): void {
   for (let i = 0; i < spawn.length; i++)
-    if (spawn[i] && !canHoldSpawn(blocked[i], wall[i])) spawn[i] = 0;
+    if (spawn[i] && (!canHoldSpawn(blocked[i], wall[i]) || !spawnClearOfCore(i % COLS, (i / COLS) | 0, base))) spawn[i] = 0;
 }
 
 /**
@@ -879,7 +881,7 @@ export function terrainFromMap(m: MapData): Terrain {
     floor,
     wall,
     blocked,
-    spawn: spawnTilesOf(m, blocked, wall),
+    spawn: spawnTilesOf(m, blocked, wall, base),
     props: propsOf(m, blocked, wall),
     valleyY: m.valleyY
       ? Float32Array.from(m.valleyY)

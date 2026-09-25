@@ -141,9 +141,16 @@ export const isBuildableWall = (wall: number): boolean =>
  *
  * Read by the loader (maps.ts clampSpawn), by the brush (MapEditor) and by
  * nothing else — those two are the only places a spawn tile is created.
+ * Both also keep a tile SPAWN_CORE_CLEAR cells off the core.
  */
 export const canHoldSpawn = (blocked: number, wall: number): boolean =>
   !blocked || wall === WALL_DEEP;
+
+/** no spawn tile within this many cells of the core's centre, whatever
+ *  the ground: a door that close is a body already on the doorstep */
+export const SPAWN_CORE_CLEAR = 80;
+export const spawnClearOfCore = (x: number, y: number, base: { x: number; y: number; size: number }): boolean =>
+  Math.hypot(x + 0.5 - (base.x + base.size / 2), y + 0.5 - (base.y + base.size / 2)) >= SPAWN_CORE_CLEAR;
 
 /** does this cell show its floor rather than a wall sprite? true for open
  *  ground and for both sentinels — a prop and the water's surface are

@@ -29,7 +29,7 @@ import {
 } from "./missionMarks";
 import { CONVOY_SIZE, WORLDS, unitAccent } from "./levels";
 import { MIN_RUN, pathProblems } from "./missions";
-import { canHoldSpawn, isWaterFloor, rebuildReserved } from "./terrain";
+import { canHoldSpawn, isWaterFloor, rebuildReserved, spawnClearOfCore } from "./terrain";
 import { WALL_DEEP, WALL_PROP, type Prop, type Terrain } from "./terrain";
 
 // THE ZOOM FLOOR IS NO LONGER COVER. It used to be 1 — "the world fills
@@ -441,7 +441,7 @@ export class MapEditor {
       // one onto rock or forest is a no-op rather than a pad the loader
       // would silently take back; carve the ground first. Deep water takes
       // one, because the deep is where a fleet comes in.
-      if (L.spawn && canHoldSpawn(T.blocked[i], T.wall[i])) T.spawn[i] = 1;
+      if (L.spawn && canHoldSpawn(T.blocked[i], T.wall[i]) && spawnClearOfCore(gx, gy, T.base)) T.spawn[i] = 1;
     } else if (set.kind === "floor") {
       T.floor[i] = pick;
       if (L.wall) {

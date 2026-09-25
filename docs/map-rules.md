@@ -39,7 +39,7 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 ## Doors and the core
 
 - The rim is rock because the noise is pushed up there, not because anything seals it — a corridor cut out to the edge (`scripts/maps/railbed.mjs`) leaves the board by an open gap, which is how a road mission's trains and carts come and go. The swarm's only destination is still the core.
-- The map paints ONE spawn layer, and a spawn tile is open ground. Each movement layer picks its own tiles out of it (`Sim.padMaskFor`): walkers and flyers take the dry ones, hulls take any and prefer the wet ones. A generator's per-layer circles are a spec convenience — they are unioned into that one layer on load.
+- The map paints ONE spawn layer, and a spawn tile is open ground at least 80 cells from the core's centre (`SPAWN_CORE_CLEAR`); the loader and the brush both refuse one closer. Each movement layer picks its own tiles out of it (`Sim.padMaskFor`): walkers and flyers take the dry ones, hulls take any and prefer the wet ones. A generator's per-layer circles are a spec convenience — they are unioned into that one layer on load.
 - Every ground zone reaches the core on foot; every water zone reaches the core over the naval mask (rock only), and no pond lies nearer the core than the sea.
 - No gate is a short cut: walks to the core within 50% of each other.
 - Open == reachable from the core.

@@ -4,7 +4,7 @@
 // forty-odd numbers an author would write. See docs/random-maps.md.
 import { COLS, ROWS } from "./constants";
 import { RANDOM_MAP_ID, type MapData } from "./maps";
-import { forestOf, type Prop } from "./terrain";
+import { forestOf, SPAWN_CORE_CLEAR, type Prop } from "./terrain";
 import { WALL_GROUP, WALL_GROUP_KINDS } from "./atlas";
 import { PROP_KINDS, propKind, rockTone, rollRot, TONE } from "./propArt";
 
@@ -1077,7 +1077,8 @@ export function build(spec: MapSpec): Built {
     };
     for (let t = 0; t < W; t++) { march(t, 0, 0, 1); march(t, H - 1, 0, -1); }
     for (let t = 0; t < H; t++) { march(0, t, 1, 0); march(W - 1, t, -1, 0); }
-    for (let i = 0; i < N; i++) if (mark[i] && ok[i]) spawnTiles.push(i);
+    // ...and none within SPAWN_CORE_CLEAR of the core, the loader's own rule (maps.ts clampSpawn)
+    for (let i = 0; i < N; i++) if (mark[i] && ok[i] && Math.hypot((i % W) + 0.5 - core.x, ((i / W) | 0) + 0.5 - core.y) >= SPAWN_CORE_CLEAR) spawnTiles.push(i);
     say(`spawn tiles: ${spawnTiles.length}`);
   }
 

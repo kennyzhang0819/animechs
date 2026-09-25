@@ -26,7 +26,7 @@ import {
   spawnTilesOf,
   SPAWN_STYLE,
 } from "@/game/maps";
-import { COLS } from "@/game/constants";
+import { BASE, COLS } from "@/game/constants";
 import { isWaterFloor } from "@/game/terrain";
 
 /* eslint-disable @next/next/no-img-element -- raw pixel sprites, no optimization wanted */
@@ -229,7 +229,8 @@ export default function LevelEditorView({
     const doc = loadMap(mapId);
     if (!doc) return { tiles: 0, wet: 0 };
     const w = doc.w ?? COLS;
-    const spawn = spawnTilesOf(doc, Uint8Array.from(doc.blocked), Uint8Array.from(doc.wall));
+    const at0 = doc.base ?? doc.core;
+    const spawn = spawnTilesOf(doc, Uint8Array.from(doc.blocked), Uint8Array.from(doc.wall), { x: at0?.x ?? BASE.x, y: at0?.y ?? BASE.y, size: BASE.size });
     let tiles = 0, wet = 0;
     for (let i = 0; i < spawn.length; i++) {
       if (!spawn[i]) continue;
