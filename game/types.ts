@@ -394,6 +394,7 @@ export interface Tower {
   targetIdx: number;
   targetT: number;
   burstLeft: number; // shots still queued in the current volley
+  salvoJit: number; // the inaccuracy roll a salvo shares, so its rounds fly parallel (Sim.fireShot)
   burstT: number; // seconds until the next queued shot fires
   shotCount: number; // lifetime shots fired — picks the next barrel (ShootAlternate)
   // the predicted impact point in world px, fixed when the volley starts.

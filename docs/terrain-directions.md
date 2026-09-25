@@ -261,8 +261,8 @@ Mindustry floor. The random maps' eight themes are built on them
 The cell grid is not drawn as a grid. The ground goes through a program
 of its own (`renderer.ts` `CLIP_FS`) that clips every floor and rock
 quad to a COVERAGE: a texture array of one byte a cell, one layer a
-floor family and one for the rock, 255 where the cell is that thing,
-sampled bilinear. A fragment is kept where its layer reads over a half,
+floor family, one for the rock and one a wall family, 255 where the cell
+is that thing, sampled bilinear. A fragment is kept where its layer reads over a half,
 with a pixel of smoothstep on the line. Between two cell centres the
 bilinear ramp is straight, so the half-line cuts every step of the grid
 into a 45-degree diagonal, rounds a lone cell into a diamond and fills
@@ -276,7 +276,10 @@ layer. Two floors meeting share one contour from both sides, so no
 priority order is needed. A rim rock cell draws the floor beside it
 underneath, so its chamfer shows ground rather than the void, and a
 floor cell beside rock draws its neighbour's rock over itself clipped to
-the rock layer, so a concave corner fills in. Water laid over a
+the rock layer, so a concave corner fills in. Inside a hill, a rock cell
+draws each different wall family among its neighbours over itself
+clipped to that family's layer, so two families meet on a contour as two
+floors do. Water laid over a
 neighbour is a still tile in the ground batch; a cell's own water stays
 in the sea's batch and program.
 

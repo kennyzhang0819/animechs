@@ -102,15 +102,17 @@ buys the line rather than a gun:
 | | tier | how it lands | poison |
 |---|---|---|---|
 | **duster** | 1x1 | a gas dart at 285 units — the longest reach on the board bar tether, barrage and railhead — bursting over 22 units | 1.2 a burst, one burst every 1.4s |
-| **blighter** | 2x2 | an arcing canister, 34-unit blast — the widest on the board | 1.4 a burst, on everything in it |
-| **drifter** | 3x3 | **a field that does not land**: a 21-tile disc of gas walking 450 units downrange over fourteen seconds, one canister every sixteen | 1 a pulse, 2 a second under it |
-| **stinger** | 4x4 | needles, twelve a second, one body at a time | 1.6 a hit — 19 a second of ramp |
+| **blighter** | 2x2 | an arcing gas bubble, 34-unit blast — the widest on the board | 1.4 a burst, on everything in it |
+| **drifter** | 3x3 | **a field that does not land**: a 21-tile disc of gas walking 450 units downrange over fourteen seconds, one bubble every sixteen | 1 a pulse, 2 a second under it |
+| **stinger** | 4x4 | needles, twelve a second at 340 units, each one through every body on its line | 1.6 a hit — 19 a second of ramp on each |
 
 The line's shape is the channel's: **nothing here is burst**. A duster's bolt
-does 9 over its whole burst, a drifter's pulse 6, and every one of the four is a rounding error
-against the crowd it is shooting at until the rot it has laid is doing the
-killing. Against an `ironhide5` a stinger's 30-damage needle is shaved to 3 by
-30 points of armour; twenty seconds of holding it there is 380 a second of
+does 9 over its whole burst, a drifter's pulse 6, and three of the four are a rounding error
+against the crowd they are shooting at until the rot they have laid is doing the
+killing. The stinger is the exception the 4x4 band buys: an 80-damage needle at
+twelve a second that pierces without a cap, so a queue on its line takes the hit
+AND the ramp body by body. Against an `ironhide5` the needle is still shaved to
+50 by 30 points of armour; twenty seconds of holding it there is 380 a second of
 poison the armour never sees.
 
 The autocannon carried 1.5 a hit until the line arrived and it came off — a
@@ -119,7 +121,7 @@ nothing of its own.
 
 **The blast and the cloud both poison flat.** `Sim.splash` falls damage off with
 distance and does *not* fall the poison off with it: a body at the rim of a
-blighter's canister takes the same rot as one at the centre, because a cloud is
+blighter's bubble takes the same rot as one at the centre, because a cloud is
 not a shockwave. A round that bursts therefore lays its poison ONCE, in the
 blast: the direct-hit path skips `b.poison` whenever the shot has splash
 (`Sim.updateProjectiles`), or whatever it hit on the way in would be rotted
@@ -132,11 +134,11 @@ with a rim round it rather than a shot — and since the field is the whole
 weapon, the turret throws one every sixteen seconds against a field that lives
 fourteen. One drifter is one moving no-go zone, and a second one is a second.
 
-**One round, three guns.** Duster's dart, blighter's lob and the cylinder
-tumbling in the middle of the drifter's field are one sprite pair at three
-sizes (`atlas.ts` `canisterBullet`), the way every bullet-class turret from the
-tacker to the repeater shares `bullet`. The stinger is a bullet-class gun and
-shares that one, in the line's green.
+**One round, three guns.** Duster's dart, blighter's lob and the bubble in the
+middle of the drifter's field are one gas bubble at three sizes — `bullet.orb`,
+drawn as the liquid turrets' ball is (`renderer.ts` `drawBubble`: dark rim,
+green body, lit core, beads behind). The stinger is a bullet-class gun and
+shares `bullet` with the tacker and the repeater, in the line's green.
 
 ## Water — slow now, execute later
 
@@ -175,9 +177,9 @@ Two things to keep an eye on:
 - **Poison has no cap by design, and the stinger is the gun that proves it.**
   Twelve hits a second at 1.6 is 19 a second of ramp with no ceiling: 190 by ten
   seconds on one body, 380 by twenty, past everything else the 4x4 band does by
-  a minute. What holds it in is that the ramp is PER BODY and dies with it — the
-  gun is terrible at a queue and unbounded against the one thing that will not
-  fall over. `POISON_SECONDS` is the only other brake. If it proves too strong
+  a minute. The ramp is PER BODY and dies with it, and since the needle pierces
+  every body on its line, a queue walking into a stinger ramps as one — the gun
+  is unbounded against whatever will not fall over, one body or a file of them. `POISON_SECONDS` is the only other brake. If it proves too strong
   the lever is the 1.6, then a cap.
 - **Soak never expiring means it only ever goes up.** Every body that survives a
   douser is permanently closer to breaking down. The balance lever is the `soak`

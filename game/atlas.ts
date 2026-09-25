@@ -742,13 +742,11 @@ export const UV_SHELL_BACK = sprite("shell-back", 36, 36);
 export const UV_MISSILE = sprite("missile", 36, 36);
 export const UV_MISSILE_BACK = sprite("missile-back", 36, 36);
 /**
- * THE FOURTH PAIR, AND THE ONE WITH NO MINDUSTRY FILE BEHIND IT: the
- * toxin line's canister (canisterBullet), drawn here at pack time the way
- * every drawn head is. One pair, three guns — duster's dart, blighter's
- * lobbed drum and the cylinder tumbling in the middle of drifter's field
- * are this shape at three sizes in one colour, exactly as tacker's pellet
- * and repeater's slug are both `bullet`. Same rule as the three above:
- * white, source size, facing +x.
+ * THE FOURTH PAIR, AND THE ONE WITH NO MINDUSTRY FILE BEHIND IT: a gas
+ * canister (canisterBullet), drawn here at pack time the way every drawn
+ * head is. No gun names it today — the toxin line's rounds are orbs
+ * (constants.ts) — but it stays a BulletSprite region. Same rule as the
+ * three above: white, source size, facing +x.
  */
 export const UV_CANISTER = sprite("canister", 36, 36);
 export const UV_CANISTER_BACK = sprite("canister-back", 36, 36);

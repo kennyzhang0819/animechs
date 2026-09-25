@@ -3,19 +3,21 @@
 import { useEffect, useRef } from "react";
 import { buildAtlas } from "@/game/atlas";
 import { CELL, clamp, COLS } from "@/game/constants";
-import { loadMap, terrainFromMap } from "@/game/maps";
+import { terrainFromMap, type MapData } from "@/game/maps";
+import { generateRandomMap, rollMapSeed } from "@/game/mapgen";
+import type { MapgenReply, MapgenRequest } from "@/game/mapgen.worker";
 import { Renderer } from "@/game/renderer";
 import { isWaterFloor, type Terrain } from "@/game/terrain";
 import { PROP_KINDS } from "@/game/propArt";
 
 /**
- * THE MENU'S GROUND — the campaign's own country, with nothing standing on
- * it and nothing happening.
+ * THE MENU'S GROUND — a board rolled the way a run rolls its own, with
+ * nothing standing on it and nothing happening.
  *
- * It is the real terrain: a campaign map's document, carved by the game's
- * own terrainFromMap and drawn by the game's own WebGL renderer, so the
- * rock, the grass, the trees and the moving sea behind the title are the
- * ones a run is played over. What it is NOT any more is a game. It USED to
+ * It is the real terrain: a map the game's own generator drew from a seed,
+ * carved by the game's own terrainFromMap and drawn by the game's own WebGL
+ * renderer, so the rock, the grass, the trees and the moving sea behind the
+ * title are the ones a run is played over. What it is NOT any more is a game. It USED to
  * be a live Sim — a whole level, waves and all, with a line of turrets laid
  * down by a builder of its own and twenty-four seconds of fighting stepped
  * behind a black screen before the menu was uncovered — and it cost what a
@@ -41,6 +43,11 @@ import { PROP_KINDS } from "@/game/propArt";
  * a pass through the rock. Each shot rolls its own height as well, so one
  * is a valley and the next is close enough to read the bark on the pines.
  *
+ * THE ROLL IS OFF THE PAGE'S THREAD (mapgen.worker.ts): a board is about a
+ * second to draw, and the next one is rolled while the current one is
+ * shown, so a map change costs the menu nothing. Without workers it is
+ * rolled here, under the black.
+ *
  * WHAT IT MUST NEVER DO is compete with the menu on top of it. The wash
  * (`dim`) is the contract: the title card sits under a light one, and the
  * deeper menus, which are lists of cards to read, pull it darker. It holds
@@ -49,19 +56,6 @@ import { PROP_KINDS } from "@/game/propArt";
  * over it (`hidden`), which is what keeps a walk to the progress board and
  * back from costing anything at all.
  */
-
-/**
- * The campaign's own fronts, in world order (WORLDS in levels.ts) — every
- * map a run is actually played on, and nothing else. The editor's
- * references and the imported Mindustry maps are left out: no world plays
- * them, so no menu shows them.
- */
-const MENU_MAPS = [
-  "confluence",
-  "maelstrom",
-  "quagmire",
-  "shoals",
-] as const;
 
 /** seconds one framing is held, and the black it is changed through */
 const SHOT_HOLD = 11;
@@ -81,15 +75,15 @@ const SHOT_APART = 4;
 /**
  * How much of the map one framing shows, across. The range is the point: a
  * shot rolls its own height inside it, so the scenes differ in scale as well
- * as in place. It stays near the height a RUN is played at, though — the art
- * is drawn for an eight-pixel cell, and blowing one up to four times that
+ * as in place. It sits a little above the height a RUN is played at — the
+ * art is drawn for an eight-pixel cell, and blowing one up far past that
  * turns a map into a soft brown wash with the filtering doing all the work.
  */
-const ACROSS_MIN = 36;
-const ACROSS_MAX = 60;
+const ACROSS_MIN = 72;
+const ACROSS_MAX = 120;
 /** and the limits on a cell, so neither end is a mush or a mosaic */
-const CELL_PX_MIN = 12;
-const CELL_PX_MAX = 28;
+const CELL_PX_MIN = 6;
+const CELL_PX_MAX = 14;
 
 /**
  * What one thing on the ground is worth when a bucket is scored. Every one
@@ -246,13 +240,33 @@ export default function MenuBackground({
     let terrain: Terrain | null = null;
     let rng = mulberry32((Math.random() * 0x7fffffff) | 0);
 
-    // the maps in a fresh order every launch, walked in turn
-    const order = MENU_MAPS.map((_, i) => i);
-    for (let i = order.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [order[i], order[j]] = [order[j], order[i]];
+    // the board waiting to be shown next, rolled while this one is up
+    let rolled: MapData | null = null;
+    let rolling = false;
+    let worker: Worker | null = null;
+    try {
+      worker = new Worker(new URL("../game/mapgen.worker.ts", import.meta.url), { type: "module" });
+      worker.addEventListener("message", (e: MessageEvent<MapgenReply>) => {
+        rolling = false;
+        rolled = e.data.doc;
+      });
+      worker.addEventListener("error", () => {
+        worker?.terminate();
+        worker = null;
+        rolling = false;
+      });
+    } catch {
+      worker = null;
     }
-    let cursor = 0;
+    const roll = (): void => {
+      if (rolled || rolling) return;
+      const seed = rollMapSeed();
+      if (worker) {
+        rolling = true;
+        worker.postMessage({ seed } satisfies MapgenRequest);
+      } else rolled = generateRandomMap(seed).doc;
+    };
+    roll();
 
     /** the framings left on the map being shown, and the one on screen */
     let shots: Shot[] = [];
@@ -279,8 +293,9 @@ export default function MenuBackground({
      * either way.
      */
     const nextMap = (): void => {
-      const doc = loadMap(MENU_MAPS[order[cursor % order.length]]);
-      cursor++;
+      const doc = rolled;
+      rolled = null;
+      roll();
       if (!doc || !renderer) return;
       rng = mulberry32((Math.random() * 0x7fffffff) | 0);
       terrain = terrainFromMap(doc);
@@ -318,10 +333,9 @@ export default function MenuBackground({
         resized = true;
       }
 
-      // the official map documents are fetched by the shell around this
-      // (Animechs), so the first shot is taken the frame they land
+      // the first shot is taken the frame the first roll lands
       if (!shot) {
-        if (!loadMap(MENU_MAPS[order[0]])) return;
+        if (!rolled) return;
         nextShot();
         if (!shot) return;
       }
@@ -425,6 +439,7 @@ export default function MenuBackground({
       canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
       renderer = null;
       terrain = null;
+      worker?.terminate();
     };
   }, []);
 

@@ -797,9 +797,11 @@ const DIRS8: readonly (readonly [number, number])[] = [
   [0, -1], [1, 0], [0, 1], [-1, 0],
   [-1, -1], [1, -1], [1, 1], [-1, 1],
 ];
-/** the coverage array's layers: one a floor group, then the rock */
+/** the coverage array's layers: one a floor group, the rock, then one a
+ *  wall family (so two families meeting inside a hill share a contour too) */
 const ROCK_LAYER = FLOOR_GROUPS.length;
-const COVER_LAYERS = ROCK_LAYER + 1;
+const WALL_LAYER0 = ROCK_LAYER + 1;
+const COVER_LAYERS = WALL_LAYER0 + WALL_GROUP_KINDS.length;
 /** a ground quad's rotation slot names its coverage layer, or this */
 const NO_CLIP = -1;
 // wall shadow strength: lighter than BlockRenderer.shadowColor's 0.71 — the
@@ -1576,7 +1578,7 @@ export class Renderer {
     // rails, pads and props
     this.walls = this.makeBatch(NCELLS * 2 + 2048, false);
     // a rock cell, or a floor cell beside rock — one quad either way
-    this.rock = this.makeBatch(NCELLS + 64, false);
+    this.rock = this.makeBatch(NCELLS * 3 + 512, false);
     this.shadow = this.makeBatch(4, false);
     this.dark = this.makeBatch(4);
     // a swarm budget, not a worst case: 12 quads is a walking mech with one
@@ -2554,19 +2556,33 @@ export class Renderer {
     const rk = this.rock;
     rk.n = 0;
     const rockBase = ROCK_LAYER * NCELLS;
-    if (layers.wall) for (let i = 0; i < NCELLS; i++) if (!showsFloorCell(T.blocked[i], T.wall[i])) cover[rockBase + i] = 255;
+    if (layers.wall) for (let i = 0; i < NCELLS; i++) if (!showsFloorCell(T.blocked[i], T.wall[i])) {
+      cover[rockBase + i] = 255;
+      const g = WALL_GROUP[T.wall[i]] ?? -1;
+      if (g >= 0) cover[(WALL_LAYER0 + g) * NCELLS + i] = 255;
+    }
+    // a rock cell draws its own family clipped to the rock, then each
+    // different family among its rock neighbours over it clipped to that
+    // family's layer, as the floors do; a floor cell beside rock does the same
+    // with its rock neighbours, so a concave corner fills with the right family
+    const pushRockNeighbours = (x: number, y: number, own: number): void => {
+      let seen = 0;
+      for (const [dx, dy] of DIRS8) {
+        const nx = x + dx, ny = y + dy;
+        if (!inMap(nx, ny)) continue;
+        const j = ny * COLS + nx;
+        if (showsFloor(j)) continue;
+        const gn = WALL_GROUP[T.wall[j]] ?? -1;
+        if (gn < 0 || gn === own || seen & (1 << gn)) continue;
+        seen |= 1 << gn;
+        this.push(rk, (x + 0.5) * CELL, (y + 0.5) * CELL, CELL, CELL, WALL_LAYER0 + gn, UV_WALLS[T.wall[j]], 1, 1, 1, 1);
+      }
+    };
     if (layers.wall) for (let y = 0; y < mapRows; y++) {
       for (let x = 0; x < mapCols; x++) {
         const i = y * COLS + x;
         if (showsFloor(i)) {
-          for (const [dx, dy] of DIRS8) {
-            const nx = x + dx, ny = y + dy;
-            if (!inMap(nx, ny)) continue;
-            const j = ny * COLS + nx;
-            if (showsFloor(j)) continue;
-            this.push(rk, (x + 0.5) * CELL, (y + 0.5) * CELL, CELL, CELL, ROCK_LAYER, UV_WALLS[T.wall[j]], 1, 1, 1, 1);
-            break;
-          }
+          pushRockNeighbours(x, y, -1);
           continue;
         }
         let uvr = UV_WALLS[T.wall[i]];
@@ -2584,6 +2600,7 @@ export class Renderer {
             uvr = quads[y & 1][x & 1];
         }
         this.push(rk, (x + 0.5) * CELL, (y + 0.5) * CELL, CELL, CELL, ROCK_LAYER, uvr, 1, 1, 1, 1);
+        pushRockNeighbours(x, y, g);
       }
     }
     // a 3D upload is refused outright while the premultiply flag the atlas
@@ -2951,13 +2968,18 @@ export class Renderer {
       const ti = (kid << 2) | (frag ? 1 : 0) | (alt ? 2 : 0);
       let b = tbl[ti];
       if (b === null) b = tbl[ti] = sim.bulletFor(TOWER_KINDS[kid], frag, alt);
-      // LiquidBulletType.draw: a water orb is not a sprite pair but a
-      // filled disc of the liquid's own colour — Fill.circle(x, y,
-      // orbSize). (The fout()/100 lerp toward white is a 1% shade and is
-      // dropped.)
+      // LiquidBulletType.draw's orb, as a bubble (drawBubble)
       if (b.orb) {
-        if (b.orb * 2 * this.ppw >= LOD_SHOT_SKIP_PX)
-          this.fillCircle(dyn, px, py, b.orb, b.fxColor ?? PAL.white, 1);
+        const life = P[o + 7], age = P[o + 6];
+        let r = b.orb;
+        // a lobbed orb swells toward the top of its arc, as a shell does
+        if (b.artillery) {
+          const fout = clamp(life / (life + age), 0, 1);
+          r *= 1 + 0.35 * (1 - Math.abs(fout - 0.5) * 2);
+        }
+        const body = b.fxColor ?? PAL.white;
+        this.drawBubble(dyn, px, py, r, P[o + 2], P[o + 3], age, body,
+          b.orbCore ?? ramp(body, PAL.white, null, 0.55));
         continue;
       }
       // a bare BulletType has no sprite at all — torch's flame lives
@@ -3062,17 +3084,10 @@ export class Renderer {
         continue;
       }
       if (look.region === "orb") {
-        // LiquidBulletType.draw: Fill.circle in the liquid's colour — and
-        // where the shot carries a distinct `front`, a brighter core over
-        // it at two thirds the radius. That second disc is the VENOM
-        // SPITTERS' whole signature (weapons.ts venomOrb): one purple ball
-        // with a lit centre, the same shape from the T1's spit to the T5's
-        // bomb, so a player reads the family off a shot in flight. A liquid
-        // orb whose two colours are the same (the old slag round) draws
-        // exactly as it always did.
-        this.fillCircle(dyn, sh.x, sh.y, look.width / 2, look.back, 1);
-        if (look.front !== look.back)
-          this.fillCircle(dyn, sh.x, sh.y, look.width / 3, look.front, 1);
+        // the venom spitters' ball and the kettles' bomb: `front` is the lit
+        // core where it differs from `back` (weapons.ts venomOrb)
+        this.drawBubble(dyn, sh.x, sh.y, look.width / 2, sh.vx, sh.vy, sh.age, look.back,
+          look.front !== look.back ? look.front : ramp(look.back, PAL.white, null, 0.55));
         continue;
       }
       const fout = clamp(sh.life / (sh.life + sh.age), 0, 1);
@@ -4389,6 +4404,52 @@ export class Renderer {
         UV_SOLID,
         r, g, b, a,
       );
+    }
+  }
+
+  /**
+   * A liquid round — the water ball, the gas bubble, the venom orb: a dark
+   * rim round the body, a lit core set off-centre with a glint on it, and
+   * two beads weaving behind the shot. The beams' rule (drawRoundBar) on a
+   * disc, so a round reads as a thing and not a dot. LOD as the sprite
+   * shots': under a pixel nothing, under a few one flat dot a screen cell,
+   * under eight the rim and body alone.
+   */
+  private drawBubble(
+    dyn: Batch,
+    x: number,
+    y: number,
+    r: number,
+    vx: number,
+    vy: number,
+    age: number,
+    body: RGB,
+    core: RGB,
+  ): void {
+    const dpx = r * 2 * this.ppw;
+    if (dpx < LOD_SHOT_SKIP_PX) return;
+    if (dpx < LOD_SHOT_FLAT_PX) {
+      this.tally.lodShots++;
+      if (this.dotFree(x, y)) this.fillCircle(dyn, x, y, r, body, 1);
+      return;
+    }
+    const rim: RGB = [body[0] * 0.45, body[1] * 0.45, body[2] * 0.45];
+    this.fillCircle(dyn, x, y, r, rim, 1);
+    this.fillCircle(dyn, x, y, r * 0.76, body, 1);
+    if (dpx < LOD_SHOT_ONE_PX) return;
+    const off = r * 0.2;
+    this.fillCircle(dyn, x - off, y - off, r * 0.4, core, 1);
+    this.fillCircle(dyn, x - off * 1.6, y - off * 1.6, r * 0.15, PAL.white, 0.85);
+    const sp = Math.sqrt(vx * vx + vy * vy);
+    if (sp < 0.01) return;
+    const bx = -vx / sp, by = -vy / sp;
+    for (let k = 0; k < 2; k++) {
+      const d = r * (1.4 + 0.6 * k);
+      const w = Math.sin(age * 13 + k * 2.4) * r * 0.5;
+      const cx = x + bx * d - by * w, cy = y + by * d + bx * w;
+      const br = r * (0.3 - 0.09 * k);
+      this.fillCircle(dyn, cx, cy, br, rim, 0.9);
+      this.fillCircle(dyn, cx, cy, br * 0.6, body, 0.9);
     }
   }
 

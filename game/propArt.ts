@@ -234,6 +234,24 @@ function clump(s: Sheet, rng: () => number, cx: number, cy: number, R: number, n
   s.disc(cx, cy, R * 0.5, R * 0.46, shade);
 }
 
+/** a lily pad: a flat disc with a wedge cut to the middle, veins out from it */
+function lilypad(s: Sheet, rng: () => number, cx: number, cy: number, r: number): void {
+  const a = rng() * 6.28;
+  const wedge = (x: number, y: number): boolean => {
+    const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+    let d = Math.atan2(dy, dx) - a;
+    while (d > Math.PI) d -= 6.28;
+    while (d < -Math.PI) d += 6.28;
+    return Math.abs(d) < 0.28 && Math.hypot(dx, dy) > r * 0.2;
+  };
+  s.disc(cx, cy, r, r, (x, y) => (wedge(x, y) ? null : MID));
+  for (let k = 0; k < 7; k++) {
+    const b = a + 0.5 + (k / 7) * (6.28 - 1);
+    s.bar([cx, cy], [cx + Math.cos(b) * (r - 2), cy + Math.sin(b) * (r - 2)], r > 20 ? 2 : 1.4, (x, y) => (wedge(x, y) ? null : LIGHT));
+  }
+  s.disc(cx, cy, r > 20 ? 3 : 2, r > 20 ? 3 : 2, DARK);
+}
+
 /** a plated hull: the body, its lit and shaded crescents, its seams */
 function plate(s: Sheet, cx: number, cy: number, rx: number, ry: number, hi: Col, mid: Col, lo: Col, lit = 0.45): void {
   s.disc(cx, cy, rx, ry, (_x, _y, u, v) => (u - v > lit ? hi : u - v < -lit - 0.15 ? lo : mid));
@@ -540,27 +558,9 @@ export const PROP_KINDS: readonly PropDef[] = [
     s.disc(c, c, 5, 5, DEEP);
   }),
   // ---- the water's edge (mapgen.ts, the shore pass) ----
-  // lily pads from straight above: flat discs, no shadow and no lit side,
-  // a notch cut to the middle, veins running out from it, a dark stem dot
-  nature("lily", "Lily pads", 1, 1.25, LEAF_TONES, (s, rng) => {
-    const pads: [number, number, number][] = [[20, 19, 11], [11, 28, 7], [30, 28, 6.5], [29, 10, 5.5]];
-    for (const [cx, cy, r] of pads) {
-      const a = rng() * 6.28;
-      const wedge = (x: number, y: number): boolean => {
-        const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
-        let d = Math.atan2(dy, dx) - a;
-        while (d > Math.PI) d -= 6.28;
-        while (d < -Math.PI) d += 6.28;
-        return Math.abs(d) < 0.3 && Math.hypot(dx, dy) > r * 0.25;
-      };
-      s.disc(cx, cy, r, r, (x, y) => (wedge(x, y) ? null : MID));
-      if (r >= 7)
-        for (let k = 0; k < 6; k++) {
-          const b = a + 0.6 + (k / 6) * (6.28 - 1.2);
-          s.bar([cx, cy], [cx + Math.cos(b) * (r - 1.5), cy + Math.sin(b) * (r - 1.5)], 1.2, (x, y) => (wedge(x, y) ? null : LIGHT));
-        }
-      s.disc(cx, cy, r >= 7 ? 1.8 : 1.3, r >= 7 ? 1.8 : 1.3, DARK);
-    }
+  // one lily pad from straight above: a flat disc with a notch, no shading
+  nature("lily", "Lily pad", 1, 1.25, LEAF_TONES, (s, rng) => {
+    lilypad(s, rng, 20, 20, 15);
   }),
   // a bleached log lying across the cell: a root flare one end, splinters the other
   nature("driftwood", "Driftwood", 1, 1.5, WOOD_TONES, (s, rng) => {
@@ -577,18 +577,22 @@ export const PROP_KINDS: readonly PropDef[] = [
     const [kx, ky] = p(4 + rng() * 6, 0);
     s.disc(kx, ky, 2, 2, DEEP);
   }),
-  // a reed bed standing in the water: stems out of a dark pool, cattail heads on half of them
+  // a reed bed from straight above: a dark pool, the stems as dots with
+  // their blades fanned round them, the cattail heads as darker dots
   nature("rushes", "Rushes", 2, 2.25, LEAF_TONES, (s, rng) => {
     const c = 36;
-    s.disc(c, c + 4, 24, 15, DEEP);
-    s.disc(c, c + 2, 20, 12, DARK);
-    const n = 14, a0 = rng() * 6.28;
+    s.disc(c, c, 26, 26, DEEP);
+    s.disc(c, c, 24, 24, DARK);
+    const n = 15, a0 = rng() * 6.28;
     for (let i = 0; i < n; i++) {
-      const b = a0 + (i / n) * 6.28 + (rng() - 0.5) * 0.5, d = 4 + rng() * 14;
-      const x0 = c + Math.cos(b) * d, y0 = c + 5 + Math.sin(b) * d * 0.6;
-      const h = 16 + rng() * 12, lean = (rng() - 0.5) * 8;
-      s.bar([x0, y0], [x0 + lean, y0 - h], 3, i % 3 === 0 ? LIGHT : MID);
-      if (i % 2 === 0) s.disc(x0 + lean, y0 - h - 2, 2.2, 3.2, DEEP);
+      const b = a0 + (i / n) * 6.28 + (rng() - 0.5) * 0.5, d = i % 3 === 0 ? 2 + rng() * 6 : 9 + rng() * 11;
+      const x = c + Math.cos(b) * d, y = c + Math.sin(b) * d;
+      const blades = 3 + ((rng() * 2) | 0), b0 = rng() * 6.28;
+      for (let k = 0; k < blades; k++) {
+        const t = b0 + (k / blades) * 6.28 + (rng() - 0.5) * 0.4, l = 6 + rng() * 5;
+        s.bar([x, y], [x + Math.cos(t) * l, y + Math.sin(t) * l], 2.2, k % 2 ? MID : LIGHT);
+      }
+      s.disc(x, y, 2, 2, i % 2 === 0 ? DEEP : LIGHT);
     }
   }),
   // wet stones strewn at the waterline
@@ -599,6 +603,9 @@ export const PROP_KINDS: readonly PropDef[] = [
       s.disc(x + 1, y + 1, r, r * 0.8, DEEP);
       s.disc(x, y, r, r * 0.8, (px, py) => (px + 0.5 - x - (py + 0.5 - y) > r * 0.3 ? LIGHT : MID));
     }
+  }),
+  nature("lilypad", "Big lily pad", 2, 2.25, LEAF_TONES, (s, rng) => {
+    lilypad(s, rng, 36, 36, 29);
   }),
 ];
 /** what a fresh prop's `rot` rolls to: a quarter turn for a kind that turns, a painting otherwise */

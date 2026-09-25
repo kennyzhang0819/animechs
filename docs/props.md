@@ -1,6 +1,6 @@
 # Props
 
-The things that stand on the ground: twenty-two kinds, painted in code in
+The things that stand on the ground: twenty-three kinds, painted in code in
 `game/propArt.ts`, placed by the map generator (`game/mapgen.ts`) and by
 the map editor, drawn by the renderer's terrain pass. This page is the
 system; the file headers say only where things are.
@@ -46,8 +46,8 @@ reorder.**
 | grove | 4 | three canopies and their brush |
 | brush, thicket | 2, 3 | the bushes a thicket is made of: a canopy with no trunk |
 | snag | 2 | a dead tree: a trunk and its bare limbs, for the barren lands |
-| lily, driftwood, shingle | 1 | the water's edge: pads on the shallows, a bleached log, wet stones |
-| rushes | 2 | a reed bed standing in the shallows |
+| lily, driftwood, shingle | 1 | the water's edge: a pad on the shallows, a bleached log, wet stones |
+| rushes, lilypad | 2 | a reed bed standing in the shallows, a big pad |
 | crate | 1 | a supply crate |
 | barrels, scrap, mast | 2 | drums, a scrap heap, a fallen radio mast |
 | hull, silo | 3 | a wrecked mech hull, a fuel tank |
@@ -130,10 +130,23 @@ lifted shallow cell gets its water back.
 Every prop can be shot, and only the player's guns shoot them. A turret
 always prefers a body; only with no body, dome or enemy building in range
 does it turn on the nearest prop in range (`Sim.nearestProp`, held in
-`Tower.aimProp`). A round in flight is stopped by the first prop on its
-path and hits it there (`firstPropAlong`), a beam or rail ends at one, and a
-blast reaches the props round it at the blast's falloff. Artillery arcs
-over them and reaches them only where it lands.
+`Tower.aimProp`). To a shot, a prop is a body: a round in flight stops at
+the first prop on its path (`firstPropAlong`) unless it pierces, in which
+case it goes through every prop on the path and hits each once, on the
+same ledger and cap as bodies (`propsAlong`); a laser counts the props on
+its line against its pierce cap, a rail spends its budget on them in the
+order met, a held beam rakes every prop under it, a cleave takes the props
+in its arc, and a blast reaches the props round it at the blast's falloff.
+Artillery arcs over them and reaches them only where it lands. The chain
+(coil) jumps bodies only and hits just the prop it was aimed at.
+
+**The statuses land on props as on bodies** (`propStatus`, ticked by
+`updatePropStatus` on `updateStatus`'s rules): fire stacks and burns for
+`FIRE_SECONDS`, poison adds and rots for `POISON_SECONDS`, wet re-times and
+doubles an electric hit (`WET_SHOCK_MUL`). Each path lays what it lays on a
+body: a direct hit its burn and wet (and its poison if it does not splash),
+a blast all three, a held beam its burn and poison, a rail or laser none.
+Fire does not spread to or from a prop, and a prop has no soak threshold.
 
 A prop's health is the turret band of its footprint, 2,800 for one tile up
 to 130,000 for six (`terrain.ts PROP_HP`), with no armour. One that comes

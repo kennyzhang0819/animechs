@@ -462,10 +462,12 @@ export interface BulletStats {
   // one boolean says. The pairing is legible from the water alone —
   // a soaked body is the one the blue line wants.
   electric?: boolean;
-  // LiquidBulletType.orbSize: the shot is not an atlas sprite but a filled
-  // disc of the liquid's own colour at this radius in px —
-  // Fill.circle(b.x, b.y, orbSize), drawn in fxColor
+  // LiquidBulletType.orbSize: the shot is not an atlas sprite but a bubble
+  // of the liquid at this radius in px (renderer.ts drawBubble): a dark rim
+  // and a body in fxColor, a lit core in orbCore — fxColor toward white
+  // when unset
   orb?: number;
+  orbCore?: RGB;
   // Mindustry fragBullet/fragBullets (BulletType.createFrags): where this
   // shot dies it throws `count` children, each on a random bearing within
   // half of `spread` of the parent's heading and at a random fraction of
@@ -836,6 +838,7 @@ export function normalizeBullet(b: BulletStats): BulletStats {
     wet: b.wet,
     electric: b.electric,
     orb: b.orb,
+    orbCore: b.orbCore,
     alt: b.alt ? normalizeBullet(b.alt) : undefined,
     frag: b.frag ? { ...b.frag, bullet: normalizeBullet(b.frag.bullet) } : undefined,
     rail: b.rail,
@@ -889,18 +892,19 @@ export function normalizeTower(s: TowerStats): TowerStats {
 
 /** the roster as written — see TOWERS below for the one the game reads */
 const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
-  // Tacker, 1:1 from mindustry/content/Blocks.java with copper ammo
-  // (BasicBulletType(2.5, 9)): one shot every 20 ticks, alternating between
-  // twin barrels 3.5 units apart (ShootAlternate)
+  // Tacker, from mindustry/content/Blocks.java with copper ammo
+  // (BasicBulletType(2.5, 9)). Upstream alternates one 9-damage shot every
+  // 20 ticks between twin barrels 3.5 units apart; here both barrels throw
+  // together, a 5-damage pellet each every 22 ticks — the same 0.45 a tick
   tacker: {
     name: "Tacker",
     size: 1,
     health: 280, // common band (300), mid: 50 tiles
     armor: 0,
     range: 160 * MU,
-    reload: 20 / TICK,
-    shots: 1,
-    shotDelay: 0,
+    reload: 22 / TICK,
+    shots: 2,
+    shotDelay: 0, // both barrels on the same tick — see Sim.fireShot's salvo
     spread: 0,
     inaccuracy: (2 * Math.PI) / 180,
     shootCone: (15 * Math.PI) / 180,
@@ -910,7 +914,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     barrels: { count: 2, spread: 3.5 * MU },
     bullet: {
       speed: 2.5 * TICK * MU,
-      damage: 9,
+      damage: 5,
       lifetime: (160 + 5 + 10) / 2.5 / TICK, // limitRange(5) + base 10-unit margin
       splash: 0,
       splashRadius: 0,
@@ -983,8 +987,10 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.graphiteAmmoBack,
     },
   },
-  // Autocannon, 1:1 from mindustry/content/Blocks.java with thorium ammo
-  // (BasicBulletType(4, 28)): 4-shot bursts 3 ticks apart, every 29 ticks
+  // Autocannon, from mindustry/content/Blocks.java with thorium ammo
+  // (BasicBulletType(4, 28)). Upstream streams 4-shot bursts 3 ticks apart
+  // every 29 ticks (112 a volley); here the three barrels throw one salvo
+  // of 37 side by side on the same clock (111 a volley)
   autocannon: {
     name: "Autocannon",
     size: 2,
@@ -992,8 +998,8 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     armor: 4,
     range: 190 * MU,
     reload: 29 / TICK,
-    shots: 4,
-    shotDelay: 3 / TICK,
+    shots: 3,
+    shotDelay: 0,
     spread: 0,
     inaccuracy: 0,
     // turret defaults: 8-degree shoot cone, 5 deg/tick turn rate
@@ -1001,9 +1007,10 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     rotateSpeed: ((5 * Math.PI) / 180) * TICK,
     targetAir: true,
     targetGround: true,
+    barrels: { count: 3, spread: 4 * MU },
     bullet: {
       speed: 4 * TICK * MU,
-      damage: 28,
+      damage: 37,
       lifetime: (190 + 9 + 10) / 4 / TICK, // limitRange() default margin 9
       splash: 0,
       splashRadius: 0,
@@ -1400,6 +1407,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       hitRadius: 5 * MU,
       wet: { duration: 2, slow: 0.65, soak: 14 },
       orb: 5 * MU, // one ball, not a droplet — LiquidBulletType.draw's disc
+      orbCore: PAL.piercerLaser, // the soaked star's light blue (weapons.ts)
       // LiquidTurret zeroes the block's own effects; the bullet's
       // shootEffect is still Fx.shootLiquid. The landing is not: hitLiquid
       // is a handspan of droplets and this burst is seven tiles wide, so
@@ -1586,6 +1594,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       hitRadius: 6 * MU, // the ball's own size, as wave's
       wet: { duration: 4, slow: 0.45, soak: 36 },
       orb: 6 * MU, // the heavy ball
+      orbCore: PAL.piercerLaser,
       shootFx: FxKind.ShootLiquid,
       hitFx: FxKind.WaterBurst,
       hitFx2: FxKind.HitLiquid,
@@ -1866,9 +1875,9 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // is a turret that does not fire shots at all. It lights a
   // ContinuousLaserBulletType and HOLDS it — Mindustry's 78 raised 30% to
   // 101 (the phase-tier up-gun, see repeater) to everything under the beam
-  // every five ticks, for 230 ticks, and only then does the 90-tick reload
-  // start running. 1,212 damage a second while it burns,
-  // against nothing at all while it cools: a 72% duty cycle.
+  // every five ticks, for as long as anything is in reach (Sim keeps
+  // `duration` topped up while a target stands); the 230 ticks are what
+  // it burns over an emptied lane before the 90-tick reload starts.
   //
   // firingMoveFract halves the turret's turn rate for as long as the beam
   // is lit, so furnace tracks a crossing target badly and a queue walking
@@ -1912,7 +1921,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       continuous: {
         length: 200 * MU,
         damageInterval: 5 / TICK,
-        duration: 230 / TICK, // LaserTurret.shootDuration
+        duration: 230 / TICK, // LaserTurret.shootDuration — refilled while a target is in reach
         fade: 16 / TICK, // ContinuousLaserBulletType.fadeTime
         moveFract: 0.5, // LaserTurret.firingMoveFract
       },
@@ -2015,15 +2024,8 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       collidesAir: false,
       collidesGround: true,
       hitRadius: 4 * MU,
-      sprite: {
-        region: "canister",
-        across: 8 * MU,
-        along: 11 * MU,
-        shrinkX: 0,
-        shrinkY: 0,
-        back: PAL.toxinBack,
-        front: PAL.toxinFront,
-      },
+      orb: 4 * MU, // a gas bubble, as the liquid turrets' ball
+      orbCore: PAL.toxinFront,
       puff: { chance: 0.3 * TICK, size: 3 * MU },
       shootFx: FxKind.ShootLiquid,
       smokeFx: FxKind.SmokeSmall,
@@ -2061,16 +2063,8 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       collidesAir: false,
       collidesGround: true,
       artillery: true,
-      sprite: {
-        region: "canister",
-        across: 13 * MU,
-        along: 16 * MU,
-        shrinkX: 0.15,
-        shrinkY: 0.35,
-        slopeShrink: true,
-        back: PAL.toxinBack,
-        front: PAL.toxinFront,
-      },
+      orb: 6.5 * MU, // the lobbed bubble swells at the top of its arc (drawBubble)
+      orbCore: PAL.toxinFront,
       trail: { size: 4 * MU, mult: 1 },
       shootFx: FxKind.ShootBig,
       smokeFx: FxKind.SmokeSmall,
@@ -2109,17 +2103,10 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       collidesAir: true,
       collidesGround: true,
       cloud: { radius: 84 * MU, interval: 0.5, poison: 1 },
-      // the canister itself, tumbling in the middle of its own gas — the
-      // field is drawn by the shield pass (renderer.ts drawCloudFields)
-      sprite: {
-        region: "canister",
-        across: 11 * MU,
-        along: 14 * MU,
-        shrinkX: 0,
-        shrinkY: 0,
-        back: PAL.toxinBack,
-        front: PAL.toxinFront,
-      },
+      // the bubble itself, in the middle of its own gas — the field is
+      // drawn by the shield pass (renderer.ts drawCloudFields)
+      orb: 5.5 * MU,
+      orbCore: PAL.toxinFront,
       puff: { chance: 1.6 * TICK, size: 9 * MU },
       shootFx: FxKind.ShootLiquid,
       smokeFx: FxKind.SmokeBig,
@@ -2133,7 +2120,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     size: 4,
     health: 6400, // ultra band
     armor: 15,
-    range: 215 * MU,
+    range: 340 * MU,
     reload: 5 / TICK,
     shots: 1,
     shotDelay: 0,
@@ -2146,14 +2133,16 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     shootY: 4 * 4 * MU, // Turret's own default, as repeater's
     barrels: { count: 2, spread: 7 * MU },
     bullet: {
-      speed: 6 * TICK * MU,
-      damage: 30,
+      speed: 10 * TICK * MU,
+      damage: 80,
       poison: 1.6,
-      lifetime: (215 + 9 + 10) / 6 / TICK,
+      lifetime: (340 + 9 + 10) / 10 / TICK,
       splash: 0,
       splashRadius: 0,
       collidesAir: true,
       collidesGround: true,
+      // no pierceCap: a needle flies its whole line and hits every body on it
+      pierce: true,
       hitRadius: (5 / 2) * MU,
       sprite: {
         region: "bullet",
@@ -2222,12 +2211,12 @@ export const TOWERS: Record<TowerKind, TowerStats> = Object.fromEntries(
  * stats, and so a rung that moves either one moves the line for free.
  */
 export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
-  tacker: "Shoots small bullets quickly.",
+  tacker: "Shoots pairs of small bullets quickly.",
   airburst: "Shoots flak shells that burst near enemies and set them alight.",
   coil: "Shoots lightning that jumps between enemies.",
   lobber: "Lobs shells that explode where they land.",
   torch: "Sprays fire at close range and sets enemies alight.",
-  autocannon: "Shoots four shells at once, then reloads slowly.",
+  autocannon: "Shoots three shells side by side, then reloads slowly.",
   douser: "Lobs a ball of water that bursts, soaking everything nearby and chipping at it.",
   piercer: "Charges up, then fires a beam through a line of enemies.",
   barrage: "Lobs six shells at once over a long distance.",
@@ -2246,7 +2235,7 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   blighter: "Lobs a canister that bursts into a huge cloud of poison.",
   drifter:
     "Fires one slow cloud that drifts far past its target, poisoning everything it passes over. Very long reload.",
-  stinger: "Shoots poisoned needles without stopping, stacking the poison as fast as it fires.",
+  stinger: "Shoots poisoned needles without stopping that punch through every body in line, stacking the poison as fast as it fires.",
 };
 
 /**

@@ -773,6 +773,8 @@ const DMG_BULLET = 1;
 const DMG_ELECTRIC = 2;
 /** fire, and anything else with no gun behind it: neither rule applies */
 const DMG_NEITHER = 0;
+/** a prop's entry in a piercing shot's ledger: below every building's sentinel */
+const PROP_SID = -2000000;
 
 /**
  * EVERY TURRET'S NATURE, precomputed by kind. `firesBullets` is the roster
@@ -2527,6 +2529,17 @@ export class Sim {
   private propHurt: number[] = [];
   private readonly splashProps: number[] = [];
   private readonly seenProps = new Set<number>();
+  // the three statuses a prop can carry, on the body's terms (docs/elements.md)
+  private propBurn = new Float32Array(0);
+  private propBurnT = new Float32Array(0);
+  private propPoison = new Float32Array(0);
+  private propPoisonT = new Float32Array(0);
+  private propWet = new Float32Array(0);
+  /** the props with a status running (propStatusIn flags them), walked by updatePropStatus */
+  private propStatusOn: number[] = [];
+  private propStatusIn = new Uint8Array(0);
+  private readonly propsOnLine: number[] = [];
+  private readonly propsOnLineD: number[] = [];
   /** the player's BUILDINGS currently selected — a gathered row to sell or inspect */
   private readonly selStructs = new Set<Structure>();
   // seal-test cache: hover asks canPlace every frame, and the test costs two
@@ -2910,6 +2923,13 @@ export class Sim {
       }
       this.propsDead = [];
       this.propHurt.length = 0;
+      this.propBurn = new Float32Array(props.length);
+      this.propBurnT = new Float32Array(props.length);
+      this.propPoison = new Float32Array(props.length);
+      this.propPoisonT = new Float32Array(props.length);
+      this.propWet = new Float32Array(props.length);
+      this.propStatusOn = [];
+      this.propStatusIn = new Uint8Array(props.length);
       this.terrainVersion++;
     }
     this.airField.rebuildWalk([], this.hills, this.padMaskFor("air"), this.coreGoal());
@@ -4301,6 +4321,7 @@ export class Sim {
       // the same tick
       targetT: Math.random() * TARGET_INTERVAL,
       burstLeft: 0,
+      salvoJit: 0,
       burstT: 0,
       shotCount: 0,
       aimX: 0,
@@ -4787,6 +4808,7 @@ export class Sim {
     this.updateLeadership(dt);
     this.mark("leadership");
     this.updateStatus(dt);
+    if (this.propStatusOn.length > 0) this.updatePropStatus(dt);
     this.mark("status");
     // the hungry eat AFTER the status pass and before the towers fire, so a
     // unit that burned to death this tick is already gone rather than being
@@ -7088,6 +7110,24 @@ export class Sim {
     }
     return -1;
   }
+  /** every standing prop on a segment in the order met, with its distance
+   *  along the segment, sampled like firstPropAlong */
+  private propsAlong(x0: number, y0: number, dx: number, dy: number, out: number[], dist: number[]): number {
+    out.length = 0;
+    dist.length = 0;
+    const len = Math.hypot(dx, dy);
+    const steps = len > SHOT_SWEEP ? Math.ceil(len / SHOT_SWEEP) : 1;
+    for (let s = 1; s <= steps; s++) {
+      const f = s / steps, px = x0 + dx * f, py = y0 + dy * f;
+      if (px < 0 || py < 0 || px >= W || py >= H) break;
+      const k = this.propAt[((py / CELL) | 0) * COLS + ((px / CELL) | 0)];
+      if (k >= 0 && this.propHp[k] > 0 && out[out.length - 1] !== k) {
+        out.push(k);
+        dist.push(len * f);
+      }
+    }
+    return out.length;
+  }
   /** every standing prop whose footprint's edge is within r of the point */
   private propsWithin(x: number, y: number, r: number, out: number[]): number[] {
     out.length = 0;
@@ -7104,9 +7144,10 @@ export class Sim {
     return out;
   }
   /** a hit on a prop: no armour, no reward; at zero it comes down */
-  private propHit(k: number, dmg: number, fx: BulletFx | undefined, angle: number, col?: RGB): void {
+  private propHit(k: number, dmg: number, fx: BulletFx | undefined, angle: number, col?: RGB, nature = DMG_BULLET): void {
     if (this.propHp[k] <= 0) return;
     if (this.propHp[k] >= propHpFor(this.terrain.props[k].kind)) this.propHurt.push(k);
+    if (nature & DMG_ELECTRIC && this.propWet[k] > 0) dmg *= WET_SHOCK_MUL;
     this.propHp[k] -= dmg;
     const half = this.propHalf(k);
     this.bulletFx(fx, this.propX(k) - Math.cos(angle) * half, this.propY(k) - Math.sin(angle) * half, angle, col);
@@ -7139,7 +7180,70 @@ export class Sim {
     this.propsDead.push(k);
     const at = this.propHurt.indexOf(k);
     if (at >= 0) this.propHurt.splice(at, 1);
+    this.propBurn[k] = 0;
+    this.propPoison[k] = 0;
+    this.propWet[k] = 0;
     this.terrainVersion++;
+  }
+  /** what a hit's status does to a prop: the body rules (applyBurn, applyPoison, applyWet) */
+  private propStatus(k: number, burn: number | undefined, poison: number | undefined, wet: BulletStats["wet"]): void {
+    if (this.propHp[k] <= 0 || !(burn || poison || wet)) return;
+    if (burn) {
+      this.propBurn[k] = Math.min(this.propBurn[k] + burn, FIRE_MAX_STACKS);
+      this.propBurnT[k] = FIRE_SECONDS;
+    }
+    if (poison) {
+      this.propPoison[k] += poison;
+      this.propPoisonT[k] = POISON_SECONDS;
+    }
+    if (wet) this.propWet[k] = wet.duration;
+    if (!this.propStatusIn[k]) {
+      this.propStatusIn[k] = 1;
+      this.propStatusOn.push(k);
+    }
+  }
+  private propStatusFx(k: number, ttl: number, kind: FxKind, col?: RGB): void {
+    const a = Math.random() * Math.PI * 2;
+    const r = (Math.random() * 2 - 1) * this.propHalf(k) * 0.7;
+    const x = this.propX(k) + Math.cos(a) * r, y = this.propY(k) + Math.sin(a) * r;
+    if (col) this.pushFxCol(x, y, ttl, kind, 0, 0, col, 0);
+    else this.pushFx(x, y, ttl, kind);
+  }
+  /** the status tick for props, on updateStatus's terms; a prop whose statuses have run out leaves the list */
+  private updatePropStatus(dt: number): void {
+    const on = this.propStatusOn;
+    for (let q = on.length - 1; q >= 0; q--) {
+      const k = on[q];
+      if (this.propHp[k] > 0) {
+        if (this.propWet[k] > 0) {
+          if ((this.propWet[k] -= dt) <= 0) this.propWet[k] = 0;
+          else if (Math.random() < WET_FX_CHANCE * dt) this.propStatusFx(k, 80 / 60, FxKind.Wet);
+        }
+        if (this.propPoison[k] > 0) {
+          if ((this.propPoisonT[k] -= dt) <= 0) {
+            this.propPoison[k] = 0;
+            this.propPoisonT[k] = 0;
+          } else {
+            this.propHit(k, this.propPoison[k] * dt, undefined, 0);
+            if (Math.random() < BURN_FX_CHANCE * dt) this.propStatusFx(k, 35 / 60, FxKind.Burning, PAL.venom);
+          }
+        }
+        if (this.propHp[k] > 0 && this.propBurn[k] > 0) {
+          if ((this.propBurnT[k] -= dt) <= 0) {
+            this.propBurn[k] = 0;
+            this.propBurnT[k] = 0;
+          } else {
+            this.propHit(k, FIRE_DPS_PER_STACK * this.propBurn[k] * dt, undefined, 0);
+            if (Math.random() < BURN_FX_CHANCE * dt) this.propStatusFx(k, 35 / 60, FxKind.Burning);
+          }
+        }
+      }
+      if (this.propHp[k] <= 0 || !(this.propWet[k] > 0 || this.propPoison[k] > 0 || this.propBurn[k] > 0)) {
+        this.propStatusIn[k] = 0;
+        on[q] = on[on.length - 1];
+        on.pop();
+      }
+    }
   }
 
   /** every hurt, standing prop with what is left of it: flat [index, fraction, ...] pairs (simreport.ts) */
@@ -12791,6 +12895,10 @@ export class Sim {
       t.aimShieldTower = shr ? this.shieldTowers.indexOf(shr) : -1;
       t.aimTower = aimT;
       t.aimProp = aimP;
+      // a lit beam is never let go while a body, a dome or a building stands
+      // in reach: its duration is refilled here and only burns down over an
+      // emptied lane, so a furnace holds a queue rather than cycling on it
+      if (cont && t.beamT > cont.fade && (best >= 0 || shr || aimT)) t.beamT = cont.duration + cont.fade;
       if (best < 0 && !shr && !aimT && aimP < 0) {
         // nothing in range: a beam already lit keeps burning down its
         // duration where it is, exactly as Mindustry's held bullet does
@@ -12984,7 +13092,11 @@ export class Sim {
    */
   private fireShot(t: Tower, st: TowerStats, idx: number): void {
     const fan = (idx - (st.shots - 1) / 2) * st.spread;
-    const a = t.angle + fan + (Math.random() * 2 - 1) * st.inaccuracy;
+    // a volley that leaves every barrel on one tick is a salvo: one
+    // inaccuracy roll for all of it, so the rounds fly parallel
+    const salvo = st.shotDelay === 0 && st.shots > 1 && st.barrels !== undefined;
+    if (!salvo || idx === 0) t.salvoJit = (Math.random() * 2 - 1) * st.inaccuracy;
+    const a = t.angle + fan + t.salvoJit;
     const cos = Math.cos(a), sin = Math.sin(a);
     // Mindustry shootY where the turret states one, else the shared
     // size-scaled muzzle
@@ -13052,7 +13164,8 @@ export class Sim {
     const hitAimed = (): void => {
       if (shrT) this.shieldTowerHit(shrT, bul.damage, bul.hitFx, a, bul.fxColor);
       if (aimT) this.structureHit(aimT, bul.damage, bul.hitFx, a, bul.fxColor);
-      if (aimP >= 0) this.propHit(aimP, bul.damage, bul.hitFx, a, bul.fxColor);
+      // the line and cone sweeps meet a prop on their own; the chain jumps bodies only
+      if (aimP >= 0 && bul.lightning) this.propHit(aimP, bul.damage, bul.hitFx, a, bul.fxColor, nature);
     };
     // THE SWARM'S OWN INSTANT WEAPONS SWEEP NOTHING (Conquest): every
     // sweep below walks the swarm's BODIES, and a conquered turret has
@@ -13218,7 +13331,7 @@ export class Sim {
     P.age[p] += dt;
     // the trails are the shot's own look and belong to whoever fired it
     if (b.puff && Math.random() < b.puff.chance * dt)
-      this.pushTrail(px, py, b.puff.size, b.sprite?.back);
+      this.pushTrail(px, py, b.puff.size, b.sprite?.back ?? b.fxColor);
     if (b.trail) {
       const fin = P.age[p] / (P.age[p] + P.life[p]);
       const slope = 1 - Math.abs(fin - 0.5) * 2;
@@ -13226,7 +13339,7 @@ export class Sim {
       const every = ((3 + slope * 2) * b.trail.mult) / 60;
       if (P.trailT[p] >= every) {
         P.trailT[p] = 0;
-        this.pushTrail(px, py, slope * b.trail.size, b.sprite?.back);
+        this.pushTrail(px, py, slope * b.trail.size, b.sprite?.back ?? b.fxColor);
       }
     }
     const off = px < 0 || py < 0 || px >= W || py >= H;
@@ -13313,24 +13426,30 @@ export class Sim {
     const { upx, upy, uhp } = this;
     const dirx = Math.cos(angle), diry = Math.sin(angle);
     const hits = this.boltHits, dists = this.boltDists;
-    // a prop on the line ends it there and takes the rail (docs/props.md)
-    let len = spec.length;
-    if (b.collidesGround) {
-      const pd = this.firstPropAlong(x, y, dirx * len, diry * len);
-      if (pd >= 0) {
-        len = Math.max(6 * MU, pd);
-        this.propHit(this.propHitK, b.damage, b.hitFx, angle, b.fxColor);
-      }
-    }
+    const len = spec.length;
     this.collideLine(x, y, dirx, diry, len, b.collidesAir, b.collidesGround, hits, dists);
-    const order = hits.map((_, k) => k).sort((p, q) => dists[p] - dists[q]);
+    // the props on the line are victims like the bodies, in the order met
+    // (docs/props.md); a prop rides the order as -1 - its slot
+    const pn = b.collidesGround ? this.propsAlong(x, y, dirx * len, diry * len, this.propsOnLine, this.propsOnLineD) : 0;
+    const order = hits.map((_, k) => k);
+    for (let q = 0; q < pn; q++) order.push(-1 - q);
+    const distOf = (k: number): number => (k >= 0 ? dists[k] : this.propsOnLineD[-1 - k]);
+    order.sort((p, q) => distOf(p) - distOf(q));
     let left = b.damage;
     let reached = len;
     const dead: number[] = [];
     for (const k of order) {
       if (left <= 0) {
-        reached = Math.min(reached, dists[k]);
+        reached = Math.min(reached, distOf(k));
         break;
+      }
+      if (k < 0) {
+        const pk = this.propsOnLine[-1 - k], health = this.propHp[pk];
+        this.propHit(pk, left, b.hitFx, angle, b.fxColor, nature);
+        this.bulletFx(b.pierceFx, this.propX(pk), this.propY(pk), angle, b.fxColor);
+        left -= Math.min(left, health);
+        if (left <= 0) reached = Math.min(reached, distOf(k));
+        continue;
       }
       const i = hits[k];
       const health = uhp[i];
@@ -13410,6 +13529,15 @@ export class Sim {
     }
     splashHits.sort((a2, b2) => b2 - a2);
     for (const i of splashHits) if (uhp[i] <= 0) this.killUnit(i);
+    // the props in the arc take the slash too (docs/props.md), by their centre
+    if (ground)
+      for (const k of this.propsWithin(x, y, length, this.splashProps)) {
+        const dx = this.propX(k) - x, dy = this.propY(k) - y, d = Math.sqrt(dx * dx + dy * dy), r = this.propHalf(k);
+        let da = Math.atan2(dy, dx) - angle;
+        da = Math.abs(Math.atan2(Math.sin(da), Math.cos(da)));
+        if (da > half + (d > r ? Math.asin(r / d) : Math.PI)) continue;
+        this.propHit(k, dmg, hitFx, angle, fxColor, nature);
+      }
   }
 
   /**
@@ -13697,25 +13825,27 @@ export class Sim {
     const { upx, upy, uhp } = this;
     const dirx = Math.cos(angle), diry = Math.sin(angle);
     const hits = this.boltHits, dists = this.boltDists;
-    // a prop on the line ends it there and takes the beam (docs/props.md)
-    if (ground) {
-      const pd = this.firstPropAlong(x, y, dirx * length, diry * length);
-      if (pd >= 0) {
-        length = Math.max(6 * MU, pd);
-        this.propHit(this.propHitK, damage, hitFx, angle, fxColor);
-      }
-    }
     this.collideLine(x, y, dirx, diry, length, air, ground, hits, dists);
-    // nearest first, so the cap keeps the units the beam reaches first
-    const order = hits.map((_, k) => k).sort((a, b) => dists[a] - dists[b]);
+    // the props on the line count against the cap like the bodies
+    // (docs/props.md); a prop rides the order as -1 - its slot
+    const pn = ground ? this.propsAlong(x, y, dirx * length, diry * length, this.propsOnLine, this.propsOnLineD) : 0;
+    const order = hits.map((_, k) => k);
+    for (let q = 0; q < pn; q++) order.push(-1 - q);
+    const distOf = (k: number): number => (k >= 0 ? dists[k] : this.propsOnLineD[-1 - k]);
+    // nearest first, so the cap keeps the victims the beam reaches first
+    order.sort((a, b) => distOf(a) - distOf(b));
     // findPierceLength: under the cap the beam runs its full length; at or
     // over it, it stops dead at the cap'th victim (never inside 6 units)
     const reached =
       pierceCap <= 0 || order.length < pierceCap
         ? length
-        : Math.max(6 * MU, dists[order[pierceCap - 1]]);
+        : Math.max(6 * MU, distOf(order[pierceCap - 1]));
     const dead: number[] = [];
     for (let k = 0; k < order.length && (pierceCap <= 0 || k < pierceCap); k++) {
+      if (order[k] < 0) {
+        this.propHit(this.propsOnLine[-1 - order[k]], damage, hitFx, angle, fxColor, nature);
+        continue;
+      }
       const i = hits[order[k]];
       this.damageUnit(i, damage, pierceArmor, armorMult, nature);
       if (uhp[i] > 0) this.bulletFx(hitFx, upx[i], upy[i], angle, fxColor);
@@ -13810,18 +13940,18 @@ export class Sim {
       t.beamDmgT += cont.damageInterval;
       const { upx, upy, uhp } = this;
       const hits = this.boltHits, dists = this.boltDists;
-      // a prop under the beam ends it there and burns (docs/props.md)
-      let beamLen = reach;
+      // every prop under the beam takes the tick and its fire, like a body (docs/props.md)
       if (b.collidesGround) {
-        const pd = this.firstPropAlong(t.beamOX, t.beamOY, Math.cos(t.beamRot) * reach, Math.sin(t.beamRot) * reach);
-        if (pd >= 0) {
-          beamLen = Math.max(6 * MU, pd);
-          this.propHit(this.propHitK, b.damage, b.hitFx, t.beamRot, b.fxColor);
+        const pn = this.propsAlong(t.beamOX, t.beamOY, Math.cos(t.beamRot) * reach, Math.sin(t.beamRot) * reach, this.propsOnLine, this.propsOnLineD);
+        for (let q = 0; q < pn; q++) {
+          const k = this.propsOnLine[q];
+          this.propHit(k, b.damage, b.hitFx, t.beamRot, b.fxColor, TOWER_NATURE[t.kind]);
+          this.propStatus(k, b.burn, b.poison, undefined);
         }
       }
       this.collideLine(
         t.beamOX, t.beamOY, Math.cos(t.beamRot), Math.sin(t.beamRot),
-        beamLen, b.collidesAir, b.collidesGround, hits, dists,
+        reach, b.collidesAir, b.collidesGround, hits, dists,
       );
       const dead: number[] = [];
       // every body under the beam takes the tick's damage; the dead are
@@ -13853,7 +13983,6 @@ export class Sim {
       // damage a conquered furnace ever does: the sweep above walks the
       // swarm's bodies, and the swarm's own gun has none to walk
       if (t.aimTower) this.structureHit(t.aimTower, b.damage, b.hitFx, t.beamRot, b.fxColor);
-      if (t.aimProp >= 0) this.propHit(t.aimProp, b.damage, b.hitFx, t.beamRot, b.fxColor);
     }
     t.beamT -= dt;
     if (t.beamT <= 0) {
@@ -14724,7 +14853,7 @@ export class Sim {
       // at its cap on every late board, which is exactly when there are
       // eighty thousand missiles asking
       if (bf & BF_PUFF && this.fxOn && this.fxN < FX_CAP && Math.random() < b.puff!.chance * dt)
-        this.pushTrail(px, py, b.puff!.size, b.sprite?.back);
+        this.pushTrail(px, py, b.puff!.size, b.sprite?.back ?? b.fxColor);
 
       // ArtilleryBulletType.update: a puff every (3 + fslope*2) * mult
       // ticks, at a radius of fslope * size. fslope peaks at half life, so
@@ -14738,7 +14867,7 @@ export class Sim {
         const every = ((3 + slope * 2) * tr.mult) / 60;
         if (P.trailT[p] >= every) {
           P.trailT[p] = 0;
-          this.pushTrail(px, py, slope * tr.size, b.sprite?.back);
+          this.pushTrail(px, py, slope * tr.size, b.sprite?.back ?? b.fxColor);
         }
       }
 
@@ -14948,19 +15077,32 @@ export class Sim {
             }
           }
         }
-        // ...AND A PROP STOPS A ROUND (docs/props.md): the flight since the
-        // last tick is walked half a cell at a time and the first standing
-        // prop on it takes the hit where the round met it — a piercing
-        // round too, since a shrub is not a body it can pass through
+        // ...AND A PROP IS A BODY TO A ROUND (docs/props.md): the flight
+        // since the last tick is walked half a cell at a time. A piercing
+        // round goes through every standing prop on it, each once by the
+        // ledger; any other round stops at the first
         if (!dead && b.collidesGround !== false) {
           const ox = px - P.vx[p] * dt, oy = py - P.vy[p] * dt;
-          const pd = this.firstPropAlong(ox, oy, px - ox, py - oy);
-          if (pd >= 0) {
-            const f = pd / Math.max(1e-6, Math.hypot(px - ox, py - oy));
-            P.x[p] = ox + (px - ox) * f;
-            P.y[p] = oy + (py - oy) * f;
-            this.propHit(this.propHitK, b.damage, b.splash <= 0 ? b.hitFx : undefined, Math.atan2(P.vy[p], P.vx[p]), b.fxColor);
-            dead = true;
+          if (pier) {
+            const pn = this.propsAlong(ox, oy, px - ox, py - oy, this.propsOnLine, this.propsOnLineD);
+            for (let q = 0; q < pn; q++) {
+              const k = this.propsOnLine[q], sid = PROP_SID - k;
+              if (pier.includes(sid)) continue;
+              this.propHit(k, b.damage, b.splash <= 0 ? b.hitFx : undefined, Math.atan2(P.vy[p], P.vx[p]), b.fxColor, TOWER_NATURE[TOWER_KINDS[K[p]]]);
+              this.propStatus(k, b.burn, b.splash <= 0 ? b.poison : 0, b.wet);
+              pier.push(sid);
+              if (b.pierceCap !== undefined && pier.length >= b.pierceCap) { dead = true; break; }
+            }
+          } else {
+            const pd = this.firstPropAlong(ox, oy, px - ox, py - oy);
+            if (pd >= 0) {
+              const f = pd / Math.max(1e-6, Math.hypot(px - ox, py - oy));
+              P.x[p] = ox + (px - ox) * f;
+              P.y[p] = oy + (py - oy) * f;
+              this.propHit(this.propHitK, b.damage, b.splash <= 0 ? b.hitFx : undefined, Math.atan2(P.vy[p], P.vx[p]), b.fxColor, TOWER_NATURE[TOWER_KINDS[K[p]]]);
+              this.propStatus(this.propHitK, b.burn, b.splash <= 0 ? b.poison : 0, b.wet);
+              dead = true;
+            }
           }
         }
       }
@@ -15124,7 +15266,8 @@ export class Sim {
       // does to the ground round where it went off
       for (const k of this.propsWithin(x, y, radius, this.splashProps)) {
         const d = this.propDist(k, x, y);
-        this.propHit(k, dmg * Math.max(0, 0.4 + 0.6 * (1 - d / radius)), undefined, 0);
+        this.propHit(k, dmg * Math.max(0, 0.4 + 0.6 * (1 - d / radius)), undefined, 0, undefined, nature);
+        this.propStatus(k, burn, poison, wet);
       }
     }
     // damage first (indices stay stable), then remove the dead from the

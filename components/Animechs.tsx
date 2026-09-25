@@ -1568,6 +1568,8 @@ const MENU_COLUMN =
 /** ...and the top pad the views that are NOT the title card clear the
  *  corner chrome (back, the level strip) with, in the same zoomed units */
 const MENU_COLUMN_PAD = "pt-20 sm:pt-20";
+/** the deploy screen's mode switch drops to a second row on a phone */
+const MENU_COLUMN_PAD_DEPLOY = "pt-32 sm:pt-20";
 
 /**
  * THE ONE BACK BUTTON: icon only, big, pinned to the top-left of the
@@ -3084,6 +3086,40 @@ export default function Animechs() {
         </button>
       </div>
     );
+    /**
+     * THE MODE, on the same top row as back and the level, centred: a
+     * segmented control and not a list, because there are two of them and
+     * they are the frame every macro on the deploy screen hangs in.
+     * Nothing explains them: the rows under it say it by being there —
+     * regular shows one macro and custom four — and the price rides in
+     * the difficulty row's own XP slot.
+     */
+    const modeSwitch = (
+      <div
+        role="group"
+        aria-label="Mode"
+        className="ui-zoom ms-seg fixed left-1/2 top-[4.25rem] z-20 h-11 w-[13rem] -translate-x-1/2 sm:top-[1rem]"
+      >
+        {(
+          [
+            ["regular", "Regular"],
+            ["custom", "Custom"],
+          ] as ReadonlyArray<[GameMode, string]>
+        ).map(([m, label]) => (
+          <button
+            key={m}
+            aria-pressed={mode === m}
+            onClick={() => {
+              setMode(m);
+              savePick({ mode: m });
+            }}
+            className="ms-btn flex-1 py-0 text-[15px]"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    );
     const back = (label: string) => (
       <CornerBack label={label} onClick={() => setMenuView("home")} />
     );
@@ -3120,7 +3156,7 @@ export default function Animechs() {
               level strip — and the centring is SAFE: a column taller than
               the screen starts at the pad and scrolls, instead of spilling
               out of both ends */}
-          <div className={`${MENU_COLUMN} ${menuView === "home" ? "" : MENU_COLUMN_PAD}`}>
+          <div className={`${MENU_COLUMN} ${menuView === "home" ? "" : menuView === "deploy" ? MENU_COLUMN_PAD_DEPLOY : MENU_COLUMN_PAD}`}>
             {/* THE TITLE CARD. A name and two doors - nothing here describes a
                 run, because no run has been chosen yet */}
             {menuView === "home" && (
@@ -3171,45 +3207,13 @@ export default function Animechs() {
               </>
             )}
 
-            {/* THE DEPLOY SCREEN. The mode, the macros that mode offers,
+            {/* THE DEPLOY SCREEN. The macros the mode (top centre) offers,
                 and Start under them. There is no map grid and no deploy
                 dialog: every pick is one press away, and the defaults
                 (Regular, Incursion) are a run in themselves */}
             {menuView === "deploy" && (
               <>
                 <div className="flex w-full max-w-[28rem] flex-col gap-3">
-                  {/* THE MODE, ABOVE EVERYTHING, as a segmented control and
-                      not a list: there are two of them, they are the frame
-                      every macro under here hangs in, and a control that
-                      has to be opened to say which one it is on is the
-                      wrong control for two words.
-                      NOTHING EXPLAINS THEM UNDER IT. A paragraph saying
-                      what each mode hands over is a paragraph describing
-                      the rows directly beneath it, which say it better by
-                      being there: regular shows one macro and custom four.
-                      The one thing the rows cannot show is the price, and
-                      that rides in the difficulty row's own XP slot */}
-                  <div role="group" aria-label="Mode" className="ms-seg w-full">
-                    {(
-                      [
-                        ["regular", "Regular"],
-                        ["custom", "Custom"],
-                      ] as ReadonlyArray<[GameMode, string]>
-                    ).map(([m, label]) => (
-                      <button
-                        key={m}
-                        aria-pressed={mode === m}
-                        onClick={() => {
-                          setMode(m);
-                          savePick({ mode: m });
-                        }}
-                        className="ms-btn flex-1 py-2.5 text-[15px]"
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-
                   {/* THE MACROS: what the next run is, as rows that read as
                       a sentence — this map, at this difficulty, against
                       these — and, in regular mode, what it pays in the XP
@@ -3315,6 +3319,7 @@ export default function Animechs() {
               a zoomed ancestor is zoomed twice (CSS zoom compounds), which
               at 200% drew a back button four times its size */}
           {menuView === "deploy" && bank}
+          {menuView === "deploy" && modeSwitch}
           {menuView === "deploy" && back("Title")}
           {menuView === "settings" && back("Back")}
 
