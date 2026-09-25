@@ -92,7 +92,7 @@
  */
 import { CELL, COLS, ROWS } from "./constants";
 import type { LevelSpec, RazeSection, UnitKind } from "./levels";
-import { markKind, markOpts, type MapMark } from "./missionMarks";
+import { garrisonLevel, markKind, markOpts, type MapMark } from "./missionMarks";
 import { RAIL_DIRS, RAIL_PIECES, railStyleIndex, type RailStyleName } from "./railArt";
 
 /** the shortest straight run a road may carry, in cells: a bend's tile
@@ -567,6 +567,34 @@ export function siegeFromMarks(marks: readonly MapMark[]): MarkSiege | null {
     guards: {},
   }));
   return { sections, spots };
+}
+
+/** a circle of held ground and the preset that mans it (missionMarks.ts
+ *  GARRISONS, levels.ts GARRISON_LEVELS) — every mission reads these, and
+ *  all of them stand from mission start */
+export interface MarkGarrison {
+  post: Post;
+  level: number;
+}
+const GARRISONS = new WeakMap<object, readonly MarkGarrison[]>();
+export function garrisonsFor(marks: readonly MapMark[] | undefined): readonly MarkGarrison[] {
+  if (!marks || marks.length === 0) return [];
+  const had = GARRISONS.get(marks);
+  if (had) return had;
+  const out: MarkGarrison[] = [];
+  for (const m of marks) {
+    const level = garrisonLevel(m.kind);
+    const kind = level > 0 ? markKind(m.kind) : null;
+    if (!kind) continue;
+    const o = markOpts(kind, m.opts);
+    const half = (kind.size * CELL) / 2;
+    out.push({
+      post: { name: `Garrison ${out.length + 1}`, x: m.x * CELL + half, y: m.y * CELL + half, r: Number(o.radius) * CELL },
+      level,
+    });
+  }
+  GARRISONS.set(marks, out);
+  return out;
 }
 
 /**

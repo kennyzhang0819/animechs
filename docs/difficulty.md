@@ -29,21 +29,19 @@ player-facing prints that index — everything goes through `rungLabel`, so the 
 index and the shown name meet in exactly one place. "Level" is never the word for it: a
 level is the player's.
 
-**The bodies at a different health are the objectives**, and that is the same size ramp
-wearing the only shape it can. A mission puts down **one** body whatever the difficulty —
-a quarter of one boss is not a body, and `scaleWave` floors a nonzero count at one on
-purpose — so every `OBJECTIVE_KINDS` body pays the tier's count share in **hit points**
-instead (`tierObjectiveHpScale`, applied in `unitHpOnRung`). That is the Sovereign, the
-Borer's whole train and the railgun emplacement: a quarter of their health at Incursion,
-three quarters at Scourge, all of it from Nemesis up.
+**The objectives do not scale with the rung at all.** A mission puts down **one** body
+whatever the difficulty — a quarter of one boss is not a body, and `scaleWave` floors a
+nonzero count at one on purpose — and that body has the **same pool on every rung**: the
+Sovereign, the Borer's whole train, the railgun emplacement, the pylons, the fabricators,
+the Wardens a garrison stands and the Branders over an escort road. `tierObjectiveHpScale`
+is 1 everywhere and stays a dial only so `unitHpOnRung` keeps one signature. The ONLY
+thing a rung moves is the swarm's count. (It used to hand the objectives the count share in
+hit points — a quarter at Incursion — and that made the bottom of the ladder a different
+mission rather than a smaller swarm.)
 
-Nothing else about them moves: armour, speed, hitbox and drop are what `UNIT_STATS` says at
-every tier — drops in particular, for the same reason the level curve leaves drops alone.
-Without this, the bottom of the ladder ended on the hardest thing in the game, unscaled,
-while everything in front of it came at quarter strength.
-
-The Borer's launch ramp (`wormRamp`) rides on top of the share, not instead of it: the
-tier says how big a train is and the ramp says how much heavier this one is than the last.
+Nothing else about them moves either: armour, speed, hitbox and drop are what `UNIT_STATS`
+says at every tier. The Borer's launch ramp (`wormRamp`) still rides on the pool: the ramp
+says how much heavier this train is than the last, and the rung says nothing.
 
 ## The health curve is not the ladder's — it is the tide's
 

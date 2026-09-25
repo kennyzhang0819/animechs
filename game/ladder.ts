@@ -38,9 +38,8 @@ import { MUT_COUNT_MAX, MUT_FIRST_TIER, mutationBudget, mutationPicks } from "./
  * A TIER IS SIZE, THEN RULES — NEVER HEALTH. Every tier plays the whole
  * authored script with every body at the same health; what moves is how
  * many come (COUNT_SCALE) and what rules they come under (mutation.ts).
- * An OBJECTIVE body cannot pay a count share — one boss, one Borer, one
- * emplacement at every difficulty — so it pays the same share in hit
- * points instead (tierObjectiveHpScale).
+ * An OBJECTIVE body does not pay the share at all: one boss, one Borer,
+ * one emplacement, at the same health on every rung (tierObjectiveHpScale).
  */
 
 /** Mindustry's own per-level health curve, and the only thing a level
@@ -137,10 +136,10 @@ export function rungLabel(tier: number): string {
 /** the count share a rung sends, 0.25 at the bottom, 1 from Nemesis up */
 export const tierCountScale = (tier: number): number => RUNGS[clampTier(tier)].countScale;
 
-/** ...and what an OBJECTIVE pays instead, because a count of one cannot
- *  carry a share: the same number off the same table, applied to hit
- *  points. Nothing else about it moves (docs/difficulty.md) */
-export const tierObjectiveHpScale = (tier: number): number => tierCountScale(tier);
+/** ...and what an OBJECTIVE pays: nothing. A mission's body has the same
+ *  pool on every rung — the swarm's count is the only thing a difficulty
+ *  moves (docs/difficulty.md). Kept as a dial so the seam stays in place */
+export const tierObjectiveHpScale = (_tier: number): number => 1;
 
 /** the rung a save must have cleared on SOME map to open this one, -1 for
  *  none: the climb is one named difficulty at a time and stops asking at

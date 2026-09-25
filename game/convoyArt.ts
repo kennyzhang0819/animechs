@@ -2,33 +2,17 @@
  * THE HAULER — the escort mission's cart (levels.ts CONVOY_HP, EscortMission),
  * and the only body on this board that is the PLAYER'S.
  *
- * THAT IS THE WHOLE OF THE BRIEF. Everything else on the field is either a
- * gun you placed or an animal coming to knock it over, and this is a third
- * thing: a vehicle of yours, crossing ground you do not hold, which you
- * are spending money to keep alive. So it is drawn to read as YOURS at a
- * glance and as NOT A TURRET at the same glance —
+ * It is drawn as a CARGO BEAST: a bull-shaped mech, horns forward, four
+ * stub legs at the flanks and the load strapped across its back. That is
+ * the brief in one silhouette — yours (the cargo is the player's amber,
+ * turretArt.ts POWER, the hue nothing in the swarm has), not a turret (it
+ * has a head and legs, and a turret is a plate with a gun on it), and
+ * going somewhere (a beast walks; a plate does not). Its plating is its
+ * own metal (HAUL), the fourth on the board beside gunmetal, slate and rail.
  *
- *   - it wears the PLAYER'S AMBER (turretArt.ts POWER), the hue the core,
- *     every selection ring and every price on the HUD
- *     are drawn in, and the one hue nothing in the swarm has. The amber is
- *     the CARGO: three crates strapped to the deck, which is the thing the
- *     mission is actually about and the part a player should find first;
- *   - its plating is its own metal (HAUL below), not a turret's gunmetal
- *     and not the core's slate, for the reason the Tusker's iron and the
- *     Borer's rail are their own: the board has four kinds of thing on it
- *     now and each one is a different metal;
- *   - it has TRACKS, and nothing else on the sheet does. A turret is a
- *     plate with a head on it and every animal walks; a thing that rolls
- *     is a thing that is going somewhere, which is the one fact about this
- *     body a player has to read.
- *
- * IT IS THE BIGGEST SINGLE BODY ON THE BOARD after the Sovereign — a
- * TWELVE-tile square, three times the widest turret (levels.ts
- * CONVOY_SIZE) — because an objective that has to be found from across a
- * map while the swarm is on the screen cannot be the size of the things
- * shooting it. Six tiles was the first answer and it was not enough: on a
- * camera pulled far enough out to see the road it read as a turret
- * somebody had left in a field.
+ * It is the biggest single body after the Sovereign — twelve tiles
+ * (levels.ts CONVOY_SIZE) — because an objective found from across a map
+ * cannot be the size of the things shooting it.
  *
  * The grammar is the families' and the turrets' (docs/unit-art.md): a
  * material is a PAIR, dark on the left half and light on the right, the
@@ -48,8 +32,9 @@ import { BORE, GUN, GUN_R, POWER, STEEL, draw, type Mat, type Pen } from "./turr
  */
 const HAUL: Mat = ["#4a4a33", "#7d7c5c"];
 const HAUL_R: Mat = [HAUL[1], HAUL[0]];
-/** the track rubber, and the bright rim of each road wheel */
+/** the legs' rubber and the tail, and the bone of the horns */
 const TRACK: Mat = ["#232322", "#3b3b38"];
+const HORN: Mat = ["#b8ad8a", "#e8e0c4"];
 
 /**
  * THE GRID: 192 native px, which is the resolution the cart is DRAWN at
@@ -67,56 +52,63 @@ const TRACK: Mat = ["#232322", "#3b3b38"];
 export const CONVOY_N = 192;
 
 /**
- * The cart, facing up: tracks down both flanks, a cab at the front, and
- * the cargo on the deck behind it. Only the left half is drawn — `draw`
- * mirrors it — so every x here is under the midline at 96. The numbers
- * are pixels on the 192 grid, which is not tiles: see CONVOY_N.
+ * The beast, facing up: horns and head at the front, a collar, the barrel
+ * of the body with a leg at each corner, the cargo on its back and a tail.
+ * Only the left half is drawn — `draw` mirrors it — so every x here is
+ * under the midline at 96. The numbers are pixels on the 192 grid, which
+ * is not tiles: see CONVOY_N.
  */
 function haulerArt(P: Pen): void {
   const n = CONVOY_N;
   const c = n / 2;
 
-  // ---- the hull: one long chamfered plate, the length of the grid ----
-  P.octa(26, 8, n - 26, n - 8, 20, HAUL);
+  // ---- the legs first, so the body sits over their roots: a stub at
+  // each corner, rubber with a steel hoof, tucked in the way a T3's are ----
+  for (const y0 of [74, 138]) {
+    P.box(14, y0, 38, y0 + 34, TRACK);
+    P.box(14, y0 + 24, 38, y0 + 34, STEEL);
+  }
 
-  // ---- the tracks: a band down each flank, wider than the hull's edge
-  // so the cart reads as sitting ON something. Eight road wheels a side,
-  // each a steel rim in the rubber — twelve px of wheel and eight of gap,
-  // which is the four-pixel floor with half again on top of it ----
-  P.box(14, 22, 46, n - 22, TRACK);
-  for (let y = 28; y + 12 <= n - 28; y += 20) P.box(18, y, 42, y + 12, STEEL);
-  // the track guard: a plate over the top of the run, in the reversed
-  // pair so it reads as a lip standing proud of the hull
-  P.box(40, 22, 56, n - 22, HAUL_R);
+  // ---- the body: one long chamfered barrel, widest across the shoulders ----
+  P.octa(30, 64, n - 30, n - 18, 18, HAUL);
+  // the fold along the flank, in the reversed pair
+  P.box(36, 84, 48, n - 36, HAUL_R);
 
-  // ---- the cab, at the front and narrower than the deck: a chamfered
-  // box with a dark screen across it and a roll bar behind ----
-  P.octa(56, 12, n - 56, 74, 14, HAUL);
-  P.box(62, 20, n - 62, 40, BORE);
-  P.box(56, 46, n - 56, 56, GUN_R);
-  // the lamps: the cart's own amber, at the leading corners. A PAIR OF
-  // BOXES and not a pair of discs — two circles side by side read as eyes
-  // at every size, which is the one thing nothing on this sheet may have
-  P.box(62, 12, 78, 24, POWER);
+  // ---- the head: a chamfered block narrower than the body, a dark brow
+  // band across it and the muzzle below in the reversed pair. A BAND and
+  // not two lamps — two discs side by side read as eyes at every size,
+  // which is the one thing nothing on this sheet may have ----
+  P.octa(54, 12, n - 54, 66, 12, HAUL);
+  P.box(60, 24, n - 60, 36, BORE);
+  P.box(70, 44, n - 70, 62, HAUL_R);
+  // the nose ring: the one amber on the head, so the front reads as the front
+  P.box(84, 54, n - 84, 62, POWER);
+
+  // ---- the horns: a staircase of bone climbing out from the brow to the
+  // top corner, each step the four-pixel floor and a half ----
+  for (let k = 0; k < 5; k++) P.box(58 - 9 * k, 30 - 6 * k, 72 - 9 * k, 40 - 6 * k, HORN);
+  P.box(14, 0, 28, 10, TRACK);
+
+  // ---- the collar: a steel yoke where the head meets the shoulders ----
+  P.box(58, 62, n - 58, 72, GUN_R);
+  P.box(64, 64, n - 64, 70, STEEL);
 
   // ---- the deck, and the cargo on it. THIS IS THE OBJECTIVE: three
   // crates in the player's own amber, strapped down under steel bands, on
   // a gunmetal bed so the amber has something dark to sit against ----
-  P.box(56, 78, n - 56, n - 16, GUN);
+  P.box(56, 80, n - 56, n - 30, GUN);
   for (let k = 0; k < 3; k++) {
-    const y0 = 86 + k * 34;
-    P.octa(64, y0, n - 64, y0 + 26, 6, POWER);
-    // the strap across each crate, in steel: the thing that says the
-    // cargo is LOAD and not a light
-    P.box(56, y0 + 10, n - 56, y0 + 16, STEEL);
+    const y0 = 86 + k * 28;
+    P.octa(62, y0, n - 62, y0 + 22, 6, POWER);
+    P.box(52, y0 + 8, n - 52, y0 + 14, STEEL);
   }
+  // the spine: a rail down the middle, drawn last so it crosses every
+  // crate and ties the load into one object
+  P.box(c - 6, 80, c + 6, n - 30, GUN_R);
 
-  // ---- the spine: a rail down the middle of the deck, drawn last so it
-  // crosses every crate and ties the load into one object ----
-  P.box(c - 8, 78, c + 8, n - 16, GUN_R);
-
-  // ---- the tow hitch at the back ----
-  P.box(c - 14, n - 20, c + 14, n - 8, TRACK);
+  // ---- the tail ----
+  P.box(c - 5, n - 20, c + 5, n - 6, TRACK);
+  P.octa(c - 9, n - 10, c + 9, n, 3, BORE);
 }
 
 export const hauler = (): Art => draw(CONVOY_N, haulerArt);

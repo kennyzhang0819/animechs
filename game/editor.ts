@@ -26,7 +26,7 @@ import {
   MARK_KINDS, MARK_TOWERS, MARK_UNITS, markKind, markOpts, markSize, markTower, markUnit,
   type MapMark, type MarkKind,
 } from "./missionMarks";
-import { unitAccent } from "./levels";
+import { CONVOY_SIZE, WORLDS, unitAccent } from "./levels";
 import { MIN_RUN, pathProblems } from "./missions";
 import { canHoldSpawn, isWaterFloor, rebuildReserved } from "./terrain";
 import { WALL_DEEP, WALL_PINE, type Prop, type Terrain } from "./terrain";
@@ -679,6 +679,7 @@ export class MapEditor {
     // the ENTRY wears the face of what walks the line — one portrait a
     // road and not one a corner, because a corner is a handle
     if (face) c.drawImage(face, px(pts[0][0]) - h * 1.5, px(pts[0][1]) - h * 1.5, h * 3, h * 3);
+    this.drawHalts(c, i, pts, s);
     c.globalAlpha = 1;
     if (!on) return;
     const bad = pathProblems(pts);
@@ -695,6 +696,62 @@ export class MapEditor {
       ty += CELL * 2;
     }
     c.textAlign = "center";
+  }
+
+  /**
+   * WHERE THE HAULER STOPS on an escort road (levels.ts EscortMission.halts):
+   * a ring the cart's own size at each halt, numbered. The polyline is
+   * walked here rather than through roadsFor, whose roads are cached on the
+   * marks array and would not follow a dragged corner.
+   */
+  private drawHalts(
+    c: CanvasRenderingContext2D,
+    markIdx: number,
+    pts: readonly (readonly [number, number])[],
+    s: number,
+  ): void {
+    let roadIdx = 0;
+    for (let j = 0; j < markIdx; j++) if (this.terrain.marks[j].kind === "road") roadIdx++;
+    const px = (v: number): number => (v + 0.5) * CELL;
+    const cum = [0];
+    for (let j = 1; j < pts.length; j++)
+      cum.push(cum[j - 1] + Math.hypot(px(pts[j][0]) - px(pts[j - 1][0]), px(pts[j][1]) - px(pts[j - 1][1])));
+    const total = cum[cum.length - 1];
+    if (total <= 0) return;
+    const at = (f: number): [number, number] => {
+      const d = f * total;
+      let j = 1;
+      while (j < cum.length - 1 && cum[j] < d) j++;
+      const leg = cum[j] - cum[j - 1];
+      const t = leg > 0 ? (d - cum[j - 1]) / leg : 0;
+      return [
+        px(pts[j - 1][0]) + (px(pts[j][0]) - px(pts[j - 1][0])) * t,
+        px(pts[j - 1][1]) + (px(pts[j][1]) - px(pts[j - 1][1])) * t,
+      ];
+    };
+    const r = (CONVOY_SIZE * CELL) / 2;
+    c.font = `${Math.round(CELL * 1.6)}px monospace`;
+    c.textAlign = "center";
+    for (const w of WORLDS) {
+      if (w.map !== this.map.id || w.mission.kind !== "escort") continue;
+      if (!w.mission.pattern.includes(roadIdx)) continue;
+      w.mission.halts.forEach((f, n) => {
+        const [x, y] = at(f);
+        c.strokeStyle = "#ffd37f";
+        c.lineWidth = 2 / s;
+        c.setLineDash([6 / s, 4 / s]);
+        c.beginPath();
+        c.arc(x, y, r, 0, Math.PI * 2);
+        c.stroke();
+        c.setLineDash([]);
+        const label = n === 0 && f === 0 ? "depot" : `halt ${n}`;
+        c.fillStyle = "#ffd37f";
+        c.strokeStyle = "rgba(10,10,14,0.9)";
+        c.lineWidth = 4 / s;
+        c.strokeText(label, x, y - r - CELL);
+        c.fillText(label, x, y - r - CELL);
+      });
+    }
   }
 
   /**

@@ -172,20 +172,37 @@ function StatusPip({ chip }: { chip: Chip }) {
  * (renderer HP_TINT), so "this is nearly gone" reads the same colour
  * wherever a player happens to be looking.
  */
-function HealthBar({ hp, max }: { hp: number; max: number }) {
+function HealthBar({ hp, max, shield = 0, shieldMax = 0 }: { hp: number; max: number; shield?: number; shieldMax?: number }) {
   const f = max > 0 ? Math.max(0, Math.min(1, hp / max)) : 0;
+  const g = shieldMax > 0 ? Math.max(0, Math.min(1, shield / shieldMax)) : 0;
   const color = f > 2 / 3 ? "#7BE58A" : f > 1 / 3 ? "#FFD37F" : "#e55454";
   return (
     <div className="flex items-center gap-2">
-      <div className="relative h-[10px] w-[9rem] overflow-hidden border border-[#26262b] bg-[#101013]">
-        <div
-          className="absolute inset-y-0 left-0 transition-[width] duration-150"
-          style={{ width: `${f * 100}%`, background: color }}
-        />
+      <div className="relative">
+        <div className="relative h-[10px] w-[9rem] overflow-hidden border border-[#26262b] bg-[#101013]">
+          <div
+            className="absolute inset-y-0 left-0 transition-[width] duration-150"
+            style={{ width: `${f * 100}%`, background: color }}
+          />
+        </div>
+        {/* the shield as a casing round the bar — see the objective stack */}
+        {g > 0 && (
+          <div
+            className="pointer-events-none absolute -inset-y-[2px] -left-[2px] transition-[width] duration-150"
+            style={{
+              width: `calc(${g * 100}% + 4px)`,
+              maxWidth: "calc(100% + 4px)",
+              background: "rgba(160,220,255,0.35)",
+              border: "2px solid rgba(210,242,255,0.95)",
+              boxSizing: "border-box",
+            }}
+          />
+        )}
       </div>
       <span className="shrink-0 text-[13px] font-bold tabular-nums" style={{ color }}>
         {hp.toLocaleString()}
         <span className="text-[#71717C]"> / {max.toLocaleString()}</span>
+        {g > 0 && <span className="text-[#9ED2F0]"> +{Math.ceil(shield).toLocaleString()}</span>}
       </span>
     </div>
   );
@@ -198,7 +215,7 @@ export function Inspector({
   inspect: NonNullable<UiState["inspect"]>;
   icons: Partial<Record<TowerKind, string>>;
 }) {
-  const { n, kind, unit, name, hp, hpMax, statuses, mods } = inspect;
+  const { n, kind, unit, name, hp, hpMax, shield, shieldMax, statuses, mods } = inspect;
   const many = n > 1;
   const carved = useUnitIcon(unit);
   // the picture, and ONLY when the whole selection is one thing — a tacker
@@ -255,7 +272,7 @@ export function Inspector({
             <span className="text-[11px] uppercase tracking-wide text-[#4A4A55]">nothing on it</span>
           )}
         </div>
-        <HealthBar hp={hp} max={hpMax} />
+        <HealthBar hp={hp} max={hpMax} shield={shield} shieldMax={shieldMax} />
       </div>
       {mods.length > 0 && (
         /* TWO ROWS, FILLED COLUMN BY COLUMN. A single wrapping line grew

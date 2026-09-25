@@ -45,10 +45,10 @@
  *             swept fins behind. It should read as the SMALL FAST ONE at
  *             any zoom, which on this grid means long and thin against the
  *             other two's squares.
- *   HALBERD   a mortar deck. A squat hull with ONE short fat bore up the
- *             middle and an arc pod out on each shoulder, so the two
- *             things it does are both on the silhouette. Wide and stubby
- *             where the Lance is long and thin.
+ *   HALBERD   an arc deck. A squat hull with ONE short fat bore up the
+ *             middle and an arc pod out on each shoulder — the pods are
+ *             what it fires with now. Wide and stubby where the Lance is
+ *             long and thin.
  *   JUGGERNAUT a block. The biggest of the four and the only one whose
  *             outline is meant to be boring: a slab with a
  *             barbette on it, treads down both flanks and a prow. Nothing

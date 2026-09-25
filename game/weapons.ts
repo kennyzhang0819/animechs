@@ -627,6 +627,13 @@ const WARDEN_LASER = laserStyle({
   lifetime: t(16),
 });
 
+/** the Brander's held beam (UNIT_WEAPONS brander): the Wardens' red over
+ *  black, in the four washes a held beam is drawn in */
+const BRANDER_BEAM = beamStyle({
+  colors: [[WARDEN_SHOT_BACK, 0.25], [WARDEN_SHOT_BACK, 0.55], [WARDEN_SHOT, 1], [WHITE, 1]],
+  width: 7,
+});
+
 export const TOWER_LASER_STYLE: Partial<Record<TowerKind, number>> = {
   tether: TETHER_LASER.id,
 };
@@ -1596,24 +1603,25 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
     },
   ],
   // THE LANCE'S BEAM is the Starlight apex's bite on a third of its cycle
-  // and a third of its reach, and it does NOT pierce. A starhart5 fires
-  // 560 down fifty-seven tiles and then spends five seconds doing
-  // nothing; this one carries the same 560 into a twenty-four-tile line
-  // every two seconds, at one target — constant rather than enormous.
+  // and a third of its reach, and it PIERCES like the Starlight beams do.
+  // A starhart5 fires 560 down fifty-seven tiles and then spends five
+  // seconds doing nothing; this one carries the same 560 into a
+  // twenty-four-tile line every two seconds, at everything on the line —
+  // constant rather than enormous.
   lance: [
     {
       name: "lance-beam", reload: t(130), mounts: 1, damage: 560, range: u(190), speed: 0,
-      fx: "laser", laser: WARDEN_LASER, charge: t(20), shoot: FxKind.ShootBig,
+      fx: "laser", pierce: true, laser: WARDEN_LASER, charge: t(20), shoot: FxKind.ShootBig,
     },
   ],
-  // THE HALBERD CUTS FOUR LANES AT ONCE. One pull, four beams in a narrow
-  // fan, armour-cutting like the Lance's and shorter: what it does to a
-  // line is open four holes in it rather than burn one.
+  // THE HALBERD THROWS FOUR ARCS AT ONCE: chain lightning on the Coil's
+  // and the Livewires' logic (fx "arc"), four chains a pull, each leaving
+  // for a structure the others have not struck and jumping three times
+  // from there. What it does to a patch is light the whole patch.
   halberd: [
     {
-      name: "halberd-fan", reload: t(150), mounts: 1, shots: 4, spread: 7 * DEG,
-      damage: 380, range: u(230), speed: 0, fx: "laser", laser: WARDEN_LASER,
-      charge: t(24), shoot: FxKind.ShootBig,
+      name: "halberd-arcs", reload: t(90), mounts: 1, shots: 4, damage: 260, range: u(230), speed: 0,
+      fx: "arc", arc: { jumps: 3, reach: u(32), decay: 0.7, color: WARDEN_SHOT },
     },
   ],
   // THE JUGGERNAUT THROWS OUT OF BOTH FLANKS — six homing missiles a
@@ -1642,6 +1650,18 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // ...and neither does a fabricator: it sends bodies, and they shoot
   fabricatorSmall: [],
   fabricatorLarge: [],
+  // THE BRANDER'S BEAM is CONSTANT: a held beam that bites the Hauler
+  // (levels.ts huntsConvoy) every tenth of a second, no charge, and a
+  // reload of nothing so the next burn opens the tick the last goes out.
+  // Twenty tiles of reach against the cart's twelve-tile box, and 150 a
+  // bite over the cart's forty plating is ~1,100 a second — a leg past
+  // one tower costs the cart what one halt mends
+  brander: [
+    {
+      name: "brander-beam", reload: 0, mounts: 1, damage: 150, range: u(160), speed: 0, fx: "laser",
+      beam: { duration: 2, interval: t(6) }, beamStyle: BRANDER_BEAM,
+    },
+  ],
 };
 
 /**

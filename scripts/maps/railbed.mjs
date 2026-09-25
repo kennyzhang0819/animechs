@@ -5,7 +5,7 @@
  *        scripts/maps/railbed.mjs [--write]
  *
  * A road mission's line is authored on the eight-heading lattice first
- * (game/missions.ts ROAD_SPECS) and the terrain is fitted to it second —
+ * (a `road` mark on the map, missionMarks.ts) and the terrain is fitted to it second —
  * which is the reversal that let those lines come out with FEWER corners
  * than the hand-traced ones they replaced. This is the second half: it
  * walks every line and takes the rock out of a corridor either side, so a
@@ -27,8 +27,7 @@
  *   is reported and left alone: that is a decision for whoever drew the
  *   line, and the answer is usually to move the line.
  * */
-import { readFileSync, writeFileSync } from "node:fs";
-import { ROAD_SPECS } from "../../game/missions.ts";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { WALL_DEEP, WALL_PINE } from "../../game/terrain.ts";
 
 /** cells cleared either side of the line: the bed is under three, and a
@@ -50,9 +49,13 @@ function walk(cells) {
   return out;
 }
 
-for (const [id, specs] of Object.entries(ROAD_SPECS)) {
+for (const f of readdirSync("public/maps")) {
+  if (!f.endsWith(".json")) continue;
+  const id = f.slice(0, -5);
   const file = `public/maps/${id}.json`;
   const m = JSON.parse(readFileSync(file, "utf8"));
+  const specs = (m.marks ?? []).filter((mk) => mk.kind === "road").map((mk) => ({ cells: mk.pts }));
+  if (specs.length === 0) continue;
   const w = m.w ?? 512;
   const rows = Math.floor(m.floor.length / w);
   const corridor = new Set();

@@ -57,7 +57,7 @@ import {
   type WardenTier,
 } from "./wardenArt";
 import { KETTLE_TIERS, kettle, kettleGeom } from "./kettleArt";
-import { BASTION_TIER, GOAD_TIER, bastionMech, goadMech } from "./pylonArt";
+import { BASTION_TIER, BRANDER_TIER, GOAD_TIER, bastionMech, branderMech, goadMech } from "./pylonArt";
 import { FABRICATOR_TIERS, fabricatorMech } from "./fabricatorArt";
 import { KING_TIER, king, kingGeom } from "./kingArt";
 
@@ -1228,6 +1228,7 @@ const JUGGERNAUT_CELLS = wardenCells("juggernaut", JUGGERNAUT_TIER.n, 256);
  *  native px is four tiles, so a 128 cell holds them at the sheet's scale */
 const GOAD_CELLS = wardenCells("goad", GOAD_TIER.n, 128);
 const BASTION_CELLS = wardenCells("bastion", BASTION_TIER.n, 128);
+const BRANDER_CELLS = wardenCells("brander", BRANDER_TIER.n, 128);
 /** the two fabricators (fabricatorArt.ts), 3 and 6 tiles, each on the
  *  smallest 64-multiple cell that holds its grid */
 const FABRICATOR_CELL_PX: readonly number[] = [128, 192];
@@ -1381,6 +1382,7 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   railgun: { uv: RAZE_CELLS.body, sprite: UNIT_SPRITE * 3 },
   goad: { uv: GOAD_CELLS.body, sprite: UNIT_SPRITE * 2 },
   bastion: { uv: BASTION_CELLS.body, sprite: UNIT_SPRITE * 2 },
+  brander: { uv: BRANDER_CELLS.body, sprite: UNIT_SPRITE * 2 },
   fabricatorSmall: { uv: FABRICATOR_CELLS[0].body, sprite: UNIT_SPRITE * 2 },
   fabricatorLarge: { uv: FABRICATOR_CELLS[1].body, sprite: UNIT_SPRITE * 3 },
   // the four Wardens, each on its own cell at the sheet's px scale
@@ -2297,6 +2299,8 @@ if (ANIMAL_ART) {
   MECH_ART.railgun = { ...wardenMechArt(RAZE_CELLS, RAZE_TIER, 192), flatBase: true };
   MECH_ART.goad = wardenMechArt(GOAD_CELLS, GOAD_TIER);
   MECH_ART.bastion = wardenMechArt(BASTION_CELLS, BASTION_TIER);
+  // the plate is laid square and the hull turns onto the cart (Sim.pickConvoyAim)
+  MECH_ART.brander = { ...wardenMechArt(BRANDER_CELLS, BRANDER_TIER), flatBase: true };
   FABRICATOR_CELLS.forEach((c, i) => {
     MECH_ART[c.kind] = wardenMechArt(c, FABRICATOR_TIERS[i], FABRICATOR_CELL_PX[i]);
   });
@@ -3335,6 +3339,7 @@ function packAnimalArt(
   // ...and the two buff towers, on the same rig (pylonArt.ts)
   packMech(GOAD_CELLS, goadMech(GOAD_TIER), GOAD_TIER.n);
   packMech(BASTION_CELLS, bastionMech(BASTION_TIER), BASTION_TIER.n);
+  packMech(BRANDER_CELLS, branderMech(BRANDER_TIER), BRANDER_TIER.n);
   FABRICATOR_CELLS.forEach((c, i) => packMech(c, fabricatorMech(FABRICATOR_TIERS[i]), FABRICATOR_TIERS[i].n));
 
   // ---- Stoop, Skate, Livewire ----

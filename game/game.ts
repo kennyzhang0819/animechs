@@ -9,7 +9,7 @@ import {
   refreshMap,
   SPAWN_STYLE,
 } from "./maps";
-import { postsFor, roadAt, roadsFor, siegeFor } from "./missions";
+import { garrisonsFor, postsFor, roadAt, roadsFor, siegeFor } from "./missions";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { towerBaseIcon, towerGhostIcon } from "./towerIcons";
 import {
@@ -89,7 +89,7 @@ import {
 import { FIELDED_KINDS, isRetired, TOWER_KINDS } from "./types";
 import { GAME_LAYERS, Renderer } from "./renderer";
 import { fitZoom } from "./fit";
-import type { Sim } from "./sim";
+import type { ObjectiveBar, Sim } from "./sim";
 import type { SimHost } from "./simhost";
 import { makeHost } from "./workerhost";
 import type { World } from "./simreads";
@@ -166,7 +166,7 @@ export interface UiState {
    * row carries a name rather than a unit kind — and `ally` is whose thing
    * it is, so the player's hauler is not painted in the swarm's crimson.
    */
-  objectives: { id: number; name: string; hp: number; max: number; ally: boolean }[];
+  objectives: ObjectiveBar[];
   /** seconds until the next wave, or 0 while one is already coming in */
   nextWaveIn: number;
   /** seconds of simulated time since the run started (Sim.time) */
@@ -626,16 +626,13 @@ const MM_SCALE = 1;
  * ground under it. Bodies read a touch smaller than structures: a line of
  * turrets is what the map is read for, and it wins the overdraw.
  *
- * Both numbers are ONE AND A HALF times what they first were (2.5 and 3).
- * A mark at those sizes was two or three screen px on a 13rem canvas —
- * legible only if you already knew where to look, which is not what a
- * corner map is for. Double read as blobs: a handful of bodies merged
- * into one red smear and the line swallowed the ground it stood on. At
- * three and a half a body is a clear speck and the line is a clear bar,
- * with the ground still visible between them.
+ * They were 2.5 and 3 (two or three screen px on a 13rem canvas, legible
+ * only if you knew where to look), then 3.75 and 4.5, which ran a handful
+ * of bodies into one smear. A touch under that keeps a body a clear speck
+ * and the line a clear bar with ground still visible between them.
  */
-const MM_UNIT_PX = 3.75;
-const MM_STRUCT_PX = 4.5;
+const MM_UNIT_PX = 3.25;
+const MM_STRUCT_PX = 4;
 /**
  * ...AND THE PINS, which are not bodies on this map, they are the
  * OBJECTIVES. On the intercept mission the one question a glance at the
@@ -992,6 +989,12 @@ const ENEMY_HP = "#FF5A5A";
 /** the soak band: health already forfeit, drawn from the left of the bar
  *  (docs/elements.md — a body breaks down the moment hp falls under it) */
 const BAR_SOAK = "#7FC4FF";
+/** the shield's casing round a bar (drawBars): the glass inside the frame,
+ *  the frame's line, how far past the bar it reaches and how thick it is */
+const BAR_GLASS = "rgba(160,220,255,0.45)";
+const BAR_GLASS_EDGE = "rgba(210,242,255,0.95)";
+const BAR_GLASS_PAD = 0.6;
+const BAR_GLASS_LINE = 1;
 
 /**
  * THE PLACEMENT GHOST'S WASHES — refused, and taxed by the Hydrophobic
@@ -3640,13 +3643,14 @@ export class Game {
     cx: number,
     topY: number,
     width: number,
-    bars: ReadonlyArray<{ v: number; col: string; doomed?: number }>,
+    bars: ReadonlyArray<{ v: number; col: string; doomed?: number; shield?: number }>,
   ): number {
     if (bars.length === 0) return topY;
     const w = Math.max(width, BAR_MIN_W);
     const x = cx - w / 2;
     let y = topY - BAR_GAP;
     for (const b of bars) {
+      if ((b.shield ?? 0) > 0) y -= BAR_GLASS_PAD * 2;
       y -= BAR_H;
       c.fillStyle = BAR_BACK;
       c.fillRect(x, y, w, BAR_H);
@@ -3666,6 +3670,19 @@ export class Game {
       c.strokeStyle = BAR_EDGE;
       c.lineWidth = 0.5;
       c.strokeRect(x, y, w, BAR_H);
+      // the shield, as a CASING round the bar: a bold frame a little
+      // larger than the bar on every side, glass inside it, the pool's
+      // share wide — so a shielded bar reads as boxed in, and the box is
+      // seen shortening from the right as the pool burns down
+      const g = clamp(b.shield ?? 0, 0, 1);
+      if (g > 0) {
+        const fw = (w + BAR_GLASS_PAD * 2) * g;
+        c.fillStyle = BAR_GLASS;
+        c.fillRect(x - BAR_GLASS_PAD, y - BAR_GLASS_PAD, fw, BAR_H + BAR_GLASS_PAD * 2);
+        c.strokeStyle = BAR_GLASS_EDGE;
+        c.lineWidth = BAR_GLASS_LINE;
+        c.strokeRect(x - BAR_GLASS_PAD, y - BAR_GLASS_PAD, fw, BAR_H + BAR_GLASS_PAD * 2);
+      }
       y -= BAR_GAP;
     }
     c.lineWidth = 1;
@@ -3803,7 +3820,7 @@ export class Game {
    */
   private drawUnitBars(c: CanvasRenderingContext2D): void {
     const w = this.world;
-    const { upx, upy, urad, uhp, uhpmax, usoak } = w.flat;
+    const { upx, upy, urad, uhp, uhpmax, usoak, ushield, ushieldMax } = w.flat;
     const n = w.n;
     const bars = this.barBuf;
     const ids = this.statusBuf;
@@ -3844,8 +3861,9 @@ export class Game {
         // an untouched body carrying one is exactly the case "damaged"
         // would have hidden
         const doomed = clamp(usoak[i] / Math.max(1, uhpmax[i]), 0, 1);
-        if (this.barsOn(false, f, false) || (doomed > 0 && this.enemyBars !== "never"))
-          bars.push({ v: f, col: ENEMY_HP, doomed });
+        const shield = ushieldMax[i] > 0 ? clamp(ushield[i] / ushieldMax[i], 0, 1) : 0;
+        if (this.barsOn(false, f, false) || ((doomed > 0 || shield > 0) && this.enemyBars !== "never"))
+          bars.push({ v: f, col: ENEMY_HP, doomed, shield });
       }
       // THE GATE, and why this is affordable over eight hundred bodies:
       // six typed-array reads, no allocation, and a no for nearly all of
@@ -3891,7 +3909,7 @@ export class Game {
 
   /** scratch for the two passes over the board, reused rather than
    *  rebuilt: one body's bars, and one body's status symbols */
-  private readonly barBuf: { v: number; col: string; doomed?: number }[] = [];
+  private readonly barBuf: { v: number; col: string; doomed?: number; shield?: number }[] = [];
   private readonly statusBuf: StatusId[] = [];
 
   /**
@@ -4007,6 +4025,31 @@ export class Game {
    * — nothing about the line is a question for the sim, because nothing
    * about it ever changes during a run.
    */
+  /**
+   * THE GROUND THE SWARM HOLDS (missionMarks.ts GARRISONS), ringed while it
+   * is held: the circle is exactly the leash (Sim.garrisonUnit), and a
+   * cleared one is not drawn — it is ground that has been taken.
+   */
+  private drawGarrisons(c: CanvasRenderingContext2D): void {
+    const rings = garrisonsFor(this.world.terrain.marks);
+    if (rings.length === 0) return;
+    const mask = this.world.garrisonHeld;
+    c.save();
+    c.beginPath();
+    c.rect(0, 0, W, H);
+    c.clip();
+    c.strokeStyle = SPAWN_STYLE.css;
+    c.globalAlpha = 0.16;
+    c.lineWidth = 2;
+    for (const [n, g] of rings.entries()) {
+      if ((mask & (1 << n)) === 0) continue;
+      c.beginPath();
+      c.arc(g.post.x, g.post.y, g.post.r, 0, Math.PI * 2);
+      c.stroke();
+    }
+    c.restore();
+  }
+
   private drawMissionRoads(c: CanvasRenderingContext2D): void {
     const level = this.world.level;
     const m = level.mission;
@@ -4239,6 +4282,7 @@ export class Game {
     // mission. So it is drawn thin and dark under everything — a line on
     // the ground, not a marker over it.
     this.drawMissionRoads(c);
+    this.drawGarrisons(c);
     // ...and the siege's batteries, on the same layer and for the same
     // reason: the mission's geometry belongs under the fight
     this.drawMissionPosts(c);

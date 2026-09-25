@@ -26,7 +26,7 @@
  * answer in the sim's arrays and tables, and a panel that asked those
  * questions across a thread would be a panel a frame behind its own arrow.
  */
-import type { Sim } from "./sim";
+import type { ObjectiveBar, Sim } from "./sim";
 import { TOWERS, type TowerStats } from "./constants";
 import { UNIT_KINDS, unitName, type UnitKind } from "./levels";
 import { modsInMask, TURRET_MOD_IDS, type ModId } from "./mods";
@@ -111,8 +111,12 @@ export const HDR = {
   /** the sweep's ledger (levels.ts SweepMission): houses down, houses drawn */
   FAB_KILLED: 32,
   FAB_TOTAL: 33,
+  /** which garrison circles are still held, one bit per mark in document
+   *  order (Sim.garrisonHeldMask) — the leash does not cross the seam, so
+   *  the overlay cannot work it out from kinds */
+  GARRISON_HELD: 34,
 } as const;
-export const HEADER_LEN = 34;
+export const HEADER_LEN = 35;
 
 /** the sim's scalars, into its own header — after every step, and on reset */
 export function writeHeader(sim: Sim): void {
@@ -145,6 +149,7 @@ export function writeHeader(sim: Sim): void {
   h[HDR.RAZE_UP] = sim.razeUp();
   h[HDR.FAB_KILLED] = sim.fabKilled;
   h[HDR.FAB_TOTAL] = sim.fabTotal;
+  h[HDR.GARRISON_HELD] = sim.garrisonHeldMask();
   h[HDR.CONVOY_DONE] = sim.convoyDone;
   h[HDR.CONVOY_LOST] = sim.convoyLost;
   {
@@ -466,6 +471,9 @@ export interface InspectPanel {
   name: string;
   hp: number;
   hpMax: number;
+  /** a body's shield pool and its ceiling, for the glass over its bar */
+  shield?: number;
+  shieldMax?: number;
   statuses: StatusChip[];
   mods: { id: ModId; n: number }[];
 }
@@ -476,7 +484,7 @@ export interface WorldReport {
    *  Named here rather than keyed by unit kind, because a train is a pool
    *  over twenty pieces and has no one kind to be named after; `ally` is
    *  whose side the row is on, which is what the HUD paints it off */
-  objectives: { id: number; name: string; hp: number; max: number; ally: boolean }[];
+  objectives: ObjectiveBar[];
   /** the player's live turrets per kind (Sim.towerCounts) */
   counts: Record<TowerKind, number>;
   /** the shelf: every mod the run owns with its count, and every relic */
@@ -550,6 +558,8 @@ export function inspectPanel(sim: Sim): InspectPanel | null {
       name: unitName(UNIT_KINDS[sim.ukind[ui]]),
       hp: Math.ceil(sim.uhp[ui]),
       hpMax: Math.ceil(sim.uhpmax[ui]),
+      shield: Math.max(0, Math.ceil(sim.ushield[ui])),
+      shieldMax: Math.ceil(sim.ushieldMax[ui]),
       statuses: unitStatusChips(sim, ui),
       mods: [],
     };

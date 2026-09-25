@@ -3445,14 +3445,32 @@ export default function Animechs() {
                     the full height the stack was a wall across the top of
                     the board. Ten px still carries the light and dark
                     rows that make it a trough */}
-                <div className="ms-bar h-[10px] w-full">
-                  <div
-                    className="transition-[width] duration-150 ease-linear"
-                    style={{
-                      width: `${Math.max(0, Math.min(100, (100 * b.hp) / Math.max(1, b.max)))}%`,
-                      background: b.ally ? "#EDEDEF" : "#e55454",
-                    }}
-                  />
+                <div className="relative">
+                  <div className="ms-bar h-[10px] w-full">
+                    <div
+                      className="transition-[width] duration-150 ease-linear"
+                      style={{
+                        width: `${Math.max(0, Math.min(100, (100 * b.hp) / Math.max(1, b.max)))}%`,
+                        background: b.ally ? "#EDEDEF" : "#e55454",
+                      }}
+                    />
+                  </div>
+                  {/* the shield as a CASING round the bar: a bold frame
+                      reaching past the trough on every side with glass
+                      inside it, the pool's share wide, so the box is seen
+                      shortening from the right as the pool burns down */}
+                  {b.shieldMax > 0 && b.shield > 0 && (
+                    <div
+                      className="pointer-events-none absolute -inset-y-[2px] -left-[2px] transition-[width] duration-150 ease-linear"
+                      style={{
+                        width: `calc(${Math.max(0, Math.min(100, (100 * b.shield) / b.shieldMax))}% + 4px)`,
+                        maxWidth: "calc(100% + 4px)",
+                        background: "rgba(160,220,255,0.35)",
+                        border: "2px solid rgba(210,242,255,0.95)",
+                        boxSizing: "border-box",
+                      }}
+                    />
+                  )}
                 </div>
               </div>
             ))}
