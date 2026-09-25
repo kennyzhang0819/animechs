@@ -69,7 +69,7 @@ for (const kind of WALL_KINDS)
 PROP_KINDS.forEach((def, k) => {
   for (const tone of def.tones) {
     const file = `public/tiles/prop-${def.id}-${PROP_TONES[tone].id}.png`;
-    const n = def.tiles * PROP_PX;
+    const n = Math.round(def.reach * PROP_PX);
     writeFileSync(file, png(paintProp(k, tone), n, n));
     console.log("wrote", file);
   }

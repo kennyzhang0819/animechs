@@ -76,7 +76,8 @@ export function forestOf(
         for (let x = x0; x < x0 + t; x++) if (!free[y * COLS + x]) { ok = false; break; }
       if (!ok) continue;
       for (let y = y0; y < y0 + t; y++) for (let x = x0; x < x0 + t; x++) free[y * COLS + x] = 0;
-      out.push({ x: x0, y: y0, kind: pick[(rng() * pick.length) | 0].kind, tone: tone(i), rot: (rng() * 4) | 0 });
+      const kind = pick[(rng() * pick.length) | 0].kind;
+      out.push({ x: x0, y: y0, kind, tone: tone(i), rot: PROP_KINDS[kind].turns ? (rng() * 4) | 0 : 0 });
     }
   }
   return out;

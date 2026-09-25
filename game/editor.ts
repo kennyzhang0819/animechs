@@ -421,7 +421,7 @@ export class MapEditor {
         T.wall[i] = WALL_PROP;
         T.spawn[i] = 0;
       }
-    T.props.push({ x: x0, y: y0, kind, tone, rot: this.randomize ? (Math.random() * 4) | 0 : 0 });
+    T.props.push({ x: x0, y: y0, kind, tone, rot: this.randomize && def.turns ? (Math.random() * 4) | 0 : 0 });
   }
 
   private paintCell(gx: number, gy: number): void {

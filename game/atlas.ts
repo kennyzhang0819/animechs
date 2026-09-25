@@ -109,8 +109,12 @@ import { EMBER, GILT, KING_TIER, PLUME, king, kingGeom } from "./kingArt";
  * family and it is back here. 3584 sits at 63%, which is inside what this
  * packer actually achieves, and 4096 is still in hand after it. The cost
  * is VRAM and it is linear: 42MB of texture became 59, 78 with mipmaps.
+ *
+ * AND FROM 3584 TO 4096 WHEN THE PROPS REACHED PAST THEIR TILES: a canopy
+ * cell is its reach squared, and twenty-two of them put the static pass
+ * over the 80% the check allows. This is the ceiling.
  */
-const ATLAS_W = 3584;
+const ATLAS_W = 4096;
 const ATLAS_H = 4096;
 const TAU = Math.PI * 2;
 
@@ -587,8 +591,8 @@ export const UV_WALL_LARGE: ReadonlyArray<ReadonlyArray<readonly UVRect[]> | nul
 const PROP_INSET = 4;
 /** one cell a kind, its 32px-a-tile art at 2x (propArt.ts PROP_KINDS),
  *  indexed by a prop's `kind`; the renderer maps the whole cell onto a
- *  `tiles * CELL` quad */
-export const UV_PROPS: readonly UVRect[] = PROP_KINDS.map((k) => tile(`prop-${k.id}`, k.tiles * 64, PROP_INSET));
+ *  `reach * CELL` quad centred on the footprint */
+export const UV_PROPS: readonly UVRect[] = PROP_KINDS.map((k) => tile(`prop-${k.id}`, Math.round(k.reach * 64), PROP_INSET));
 
 // ---------------------------------------------------------------------
 // STRUCTURES, EFFECTS AND THE ODD SHAPES

@@ -1,7 +1,7 @@
 // THE PROPS — the things that stand on the ground and stop the swarm:
-// twenty kinds, 1x1 to 6x6 tiles, painted here in code at 32 px a tile the
-// way the floors are (tiles.ts). See docs/props.md for the system: the
-// footprint rule, the tones, how a map is decorated.
+// 1x1 to 6x6 tiles, painted here in code at 32 px a tile the way the
+// floors are (tiles.ts). See docs/props.md for the system: the footprint
+// rule, the reach past it, the tones, how a map is decorated.
 //
 // A NATURE prop is painted in FOUR GREYS and tinted at draw time by its
 // tone (PROP_TONES), so one painting is a pine, a mangrove or a snow tree
@@ -154,7 +154,7 @@ const bands = (rng: () => number, cx: number, cy: number, r: number, lit = 0.22,
 /** a canopy: a ring of lobes round a crown, shaded as one shape, a lit
  *  cluster on its bright side, a few dark gaps on its shaded side and a
  *  trunk at the heart */
-function canopy(s: Sheet, rng: () => number, cx: number, cy: number, R: number, lobes: number, inner = 0): void {
+function canopy(s: Sheet, rng: () => number, cx: number, cy: number, R: number, lobes: number, inner = 0, trunk = true): void {
   const shade = bands(rng, cx, cy, R * 0.95, 0.2, -0.2);
   const a0 = rng() * 6.28;
   const lobe = (x: number, y: number, r: number, c: Col | ((x: number, y: number) => Col) = shade): void => s.disc(x, y, r, r, c);
@@ -178,6 +178,7 @@ function canopy(s: Sheet, rng: () => number, cx: number, cy: number, R: number, 
     const g = Math.max(2.2, R * 0.085);
     s.disc(cx + Math.cos(b) * d, cy + Math.sin(b) * d, g, g * 0.9, DEEP);
   }
+  if (!trunk) return;
   const t = Math.max(2.2, R * 0.1);
   s.disc(cx, cy, t, t, DEEP);
 }
@@ -216,6 +217,12 @@ export interface PropDef {
   id: string;
   label: string;
   tiles: PropTiles;
+  /** how far the art reaches, in tiles: the footprint or a little past
+   *  it, so a canopy spills over its square with no hitbox under the spill */
+  reach: number;
+  /** may it be set down at any quarter turn? A made thing may; a growing
+   *  or lying thing keeps the one light every prop shares */
+  turns: boolean;
   /** tinted: painted in greys, multiplied by the tone. Otherwise its own
    *  paint, and the tone is a weathering tint */
   tinted: boolean;
@@ -226,33 +233,33 @@ export interface PropDef {
   paint: (s: Sheet, rng: () => number) => void;
 }
 
-const nature = (id: string, label: string, tiles: PropTiles, tones: readonly number[], paint: PropDef["paint"]): PropDef =>
-  ({ id, label, tiles, tinted: true, tones, paint });
+const nature = (id: string, label: string, tiles: PropTiles, reach: number, tones: readonly number[], paint: PropDef["paint"]): PropDef =>
+  ({ id, label, tiles, reach, turns: false, tinted: true, tones, paint });
 const made = (id: string, label: string, tiles: PropTiles, mini: string, paint: PropDef["paint"]): PropDef =>
-  ({ id, label, tiles, tinted: false, tones: WEATHER_TONES, mini, paint });
+  ({ id, label, tiles, reach: tiles, turns: true, tinted: false, tones: WEATHER_TONES, mini, paint });
 
 /**
- * THE TWENTY. APPEND ONLY — a prop's kind is its index here, in every
- * document on disk. Every painting stays three px clear of its square's
- * rim (the atlas crops two, PROP_INSET).
+ * THE KINDS. APPEND ONLY — a prop's kind is its index here, in every
+ * document on disk. A painting is `reach * PROP_PX` square and stays
+ * three px clear of its rim (the atlas crops two, PROP_INSET).
  */
 export const PROP_KINDS: readonly PropDef[] = [
-  nature("shrub", "Shrub", 1, LEAF_TONES, (s, rng) => {
-    clump(s, rng, 16, 16.5, 12.5, 5);
+  nature("shrub", "Shrub", 1, 1.5, LEAF_TONES, (s, rng) => {
+    clump(s, rng, 24, 24.5, 19, 5);
   }),
-  nature("reeds", "Reeds", 1, LEAF_TONES, (s, rng) => {
-    s.disc(16, 20, 10, 6, DARK);
+  nature("reeds", "Reeds", 1, 1.25, LEAF_TONES, (s, rng) => {
+    s.disc(20, 25, 12, 7, DARK);
     for (let i = 0; i < 4; i++) {
-      const x = 3 + i * 8, top = 4 + ((rng() * 5) | 0), bottom = 20 + ((rng() * 4) | 0);
+      const x = 5 + i * 8, top = 5 + ((rng() * 6) | 0), bottom = 25 + ((rng() * 5) | 0);
       s.rect(x, top, 4, bottom - top, i % 2 ? LIGHT : MID);
       s.rect(x, top, 4, 4, LIGHT);
     }
-    s.disc(16, 22, 6, 3.5, DEEP);
+    s.disc(20, 28, 7, 4, DEEP);
   }),
-  nature("boulder", "Boulder", 1, ROCK_TONES, (s, rng) => {
-    stone(s, rng, 16 + (rng() - 0.5) * 2, 16.5, 12, 10.5);
+  nature("boulder", "Boulder", 1, 1.25, ROCK_TONES, (s, rng) => {
+    stone(s, rng, 20 + (rng() - 0.5) * 2, 20.5, 15, 13);
   }),
-  nature("stump", "Stump", 1, WOOD_TONES, (s, rng) => {
+  nature("stump", "Stump", 1, 1, WOOD_TONES, (s, rng) => {
     const a0 = rng() * 6.28;
     for (let i = 0; i < 3; i++) {
       const b = a0 + (i / 3) * 6.28;
@@ -263,42 +270,42 @@ export const PROP_KINDS: readonly PropDef[] = [
     s.disc(16, 16, 4.5, 4.5, LIGHT);
     s.bar([16, 16], [16 + Math.cos(a0) * 10, 16 + Math.sin(a0) * 10], 4, DEEP);
   }),
-  nature("tree", "Tree", 2, LEAF_TONES, (s, rng) => {
-    canopy(s, rng, 32, 32, 27, 7);
+  nature("tree", "Tree", 2, 2.5, LEAF_TONES, (s, rng) => {
+    canopy(s, rng, 40, 40, 35, 7);
   }),
-  nature("rock", "Rock", 2, ROCK_TONES, (s, rng) => {
-    stone(s, rng, 30, 35, 24, 19);
-    stone(s, rng, 45, 23, 13, 11, false);
+  nature("rock", "Rock", 2, 2.25, ROCK_TONES, (s, rng) => {
+    stone(s, rng, 34, 40, 27, 21);
+    stone(s, rng, 51, 26, 14, 12, false);
   }),
-  nature("log", "Fallen log", 2, WOOD_TONES, (s, rng) => {
-    const y0 = 25, h = 16;
-    s.rect(8, y0, 50, h, MID);
-    s.rect(8, y0, 50, 5, LIGHT);
-    s.rect(8, y0 + h - 5, 50, 5, DARK);
+  nature("log", "Fallen log", 2, 2.25, WOOD_TONES, (s, rng) => {
+    const y0 = 28, h = 18;
+    s.rect(8, y0, 58, h, MID);
+    s.rect(8, y0, 58, 6, LIGHT);
+    s.rect(8, y0 + h - 5, 58, 5, DARK);
     s.disc(8, y0 + h / 2, 4, h / 2, DARK);
     // the broken end: splinters
-    s.poly([[58, y0], [61, y0 + 5], [57, y0 + 8], [61, y0 + 12], [58, y0 + h]], MID);
-    s.bar([38, y0 + 2], [46, 11], 6, MID);
-    s.bar([22, y0 + h - 2], [15, 53], 6, DARK);
-    s.rect(28, y0 + 5, 5, 5, DEEP);
-    s.rect(46 + ((rng() * 4) | 0), y0 + 8, 4, 4, DEEP);
+    s.poly([[66, y0], [69, y0 + 6], [65, y0 + 9], [69, y0 + 14], [66, y0 + h]], MID);
+    s.bar([44, y0 + 2], [53, 12], 6, MID);
+    s.bar([24, y0 + h - 2], [16, 60], 6, DARK);
+    s.rect(32, y0 + 6, 5, 5, DEEP);
+    s.rect(52 + ((rng() * 4) | 0), y0 + 9, 4, 4, DEEP);
   }),
-  nature("oak", "Oak", 3, LEAF_TONES, (s, rng) => {
-    canopy(s, rng, 48, 48, 41, 9, 5);
+  nature("oak", "Oak", 3, 3.5, LEAF_TONES, (s, rng) => {
+    canopy(s, rng, 56, 56, 49, 9, 5);
   }),
-  nature("outcrop", "Outcrop", 3, ROCK_TONES, (s, rng) => {
-    stone(s, rng, 42, 52, 26, 21);
-    stone(s, rng, 68, 36, 15, 13);
-    stone(s, rng, 30, 25, 12, 10, false);
-    stone(s, rng, 68, 66, 10, 8, false);
+  nature("outcrop", "Outcrop", 3, 3.25, ROCK_TONES, (s, rng) => {
+    stone(s, rng, 46, 56, 28, 23);
+    stone(s, rng, 74, 39, 16, 14);
+    stone(s, rng, 32, 27, 13, 11, false);
+    stone(s, rng, 74, 72, 11, 9, false);
   }),
-  nature("grove", "Grove", 4, LEAF_TONES, (s, rng) => {
-    clump(s, rng, 18, 100, 11, 4);
-    clump(s, rng, 108, 98, 10, 4);
-    clump(s, rng, 106, 20, 9, 4);
-    canopy(s, rng, 44, 52, 30, 8);
-    canopy(s, rng, 84, 42, 26, 7);
-    canopy(s, rng, 70, 88, 28, 8);
+  nature("grove", "Grove", 4, 4.5, LEAF_TONES, (s, rng) => {
+    clump(s, rng, 20, 113, 12, 4);
+    clump(s, rng, 122, 110, 11, 4);
+    clump(s, rng, 119, 22, 10, 4);
+    canopy(s, rng, 50, 58, 34, 8);
+    canopy(s, rng, 95, 47, 29, 7);
+    canopy(s, rng, 79, 99, 31, 8);
   }),
   made("crate", "Crate", 1, "#6e6a49", (s) => {
     s.rect(4, 4, 24, 24, CRATE.mid);
@@ -484,6 +491,13 @@ export const PROP_KINDS: readonly PropDef[] = [
     s.rect(92, 48, 6, 6, EYE);
     s.rect(88, 66, 16, 4, STEEL.deep);
   }),
+  // the bushes a thicket is made of: a canopy's lobes with no trunk under them
+  nature("brush", "Brush", 2, 2.5, LEAF_TONES, (s, rng) => {
+    canopy(s, rng, 40, 40, 35, 8, 0, false);
+  }),
+  nature("thicket", "Thicket", 3, 3.5, LEAF_TONES, (s, rng) => {
+    canopy(s, rng, 56, 56, 49, 10, 5, false);
+  }),
 ];
 export const PROP_KIND_INDEX: Readonly<Record<string, number>> = Object.fromEntries(PROP_KINDS.map((k, i) => [k.id, i]));
 /** a kind by its id; throws on a name the table does not have */
@@ -501,10 +515,10 @@ export function propMini(kind: number, tone: number): string {
   return mix(PROP_TONES[tone]?.hex ?? "#ffffff", "#000000", 0.42);
 }
 
-/** paint one kind: `tiles * PROP_PX` square RGBA, transparent where nothing is */
+/** paint one kind: `reach * PROP_PX` square RGBA, transparent where nothing is */
 export function paintProp(kind: number, tint?: number): Uint8ClampedArray<ArrayBuffer> {
   const def = PROP_KINDS[kind];
-  const n = def.tiles * PROP_PX;
+  const n = Math.round(def.reach * PROP_PX);
   const s = new Sheet(n);
   def.paint(s, mulberry32(7000 + kind * 331));
   const out = new Uint8ClampedArray(new ArrayBuffer(n * n * 4));
@@ -523,7 +537,7 @@ export function paintProp(kind: number, tint?: number): Uint8ClampedArray<ArrayB
 
 /** the painted kind as a canvas at its native size, untinted */
 export function propCanvas(kind: number): HTMLCanvasElement {
-  const n = PROP_KINDS[kind].tiles * PROP_PX;
+  const n = Math.round(PROP_KINDS[kind].reach * PROP_PX);
   const c = document.createElement("canvas");
   c.width = c.height = n;
   const g = c.getContext("2d");

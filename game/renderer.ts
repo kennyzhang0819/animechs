@@ -794,6 +794,8 @@ const floorVariant = (floor: number, x: number, y: number): number =>
 // wall shadow strength: BlockRenderer.shadowColor is black at 0.71 — the
 // premultiplied blend of a black quad at this alpha equals its multiply
 export const WALL_SHADOW_A = 0.71;
+/** what a prop's cell stamps into the shadow mask, out of a hill's 255 */
+const PROP_SHADOW = 115;
 /**
  * THE INSIDE OF A HILL IS DARK — Mindustry's darkness buffer, reproduced
  * exactly (World.addDarkness for the numbers, BlockRenderer.updateDarkness
@@ -2099,18 +2101,20 @@ export class Renderer {
     // around them darkens; what the hill does INSIDE is pass 2b
     const mask = this.shadowMask;
     mask.fill(0);
-    const stamp = (i: number): void => {
-      mask[i * 4] = mask[i * 4 + 1] = mask[i * 4 + 2] = mask[i * 4 + 3] = 255;
+    const stamp = (i: number, v = 255): void => {
+      mask[i * 4] = mask[i * 4 + 1] = mask[i * 4 + 2] = mask[i * 4 + 3] = v;
     };
     // DEEP WATER IS BLOCKED BUT CASTS NOTHING. The shadow is a HILL's rim —
     // the ground beside something standing above it — and water is a hole,
     // not a hill. Stamping it would ring every lake with the same dark
     // fringe a cliff gets, which reads as the water being piled on the map
+    // ...and a prop casts at PROP_SHADOW of a hill's: a thing on the
+    // ground, not a mass, and a thicket of them at full went to mud
     if (layers.wall)
       for (let y = 0; y < mapRows; y++)
         for (let x = 0; x < mapCols; x++) {
           const i = y * COLS + x;
-          if (T.blocked[i] && T.wall[i] !== WALL_DEEP) stamp(i);
+          if (T.blocked[i] && T.wall[i] !== WALL_DEEP) stamp(i, T.wall[i] === WALL_PROP ? PROP_SHADOW : 255);
         }
     // buildings on the ground stamp their footprint too, like Mindustry's
     // displayShadow blocks — the base sprite covers the middle, so what
@@ -2294,9 +2298,9 @@ export class Renderer {
       for (const p of T.props) {
         const def = PROP_KINDS[p.kind];
         if (!def) continue;
-        const side = def.tiles * CELL;
+        const half = (def.tiles * CELL) / 2, side = def.reach * CELL;
         const tint = PROP_TINT[p.tone] ?? PROP_TINT[0];
-        this.push(w, p.x * CELL + side / 2, p.y * CELL + side / 2, side, side, p.rot * (Math.PI / 2), UV_PROPS[p.kind], tint[0], tint[1], tint[2], 1);
+        this.push(w, p.x * CELL + half, p.y * CELL + half, side, side, p.rot * (Math.PI / 2), UV_PROPS[p.kind], tint[0], tint[1], tint[2], 1);
       }
     }
     for (const b of [t, wt, sh, w, dq]) {

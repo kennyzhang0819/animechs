@@ -1,6 +1,6 @@
 # Props
 
-The things that stand on the ground: twenty kinds, painted in code in
+The things that stand on the ground: twenty-two kinds, painted in code in
 `game/propArt.ts`, placed by the map generator (`game/mapgen.ts`) and by
 the map editor, drawn by the renderer's terrain pass. This page is the
 system; the file headers say only where things are.
@@ -20,7 +20,9 @@ darkens inside: a prop is a thing on the ground, not a mass.
 sim reads. The loader (`maps.ts propsOf`) keeps them honest both ways: a
 listed prop whose footprint is not all sentinel cells is dropped, and a
 sentinel cell no prop covers is grown over (`terrain.ts forestOf`) so
-nothing blocks the swarm invisibly. That second rule is also how a
+nothing blocks the swarm invisibly. A prop casts the rim shadow at less
+than half a hill's (`PROP_SHADOW`); a thicket at full strength went to
+mud. That second rule is also how a
 legacy document's `pines` become trees: a pine cell already wears the
 sentinel, and the loader tiles the pine cells into oaks, trees and
 shrubs in the tone its forest kind meant. The old non-blocking `decor`
@@ -29,8 +31,12 @@ is ignored.
 ## The kinds
 
 A prop is a square footprint of 1, 2, 3, 4 or 6 tiles, painted at 32 px
-a tile and packed at 2x like the floors. The index into `PROP_KINDS` is
-what a document stores: **append, never reorder.**
+a tile and packed at 2x like the floors. Its art may REACH past the
+footprint (`reach`, in tiles): a shrub's square is one tile and its
+canopy one and a half, so bushes and trees touch and overlap with no
+hitbox under the spill. A made prop reaches exactly its footprint. The
+index into `PROP_KINDS` is what a document stores: **append, never
+reorder.**
 
 | kind | tiles | what |
 | --- | --- | --- |
@@ -38,6 +44,7 @@ what a document stores: **append, never reorder.**
 | tree, rock, log | 2 | a canopy, a bigger stone, a fallen trunk |
 | oak, outcrop | 3 | a broad canopy, a cluster of stones |
 | grove | 4 | three canopies and their brush |
+| brush, thicket | 2, 3 | the bushes a thicket is made of: a canopy with no trunk |
 | crate | 1 | a supply crate |
 | barrels, scrap, mast | 2 | drums, a scrap heap, a fallen radio mast |
 | hull, silo | 3 | a wrecked mech hull, a fuel tank |
@@ -56,7 +63,10 @@ that table is append-only too.
 
 Shading follows the hills: light on the top-right, dark on the
 bottom-left, a mid band between. Nothing under four px, no outline —
-the silhouette is the shading's own edge, as on the tiles.
+the silhouette is the shading's own edge, as on the tiles. A nature
+prop is never turned (`turns`): every one keeps the one light, which is
+what lets a thicket read as one thing. A made prop lands at any quarter
+turn.
 
 ## How a board is decorated
 
@@ -82,8 +92,10 @@ thick):
 4. **The growth and the stones.** Every open cell in a random order: a
    growth noise says where the thickets are, and along the rock
    (`hug`) both growth and stones lie thicker; the big kinds go in the
-   thick of a thicket, the small ones at its edge. Stones wear the rock
-   tone of the wall the floor family under them wears.
+   thick of a thicket, the small ones at its edge — inside a thicket
+   mostly the brush and thicket patches, with trees rising out of them
+   and single shrubs as strays. Stones wear the rock tone of the wall
+   the floor family under them wears.
 5. **Pockets.** A pocket the props closed is grown over with shrubs and
    trees rather than sealed as rock, so a thicket stays a thicket. A wet
    one, or one no flora fits, is sealed as before.
