@@ -6,7 +6,7 @@ import { COLS, ROWS } from "./constants";
 import { RANDOM_MAP_ID, type MapData } from "./maps";
 import { forestOf, SPAWN_CORE_CLEAR, type Prop } from "./terrain";
 import { WALL_GROUP, WALL_GROUP_KINDS } from "./atlas";
-import { PROP_KINDS, propKind, rockTone, rollRot, THEME_PROPS, TONE } from "./propArt";
+import { PROP_KINDS, propKind, rockTone, rollRot, BIOME_PROPS, TONE } from "./propArt";
 import type { MapMark } from "./missionMarks";
 import { MAX_SITES, rollSiteCounts, SITE_KINDS, SITE_MARK, SITE_SIZES, siteTier, type SiteSize } from "./sites";
 
@@ -24,7 +24,7 @@ export type RoutePoint = number | "core" | `spawn:${number}`;
 export interface SpecRoute { spawn: number; via?: RoutePoint[]; to?: RoutePoint; width: [number, number]; layer?: "ground" | "water" }
 export interface SpecLink { rooms: [RoutePoint, RoutePoint]; width: [number, number]; layer?: "ground" | "water" }
 export interface SpecChoke { x: number; y: number; w: number; reach: number }
-/** a theme's props: which kinds, in which tones, how thick */
+/** a biome's props: which kinds, in which tones, how thick */
 export interface PropSpec {
   /** leaf tones for the growing things; the first is the common one */
   canopy: number[];
@@ -54,7 +54,7 @@ type Ground = Pick<MapSpec, "beach" | "flats" | "forest">;
 export interface Blend extends Ground {
   families: { floor: number; wall: number; weight: number }[];
   props: PropSpec;
-  /** the share of the board the second theme takes, 0..1 */
+  /** the share of the board this biome takes, 0..1 */
   amount: number;
 }
 
@@ -77,12 +77,12 @@ export interface MapSpec {
   holes?: number;
   lumps?: number;
   ruins?: number;
-  /** rock beside these floors grows the theme's flora instead of standing bare */
+  /** rock beside these floors grows the biome's flora instead of standing bare */
   forest?: { on: number[]; threshold: number; depth: number };
   /** what stands on the open ground — see docs/props.md */
   props?: PropSpec;
-  /** a second theme over part of the board, interfingered with the first (docs/random-maps.md) */
-  blend?: Blend;
+  /** the second and third biomes, each over part of the board, interfingered with the first (docs/random-maps.md) */
+  blends?: Blend[];
   distort?: number;
   bays?: number;
   clutter?: number;
@@ -117,12 +117,12 @@ export function scaleSpec(spec: MapSpec): MapSpec {
     beach: spec.beach && { ...spec.beach, depth: spec.beach.depth * k },
     flats: spec.flats && { ...spec.flats, clear: spec.flats.clear * k },
     forest: spec.forest && { ...spec.forest, depth: spec.forest.depth * k },
-    blend: spec.blend && {
-      ...spec.blend,
-      beach: spec.blend.beach && { ...spec.blend.beach, depth: spec.blend.beach.depth * k },
-      flats: spec.blend.flats && { ...spec.blend.flats, clear: spec.blend.flats.clear * k },
-      forest: spec.blend.forest && { ...spec.blend.forest, depth: spec.blend.forest.depth * k },
-    },
+    blends: spec.blends?.map((b) => ({
+      ...b,
+      beach: b.beach && { ...b.beach, depth: b.beach.depth * k },
+      flats: b.flats && { ...b.flats, clear: b.flats.clear * k },
+      forest: b.forest && { ...b.forest, depth: b.forest.depth * k },
+    })),
     rooms: spec.rooms.map((r) => ({ ...pt(r), r: r.r * k * ROOM_WIDEN })),
     core: { ...pt(spec.core), r: (spec.core.r ?? 11) * k },
     spawns: spec.spawns.map(pt),
@@ -838,26 +838,27 @@ export function build(spec: MapSpec): Built {
   };
   const fams = spec.floors.families;
   const fam = cutInto(fams);
-  // THE BLEND: the second theme takes `amount` of the board where a slow
-  // noise runs high, and across the band round that cut the two
-  // interfinger on a fine noise instead of meeting at a line
-  const bl = spec.blend;
+  // THE BLENDS: each further biome takes `amount` of the board where a
+  // slow noise of its own runs high, a later one over an earlier, and
+  // across the band round each cut the two interfinger on a fine noise
+  // instead of meeting at a line. `sec` is a cell's biome: 0 the first
+  const bls = spec.blends ?? [];
   const sec = new Uint8Array(N);
-  const fam2 = bl ? cutInto(bl.families) : fam;
-  if (bl) {
+  const famB = bls.map((b) => cutInto(b.families));
+  bls.forEach((b, n) => {
     const bN = makeWarped(rnd, 110, 24, 2), hN = makeNoise(rnd, 2);
     const bv = new Float32Array(N);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) bv[y * W + x] = bN(x, y);
-    const cut = Float32Array.from(bv).sort()[Math.min(N - 1, Math.floor((1 - bl.amount) * N))];
+    const cut = Float32Array.from(bv).sort()[Math.min(N - 1, Math.floor((1 - b.amount) * N))];
     const band = 0.07;
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
         const i = y * W + x, u = Math.max(0, Math.min(1, (bv[i] - (cut - band)) / (2 * band)));
-        if (hN(x / 5, y / 5) < u * u * (3 - 2 * u)) sec[i] = 1;
+        if (hN(x / 5, y / 5) < u * u * (3 - 2 * u)) sec[i] = n + 1;
       }
-  }
-  const famAt = (i: number): { floor: number; wall: number } => (sec[i] && bl ? bl.families[fam2[i]] : fams[fam[i]]);
-  const groundAt = (i: number): Ground => (sec[i] && bl ? bl : spec);
+  });
+  const famAt = (i: number): { floor: number; wall: number } => (sec[i] ? bls[sec[i] - 1].families[famB[sec[i] - 1][i]] : fams[fam[i]]);
+  const groundAt = (i: number): Ground => (sec[i] ? bls[sec[i] - 1] : spec);
   const shallowF = spec.water?.shallow ?? FLOOR_SHALLOW_WATER, deepF = spec.water?.deep ?? FLOOR_DEEP_WATER;
   const flatN = makeNoise(rnd, 2);
   for (let y = 0; y < H; y++)
@@ -938,7 +939,7 @@ export function build(spec: MapSpec): Built {
       const wf = g.beach && dWater[i] <= g.beach.depth + 1 && g.beach.wall != null ? g.beach.wall : famAt(i).wall;
       return rockTone(WALL_GROUP_KINDS[WALL_GROUP[wf]]);
     };
-    // the tables a theme's props are drawn from; a blended board has two and each cell reads its own
+    // the tables a biome's props are drawn from, one a biome; each cell reads its own
     const tablesOf = (p: PropSpec) => {
       const canopyTone = (): number => (rnd() < 0.75 ? p.canopy[0] : pick(p.canopy));
       const toneFor = (k: number, i: number): number => {
@@ -948,18 +949,18 @@ export function build(spec: MapSpec): Built {
       };
       return { pp: p, flora: bySize(p.flora), stones: bySize(p.stones), canopyTone, toneFor };
     };
-    const T1 = tablesOf(pp), T2 = bl ? tablesOf(bl.props) : T1;
-    const tab = (i: number) => (sec[i] ? T2 : T1);
-    const { flora, canopyTone } = T1;
+    const Ts = [tablesOf(pp), ...bls.map((b) => tablesOf(b.props))];
+    const tab = (i: number) => Ts[sec[i]];
+    const { flora, canopyTone } = Ts[0];
 
     // THE FRINGE FOREST: rock beside the forest floors, the noise's own
-    // shape and the theme's depth in, grown over — oaks where three cells
+    // shape and the biome's depth in, grown over — oaks where three cells
     // square of it are free, trees where two, shrubs on the rest. It was
     // rock, so no lane is the narrower for it
-    if (spec.forest || bl?.forest) {
+    if (spec.forest || bls.some((b) => b.forest)) {
       const fN = makeWarped(rnd, 26 * SCALE, 8 * SCALE, 2);
-      const on = [new Set(spec.forest?.on ?? []), new Set(bl?.forest?.on ?? [])];
-      const fringe = [new Uint8Array(N), new Uint8Array(N)];
+      const on = [spec, ...bls].map((g) => new Set(g.forest?.on ?? []));
+      const fringe = on.map(() => new Uint8Array(N));
       for (let y = 1; y < H - 1; y++)
         for (let x = 1; x < W - 1; x++) {
           const i = y * W + x, s = sec[i], fo = groundAt(i).forest;
@@ -970,11 +971,11 @@ export function build(spec: MapSpec): Built {
           if (dOpen > fo.depth) continue;
           fringe[s][i] = 1;
         }
-      for (const s of [0, 1] as const) {
-        const tb = s ? T2 : T1;
+      for (let s = 0; s < fringe.length; s++) {
+        const tb = Ts[s];
         const kinds = [3, 2, 1].flatMap((t) => (tb.flora.get(t) ?? []).map((k) => ({ tiles: t, kind: k })));
         if (kinds.length)
-          for (const f of forestOf(fringe[s], () => tb.canopyTone(), spec.seed ^ (s ? 0x5f0e : 0x5f0d), kinds)) stand(f.x, f.y, f.kind, f.tone, f.rot);
+          for (const f of forestOf(fringe[s], () => tb.canopyTone(), spec.seed ^ (0x5f0d + s), kinds)) stand(f.x, f.y, f.kind, f.tone, f.rot);
       }
     }
     // the fringe stood on rock; everything after it stands on open ground
@@ -1117,10 +1118,10 @@ export function build(spec: MapSpec): Built {
     // stand on deep water too (pads and reeds off a bank); the wood and
     // the stones only on the shallows and the ground. A bed on the water
     // blocks like any other prop, and deep water was blocked already
-    if (pp.shore?.length || bl?.props.shore?.length) {
+    if ([pp, ...bls.map((b) => b.props)].some((p) => p.shore?.length)) {
       const grows = (n: string): boolean => PROP_KINDS[propKind(n)].tones.includes(TONE.pine);
       const shoreOf = (p: PropSpec) => { const sh = p.shore ?? []; return { all: bySize(sh), wet: bySize(sh.filter(grows)), dry: bySize(sh.filter((n) => !grows(n))) }; };
-      const S1 = shoreOf(pp), S2 = bl ? shoreOf(bl.props) : S1;
+      const Ss = [shoreOf(pp), ...bls.map((b) => shoreOf(b.props))];
       const dLand = clearance((i) => isWater(i));
       const dWet = clearance((i) => !isWater(i));
       const shoreCell = (i: number): boolean =>
@@ -1132,7 +1133,7 @@ export function build(spec: MapSpec): Built {
       let shore = 0;
       for (const i of band) {
         if (claim[i] || rnd() > (isWater(i) ? 0.1 : 0.06)) continue;
-        const sh = sec[i] ? S2 : S1;
+        const sh = Ss[sec[i]];
         const table = kind[i] === DEEP ? sh.wet : kind[i] === OPEN && sh.dry.size ? sh.dry : sh.all;
         if (!table.size) continue;
         const wantT = isWater(i) && rnd() < 0.35 ? 2 : 1;
@@ -1589,7 +1590,7 @@ const RIM = 22;
 /** a random map's lanes are held wider than an authored map's (docs/random-maps.md) */
 const RANDOM_ROUTE_MIN = { ground: 16, water: 20 };
 
-interface Theme {
+interface Biome {
   id: string;
   families: { floor: number; wall: number; weight: number }[];
   beach: { floor: number; wall?: number; depth: number };
@@ -1599,19 +1600,19 @@ interface Theme {
   ruins: number;
   props: PropSpec;
   names: [string[], string[]];
-  /** the themes this one may share a board with (the blend) */
+  /** the biomes this one may share a board with (the blends) */
   kin: string[];
 }
 
-// the made kinds a theme's ground is littered with, by how the ground treats metal
+// the made kinds a biome's ground is littered with, by how the ground treats metal
 const DRY_LITTER = ["crate", "barrels", "scrap", "hull", "silo", "mast"];
 const WET_LITTER = ["barrels", "scrap", "hull", "crate"];
 const COLD_LITTER = ["crate", "crate", "barrels", "mast", "silo"];
 const ROCKS = ["boulder", "rock", "outcrop", "knoll", "crag", "tor"];
 
-/** a theme's props: its family at every footprint, its two auxiliaries on the shore, the shared rock (propArt.ts THEME_PROPS) */
-const themeProps = (id: string, weather: number, litter: string[], sites: string[], growth: number, stone: number, siteCount: [number, number]): PropSpec => {
-  const tp = THEME_PROPS[id];
+/** a biome's props: its family at every footprint, its two auxiliaries on the shore, the shared rock (propArt.ts BIOME_PROPS) */
+const biomeProps = (id: string, weather: number, litter: string[], sites: string[], growth: number, stone: number, siteCount: [number, number]): PropSpec => {
+  const tp = BIOME_PROPS[id];
   return {
     canopy: [...tp.tones], wood: tp.auxTone, weather,
     flora: [1, 2, 3, 4, 6, 10].map((n) => `${tp.family}${n}`),
@@ -1621,8 +1622,8 @@ const themeProps = (id: string, weather: number, litter: string[], sites: string
   };
 };
 
-// the ten themes (docs/random-maps.md), one family a theme
-const THEMES: Theme[] = [
+// the ten biomes (docs/random-maps.md), one family a biome
+const BIOMES: Biome[] = [
   {
     id: "meadow",
     families: [
@@ -1633,7 +1634,7 @@ const THEMES: Theme[] = [
     beach: { floor: FLOOR_LOAM, depth: 2 },
     forest: { on: [FLOOR_GRASS, FLOOR_LOAM], threshold: 0.5, depth: 4 },
     ruins: 2,
-    props: themeProps("meadow", TONE.plain, DRY_LITTER, ["walker", "colossus", "bunker", "wreck"], 1, 0.6, [1, 2]),
+    props: biomeProps("meadow", TONE.plain, DRY_LITTER, ["walker", "colossus", "bunker", "wreck"], 1, 0.6, [1, 2]),
     names: [["Green", "Thorn", "Old", "Low", "Wild"], ["Wood", "Way", "Meadow", "Ford", "Glen"]],
     kin: ["jungle", "badlands"],
   },
@@ -1648,7 +1649,7 @@ const THEMES: Theme[] = [
     flats: { floor: FLOOR_SALT, clear: 10 },
     forest: { on: [FLOOR_SAND, FLOOR_DARKSAND], threshold: 0.64, depth: 2 },
     ruins: 3,
-    props: themeProps("saltpan", TONE.dust, DRY_LITTER, ["silo", "wreck", "bunker", "wreck"], 0.35, 2.4, [1, 3]),
+    props: biomeProps("saltpan", TONE.dust, DRY_LITTER, ["silo", "wreck", "bunker", "wreck"], 0.35, 2.4, [1, 3]),
     names: [["Salt", "Dune", "Ashen", "Sun", "Bleached"], ["Basin", "Reach", "Flats", "Verge", "Hollow"]],
     kin: ["badlands", "shallows"],
   },
@@ -1663,7 +1664,7 @@ const THEMES: Theme[] = [
     flats: { floor: FLOOR_ICE, clear: 11 },
     forest: { on: [FLOOR_SNOW, FLOOR_ICE], threshold: 0.6, depth: 2 },
     ruins: 1,
-    props: themeProps("tundra", TONE.rime, COLD_LITTER, ["bunker", "wreck", "colossus", "wreck"], 0.5, 1, [1, 2]),
+    props: biomeProps("tundra", TONE.rime, COLD_LITTER, ["bunker", "wreck", "colossus", "wreck"], 0.5, 1, [1, 2]),
     names: [["White", "Cold", "Frost", "Still", "North"], ["Peak", "Line", "Field", "Pass", "Shelf"]],
     kin: ["crystal"],
   },
@@ -1678,7 +1679,7 @@ const THEMES: Theme[] = [
     flats: { floor: FLOOR_DUST, clear: 11 },
     forest: { on: [FLOOR_CLAY, FLOOR_LOAM], threshold: 0.66, depth: 2 },
     ruins: 3,
-    props: themeProps("badlands", TONE.ochre, DRY_LITTER, ["wreck", "bunker", "colossus", "silo"], 0.4, 2.2, [1, 3]),
+    props: biomeProps("badlands", TONE.ochre, DRY_LITTER, ["wreck", "bunker", "colossus", "silo"], 0.4, 2.2, [1, 3]),
     names: [["Red", "Rust", "Kiln", "Ochre", "Brick"], ["Badlands", "Mesa", "Gulch", "Bluff", "Terrace"]],
     kin: ["saltpan", "meadow", "caldera"],
   },
@@ -1693,7 +1694,7 @@ const THEMES: Theme[] = [
     flats: { floor: FLOOR_BASALT, clear: 12 },
     forest: { on: [FLOOR_CINDER, FLOOR_DARKSAND], threshold: 0.62, depth: 2 },
     ruins: 2,
-    props: themeProps("ashfall", TONE.soot, ["scrap", "scrap", "hull", "hull", "barrels", "mast"], ["walker", "colossus", "wreck", "walker"], 0.45, 2.2, [2, 3]),
+    props: biomeProps("ashfall", TONE.soot, ["scrap", "scrap", "hull", "hull", "barrels", "mast"], ["walker", "colossus", "wreck", "walker"], 0.45, 2.2, [2, 3]),
     names: [["Ash", "Black", "Soot", "Ember", "Burnt"], ["Fall", "Reach", "Waste", "Field", "Cinders"]],
     kin: ["caldera", "sporefield"],
   },
@@ -1709,7 +1710,7 @@ const THEMES: Theme[] = [
     flats: { floor: FLOOR_BASALT, clear: 12 },
     forest: { on: [FLOOR_SCORIA, FLOOR_CINDER], threshold: 0.6, depth: 2 },
     ruins: 2,
-    props: themeProps("caldera", TONE.soot, ["scrap", "hull", "hull", "barrels"], ["walker", "colossus", "wreck"], 0.45, 2, [1, 3]),
+    props: biomeProps("caldera", TONE.soot, ["scrap", "hull", "hull", "barrels"], ["walker", "colossus", "wreck"], 0.45, 2, [1, 3]),
     names: [["Black", "Ember", "Fire", "Cinder", "Molten"], ["Caldera", "Rim", "Vent", "Crater", "Bowl"]],
     kin: ["ashfall", "badlands"],
   },
@@ -1725,7 +1726,7 @@ const THEMES: Theme[] = [
     // the water high and nearly all of it shallow: a drowned flat the ground bodies wade
     water: { level: 0.55, shore: 0.3 },
     ruins: 1,
-    props: themeProps("shallows", TONE.film, WET_LITTER, ["wreck", "walker", "wreck"], 0.8, 0.6, [0, 2]),
+    props: biomeProps("shallows", TONE.film, WET_LITTER, ["wreck", "walker", "wreck"], 0.8, 0.6, [0, 2]),
     names: [["Coral", "Tide", "Salt", "Blue", "Low"], ["Shallows", "Shoal", "Lagoon", "Reef", "Sound"]],
     kin: ["saltpan", "meadow"],
   },
@@ -1740,7 +1741,7 @@ const THEMES: Theme[] = [
     beach: { floor: FLOOR_LITTER, depth: 2 },
     forest: { on: [FLOOR_JUNGLE, FLOOR_MOSS, FLOOR_LITTER], threshold: 0.45, depth: 5 },
     ruins: 2,
-    props: themeProps("jungle", TONE.film, DRY_LITTER, ["walker", "colossus", "wreck", "bunker"], 1.5, 0.4, [1, 2]),
+    props: biomeProps("jungle", TONE.film, DRY_LITTER, ["walker", "colossus", "wreck", "bunker"], 1.5, 0.4, [1, 2]),
     names: [["Green", "Deep", "Wet", "Tangled", "Old"], ["Jungle", "Canopy", "Tangle", "Basin", "Thicket"]],
     kin: ["meadow", "sporefield"],
   },
@@ -1756,7 +1757,7 @@ const THEMES: Theme[] = [
     forest: { on: [FLOOR_SPOREFIELD, FLOOR_BLIGHT], threshold: 0.55, depth: 3 },
     water: { shallow: FLOOR_TAINTED_WATER, deep: FLOOR_DEEP_TAINTED_WATER },
     ruins: 1,
-    props: themeProps("sporefield", TONE.film, WET_LITTER, ["wreck", "walker", "colossus"], 0.9, 0.5, [0, 2]),
+    props: biomeProps("sporefield", TONE.film, WET_LITTER, ["wreck", "walker", "colossus"], 0.9, 0.5, [0, 2]),
     names: [["Spore", "Pale", "Rot", "Blighted", "Mold"], ["Field", "Waste", "Bloom", "Hollow", "Reach"]],
     kin: ["jungle", "ashfall", "crystal"],
   },
@@ -1771,15 +1772,15 @@ const THEMES: Theme[] = [
     flats: { floor: FLOOR_SALT, clear: 12 },
     forest: { on: [FLOOR_QUARTZ], threshold: 0.6, depth: 2 },
     ruins: 1,
-    props: themeProps("crystal", TONE.rime, COLD_LITTER, ["bunker", "wreck", "colossus"], 0.5, 1.2, [1, 2]),
+    props: biomeProps("crystal", TONE.rime, COLD_LITTER, ["bunker", "wreck", "colossus"], 0.5, 1.2, [1, 2]),
     names: [["Glass", "Quartz", "Bright", "Shard", "Cold"], ["Barrens", "Field", "Scar", "Waste", "Shelf"]],
     kin: ["tundra", "sporefield"],
   },
 ];
-const themeById = (id: string): Theme => THEMES.find((t) => t.id === id)!;
+const biomeById = (id: string): Biome => BIOMES.find((t) => t.id === id)!;
 
 /**
- * THE SHAPE OF A BOARD, rolled apart from its theme (docs/random-maps.md):
+ * THE SHAPE OF A BOARD, rolled apart from its biome (docs/random-maps.md):
  * how thick the rock lies, how big its features are, how open the ground
  * is, how much water there is. Every dial below is a range the roll draws
  * from, and each archetype's ranges are far enough apart that two boards
@@ -1825,13 +1826,16 @@ export function randomSpec(seed: number): MapSpec {
   const rnd = rng(seed);
   const between = (a: number, b: number): number => a + rnd() * (b - a);
   const pick = <T>(a: readonly T[]): T => a[(rnd() * a.length) | 0];
-  const theme = pick(THEMES);
+  const biome = pick(BIOMES);
   const arch = pick(ARCHETYPES);
-  // two boards in three carry a second theme, one of the first's kin, over a fifth to two fifths of the ground
-  const kin = rnd() < 0.66 ? themeById(pick(theme.kin)) : null;
-  const blend: Blend | undefined = kin
-    ? { families: kin.families, beach: kin.beach, flats: kin.flats, forest: kin.forest, props: kin.props, amount: between(0.2, 0.42) }
-    : undefined;
+  // every board carries a second biome, one of the first's kin, over a fifth to two fifths of the
+  // ground; one in three carries a third, kin of either, over a tenth to a fifth
+  const second = biomeById(pick(biome.kin));
+  const thirds = [...new Set([...biome.kin, ...second.kin])].filter((id) => id !== biome.id && id !== second.id);
+  const third = thirds.length > 0 && rnd() < 0.34 ? biomeById(pick(thirds)) : null;
+  const blendOf = (b: Biome, amount: number): Blend => ({ families: b.families, beach: b.beach, flats: b.flats, forest: b.forest, props: b.props, amount });
+  const blends = [blendOf(second, between(0.2, 0.42))];
+  if (third) blends.push(blendOf(third, between(0.1, 0.2)));
   const clampIn = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, Math.round(v)));
   const roll = (r: [number, number]): number => r[0] + ((rnd() * (r[1] - r[0] + 1)) | 0);
 
@@ -1974,23 +1978,23 @@ export function randomSpec(seed: number): MapSpec {
     }
   }
   const waterSpec: MapSpec["water"] = seaMode
-    ? { scale: 50, level: arch.seaLevel ?? 0.44, shore: 0.08, warp: 18, bias: (x, y) => (seaIn(x, y) / 130) * 0.7 - 0.24, ...theme.water }
-    : { scale: 60, level: arch.riverLevel ?? 0.3, shore: 0.07, bias: (x, y) => 0.14 + wells.reduce((a, w) => a + w(x, y), 0), ...theme.water };
+    ? { scale: 50, level: arch.seaLevel ?? 0.44, shore: 0.08, warp: 18, bias: (x, y) => (seaIn(x, y) / 130) * 0.7 - 0.24, ...biome.water }
+    : { scale: 60, level: arch.riverLevel ?? 0.3, shore: 0.07, bias: (x, y) => 0.14 + wells.reduce((a, w) => a + w(x, y), 0), ...biome.water };
 
-  // the theme names the ground, the archetype the shape
-  const name = `${pick(theme.names[0])} ${rnd() < 0.5 ? pick(arch.nouns) : pick(theme.names[1])}`;
+  // the biome names the ground, the archetype the shape
+  const name = `${pick(biome.names[0])} ${rnd() < 0.5 ? pick(arch.nouns) : pick(biome.names[1])}`;
   return {
     id: RANDOM_MAP_ID,
     name,
     seed,
     rock: { threshold: between(arch.rock[0], arch.rock[1]), scale: between(arch.scale[0], arch.scale[1]), warp: between(arch.warp[0], arch.warp[1]) },
     water: waterSpec,
-    floors: { scale: between(arch.patch[0], arch.patch[1]), warp: 12, families: theme.families },
-    beach: theme.beach,
-    flats: theme.flats,
-    forest: theme.forest,
-    props: theme.props,
-    blend,
+    floors: { scale: between(arch.patch[0], arch.patch[1]), warp: 12, families: biome.families },
+    beach: biome.beach,
+    flats: biome.flats,
+    forest: biome.forest,
+    props: biome.props,
+    blends,
     rooms,
     core,
     spawns,
@@ -2001,7 +2005,7 @@ export function randomSpec(seed: number): MapSpec {
     distort: arch.distort,
     bays: arch.bays,
     clutter: between(0.6, 1.8),
-    ruins: (rnd() * (theme.ruins + 1)) | 0,
+    ruins: (rnd() * (biome.ruins + 1)) | 0,
     routeMin: RANDOM_ROUTE_MIN,
     spreadMax: 0.8,
   };

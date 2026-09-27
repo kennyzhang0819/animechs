@@ -156,7 +156,7 @@ import {
   type ShotRegion,
 } from "./weapons";
 import { isWaterFloor, showsFloorCell, WALL_DEEP, WALL_PROP, type Prop, type Terrain } from "./terrain";
-import { PROP_KINDS, PROP_TINT, themesOf } from "./propArt";
+import { PROP_KINDS, PROP_TINT, biomesOf } from "./propArt";
 import { SPAWN_STYLE } from "./maps";
 import {
   FxKind,
@@ -2612,8 +2612,8 @@ export class Renderer {
     gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.R8, COLS, ROWS, COVER_LAYERS, 0, gl.RED, gl.UNSIGNED_BYTE, cover);
     gl.activeTexture(gl.TEXTURE0);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-    // the board's themes take the family slots on the sheet (atlas.ts FAMILY_SETS)
-    if (layers.props && ensureFamilies(themesOf(T.props))) this.uploadAtlas();
+    // the board's biomes take the family slots on the sheet (atlas.ts FAMILY_SETS)
+    if (layers.props && ensureFamilies(biomesOf(T.props))) this.uploadAtlas();
     if (layers.props) {
       // a prop's own cells cast the rim shadow (pass 2), so it is not shaded
       // by it: its tone is the whole of its colour (propArt.ts PROP_TINT)

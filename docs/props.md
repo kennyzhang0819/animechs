@@ -1,6 +1,6 @@
 # Props
 
-The things that stand on the ground: the standing kinds below and the ten themes' roster, painted in code in
+The things that stand on the ground: the standing kinds below and the ten biomes' roster, painted in code in
 `game/propArt.ts`, placed by the map generator (`game/mapgen.ts`) and by
 the map editor, drawn by the renderer's terrain pass. This page is the
 system; the file headers say only where things are.
@@ -62,19 +62,19 @@ reorder.**
 
 ## The roster
 
-The rolled themes (`mapgen.ts THEMES`) draw from a fixed roster rather
-than the table above: **one family a theme at every footprint, two
+The rolled biomes (`mapgen.ts BIOMES`) draw from a fixed roster rather
+than the table above: **one family a biome at every footprint, two
 auxiliaries, and the one rock shared by all.** A family is one silhouette
 that comes in 1, 2, 3, 4, 6 and 10 tiles — the meadow's canopy, the salt
 pan's cactus, the tundra's ice slab, the badlands' mesa, the ashfall's
 burnt snag, the caldera's basalt columns, the shallows' coral, the
 jungle's broadleaf, the spore field's cap and the crystal barrens' shard
 — so a prop's size is its health (`PROP_HP`, by footprint, the same in
-every theme) and its family is its map. The auxiliaries are a 2-tile and
-a 1-tile kind of the theme's own (a log and a stump, a drift and an ice
+every biome) and its family is its map. The auxiliaries are a 2-tile and
+a 1-tile kind of the biome's own (a log and a stump, a drift and an ice
 shard, a flow tongue and a lava bomb…) that also stand at the shore. The
 rock is the boulder, rock, outcrop, knoll, crag and tor, in the rock
-tone of the wall family under it. Nothing else crosses a theme; the made
+tone of the wall family under it. Nothing else crosses a biome; the made
 kinds belong to the sites (`sites.md`), and the older kinds above stay
 for the authored maps and the editor.
 
@@ -85,15 +85,15 @@ by one mark, the stones' own three: plain, a face catching the light
 up-right, hollows on the shaded side. The 1-, 2- and 3-tile kinds carry
 three paintings, the 4-tile two, the 6- and 10-tile one.
 
-**The families live in two slots on the sheet, not in cells of their
+**The families live in three slots on the sheet, not in cells of their
 own.** Ten families at ten tiles would not fit the atlas, and a board
-carries at most two themes (`random-maps.md`, the blend), so the atlas
-reserves two sets of family cells (`FAMILY_SETS`) and the renderer draws
-the board's themes into them when it builds the terrain
-(`ensureFamilies`, then the texture is uploaded again). The six- and
-ten-tile paintings sit at 1x in their cells, the rest at 2x like every
-other prop. A document that stands a third theme's kinds draws them from
-the first slot.
+carries at most three biomes (`random-maps.md`, the blends), so the atlas
+reserves three sets of family cells (`FAMILY_SETS`) and the renderer draws
+the board's biomes into them when it builds the terrain
+(`ensureFamilies`, then the texture is uploaded again). A painting six
+tiles or more sits at 1x in its cell, slot or not, the rest at 2x. A
+document that stands a fourth biome's kinds draws them from the first
+slot.
 
 **Nature kinds are tinted, made kinds carry their paint.** A nature prop
 is painted in four greys and multiplied at draw time by its `tone`
@@ -118,20 +118,20 @@ wears (`rollRot`).
 ## How a board is decorated
 
 The generator's props stage runs after the ruins and before the spawn
-layer, from the theme's `PropSpec` (which kinds, in which tones, how
+layer, from each biome's `PropSpec` (which kinds, in which tones, how
 thick):
 
-1. **The fringe forest.** Rock beside the theme's forest floors, in
+1. **The fringe forest.** Rock beside a biome's forest floors, in
    the noise's shape and `depth` cells in, is tiled into props — oaks
    where three cells square are free, trees where two, shrubs on the
-   rest. It was rock, so no lane is the narrower for it. Every theme
+   rest. It was rock, so no lane is the narrower for it. Every biome
    has one now; the deserts' are thin scrub.
 2. **What is kept clear.** The core's yard, every door's apron, each
    ground door's shortest walk to the core (three cells either side),
    and along the widest way from each door a lane as wide as the checks
    want (`routeMin`). Props go nowhere in that mask, which is why a
    board the checks passed still passes with the props on it.
-3. **The sites.** One to three (`siteCount`) of the theme's big made
+3. **The sites.** One to three (`siteCount`) of the first biome's big made
    kinds, each with three to seven pieces of its `litter` scattered
    round it. A site that would wall off a room — the ground the core
    can reach shrinking by more than what was stood on it — is taken up
@@ -160,7 +160,7 @@ written by `npm run gen:tiles` (`public/tiles/prop-<kind>-<tone>.png`).
 
 ## At the shore
 
-A theme names its water's-edge kinds (`PropSpec.shore`), and the shore pass
+A biome names its water's-edge kinds (`PropSpec.shore`), and the shore pass
 stands them on the shallows within two cells of dry ground and on the dry
 ground a cell off the water, off the routes. A bed on the shallows blocks
 like any other prop; one that shuts a room is lifted with the rest, and a

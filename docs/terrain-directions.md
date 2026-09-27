@@ -253,7 +253,7 @@ eight floor families with six rock families of their own were added
 (`tiles.ts`, appended in `atlas.ts` so every index on disk still means
 what it did): loam, dust, flint, clay, peat, bog, cinder and chalk on the
 floor; flint, clay, peat, cinder, chalk and loam as rock. None is a
-Mindustry floor. The random maps' eight themes are built on them
+Mindustry floor. The random maps' biomes are built on them
 (`docs/random-maps.md`).
 
 ### The seams

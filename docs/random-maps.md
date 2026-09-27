@@ -16,25 +16,28 @@ by their spec files; in the game they are **the bank** (`BANK_WORLDS` in
 On the authored 256 board, scaled onto the 512 grid by `scaleSpec` like
 every spec:
 
-- **A theme** — one of ten (`THEMES`): meadow, salt pan, tundra,
+- **A biome** — one of ten (`BIOMES`): meadow, salt pan, tundra,
   badlands, ashfall, caldera, shallows, jungle, spore field and crystal
   barrens. Each names its floor families with their rock, its beach and
   flats floors, its forest fringe, its water and its ruin count, and owns
   one prop family (`props.md`, "The roster"). The families are the
   game's own (`docs/terrain-directions.md`); the fourth batch of floors
-  and rock was painted for the last five themes. The shallows hold the
+  and rock was painted for the last five biomes. The shallows hold the
   water high and nearly all of it shallow, so the ground bodies wade.
-- **A second theme**, two rolls in three, drawn from the first's `kin`
-  (a meadow may carry jungle or badlands, a tundra crystal barrens, and
-  so on) over a fifth to two fifths of the board. Where it lies is a slow
+- **A second biome**, on every board, drawn from the first's `kin` (a
+  meadow carries jungle or badlands, a tundra crystal barrens, and so
+  on) over a fifth to two fifths of the board. Where it lies is a slow
   warped noise cut at that share; across the band round the cut the two
-  themes interfinger on a fine noise rather than meeting at a line, so a
-  meadow runs out into jungle in tongues and patches. A cell reads its
-  own theme for its floor family, its rock, its beach and flats, its
-  fringe forest and its props; the sites, the water and the name are the
-  first theme's.
+  biomes interfinger on a fine noise rather than meeting at a line, so a
+  meadow runs out into jungle in tongues and patches.
+- **A third biome**, one board in three, kin of the first or the second
+  and neither of them, over a tenth to a fifth of the board on a noise
+  of its own, laid over the other two. A board never carries more than
+  three (`FAMILY_SETS`, `props.md`). A cell reads its own biome for its
+  floor family, its rock, its beach and flats, its fringe forest and its
+  props; the sites, the water and the name are the first biome's.
 - **A shape** — one of six archetypes (`ARCHETYPES`), rolled apart from
-  the theme: highlands (rooms and lanes through thick rock, the board as
+  the biome: highlands (rooms and lanes through thick rock, the board as
   it was), canyons (rock everywhere, fine and twisting), plains (open
   ground with rock in lumps), isles (the sea everywhere, the land in
   islands), crater (one great bowl round the core) and warren (a fine
@@ -42,7 +45,7 @@ every spec:
   feature size, the room count and size, the core room, the links,
   holes and lumps, the water level and the floor patch size. Two boards
   of different shapes are different places; two of one shape still
-  differ in their theme, doors and rooms. The name is a theme word and,
+  differ in their biomes, doors and rooms. The name is a biome word and,
   half the time, the shape's noun.
 - **The core**, anywhere in the middle band (64 to 192 on either axis).
   It is not walled in and names no funnel: the swarm comes from every
@@ -62,8 +65,8 @@ every spec:
   it lies against the base.
 - **One or two more clearings**, up to four links between clearings 36
   to 110 apart, five to nine holes, eight to sixteen lumps, and the
-  theme's ruins.
-- **The props** (`props.md`): the theme's forest on the rock fringe, its
+  biome's ruins.
+- **The props** (`props.md`): each biome's forest on its rock fringe, its
   thickets, stones, wrecks and litter on the open ground, clear of every
   lane the checks measure.
 

@@ -52,7 +52,7 @@ export const PROP_TONES: readonly PropTone[] = [
   { id: "film", label: "Mossed", hex: "#dbe2c7" },
   { id: "ochre", label: "Ochre dust", hex: "#efd8c2" },
   ...WALL_KINDS.map((k) => ({ id: `rock-${k}`, label: `${k} rock`, hex: mix(WALL_STYLE[k].face, WALL_STYLE[k].light, 0.6) })),
-  // the themes' own tones (THEME_PROPS), after the rock tones so ROCK_TONE0 holds
+  // the biomes' own tones (BIOME_PROPS), after the rock tones so ROCK_TONE0 holds
   { id: "cactus", label: "Cactus", hex: leaf("#8fae6a") },
   { id: "ice", label: "Ice", hex: "#d6e4f2" },
   { id: "mesa", label: "Mesa", hex: "#c9865a" },
@@ -75,7 +75,7 @@ export const TONE = {
 export const ROCK_TONE0 = 12;
 export const rockTone = (k: WallKind): number => ROCK_TONE0 + WALL_KINDS.indexOf(k);
 const FTONE0 = ROCK_TONE0 + WALL_KINDS.length;
-/** the themes' tones, by index (see PROP_TONES) */
+/** the biomes' tones, by index (see PROP_TONES) */
 export const FTONE = {
   cactus: FTONE0, ice: FTONE0 + 1, mesa: FTONE0 + 2, basalt: FTONE0 + 3,
   coralRed: FTONE0 + 4, coralOrange: FTONE0 + 5, coralYellow: FTONE0 + 6, coralPurple: FTONE0 + 7,
@@ -301,8 +301,8 @@ export interface PropDef {
   tones: readonly number[];
   /** the corner map's colour for a made prop (a tinted one reads its tone) */
   mini?: string;
-  /** a theme's own kind: drawn from that theme's slot on the sheet (atlas.ts FAMILY_SETS), not a cell of its own */
-  family?: { theme: string; slot: string };
+  /** a biome's own kind: drawn from that biome's slot on the sheet (atlas.ts FAMILY_SETS), not a cell of its own */
+  family?: { biome: string; slot: string };
   paint: (s: Sheet, rng: () => number, variant: number) => void;
 }
 
@@ -311,7 +311,7 @@ const nature = (id: string, label: string, tiles: PropTiles, reach: number, tone
 const made = (id: string, label: string, tiles: PropTiles, mini: string, paint: PropDef["paint"]): PropDef =>
   ({ id, label, tiles, reach: tiles, turns: true, variants: 1, tinted: false, tones: WEATHER_TONES, mini, paint });
 
-// ---------- the themes' families (docs/props.md, "The roster") ----------
+// ---------- the biomes' families (docs/props.md, "The roster") ----------
 // One silhouette under one shading: pieces go into a mask and the mask's
 // union gets the bands, so nothing is drawn inside the outline but the one
 // mark a painting may carry. No shadow: the renderer casts the prop's.
@@ -484,7 +484,7 @@ export const FAMILY_SLOTS: readonly { key: string; tiles: PropTiles; reach: numb
   { key: "a0", tiles: 2, reach: 3, variants: 3 },
   { key: "a1", tiles: 1, reach: 1.75, variants: 3 },
 ];
-export interface ThemeProps {
+export interface BiomeProps {
   /** the family's kind ids are `${family}${tiles}`; the auxiliaries their own */
   family: string;
   label: string;
@@ -494,8 +494,8 @@ export interface ThemeProps {
   tones: readonly number[];
   auxTone: number;
 }
-/** one family a theme, two auxiliaries, and the rock shared by all (docs/props.md) */
-export const THEME_PROPS: Readonly<Record<string, ThemeProps>> = {
+/** one family a biome, two auxiliaries, and the rock shared by all (docs/props.md) */
+export const BIOME_PROPS: Readonly<Record<string, BiomeProps>> = {
   meadow: { family: "canopy", label: "Canopy", paint: dense, tones: [TONE.pine], auxTone: TONE.bark,
     aux: [{ id: "mlog", label: "Log", paint: LOG }, { id: "mstump", label: "Stump", paint: STUMP }] },
   saltpan: { family: "cactus", label: "Cactus", paint: cactus, tones: [FTONE.cactus], auxTone: FTONE.bleached,
@@ -517,17 +517,17 @@ export const THEME_PROPS: Readonly<Record<string, ThemeProps>> = {
   crystal: { family: "shard", label: "Shard", paint: shards, tones: [FTONE.crystal], auxTone: FTONE.crystal,
     aux: [{ id: "column", label: "Broken column", paint: shaped(0.1, -0.3, (m, rng, c, R) => m.poly(slab(c, c, R * 1.9, R * 0.9, rng() * 3.14), MID)) }, { id: "sliver", label: "Sliver", paint: shaped(0.1, -0.3, (m, rng, c, R) => m.poly(slab(c, c, R * 1.8, R * 0.6, rng() * 3.14), MID)) }] },
 };
-export const THEME_IDS: readonly string[] = Object.keys(THEME_PROPS);
-const themeKind = (theme: string, slot: (typeof FAMILY_SLOTS)[number], id: string, label: string, tones: readonly number[], fam: Fam): PropDef => {
+export const BIOME_IDS: readonly string[] = Object.keys(BIOME_PROPS);
+const biomeKind = (biome: string, slot: (typeof FAMILY_SLOTS)[number], id: string, label: string, tones: readonly number[], fam: Fam): PropDef => {
   const n = Math.round(slot.reach * PROP_PX), c = n / 2, R = c - 6;
-  return { id, label, tiles: slot.tiles, reach: slot.reach, turns: false, variants: slot.variants, tinted: true, tones, family: { theme, slot: slot.key }, paint: (s, rng, v) => fam(s, rng, c, R, v) };
+  return { id, label, tiles: slot.tiles, reach: slot.reach, turns: false, variants: slot.variants, tinted: true, tones, family: { biome, slot: slot.key }, paint: (s, rng, v) => fam(s, rng, c, R, v) };
 };
-const THEME_KINDS: readonly PropDef[] = THEME_IDS.flatMap((theme) => {
-  const tp = THEME_PROPS[theme];
+const BIOME_KINDS: readonly PropDef[] = BIOME_IDS.flatMap((biome) => {
+  const tp = BIOME_PROPS[biome];
   return [
-    ...FAMILY_SLOTS.slice(0, 6).map((slot) => themeKind(theme, slot, `${tp.family}${slot.tiles}`, `${tp.label} ${slot.tiles}`, tp.tones, tp.paint)),
-    themeKind(theme, FAMILY_SLOTS[6], tp.aux[0].id, tp.aux[0].label, [tp.auxTone], tp.aux[0].paint),
-    themeKind(theme, FAMILY_SLOTS[7], tp.aux[1].id, tp.aux[1].label, [tp.auxTone], tp.aux[1].paint),
+    ...FAMILY_SLOTS.slice(0, 6).map((slot) => biomeKind(biome, slot, `${tp.family}${slot.tiles}`, `${tp.label} ${slot.tiles}`, tp.tones, tp.paint)),
+    biomeKind(biome, FAMILY_SLOTS[6], tp.aux[0].id, tp.aux[0].label, [tp.auxTone], tp.aux[0].paint),
+    biomeKind(biome, FAMILY_SLOTS[7], tp.aux[1].id, tp.aux[1].label, [tp.auxTone], tp.aux[1].paint),
   ];
 });
 
@@ -924,18 +924,18 @@ export const PROP_KINDS: readonly PropDef[] = [
   nature("knoll", "Knoll", 4, 5.5, ROCK_TONES, (s, rng, v) => {
     stone(s, rng, 88, 89, 80, 70, v);
   }, STONE_VARIANTS),
-  ...THEME_KINDS,
+  ...BIOME_KINDS,
 ];
-/** the kinds a theme owns: its family's six footprints and its two auxiliaries */
-export const familyKinds = (theme: string): number[] => {
+/** the kinds a biome owns: its family's six footprints and its two auxiliaries */
+export const familyKinds = (biome: string): number[] => {
   const out: number[] = [];
-  PROP_KINDS.forEach((k, i) => { if (k.family?.theme === theme) out.push(i); });
+  PROP_KINDS.forEach((k, i) => { if (k.family?.biome === biome) out.push(i); });
   return out;
 };
-/** the themes a board's props belong to, the most common first */
-export function themesOf(props: readonly { kind: number }[]): string[] {
+/** the biomes a board's props belong to, the most common first */
+export function biomesOf(props: readonly { kind: number }[]): string[] {
   const count = new Map<string, number>();
-  for (const p of props) { const th = PROP_KINDS[p.kind]?.family?.theme; if (th) count.set(th, (count.get(th) ?? 0) + 1); }
+  for (const p of props) { const th = PROP_KINDS[p.kind]?.family?.biome; if (th) count.set(th, (count.get(th) ?? 0) + 1); }
   return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([th]) => th);
 }
 /** what a fresh prop's `rot` rolls to: a quarter turn for a kind that turns, a painting otherwise */

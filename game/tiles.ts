@@ -82,7 +82,7 @@ export type FloorKind =
   | "bog"
   | "cinder"
   | "chalk"
-  // the fourth batch: the ten themes' own ground (docs/random-maps.md)
+  // the fourth batch: the ten biomes' own ground (docs/random-maps.md)
   | "scoria"
   | "obsidian"
   | "shoal"
@@ -390,7 +390,7 @@ export type WallKind =
   | "cinder"
   | "chalk"
   | "loam"
-  // the fourth batch, one or two a theme (docs/random-maps.md)
+  // the fourth batch, one or two a biome (docs/random-maps.md)
   | "scoria"
   | "obsidian"
   | "reef"

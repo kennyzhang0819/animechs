@@ -149,14 +149,14 @@ on this game's document shape:
    walker uses, so the routes are unchanged. `ruins` are rectangles of
    basalt with broken dark walls, placed only where a route's width of
    open ground surrounds them. The in-game generator then stands the
-   theme's props on the open ground, clear of every lane (`props.md`);
+   biome's props on the open ground, clear of every lane (`props.md`);
    the authoring script still writes the old clutter, which the loader
    ignores.
 9. **Checks**, then the document.
 
 ## The campaign maps
 
-Four specs, four themes. Every one is `scripts/maps/<id>.mjs`. Five more —
+Four specs, four biomes. Every one is `scripts/maps/<id>.mjs`. Five more —
 Greenwood, Tundra, Crater, Riverlands and Estuary — were deleted: they were
 shelved holds on undressed ground and nothing played them.
 

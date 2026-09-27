@@ -391,7 +391,7 @@ export const FLOOR_GROUPS: readonly ({ kind: FloorKind; slots: number } | { wate
   { kind: "bog", slots: 3 },
   { kind: "cinder", slots: 3 },
   { kind: "chalk", slots: 3 },
-  // the fourth batch: the ten themes' own ground (tiles.ts)
+  // the fourth batch: the ten biomes' own ground (tiles.ts)
   { kind: "scoria", slots: 3 },
   { kind: "obsidian", slots: 3 },
   { kind: "shoal", slots: 3 },
@@ -627,52 +627,53 @@ const PROP_INSET = 4;
 /** one cell a painting of a kind, its 32px-a-tile art at 2x (propArt.ts
  *  PROP_KINDS), indexed by a prop's `kind` then its painting; the renderer
  *  maps the whole cell onto a `reach * CELL` quad centred on the footprint */
+// a painting six tiles or more sits at 1x on the sheet, the rest at 2x: the big
+// kinds were a fifth of it at 2x, and drawCell scales a canvas to its cell
+const propCellPx = (tiles: number, reach: number): number => Math.round(reach * (tiles >= 6 ? 32 : 64));
 export const UV_PROPS: readonly (readonly UVRect[])[] = PROP_KINDS.map((k) =>
   k.family
     ? []
-    : Array.from({ length: k.variants }, (_, v) => tile(`prop-${k.id}-${v}`, Math.round(k.reach * 64), PROP_INSET)),
+    : Array.from({ length: k.variants }, (_, v) => tile(`prop-${k.id}-${v}`, propCellPx(k.tiles, k.reach), PROP_INSET)),
 );
 /**
- * THE FAMILY SLOTS. A theme's family (propArt.ts THEME_PROPS) is nine kinds
- * and ten themes of them would not fit the sheet, so two sets of slots are
- * reserved — a board carries at most two themes (mapgen.ts, the blend) —
- * and the rolled themes' paintings are drawn into them when a level's
- * terrain is built (ensureFamilies). The six- and ten-tile paintings sit
- * at 1x; everything else at the 2x the standing kinds get.
+ * THE FAMILY SLOTS. A biome's family (propArt.ts BIOME_PROPS) is nine kinds
+ * and ten biomes of them would not fit the sheet, so three sets of slots are
+ * reserved — a board carries at most three biomes (mapgen.ts, the blends) —
+ * and the rolled biomes' paintings are drawn into them when a level's
+ * terrain is built (ensureFamilies).
  */
-export const FAMILY_SETS = 2;
-const familyCellPx = (tiles: number, reach: number): number => Math.round(reach * (tiles >= 6 ? 32 : 64));
+export const FAMILY_SETS = 3;
 const FAMILY_UV: readonly Map<string, readonly UVRect[]>[] = Array.from({ length: FAMILY_SETS }, (_, s) => {
   const m = new Map<string, readonly UVRect[]>();
   for (const slot of FAMILY_SLOTS)
-    m.set(slot.key, Array.from({ length: slot.variants }, (_, v) => tile(`family${s}-${slot.key}-${v}`, familyCellPx(slot.tiles, slot.reach), PROP_INSET)));
+    m.set(slot.key, Array.from({ length: slot.variants }, (_, v) => tile(`family${s}-${slot.key}-${v}`, propCellPx(slot.tiles, slot.reach), PROP_INSET)));
   return m;
 });
 const familyLoaded: (string | null)[] = Array.from({ length: FAMILY_SETS }, () => null);
 let sheet: CanvasRenderingContext2D | null = null;
-/** the cell a kind's painting is drawn from: its own, or its theme's slot */
+/** the cell a kind's painting is drawn from: its own, or its biome's slot */
 export function propUV(kind: number, variant: number): UVRect {
   const def = PROP_KINDS[kind];
   if (!def.family) { const cells = UV_PROPS[kind]; return cells[variant % cells.length]; }
-  let s = familyLoaded.indexOf(def.family.theme);
+  let s = familyLoaded.indexOf(def.family.biome);
   if (s < 0) s = 0;
   const cells = FAMILY_UV[s].get(def.family.slot)!;
   return cells[variant % cells.length];
 }
 /**
- * Draw these themes' families into the slot sets, oldest set replaced
+ * Draw these biomes' families into the slot sets, oldest set replaced
  * first. True when the sheet changed and the texture wants uploading again.
  */
-export function ensureFamilies(themes: readonly string[]): boolean {
+export function ensureFamilies(biomes: readonly string[]): boolean {
   if (!sheet) return false;
-  const want = themes.slice(0, FAMILY_SETS);
+  const want = biomes.slice(0, FAMILY_SETS);
   let changed = false;
-  for (const theme of want) {
-    if (familyLoaded.includes(theme)) continue;
+  for (const biome of want) {
+    if (familyLoaded.includes(biome)) continue;
     let s = familyLoaded.findIndex((l) => l === null || !want.includes(l));
     if (s < 0) s = 0;
-    familyLoaded[s] = theme;
-    for (const k of familyKinds(theme)) {
+    familyLoaded[s] = biome;
+    for (const k of familyKinds(biome)) {
       const def = PROP_KINDS[k], cells = FAMILY_UV[s].get(def.family!.slot)!;
       cells.forEach((uv, v) => {
         const cell = cellOf(uv);
