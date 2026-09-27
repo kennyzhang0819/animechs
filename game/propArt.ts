@@ -531,6 +531,28 @@ const BIOME_KINDS: readonly PropDef[] = BIOME_IDS.flatMap((biome) => {
   ];
 });
 
+
+// ---------- the made kinds and the sites' pieces, under the same rule ----------
+// one silhouette in the material's three bands; a big one may carry one panel
+type Pal = { hi: Col; mid: Col; lo: Col };
+type Panel = (s: Sheet, c: number, R: number) => void;
+const madeShape = (pal: Pal, litAt: number, darkAt: number, draw: (m: Sheet, rng: () => number, c: number, R: number) => Panel | void) =>
+  (s: Sheet, rng: () => number): void => {
+    const n = s.n, c = n / 2, R = c - 5;
+    const m = new Sheet(n);
+    const panel = draw(m, rng, c, R);
+    // straight band edges: a wandering edge reads as blotches on metal and concrete
+    const shade = (x: number, y: number): Col => { const q = ((x + 0.5 - c) - (y + 0.5 - c)) / (2 * R); return q > litAt ? LIGHT : q < darkAt ? DARK : MID; };
+    for (let y = 0; y < n; y++)
+      for (let x = 0; x < n; x++) {
+        if (!m.at(x, y)) continue;
+        const b = shade(x, y);
+        s.put(x, y, b === LIGHT ? pal.hi : b === DARK ? pal.lo : pal.mid);
+      }
+    if (panel) panel(s, c, R);
+  };
+const along = (c: number, a: number, d: number, w = 0): Pt => [c + Math.cos(a) * d - Math.sin(a) * w, c + Math.sin(a) * d + Math.cos(a) * w];
+
 /**
  * THE KINDS. APPEND ONLY — a prop's kind is its index here, in every
  * document on disk. A painting is `reach * PROP_PX` square and stays
@@ -596,190 +618,71 @@ export const PROP_KINDS: readonly PropDef[] = [
     canopy(s, rng, 95, 47, 29, 7);
     canopy(s, rng, 79, 99, 31, 8);
   }),
-  made("crate", "Crate", 1, "#6e6a49", (s) => {
-    s.rect(4, 4, 24, 24, CRATE.mid);
-    s.rect(4, 4, 24, 4, CRATE.hi);
-    s.rect(24, 4, 4, 24, CRATE.hi);
-    s.rect(4, 24, 24, 4, CRATE.lo);
-    s.rect(4, 4, 4, 24, CRATE.lo);
-    s.rect(14, 4, 4, 24, STEEL.lo);
-    s.rect(4, 14, 24, 4, STEEL.lo);
-  }),
-  made("barrels", "Barrels", 2, "#7a4a30", (s) => {
-    s.disc(46, 50, 10, 6, SPILL);
-    const drum = (cx: number, cy: number, body: Col, hi: Col): void => {
-      s.disc(cx, cy, 13, 13, STEEL.lo);
-      s.disc(cx, cy, 10, 10, (_x, _y, u, v) => (u - v > 0.5 ? hi : body));
-      s.disc(cx, cy, 3.5, 3.5, STEEL.deep);
-    };
-    drum(22, 22, RUST.mid, RUST.hi);
-    drum(44, 27, STEEL.mid, STEEL.hi);
-    drum(29, 46, RUST.mid, RUST.hi);
-  }),
-  made("scrap", "Scrap pile", 2, "#4a5158", (s) => {
-    s.disc(32, 35, 26, 21, STEEL.lo);
-    s.disc(20, 44, 8, 5, RUST.lo);
-    s.box(26, 30, 24, 12, 0.35, STEEL.mid);
-    s.box(41, 37, 18, 10, -0.6, STEEL.hi);
-    s.box(31, 44, 16, 9, 1.2, RUST.mid);
-    s.bar([13, 22], [50, 15], 6, STEEL.hi);
-    s.ring(46, 26, 8, 4, STEEL.hi);
-    for (const [dx, dy] of [[0, -9], [9, 0], [0, 9], [-9, 0]] as const) s.rect(46 + dx - 2, 26 + dy - 2, 4, 4, STEEL.hi);
-    s.rect(26, 27, 5, 5, STEEL.deep);
-  }),
-  made("mast", "Fallen mast", 2, "#6e777e", (s) => {
-    s.rect(6, 42, 16, 16, CONCRETE.mid);
-    s.rect(6, 42, 16, 4, CONCRETE.hi);
-    s.rect(18, 42, 4, 16, CONCRETE.hi);
-    s.rect(6, 54, 16, 4, CONCRETE.lo);
-    const a: Pt = [14, 50], b: Pt = [50, 14];
-    s.bar(a, b, 9, STEEL.mid);
-    for (const t of [0.25, 0.45, 0.65, 0.85]) {
-      const x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t;
-      s.bar([x - 4.5, y - 4.5], [x + 4.5, y + 4.5], 4, STEEL.deep);
+  made("crate", "Crate", 1, "#6e6a49", madeShape(CRATE, 0.25, -0.25, (m, rng, c, R) => { m.box(c, c, R * 1.7, R * 1.7, (rng() - 0.5) * 0.3, MID); })),
+  made("barrels", "Barrels", 2, "#7a4a30", madeShape(RUST, 0.2, -0.24, (m, rng, c, R) => {
+    const a0 = rng() * 6.28;
+    for (let i = 0; i < 3; i++) { const [x, y] = along(c, a0 + (i / 3) * 6.28, R * 0.42); m.disc(x, y, R * 0.5, R * 0.5, MID); }
+  })),
+  made("scrap", "Scrap pile", 2, "#4a5158", madeShape(STEEL, 0.2, -0.24, (m, rng, c, R) => { m.poly(lumpy(rng, c, c, R * 0.8, 0.9, 8, 0.2), MID); })),
+  made("mast", "Fallen mast", 2, "#6e777e", madeShape(STEEL, 0.2, -0.24, (m, rng, c, R) => {
+    const a = rng() * 3.14;
+    m.bar(along(c, a, -R * 0.85), along(c, a, R * 0.85), R * 0.28, MID);
+    const [x, y] = along(c, a, R * 0.62);
+    m.disc(x, y, R * 0.32, R * 0.32, MID);
+  })),
+  made("hull", "Wrecked hull", 3, "#5a6068", madeShape(STEEL, 0.2, -0.24, (m, rng, c, R) => {
+    const a = rng() * 3.14;
+    m.oval(c, c, R * 0.9, R * 0.6, a, MID);
+    const [sx, sy] = along(c, a, -R * 0.42);
+    m.disc(sx, sy, R * 0.5, R * 0.5, MID);
+    return (s) => { const [px, py] = along(c, a, R * 0.35); s.oval(px, py, R * 0.3, R * 0.2, a, GLASS); };
+  })),
+  made("silo", "Silo", 3, "#6e777e", madeShape(STEEL, 0.1, -0.3, (m, rng, c, R) => {
+    m.disc(c, c, R * 0.88, R * 0.88, MID);
+    const a = rng() * 6.28;
+    m.bar([c, c], along(c, a, R * 0.95), R * 0.22, MID);
+  })),
+  made("walker", "Dead walker", 4, "#5a6068", madeShape(STEEL, 0.2, -0.24, (m, rng, c, R) => {
+    const a = rng() * 3.14;
+    m.oval(c, c, R * 0.62, R * 0.45, a, MID);
+    for (const q of [0.7, -0.7, 3.14 + 0.7, 3.14 - 0.7]) {
+      const [kx, ky] = along(c, a + q, R * 0.8);
+      m.bar([c, c], [kx, ky], R * 0.2, MID);
+      m.disc(kx, ky, R * 0.14, R * 0.14, MID);
     }
-    s.disc(50, 14, 10, 10, STEEL.lo);
-    s.disc(50, 14, 7, 7, STEEL.hi);
-    s.rect(48, 12, 4, 4, STEEL.deep);
-  }),
-  made("hull", "Wrecked hull", 3, "#5a6068", (s) => {
-    s.disc(50, 50, 40, 33, SCORCH);
-    s.bar([24, 58], [10, 74], 8, STEEL.lo);
-    s.bar([72, 56], [86, 70], 8, STEEL.lo);
-    s.disc(10, 74, 6, 6, STEEL.deep);
-    s.disc(86, 70, 6, 6, STEEL.deep);
-    plate(s, 48, 46, 30, 24, STEEL.hi, STEEL.mid, STEEL.lo);
-    s.bar([30, 30], [44, 44], 4, STEEL.deep);
-    s.bar([44, 44], [40, 60], 4, STEEL.deep);
-    s.bar([40, 60], [56, 68], 4, STEEL.deep);
-    s.disc(46, 42, 7, 6, RUST.mid);
-    s.disc(38, 58, 6, 5, RUST.lo);
-    s.disc(48, 30, 9, 9, STEEL.lo);
-    s.disc(48, 30, 6, 6, GLASS);
-    s.rect(49, 26, 4, 4, GLINT);
-  }),
-  made("silo", "Silo", 3, "#6e777e", (s) => {
-    s.disc(46, 48, 36, 36, STEEL.lo);
-    plate(s, 46, 48, 32, 32, STEEL.hi, STEEL.mid, STEEL.lo, 0.5);
-    s.ring(46, 48, 22, 4, STEEL.deep);
-    s.bar([46, 58], [50, 78], 6, RUST.mid);
-    s.rect(38, 40, 16, 16, STEEL.deep);
-    s.rect(40, 42, 12, 12, STEEL.hi);
-    s.bar([76, 62], [86, 84], 8, STEEL.lo);
-    s.disc(86, 84, 6, 6, RUST.hi);
-  }),
-  made("walker", "Dead walker", 4, "#5a6068", (s) => {
-    s.disc(64, 68, 52, 44, SCORCH);
-    const leg = (hip: Pt, knee: Pt, foot: Pt): void => {
-      s.bar(hip, knee, 10, STEEL.lo);
-      s.bar(knee, foot, 10, STEEL.lo);
-      s.disc(knee[0], knee[1], 6, 6, STEEL.mid);
-      s.disc(foot[0], foot[1], 7, 7, STEEL.deep);
-    };
-    leg([44, 50], [24, 34], [18, 14]);
-    leg([84, 50], [104, 36], [112, 16]);
-    leg([44, 86], [26, 100], [16, 112]);
-    s.bar([84, 86], [98, 98], 10, STEEL.lo);
-    s.disc(98, 98, 6, 6, RUST.lo);
-    s.bar([104, 110], [120, 104], 10, STEEL.lo);
-    s.disc(104, 110, 6, 6, RUST.mid);
-    plate(s, 64, 68, 30, 26, STEEL.hi, STEEL.mid, STEEL.lo);
-    s.bar([40, 60], [88, 76], 4, STEEL.deep);
-    s.bar([52, 88], [76, 48], 4, STEEL.deep);
-    s.disc(46, 54, 7, 6, RUST.mid);
-    s.disc(84, 80, 6, 5, RUST.lo);
-    s.disc(64, 38, 12, 12, STEEL.lo);
-    s.rect(56, 36, 16, 4, STEEL.deep);
-    s.rect(62, 36, 4, 4, EYE);
-    s.bar([86, 60], [118, 44], 8, STEEL.lo);
-    s.ring(118, 44, 6, 3, STEEL.deep);
-  }),
-  made("bunker", "Ruined bunker", 4, "#8a857c", (s) => {
-    s.rect(8, 8, 112, 112, CONCRETE.mid);
-    s.rect(8, 8, 112, 4, CONCRETE.hi);
-    s.rect(116, 8, 4, 112, CONCRETE.hi);
-    s.rect(8, 116, 112, 4, CONCRETE.lo);
-    s.rect(8, 8, 4, 112, CONCRETE.lo);
-    s.rect(24, 24, 80, 80, CONCRETE.deep);
-    s.rect(24, 24, 80, 4, "#3d3a35");
-    s.rect(100, 24, 4, 80, "#3d3a35");
-    // the breach in the south wall, and what fell out of it
-    s.rect(56, 104, 28, 16, CONCRETE.deep);
-    for (const [x, y, r, c] of [[60, 110, 6, CONCRETE.hi], [72, 114, 5, CONCRETE.lo], [82, 108, 5, CONCRETE.hi], [66, 100, 4, CONCRETE.lo]] as const)
-      s.disc(x, y, r, r * 0.85, c);
-    s.rect(40, 12, 16, 4, CONCRETE.deep);
-    s.rect(72, 12, 16, 4, CONCRETE.deep);
-    s.bar([14, 60], [21, 92], 4, CONCRETE.deep);
-    s.ring(52, 64, 12, 4, STEEL.lo);
-    s.disc(52, 64, 8, 8, RUST.mid);
-    s.rect(86, 82, 10, 10, CRATE.mid);
-    s.rect(86, 82, 10, 3, CRATE.hi);
-  }),
-  made("wreck", "Crashed gunship", 6, "#5a6068", (s) => {
-    const ang = -0.49, ca = Math.cos(ang), sa = Math.sin(ang);
-    const cx = 96, cy = 98;
-    // along the axis (u, from tail to nose) and across it (v, left is -)
-    const P = (u: number, v: number): Pt => [cx + u * ca - v * sa, cy + u * sa + v * ca];
-    s.oval(cx, cy, 92, 48, ang, SCORCH);
-    // debris thrown clear
-    for (const [u, v, w, c] of [[-60, -44, 9, STEEL.mid], [20, 44, 8, RUST.mid], [66, -30, 7, STEEL.lo], [-84, 20, 8, STEEL.hi], [50, 40, 6, STEEL.mid]] as const)
-      s.box(P(u, v)[0], P(u, v)[1], w, w * 0.6, ang + u * 0.05, c);
-    // the snapped wing lying off the right side
-    s.poly([P(-14, 26), P(-2, 26), P(-30, 60), P(-46, 60), P(-34, 34)], STEEL.mid);
-    s.poly([P(-30, 60), P(-46, 60), P(-40, 48)], RUST.lo);
-    // the wing still on, swept back to the left, scorched at the tip
-    s.poly([P(6, -18), P(26, -18), P(-4, -66), P(-30, -66), P(-16, -30)], STEEL.mid);
-    s.poly([P(-4, -66), P(-30, -66), P(-18, -50)], RUST.lo);
-    s.bar(P(-2, -36), P(10, -36), 5, HAZARD);
-    s.bar(P(-10, -50), P(2, -50), 5, HAZARD);
-    s.disc(P(12, -30)[0], P(12, -30)[1], 11, 11, STEEL.lo);
-    s.disc(P(12, -30)[0], P(12, -30)[1], 6, 6, STEEL.deep);
-    // the tail fins
-    s.poly([P(-70, -8), P(-58, -8), P(-78, -30), P(-84, -28)], STEEL.lo);
-    s.poly([P(-70, 8), P(-58, 8), P(-76, 26), P(-82, 24)], STEEL.lo);
-    // the fuselage: lit along its top-right side, shaded along the other
-    s.poly([P(-76, -19), P(56, -19), P(76, -8), P(76, 8), P(56, 19), P(-76, 19)], STEEL.mid);
-    s.poly([P(-76, -19), P(56, -19), P(70, -11), P(-76, -8)], STEEL.hi);
-    s.poly([P(-76, 8), P(70, 11), P(56, 19), P(-76, 19)], STEEL.lo);
-    s.bar(P(-40, -19), P(-40, 19), 4, STEEL.deep);
-    s.bar(P(0, -19), P(0, 19), 4, STEEL.deep);
-    s.bar(P(-60, 0), P(-20, 4), 4, STEEL.deep);
-    s.disc(P(-26, 4)[0], P(-26, 4)[1], 8, 6, RUST.mid);
-    s.disc(P(40, -6)[0], P(40, -6)[1], 6, 5, RUST.lo);
-    s.disc(P(58, 0)[0], P(58, 0)[1], 9, 7, GLASS);
-    s.rect(P(60, -3)[0] - 2, P(60, -3)[1] - 2, 4, 4, GLINT);
-  }),
-  made("colossus", "Fallen colossus", 6, "#4a5158", (s) => {
-    s.disc(96, 100, 84, 74, SCORCH);
-    s.disc(96, 100, 74, 64, "#3d3936");
-    const leg = (hip: Pt, knee: Pt, foot: Pt): void => {
-      s.bar(hip, knee, 18, STEEL.lo);
-      s.bar(knee, foot, 16, STEEL.lo);
-      s.disc(knee[0], knee[1], 11, 11, STEEL.mid);
-      s.disc(knee[0], knee[1], 5, 5, STEEL.deep);
-      s.disc(foot[0], foot[1], 12, 12, STEEL.deep);
-      s.disc(foot[0], foot[1], 7, 7, STEEL.lo);
-    };
-    leg([60, 76], [30, 50], [22, 20]);
-    leg([132, 76], [160, 52], [168, 22]);
-    leg([60, 126], [28, 146], [24, 172]);
-    leg([132, 126], [158, 150], [166, 172]);
-    s.bar([138, 90], [176, 62], 14, STEEL.mid);
-    s.ring(176, 62, 9, 4, STEEL.lo);
-    plate(s, 96, 100, 46, 36, STEEL.mid, STEEL.lo, STEEL.deep, 0.55);
-    s.box(84, 92, 30, 18, 0.2, STEEL.mid);
-    s.box(112, 106, 26, 16, -0.4, STEEL.mid);
-    s.bar([60, 112], [130, 122], 4, STEEL.deep);
-    s.bar([70, 80], [126, 84], 4, STEEL.deep);
-    s.disc(70, 100, 10, 8, RUST.mid);
-    s.disc(118, 92, 8, 7, RUST.lo);
-    s.disc(126, 74, 7, 6, RUST.mid);
-    s.disc(96, 52, 20, 20, STEEL.mid);
-    s.disc(96, 52, 20, 20, (_x, _y, u, v) => (u - v > 0.6 ? STEEL.hi : null));
-    s.rect(78, 48, 36, 8, STEEL.deep);
-    s.rect(92, 48, 6, 6, EYE);
-    s.rect(88, 66, 16, 4, STEEL.deep);
-  }),
+    return (s) => { const [px, py] = along(c, a, R * 0.2); s.oval(px, py, R * 0.3, R * 0.2, a, GLASS); };
+  })),
+  made("bunker", "Ruined bunker", 4, "#8a857c", madeShape(CONCRETE, 0.25, -0.3, (m, rng, c, R) => {
+    const a = (rng() - 0.5) * 0.2;
+    m.box(c, c, R * 1.8, R * 1.8, a, MID);
+    return (s) => s.box(c, c, R * 0.9, R * 0.9, a, CONCRETE.deep);
+  })),
+  made("wreck", "Crashed gunship", 6, "#5a6068", madeShape(STEEL, 0.2, -0.24, (m, rng, c, R) => {
+    const a = rng() * 3.14;
+    m.oval(c, c, R * 0.9, R * 0.26, a, MID);
+    const [nx, ny] = along(c, a, R * 0.7);
+    m.disc(nx, ny, R * 0.26, R * 0.26, MID);
+    for (const side of [1, -1]) {
+      m.poly([along(c, a, R * 0.2), along(c, a, -R * 0.4, side * R * 0.8), along(c, a, -R * 0.68, side * R * 0.76), along(c, a, -R * 0.3)], MID);
+      m.poly([along(c, a, -R * 0.65), along(c, a, -R * 0.9, side * R * 0.34), along(c, a, -R * 0.9)], MID);
+    }
+    return (s) => { const [px, py] = along(c, a, R * 0.5); s.oval(px, py, R * 0.24, R * 0.16, a, GLASS); };
+  })),
+  made("colossus", "Fallen colossus", 6, "#4a5158", madeShape(STEEL, 0.2, -0.24, (m, rng, c, R) => {
+    const a = rng() * 3.14;
+    m.oval(c, c, R * 0.7, R * 0.48, a, MID);
+    const [hx, hy] = along(c, a, R * 0.68);
+    m.disc(hx, hy, R * 0.26, R * 0.26, MID);
+    for (const side of [1, -1]) {
+      const [ex, ey] = along(c, a + side * 1.1, R * 0.8);
+      m.bar(along(c, a, R * 0.3), [ex, ey], R * 0.22, MID);
+      m.disc(ex, ey, R * 0.15, R * 0.15, MID);
+      const [fx, fy] = along(c, a + 3.14 + side * 0.45, R * 0.78);
+      m.bar(along(c, a, -R * 0.3), [fx, fy], R * 0.26, MID);
+      m.disc(fx, fy, R * 0.17, R * 0.17, MID);
+    }
+    return (s) => s.oval(c, c, R * 0.36, R * 0.24, a, STEEL.deep);
+  })),
   // the bushes a thicket is made of: a canopy's lobes with no trunk under them
   nature("brush", "Brush", 2, 3, LEAF_TONES, (s, rng) => {
     canopy(s, rng, 48, 48, 43, 8, 0, false);
@@ -865,61 +768,27 @@ export const PROP_KINDS: readonly PropDef[] = [
   nature("tor", "Tor", 10, 11, ROCK_TONES, (s, rng) => {
     stone(s, rng, 176, 177, 166, 148, 1);
   }),
-  // the side sites' cache (docs/sites.md): a strongbox, banded and locked
-  made("chest", "Cache", 2, "#b8983a", (s) => {
-    s.disc(34, 40, 26, 18, SPILL);
-    s.rect(10, 12, 44, 40, CRATE.mid);
-    s.rect(10, 12, 44, 5, CRATE.hi);
-    s.rect(49, 12, 5, 40, CRATE.hi);
-    s.rect(10, 47, 44, 5, CRATE.lo);
-    s.rect(10, 12, 5, 40, CRATE.lo);
-    s.rect(10, 30, 44, 4, STEEL.lo);
-    s.rect(18, 12, 5, 40, HAZARD);
-    s.rect(41, 12, 5, 40, HAZARD);
-    s.rect(18, 30, 5, 4, EYE);
-    s.rect(41, 30, 5, 4, EYE);
-    s.rect(27, 26, 10, 12, STEEL.deep);
-    s.rect(29, 28, 6, 5, GLINT);
-  }),
+  // the side sites' cache (docs/sites.md): a strongbox, its lid banded in the hazard yellow
+  made("chest", "Cache", 2, "#b8983a", madeShape(CRATE, 0.25, -0.25, (m, _rng, c, R) => {
+    m.box(c, c, R * 1.7, R * 1.3, 0, MID);
+    return (s) => s.box(c, c, R * 1.7, R * 0.45, 0, HAZARD);
+  })),
   // ...and what a site is built out of (docs/sites.md): standing stones,
   // pillars, braziers and an altar. A stronghold's walls are rock, not props
   nature("menhir", "Standing stone", 2, 2.25, ROCK_TONES, (s, rng, v) => {
-    const a = v ? 0.4 : -0.25;
-    s.disc(40, 48, 24, 14, DEEP);
-    s.box(37, 36, 22, 54, a, DEEP);
-    s.box(36, 35, 18, 50, a, DARK);
-    s.box(34, 33, 13, 44, a, MID);
-    s.box(30, 30, 6, 36, a, LIGHT);
-    if (rng() < 0.6) s.box(42, 44, 5, 12, a, DEEP);
-    if (rng() < 0.5) s.box(33, 20, 4, 6, a, DEEP);
+    const n = s.n, c = n / 2, R = c - 6, a = v ? 0.4 : -0.25;
+    const m = union(s, rng, c, c, R, (mm) => mm.poly(slab(c, c, R * 1.9, R * 0.9, a + 1.57), MID), 0.18, -0.26);
+    mark(s, m, rng, 1, c, c, R);
   }, 2),
-  made("pillar", "Pillar", 1, "#b3aea3", (s) => {
-    s.disc(18, 19, 11, 8, SPILL);
-    s.disc(16, 16, 12, 12, CONCRETE.deep);
-    plate(s, 16, 16, 10, 10, CONCRETE.hi, CONCRETE.mid, CONCRETE.lo, 0.4);
-    s.disc(16, 16, 4, 4, CONCRETE.deep);
-    s.disc(15, 15, 2, 2, CONCRETE.hi);
-  }),
-  made("brazier", "Brazier", 1, "#c8501e", (s) => {
-    s.disc(17, 19, 12, 9, SPILL);
-    for (const [x, y] of [[8, 24], [24, 24], [16, 6]] as const) s.rect(x - 2, y - 2, 4, 4, STEEL.deep);
-    s.disc(16, 16, 11, 11, STEEL.deep);
-    s.ring(16, 16, 11, 3, STEEL.lo);
-    s.disc(16, 16, 7, 7, "#c8501e");
-    s.disc(15, 15, 4.5, 4.5, "#f2a13a");
-    s.disc(14, 14, 2, 2, "#fff0a0");
-  }),
-  made("altar", "Altar", 2, "#6d6960", (s) => {
-    s.rect(8, 12, 48, 44, SCORCH);
-    s.rect(8, 10, 48, 44, CONCRETE.lo);
-    s.rect(14, 8, 36, 40, CONCRETE.mid);
-    s.rect(14, 8, 36, 4, CONCRETE.hi);
-    s.rect(14, 44, 36, 4, CONCRETE.deep);
-    s.rect(20, 16, 24, 24, CONCRETE.deep);
-    s.rect(22, 18, 20, 20, "#4a2626");
-    s.rect(26, 22, 12, 12, "#6a2b2b");
-    s.rect(30, 26, 4, 4, HAZARD);
-  }),
+  made("pillar", "Pillar", 1, "#b3aea3", madeShape(CONCRETE, 0.15, -0.3, (m, _rng, c, R) => { m.disc(c, c, R * 0.9, R * 0.9, MID); })),
+  made("brazier", "Brazier", 1, "#c8501e", madeShape(STEEL, 0.2, -0.3, (m, _rng, c, R) => {
+    m.disc(c, c, R * 0.9, R * 0.9, MID);
+    return (s) => s.disc(c, c, R * 0.5, R * 0.5, "#e0662a");
+  })),
+  made("altar", "Altar", 2, "#6d6960", madeShape(CONCRETE, 0.25, -0.3, (m, _rng, c, R) => {
+    m.box(c, c, R * 1.8, R * 1.4, 0, MID);
+    return (s) => s.box(c, c, R * 0.9, R * 0.7, 0, "#4a2626");
+  })),
   // the rock's missing footprint, so the shared rock comes in every size a family does
   nature("knoll", "Knoll", 4, 5.5, ROCK_TONES, (s, rng, v) => {
     stone(s, rng, 88, 89, 80, 70, v);
