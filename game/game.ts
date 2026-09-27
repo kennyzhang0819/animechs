@@ -64,6 +64,8 @@ import {
   anyModOpen,
   maskRarity,
   MOD_ODDS,
+  MODS,
+  modsOfRarity,
   rollMod,
   type ModId,
 } from "./mods";
@@ -2106,12 +2108,15 @@ export class Game {
     const sites = sitesOf(this.world.terrain.marks);
     const site = sites[this.world.siteLast];
     if (!site) return;
-    const ids: ModId[] = [];
-    for (let tries = 0; ids.length < MOD_CHOICES && tries < 64; tries++) {
-      const id = rollMod(SITE_MOD_ODDS, Math.random);
-      if (!id) break;
-      if (!ids.includes(id)) ids.push(id);
-    }
+    // ONE RARITY FOR THE WHOLE TABLE: the roll is made once and all three
+    // are drawn from that band, since a table that mixed bands would have
+    // one real choice on it. The size's copy count covers all three too.
+    const first = rollMod(SITE_MOD_ODDS, Math.random);
+    if (!first) return;
+    const band = MODS.find((m) => m.id === first)!.rarity;
+    const pool = modsOfRarity(band).map((m) => m.id);
+    for (let k = pool.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); [pool[k], pool[j]] = [pool[j], pool[k]]; }
+    const ids: ModId[] = pool.slice(0, MOD_CHOICES);
     if (ids.length === 0) return;
     this.modOffer = { ids, copies: SITE_MOD_COPIES[site.size], from: SITE_DEFS[site.kind].name };
   }
@@ -4157,39 +4162,21 @@ export class Game {
    * thing drawn is a bomber run's line: the pad, the flight's line to the
    * cache, and the clock to launch, while the run is still on.
    */
+  /** a bomber run's clock, as a bar over the flight parked on its pad (sites.ts):
+   *  no line, no ring, no name — the pad, the flight and the cache are props and bodies */
   private drawSites(c: CanvasRenderingContext2D): void {
     const sites = sitesOf(this.world.terrain.marks);
     if (sites.length === 0) return;
     const w = this.world;
-    const px = 1 / (this.scale * this.zoom);
     c.save();
     c.beginPath();
     c.rect(0, 0, W, H);
     c.clip();
-    c.lineWidth = 2 * px;
-    c.font = `bold ${11 * px}px sans-serif`;
-    c.textAlign = "center";
-    c.textBaseline = "top";
-    c.strokeStyle = SPAWN_STYLE.css;
-    c.fillStyle = SPAWN_STYLE.css;
     for (const [n, s] of sites.entries()) {
-      if (!s.tier.bombers || w.siteState(n) !== 0) continue;
-      const x = (s.x + 1) * CELL, y = (s.y + 1) * CELL;
+      const launch = s.tier.launch ?? 0;
+      if (!s.tier.bombers || w.siteState(n) !== 0 || w.time >= launch) continue;
       const bx = (s.padX + 0.5) * CELL, by = (s.padY + 0.5) * CELL;
-      c.globalAlpha = 0.4;
-      c.setLineDash([8 * px, 8 * px]);
-      c.beginPath();
-      c.moveTo(bx, by);
-      c.lineTo(x, y);
-      c.stroke();
-      c.setLineDash([]);
-      c.beginPath();
-      c.arc(bx, by, 2 * CELL, 0, Math.PI * 2);
-      c.stroke();
-      const left = Math.max(0, (s.tier.launch ?? 0) - w.time);
-      const m = Math.floor(left / 60), sec = Math.floor(left % 60);
-      c.globalAlpha = 0.85;
-      c.fillText(`launch ${m}:${sec < 10 ? "0" : ""}${sec}`, bx, by + 2 * CELL + 4 * px);
+      this.drawBars(c, bx, by - 2.5 * CELL, 5 * CELL, [{ v: w.time / launch, col: SPAWN_STYLE.css }]);
     }
     c.restore();
   }

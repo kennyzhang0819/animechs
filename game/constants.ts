@@ -2479,7 +2479,7 @@ export const SHRAPNEL = {
 export const CORE_HP_SCALE = 4;
 export const CORE_HP = 6000 * CORE_HP_SCALE;
 
-export const BASE = { x: 120, y: 33, size: 6 };
+export const BASE = { x: 120, y: 33, size: 10 };
 /** every base is this many cells square */
 export const BASE_SIZE = BASE.size;
 

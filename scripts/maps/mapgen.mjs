@@ -213,7 +213,8 @@ const CLUTTER = {
   [FLOOR_BASALT]: [DECOR.shaleBoulder, DECOR.boulder],
 };
 const CELL = 20; // world px per cell (game/constants.ts)
-const CORE = 6; // the core's edge, in cells (BASE.size)
+const CORE = 10; // the core's edge, in cells (BASE.size)
+const CORE_LO = -(CORE >> 1), CORE_HI = CORE - (CORE >> 1) - 1;
 
 /**
  * THE MINIMUM THROUGH GAP, on land and at sea. An ironhide5 is UR*3.75 across
@@ -698,8 +699,8 @@ export function build(spec) {
   say(`gap ${GAP_GROUND}/${GAP_WATER}: silted ${silted} ground cells (${og.restored} notches kept), ${siltedSea} sea cells`);
 
   // the core's own ground, whatever the noise did to it
-  for (let y = core.y - 2; y <= core.y + 2; y++)
-    for (let x = core.x - 2; x <= core.x + 2; x++) kind[y * W + x] = OPEN;
+  for (let y = core.y + CORE_LO; y <= core.y + CORE_HI; y++)
+    for (let x = core.x + CORE_LO; x <= core.x + CORE_HI; x++) kind[y * W + x] = OPEN;
   disc(W, H, core.x, core.y, 5, (i) => { if (kind[i] === WALL) kind[i] = OPEN; if (kind[i] === DEEP) kind[i] = SHALLOW; });
 
   // inverse flood fill from the core
@@ -744,7 +745,7 @@ export function build(spec) {
   const walkMask = () => { const m = new Uint8Array(N); for (let i = 0; i < N; i++) m[i] = isWalk(i) ? 1 : 0; return m; };
   const groundPads = (z) => { const out = []; disc(W, H, z.x, z.y, z.r, (i) => { if (isWalk(i)) out.push(i); }); return out; };
   const groundZones = spec.spawns.filter((z) => z.zone === "ground");
-  const coreCells = () => { const out = []; for (let y = core.y - 2; y <= core.y + 2; y++) for (let x = core.x - 2; x <= core.x + 2; x++) out.push(y * W + x); return out; };
+  const coreCells = () => { const out = []; for (let y = core.y + CORE_LO; y <= core.y + CORE_HI; y++) for (let x = core.x + CORE_LO; x <= core.x + CORE_HI; x++) out.push(y * W + x); return out; };
   const walkFrom = () => {
     const d = distances(coreCells(), isWalk);
     return groundZones.map((z) => Math.min(...groundPads(z).map((i) => d[i])));
@@ -902,7 +903,7 @@ export function build(spec) {
   const ore = new Uint8Array(N);
   const veins = 0;
 
-  const base = { x: core.x - 2, y: core.y - 2 };
+  const base = { x: core.x + CORE_LO, y: core.y + CORE_LO };
   return { floor, wall, blocked, ore, kind, pines, decor, spawns: spec.spawns.map((z) => ({ x: z.x, y: z.y, r: z.r, zone: z.zone })), base, core, routes, ruins: ruins.length, holes, lumps, veins, log };
 }
 
@@ -919,7 +920,7 @@ export function check(spec, m) {
   const pads = (z, pass) => { const out = []; disc(W, H, z.x, z.y, z.r, (i) => { if (pass(i)) out.push(i); }); return out; };
 
   // the core: open, dry, off every zone, one cell in from the rim
-  say(coreCells.every((i) => walk(i) && !wet(i)), `core 5x5 at ${base.x},${base.y} is open dry ground`);
+  say(coreCells.every((i) => walk(i) && !wet(i)), `core ${CORE}x${CORE} at ${base.x},${base.y} is open dry ground`);
   say(spawns.every((z) => Math.hypot(z.x - m.core.x, z.y - m.core.y) > z.r + CORE), "no drop zone touches the core");
 
   // the hulls' goal: the water nearest the core, as the sim finds it

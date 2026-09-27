@@ -5677,6 +5677,7 @@ export class Sim {
         if (!this.spawnUnit(kind, { x: spot.x, y: spot.y, exact: true }, 0)) return -1;
         const i = this.n - 1;
         this.plantUnit(i);
+        this.hardenPlanted(i, true);
         this.usite[i] = idx + 1;
         this.urot[i] = Math.PI / 2;
         this.ubrot[i] = Math.PI / 2;
@@ -5696,6 +5697,24 @@ export class Sim {
           else this.siteBastions++;
         }
       for (let b = 0; b < (t.branders ?? 0); b++) plant("brander", 5 * CELL);
+      // THE FLIGHT SITS ON ITS PAD until the clock (runSites): parked bodies
+      // the board can see, shoot, and count down over (Game.drawSites)
+      if (t.bombers) {
+        const px = (site.padX + 0.5) * CELL, py = (site.padY + 0.5) * CELL, a = Math.atan2(y - py, x - px);
+        t.bombers.forEach((kind, b) => {
+          const off = (b - (t.bombers!.length - 1) / 2) * CELL * 1.6;
+          const bx = px - Math.sin(a) * off, by = py + Math.cos(a) * off;
+          if (!this.spawnUnit(kind, { x: bx, y: by, exact: true }, 0)) return;
+          const i = this.n - 1;
+          this.plantUnit(i);
+          this.usite[i] = idx + 1;
+          this.urot[i] = a;
+          this.ubrot[i] = a;
+          this.uheldRot[i] = a;
+          st.live++;
+          this.siteBombers++;
+        });
+      }
       const roster = Object.entries(t.guards ?? {}) as [UnitKind, number][];
       const total = roster.reduce((n, [, c]) => n + c, 0);
       let g = 0;
@@ -5718,19 +5737,19 @@ export class Sim {
       const t = st.site.tier;
       if (st.state !== 0 || !t.bombers || st.launched || this.time < (t.launch ?? 0)) continue;
       st.launched = true;
-      const px = (st.site.padX + 0.5) * CELL, py = (st.site.padY + 0.5) * CELL;
-      for (const kind of t.bombers) {
-        if (!this.spawnUnit(kind, { x: px + (Math.random() - 0.5) * CELL, y: py + (Math.random() - 0.5) * CELL, exact: true }, 0)) continue;
-        const i = this.n - 1;
-        this.usite[i] = s + 1;
+      // the parked flight lifts off: unbolted, aimed at the cache
+      for (let i = 0; i < this.n; i++) {
+        if (this.usite[i] !== s + 1 || this.ufly[i] === 0 || this.ugar[i] !== 2 || this.uhp[i] <= 0) continue;
+        this.ugar[i] = 0;
+        this.ufix[i] = 0;
         this.ugx[i] = st.x;
         this.ugy[i] = st.y;
-        const a = Math.atan2(st.y - py, st.x - px);
+        const a = Math.atan2(st.y - this.upy[i], st.x - this.upx[i]);
         this.urot[i] = a;
         this.ubrot[i] = a;
-        st.live++;
-        this.siteBombers++;
       }
+      // a flight shot down on the pad opens the cache the moment the clock would have launched it
+      if (st.live <= 0) this.openSite(s);
     }
     if (this.siteBombers === 0) return;
     const reach = this.coreHold() + CELL * 0.5;
@@ -5982,6 +6001,34 @@ export class Sim {
     this.ugarx[i] = this.upx[i];
     this.ugary[i] = this.upy[i];
     this.ugarr[i] = 0;
+  }
+
+  /**
+   * A PLANTED SITE BODY IS ROCK TO THE SWARM'S FIELDS: its cells go hard
+   * in the walkers' and the tanks' walk masks, so a wave routes round a
+   * house or a pylon instead of piling up behind it, and come back when
+   * it falls. Solid and never soft — nothing of the swarm's shoots it.
+   */
+  private hardenPlanted(i: number, on: boolean): void {
+    const hb = HB_OUTER[this.ukind[i]];
+    const size = Math.max(1, Math.round((hb * 2) / CELL));
+    const gx = Math.round(this.upx[i] / CELL - size / 2), gy = Math.round(this.upy[i] / CELL - size / 2);
+    const { blocked } = this.terrain;
+    const { walk } = this.field, nWalk = this.navalField.walk;
+    let changed = false;
+    for (let y = Math.max(0, gy); y < Math.min(ROWS, gy + size); y++)
+      for (let x = Math.max(0, gx); x < Math.min(COLS, gx + size); x++) {
+        const j = y * COLS + x;
+        if (blocked[j] || this.occupied[j]) continue;
+        walk[j] = on ? 1 : 0;
+        nWalk[j] = on ? 1 : 0;
+        changed = true;
+      }
+    if (!changed) return;
+    this.fieldDirty = true;
+    this.navalDirty = true;
+    this.unstickPending = true;
+    this.fieldQuiet = 0;
   }
 
   /** the way back to a post's middle from every cell inside its circle,
@@ -10725,6 +10772,7 @@ export class Sim {
     // handed the mission (skipToTime)
     if (this.ukind[i] === UNIT_ID.railgun && !this.crossSweeping) this.razeKilled++;
     if (FAB_HOUSE[this.ukind[i]] !== 0 && !this.crossSweeping) this.fabKilled++;
+    if (this.usite[i] > 0 && this.ugar[i] === 2 && this.ufly[i] === 0) this.hardenPlanted(i, false);
     if (this.usite[i] > 0 && this.ukind[i] === UNIT_ID.goad) this.siteGoads--;
     if (this.usite[i] > 0 && this.ukind[i] === UNIT_ID.bastion) this.siteBastions--;
     if (this.usite[i] > 0 && this.ufly[i] === 1) {
@@ -10732,7 +10780,7 @@ export class Sim {
       st.live--;
       this.siteBombers--;
       // the whole flight down before any of it arrived: the cache opens
-      if (st.live <= 0 && st.launched && st.state === 0) this.openSite(this.usite[i] - 1);
+      if (st.live <= 0 && st.state === 0) this.openSite(this.usite[i] - 1);
     }
     const cross = this.ucross[i];
     if (cross >= 0) {

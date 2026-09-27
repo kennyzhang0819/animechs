@@ -56,6 +56,8 @@ reorder.**
 | walker, bunker | 4 | a dead mech, a ruined emplacement |
 | wreck, colossus | 6 | a crashed gunship, a fallen giant |
 | chest | 2 | a side site's cache (docs/sites.md): the generator stands one at each site |
+| ziggurat, keep, temple, launchpad | 6 | a site's building (docs/sites.md): a stepped pyramid, a walled keep with four towers, a hall with a ridged roof and a portico, a round pad |
+| ziggurat-great, keep-great, temple-great | 10 | the same, for a large site |
 | menhir | 1 | a standing stone, tinted like the rock: a cairn's ring |
 | pillar, brazier | 1 | a column, an iron fire bowl: a shrine's furniture |
 | altar | 2 | a stained slab on a plinth |

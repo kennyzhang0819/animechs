@@ -802,8 +802,8 @@ export const UV_FIXER = flat("fixer", 64);
  */
 export const UV_TETHER_LASER = reserve("tether-laser", 24, 4, { art: [24, 4] });
 export const UV_TETHER_LASER_END = sprite("tether-laser-end", 32, 32);
-// the player's base, six cells square at 32 px a cell (propArt.ts coreCanvas)
-export const UV_BASE = flat("base", 192);
+// the player's base, ten cells square at 32 px a cell (propArt.ts coreCanvas)
+export const UV_BASE = flat("base", 320);
 
 /**
  * The bullet regions and the shell regions. Every one is packed WHITE and

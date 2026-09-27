@@ -15,7 +15,8 @@ Every site is the same skeleton:
 - a **ring**, `radius` cells round it, the circle the guards hold. It is
   NOT drawn, and neither is the site's name or size: what a site holds is
   learned by breaking a few, and how much is built round the cache is the
-  tell — a bigger site is a bigger build;
+  tell — a small site is a few props, a medium one has its kind's
+  building beside the cache and a large one the great version of it;
 - a **guard**, what the board has to get past to reach the cache;
 - a **reward**, three mods rolled at the sites' own odds, the same odds
   for every site (`SITE_MOD_ODDS`: 55% common, 30% uncommon, 12% rare, 3%
@@ -50,7 +51,7 @@ it.
 | **Sleeping house** | a dormant Fabricator six tiles off (`docs/mission-marks.md` says what waking one costs); the cache sits inside its blast | 40k, small house | 90k, large house | 180k, a large and a small |
 | **Shrine** | a Pylon five tiles off, and Wardens. Every ten seconds a Goad hastes every body within twenty-six tiles and a Bastion plates it (`levels.ts hasteField / armorField`), waves walking past included, until it falls. Local only: a site's pylon counts for nothing on the board at large (`Sim.goadMul`) | 40k, Goad | 100k, Bastion | 220k, both |
 | **Beacon** | a Brander five tiles off that burns any turret within twenty tiles, and Bulwarks | 40k, 1 Brander | 100k, 1 Brander 2 Bulwarks | 220k, 2 Branders, 2 Bulwarks 1 Halberd |
-| **Bomber run** | the cache is sealed against the board. On the clock a flight of Stoops launches from the pad and flies the drawn line at it; the first to arrive bombs it and the site is lost. Shoot every one down first and it opens | 1 T3 at 2:00, 60 cells out | T4 + T3 at 4:00, 90 out | T5 + 2 T4 at 7:00, 120 out |
+| **Bomber run** | the cache is sealed against the board. The flight sits parked on its launch pad from the first frame with the clock as a bar over it; on the clock it lifts off and flies at the cache, and the first to arrive bombs it and the site is lost. Shoot every one down, on the pad or in the air, and it opens | 1 T3 at 2:00, 60 cells out | T4 + T3 at 4:00, 90 out | T5 + 2 T4 at 7:00, 120 out |
 
 The Wardens are the garrison's (`docs/mission-marks.md`), posted the same
 way (`Sim.garrisonUnit`): they fight what the board builds inside the ring
@@ -75,18 +76,22 @@ off is taken up with its cache:
 
 - **Cairn**: a basalt disc under the cache, a ring of standing stones
   (`menhir`, tinted like the map's rock) at the edge of the circle,
-  boulders inside it.
-- **Mirror cache**: a basalt disc and nothing else — the plain one.
+  boulders inside it; a temple beside the cache from medium up.
+- **Mirror cache**: a basalt disc, and a temple from medium up.
 - **Sleeping house**: a cinder yard, a ring of rock two cells deep with
-  three openings, crates, barrels and scrap.
-- **Shrine**: a wide basalt floor, pillars, braziers round the rim and an
-  altar beside the cache from medium up.
+  three openings, crates, barrels and scrap; a keep from medium up.
+- **Shrine**: a wide basalt floor, pillars, braziers round the rim, an
+  altar beside the cache and a ziggurat from medium up.
 - **Beacon**: the widest yard, a thicker rock ring with more openings as
-  it grows, ruined bunkers, barrels.
-- **Bomber run**: crates round the cache; at the pad, a cinder apron with a
-  silo, barrels and a crate — a fuel dump at the end of the line.
+  it grows, ruined bunkers, barrels; a keep from medium up.
+- **Bomber run**: crates round the cache and a keep from medium up; at
+  the pad, a cinder apron with the launch pad, a silo, barrels and a
+  crate — the fuel dump the flight waits on.
 
-Every count above grows with the size, so the build is the size.
+The buildings are the `ziggurat`, `keep`, `temple` and `launchpad` kinds
+(`propArt.ts`), six tiles for a medium site and ten for a large one, so
+every count above and the building itself grow with the size: the build
+is the size.
 
 ## Rolling them
 
@@ -106,11 +111,17 @@ number of flips, an unlucky one down to none.
 | large | 6 | 25% | 1.5 | 1 in 6 | 1 in 4,000 |
 
 The board carries at most `MAX_SITES` (24). The largest are placed first,
-each a kind drawn at random, so kinds repeat. The cache stands in an open
-6x6 yard at least 26 cells in from the rim, 60 past the core, clear of
-every door's disc and every other site's ring, with at least six tenths of
-its ring on open ground; a site that finds no such ground is simply not
-placed, and one that walls a room off is taken up again like a junk site. A
+each a kind drawn at random, so kinds repeat. The cache stands in a 6x6
+yard at least 26 cells in from the rim, 60 past the core, clear of
+every door's disc and every other site's ring. An open yard wants six
+tenths of its ring on open ground. **A yard that is all rock is a site in
+a hill**: a pocket six tenths of the ring wide is carved out of the hill
+round the cache, open ground the core never reaches. That is the point —
+the guards are there to keep the cache, not to walk anywhere, and the
+rock round the pocket is where the turrets that take it stand. The
+generator's pocket pass and the orphan check both leave a site's pocket
+alone. A site that finds no ground is simply not placed, and one that
+walls a room off is taken up again like a junk site. A
 bomber run also needs a pad `flight` cells out that is on the board and off
 the core.
 
@@ -118,6 +129,11 @@ the core.
 
 Three header slots (`simreport.ts`): caches opened, the last opened by
 index, and every site's state two bits each (standing, opened, lost). The
-overlay (`Game.drawSites`) draws only a bomber run's pad, line and launch
-clock, off the marks and the run clock; `Game.offerSites` edge-detects the
-count and rolls the three.
+overlay (`Game.drawSites`) draws only a bomber run's launch clock, as a
+bar over the flight parked on its pad, off the marks and the run clock —
+no line, no ring, no name; `Game.offerSites` edge-detects the count and
+rolls the three: ONE rarity for all three (a mixed table is a table with
+one real choice on it) and the size's one copy count. A site's planted
+bodies — its house, pylon or brander — are rock to the swarm's fields
+(`Sim.hardenPlanted`), so a wave routes round them instead of piling up
+behind one, and the cells come back when the body falls.

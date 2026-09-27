@@ -213,7 +213,7 @@ that dips under `GAP_WATER` anywhere is silted shut there. Room indices are what
 A generator that does not verify itself is a generator that quietly ships a
 broken map. Every one of these is printed on every run:
 
-- **The core** is 6x6 open dry ground, off every drop zone; the loader clears its cells on any document.
+- **The core** is 10x10 open dry ground, off every drop zone; the loader clears its cells on any document.
 - **Every ground zone reaches the core; every water zone reaches the sea
   it is in and the water nearest the core.** The generator still measures
   the water zones over the water alone, which is stricter than the sim now

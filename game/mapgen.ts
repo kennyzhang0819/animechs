@@ -205,7 +205,9 @@ export const WALL_FUNGAL = 50;
 export const WALL_CRYSTAL_ROCK = 52;
 export const WALL_SLATE = 54;
 const WATER_FLOORS = [FLOOR_SHALLOW_WATER, FLOOR_DEEP_WATER, FLOOR_TAINTED_WATER, FLOOR_DEEP_TAINTED_WATER];
-const CORE = 6;
+const CORE = 10;
+/** the core's cells round its centre: CORE_LO..CORE_HI on either axis */
+const CORE_LO = -(CORE >> 1), CORE_HI = CORE - (CORE >> 1) - 1;
 export const GAP_GROUND = 5;
 export const GAP_WATER = 11;
 /** a spawn tile must sit on ground that reaches the core through corridors
@@ -721,9 +723,9 @@ export function build(spec: MapSpec): Built {
   }
   say(`gap ${GAP_GROUND}/${GAP_WATER}: silted ${silted} ground cells (${og.restored} notches kept), ${siltedSea} sea cells`);
 
-  for (let y = core.y - 2; y <= core.y + 2; y++)
-    for (let x = core.x - 2; x <= core.x + 2; x++) kind[y * W + x] = OPEN;
-  disc(core.x, core.y, 5, (i) => { if (kind[i] === WALL) kind[i] = OPEN; if (kind[i] === DEEP) kind[i] = SHALLOW; });
+  for (let y = core.y + CORE_LO; y <= core.y + CORE_HI; y++)
+    for (let x = core.x + CORE_LO; x <= core.x + CORE_HI; x++) kind[y * W + x] = OPEN;
+  disc(core.x, core.y, CORE * 0.9, (i) => { if (kind[i] === WALL) kind[i] = OPEN; if (kind[i] === DEEP) kind[i] = SHALLOW; });
 
   const seenG = flood([core.y * W + core.x], isWalk);
   let filled = 0;
@@ -762,7 +764,7 @@ export function build(spec: MapSpec): Built {
   const walkMask = (): Uint8Array => { const m = new Uint8Array(N); for (let i = 0; i < N; i++) m[i] = isWalk(i) ? 1 : 0; return m; };
   const groundPads = (z: SpecZone): number[] => { const out: number[] = []; disc(z.x, z.y, z.r, (i) => { if (isWalk(i)) out.push(i); }); return out; };
   const groundZones = spec.spawns.filter((z) => z.zone === "ground");
-  const coreCells = (): number[] => { const out: number[] = []; for (let y = core.y - 2; y <= core.y + 2; y++) for (let x = core.x - 2; x <= core.x + 2; x++) out.push(y * W + x); return out; };
+  const coreCells = (): number[] => { const out: number[] = []; for (let y = core.y + CORE_LO; y <= core.y + CORE_HI; y++) for (let x = core.x + CORE_LO; x <= core.x + CORE_HI; x++) out.push(y * W + x); return out; };
   const walkFrom = (): number[] => {
     const d = distances(coreCells(), isWalk);
     return groundZones.map((z) => Math.min(...groundPads(z).map((i) => d[i])));
@@ -1280,6 +1282,8 @@ export function build(spec: MapSpec): Built {
       plan.length = Math.min(plan.length, MAX_SITES);
       const chestK = propKind("chest");
       const stood: { x: number; y: number; r: number }[] = [];
+      const sitePocket = new Uint8Array(N);
+      let hills = 0;
       for (const size of plan) {
         const sk = SITE_KINDS[(srnd() * SITE_KINDS.length) | 0];
         const tier = siteTier(sk, size);
@@ -1291,10 +1295,28 @@ export function build(spec: MapSpec): Built {
           if (Math.hypot(cx - core.x, cy - core.y) < r + 60) continue;
           if (spec.spawns.some((z) => Math.hypot(z.x - cx, z.y - cy) < z.r + r + 10)) continue;
           if (stood.some((p) => Math.hypot(p.x - cx, p.y - cy) < p.r + r + 12)) continue;
-          if (!fits(x0 - 2, y0 - 2, 6, open)) continue;
+          // A SITE MAY SIT IN A HILL: a yard that is all rock is carved into a
+          // pocket the core never reaches. Its guards never needed to; they
+          // are there to keep the cache, and a turret stands on the rock
+          // round it (docs/sites.md)
+          const inRock = (i: number): boolean => kind[i] === WALL && !claim[i] && !keep[i];
+          const hill = !fits(x0 - 2, y0 - 2, 6, open) && fits(x0 - 2, y0 - 2, 6, inRock);
+          if (!hill && !fits(x0 - 2, y0 - 2, 6, open)) continue;
+          const pocket: number[] = [];
+          if (hill) {
+            const pr = r * 0.6, w0 = srnd() * 6.28;
+            disc(cx, cy, pr * 1.25, (i, x, y) => {
+              const a = Math.atan2(y + 0.5 - cy, x + 0.5 - cx), d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
+              if (d > pr * (1 + 0.2 * Math.sin(a * 3 + w0)) || !inRock(i)) return;
+              kind[i] = OPEN; blocked[i] = 0; wall[i] = 0; floor[i] = variant(famAt(i).floor);
+              pocket.push(i);
+            });
+            if (pocket.length < 40) { for (const i of pocket) { kind[i] = WALL; blocked[i] = 1; wall[i] = variant(famAt(i).wall, 2); } continue; }
+            for (const i of pocket) sitePocket[i] = 1;
+          }
           let all = 0, ok = 0;
           disc(cx, cy, r, (i) => { all++; if (kind[i] === OPEN && !claim[i]) ok++; });
-          if (ok < all * 0.6) continue;
+          if (ok < all * (hill ? 0.25 : 0.6)) { for (const i of pocket) { kind[i] = WALL; blocked[i] = 1; wall[i] = variant(famAt(i).wall, 2); sitePocket[i] = 0; } continue; }
           let padX = x0, padY = y0;
           if (tier.flight) {
             const a0 = srnd() * Math.PI * 2;
@@ -1351,35 +1373,54 @@ export function build(spec: MapSpec): Built {
               }
             }
           };
+          // THE STRUCTURE: a medium site stands its kind's building beside the
+          // cache, a large one the great version, on whichever side has room
+          const structure = (id: string): void => {
+            if (level === 0) return;
+            const kid = level === 2 ? `${id}-great` : id, t = PROP_KINDS[propKind(kid)].tiles;
+            const a0 = srnd() * Math.PI * 2;
+            for (let k = 0; k < 4; k++) {
+              const a = a0 + (k / 4) * Math.PI * 2, d = 1.5 + t / 2 + 1;
+              if (put(kid, cx + Math.cos(a) * d, cy + Math.sin(a) * d, 0)) return;
+            }
+          };
           if (sk === "cairn") {
             pave(cx, cy, 3.5, FLOOR_BASALT);
+            structure("temple");
             around("menhir", 6 + level * 2, r * 0.85, rockToneAt);
             around("boulder", 3 + level, r * 0.5, rockToneAt);
           } else if (sk === "mirror") {
             pave(cx, cy, 3.5, FLOOR_BASALT);
+            structure("temple");
           } else if (sk === "sleeper") {
             pave(cx, cy, 5 + level, FLOOR_CINDER);
+            structure("keep");
             rampart(r * 0.72, 2, 3);
             around(level > 0 ? "barrels" : "crate", 3 + level, r * 0.4);
             around("scrap", 1 + level, r * 0.3);
           } else if (sk === "shrine") {
             pave(cx, cy, 5 + level, FLOOR_BASALT);
+            structure("ziggurat");
             around("pillar", 6 + level * 2, r * 0.55);
             around("brazier", 4 + level * 2, r * 0.85);
             if (level > 0) put("altar", cx + 4, cy + 1);
           } else if (sk === "beacon") {
             pave(cx, cy, 6 + level, FLOOR_CINDER);
+            structure("keep");
             rampart(r * 0.8, 2 + level, 3 + level);
             around("bunker", 1 + level, r * 0.5);
             around("barrels", 2 + level, r * 0.3);
           } else if (sk === "bomber") {
             pave(cx, cy, 3.5, FLOOR_CINDER);
+            structure("keep");
             around("crate", 3, 4);
-            pave(padX, padY, 4, FLOOR_CINDER);
+            // THE PAD, where the flight sits until the clock: a launch pad and its fuel dump
+            pave(padX, padY, 6, FLOOR_CINDER);
+            put("launchpad", padX, padY, 0);
             const sa = srnd() * Math.PI * 2;
-            put("silo", padX + Math.cos(sa) * 6, padY + Math.sin(sa) * 6);
-            put("barrels", padX + Math.cos(sa + 2) * 5, padY + Math.sin(sa + 2) * 5);
-            put("crate", padX + Math.cos(sa + 4) * 5, padY + Math.sin(sa + 4) * 5);
+            put("silo", padX + Math.cos(sa) * 7, padY + Math.sin(sa) * 7);
+            put("barrels", padX + Math.cos(sa + 2) * 6, padY + Math.sin(sa + 2) * 6);
+            put("crate", padX + Math.cos(sa + 4) * 6, padY + Math.sin(sa + 4) * 6);
           }
           if (before - reach() > placed + 6) {
             for (const q of props.splice(from)) {
@@ -1388,10 +1429,12 @@ export function build(spec: MapSpec): Built {
                 for (let x = q.x; x < q.x + qt; x++) { const i = y * W + x; blocked[i] = 0; wall[i] = 0; kind[i] = OPEN; claim[i] = 0; }
             }
             for (const i of rocked) { blocked[i] = 0; wall[i] = 0; kind[i] = OPEN; claim[i] = 0; }
+            for (const i of pocket) { kind[i] = WALL; blocked[i] = 1; wall[i] = variant(famAt(i).wall, 2); sitePocket[i] = 0; }
             continue;
           }
           marks.push({ kind: SITE_MARK, x: x0, y: y0, opts: { site: sk, size, radius: r, padX, padY } });
           stood.push({ x: cx, y: cy, r });
+          if (hill) hills++;
           break;
         }
       }
@@ -1401,16 +1444,16 @@ export function build(spec: MapSpec): Built {
         const seen = flood(cc, isWalk);
         const pocket = new Uint8Array(N);
         let any = false;
-        for (let i = 0; i < N; i++) if (isWalk(i) && !seen[i]) { pocket[i] = 1; any = true; }
+        for (let i = 0; i < N; i++) if (isWalk(i) && !seen[i] && !sitePocket[i]) { pocket[i] = 1; any = true; }
         const kinds = [2, 1].flatMap((t) => (flora.get(t) ?? []).map((k) => ({ tiles: t, kind: k })));
         if (any && kinds.length)
           for (const f of forestOf(pocket, () => canopyTone(), spec.seed ^ 0x5173, kinds)) {
             if (kind[f.y * W + f.x] === SHALLOW) continue;
             stand(f.x, f.y, f.kind, f.tone, f.rot);
           }
-        for (const i of sealWalk()) { blocked[i] = 1; wall[i] = variant(famAt(i).wall, 2); }
+        for (const i of sealWalk()) { if (sitePocket[i]) { kind[i] = OPEN; continue; } blocked[i] = 1; wall[i] = variant(famAt(i).wall, 2); }
       }
-      say(`sites: ${marks.length} of ${plan.length} rolled (${counts.small} small, ${counts.medium} medium, ${counts.large} large): ${marks.map((m) => `${m.opts?.site} ${m.opts?.size}`).join(", ") || "none"}`);
+      say(`sites: ${marks.length} of ${plan.length} rolled (${counts.small} small, ${counts.medium} medium, ${counts.large} large), ${hills} in hills: ${marks.map((m) => `${m.opts?.site} ${m.opts?.size}`).join(", ") || "none"}`);
     }
     say(`props: ${props.length} (${sites.length} sites)`);
   }
@@ -1465,7 +1508,7 @@ export function build(spec: MapSpec): Built {
     say(`spawn tiles: ${spawnTiles.length}`);
   }
 
-  const base = { x: core.x - 2, y: core.y - 2 };
+  const base = { x: core.x + CORE_LO, y: core.y + CORE_LO };
   return { floor, wall, blocked, props, marks, spawns: spec.spawns.map((z) => ({ x: z.x, y: z.y, r: z.r, zone: z.zone })), spawnTiles, base, core, ruins: ruins.length, holes, lumps, log };
 }
 
@@ -1484,7 +1527,7 @@ export function check(spec: MapSpec, m: Built): { fails: string[]; lines: string
   const minGround = spec.routeMin?.ground ?? ROUTE_MIN_GROUND;
   const minWater = spec.routeMin?.water ?? ROUTE_MIN_WATER;
 
-  say(coreCells.every((i) => walk(i) && !wet(i)), `core 5x5 at ${base.x},${base.y} is open dry ground`);
+  say(coreCells.every((i) => walk(i) && !wet(i)), `core ${CORE}x${CORE} at ${base.x},${base.y} is open dry ground`);
   say(spawns.every((z) => Math.hypot(z.x - m.core.x, z.y - m.core.y) > z.r + CORE), "no drop zone touches the core");
 
   let bestD = Infinity;
@@ -1540,8 +1583,11 @@ export function check(spec: MapSpec, m: Built): { fails: string[]; lines: string
   }
 
   const seen = flood(coreCells, walk);
+  // a site cut into a hill is a pocket the core never reaches, on purpose (docs/sites.md)
+  const pocketed = new Uint8Array(N);
+  for (const mk of m.marks) if (mk.kind === SITE_MARK) disc(mk.x + 1, mk.y + 1, Number(mk.opts?.radius ?? 0) + 2, (i) => { pocketed[i] = 1; });
   let orphan = 0;
-  for (let i = 0; i < N; i++) if (walk(i) && !seen[i]) orphan++;
+  for (let i = 0; i < N; i++) if (walk(i) && !seen[i] && !pocketed[i]) orphan++;
   say(orphan === 0, `orphan open cells: ${orphan}`);
 
   let rock = 0, pine = 0, open = 0, shallow = 0, deep = 0;

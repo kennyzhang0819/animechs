@@ -553,6 +553,59 @@ const madeShape = (pal: Pal, litAt: number, darkAt: number, draw: (m: Sheet, rng
   };
 const along = (c: number, a: number, d: number, w = 0): Pt => [c + Math.cos(a) * d - Math.sin(a) * w, c + Math.sin(a) * d + Math.cos(a) * w];
 
+// a stack of courses, each its own banded square: the sites' pyramid
+const SANDSTONE = { hi: "#d8c49a", mid: "#b89c6e", lo: "#8a7048" };
+const MARBLE = { hi: "#e8e2d2", mid: "#c8c0ac", lo: "#9a9282" };
+const ROOF = { hi: "#8a7a66", lo: "#4e4437" };
+const course = (s: Sheet, pal: Pal, cx: number, cy: number, w: number, h: number, ang: number, R: number, litAt = 0.25, darkAt = -0.25): void => {
+  const m = new Sheet(s.n);
+  m.box(cx, cy, w, h, ang, MID);
+  for (let y = 0; y < s.n; y++)
+    for (let x = 0; x < s.n; x++) {
+      if (!m.at(x, y)) continue;
+      const q = ((x + 0.5 - cx) - (y + 0.5 - cy)) / (2 * R);
+      s.put(x, y, q > litAt ? pal.hi : q < darkAt ? pal.lo : pal.mid);
+    }
+};
+const tower = (s: Sheet, pal: Pal, tx: number, ty: number, r: number): void => {
+  const m = new Sheet(s.n);
+  m.disc(tx, ty, r, r, MID);
+  for (let y = 0; y < s.n; y++) for (let x = 0; x < s.n; x++) if (m.at(x, y)) { const q = ((x + 0.5 - tx) - (y + 0.5 - ty)) / (2 * r); s.put(x, y, q > 0.25 ? pal.hi : q < -0.25 ? pal.lo : pal.mid); }
+};
+const SANDSTONE_TOP = { hi: "#ecdcb6", mid: "#d0b78a", lo: "#a08458" };
+const ziggurat = (s: Sheet, rng: () => number): void => {
+  const c = s.n / 2, R = c - 5, a = (rng() - 0.5) * 0.12;
+  // every second course a step lighter, so the stack reads as steps and not one slab
+  ([[1.9, 0.95], [1.45, 0.72], [1.0, 0.5], [0.55, 0.28]] as const).forEach(([k, w], n) => course(s, n % 2 ? SANDSTONE_TOP : SANDSTONE, c, c, R * k, R * k, a, R * w));
+};
+const keep = (s: Sheet, rng: () => number): void => {
+  const c = s.n / 2, R = c - 5, a = (rng() - 0.5) * 0.1;
+  course(s, CONCRETE, c, c, R * 1.9, R * 1.9, a, R * 0.95);
+  s.box(c, c, R * 1.3, R * 1.3, a, CONCRETE.deep);
+  for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
+    const u = sx * R * 0.82, v = sy * R * 0.82;
+    tower(s, CONCRETE, c + u * Math.cos(a) - v * Math.sin(a), c + u * Math.sin(a) + v * Math.cos(a), R * 0.3);
+  }
+  course(s, CONCRETE, c, c, R * 0.7, R * 0.7, a, R * 0.35);
+};
+const temple = (s: Sheet, rng: () => number): void => {
+  const c = s.n / 2, R = c - 5, a = rng() < 0.5 ? 0 : 1.5708;
+  const p = (u: number, q: number): [number, number] => [c + u * Math.cos(a) - q * Math.sin(a), c + u * Math.sin(a) + q * Math.cos(a)];
+  course(s, MARBLE, c, c, R * 1.9, R * 1.3, a, R * 0.95);
+  // the hall's roof: one ridge, the lit pitch and the shaded pitch
+  const [lx, ly] = p(0, -R * 0.2), [dx, dy] = p(0, R * 0.2);
+  s.box(lx, ly, R * 1.4, R * 0.4, a, ROOF.hi);
+  s.box(dx, dy, R * 1.4, R * 0.4, a, ROOF.lo);
+  const [px, py] = p(R * 0.62, 0);
+  course(s, MARBLE, px, py, R * 0.3, R * 0.9, a, R * 0.45);
+};
+const launchpad = (s: Sheet, _rng: () => number): void => {
+  const c = s.n / 2, R = c - 5;
+  tower(s, CONCRETE, c, c, R * 0.95);
+  s.disc(c, c, R * 0.62, R * 0.62, CONCRETE.deep);
+  s.disc(c, c, R * 0.2, R * 0.2, HAZARD);
+};
+
 /**
  * THE KINDS. APPEND ONLY — a prop's kind is its index here, in every
  * document on disk. A painting is `reach * PROP_PX` square and stays
@@ -794,6 +847,16 @@ export const PROP_KINDS: readonly PropDef[] = [
     stone(s, rng, 88, 89, 80, 70, v);
   }, STONE_VARIANTS),
   ...BIOME_KINDS,
+  // THE SITES' STRUCTURES (docs/sites.md): what makes a medium or a large
+  // site read as a place — a pyramid, a stronghold, a temple, a launch pad.
+  // Six and ten tiles, so their courses and towers are big enough to draw.
+  made("ziggurat", "Ziggurat", 6, "#b89c6e", ziggurat),
+  made("ziggurat-great", "Great ziggurat", 10, "#b89c6e", ziggurat),
+  made("keep", "Keep", 6, "#8a857c", keep),
+  made("keep-great", "Great keep", 10, "#8a857c", keep),
+  made("temple", "Temple", 6, "#c8c0ac", temple),
+  made("temple-great", "Great temple", 10, "#c8c0ac", temple),
+  made("launchpad", "Launch pad", 6, "#6d6960", launchpad),
 ];
 /** the kinds a biome owns: its family's six footprints and its two auxiliaries */
 export const familyKinds = (biome: string): number[] => {
@@ -849,22 +912,22 @@ export function paintProp(kind: number, tint?: number, variant = 0): Uint8Clampe
 }
 
 /**
- * THE CORE, six cells square at 32 px a cell (constants.ts BASE.size), in
+ * THE CORE, ten cells square at 32 px a cell (constants.ts BASE.size), in
  * the props' own bands: an octagonal slab of slate, an iron course inside
  * it, and a well of the team's amber. Symmetric on both axes, since a
  * building the swarm walks at from every side has no front.
  */
 export function coreCanvas(): HTMLCanvasElement {
-  const n = 192, c = n / 2, s = new Sheet(n);
+  const n = 320, c = n / 2, s = new Sheet(n);
   const SLATE = { hi: "#5e6478", mid: "#454a5c", lo: "#30343f" };
   const IRON = { hi: "#9aa0b0", mid: "#6e7484", lo: "#4c5160" };
   const oct = (r: number): Pt[] => { const p: Pt[] = []; for (let k = 0; k < 8; k++) { const a = (k / 8) * 6.28 + 0.39; p.push([c + Math.cos(a) * r, c + Math.sin(a) * r]); } return p; };
   const band = (pal: { hi: Col; mid: Col; lo: Col }, r: number) => (x: number, y: number): Col => { const q = ((x + 0.5 - c) - (y + 0.5 - c)) / (2 * r); return q > 0.22 ? pal.hi : q < -0.22 ? pal.lo : pal.mid; };
-  s.poly(oct(94), band(SLATE, 94));
-  s.poly(oct(66), band(IRON, 66));
-  s.poly(oct(46), band(SLATE, 46));
-  s.disc(c, c, 32, 32, "#e0a83a");
-  s.disc(c, c, 18, 18, "#f6cf6a");
+  s.poly(oct(157), band(SLATE, 157));
+  s.poly(oct(110), band(IRON, 110));
+  s.poly(oct(77), band(SLATE, 77));
+  s.disc(c, c, 53, 53, "#e0a83a");
+  s.disc(c, c, 30, 30, "#f6cf6a");
   const cv = document.createElement("canvas");
   cv.width = cv.height = n;
   const g = cv.getContext("2d");
