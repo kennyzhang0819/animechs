@@ -32,7 +32,8 @@ the mission logic (`raze`, `escort`, …) stays in the code unused.
 **Side sites** (`game/sites.ts`, `docs/sites.md`). A rolled board carries three or four
 small structures: a cache prop with a guard — Wardens, a dormant Fabricator, a Pylon, a
 Brander, or a flight of bombers on the clock. Break the cache (or shoot the flight down)
-and three mods of the site's band go on the table; take one. The only way a run gets a mod.
+and three mods roll onto the table at fixed odds; take one, in as many copies as the
+site's size pays (one, three or ten). The only way a run gets a mod.
 
 **Mutators** (`game/mutation.ts`). The rules a run is played *under*, rolled rather
 than chosen. Each costs points; a rung carries a budget and a count. Mandatory from

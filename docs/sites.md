@@ -13,16 +13,20 @@ Every site is the same skeleton:
 - a **cache**, the 2x2 `chest` prop (`game/propArt.ts`) at the mark's cell,
   with the site's own health pool when the table gives it one;
 - a **ring**, `radius` cells round it, the circle the guards hold. It is
-  NOT drawn, and neither is the site's name or band: what a site holds is
+  NOT drawn, and neither is the site's name or size: what a site holds is
   learned by breaking a few, and how much is built round the cache is the
   tell — a bigger site is a bigger build;
 - a **guard**, what the board has to get past to reach the cache;
-- a **reward**, three mods of one rarity (`docs/economy.md` says why mods
-  are dealt nowhere else). Break the cache and the three go on the table
-  (`components/Relics.tsx ModChoice`); the world holds until one is taken
-  (`Game.chooseMod` → `Sim.takeMod`). A picked mod is one more copy the run
-  owns, and every turret placed from then on rolls it at its chance
-  (`mods.ts rollTurretMods`). Nothing is applied to a standing turret.
+- a **reward**, three mods rolled at the sites' own odds, the same odds
+  for every site (`SITE_MOD_ODDS`: 55% common, 30% uncommon, 12% rare, 3%
+  ultra), and a number of copies set by the size alone (`SITE_MOD_COPIES`:
+  one for a small, three for a medium, ten for a large). `docs/economy.md`
+  says why mods are dealt nowhere else. Break the cache and the three go
+  on the table (`components/Relics.tsx ModChoice`); the world holds until
+  one is taken (`Game.chooseMod` → `Sim.takeMod`), that many times over.
+  Every copy the run owns adds to what a turret born with the mod gets,
+  and every turret placed from then on rolls it at its chance (`mods.ts
+  rollTurretMods`). Nothing is applied to a standing turret.
 
 A site is a mark on the document (`missionMarks.ts SITE`): the cache's
 top-left cell, and `site`, `size`, `radius`, `padX`, `padY` in its opts. The
@@ -31,8 +35,9 @@ cache under it is no site — the sim skips it and `npm run check` says so.
 
 ## The kinds
 
-Six kinds, three sizes each. Size is the guard and the band together:
-the harder the site, the better the three on the table.
+Six kinds, three sizes each. Size is the guard and the copies together:
+the harder the site, the more copies of whichever of the three is taken.
+What the three are is the same roll at every size.
 
 Sizes read off the build: a small site is a few props round the cache, a
 large one a compound. The table is for authors; nothing on the field prints
@@ -40,12 +45,12 @@ it.
 
 | kind | what guards the cache | small | medium | large |
 |---|---|---|---|---|
-| **Cairn** | Wardens leashed to the ring, in a ring of stones | common, 40k, 1 Lance | uncommon, 100k, 2 Lances 1 Bulwark | rare, 220k, 2 Lances 2 Bulwarks 1 Halberd |
-| **Mirror cache** | nothing. Every hit on the cache comes back at the nearest turret, at the site's share (`reflect`) | common, 30k, 10% back | uncommon, 80k, 20% back | rare, 160k, 35% back |
-| **Sleeping house** | a dormant Fabricator six tiles off (`docs/mission-marks.md` says what waking one costs); the cache sits inside its blast | uncommon, 40k, small house | rare, 90k, large house | ultra, 180k, a large and a small |
-| **Shrine** | a Pylon five tiles off, and Wardens. Every ten seconds a Goad hastes every body within twenty-six tiles and a Bastion plates it (`levels.ts hasteField / armorField`), waves walking past included, until it falls. Local only: a site's pylon counts for nothing on the board at large (`Sim.goadMul`) | uncommon, 40k, Goad | rare, 100k, Bastion | ultra, 220k, both |
-| **Beacon** | a Brander five tiles off that burns any turret within twenty tiles, and Bulwarks | uncommon, 40k, 1 Brander | rare, 100k, 1 Brander 2 Bulwarks | ultra, 220k, 2 Branders, 2 Bulwarks 1 Halberd |
-| **Bomber run** | the cache is sealed against the board. On the clock a flight of Stoops launches from the pad and flies the drawn line at it; the first to arrive bombs it and the site is lost. Shoot every one down first and it opens | common, 1 T3 at 2:00, 60 cells out | uncommon, T4 + T3 at 4:00, 90 out | rare, T5 + 2 T4 at 7:00, 120 out |
+| **Cairn** | Wardens leashed to the ring, in a ring of stones | 40k, 1 Lance | 100k, 2 Lances 1 Bulwark | 220k, 2 Lances 2 Bulwarks 1 Halberd |
+| **Mirror cache** | nothing. Every hit on the cache comes back at the nearest turret, at the site's share (`reflect`) | 30k, 10% back | 80k, 20% back | 160k, 35% back |
+| **Sleeping house** | a dormant Fabricator six tiles off (`docs/mission-marks.md` says what waking one costs); the cache sits inside its blast | 40k, small house | 90k, large house | 180k, a large and a small |
+| **Shrine** | a Pylon five tiles off, and Wardens. Every ten seconds a Goad hastes every body within twenty-six tiles and a Bastion plates it (`levels.ts hasteField / armorField`), waves walking past included, until it falls. Local only: a site's pylon counts for nothing on the board at large (`Sim.goadMul`) | 40k, Goad | 100k, Bastion | 220k, both |
+| **Beacon** | a Brander five tiles off that burns any turret within twenty tiles, and Bulwarks | 40k, 1 Brander | 100k, 1 Brander 2 Bulwarks | 220k, 2 Branders, 2 Bulwarks 1 Halberd |
+| **Bomber run** | the cache is sealed against the board. On the clock a flight of Stoops launches from the pad and flies the drawn line at it; the first to arrive bombs it and the site is lost. Shoot every one down first and it opens | 1 T3 at 2:00, 60 cells out | T4 + T3 at 4:00, 90 out | T5 + 2 T4 at 7:00, 120 out |
 
 The Wardens are the garrison's (`docs/mission-marks.md`), posted the same
 way (`Sim.garrisonUnit`): they fight what the board builds inside the ring
@@ -115,4 +120,4 @@ Three header slots (`simreport.ts`): caches opened, the last opened by
 index, and every site's state two bits each (standing, opened, lost). The
 overlay (`Game.drawSites`) draws only a bomber run's pad, line and launch
 clock, off the marks and the run clock; `Game.offerSites` edge-detects the
-count and rolls three of the band.
+count and rolls the three.

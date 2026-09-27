@@ -64,11 +64,10 @@ import {
   anyModOpen,
   maskRarity,
   MOD_ODDS,
-  modsOfRarity,
   rollMod,
   type ModId,
 } from "./mods";
-import { SITE_DEFS, sitesOf } from "./sites";
+import { SITE_DEFS, SITE_MOD_COPIES, SITE_MOD_ODDS, sitesOf } from "./sites";
 import {
   anyRelicLeft,
   anyRelicOpen,
@@ -2095,8 +2094,9 @@ export class Game {
   }
 
   /**
-   * A CACHE OPENED (Sim.openSite): three mods of the site's band go on the
-   * table and the world holds until one is taken (chooseMod). The opens
+   * A CACHE OPENED (Sim.openSite): three mods rolled at the sites' odds go
+   * on the table, the size saying how many copies of the pick (sites.ts),
+   * and the world holds until one is taken (chooseMod). The opens
    * are counted on the header, so one missed while the offer was up is
    * put up the moment the table clears.
    */
@@ -2106,14 +2106,14 @@ export class Game {
     const sites = sitesOf(this.world.terrain.marks);
     const site = sites[this.world.siteLast];
     if (!site) return;
-    const pool = modsOfRarity(site.tier.rarity).map((m) => m.id);
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = (Math.random() * (i + 1)) | 0;
-      [pool[i], pool[j]] = [pool[j], pool[i]];
+    const ids: ModId[] = [];
+    for (let tries = 0; ids.length < MOD_CHOICES && tries < 64; tries++) {
+      const id = rollMod(SITE_MOD_ODDS, Math.random);
+      if (!id) break;
+      if (!ids.includes(id)) ids.push(id);
     }
-    const ids = pool.slice(0, MOD_CHOICES);
     if (ids.length === 0) return;
-    this.modOffer = { ids, copies: 1, from: SITE_DEFS[site.kind].name };
+    this.modOffer = { ids, copies: SITE_MOD_COPIES[site.size], from: SITE_DEFS[site.kind].name };
   }
 
   /** THE G BUTTON: relics, in force over the whole board the moment they land */

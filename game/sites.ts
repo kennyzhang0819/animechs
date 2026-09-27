@@ -1,7 +1,7 @@
 // the side sites a rolled board carries — see docs/sites.md
 import type { UnitKind } from "./levels";
 import type { MapMark } from "./missionMarks";
-import type { Rarity } from "./rarity";
+import type { RarityWeights } from "./rarity";
 
 export const SITE_KINDS = ["cairn", "mirror", "sleeper", "shrine", "beacon", "bomber"] as const;
 export type SiteKind = (typeof SITE_KINDS)[number];
@@ -9,8 +9,11 @@ export const SITE_SIZES = ["small", "medium", "large"] as const;
 export type SiteSize = (typeof SITE_SIZES)[number];
 export const SITE_MARK = "site";
 
+/** the odds a cache's mod rolls at, the same for every site; the size sets the copies */
+export const SITE_MOD_ODDS: RarityWeights = { common: 55, uncommon: 30, rare: 12, ultra: 3 };
+export const SITE_MOD_COPIES: Readonly<Record<SiteSize, number>> = { small: 1, medium: 3, large: 10 };
+
 export interface SiteTier {
-  rarity: Rarity;
   /** the circle the guards hold and the board rings, in cells */
   radius: number;
   guards?: Readonly<Partial<Record<UnitKind, number>>>;
@@ -40,9 +43,9 @@ export const SITE_DEFS: Readonly<Record<SiteKind, SiteDef>> = {
     name: "Cairn",
     blurb: "A cache in a ring of stones, and the Wardens that hold it.",
     tiers: {
-      small: { rarity: "common", radius: 12, hp: 40000, guards: { lance: 1 } },
-      medium: { rarity: "uncommon", radius: 15, hp: 100000, guards: { lance: 2, bulwark: 1 } },
-      large: { rarity: "rare", radius: 18, hp: 220000, guards: { lance: 2, bulwark: 2, halberd: 1 } },
+      small: { radius: 12, hp: 40000, guards: { lance: 1 } },
+      medium: { radius: 15, hp: 100000, guards: { lance: 2, bulwark: 1 } },
+      large: { radius: 18, hp: 220000, guards: { lance: 2, bulwark: 2, halberd: 1 } },
     },
   },
   mirror: {
@@ -50,9 +53,9 @@ export const SITE_DEFS: Readonly<Record<SiteKind, SiteDef>> = {
     name: "Mirror cache",
     blurb: "Unguarded. Every hit on it comes back at the nearest turret.",
     tiers: {
-      small: { rarity: "common", radius: 6, hp: 30000, reflect: 0.1 },
-      medium: { rarity: "uncommon", radius: 6, hp: 80000, reflect: 0.2 },
-      large: { rarity: "rare", radius: 6, hp: 160000, reflect: 0.35 },
+      small: { radius: 6, hp: 30000, reflect: 0.1 },
+      medium: { radius: 6, hp: 80000, reflect: 0.2 },
+      large: { radius: 6, hp: 160000, reflect: 0.35 },
     },
   },
   sleeper: {
@@ -60,10 +63,9 @@ export const SITE_DEFS: Readonly<Record<SiteKind, SiteDef>> = {
     name: "Sleeping house",
     blurb: "A dormant Fabricator beside the cache. Wake it and it blasts everything near, then sends.",
     tiers: {
-      small: { rarity: "uncommon", radius: 10, hp: 40000, houses: [{ kind: "fabricatorSmall", every: 2 }] },
-      medium: { rarity: "rare", radius: 12, hp: 90000, houses: [{ kind: "fabricatorLarge", every: 4 }] },
+      small: { radius: 10, hp: 40000, houses: [{ kind: "fabricatorSmall", every: 2 }] },
+      medium: { radius: 12, hp: 90000, houses: [{ kind: "fabricatorLarge", every: 4 }] },
       large: {
-        rarity: "ultra",
         radius: 14,
         hp: 180000,
         houses: [{ kind: "fabricatorLarge", every: 2 }, { kind: "fabricatorSmall", every: 1 }],
@@ -75,9 +77,9 @@ export const SITE_DEFS: Readonly<Record<SiteKind, SiteDef>> = {
     name: "Shrine",
     blurb: "A Pylon over the cache buffs every body near it, waves included, until it falls.",
     tiers: {
-      small: { rarity: "uncommon", radius: 12, hp: 40000, pylons: ["goad"], guards: { lance: 1 } },
-      medium: { rarity: "rare", radius: 15, hp: 100000, pylons: ["bastion"], guards: { lance: 1, bulwark: 1 } },
-      large: { rarity: "ultra", radius: 18, hp: 220000, pylons: ["goad", "bastion"], guards: { lance: 2, bulwark: 2 } },
+      small: { radius: 12, hp: 40000, pylons: ["goad"], guards: { lance: 1 } },
+      medium: { radius: 15, hp: 100000, pylons: ["bastion"], guards: { lance: 1, bulwark: 1 } },
+      large: { radius: 18, hp: 220000, pylons: ["goad", "bastion"], guards: { lance: 2, bulwark: 2 } },
     },
   },
   beacon: {
@@ -85,9 +87,9 @@ export const SITE_DEFS: Readonly<Record<SiteKind, SiteDef>> = {
     name: "Beacon",
     blurb: "A Brander beside the cache burns any turret in its reach.",
     tiers: {
-      small: { rarity: "uncommon", radius: 12, hp: 40000, branders: 1 },
-      medium: { rarity: "rare", radius: 15, hp: 100000, branders: 1, guards: { bulwark: 2 } },
-      large: { rarity: "ultra", radius: 18, hp: 220000, branders: 2, guards: { bulwark: 2, halberd: 1 } },
+      small: { radius: 12, hp: 40000, branders: 1 },
+      medium: { radius: 15, hp: 100000, branders: 1, guards: { bulwark: 2 } },
+      large: { radius: 18, hp: 220000, branders: 2, guards: { bulwark: 2, halberd: 1 } },
     },
   },
   bomber: {
@@ -95,9 +97,9 @@ export const SITE_DEFS: Readonly<Record<SiteKind, SiteDef>> = {
     name: "Bomber run",
     blurb: "Bombers fly from the pad to the cache on the clock. Shoot every one down and it opens.",
     tiers: {
-      small: { rarity: "common", radius: 6, bombers: ["stoop3"], launch: 120, flight: 60 },
-      medium: { rarity: "uncommon", radius: 6, bombers: ["stoop4", "stoop3"], launch: 240, flight: 90 },
-      large: { rarity: "rare", radius: 6, bombers: ["stoop5", "stoop4", "stoop4"], launch: 420, flight: 120 },
+      small: { radius: 6, bombers: ["stoop3"], launch: 120, flight: 60 },
+      medium: { radius: 6, bombers: ["stoop4", "stoop3"], launch: 240, flight: 90 },
+      large: { radius: 6, bombers: ["stoop5", "stoop4", "stoop4"], launch: 420, flight: 120 },
     },
   },
 };
