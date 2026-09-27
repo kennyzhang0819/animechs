@@ -153,7 +153,7 @@ import { DealCorner, useDeal } from "./Deal";
 import TouchControls, { useCoarsePointer } from "./TouchControls";
 import { Inspector } from "./Inspector";
 import { BLANK_ICON, carveUnitIcon, unitIconOf } from "./unitIcons";
-import { RelicShelf } from "./Relics";
+import { ModChoice, RelicShelf } from "./Relics";
 import { useConfirm } from "./ConfirmDialog";
 
 /** the level card's map preview — the admin editor's thumbnail look */
@@ -4135,6 +4135,21 @@ export default function Animechs() {
         )}
         {/* THE PAUSE SHEET. Opening it holds the sim (Game.openMenu), so
             its heading says what the run is doing */}
+        {/* A CACHE OPENED (game.ts offerSites): the three on the table
+            over a held world, under the pause sheet if that is up too */}
+        {hud?.modOffer && !hud.lost && !hud.won && !hud.menuOpen && (
+          <div className="ms-screen absolute inset-0 flex items-center justify-center">
+            <div className="ui-zoom">
+              <ModChoice
+                offer={hud.modOffer}
+                onChoose={(id) => {
+                  gameRef.current?.chooseMod(id);
+                  refresh();
+                }}
+              />
+            </div>
+          </div>
+        )}
         {hud?.menuOpen && !hud.lost && !hud.won && !pauseSettings && (
           <div className="ms-screen absolute inset-0 flex items-center justify-center">
             <div className="ui-zoom ms-pane flex max-h-[calc(100vh-2rem)] w-[30rem] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 overflow-y-auto p-6">

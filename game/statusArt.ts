@@ -647,6 +647,13 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
     g.box(0.32, 0.1, 0.94, 0.56, PAL.emberDark);
     g.over((o) => o.box(0, 0.1, 1, 0.34, PAL.ember));
   },
+
+  /** HIGH GROUND — a peak, lit on one face */
+  highGround: (g) => {
+    g.poly([[0.02, 0.96], [0.5, 0.1], [0.98, 0.96]], PAL.steelDark);
+    g.over((o) => o.poly([[0.5, 0.1], [0.98, 0.96], [0.5, 0.96]], PAL.steel));
+    g.over((o) => o.poly([[0.5, 0.1], [0.36, 0.36], [0.64, 0.36]], PAL.steelWhite));
+  },
 };
 
 /** the picture a status wears, as paths — drawn once per id and kept */

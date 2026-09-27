@@ -81,7 +81,21 @@ export type FloorKind =
   | "peat"
   | "bog"
   | "cinder"
-  | "chalk";
+  | "chalk"
+  // the fourth batch: the ten themes' own ground (docs/random-maps.md)
+  | "scoria"
+  | "obsidian"
+  | "shoal"
+  | "coralsand"
+  | "silt"
+  | "jungle"
+  | "litter"
+  | "redearth"
+  | "sporefield"
+  | "mycelium"
+  | "blight"
+  | "quartz"
+  | "slate";
 
 const STOCK_FLOOR_STYLE: Readonly<Record<FloorKind, FloorStyle>> = {
   grass: { base: "#78995a", light: "#88a866", dark: "#68884c", mark: "tussock" },
@@ -113,6 +127,19 @@ const STOCK_FLOOR_STYLE: Readonly<Record<FloorKind, FloorStyle>> = {
   bog: { base: "#5c5638", light: "#686241", dark: "#4f4a30", mark: "dune" },
   cinder: { base: "#3a3230", light: "#463d3a", dark: "#2e2826", accent: "#c95a2a", mark: "ember" },
   chalk: { base: "#e4ddcc", light: "#eee9db", dark: "#d5cdbb", mark: "spotted" },
+  scoria: { base: "#4e3029", light: "#5c3b32", dark: "#3e2520", mark: "soft" },
+  obsidian: { base: "#2c2830", light: "#38333c", dark: "#201d24", mark: "spotted" },
+  shoal: { base: "#d6cba8", light: "#e2d8b8", dark: "#c4b894", mark: "spotted" },
+  coralsand: { base: "#e4cfc0", light: "#eedcd0", dark: "#d2bcac", mark: "dune" },
+  silt: { base: "#9a9478", light: "#a8a286", dark: "#888268", mark: "soft" },
+  jungle: { base: "#4e7a3a", light: "#5c8a46", dark: "#406a30", mark: "tussock" },
+  litter: { base: "#6b5a3a", light: "#786646", dark: "#5c4c30", mark: "pebbled" },
+  redearth: { base: "#8a4a35", light: "#98553f", dark: "#763e2c", mark: "soft" },
+  sporefield: { base: "#7a6a80", light: "#88778e", dark: "#6a5a70", mark: "soft" },
+  mycelium: { base: "#b4a6b4", light: "#c2b6c2", dark: "#a296a2", mark: "spotted" },
+  blight: { base: "#4a3a52", light: "#56455e", dark: "#3e3046", mark: "dune" },
+  quartz: { base: "#b4b0c8", light: "#c2bed4", dark: "#a29eb6", mark: "spotted" },
+  slate: { base: "#4e5262", light: "#5a5e6e", dark: "#424656", mark: "soft" },
 };
 
 
@@ -362,7 +389,18 @@ export type WallKind =
   | "peat"
   | "cinder"
   | "chalk"
-  | "loam";
+  | "loam"
+  // the fourth batch, one or two a theme (docs/random-maps.md)
+  | "scoria"
+  | "obsidian"
+  | "reef"
+  | "limestone"
+  | "jungle"
+  | "laterite"
+  | "sporerock"
+  | "fungal"
+  | "crystalrock"
+  | "slate";
 
 export interface WallStyle {
   /** the mid tone: the band across the middle of the tile */
@@ -399,6 +437,16 @@ const STOCK_WALL_STYLE: Readonly<Record<WallKind, WallStyle>> = {
   cinder: { face: "#2e2826", light: "#413936", dark: "#1e1a18", grain: "rough" },
   chalk: { face: "#d9d2c2", light: "#f2ede0", dark: "#b8b0a0", grain: "glassy" },
   loam: { face: "#6a4b30", light: "#83603f", dark: "#4f3722", grain: "soft" },
+  scoria: { face: "#5e3c30", light: "#7e5646", dark: "#3c2620", grain: "rough" },
+  obsidian: { face: "#2e2a33", light: "#4c4754", dark: "#1a1720", grain: "glassy" },
+  reef: { face: "#c48a7a", light: "#e0a898", dark: "#9a6656", grain: "rough" },
+  limestone: { face: "#cfc5ad", light: "#e8e0c8", dark: "#a89e86", grain: "soft" },
+  jungle: { face: "#55603a", light: "#74804e", dark: "#3a4226", grain: "soft" },
+  laterite: { face: "#7a4a36", light: "#9a6448", dark: "#56321f", grain: "rough" },
+  sporerock: { face: "#6a5a72", light: "#8a7a92", dark: "#4a3d52", grain: "soft" },
+  fungal: { face: "#8a6a80", light: "#a88a9e", dark: "#5e4658", grain: "glassy" },
+  crystalrock: { face: "#7a7fa0", light: "#a3a8cc", dark: "#555a78", grain: "glassy" },
+  slate: { face: "#454a5a", light: "#5c6274", dark: "#2e3240", grain: "rough" },
 };
 
 /** a rock family under the ink: the face burnt umber over the family's

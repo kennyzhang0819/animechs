@@ -170,7 +170,8 @@ export function useDeal(
       const act = by[e.code];
       if (!act) return;
       const g = gameRef.current;
-      if (!g || g.ui().menuOpen) return;
+      const ui = g?.ui();
+      if (!g || !ui || ui.menuOpen || ui.modOffer) return;
       e.preventDefault();
       act();
     };

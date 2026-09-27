@@ -11,6 +11,7 @@
 import { FABRICATOR_KINDS, FABRICATOR_TILES, GARRISON_LEVELS, type Mission, type UnitKind } from "./levels";
 import type { TowerKind } from "./types";
 import { TOWERS } from "./constants";
+import { SITE_DEFS, SITE_KINDS, SITE_MARK, SITE_SIZES } from "./sites";
 
 /**
  * WHAT SHAPE OF THING AN AUTHOR PLACES. A `point` is one footprint at
@@ -320,7 +321,39 @@ export const GARRISONS: readonly MarkKind[] = GARRISON_LEVELS.map((roster, i) =>
 export const garrisonLevel = (kind: string): number =>
   kind.startsWith(GARRISON_KIND_PREFIX) ? Number(kind.slice(GARRISON_KIND_PREFIX.length)) || 0 : 0;
 
-export const MARK_KINDS: readonly MarkKind[] = [BUFF_TOWER, RAILGUN, FABRICATOR, BRANDER, ...GARRISONS, ROAD];
+/** a side site (docs/sites.md): the 2x2 cache is the footprint, the
+ *  guards and the ring come off the kind and size (sites.ts SITE_DEFS) */
+const SITE: MarkKind = {
+  id: SITE_MARK,
+  label: "Side site",
+  geom: "point",
+  size: 2,
+  color: "#7bdff2",
+  unit: "bulwark",
+  pad: 0,
+  radiusField: "radius",
+  fields: [
+    {
+      key: "site",
+      label: "Site",
+      kind: "choice",
+      choices: SITE_KINDS.map((k) => ({ value: k, label: SITE_DEFS[k].name })),
+      def: "cairn",
+    },
+    {
+      key: "size",
+      label: "Size",
+      kind: "choice",
+      choices: SITE_SIZES.map((s) => ({ value: s, label: s[0].toUpperCase() + s.slice(1) })),
+      def: "small",
+    },
+    { key: "radius", label: "Range", kind: "int", min: 4, max: 40, def: 12 },
+    { key: "padX", label: "Pad X", kind: "int", min: 0, max: 511, def: 0 },
+    { key: "padY", label: "Pad Y", kind: "int", min: 0, max: 511, def: 0 },
+  ],
+};
+
+export const MARK_KINDS: readonly MarkKind[] = [BUFF_TOWER, RAILGUN, FABRICATOR, BRANDER, ...GARRISONS, SITE, ROAD];
 
 /** the turret a mark stands up, where it stands one — the TowerKind twin
  *  of markUnit */

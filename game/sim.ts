@@ -74,6 +74,8 @@ import {
   ROWS as ROWS_IMPORT,
   TOWERS as TOWERS_IMPORT,
   TOWER_HP_SCALE,
+  HIGH_GROUND_CUT,
+  HIGH_GROUND_RANGE,
   WET_SHOCK_MUL,
   firesBullets,
   towerMaxHp,
@@ -274,6 +276,7 @@ import {
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
 import { markKind, markOpts, markSize } from "./missionMarks";
+import { MAX_SITES, sitesOf, type Site } from "./sites";
 import {
   garrisonsFor, levelWithMarks, postProblems, postsFor, roadAt, roadProblems, roadsFor,
   siegeFromMarks, type MarkGarrison, type MarkSiege, type Post, type Road,
@@ -720,6 +723,18 @@ export interface Aim {
   y: number;
   half: number;
   s: Structure;
+}
+
+/** one side site on the board (sites.ts): 0 standing, 1 opened, 2 lost */
+interface SiteState {
+  site: Site;
+  x: number;
+  y: number;
+  r: number;
+  chest: number;
+  state: 0 | 1 | 2;
+  launched: boolean;
+  live: number;
 }
 
 // is a unit kind (by numeric id) airborne? towers and bullets check this
@@ -1625,6 +1640,16 @@ export class Sim {
   /** the fabricators the map carries (missionMarks.ts FABRICATOR), all
    *  stood up at reset (raiseHouses) */
   private fabSpots: { x: number; y: number; kind: UnitKind; every: number }[] = [];
+  /** the side sites (sites.ts, docs/sites.md) in mark order; usite is a
+   *  body's site as index + 1, propSite a prop's the same way */
+  sites: SiteState[] = [];
+  private readonly usite = new Int16Array(MAX_UNITS);
+  private propSite = new Int16Array(0);
+  sitesOpened = 0;
+  siteLast = -1;
+  private siteBombers = 0;
+  private siteGoads = 0;
+  private siteBastions = 0;
   /** a standing house's clock: seconds to its next body, and the gap */
   private readonly ufabT = new Float32Array(MAX_UNITS);
   private readonly ufabEvery = new Float32Array(MAX_UNITS);
@@ -2711,6 +2736,12 @@ export class Sim {
     this.razeKilled = 0;
     this.fabKilled = 0;
     this.fabTotal = 0;
+    this.sites = [];
+    this.sitesOpened = 0;
+    this.siteLast = -1;
+    this.siteBombers = 0;
+    this.siteGoads = 0;
+    this.siteBastions = 0;
     this.posts = [];
     this.roads = [];
     this.loopLevel = 0;
@@ -2991,6 +3022,7 @@ export class Sim {
     this.raiseHouses();
     this.manGarrisons();
     this.raiseBranders();
+    this.raiseSites();
   }
 
   loadLevel(spec: LevelSpec): void {
@@ -3773,6 +3805,7 @@ export class Sim {
     // the effect, so a copy bought mid-wave lands on the board already
     // standing, through this very call
     t.spec = applyTurretMods(kind, t.mods, this.mods);
+    if (t.high) t.spec = { ...t.spec, range: t.spec.range * HIGH_GROUND_RANGE };
     // ...under the bench's reach when one is set — see setBench
     if (this.benchTowerRange !== null) t.spec = { ...t.spec, range: this.benchTowerRange };
     const max = t.spec.health * TOWER_HP_SCALE;
@@ -4272,6 +4305,7 @@ export class Sim {
     const x = (gx + sz / 2) * CELL, y = (gy + sz / 2) * CELL;
     const tower: Tower = {
       kind,
+      high: this.hills[gy * COLS + gx] === 1,
       gx,
       gy,
       x,
@@ -4375,7 +4409,7 @@ export class Sim {
     const t = this.cellTower[((py / CELL) | 0) * COLS + ((px / CELL) | 0)];
     // the team test costs nothing in a run without Conquest, where every
     // building on the board is the player's and `enemyTowers` is 0
-    return t && (this.enemyTowers === 0 ? team === "player" : teamOf(t) === team) && !(ground && this.onHill(t)) ? t : null;
+    return t && (this.enemyTowers === 0 ? team === "player" : teamOf(t) === team) ? t : null;
   }
 
 
@@ -4777,6 +4811,7 @@ export class Sim {
     this.runConvoys();
     // ...and the houses, on the wave clock (runFabricators)
     this.runFabricators(dt);
+    this.runSites(dt);
     // a structure went up on, or came down off, open ground: shove anything
     // standing in its cells clear now, and re-solve the routes when the
     // board settles (solveDirtyFields)
@@ -5572,12 +5607,13 @@ export class Sim {
    * reach zero. An author who rings a road with towers gets a hard mission,
    * not an unkillable one.
    */
+  // a site's pylon (sites.ts) is a local aura and counts for nothing here
   private get goadMul(): number {
-    const n = this.aliveByKind[UNIT_ID.goad];
+    const n = this.aliveByKind[UNIT_ID.goad] - this.siteGoads;
     return n > 0 ? GOAD_SPEED_MUL ** n : 1;
   }
   private get bastionCut(): number {
-    const n = this.aliveByKind[UNIT_ID.bastion];
+    const n = this.aliveByKind[UNIT_ID.bastion] - this.siteBastions;
     return n > 0 ? (1 - BASTION_CUT) ** n : 1;
   }
 
@@ -5596,10 +5632,11 @@ export class Sim {
       this.ufabEvery[i] = f.every;
       this.ufabT[i] = f.every;
       this.ufabState[i] = 0;
-      // a building sits square to the grid: its art is drawn facing up
-      this.urot[i] = -Math.PI / 2;
-      this.ubrot[i] = -Math.PI / 2;
-      this.uheldRot[i] = -Math.PI / 2;
+      // a building sits square to the grid: its art is drawn facing up,
+      // which the sheet holds as +x, so a half turn past -PI/2 shows it upright
+      this.urot[i] = Math.PI / 2;
+      this.ubrot[i] = Math.PI / 2;
+      this.uheldRot[i] = Math.PI / 2;
     }
   }
 
@@ -5610,10 +5647,125 @@ export class Sim {
       if (!this.spawnUnit("brander", { x: s.x, y: s.y, exact: true }, 0)) continue;
       const i = this.n - 1;
       this.plantUnit(i);
-      this.urot[i] = -Math.PI / 2;
-      this.ubrot[i] = -Math.PI / 2;
-      this.uheldRot[i] = -Math.PI / 2;
+      this.urot[i] = Math.PI / 2;
+      this.ubrot[i] = Math.PI / 2;
+      this.uheldRot[i] = Math.PI / 2;
     }
+  }
+
+  /**
+   * THE SIDE SITES, up from the first frame (sites.ts). A mark with no
+   * cache under it is no site. Guards stand evenly round the ring and are
+   * leashed to it; a house, a pylon or a brander is planted a few tiles
+   * off the cache; a flight is launched later, on the clock (runSites).
+   */
+  private raiseSites(): void {
+    this.propSite = new Int16Array(this.terrain.props.length);
+    let ang = 0;
+    for (const site of sitesOf(this.terrain.marks)) {
+      const k = this.propAt[site.y * COLS + site.x];
+      if (k < 0 || PROP_KINDS[this.terrain.props[k].kind].id !== "chest") continue;
+      const x = (site.x + 1) * CELL, y = (site.y + 1) * CELL, r = site.radius * CELL;
+      const st: SiteState = { site, x, y, r, chest: k, state: 0, launched: false, live: 0 };
+      const idx = this.sites.push(st) - 1;
+      this.propSite[k] = idx + 1;
+      const t = site.tier;
+      if (t.hp) this.propHp[k] = t.hp;
+      const plant = (kind: UnitKind, d: number): number => {
+        ang += 2.4;
+        const spot = this.clearNear(x + Math.cos(ang) * d, y + Math.sin(ang) * d, HB_OUTER[UNIT_ID[kind]]);
+        if (!this.spawnUnit(kind, { x: spot.x, y: spot.y, exact: true }, 0)) return -1;
+        const i = this.n - 1;
+        this.plantUnit(i);
+        this.usite[i] = idx + 1;
+        this.urot[i] = Math.PI / 2;
+        this.ubrot[i] = Math.PI / 2;
+        this.uheldRot[i] = Math.PI / 2;
+        return i;
+      };
+      for (const h of t.houses ?? []) {
+        const i = plant(h.kind, 6 * CELL);
+        if (i < 0) continue;
+        this.ufabEvery[i] = h.every;
+        this.ufabT[i] = h.every;
+        this.ufabState[i] = 0;
+      }
+      for (const p of t.pylons ?? [])
+        if (plant(p, 5 * CELL) >= 0) {
+          if (p === "goad") this.siteGoads++;
+          else this.siteBastions++;
+        }
+      for (let b = 0; b < (t.branders ?? 0); b++) plant("brander", 5 * CELL);
+      const roster = Object.entries(t.guards ?? {}) as [UnitKind, number][];
+      const total = roster.reduce((n, [, c]) => n + c, 0);
+      let g = 0;
+      for (const [kind, n] of roster)
+        for (let c = 0; c < n; c++, g++) {
+          const a = (g / total) * Math.PI * 2 + 0.7;
+          const spot = this.clearNear(x + Math.cos(a) * r * 0.55, y + Math.sin(a) * r * 0.55, HB_OUTER[UNIT_ID[kind]]);
+          if (!this.spawnUnit(kind, { x: spot.x, y: spot.y, exact: true }, 0)) continue;
+          this.garrisonUnit(this.n - 1, x, y, r);
+          this.usite[this.n - 1] = idx + 1;
+        }
+    }
+  }
+
+  /** the flights on the clock, and each bomber's arrival over its cache */
+  private runSites(dt: number): void {
+    void dt;
+    for (let s = 0; s < this.sites.length; s++) {
+      const st = this.sites[s];
+      const t = st.site.tier;
+      if (st.state !== 0 || !t.bombers || st.launched || this.time < (t.launch ?? 0)) continue;
+      st.launched = true;
+      const px = (st.site.padX + 0.5) * CELL, py = (st.site.padY + 0.5) * CELL;
+      for (const kind of t.bombers) {
+        if (!this.spawnUnit(kind, { x: px + (Math.random() - 0.5) * CELL, y: py + (Math.random() - 0.5) * CELL, exact: true }, 0)) continue;
+        const i = this.n - 1;
+        this.usite[i] = s + 1;
+        this.ugx[i] = st.x;
+        this.ugy[i] = st.y;
+        const a = Math.atan2(st.y - py, st.x - px);
+        this.urot[i] = a;
+        this.ubrot[i] = a;
+        st.live++;
+        this.siteBombers++;
+      }
+    }
+    if (this.siteBombers === 0) return;
+    const reach = this.coreHold() + CELL * 0.5;
+    for (let i = this.n - 1; i >= 0; i--) {
+      const s = this.usite[i];
+      if (s === 0 || this.ufly[i] === 0 || this.uhp[i] <= 0) continue;
+      const st = this.sites[s - 1];
+      const dx = this.upx[i] - st.x, dy = this.upy[i] - st.y;
+      if (dx * dx + dy * dy > reach * reach) continue;
+      if (st.state === 0) {
+        st.state = 2;
+        if (this.propHp[st.chest] > 0) {
+          this.propHp[st.chest] = 0;
+          this.killProp(st.chest);
+        }
+      }
+      this.killUnit(i);
+    }
+  }
+
+  private openSite(s: number): void {
+    const st = this.sites[s];
+    if (st.state !== 0) return;
+    st.state = 1;
+    this.sitesOpened++;
+    this.siteLast = s;
+    this.pushFxCol(st.x, st.y, 40 / 60, FxKind.ShieldWave, 0, st.r, PAL.lighterOrange);
+  }
+
+  /** every site's state, two bits each in mark order (simreport.ts) —
+   *  as a float, since 24 sites are 48 bits (sites.ts MAX_SITES) */
+  siteStates(): number {
+    let out = 0;
+    for (let s = 0; s < this.sites.length && s < MAX_SITES; s++) out += this.sites[s].state * 4 ** s;
+    return out;
   }
 
   private runFabricators(dt: number): void {
@@ -6678,7 +6830,6 @@ export class Sim {
         // only the OTHER side's buildings are targets: a body walks past the
         // swarm's own conquered turret, and that turret never fires on it
         if (this.enemyTowers > 0 && teamOf(t) !== team) continue;
-        if (ground && this.onHill(t)) continue;
         const half = (this.sizeOf(t) * CELL) / 2;
         const dx = t.x - x, dy = t.y - y;
         const d = Math.sqrt(dx * dx + dy * dy) - half;
@@ -6795,7 +6946,6 @@ export class Sim {
         if (!t || seen.has(t)) continue;
         seen.add(t);
         if (this.enemyTowers > 0 && teamOf(t) !== team) continue;
-        if (ground && this.onHill(t)) continue;
         const half = (this.sizeOf(t) * CELL) / 2;
         const dx = t.x - x, dy = t.y - y;
         if (Math.sqrt(dx * dx + dy * dy) - half <= r) out.push(t);
@@ -6873,7 +7023,6 @@ export class Sim {
         if (!t || seen.has(t)) continue;
         seen.add(t);
         if (this.enemyTowers > 0 && teamOf(t) !== team) continue;
-        if (ground && this.onHill(t)) continue;
         out.push(t);
       }
     }
@@ -7146,6 +7295,16 @@ export class Sim {
   /** a hit on a prop: no armour, no reward; at zero it comes down */
   private propHit(k: number, dmg: number, fx: BulletFx | undefined, angle: number, col?: RGB, nature = DMG_BULLET): void {
     if (this.propHp[k] <= 0) return;
+    const site = this.propSite[k] > 0 ? this.sites[this.propSite[k] - 1] : null;
+    if (site && site.state === 0) {
+      // a bomber run's cache is the flight's to break, not the board's
+      if (site.site.tier.bombers) return;
+      const back = site.site.tier.reflect;
+      if (back) {
+        const t = this.nearestStructure(site.x, site.y, 40 * CELL, false, "player");
+        if (t && !isCore(t)) this.damageTower(t, dmg * back);
+      }
+    }
     if (this.propHp[k] >= propHpFor(this.terrain.props[k].kind)) this.propHurt.push(k);
     if (nature & DMG_ELECTRIC && this.propWet[k] > 0) dmg *= WET_SHOCK_MUL;
     this.propHp[k] -= dmg;
@@ -7184,6 +7343,7 @@ export class Sim {
     this.propPoison[k] = 0;
     this.propWet[k] = 0;
     this.terrainVersion++;
+    if (this.propSite[k] > 0) this.openSite(this.propSite[k] - 1);
   }
   /** what a hit's status does to a prop: the body rules (applyBurn, applyPoison, applyWet) */
   private propStatus(k: number, burn: number | undefined, poison: number | undefined, wet: BulletStats["wet"]): void {
@@ -7289,8 +7449,9 @@ export class Sim {
   }
 
   /** does this building stand on a hill? A footprint is all hill or all
-   *  floor (board.ts groundClear), so its anchor cell answers for it. A
-   *  ground body cannot hit one; a flyer can */
+   *  floor (board.ts groundClear), so its anchor cell answers for it. Any
+   *  body may hit one now (Tower.high); the `ground` flags that used to
+   *  spare it are still passed and mean nothing */
   private onHill(t: Structure): boolean {
     return this.hills[t.gy * COLS + t.gx] === 1;
   }
@@ -7401,10 +7562,15 @@ export class Sim {
         // so what it picks must be a thing it can walk straight at, and
         // its reach is a few tiles — a ray a candidate costs nothing there.
         const seek = HAS_CHARGE && KIND_CHARGE[ukind[i]] > 0;
+        // a site's bomber flies its line and dives at nothing; a site's
+        // brander hunts no cart and burns what the board builds in reach
+        const onSite = this.usite[i] > 0;
         tgt =
-          HAS_HUNTS_CONVOY && KIND_HUNTS_CONVOY[ukind[i]]
-            ? this.pickConvoyAim(x, y, reach)
-            : this.pickAim(x, y, reach, sighted && (seek || this.ugar[i] === 1), this.ufly[i] === 0);
+          onSite && this.ufly[i] === 1
+            ? null
+            : HAS_HUNTS_CONVOY && KIND_HUNTS_CONVOY[ukind[i]] && !onSite
+              ? this.pickConvoyAim(x, y, reach)
+              : this.pickAim(x, y, reach, sighted && (seek || this.ugar[i] === 1), this.ufly[i] === 0);
         // A POSTED BODY SEES ONLY ITS OWN GROUND (see ugar). The pick is
         // the ordinary one and then it is CLIPPED to the post's circle:
         // anything standing outside the leash is not a target, however
@@ -7429,8 +7595,10 @@ export class Sim {
       // a cart moves between re-picks, so a hunter's aim follows it and
       // the hull (a planted body, never turned by the drive) turns with it
       if (tgt && HAS_HUNTS_CONVOY && KIND_HUNTS_CONVOY[ukind[i]]) {
-        tgt.x = tgt.s.x;
-        tgt.y = tgt.s.y;
+        if (this.usite[i] === 0) {
+          tgt.x = tgt.s.x;
+          tgt.y = tgt.s.y;
+        }
         const a = Math.atan2(tgt.y - y, tgt.x - x);
         urot[i] = a;
         this.ubrot[i] = a;
@@ -8838,7 +9006,7 @@ export class Sim {
   placeTower(gx: number, gy: number, kind: TowerKind): PlaceResult {
     const sz = structStats(kind).size;
     if (!this.canPlace(gx, gy, kind, sz)) return "invalid";
-    this.addTower(gx, gy, kind, sz, this.charging ? rollTurretMods(this.mods, kind) : 0);
+    this.addTower(gx, gy, kind, sz, rollTurretMods(this.mods, kind));
     return "ok";
   }
 
@@ -8848,7 +9016,7 @@ export class Sim {
    * footprint is laid. Null is the ordinary case.
    */
   rollSoloMod(): ModId | null {
-    return this.charging ? rollSolo(this.mods) : null;
+    return rollSolo(this.mods);
   }
 
   /**
@@ -9433,6 +9601,7 @@ export class Sim {
       this.ugary[i] = 0;
       this.ugarr[i] = 0;
       this.ugarRoute[i] = null;
+      this.usite[i] = 0;
       this.uid[i] = this.nextId++;
       this.ukind[i] = UNIT_ID[kind];
       this.ufly[i] = fly ? 1 : 0;
@@ -10556,6 +10725,15 @@ export class Sim {
     // handed the mission (skipToTime)
     if (this.ukind[i] === UNIT_ID.railgun && !this.crossSweeping) this.razeKilled++;
     if (FAB_HOUSE[this.ukind[i]] !== 0 && !this.crossSweeping) this.fabKilled++;
+    if (this.usite[i] > 0 && this.ukind[i] === UNIT_ID.goad) this.siteGoads--;
+    if (this.usite[i] > 0 && this.ukind[i] === UNIT_ID.bastion) this.siteBastions--;
+    if (this.usite[i] > 0 && this.ufly[i] === 1) {
+      const st = this.sites[this.usite[i] - 1];
+      st.live--;
+      this.siteBombers--;
+      // the whole flight down before any of it arrived: the cache opens
+      if (st.live <= 0 && st.launched && st.state === 0) this.openSite(this.usite[i] - 1);
+    }
     const cross = this.ucross[i];
     if (cross >= 0) {
       const worm = this.crossers[cross];
@@ -10677,6 +10855,8 @@ export class Sim {
     this.ugarr[i] = this.ugarr[n];
     this.ugarRoute[i] = this.ugarRoute[n];
     this.ugarRoute[n] = null;
+    this.usite[i] = this.usite[n];
+    this.usite[n] = 0;
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
     this.ufly[i] = this.ufly[n];
@@ -11863,6 +12043,7 @@ export class Sim {
     // same exemption on the other side of the field: a status is not a hit,
     // so there is nothing for plating to shave. It is also the whole reason
     // the Venom spitters and the Ground mechs are different problems.
+    if (!isCore(t) && t.high) dmg *= HIGH_GROUND_CUT;
     if (!pierceArmor && !isCore(t)) dmg = Sim.applyArmor(dmg, t.spec.armor);
     // THE CART TAKES ITS HIT SOMEWHERE ELSE (damageConvoy). Everything
     // below this line answers the death of a BUILDING — a revive, a

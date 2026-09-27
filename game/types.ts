@@ -224,6 +224,9 @@ export interface Tower {
    * whole shape of the mechanic — see the header of mods.ts.
    */
   mods: number;
+  /** standing on a hill: half the damage, a fifth more reach (constants.ts
+   *  HIGH_GROUND_*), and every body may shoot it */
+  high: boolean;
   /**
    * The stats this turret actually fires with: its kind's (the tech
    * tree's rungs and the run's relics folded in, Sim.specs) with this

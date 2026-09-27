@@ -2316,6 +2316,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // moment it falls — so it is the one worth defending, and a mission
   // that wants it answered early should place it where a board can get at
   // it rather than make it soft.
+  // ...and on a side site (sites.ts shrine) each is a stamp aura over the
+  // ground round it, pulsed every ten seconds out to a wide ring: the Goad
+  // hastes every body in it, the Bastion plates it. Local, never the board
   goad: {
     hp: 9000,
     speed: 0,
@@ -2324,6 +2327,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 5,
     rotateSpeed: 30,
     unslowable: true,
+    hasteField: { mult: 1.5, reload: 10, range: 26 * CELL },
   },
   bastion: {
     hp: 14000,
@@ -2333,6 +2337,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 5,
     rotateSpeed: 30,
     unslowable: true,
+    armorField: { amount: 20, reload: 10, range: 26 * CELL },
   },
 
   // ── THE FABRICATORS, the two houses (game/fabricatorArt.ts) ──────────

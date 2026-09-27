@@ -1,6 +1,6 @@
 # Props
 
-The things that stand on the ground: twenty-seven kinds, painted in code in
+The things that stand on the ground: the standing kinds below and the ten themes' roster, painted in code in
 `game/propArt.ts`, placed by the map generator (`game/mapgen.ts`) and by
 the map editor, drawn by the renderer's terrain pass. This page is the
 system; the file headers say only where things are.
@@ -55,6 +55,45 @@ reorder.**
 | hull, silo | 3 | a wrecked mech hull, a fuel tank |
 | walker, bunker | 4 | a dead mech, a ruined emplacement |
 | wreck, colossus | 6 | a crashed gunship, a fallen giant |
+| chest | 2 | a side site's cache (docs/sites.md): the generator stands one at each site |
+| menhir | 1 | a standing stone, tinted like the rock: a cairn's ring |
+| pillar, brazier | 1 | a column, an iron fire bowl: a shrine's furniture |
+| altar | 2 | a stained slab on a plinth |
+
+## The roster
+
+The rolled themes (`mapgen.ts THEMES`) draw from a fixed roster rather
+than the table above: **one family a theme at every footprint, two
+auxiliaries, and the one rock shared by all.** A family is one silhouette
+that comes in 1, 2, 3, 4, 6 and 10 tiles — the meadow's canopy, the salt
+pan's cactus, the tundra's ice slab, the badlands' mesa, the ashfall's
+burnt snag, the caldera's basalt columns, the shallows' coral, the
+jungle's broadleaf, the spore field's cap and the crystal barrens' shard
+— so a prop's size is its health (`PROP_HP`, by footprint, the same in
+every theme) and its family is its map. The auxiliaries are a 2-tile and
+a 1-tile kind of the theme's own (a log and a stump, a drift and an ice
+shard, a flow tongue and a lava bomb…) that also stand at the shore. The
+rock is the boulder, rock, outcrop, knoll, crag and tor, in the rock
+tone of the wall family under it. Nothing else crosses a theme; the made
+kinds belong to the sites (`sites.md`), and the older kinds above stay
+for the authored maps and the editor.
+
+Every roster painting is **one shape under one shading**: its pieces go
+into a mask and the union of the mask gets the three bands, so nothing is
+drawn inside the outline and no shadow is painted: the renderer casts it. A kind's paintings differ
+by one mark, the stones' own three: plain, a face catching the light
+up-right, hollows on the shaded side. The 1-, 2- and 3-tile kinds carry
+three paintings, the 4-tile two, the 6- and 10-tile one.
+
+**The families live in two slots on the sheet, not in cells of their
+own.** Ten families at ten tiles would not fit the atlas, and a board
+carries at most two themes (`random-maps.md`, the blend), so the atlas
+reserves two sets of family cells (`FAMILY_SETS`) and the renderer draws
+the board's themes into them when it builds the terrain
+(`ensureFamilies`, then the texture is uploaded again). The six- and
+ten-tile paintings sit at 1x in their cells, the rest at 2x like every
+other prop. A document that stands a third theme's kinds draws them from
+the first slot.
 
 **Nature kinds are tinted, made kinds carry their paint.** A nature prop
 is painted in four greys and multiplied at draw time by its `tone`

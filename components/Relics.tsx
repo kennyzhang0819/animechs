@@ -1,6 +1,6 @@
 "use client";
 
-import type { RefObject } from "react";
+import { useEffect, type RefObject } from "react";
 
 import { modBlurb, modDef, modName, stackLine, type ModGlyph, type ModId } from "@/game/mods";
 import { relicDef, type RelicGlyph, type RelicId } from "@/game/relics";
@@ -287,7 +287,23 @@ export function ModChoice({
   offer: ModOffer | null;
   onChoose: (id: ModId) => void;
 }) {
-  if (!offer || offer.ids.length === 0) return null;
+  const ids = offer?.ids ?? [];
+  // the number keys take a card, the way the deal's letters buy one (Deal.tsx)
+  useEffect(() => {
+    if (ids.length === 0) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      const m = /^Digit([1-3])$/.exec(e.code);
+      if (!m) return;
+      const id = ids[Number(m[1]) - 1];
+      if (!id) return;
+      e.preventDefault();
+      onChoose(id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [ids, onChoose]);
+  if (!offer || ids.length === 0) return null;
   const copies = Math.max(1, offer.copies);
   return (
     <div
@@ -297,7 +313,7 @@ export function ModChoice({
     >
       <div className="flex items-baseline justify-between gap-2">
         <span className="font-display text-[13px] font-bold uppercase leading-none tracking-wide text-[#FFD37F]">
-          Choose 1 mod
+          {offer.from ? `${offer.from} opened` : "Choose 1 mod"}
         </span>
         {/* THE AMOUNT, WHERE IT MATTERS: a x4 press paid four fees and the
             one card taken is taken four times (game.ts ModOffer). That is

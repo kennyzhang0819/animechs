@@ -214,7 +214,7 @@ Math.random = () => {
 const R = (m) => require(path.join(DIST, m));
 const L = R("levels.js"), M = R("maps.js"), LA = R("ladder.js"), C = R("constants.js");
 const TR = R("track.js"), FA = R("foundryArt.js"), T = R("types.js"), MK = R("missionMarks.js");
-const SR = R("simreport.js"), EC = R("economy.js");
+const SR = R("simreport.js"), EC = R("economy.js"), PA = R("propArt.js");
 /** the most turrets the battle check will stand up. Every world we ship runs
  *  out of legal ground long before this, so it is a stop against a future
  *  map that does not, never a target. */
@@ -600,6 +600,13 @@ for (const w of L.WORLDS) {
       for (let x = mk.x; x < mk.x + size; x++)
         if (sim.terrain.blocked[y * COLS + x]) rock++;
     if (rock > 0) say(`a ${mk.kind} at ${mk.x},${mk.y} stands on ${rock} cells of rock`);
+  }
+  // ...and a side site (game/sites.ts) is its cache: a mark with no chest
+  // prop under it is one the sim skips without a word
+  for (const mk of sim.terrain.marks) {
+    if (mk.kind !== "site") continue;
+    const chest = sim.terrain.props.find((p) => p.x === mk.x && p.y === mk.y && PA.PROP_KINDS[p.kind].id === "chest");
+    if (!chest) say(`a site at ${mk.x},${mk.y} has no cache under it`);
   }
 }
 report(

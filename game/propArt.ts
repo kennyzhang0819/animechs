@@ -52,6 +52,21 @@ export const PROP_TONES: readonly PropTone[] = [
   { id: "film", label: "Mossed", hex: "#dbe2c7" },
   { id: "ochre", label: "Ochre dust", hex: "#efd8c2" },
   ...WALL_KINDS.map((k) => ({ id: `rock-${k}`, label: `${k} rock`, hex: mix(WALL_STYLE[k].face, WALL_STYLE[k].light, 0.6) })),
+  // the themes' own tones (THEME_PROPS), after the rock tones so ROCK_TONE0 holds
+  { id: "cactus", label: "Cactus", hex: leaf("#8fae6a") },
+  { id: "ice", label: "Ice", hex: "#d6e4f2" },
+  { id: "mesa", label: "Mesa", hex: "#c9865a" },
+  { id: "basalt", label: "Basalt", hex: "#5a5356" },
+  { id: "coral-red", label: "Red coral", hex: "#e05a48" },
+  { id: "coral-orange", label: "Orange coral", hex: "#e8903a" },
+  { id: "coral-yellow", label: "Yellow coral", hex: "#e6c84a" },
+  { id: "coral-purple", label: "Purple coral", hex: "#a86bb8" },
+  { id: "jungle", label: "Jungle", hex: leaf("#4f9a4a") },
+  { id: "cap", label: "Cap", hex: "#b898c4" },
+  { id: "crystal", label: "Crystal", hex: "#b6c3ef" },
+  { id: "bleached", label: "Bleached", hex: "#d8c9a4" },
+  { id: "shell", label: "Shell", hex: "#e8dcc6" },
+  { id: "pod", label: "Pod", hex: "#9fb87a" },
 ];
 export const TONE = {
   pine: 0, mangrove: 1, frost: 2, scrub: 3, ash: 4, bark: 5,
@@ -59,6 +74,13 @@ export const TONE = {
 } as const;
 export const ROCK_TONE0 = 12;
 export const rockTone = (k: WallKind): number => ROCK_TONE0 + WALL_KINDS.indexOf(k);
+const FTONE0 = ROCK_TONE0 + WALL_KINDS.length;
+/** the themes' tones, by index (see PROP_TONES) */
+export const FTONE = {
+  cactus: FTONE0, ice: FTONE0 + 1, mesa: FTONE0 + 2, basalt: FTONE0 + 3,
+  coralRed: FTONE0 + 4, coralOrange: FTONE0 + 5, coralYellow: FTONE0 + 6, coralPurple: FTONE0 + 7,
+  jungle: FTONE0 + 8, cap: FTONE0 + 9, crystal: FTONE0 + 10, bleached: FTONE0 + 11, shell: FTONE0 + 12, pod: FTONE0 + 13,
+} as const;
 const LEAF_TONES = [TONE.pine, TONE.mangrove, TONE.frost, TONE.scrub, TONE.ash];
 const WOOD_TONES = [TONE.bark, TONE.ash];
 const WEATHER_TONES = [TONE.plain, TONE.dust, TONE.rime, TONE.soot, TONE.film, TONE.ochre];
@@ -279,6 +301,8 @@ export interface PropDef {
   tones: readonly number[];
   /** the corner map's colour for a made prop (a tinted one reads its tone) */
   mini?: string;
+  /** a theme's own kind: drawn from that theme's slot on the sheet (atlas.ts FAMILY_SETS), not a cell of its own */
+  family?: { theme: string; slot: string };
   paint: (s: Sheet, rng: () => number, variant: number) => void;
 }
 
@@ -286,6 +310,226 @@ const nature = (id: string, label: string, tiles: PropTiles, reach: number, tone
   ({ id, label, tiles, reach, turns: false, variants, tinted: true, tones, paint });
 const made = (id: string, label: string, tiles: PropTiles, mini: string, paint: PropDef["paint"]): PropDef =>
   ({ id, label, tiles, reach: tiles, turns: true, variants: 1, tinted: false, tones: WEATHER_TONES, mini, paint });
+
+// ---------- the themes' families (docs/props.md, "The roster") ----------
+// One silhouette under one shading: pieces go into a mask and the mask's
+// union gets the bands, so nothing is drawn inside the outline but the one
+// mark a painting may carry. No shadow: the renderer casts the prop's.
+
+const SOFT_MARK = "#b8b8b8";
+type Draw = (m: Sheet) => void;
+function union(s: Sheet, rng: () => number, cx: number, cy: number, R: number, draw: Draw, litAt = 0.2, darkAt = -0.24): Sheet {
+  const m = new Sheet(s.n);
+  draw(m);
+  const shade = bands(rng, cx, cy, R, litAt, darkAt);
+  for (let y = 0; y < s.n; y++) for (let x = 0; x < s.n; x++) if (m.at(x, y)) s.put(x, y, shade(x, y));
+  return m;
+}
+/** the one mark, clipped to the shape: 1 a face catching the light up-right, 2 hollows a shade down on the shaded side */
+function mark(s: Sheet, m: Sheet, rng: () => number, v: number, cx: number, cy: number, R: number): void {
+  const only = (c: Col) => (x: number, y: number): Col | null => (m.at(x, y) ? c : null);
+  if (v === 1) {
+    const b = -0.79 + (rng() - 0.5) * 0.6, d = R * 0.38;
+    s.disc(cx + Math.cos(b) * d, cy + Math.sin(b) * d, R * 0.4, R * 0.34, only(LIGHT));
+  } else if (v === 2) {
+    const n = R >= 60 ? 3 : 2;
+    for (let i = 0; i < n; i++) {
+      const b = 2.36 + (i - (n - 1) / 2) * 0.8 + (rng() - 0.5) * 0.3, d = R * (0.35 + rng() * 0.25), r = Math.max(5, R * (0.13 + rng() * 0.05));
+      s.disc(cx + Math.cos(b) * d, cy + Math.sin(b) * d, r, r * 0.9, only(SOFT_MARK));
+    }
+  }
+}
+const lumpy = (rng: () => number, cx: number, cy: number, r: number, squash: number, n: number, wobble: number): Pt[] => {
+  const pts: Pt[] = [], a0 = rng() * 6.28;
+  for (let i = 0; i < n; i++) { const a = a0 + (i / n) * 6.28, rr = r * (1 - wobble + rng() * wobble * 2); pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * squash]); }
+  return pts;
+};
+const hexagon = (rng: () => number, cx: number, cy: number, r: number, ang: number): Pt[] => {
+  const v: Pt[] = [];
+  for (let k = 0; k < 6; k++) { const a = ang + (k / 6) * 6.28, rr = r * (0.88 + rng() * 0.24); v.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]); }
+  return v;
+};
+const shard = (cx: number, cy: number, a: number, L: number, W: number): Pt[] => {
+  const ux = Math.cos(a), uy = Math.sin(a), nx = -uy, ny = ux, p = (d: number, w: number): Pt => [cx + ux * d + nx * w, cy + uy * d + ny * w];
+  return [p(L * 0.1, -W / 2), p(L * 0.78, -W / 2), p(L, -W * 0.08), p(L, W * 0.08), p(L * 0.78, W / 2), p(L * 0.1, W / 2), p(0, 0)];
+};
+const slab = (cx: number, cy: number, L: number, W: number, ang: number): Pt[] => {
+  const ca = Math.cos(ang), sa = Math.sin(ang), p = (u: number, q: number): Pt => [cx + u * ca - q * sa, cy + u * sa + q * ca];
+  return [p(-L / 2, 0), p(-L / 4, -W / 2), p(L / 4, -W / 2), p(L / 2, 0), p(L / 4, W / 2), p(-L / 4, W / 2)];
+};
+const leafPts = (cx: number, cy: number, len: number, wid: number, ang: number): Pt[] => {
+  const pts: Pt[] = [];
+  for (let i = 0; i < 28; i++) { const t = (i / 28) * 6.28, u = Math.cos(t) * len, v = Math.sin(t) * wid * (0.75 + 0.25 * Math.cos(t + 0.6)); pts.push([cx + u * Math.cos(ang) - v * Math.sin(ang), cy + u * Math.sin(ang) + v * Math.cos(ang)]); }
+  return pts;
+};
+const teardrop = (c: number, R: number, a: number): Pt[] => {
+  const pts: Pt[] = [];
+  for (let i = 0; i < 28; i++) { const t = (i / 28) * 6.28, r = R * 0.68 + R * 0.32 * Math.max(0, Math.cos(t - a)) ** 3; pts.push([c + Math.cos(t) * r, c + Math.sin(t) * r]); }
+  return pts;
+};
+function branches(m: Sheet, rng: () => number, cx: number, cy: number, R: number, arms: number, w: number): void {
+  m.disc(cx, cy, w * 0.9, w * 0.9, MID);
+  const a0 = rng() * 6.28;
+  const grow = (x: number, y: number, a: number, l: number, depth: number): void => {
+    const x1 = x + Math.cos(a) * l, y1 = y + Math.sin(a) * l;
+    m.bar([x, y], [x1, y1], w, MID);
+    m.disc(x1, y1, w / 2, w / 2, MID);
+    if (depth === 0) return;
+    grow(x1, y1, a + 0.55 + rng() * 0.2, l * 0.65, depth - 1);
+    if (rng() < 0.8) grow(x1, y1, a - 0.55 - rng() * 0.2, l * 0.6, depth - 1);
+  };
+  for (let i = 0; i < arms; i++) grow(cx, cy, a0 + (i / arms) * 6.28 + (rng() - 0.5) * 0.4, R * (0.4 + rng() * 0.12), 2);
+}
+const logShape = (m: Sheet, rng: () => number, c: number, R: number, flare: boolean): void => {
+  const a = -0.5 + rng(), w = R * 0.42, l = R * 0.9, p = (t: number, q: number): Pt => [c + Math.cos(a) * t - Math.sin(a) * q, c + Math.sin(a) * t + Math.cos(a) * q];
+  m.bar(p(-l, 0), p(l, 0), w, MID);
+  const [ax, ay] = p(-l, 0), [bx, by] = p(l, 0);
+  m.disc(ax, ay, w / 2, w / 2, MID);
+  m.disc(bx, by, w / 2, w / 2, MID);
+  if (flare) { m.bar(p(-l, 0), p(-l - w * 0.6, -w * 0.7), w * 0.5, MID); m.bar(p(-l, 0), p(-l - w * 0.5, w * 0.7), w * 0.5, MID); }
+};
+const stumpShape = (m: Sheet, rng: () => number, c: number, R: number): void => {
+  m.disc(c, c, R * 0.6, R * 0.6, MID);
+  const a0 = rng() * 6.28;
+  for (let i = 0; i < 3; i++) { const b = a0 + (i / 3) * 6.28; m.bar([c, c], [c + Math.cos(b) * R * 0.95, c + Math.sin(b) * R * 0.95], R * 0.3, MID); }
+};
+
+/** a family painter: the shape at centre `c` with radius `R`, in painting `v` */
+type Fam = (s: Sheet, rng: () => number, c: number, R: number, v: number) => void;
+const shaped = (litAt: number, darkAt: number, draw: (m: Sheet, rng: () => number, c: number, R: number) => void): Fam =>
+  (s, rng, c, R, v) => { const m = union(s, rng, c, c, R, (mm) => draw(mm, rng, c, R), litAt, darkAt); mark(s, m, rng, v, c, c, R); };
+const heap = (n: (R: number) => number, rmin: number, rmax: number, litAt: number, darkAt: number): Fam =>
+  shaped(litAt, darkAt, (m, rng, c, R) => {
+    m.disc(c, c, R * 0.55, R * 0.55, MID);
+    const k = n(R);
+    for (let i = 0; i < k; i++) { const a = (i / k) * 6.28 + rng() * 0.5, d = R * (0.35 + rng() * 0.3), r = R * (rmin + rng() * (rmax - rmin)); m.disc(c + Math.cos(a) * d, c + Math.sin(a) * d * 0.9, r, r, MID); }
+  });
+const dense: Fam = shaped(0.2, -0.22, (m, rng, c, R) => {
+  const lobes = R < 40 ? 5 : R < 90 ? 7 : 9, a0 = rng() * 6.28;
+  for (let i = 0; i < lobes; i++) { const b = a0 + (i / lobes) * 6.28 + (rng() - 0.5) * 0.2, d = R * 0.5, r = R * (0.46 + rng() * 0.06); m.disc(c + Math.cos(b) * d, c + Math.sin(b) * d, r, r, MID); }
+  m.disc(c, c, R * 0.62, R * 0.62, MID);
+});
+const cactus: Fam = shaped(0.2, -0.24, (m, rng, c, R) => {
+  m.disc(c, c, R * 0.42, R * 0.42, MID);
+  const n = R < 40 ? 3 : R < 90 ? 6 : 10;
+  for (let i = 0; i < n; i++) { const a = (i / n) * 6.28 + rng() * 0.5, d = R * (0.35 + rng() * 0.2); m.oval(c + Math.cos(a) * d, c + Math.sin(a) * d, R * 0.34, R * 0.2, a + (rng() - 0.5) * 0.5, MID); }
+});
+const iceSlab: Fam = shaped(0.1, -0.4, (m, rng, c, R) => {
+  const n = R < 40 ? 1 : R < 90 ? 2 : 3;
+  for (let i = 0; i < n; i++) {
+    const a = i === 0 ? 0 : rng() * 6.28, d = i === 0 ? 0 : R * (0.3 + rng() * 0.2), w = R * (0.9 - i * 0.2), h = w * (0.5 + rng() * 0.25);
+    const cx = c + Math.cos(a) * d, cy = c + Math.sin(a) * d, ang = rng() * 3.14;
+    m.oval(cx, cy, w / 1.6, h / 1.6, ang, MID);
+    m.box(cx, cy, w, h, ang, MID);
+  }
+});
+const mesa: Fam = shaped(0.0, -0.4, (m, rng, c, R) => m.poly(lumpy(rng, c, c, R, 0.85, R < 40 ? 5 : 7, 0.2), MID));
+const burntSnag: Fam = shaped(0.2, -0.24, (m, rng, c, R) => {
+  const w = Math.max(5, R * 0.16), a0 = rng() * 6.28, arms = R < 40 ? 4 : R < 90 ? 5 : 7;
+  m.disc(c, c, w, w, MID);
+  const grow = (x: number, y: number, a: number, l: number, depth: number): void => {
+    const x1 = x + Math.cos(a) * l, y1 = y + Math.sin(a) * l;
+    m.bar([x, y], [x1, y1], w, MID);
+    if (depth === 0) return;
+    grow(x1, y1, a + 0.6 + rng() * 0.4, l * (0.5 + rng() * 0.2), depth - 1);
+    if (rng() < 0.7) grow(x1, y1, a - 0.6 - rng() * 0.4, l * (0.45 + rng() * 0.2), depth - 1);
+  };
+  for (let i = 0; i < arms; i++) grow(c, c, a0 + (i / arms) * 6.28 + (rng() - 0.5) * 0.5, R * (0.5 + rng() * 0.15), R < 40 ? 1 : 2);
+});
+const columns: Fam = shaped(0.05, -0.38, (m, rng, c, R) => {
+  const r = Math.max(9, R * 0.3), ang = rng() * 1.05, dx = r * 1.72, dy = r * 1.5;
+  for (let j = -4; j <= 4; j++)
+    for (let i = -4; i <= 4; i++) {
+      const x = c + (i + (j % 2 ? 0.5 : 0)) * dx, y = c + j * dy;
+      if (Math.hypot(x - c, (y - c) * 1.1) > R - r * 0.5) continue;
+      m.poly(hexagon(() => 0.5, x, y, r * 1.14, ang), MID);
+    }
+  m.poly(hexagon(rng, c, c, r, ang), MID);
+});
+const coral: Fam = shaped(0.16, -0.22, (m, rng, c, R) => {
+  branches(m, rng, c, c, R, R < 40 ? 3 : R < 90 ? 5 : 7, Math.max(6, R * 0.22));
+  if (R >= 60) for (let i = 0; i < 3; i++) { const a = rng() * 6.28, d = R * (0.25 + rng() * 0.3); m.disc(c + Math.cos(a) * d, c + Math.sin(a) * d, R * 0.24, R * 0.24, MID); }
+});
+/** a leaf, a heap of leaves, then canopies of a few big lobes */
+const broadleaf: Fam = (s, rng, c, R, v) => {
+  if (R < 30) { const m = union(s, rng, c, c, R, (mm) => mm.poly(leafPts(c, c, R, R * 0.62, rng() * 6.28), MID)); mark(s, m, rng, 0, c, c, R); }
+  else if (R < 50) shaped(0.2, -0.24, (m, rr, cc, RR) => { for (let i = 0; i < 6; i++) { const a = rr() * 6.28, d = rr() * RR * 0.35; m.poly(leafPts(cc + Math.cos(a) * d, cc + Math.sin(a) * d, RR * 0.65, RR * 0.4, rr() * 6.28), MID); } })(s, rng, c, R, v);
+  else dense(s, rng, c, R, v);
+};
+const caps: Fam = (s, rng, c, R, v) => {
+  if (R < 90) shaped(0.14, -0.3, (m, rr, cc, RR) => m.poly(lumpy(rr, cc, cc, RR, 1, 9, 0.07), MID))(s, rng, c, R, v);
+  else heap(() => 8, 0.25, 0.42, 0.14, -0.3)(s, rng, c, R, v);
+};
+const shards: Fam = (s, rng, c, R, v) => {
+  const n = R < 40 ? 3 : R < 90 ? 4 : 6;
+  const m = union(s, rng, c, c, R, (mm) => {
+    mm.poly(hexagon(rng, c, c, R * 0.42, rng() * 1.05), MID);
+    const a0 = rng() * 6.28;
+    for (let i = 0; i < n; i++) { const a = a0 + (i / n) * 6.28 + (rng() - 0.5) * 0.4, L = R * (0.6 + rng() * 0.4), W = R * (0.3 + rng() * 0.12); mm.poly(shard(c, c, a, L, W), MID); }
+  }, 0.1, -0.3);
+  mark(s, m, rng, v === 2 ? 0 : v, c, c, R * 0.8);
+};
+const LOG = shaped(0.22, -0.24, (m, rng, c, R) => logShape(m, rng, c, R, true));
+const BARE_LOG = shaped(0.22, -0.24, (m, rng, c, R) => logShape(m, rng, c, R, false));
+const STUMP = shaped(0.22, -0.24, (m, rng, c, R) => stumpShape(m, rng, c, R));
+
+/** the footprints a family comes in, their reach and how many paintings each gets (atlas.ts FAMILY_SETS) */
+export const FAMILY_SLOTS: readonly { key: string; tiles: PropTiles; reach: number; variants: number }[] = [
+  { key: "f1", tiles: 1, reach: 1.75, variants: 3 },
+  { key: "f2", tiles: 2, reach: 3, variants: 3 },
+  { key: "f3", tiles: 3, reach: 4.25, variants: 3 },
+  { key: "f4", tiles: 4, reach: 5.5, variants: 2 },
+  { key: "f6", tiles: 6, reach: 8, variants: 1 },
+  { key: "f10", tiles: 10, reach: 11, variants: 1 },
+  { key: "a0", tiles: 2, reach: 3, variants: 3 },
+  { key: "a1", tiles: 1, reach: 1.75, variants: 3 },
+];
+export interface ThemeProps {
+  /** the family's kind ids are `${family}${tiles}`; the auxiliaries their own */
+  family: string;
+  label: string;
+  aux: readonly [{ id: string; label: string; paint: Fam }, { id: string; label: string; paint: Fam }];
+  paint: Fam;
+  /** the family's tones, the first the common one, and the auxiliaries' one tone */
+  tones: readonly number[];
+  auxTone: number;
+}
+/** one family a theme, two auxiliaries, and the rock shared by all (docs/props.md) */
+export const THEME_PROPS: Readonly<Record<string, ThemeProps>> = {
+  meadow: { family: "canopy", label: "Canopy", paint: dense, tones: [TONE.pine], auxTone: TONE.bark,
+    aux: [{ id: "mlog", label: "Log", paint: LOG }, { id: "mstump", label: "Stump", paint: STUMP }] },
+  saltpan: { family: "cactus", label: "Cactus", paint: cactus, tones: [FTONE.cactus], auxTone: FTONE.bleached,
+    aux: [{ id: "bleached", label: "Bleached log", paint: LOG }, { id: "drybush", label: "Dry bush", paint: shaped(0.2, -0.24, (m, rng, c, R) => m.poly(lumpy(rng, c, c, R * 0.9, 0.9, 11, 0.22), MID)) }] },
+  tundra: { family: "iceslab", label: "Ice slab", paint: iceSlab, tones: [FTONE.ice], auxTone: FTONE.ice,
+    aux: [{ id: "drift", label: "Drift", paint: shaped(0.35, -0.5, (m, rng, c, R) => m.poly(lumpy(rng, c, c, R, 0.55, 9, 0.08), MID)) }, { id: "iceshard", label: "Ice shard", paint: shaped(0.1, -0.4, (m, rng, c, R) => m.poly(slab(c, c, R * 1.8, R * 0.8, rng() * 3.14), MID)) }] },
+  badlands: { family: "mesa", label: "Mesa", paint: mesa, tones: [FTONE.mesa], auxTone: FTONE.mesa,
+    aux: [{ id: "drylog", label: "Dry log", paint: LOG }, { id: "hoodoo", label: "Hoodoo", paint: shaped(0.0, -0.4, (m, rng, c, R) => m.poly(lumpy(rng, c, c, R * 0.85, 0.85, 5, 0.2), MID)) }] },
+  ashfall: { family: "bsnag", label: "Burnt snag", paint: burntSnag, tones: [TONE.ash], auxTone: TONE.ash,
+    aux: [{ id: "charred", label: "Charred log", paint: BARE_LOG }, { id: "ashstump", label: "Ash stump", paint: STUMP }] },
+  caldera: { family: "columns", label: "Basalt columns", paint: columns, tones: [FTONE.basalt], auxTone: FTONE.basalt,
+    aux: [{ id: "flow", label: "Flow tongue", paint: shaped(0.2, -0.3, (m, rng, c, R) => { const a = rng() * 3.14; m.oval(c, c, R, R * 0.5, a, MID); m.disc(c + Math.cos(a) * R * 0.6, c + Math.sin(a) * R * 0.6, R * 0.42, R * 0.42, MID); }) }, { id: "bomb", label: "Lava bomb", paint: shaped(0.2, -0.3, (m, rng, c, R) => m.poly(teardrop(c, R, rng() * 6.28), MID)) }] },
+  shallows: { family: "coral", label: "Coral", paint: coral, tones: [FTONE.coralRed, FTONE.coralOrange, FTONE.coralYellow, FTONE.coralPurple], auxTone: FTONE.bleached,
+    aux: [{ id: "driftlog", label: "Driftwood", paint: LOG }, { id: "shell", label: "Shell", paint: shaped(0.1, -0.28, (m, rng, c, R) => { const a = rng() * 6.28, hx = c - Math.cos(a) * R * 0.5, hy = c - Math.sin(a) * R * 0.5, pts: Pt[] = [[hx, hy]]; for (let i = 0; i <= 8; i++) { const b = a - 0.95 + (i / 8) * 1.9, r = R * 1.35 - (i % 2) * R * 0.18; pts.push([hx + Math.cos(b) * r, hy + Math.sin(b) * r]); } m.poly(pts, MID); }) }] },
+  jungle: { family: "jungle", label: "Broadleaf", paint: broadleaf, tones: [FTONE.jungle], auxTone: TONE.bark,
+    aux: [{ id: "mossylog", label: "Mossy trunk", paint: LOG }, { id: "rootknot", label: "Root knot", paint: STUMP }] },
+  sporefield: { family: "cap", label: "Cap", paint: caps, tones: [FTONE.cap], auxTone: FTONE.pod,
+    aux: [{ id: "stalk", label: "Fallen stalk", paint: BARE_LOG }, { id: "pod", label: "Spore pod", paint: shaped(0.2, -0.24, (m, rng, c, R) => m.poly(teardrop(c, R, rng() * 6.28), MID)) }] },
+  crystal: { family: "shard", label: "Shard", paint: shards, tones: [FTONE.crystal], auxTone: FTONE.crystal,
+    aux: [{ id: "column", label: "Broken column", paint: shaped(0.1, -0.3, (m, rng, c, R) => m.poly(slab(c, c, R * 1.9, R * 0.9, rng() * 3.14), MID)) }, { id: "sliver", label: "Sliver", paint: shaped(0.1, -0.3, (m, rng, c, R) => m.poly(slab(c, c, R * 1.8, R * 0.6, rng() * 3.14), MID)) }] },
+};
+export const THEME_IDS: readonly string[] = Object.keys(THEME_PROPS);
+const themeKind = (theme: string, slot: (typeof FAMILY_SLOTS)[number], id: string, label: string, tones: readonly number[], fam: Fam): PropDef => {
+  const n = Math.round(slot.reach * PROP_PX), c = n / 2, R = c - 6;
+  return { id, label, tiles: slot.tiles, reach: slot.reach, turns: false, variants: slot.variants, tinted: true, tones, family: { theme, slot: slot.key }, paint: (s, rng, v) => fam(s, rng, c, R, v) };
+};
+const THEME_KINDS: readonly PropDef[] = THEME_IDS.flatMap((theme) => {
+  const tp = THEME_PROPS[theme];
+  return [
+    ...FAMILY_SLOTS.slice(0, 6).map((slot) => themeKind(theme, slot, `${tp.family}${slot.tiles}`, `${tp.label} ${slot.tiles}`, tp.tones, tp.paint)),
+    themeKind(theme, FAMILY_SLOTS[6], tp.aux[0].id, tp.aux[0].label, [tp.auxTone], tp.aux[0].paint),
+    themeKind(theme, FAMILY_SLOTS[7], tp.aux[1].id, tp.aux[1].label, [tp.auxTone], tp.aux[1].paint),
+  ];
+});
 
 /**
  * THE KINDS. APPEND ONLY — a prop's kind is its index here, in every
@@ -621,7 +865,79 @@ export const PROP_KINDS: readonly PropDef[] = [
   nature("tor", "Tor", 10, 11, ROCK_TONES, (s, rng) => {
     stone(s, rng, 176, 177, 166, 148, 1);
   }),
+  // the side sites' cache (docs/sites.md): a strongbox, banded and locked
+  made("chest", "Cache", 2, "#b8983a", (s) => {
+    s.disc(34, 40, 26, 18, SPILL);
+    s.rect(10, 12, 44, 40, CRATE.mid);
+    s.rect(10, 12, 44, 5, CRATE.hi);
+    s.rect(49, 12, 5, 40, CRATE.hi);
+    s.rect(10, 47, 44, 5, CRATE.lo);
+    s.rect(10, 12, 5, 40, CRATE.lo);
+    s.rect(10, 30, 44, 4, STEEL.lo);
+    s.rect(18, 12, 5, 40, HAZARD);
+    s.rect(41, 12, 5, 40, HAZARD);
+    s.rect(18, 30, 5, 4, EYE);
+    s.rect(41, 30, 5, 4, EYE);
+    s.rect(27, 26, 10, 12, STEEL.deep);
+    s.rect(29, 28, 6, 5, GLINT);
+  }),
+  // ...and what a site is built out of (docs/sites.md): standing stones,
+  // pillars, braziers and an altar. A stronghold's walls are rock, not props
+  nature("menhir", "Standing stone", 2, 2.25, ROCK_TONES, (s, rng, v) => {
+    const a = v ? 0.4 : -0.25;
+    s.disc(40, 48, 24, 14, DEEP);
+    s.box(37, 36, 22, 54, a, DEEP);
+    s.box(36, 35, 18, 50, a, DARK);
+    s.box(34, 33, 13, 44, a, MID);
+    s.box(30, 30, 6, 36, a, LIGHT);
+    if (rng() < 0.6) s.box(42, 44, 5, 12, a, DEEP);
+    if (rng() < 0.5) s.box(33, 20, 4, 6, a, DEEP);
+  }, 2),
+  made("pillar", "Pillar", 1, "#b3aea3", (s) => {
+    s.disc(18, 19, 11, 8, SPILL);
+    s.disc(16, 16, 12, 12, CONCRETE.deep);
+    plate(s, 16, 16, 10, 10, CONCRETE.hi, CONCRETE.mid, CONCRETE.lo, 0.4);
+    s.disc(16, 16, 4, 4, CONCRETE.deep);
+    s.disc(15, 15, 2, 2, CONCRETE.hi);
+  }),
+  made("brazier", "Brazier", 1, "#c8501e", (s) => {
+    s.disc(17, 19, 12, 9, SPILL);
+    for (const [x, y] of [[8, 24], [24, 24], [16, 6]] as const) s.rect(x - 2, y - 2, 4, 4, STEEL.deep);
+    s.disc(16, 16, 11, 11, STEEL.deep);
+    s.ring(16, 16, 11, 3, STEEL.lo);
+    s.disc(16, 16, 7, 7, "#c8501e");
+    s.disc(15, 15, 4.5, 4.5, "#f2a13a");
+    s.disc(14, 14, 2, 2, "#fff0a0");
+  }),
+  made("altar", "Altar", 2, "#6d6960", (s) => {
+    s.rect(8, 12, 48, 44, SCORCH);
+    s.rect(8, 10, 48, 44, CONCRETE.lo);
+    s.rect(14, 8, 36, 40, CONCRETE.mid);
+    s.rect(14, 8, 36, 4, CONCRETE.hi);
+    s.rect(14, 44, 36, 4, CONCRETE.deep);
+    s.rect(20, 16, 24, 24, CONCRETE.deep);
+    s.rect(22, 18, 20, 20, "#4a2626");
+    s.rect(26, 22, 12, 12, "#6a2b2b");
+    s.rect(30, 26, 4, 4, HAZARD);
+  }),
+  // the rock's missing footprint, so the shared rock comes in every size a family does
+  nature("knoll", "Knoll", 4, 5.5, ROCK_TONES, (s, rng, v) => {
+    stone(s, rng, 88, 89, 80, 70, v);
+  }, STONE_VARIANTS),
+  ...THEME_KINDS,
 ];
+/** the kinds a theme owns: its family's six footprints and its two auxiliaries */
+export const familyKinds = (theme: string): number[] => {
+  const out: number[] = [];
+  PROP_KINDS.forEach((k, i) => { if (k.family?.theme === theme) out.push(i); });
+  return out;
+};
+/** the themes a board's props belong to, the most common first */
+export function themesOf(props: readonly { kind: number }[]): string[] {
+  const count = new Map<string, number>();
+  for (const p of props) { const th = PROP_KINDS[p.kind]?.family?.theme; if (th) count.set(th, (count.get(th) ?? 0) + 1); }
+  return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([th]) => th);
+}
 /** what a fresh prop's `rot` rolls to: a quarter turn for a kind that turns, a painting otherwise */
 export const rollRot = (kind: number, r: number): number => {
   const def = PROP_KINDS[kind];

@@ -62,9 +62,11 @@ import {
   anyModOpen,
   maskRarity,
   MOD_ODDS,
+  modsOfRarity,
   rollMod,
   type ModId,
 } from "./mods";
+import { SITE_DEFS, sitesOf } from "./sites";
 import {
   anyRelicLeft,
   anyRelicOpen,
@@ -151,6 +153,8 @@ export interface ModOffer {
   ids: readonly ModId[];
   /** how many copies of whichever one is picked */
   copies: number;
+  /** what put them there — a site's name (sites.ts), or nothing */
+  from?: string;
 }
 
 export interface UiState {
@@ -850,9 +854,9 @@ const MM_CROSS_EDGE = mmColor(0x00, 0x00, 0x00);
  * is trying to get in front of. A posted guard is off it for the same
  * reason — it is the emplacement's fence rather than the thing behind it.
  */
-const MM_PIN_FOE = Uint8Array.from(UNIT_KINDS, (k) =>
-  k === "wormhead" || k === "railgun" || k === "goad" || k === "bastion" || k === "boss" ? 1 : 0,
-);
+// the Sovereign only: the parked missions' heads, guns and pylons are off
+// it, and a site's pylon (sites.ts) is a guard rather than an objective
+const MM_PIN_FOE = Uint8Array.from(UNIT_KINDS, (k) => (k === "boss" ? 1 : 0));
 /** how dark a hill is on the minimap, as a factor on the rock's true tone:
  *  1 draws the rock as painted (it was an eighth, near black, until the
  *  board's hills stopped going dark too) */
@@ -1315,6 +1319,8 @@ export class Game {
    * re-mount would throw away.
    */
   private modOffer: ModOffer | null = null;
+  /** caches opened that have already put their three on the table */
+  private sitesSeen = 0;
   /**
    * HOW MANY STRUCTURES THIS RUN HAS PLACED, only ever going up. The card
    * layer (Animechs) owns the deal, and it has no other way to learn that
@@ -2082,6 +2088,28 @@ export class Game {
     this.lastDraw = { kind: "mod", ids: got };
     this.modDraws++;
     return true;
+  }
+
+  /**
+   * A CACHE OPENED (Sim.openSite): three mods of the site's band go on the
+   * table and the world holds until one is taken (chooseMod). The opens
+   * are counted on the header, so one missed while the offer was up is
+   * put up the moment the table clears.
+   */
+  private offerSites(): void {
+    if (this.modOffer || this.world.sitesOpened <= this.sitesSeen) return;
+    this.sitesSeen++;
+    const sites = sitesOf(this.world.terrain.marks);
+    const site = sites[this.world.siteLast];
+    if (!site) return;
+    const pool = modsOfRarity(site.tier.rarity).map((m) => m.id);
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = (Math.random() * (i + 1)) | 0;
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    const ids = pool.slice(0, MOD_CHOICES);
+    if (ids.length === 0) return;
+    this.modOffer = { ids, copies: 1, from: SITE_DEFS[site.kind].name };
   }
 
   /** THE G BUTTON: relics, in force over the whole board the moment they land */
@@ -2887,6 +2915,7 @@ export class Game {
     this.modDraws = 0;
     // ...and a question nobody answered dies with the run that asked it
     this.modOffer = null;
+    this.sitesSeen = 0;
     this.soakLayer = null; // a new level is a new coastline
     this.spawnOutline = null; // ...and new mouths
     this.mmBase = null; // ...and a new ground under the minimap
@@ -3130,8 +3159,10 @@ export class Game {
     // game freezes mid-carnage (the host knows that one itself). How the
     // real time becomes fixed steps is the host's — in this thread it
     // steps here, on a worker it only hears whether to be moving
-    this.host.advance(dt, !this.paused && !this.menuOpen);
+    // ...and a cache waiting to be answered holds the world too
+    this.host.advance(dt, !this.paused && !this.menuOpen && !this.modOffer);
     const simMs = performance.now() - t0;
+    this.offerSites();
 
     // ...and the other half starts HERE, at the handover rather than at the
     // first pixel. publish() is the seam's own cost and it is paid on this
@@ -4117,6 +4148,49 @@ export class Game {
     c.restore();
   }
 
+  /**
+   * THE SIDE SITES (sites.ts) show nothing of what they hold or how far
+   * their guards reach — the build round the cache is the tell. The one
+   * thing drawn is a bomber run's line: the pad, the flight's line to the
+   * cache, and the clock to launch, while the run is still on.
+   */
+  private drawSites(c: CanvasRenderingContext2D): void {
+    const sites = sitesOf(this.world.terrain.marks);
+    if (sites.length === 0) return;
+    const w = this.world;
+    const px = 1 / (this.scale * this.zoom);
+    c.save();
+    c.beginPath();
+    c.rect(0, 0, W, H);
+    c.clip();
+    c.lineWidth = 2 * px;
+    c.font = `bold ${11 * px}px sans-serif`;
+    c.textAlign = "center";
+    c.textBaseline = "top";
+    c.strokeStyle = SPAWN_STYLE.css;
+    c.fillStyle = SPAWN_STYLE.css;
+    for (const [n, s] of sites.entries()) {
+      if (!s.tier.bombers || w.siteState(n) !== 0) continue;
+      const x = (s.x + 1) * CELL, y = (s.y + 1) * CELL;
+      const bx = (s.padX + 0.5) * CELL, by = (s.padY + 0.5) * CELL;
+      c.globalAlpha = 0.4;
+      c.setLineDash([8 * px, 8 * px]);
+      c.beginPath();
+      c.moveTo(bx, by);
+      c.lineTo(x, y);
+      c.stroke();
+      c.setLineDash([]);
+      c.beginPath();
+      c.arc(bx, by, 2 * CELL, 0, Math.PI * 2);
+      c.stroke();
+      const left = Math.max(0, (s.tier.launch ?? 0) - w.time);
+      const m = Math.floor(left / 60), sec = Math.floor(left % 60);
+      c.globalAlpha = 0.85;
+      c.fillText(`launch ${m}:${sec < 10 ? "0" : ""}${sec}`, bx, by + 2 * CELL + 4 * px);
+    }
+    c.restore();
+  }
+
   private drawMissionRoads(c: CanvasRenderingContext2D): void {
     const level = this.world.level;
     const m = level.mission;
@@ -4350,6 +4424,7 @@ export class Game {
     // the ground, not a marker over it.
     this.drawMissionRoads(c);
     this.drawGarrisons(c);
+    this.drawSites(c);
     // ...and the siege's batteries, on the same layer and for the same
     // reason: the mission's geometry belongs under the fight
     this.drawMissionPosts(c);

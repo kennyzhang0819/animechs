@@ -29,6 +29,11 @@ files and documents stay. Missions are parked: every swarm map is a hold of the 
 script with the Sovereign on wave 50 (`HoldMission.finale`), the tide stops there, and
 the mission logic (`raze`, `escort`, …) stays in the code unused.
 
+**Side sites** (`game/sites.ts`, `docs/sites.md`). A rolled board carries three or four
+small structures: a cache prop with a guard — Wardens, a dormant Fabricator, a Pylon, a
+Brander, or a flight of bombers on the clock. Break the cache (or shoot the flight down)
+and three mods of the site's band go on the table; take one. The only way a run gets a mod.
+
 **Mutators** (`game/mutation.ts`). The rules a run is played *under*, rolled rather
 than chosen. Each costs points; a rung carries a budget and a count. Mandatory from
 Nemesis +1 up. Custom mode may name a hand instead of rolling.
@@ -38,10 +43,10 @@ CLOCK and nothing else — no kill drops, no wave bonus — so difficulty and in
 independent. A press costs its TIER (the gun's footprint in tiles, 2/3/4/6, picked with
 1/2/3/4) times `CARD_CELLS`, flat, times the AMOUNT (1/4/9/16, cycled with X); the SHAPE
 it hands over is rolled, 3x3 to 6x6. The bands open on the run clock — tier 1 at once,
-then 5:00, 10:00 and 15:00. **Mods and
-relics** (`game/mods.ts`, `game/relics.ts`) are OUT OF PLAY: the catalogs, odds, shelf
-and codex tabs are intact and `track.ts` deals neither, so nothing in a run can roll one.
-Do not delete them.
+then 5:00, 10:00 and 15:00. **Mods** (`game/mods.ts`) are
+dealt by the side sites only; **relics** (`game/relics.ts`) are OUT OF PLAY: the catalog,
+odds and shelf are intact and `track.ts` deals neither, so nothing else in a run can roll
+one. Do not delete them.
 
 ## Checks — read this before running one
 

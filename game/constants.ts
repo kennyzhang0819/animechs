@@ -966,8 +966,8 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       artillery: true,
       sprite: {
         region: "shell",
-        across: 11 * MU,
-        along: 11 * MU,
+        across: 16 * MU,
+        along: 16 * MU,
         // ArtilleryBulletType's own defaults, and the reason a shell reads
         // as leaving the ground: Mathf.slope peaks at half life, so it
         // opens out of the barrel at half size and closes again on impact
@@ -977,7 +977,7 @@ const RAW_TOWERS: Record<import("./types").TowerKind, TowerStats> = {
         back: PAL.graphiteAmmoBack,
         front: PAL.graphiteAmmoFront,
       },
-      trail: { size: 4 * MU, mult: 1 },
+      trail: { size: 6 * MU, mult: 1 },
       shootFx: FxKind.ShootBig,
       smokeFx: FxKind.SmokeSmall,
       // collides is false, so a shell only ever dies of old age — and
@@ -2288,6 +2288,9 @@ export const targetingLine = (s: TowerStats): string =>
  * The core is written on its own (CORE_HP) and did NOT move with it.
  */
 export const TOWER_HP_SCALE = 10;
+/** a turret on a hill (Tower.high): the share of every hit it takes, and its reach */
+export const HIGH_GROUND_CUT = 0.5;
+export const HIGH_GROUND_RANGE = 1.2;
 
 /** the stats of a structure kind — one funnel, so a caller never reads TOWERS by hand */
 export const structStats = (kind: import("./types").TowerKind): TowerStats => TOWERS[kind];

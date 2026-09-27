@@ -16,7 +16,8 @@ import {
   UV_SOLID,
   UV_BASE,
   UV_FLOORS,
-  UV_PROPS,
+  ensureFamilies,
+  propUV,
   UV_RAILS,
   UV_MARK_PAD,
   UV_SPAWN,
@@ -155,7 +156,7 @@ import {
   type ShotRegion,
 } from "./weapons";
 import { isWaterFloor, showsFloorCell, WALL_DEEP, WALL_PROP, type Prop, type Terrain } from "./terrain";
-import { PROP_KINDS, PROP_TINT } from "./propArt";
+import { PROP_KINDS, PROP_TINT, themesOf } from "./propArt";
 import { SPAWN_STYLE } from "./maps";
 import {
   FxKind,
@@ -1541,7 +1542,7 @@ export class Renderer {
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
-    atlas: HTMLCanvasElement,
+    private readonly atlas: HTMLCanvasElement,
   ) {
     const gl = canvas.getContext("webgl2", { alpha: false, antialias: false });
     if (!gl) throw new Error("WebGL2 is required");
@@ -2611,6 +2612,8 @@ export class Renderer {
     gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.R8, COLS, ROWS, COVER_LAYERS, 0, gl.RED, gl.UNSIGNED_BYTE, cover);
     gl.activeTexture(gl.TEXTURE0);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    // the board's themes take the family slots on the sheet (atlas.ts FAMILY_SETS)
+    if (layers.props && ensureFamilies(themesOf(T.props))) this.uploadAtlas();
     if (layers.props) {
       // a prop's own cells cast the rim shadow (pass 2), so it is not shaded
       // by it: its tone is the whole of its colour (propArt.ts PROP_TINT)
@@ -2620,8 +2623,7 @@ export class Renderer {
         if (!def) continue;
         const half = (def.tiles * CELL) / 2, side = def.reach * CELL;
         const tint = PROP_TINT[p.tone] ?? PROP_TINT[0];
-        const cells = UV_PROPS[p.kind];
-        const uv = def.turns ? cells[0] : cells[p.rot % cells.length];
+        const uv = propUV(p.kind, def.turns ? 0 : p.rot);
         this.propSlots.set(p, w.n);
         this.push(w, p.x * CELL + half, p.y * CELL + half, side, side, def.turns ? p.rot * (Math.PI / 2) : 0, uv, tint[0], tint[1], tint[2], 1);
       }
@@ -2631,6 +2633,16 @@ export class Renderer {
       gl.bindBuffer(gl.ARRAY_BUFFER, b.vbo);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, b.data, 0, b.n * FLOATS);
     }
+  }
+
+  /** the sheet again, after the family slots were repainted */
+  private uploadAtlas(): void {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.atlas);
+    gl.generateMipmap(gl.TEXTURE_2D);
   }
 
   /** the shadow mask as it stands, to the GPU as the rim and to the CPU as

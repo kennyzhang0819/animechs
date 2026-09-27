@@ -99,7 +99,8 @@ export type StatusId =
   | "regen"
   | "revive"
   | "soaked"
-  | "conquered";
+  | "conquered"
+  | "highGround";
 
 export interface StatusDef {
   id: StatusId;
@@ -491,6 +492,13 @@ export const STATUSES: readonly StatusDef[] = [
     blurb:
       "This gun reloads slower: built near water under Hydrophobic, which never lifts, or caught by a Grapnel's soaked star or a Kettle's wet bomb, which run out.",
     field: true,
+  },
+  {
+    id: "highGround",
+    name: "High ground",
+    color: "#C9B79C",
+    blurb: "Built on a hill: it takes half the damage and reaches a fifth further, and any body may shoot at it.",
+    field: false,
   },
   {
     id: "conquered",
@@ -1090,6 +1098,7 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
     if (s.revives > 0) bump("revive");
     if (s.fireRate < 1 || s.soakT > 0) bump("soaked");
     if (s.team === "enemy") bump("conquered");
+    if (s.high) bump("highGround");
   }
   const out: StatusChip[] = [];
   // the gun first — what it DOES — and only then what it is made of
@@ -1120,5 +1129,6 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
   on("revive", revives, `${revives} stand-up${revives === 1 ? "" : "s"} left`);
   on("soaked", null, `reloads at ${Math.round(rate * 100)}%`);
   on("conquered", null, "shooting at you");
+  on("highGround", null, "half damage taken, +20% range");
   return out;
 }

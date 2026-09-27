@@ -16,12 +16,23 @@ by their spec files; in the game they are **the bank** (`BANK_WORLDS` in
 On the authored 256 board, scaled onto the 512 grid by `scaleSpec` like
 every spec:
 
-- **A theme** — one of eight floor palettes (salt pan, flint fells,
-  peat moor, tundra, meadow, badlands, ashfall, chalk downs), each with
-  its wall pairs, beach and flats floors, forest kind and ruin count.
-  The families are the game's own (`docs/terrain-directions.md`): eight
-  of them were added for these themes and the stock set was repainted
-  off Mindustry's hues.
+- **A theme** — one of ten (`THEMES`): meadow, salt pan, tundra,
+  badlands, ashfall, caldera, shallows, jungle, spore field and crystal
+  barrens. Each names its floor families with their rock, its beach and
+  flats floors, its forest fringe, its water and its ruin count, and owns
+  one prop family (`props.md`, "The roster"). The families are the
+  game's own (`docs/terrain-directions.md`); the fourth batch of floors
+  and rock was painted for the last five themes. The shallows hold the
+  water high and nearly all of it shallow, so the ground bodies wade.
+- **A second theme**, two rolls in three, drawn from the first's `kin`
+  (a meadow may carry jungle or badlands, a tundra crystal barrens, and
+  so on) over a fifth to two fifths of the board. Where it lies is a slow
+  warped noise cut at that share; across the band round the cut the two
+  themes interfinger on a fine noise rather than meeting at a line, so a
+  meadow runs out into jungle in tongues and patches. A cell reads its
+  own theme for its floor family, its rock, its beach and flats, its
+  fringe forest and its props; the sites, the water and the name are the
+  first theme's.
 - **A shape** — one of six archetypes (`ARCHETYPES`), rolled apart from
   the theme: highlands (rooms and lanes through thick rock, the board as
   it was), canyons (rock everywhere, fine and twisting), plains (open

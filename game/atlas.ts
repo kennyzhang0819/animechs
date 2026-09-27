@@ -9,7 +9,7 @@ import {
   type FloorKind,
   type WallKind,
 } from "./tiles";
-import { PROP_KINDS, propCanvas } from "./propArt";
+import { FAMILY_SLOTS, familyKinds, PROP_KINDS, propCanvas } from "./propArt";
 import { CONVOY_SIZE, FABRICATOR_KINDS, type UnitKind } from "./levels";
 import { ANIMAL_ART } from "./animalFlag";
 import { FOUNDRY_ART } from "./turretFlag";
@@ -391,6 +391,20 @@ export const FLOOR_GROUPS: readonly ({ kind: FloorKind; slots: number } | { wate
   { kind: "bog", slots: 3 },
   { kind: "cinder", slots: 3 },
   { kind: "chalk", slots: 3 },
+  // the fourth batch: the ten themes' own ground (tiles.ts)
+  { kind: "scoria", slots: 3 },
+  { kind: "obsidian", slots: 3 },
+  { kind: "shoal", slots: 3 },
+  { kind: "coralsand", slots: 3 },
+  { kind: "silt", slots: 3 },
+  { kind: "jungle", slots: 3 },
+  { kind: "litter", slots: 3 },
+  { kind: "redearth", slots: 3 },
+  { kind: "sporefield", slots: 3 },
+  { kind: "mycelium", slots: 3 },
+  { kind: "blight", slots: 3 },
+  { kind: "quartz", slots: 3 },
+  { kind: "slate", slots: 3 },
 ];
 /** each group's painted cells: one per variant, or the one water block */
 const FLOOR_CELLS: readonly (readonly UVRect[])[] = FLOOR_GROUPS.map((g) =>
@@ -447,6 +461,20 @@ export const FLOOR_PEAT = 63;
 export const FLOOR_BOG = 66;
 export const FLOOR_CINDER = 69;
 export const FLOOR_CHALK = 72;
+// the fourth batch
+export const FLOOR_SCORIA = 75;
+export const FLOOR_OBSIDIAN = 78;
+export const FLOOR_SHOAL = 81;
+export const FLOOR_CORALSAND = 84;
+export const FLOOR_SILT = 87;
+export const FLOOR_JUNGLE = 90;
+export const FLOOR_LITTER = 93;
+export const FLOOR_REDEARTH = 96;
+export const FLOOR_SPOREFIELD = 99;
+export const FLOOR_MYCELIUM = 102;
+export const FLOOR_BLIGHT = 105;
+export const FLOOR_QUARTZ = 108;
+export const FLOOR_SLATE = 111;
 
 /**
  * WHICH FLOOR GROUPS ARE WATER — the whole definition of where a walker
@@ -501,6 +529,7 @@ const WALL_KINDS_IN_ORDER: readonly (WallKind | null)[] = [
   "stone", "dirt", null, "dark", null,
   "spore", "shale", "snow", "ice", "salt", "sand", "dune", "dacite",
   "flint", "clay", "peat", "cinder", "chalk", "loam",
+  "scoria", "obsidian", "reef", "limestone", "jungle", "laterite", "sporerock", "fungal", "crystalrock", "slate",
 ];
 const WALL_CELLS: readonly (readonly UVRect[] | null)[] = WALL_KINDS_IN_ORDER.map((k) =>
   k ? Array.from({ length: WALL_VARIANTS }, (_, v) => tile(`wall-${k}-${v}`, 64, WALL_INSET)) : null,
@@ -517,6 +546,7 @@ export const WALL_GROUP: readonly number[] = [
   0, 0, 1, 1, -1, 2, 2, -1,
   3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10,
   11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 16, 16,
+  17, 17, 18, 18, 19, 19, 20, 20, 21, 21, 22, 22, 23, 23, 24, 24, 25, 25, 26, 26,
 ];
 /** first index of each second-band wall family */
 export const WALL_SPORE = 8;
@@ -534,6 +564,17 @@ export const WALL_PEAT = 28;
 export const WALL_CINDER = 30;
 export const WALL_CHALK = 32;
 export const WALL_LOAM = 34;
+// the fourth band
+export const WALL_SCORIA = 36;
+export const WALL_OBSIDIAN = 38;
+export const WALL_REEF = 40;
+export const WALL_LIMESTONE = 42;
+export const WALL_JUNGLE = 44;
+export const WALL_LATERITE = 46;
+export const WALL_SPORE_ROCK = 48;
+export const WALL_FUNGAL = 50;
+export const WALL_CRYSTAL_ROCK = 52;
+export const WALL_SLATE = 54;
 /**
  * Mindustry's <wall>-large art: one 2x2-tile block per family, split
  * into per-tile quadrant UVs [row][col] in screen space (y down). null
@@ -562,6 +603,7 @@ const largeQuads = (uv: UVRect): ReadonlyArray<readonly UVRect[]> => {
 const LARGE_KINDS: readonly (WallKind | null)[] = [
   "stone", null, "dark", "spore", "shale", "snow", "ice", "salt", "sand", "dune", "dacite",
   "flint", "clay", "peat", "cinder", "chalk", "loam",
+  "scoria", "obsidian", "reef", "limestone", "jungle", "laterite", "sporerock", "fungal", "crystalrock", "slate",
 ];
 const LARGE_CELLS: readonly (UVRect | null)[] = LARGE_KINDS.map((k) =>
   k ? reserve(`wall-${k}-large`, 128, 128, { upright: true }) : null,
@@ -586,8 +628,62 @@ const PROP_INSET = 4;
  *  PROP_KINDS), indexed by a prop's `kind` then its painting; the renderer
  *  maps the whole cell onto a `reach * CELL` quad centred on the footprint */
 export const UV_PROPS: readonly (readonly UVRect[])[] = PROP_KINDS.map((k) =>
-  Array.from({ length: k.variants }, (_, v) => tile(`prop-${k.id}-${v}`, Math.round(k.reach * 64), PROP_INSET)),
+  k.family
+    ? []
+    : Array.from({ length: k.variants }, (_, v) => tile(`prop-${k.id}-${v}`, Math.round(k.reach * 64), PROP_INSET)),
 );
+/**
+ * THE FAMILY SLOTS. A theme's family (propArt.ts THEME_PROPS) is nine kinds
+ * and ten themes of them would not fit the sheet, so two sets of slots are
+ * reserved — a board carries at most two themes (mapgen.ts, the blend) —
+ * and the rolled themes' paintings are drawn into them when a level's
+ * terrain is built (ensureFamilies). The six- and ten-tile paintings sit
+ * at 1x; everything else at the 2x the standing kinds get.
+ */
+export const FAMILY_SETS = 2;
+const familyCellPx = (tiles: number, reach: number): number => Math.round(reach * (tiles >= 6 ? 32 : 64));
+const FAMILY_UV: readonly Map<string, readonly UVRect[]>[] = Array.from({ length: FAMILY_SETS }, (_, s) => {
+  const m = new Map<string, readonly UVRect[]>();
+  for (const slot of FAMILY_SLOTS)
+    m.set(slot.key, Array.from({ length: slot.variants }, (_, v) => tile(`family${s}-${slot.key}-${v}`, familyCellPx(slot.tiles, slot.reach), PROP_INSET)));
+  return m;
+});
+const familyLoaded: (string | null)[] = Array.from({ length: FAMILY_SETS }, () => null);
+let sheet: CanvasRenderingContext2D | null = null;
+/** the cell a kind's painting is drawn from: its own, or its theme's slot */
+export function propUV(kind: number, variant: number): UVRect {
+  const def = PROP_KINDS[kind];
+  if (!def.family) { const cells = UV_PROPS[kind]; return cells[variant % cells.length]; }
+  let s = familyLoaded.indexOf(def.family.theme);
+  if (s < 0) s = 0;
+  const cells = FAMILY_UV[s].get(def.family.slot)!;
+  return cells[variant % cells.length];
+}
+/**
+ * Draw these themes' families into the slot sets, oldest set replaced
+ * first. True when the sheet changed and the texture wants uploading again.
+ */
+export function ensureFamilies(themes: readonly string[]): boolean {
+  if (!sheet) return false;
+  const want = themes.slice(0, FAMILY_SETS);
+  let changed = false;
+  for (const theme of want) {
+    if (familyLoaded.includes(theme)) continue;
+    let s = familyLoaded.findIndex((l) => l === null || !want.includes(l));
+    if (s < 0) s = 0;
+    familyLoaded[s] = theme;
+    for (const k of familyKinds(theme)) {
+      const def = PROP_KINDS[k], cells = FAMILY_UV[s].get(def.family!.slot)!;
+      cells.forEach((uv, v) => {
+        const cell = cellOf(uv);
+        sheet!.clearRect(cell.x, cell.y, cell.w, cell.h);
+        drawCell(sheet!, uv, antialiased(propCanvas(k, v)));
+      });
+    }
+    changed = true;
+  }
+  return changed;
+}
 
 // ---------------------------------------------------------------------
 // STRUCTURES, EFFECTS AND THE ODD SHAPES
@@ -3395,6 +3491,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // THE PROPS ARE PAINTED TOO (game/propArt.ts): each at its native size,
   // 2x into a cell cut to it, through the same antialias pass
   PROP_KINDS.forEach((_k, i) => UV_PROPS[i].forEach((cell, v) => draw(cell, antialiased(propCanvas(i, v)))));
+  sheet = c;
   draw(UV_SPAWN, antialiased(img.spawnPad));
   draw(UV_MARK_PAD, antialiased(markPadCanvas()));
   // THE RAIL PIECES, painted like the floors and through the same filter
