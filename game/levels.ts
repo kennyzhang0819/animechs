@@ -3450,10 +3450,9 @@ export const FAMILIES_PER_RUN = 4;
  * already hands over the difficulty and the mutators; the swarm's cast is
  * the same kind of dial.
  *
- * IT IS THE WHOLE ROSTER. It was a flat ten while the roster was nine, and
- * the eleventh family made ten a cap a hand could hit: a player could no
- * longer ask for every family at once. The picker already clamps to what
- * is offered, so the number follows the table.
+ * IT IS THE DIE'S FOUR. The sheet is packed a level at a time with the
+ * lines the run sends (docs/sprite-sheet.md), and four lines is what a
+ * level's working set is sized for; a hand may name no more.
  *
  * THE FLOOR IS ONE, and one is a real answer: a hand of a single family
  * plays every wave of the campaign in that family (transformScript), which
@@ -3461,7 +3460,7 @@ export const FAMILIES_PER_RUN = 4;
  * hand is not zero families — it is the absence of a hand, and means
  * rolled (see rollFamilies `chosen`).
  */
-export const FAMILIES_MAX = FAMILIES.length;
+export const FAMILIES_MAX = FAMILIES_PER_RUN;
 
 /**
  * THE MOST FAMILIES ONE WAVE MAY SEND, however many the run rolled.
@@ -3802,7 +3801,7 @@ export function rollFamilies(
    *  opened (track.ts familiesAt); custom mode takes the default */
   open: readonly FamilyKey[] = ACTIVE_FAMILIES,
 ): FamilyKey[] {
-  const hand = cleanFamilies(chosen);
+  const hand = cleanFamilies(chosen).slice(0, FAMILIES_MAX);
   // A HAND NAMED IS A HAND PLAYED (see `chosen`): the pool is drawn on
   // only to FILL a run nobody named, never to pad one somebody did
   const pool: FamilyKey[] =

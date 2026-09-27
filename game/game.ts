@@ -41,6 +41,8 @@ import {
   type Mission,
   type TowerKind,
   type UnitKind,
+  familyByKey,
+  scriptFamilies,
 } from "./levels";
 import {
   cardPrice,
@@ -466,6 +468,12 @@ export const BOOT_STEP_LABEL: Record<BootStep, string> = {
  * leap, which reads as a stutter. Starting the bar past the finished work
  * instead makes a warm start look like what it is: nearly instant.
  */
+/** the unit kinds a run may put on the board: its families' trees */
+export function runUnits(spec: LevelSpec): UnitKind[] {
+  const families = spec.families ?? scriptFamilies(spec.script);
+  return families.flatMap((f) => [...familyByKey(f).kinds]);
+}
+
 export function firstLoadStep(): LoadStep {
   return atlasReady() ? "map" : "sprites";
 }
@@ -2318,12 +2326,11 @@ export class Game {
       await paint();
     };
 
-    // packed once per page and shared from then on: the long step on a cold
-    // start, free on every level after. A warm start does not announce it at
-    // all, matching firstLoadStep — otherwise the bar would step BACKWARDS
-    // from where the screen came up
-    if (!atlasReady()) await begin("sprites");
-    const atlas = await buildAtlas();
+    // the sheet holds this run's unit lines (docs/sprite-sheet.md); one
+    // that already does costs nothing, matching firstLoadStep
+    const units = runUnits(spec);
+    if (!atlasReady(units)) await begin("sprites");
+    const atlas = await buildAtlas({ units });
 
     // the sim reads the official map documents, which live outside the
     // module graph and are fetched, never imported (imported JSON turned

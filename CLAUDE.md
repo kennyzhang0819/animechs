@@ -74,7 +74,7 @@ game/skills.ts         the skill tree — ten nodes a turret, spent with the tra
 game/projs.ts          the player's shots in flight, as lanes — read its header before touching the shot loop
 game/terrain.ts maps.ts board.ts tiles.ts   the ground
 game/mapgen.ts         the map generator in the game — a run's board, from a seed
-game/*Art.ts + atlas.ts                     art is CODE, drawn into an atlas at runtime
+game/*Art.ts + atlas.ts                     art is CODE, packed onto one sheet per level (docs/sprite-sheet.md)
 game/snapshot.ts simreport.ts simreads.ts simview.ts   THE SEAM (see below)
 game/renderer.ts       WebGL2 instanced draw
 game/game.ts           the client — input, UiState, overlays
@@ -111,7 +111,10 @@ docs/                  the SYSTEMS live here, not in the files: mutators,
    exactly. `roadProblems` refuses anything else at load. Move a road and the
    terrain follows it — `scripts/maps/railbed.mjs`, not the map generator,
    which would wipe the painted layers.
-7. **The file headers are the documentation.** `sim.ts`, `levels.ts`, `missions.ts`
+7. **A UV is a handle, not a number.** The sheet is repacked per level and a cell's
+   rect is rewritten every time (`docs/sprite-sheet.md`), so read `uv[0..3]` at draw
+   time and never bake them into a constant or a buffer that outlives the level.
+8. **The file headers are the documentation.** `sim.ts`, `levels.ts`, `missions.ts`
    and the art files carry long headers explaining *why* a thing is the way it is.
    Read the header before editing the file, and update it when you change the reason.
    Reading them is the rule; writing more of them is not — see below.

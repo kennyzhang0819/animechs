@@ -63,60 +63,15 @@ import { FABRICATOR_TIERS, fabricatorMech } from "./fabricatorArt";
 import { EMBER, GILT, KING_TIER, PLUME, king, kingGeom } from "./kingArt";
 
 /**
- * THE SHEET IS PACKED AT LOAD. Nothing in this file names a pixel
- * coordinate: a cell is asked for by size — `reserve(name, w, h)` — and
- * the packer below hands back the UV rect of a rectangle nothing else
- * owns. Where a cell lands is the packer's business and changes whenever
- * the roster does; what a cell holds, how big it is and what it is
- * called are the only things anyone declares.
- *
- * The sheet used to be laid out by hand, every cell a pair of pixel
- * coordinates typed into this file, and the layout's one invariant — no
- * two cells overlap — was a thing you checked by reading comments. It
- * was also the thing that broke: a cell parked on "the free block right
- * of the environment band" was inside the band, on the large walls and
- * the edge fades, and the hills went blotchy. A packer cannot do that:
- * it only ever chooses from space it has not given out. Three things are
- * guaranteed by construction rather than by care —
- *
- *   - no two cells share a texel: a placed rect is cut out of the free
- *     list before the next request is served;
- *   - nothing is painted outside its cell: every draw goes through
- *     drawCell / paintCell, which CLIP to the cell before touching the
- *     canvas, and the raw context is never handed out;
- *   - nothing samples a neighbour: every cell is placed with a gutter
- *     wide enough that a mip-3 texel at its edge reads only its own
- *     transparent margin (MIP_MARGIN), sized from the art it declares.
- *
- * The sheet is 4096x4096. A WebGL2 context only has to guarantee
- * MAX_TEXTURE_SIZE 2048 and every device that runs the game clears 4096,
- * so 4096 is the longest side allowed. If the roster outgrows it, the
- * packer throws with the name of the cell that did not fit and how full
- * the sheet was when it gave up, and the one thing to change is ATLAS_W:
- * every UV is a fraction of the sheet, so a wider sheet moves nothing
- * anyone can see. It went from 2048 to 2560 when each water kind grew
- * from one painted block to three (see FLOOR_CELLS) and the boxer's cell
- * no longer fit.
- *
- * IT WENT FROM 2560 TO 3584 WHEN THE KETTLES LANDED, and the jump is two
- * steps rather than one on purpose. The roster's cells are 9.2M px and a
- * 2560 sheet is 10.5M, so the packer was being asked for 88% PACKING
- * DENSITY — which MaxRects cannot reach on cells that run from 16px
- * bullets to a 512px eagle, whatever order they arrive in. It did not
- * fail because the sheet was full; it failed because what was left was
- * in the wrong shapes, which is why the last thing packed (a 69x78 team
- * cell) is the one that threw and why nothing before it noticed.
- *
- * 3072 fits today at 73% and leaves four hundred rows spare — one more
- * family and it is back here. 3584 sits at 63%, which is inside what this
- * packer actually achieves, and 4096 is still in hand after it. The cost
- * is VRAM and it is linear: 42MB of texture became 59, 78 with mipmaps.
- *
- * AND FROM 3584 TO 4096 WHEN THE PROPS REACHED PAST THEIR TILES AND THE
- * WHALES AND RATKINGS LANDED: a canopy cell is its reach squared, and with
- * two more families the static pass alone was past the 80% the check
- * allows. 4096 is the ceiling; the next family has to find its room by
- * shrinking cells, not by widening the sheet.
+ * THE SHEET IS A CACHE, NOT A CATALOG (docs/sprite-sheet.md). Every cell
+ * is declared here by size — `reserve(name, w, h)` — and handed back as a
+ * UV rect that is a HANDLE: its numbers are written when a sheet is
+ * packed and change with every pack, so nothing may bake them into a
+ * constant. A sheet is packed per level with the shared roster, the unit
+ * lines the run sends and the biomes' family slots; the rest of the
+ * roster is not on it. The sheet is 4096 square, the longest side every
+ * device that runs the game clears, and what has to fit is one level's
+ * working set, not the catalog.
  */
 const ATLAS_W = 4096;
 const ATLAS_H = 4096;
@@ -161,9 +116,16 @@ interface Fit {
   upright?: boolean;
 }
 
+type MutUV = [number, number, number, number];
+
+/**
+ * A cell is declared once and placed on every pack (docs/sprite-sheet.md):
+ * `uv` is the handle every consumer holds, and its numbers are written
+ * when the live sheet places the cell. `units` is the unit lines the cell
+ * belongs to, null for the shared roster that is resident on every sheet.
+ */
 interface Cell {
   name: string;
-  /** the cell's own rect, gutter excluded */
   x: number;
   y: number;
   w: number;
@@ -171,103 +133,134 @@ interface Cell {
   inset: number;
   art: readonly [number, number] | null;
   upright: boolean;
+  pad: number;
+  uv: MutUV;
+  units: Set<string> | null;
 }
 
-/** every cell on the sheet, keyed by the UV rect handed out for it — the
- *  UV IS the handle, so a draw call names its cell by the same constant
- *  the renderer samples it through */
 const CELLS = new Map<UVRect, Cell>();
-/** set once the sheet is packed: a cell reserved after that would never
- *  be drawn or uploaded, so asking for one is a bug */
-let sealed = false;
+/** a rect cut out of a placed cell (the large walls' quadrants), refreshed with it */
+const DERIVED: { cell: Cell; out: MutUV; px: (x: number, y: number) => readonly [number, number, number, number] }[] = [];
 
-/**
- * THE PACKER: MaxRects with best-short-side-fit, the standard for
- * sheets like this one. The free space is kept as a list of maximal
- * empty rectangles; a request takes the top-left corner of whichever
- * free rect leaves the smallest leftover on its tighter side, and every
- * free rect the placement cuts through is split into the pieces around
- * it. Deterministic for a given sequence of requests, which is what a
- * module's top-level declarations are.
- */
 interface Rect {
   x: number;
   y: number;
   w: number;
   h: number;
 }
-const FREE: Rect[] = [{ x: 0, y: 0, w: ATLAS_W, h: ATLAS_H }];
 const contains = (a: Rect, b: Rect): boolean =>
   a.x <= b.x && a.y <= b.y && a.x + a.w >= b.x + b.w && a.y + a.h >= b.y + b.h;
 
-function place(name: string, w: number, h: number): Rect {
-  let best = -1, bs = Infinity, bl = Infinity;
-  for (let i = 0; i < FREE.length; i++) {
-    const f = FREE[i];
-    if (f.w < w || f.h < h) continue;
-    const s = Math.min(f.w - w, f.h - h), l = Math.max(f.w - w, f.h - h);
-    if (s < bs || (s === bs && l < bl)) {
-      best = i;
-      bs = s;
-      bl = l;
-    }
+/**
+ * One packing of the declared cells — MaxRects, best-short-side-fit: the
+ * free list, where each placed cell landed and, for a sheet that is
+ * drawn, its canvas. The LIVE sheet is the one the renderer samples and
+ * the only one that writes a cell's uv numbers; a scratch sheet
+ * (unitIcon) or a dry plan (scripts/check.mjs) keeps its placements to
+ * itself.
+ */
+class Sheet {
+  free: Rect[];
+  readonly at = new Map<Cell, Rect>();
+  /** the cells whose paint is on this canvas */
+  readonly drawn = new Set<Cell>();
+  canvas: HTMLCanvasElement | null = null;
+  c: CanvasRenderingContext2D | null = null;
+  constructor(readonly w: number, readonly h: number, readonly live: boolean) {
+    this.free = [{ x: 0, y: 0, w, h }];
   }
-  if (best < 0) {
-    // WHAT THE SHEET LOOKED LIKE WHEN IT GAVE UP, because "full" is
-    // almost never the reason. This packer fails on SHAPE long before it
-    // fails on area — see the note on ATLAS_W — and the two are fixed by
-    // the same dial but tell you very different things about how much
-    // room the next family has. An error that only names the cell sends
-    // the reader to count sprites; one that says "63% used, biggest free
-    // rect 40x2100" says it in a line.
-    const big = FREE.reduce((a, f) => (f.w * f.h > a.w * a.h ? f : a), { x: 0, y: 0, w: 0, h: 0 });
-    throw new Error(
-      `atlas is full: no room for ${name} (${w}x${h} with its gutter) — ` +
-        `${atlasFill().cells} cells fill ${atlasFill().pct}% of ${ATLAS_W}x${ATLAS_H}, ` +
-        `biggest free rect ${big.w}x${big.h}. Raise ATLAS_W in game/atlas.ts (ceiling 4096).`,
-    );
-  }
-  const r: Rect = { x: FREE[best].x, y: FREE[best].y, w, h };
-  const next: Rect[] = [];
-  for (const f of FREE) {
-    if (r.x >= f.x + f.w || r.x + r.w <= f.x || r.y >= f.y + f.h || r.y + r.h <= f.y) {
-      next.push(f);
-      continue;
-    }
-    if (r.x > f.x) next.push({ x: f.x, y: f.y, w: r.x - f.x, h: f.h });
-    if (r.x + r.w < f.x + f.w) next.push({ x: r.x + r.w, y: f.y, w: f.x + f.w - (r.x + r.w), h: f.h });
-    if (r.y > f.y) next.push({ x: f.x, y: f.y, w: f.w, h: r.y - f.y });
-    if (r.y + r.h < f.y + f.h) next.push({ x: f.x, y: r.y + r.h, w: f.w, h: f.y + f.h - (r.y + r.h) });
-  }
-  FREE.length = 0;
-  for (let i = 0; i < next.length; i++) {
-    const a = next[i];
-    let kept = true;
-    for (let j = 0; j < next.length && kept; j++) {
-      if (j === i) continue;
-      const b = next[j];
-      // a rect inside another is redundant; of two identical ones the
-      // first survives
-      if (contains(b, a) && !(contains(a, b) && j > i)) kept = false;
-    }
-    if (kept) FREE.push(a);
-  }
-  return r;
-}
 
-/** how full the sheet is: the cells handed out, the px they cover and
- *  that as a percentage of the whole — for the atlas stage of scripts/check.mjs */
-export function atlasFill(): { cells: number; px: number; pct: number } {
-  let px = 0;
-  for (const cell of CELLS.values()) px += cell.w * cell.h;
-  return { cells: CELLS.size, px, pct: +((100 * px) / (ATLAS_W * ATLAS_H)).toFixed(1) };
-}
+  withCanvas(): this {
+    const a = document.createElement("canvas");
+    a.width = this.w;
+    a.height = this.h;
+    const c = a.getContext("2d");
+    if (!c) throw new Error("2d context unavailable for atlas build");
+    c.imageSmoothingEnabled = false; // integer upscales keep the pixel art crisp
+    this.canvas = a;
+    this.c = c;
+    return this;
+  }
 
-/** the biggest rectangle the packer could still hand out — the number that
- *  actually predicts the next failure, since this one fails on shape */
-export function atlasLargestFree(): { w: number; h: number } {
-  const big = FREE.reduce((a, f) => (f.w * f.h > a.w * a.h ? f : a), { x: 0, y: 0, w: 0, h: 0 });
-  return { w: big.w, h: big.h };
+  place(cell: Cell): Rect {
+    const have = this.at.get(cell);
+    if (have) return have;
+    const w = cell.w + cell.pad * 2, h = cell.h + cell.pad * 2;
+    let best = -1, bs = Infinity, bl = Infinity;
+    for (let i = 0; i < this.free.length; i++) {
+      const f = this.free[i];
+      if (f.w < w || f.h < h) continue;
+      const s = Math.min(f.w - w, f.h - h), l = Math.max(f.w - w, f.h - h);
+      if (s < bs || (s === bs && l < bl)) {
+        best = i;
+        bs = s;
+        bl = l;
+      }
+    }
+    if (best < 0) {
+      // "full" is almost never the reason: this packer fails on shape long
+      // before it fails on area, so the report says both
+      const big = this.largestFree(), fill = this.fill();
+      throw new Error(
+        `atlas is full: no room for ${cell.name} (${w}x${h} with its gutter) — ` +
+          `${fill.cells} cells fill ${fill.pct}% of ${this.w}x${this.h}, biggest free rect ${big.w}x${big.h}`,
+      );
+    }
+    const r: Rect = { x: this.free[best].x, y: this.free[best].y, w, h };
+    const next: Rect[] = [];
+    for (const f of this.free) {
+      if (r.x >= f.x + f.w || r.x + r.w <= f.x || r.y >= f.y + f.h || r.y + r.h <= f.y) {
+        next.push(f);
+        continue;
+      }
+      if (r.x > f.x) next.push({ x: f.x, y: f.y, w: r.x - f.x, h: f.h });
+      if (r.x + r.w < f.x + f.w) next.push({ x: r.x + r.w, y: f.y, w: f.x + f.w - (r.x + r.w), h: f.h });
+      if (r.y > f.y) next.push({ x: f.x, y: f.y, w: f.w, h: r.y - f.y });
+      if (r.y + r.h < f.y + f.h) next.push({ x: f.x, y: r.y + r.h, w: f.w, h: f.y + f.h - (r.y + r.h) });
+    }
+    this.free = [];
+    for (let i = 0; i < next.length; i++) {
+      const a = next[i];
+      let kept = true;
+      for (let j = 0; j < next.length && kept; j++) {
+        if (j === i) continue;
+        const b = next[j];
+        // a rect inside another is redundant; of two identical ones the
+        // first survives
+        if (contains(b, a) && !(contains(a, b) && j > i)) kept = false;
+      }
+      if (kept) this.free.push(a);
+    }
+    const at: Rect = { x: r.x + cell.pad, y: r.y + cell.pad, w: cell.w, h: cell.h };
+    this.at.set(cell, at);
+    if (this.live) {
+      cell.x = at.x;
+      cell.y = at.y;
+      cell.uv[0] = (at.x + cell.inset) / this.w;
+      cell.uv[1] = (at.y + cell.inset) / this.h;
+      cell.uv[2] = (at.x + cell.w - cell.inset) / this.w;
+      cell.uv[3] = (at.y + cell.h - cell.inset) / this.h;
+      for (const d of DERIVED)
+        if (d.cell === cell) {
+          const [x0, y0, x1, y1] = d.px(at.x, at.y);
+          d.out[0] = x0 / this.w; d.out[1] = y0 / this.h; d.out[2] = x1 / this.w; d.out[3] = y1 / this.h;
+        }
+    }
+    return at;
+  }
+
+  /** the cells placed, the px they cover and that as a percentage of the sheet */
+  fill(): { cells: number; px: number; pct: number } {
+    let px = 0;
+    for (const r of this.at.values()) px += r.w * r.h;
+    return { cells: this.at.size, px, pct: +((100 * px) / (this.w * this.h)).toFixed(1) };
+  }
+
+  /** the biggest rectangle the packer could still hand out — what predicts the next failure */
+  largestFree(): { w: number; h: number } {
+    const big = this.free.reduce((a, f) => (f.w * f.h > a.w * a.h ? f : a), { x: 0, y: 0, w: 0, h: 0 });
+    return { w: big.w, h: big.h };
+  }
 }
 
 /** the sheet, for anything that has to print it */
@@ -278,7 +271,6 @@ export const ATLAS_SIZE: readonly [number, number] = [ATLAS_W, ATLAS_H];
  * samples it through. The only way to get room on the sheet.
  */
 function reserve(name: string, w: number, h: number, fit: Fit = {}): UVRect {
-  if (sealed) throw new Error(`atlas cell ${name} reserved after the sheet was packed`);
   if (!Number.isInteger(w) || !Number.isInteger(h) || w <= 0 || h <= 0)
     throw new Error(`atlas cell ${name}: a cell is a whole number of px, not ${w}x${h}`);
   const inset = fit.inset ?? 0;
@@ -288,16 +280,19 @@ function reserve(name: string, w: number, h: number, fit: Fit = {}): UVRect {
   // nothing; art centred in a bigger cell, half the difference
   const margin = art ? Math.min((w - art[0]) / 2, (h - art[1]) / 2) : 0;
   const pad = Math.max(0, Math.ceil(MIP_MARGIN - margin));
-  const at = place(name, w + pad * 2, h + pad * 2);
-  const cell: Cell = { name, x: at.x + pad, y: at.y + pad, w, h, inset, art, upright: fit.upright === true };
-  const uv: UVRect = [
-    (cell.x + inset) / ATLAS_W,
-    (cell.y + inset) / ATLAS_H,
-    (cell.x + w - inset) / ATLAS_W,
-    (cell.y + h - inset) / ATLAS_H,
-  ];
+  // placed nowhere yet: an unplaced cell's uv is the sheet's corner, a
+  // transparent gutter texel, so a stray draw of it shows nothing
+  const uv: MutUV = [0, 0, 0, 0];
+  const cell: Cell = { name, x: 0, y: 0, w, h, inset, art, upright: fit.upright === true, pad, uv, units: null };
   CELLS.set(uv, cell);
   return uv;
+}
+
+/** a rect inside a cell, in px off the cell's corner, kept current as the cell moves */
+function derive(parent: UVRect, px: (x: number, y: number) => readonly [number, number, number, number]): UVRect {
+  const out: MutUV = [0, 0, 0, 0];
+  DERIVED.push({ cell: cellOf(parent), out, px });
+  return out;
 }
 
 const cellOf = (uv: UVRect): Cell => {
@@ -588,17 +583,17 @@ export const WALL_SLATE = 54;
  * would skip a strip of the painting at every seam and break the bands
  * that run corner to corner across the whole block.
  */
-const largeQuads = (uv: UVRect): ReadonlyArray<readonly UVRect[]> => {
-  const { x, y } = cellOf(uv);
-  return [0, 1].map((row) =>
-    [0, 1].map((col): UVRect => [
-      (x + col * 64 + (col === 0 ? WALL_INSET : 0)) / ATLAS_W,
-      (y + row * 64 + (row === 0 ? WALL_INSET : 0)) / ATLAS_H,
-      (x + col * 64 + 64 - (col === 1 ? WALL_INSET : 0)) / ATLAS_W,
-      (y + row * 64 + 64 - (row === 1 ? WALL_INSET : 0)) / ATLAS_H,
-    ]),
+const largeQuads = (uv: UVRect): ReadonlyArray<readonly UVRect[]> =>
+  [0, 1].map((row) =>
+    [0, 1].map((col): UVRect =>
+      derive(uv, (x, y) => [
+        x + col * 64 + (col === 0 ? WALL_INSET : 0),
+        y + row * 64 + (row === 0 ? WALL_INSET : 0),
+        x + col * 64 + 64 - (col === 1 ? WALL_INSET : 0),
+        y + row * 64 + 64 - (row === 1 ? WALL_INSET : 0),
+      ]),
+    ),
   );
-};
 /** the families with large art, in WALL_GROUP order */
 const LARGE_KINDS: readonly (WallKind | null)[] = [
   "stone", null, "dark", "spore", "shale", "snow", "ice", "salt", "sand", "dune", "dacite",
@@ -650,7 +645,8 @@ const FAMILY_UV: readonly Map<string, readonly UVRect[]>[] = Array.from({ length
   return m;
 });
 const familyLoaded: (string | null)[] = Array.from({ length: FAMILY_SETS }, () => null);
-let sheet: CanvasRenderingContext2D | null = null;
+/** the sheet the renderer samples (docs/sprite-sheet.md) */
+let live: Sheet | null = null;
 /** the cell a kind's painting is drawn from: its own, or its biome's slot */
 export function propUV(kind: number, variant: number): UVRect {
   const def = PROP_KINDS[kind];
@@ -665,7 +661,7 @@ export function propUV(kind: number, variant: number): UVRect {
  * first. True when the sheet changed and the texture wants uploading again.
  */
 export function ensureFamilies(biomes: readonly string[]): boolean {
-  if (!sheet) return false;
+  if (!live?.c) return false;
   const want = biomes.slice(0, FAMILY_SETS);
   let changed = false;
   for (const biome of want) {
@@ -676,9 +672,8 @@ export function ensureFamilies(biomes: readonly string[]): boolean {
     for (const k of familyKinds(biome)) {
       const def = PROP_KINDS[k], cells = FAMILY_UV[s].get(def.family!.slot)!;
       cells.forEach((uv, v) => {
-        const cell = cellOf(uv);
-        sheet!.clearRect(cell.x, cell.y, cell.w, cell.h);
-        drawCell(sheet!, uv, antialiased(propCanvas(k, v)));
+        clearCell(live!, uv);
+        drawCell(live!, uv, antialiased(propCanvas(k, v)));
       });
     }
     changed = true;
@@ -1930,8 +1925,8 @@ const MANTA_KINDS: readonly UnitKind[] = ["skate1", "skate2", "skate3", "skate4"
 const NARWHAL_KINDS: readonly UnitKind[] = ["livewire1", "livewire2", "livewire3", "livewire4", "livewire5"];
 const STOOP_KINDS: readonly UnitKind[] = ["stoop1", "stoop2", "stoop3", "stoop4", "stoop5"];
 /** a cell's edges in atlas px (every animal cell is packed with no inset) */
-const cellPx = (u: UVRect): number => Math.round((u[2] - u[0]) * ATLAS_W);
-const cellPxH = (u: UVRect): number => Math.round((u[3] - u[1]) * ATLAS_H);
+const cellPx = (u: UVRect): number => cellOf(u).w - 2 * cellOf(u).inset;
+const cellPxH = (u: UVRect): number => cellOf(u).h - 2 * cellOf(u).inset;
 
 // Every family is drawn at its hitbox on the turrets' scale (ironhideArt.ts,
 // familyArt.ts), so nothing here overshoots: the stock cells and quads
@@ -2939,9 +2934,7 @@ export async function cellIcon(
   upright = false,
 ): Promise<string> {
   const sheet = await buildAtlas();
-  const x = Math.round(uv[0] * ATLAS_W), y = Math.round(uv[1] * ATLAS_H);
-  const w = Math.round((uv[2] - uv[0]) * ATLAS_W);
-  const h = Math.round((uv[3] - uv[1]) * ATLAS_H);
+  const { x, y, w, h } = pxOn(live!, uv);
   const out = document.createElement("canvas");
   out.width = upright ? h : w;
   out.height = upright ? w : h;
@@ -2959,16 +2952,42 @@ export async function cellIcon(
   return out.toDataURL();
 }
 
+/** a cell's painted rect on a sheet, inset in, in px */
+function pxOn(sheet: Sheet, uv: UVRect): { x: number; y: number; w: number; h: number } {
+  const cell = cellOf(uv), at = sheet.at.get(cell);
+  if (!at) throw new Error(`${cell.name} is not on this sheet`);
+  return { x: at.x + cell.inset, y: at.y + cell.inset, w: cell.w - 2 * cell.inset, h: cell.h - 2 * cell.inset };
+}
+
+/** a scratch sheet a line is painted on alone, for its pictures while it is not in play */
+const SCRATCH = 2048;
+const scratch = new Map<string, Promise<{ sheet: Sheet; team: Map<UnitKind, CellArt> }>>();
+async function sheetFor(kind: UnitKind): Promise<{ sheet: Sheet; cell: CellArt | undefined }> {
+  const line = lineOf(kind);
+  await buildAtlas();
+  if (line === null || liveUnits.has(line)) return { sheet: live!, cell: UNIT_CELL[kind] };
+  let job = scratch.get(line);
+  if (!job) {
+    const sheet = new Sheet(SCRATCH, SCRATCH, false).withCanvas();
+    job = packInto(sheet, new Set([line]), false, null).then((team) => ({ sheet, team }));
+    scratch.set(line, job);
+    job.catch(() => scratch.delete(line));
+    // two lines' pictures at a time is plenty; the rest are cached as urls upstream
+    for (const key of [...scratch.keys()].slice(0, -2)) scratch.delete(key);
+  }
+  const { sheet, team } = await job;
+  return { sheet, cell: team.get(kind) };
+}
+
 async function carveUnit(
   kind: UnitKind,
   accent: readonly [number, number, number],
   upright: boolean,
 ): Promise<{ url: string; size: number }> {
-  const sheet = await buildAtlas();
+  const { sheet: on, cell } = await sheetFor(kind);
+  const sheet = on.canvas!;
   const { uv } = UNIT_ART[kind];
-  const x = Math.round(uv[0] * ATLAS_W), y = Math.round(uv[1] * ATLAS_H);
-  const size = Math.round((uv[2] - uv[0]) * ATLAS_W);
-  const cell = UNIT_CELL[kind];
+  const { x, y, w: size } = pxOn(on, uv);
 
   // the body's cell onto its own canvas, on the sheet's axes
   const flat = document.createElement("canvas");
@@ -2983,8 +3002,7 @@ async function carveUnit(
   const rig = MECH_ART[kind];
   if (rig) {
     const part = (uv: UVRect, flip: boolean): void => {
-      const px = Math.round(uv[0] * ATLAS_W), py = Math.round(uv[1] * ATLAS_H);
-      const pw = Math.round((uv[2] - uv[0]) * ATLAS_W), ph = Math.round((uv[3] - uv[1]) * ATLAS_H);
+      const { x: px, y: py, w: pw, h: ph } = pxOn(on, uv);
       fc.save();
       if (flip) {
         fc.translate(0, size);
@@ -3008,7 +3026,7 @@ async function carveUnit(
   if (cell) {
     const cw = Math.max(1, Math.round(cell.w * size));
     const ch = Math.max(1, Math.round(cell.h * size));
-    const cx = Math.round(cell.uv[0] * ATLAS_W), cy = Math.round(cell.uv[1] * ATLAS_H);
+    const { x: cx, y: cy } = pxOn(on, cell.uv);
     const tint = document.createElement("canvas");
     tint.width = cw;
     tint.height = ch;
@@ -3075,8 +3093,9 @@ async function carveUnit(
  * native-size cell checks that the source IS the size it declared,
  * because the gutter was sized from that declaration.
  */
-function drawCell(c: CanvasRenderingContext2D, uv: UVRect, src: Src, size?: readonly [number, number]): void {
-  const cell = cellOf(uv);
+function drawCell(sheet: Sheet, uv: UVRect, src: Src, size?: readonly [number, number]): void {
+  const cell = cellOf(uv), at = sheet.at.get(cell), c = sheet.c;
+  if (!at || !c) return;
   let w: number, h: number;
   if (size) [w, h] = size;
   else if (cell.art) {
@@ -3090,12 +3109,13 @@ function drawCell(c: CanvasRenderingContext2D, uv: UVRect, src: Src, size?: read
   }
   c.save();
   c.beginPath();
-  c.rect(cell.x, cell.y, cell.w, cell.h);
+  c.rect(at.x, at.y, cell.w, cell.h);
   c.clip();
-  c.translate(cell.x + cell.w / 2, cell.y + cell.h / 2);
+  c.translate(at.x + cell.w / 2, at.y + cell.h / 2);
   if (!cell.upright) c.rotate(Math.PI / 2);
   c.drawImage(src, -w / 2, -h / 2, w, h);
   c.restore();
+  sheet.drawn.add(cell);
 }
 
 /**
@@ -3104,24 +3124,26 @@ function drawCell(c: CanvasRenderingContext2D, uv: UVRect, src: Src, size?: read
  * size and inset to draw against.
  */
 function paintCell(
-  c: CanvasRenderingContext2D,
+  sheet: Sheet,
   uv: UVRect,
   fn: (c: CanvasRenderingContext2D, cell: { w: number; h: number; inset: number }) => void,
 ): void {
-  const cell = cellOf(uv);
+  const cell = cellOf(uv), at = sheet.at.get(cell), c = sheet.c;
+  if (!at || !c) return;
   c.save();
   c.beginPath();
-  c.rect(cell.x, cell.y, cell.w, cell.h);
+  c.rect(at.x, at.y, cell.w, cell.h);
   c.clip();
-  c.translate(cell.x, cell.y);
+  c.translate(at.x, at.y);
   fn(c, { w: cell.w, h: cell.h, inset: cell.inset });
   c.restore();
+  sheet.drawn.add(cell);
 }
 
 /** a cell back to transparent, for art packed over stock art */
-function clearCell(c: CanvasRenderingContext2D, uv: UVRect): void {
-  const cell = cellOf(uv);
-  c.clearRect(cell.x, cell.y, cell.w, cell.h);
+function clearCell(sheet: Sheet, uv: UVRect): void {
+  const cell = cellOf(uv), at = sheet.at.get(cell);
+  if (at && sheet.c) sheet.c.clearRect(at.x, at.y, cell.w, cell.h);
 }
 
 /**
@@ -3137,20 +3159,21 @@ function clearCell(c: CanvasRenderingContext2D, uv: UVRect): void {
  * it. It packs either way, which is also why it has no silhouette and no
  * team cell to requeue — see THE CROSSER'S CELLS.
  */
-function packWormArt(c: CanvasRenderingContext2D): void {
-  const pack = (u: UVRect, art: Art): void => {
-    const cv = toCanvas(art);
-    clearCell(c, u);
-    drawCell(c, u, antialiased(cv), [cv.width, cv.height]);
+function packWormArt(sheet: Sheet, fresh: (u: UVRect) => boolean): void {
+  const pack = (u: UVRect, art: () => Art): void => {
+    if (!fresh(u)) return;
+    const cv = toCanvas(art());
+    clearCell(sheet, u);
+    drawCell(sheet, u, antialiased(cv), [cv.width, cv.height]);
   };
-  pack(WORM_CELLS.head, wormHead());
-  pack(WORM_CELLS.car, wormCar());
-  pack(WORM_CELLS.tail, wormTail());
+  pack(WORM_CELLS.head, wormHead);
+  pack(WORM_CELLS.car, wormCar);
+  pack(WORM_CELLS.tail, wormTail);
   // ...and the escort's cart, beside the crosser's train because they are
   // the same kind of thing on the sheet: a mission's own body, packed
   // whichever way the animal switch is thrown
-  pack(UV_CONVOY, hauler());
-  pack(UV_CONVOY_LEG, haulerLeg());
+  pack(UV_CONVOY, hauler);
+  pack(UV_CONVOY_LEG, haulerLeg);
 }
 
 /**
@@ -3161,20 +3184,22 @@ function packWormArt(c: CanvasRenderingContext2D): void {
  * with the switch off this is never called and the sheet is the stock one.
  */
 function packAnimalArt(
-  c: CanvasRenderingContext2D,
+  sheet: Sheet,
   teamCell: (kind: UnitKind, body: HTMLCanvasElement, cell: HTMLCanvasElement, bodyUV: UVRect, w: number, h?: number) => void,
   dropCell: (kind: UnitKind) => void,
+  /** whether a kind's drawings are wanted: on this sheet and not already painted */
+  needs: (kind: UnitKind, cells: readonly UVRect[]) => boolean,
 ): void {
   // a part into its cell at native size, the way the cell is declared
   // (a knee cap's cell is upright, because it is drawn unrotated)
   const part = (u: UVRect, art: HTMLCanvasElement): void => {
-    clearCell(c, u);
-    drawCell(c, u, antialiased(art), [art.width, art.height]);
+    clearCell(sheet, u);
+    drawCell(sheet, u, antialiased(art), [art.width, art.height]);
   };
   // a stretched segment on its exact rect
   const seg = (u: UVRect, art: HTMLCanvasElement): void => {
-    clearCell(c, u);
-    drawCell(c, u, antialiased(art));
+    clearCell(sheet, u);
+    drawCell(sheet, u, antialiased(art));
   };
 
   // ---- the ground families ----
@@ -3185,13 +3210,18 @@ function packAnimalArt(
   interface LegCells {
     kind: UnitKind; body: UVRect; base?: UVRect; joint?: UVRect; baseJoint?: UVRect; foot: UVRect; leg: UVRect; legBase: UVRect;
   }
-  const packMech = (cells: MechCells, a: MechParts, n: number): void => {
+  const packMech = (cells: MechCells, art: () => MechParts, n: number): void => {
+    if (!needs(cells.kind, [cells.body, cells.base, cells.leg])) return;
+    const a = art();
     const body = toCanvas(a.body), base = toCanvas(a.base), leg = toCanvas(a.leg);
     part(cells.body, body); part(cells.base, base); part(cells.leg, leg);
     dropCell(cells.kind);
     teamCell(cells.kind, body, toCanvas(a.cell), cells.body, n);
   };
-  const packLegged = (cells: LegCells, a: LegParts, n: number): void => {
+  const packLegged = (cells: LegCells, art: () => LegParts, n: number): void => {
+    const all = [cells.body, cells.foot, cells.leg, cells.legBase, cells.base, cells.joint, cells.baseJoint].filter((u): u is UVRect => !!u);
+    if (!needs(cells.kind, all)) return;
+    const a = art();
     const body = toCanvas(a.body), foot = toCanvas(a.foot);
     part(cells.body, body);
     part(cells.foot, foot);
@@ -3208,26 +3238,26 @@ function packAnimalArt(
     { kind: "starhart2", body: UV_STARHART2_BODY, base: UV_STARHART2_BASE, leg: UV_STARHART2_LEG },
     { kind: "starhart3", body: UV_STARHART3_BODY, base: UV_STARHART3_BASE, leg: UV_STARHART3_LEG },
   ];
-  hartMechCells.forEach((cells, i) => packMech(cells, hartMech(HART_TIERS[i]), HART_TIERS[i].n));
+  hartMechCells.forEach((cells, i) => packMech(cells, () => hartMech(HART_TIERS[i]), HART_TIERS[i].n));
   const hartLegCells: readonly LegCells[] = [
     { kind: "starhart4", body: UV_STARHART4_BODY, base: UV_STARHART4_BASE, joint: UV_STARHART4_JOINT, baseJoint: UV_STARHART4_JOINT_BASE, foot: UV_STARHART4_FOOT, leg: UV_STARHART4_LEG_SEG, legBase: UV_STARHART4_LEG_BASE_SEG },
     { kind: "starhart5", body: UV_STARHART5_BODY, base: UV_STARHART5_BASE, joint: UV_STARHART5_JOINT, baseJoint: UV_STARHART5_JOINT_BASE, foot: UV_STARHART5_FOOT, leg: UV_STARHART5_LEG_SEG, legBase: UV_STARHART5_LEG_BASE_SEG },
   ];
-  hartLegCells.forEach((cells, i) => packLegged(cells, hartLegged(HART_TIERS[3 + i]), HART_TIERS[3 + i].n));
+  hartLegCells.forEach((cells, i) => packLegged(cells, () => hartLegged(HART_TIERS[3 + i]), HART_TIERS[3 + i].n));
   const rhinoMechCells: readonly MechCells[] = [
     { kind: "ironhide1", body: UV_IRONHIDE1_BODY, base: UV_IRONHIDE1_BASE, leg: UV_IRONHIDE1_LEG },
     { kind: "ironhide2", body: UV_IRONHIDE2_BODY, base: UV_IRONHIDE2_BASE, leg: UV_IRONHIDE2_LEG },
     { kind: "ironhide3", body: UV_IRONHIDE3_BODY, base: UV_IRONHIDE3_BASE, leg: UV_IRONHIDE3_LEG },
   ];
-  rhinoMechCells.forEach((cells, i) => packMech(cells, ironMech(IRON_TIERS[i]), IRON_TIERS[i].n));
+  rhinoMechCells.forEach((cells, i) => packMech(cells, () => ironMech(IRON_TIERS[i]), IRON_TIERS[i].n));
   const rhinoLegCells: readonly LegCells[] = [
     { kind: "ironhide4", body: UV_IRONHIDE4_BODY, base: UV_IRONHIDE4_BASE, joint: UV_IRONHIDE4_JOINT, baseJoint: UV_IRONHIDE4_JOINT_BASE, foot: UV_IRONHIDE4_FOOT, leg: UV_IRONHIDE4_LEG_SEG, legBase: UV_IRONHIDE4_LEG_BASE_SEG },
     { kind: "ironhide5", body: UV_IRONHIDE5_BODY, base: UV_IRONHIDE5_BASE, joint: UV_IRONHIDE5_JOINT, baseJoint: UV_IRONHIDE5_JOINT_BASE, foot: UV_IRONHIDE5_FOOT, leg: UV_IRONHIDE5_LEG_SEG, legBase: UV_IRONHIDE5_LEG_BASE_SEG },
   ];
-  rhinoLegCells.forEach((cells, i) => packLegged(cells, ironLegged(IRON_TIERS[3 + i]), IRON_TIERS[3 + i].n));
+  rhinoLegCells.forEach((cells, i) => packLegged(cells, () => ironLegged(IRON_TIERS[3 + i]), IRON_TIERS[3 + i].n));
   packMech(
     { kind: "dartback1", body: UV_DARTBACK1_BODY, base: UV_DARTBACK1_BASE, leg: UV_DARTBACK1_LEG },
-    frogMech(FROG_TIERS[0]), FROG_TIERS[0].n,
+    () => frogMech(FROG_TIERS[0]), FROG_TIERS[0].n,
   );
   const frogLegCells: readonly LegCells[] = [
     { kind: "dartback2", body: UV_DARTBACK2_BODY, base: UV_DARTBACK2_BASE, foot: UV_DARTBACK2_FOOT, leg: UV_DARTBACK2_LEG_SEG, legBase: UV_DARTBACK2_LEG_BASE_SEG },
@@ -3235,7 +3265,7 @@ function packAnimalArt(
     { kind: "dartback4", body: UV_DARTBACK4_BODY, foot: UV_DARTBACK4_FOOT, leg: UV_DARTBACK4_LEG_SEG, legBase: UV_DARTBACK4_LEG_BASE_SEG },
     { kind: "dartback5", body: UV_DARTBACK5_BODY, foot: UV_DARTBACK5_FOOT, leg: UV_DARTBACK5_LEG_SEG, legBase: UV_DARTBACK5_LEG_BASE_SEG },
   ];
-  frogLegCells.forEach((cells, i) => packLegged(cells, frogLegged(FROG_TIERS[1 + i]), FROG_TIERS[1 + i].n));
+  frogLegCells.forEach((cells, i) => packLegged(cells, () => frogLegged(FROG_TIERS[1 + i]), FROG_TIERS[1 + i].n));
   // the elephants, into cells nobody else owns (see THE TUSKERS' CELLS).
   // `part` clears before it draws like everywhere else — here there is
   // simply nothing under it to clear
@@ -3244,42 +3274,43 @@ function packAnimalArt(
     { kind: "tusker2", body: TUSK2_CELLS.body, base: TUSK2_CELLS.base, leg: TUSK2_CELLS.leg },
     { kind: "tusker3", body: TUSK3_CELLS.body, base: TUSK3_CELLS.base, leg: TUSK3_CELLS.leg },
   ];
-  tuskMechCellSets.forEach((cells, i) => packMech(cells, tuskMech(TUSK_TIERS[i]), TUSK_TIERS[i].n));
+  tuskMechCellSets.forEach((cells, i) => packMech(cells, () => tuskMech(TUSK_TIERS[i]), TUSK_TIERS[i].n));
   const tuskLegCellSets: readonly LegCells[] = [
     { kind: "tusker4", body: TUSK4_CELLS.body, base: TUSK4_CELLS.base, joint: TUSK4_CELLS.joint, baseJoint: TUSK4_CELLS.baseJoint, foot: TUSK4_CELLS.foot, leg: TUSK4_CELLS.leg, legBase: TUSK4_CELLS.legBase },
     { kind: "tusker5", body: TUSK5_CELLS.body, base: TUSK5_CELLS.base, joint: TUSK5_CELLS.joint, baseJoint: TUSK5_CELLS.baseJoint, foot: TUSK5_CELLS.foot, leg: TUSK5_CELLS.leg, legBase: TUSK5_CELLS.legBase },
   ];
-  tuskLegCellSets.forEach((cells, i) => packLegged(cells, tuskLegged(TUSK_TIERS[3 + i]), TUSK_TIERS[3 + i].n));
+  tuskLegCellSets.forEach((cells, i) => packLegged(cells, () => tuskLegged(TUSK_TIERS[3 + i]), TUSK_TIERS[3 + i].n));
   // ---- the Grapnels: five mech tiers, body, base plate and rowing arms ----
   const sfCellSets: readonly MechCells[] = [SF1_CELLS, SF2_CELLS, SF3_CELLS, SF4_CELLS, SF5_CELLS].map((c, i) => ({
     kind: `grapnel${i + 1}` as UnitKind,
     body: c.body, base: c.base, leg: c.leg,
   }));
-  sfCellSets.forEach((cells, i) => packMech(cells, grapnelMech(GRAPNEL_TIERS[i]), GRAPNEL_TIERS[i].n));
+  sfCellSets.forEach((cells, i) => packMech(cells, () => grapnelMech(GRAPNEL_TIERS[i]), GRAPNEL_TIERS[i].n));
   // ---- the Ratkings: the same three parts a tier ----
   RK_CELLS.forEach((c, i) => packMech({
     kind: `ratking${i + 1}` as UnitKind,
     body: c.body, base: c.base, leg: c.leg,
-  }, ratkingMech(RATKING_TIERS[i]), RATKING_TIERS[i].n));
+  }, () => ratkingMech(RATKING_TIERS[i]), RATKING_TIERS[i].n));
   // ---- the siege: the railgun on the mech rig, into cells nobody else
   // owns (see THE SIEGE'S CELLS) ----
-  packMech(RAZE_CELLS, razeMech(RAZE_TIER), RAZE_TIER.n);
+  packMech(RAZE_CELLS, () => razeMech(RAZE_TIER), RAZE_TIER.n);
   // ...and the four Wardens, on the same rig
-  packMech(LANCE_CELLS, lanceMech(LANCE_TIER), LANCE_TIER.n);
-  packMech(BULWARK_CELLS, bulwarkMech(BULWARK_TIER), BULWARK_TIER.n);
-  packMech(HALBERD_CELLS, halberdMech(HALBERD_TIER), HALBERD_TIER.n);
-  packMech(JUGGERNAUT_CELLS, juggernautMech(JUGGERNAUT_TIER), JUGGERNAUT_TIER.n);
+  packMech(LANCE_CELLS, () => lanceMech(LANCE_TIER), LANCE_TIER.n);
+  packMech(BULWARK_CELLS, () => bulwarkMech(BULWARK_TIER), BULWARK_TIER.n);
+  packMech(HALBERD_CELLS, () => halberdMech(HALBERD_TIER), HALBERD_TIER.n);
+  packMech(JUGGERNAUT_CELLS, () => juggernautMech(JUGGERNAUT_TIER), JUGGERNAUT_TIER.n);
   // ...and the two buff towers, on the same rig (pylonArt.ts)
-  packMech(GOAD_CELLS, goadMech(GOAD_TIER), GOAD_TIER.n);
-  packMech(BASTION_CELLS, bastionMech(BASTION_TIER), BASTION_TIER.n);
-  packMech(BRANDER_CELLS, branderMech(BRANDER_TIER), BRANDER_TIER.n);
-  FABRICATOR_CELLS.forEach((c, i) => packMech(c, fabricatorMech(FABRICATOR_TIERS[i]), FABRICATOR_TIERS[i].n));
+  packMech(GOAD_CELLS, () => goadMech(GOAD_TIER), GOAD_TIER.n);
+  packMech(BASTION_CELLS, () => bastionMech(BASTION_TIER), BASTION_TIER.n);
+  packMech(BRANDER_CELLS, () => branderMech(BRANDER_TIER), BRANDER_TIER.n);
+  FABRICATOR_CELLS.forEach((c, i) => packMech(c, () => fabricatorMech(FABRICATOR_TIERS[i]), FABRICATOR_TIERS[i].n));
 
   // ---- Stoop, Skate, Livewire ----
   // the wing rig: the composed sprite in the kind's own cell, the body
   // column and the wing in the cells above
   const packWinged = (kinds: readonly UnitKind[], tiers: readonly FlyerTier[], fulls: readonly UVRect[], cells: readonly (readonly [UVRect, UVRect])[], art: (T: FlyerTier) => StoopArt): void =>
     tiers.forEach((T, i) => {
+      if (!needs(kinds[i], [fulls[i], cells[i][0], cells[i][1]])) return;
       const a = art(T);
       const full = toCanvas(a.full);
       part(fulls[i], full);
@@ -3302,7 +3333,7 @@ function packAnimalArt(
   // the boss, into cells nobody else owns (see THE SOVEREIGN'S CELLS): the
   // same three drawings as any other wing-rig body, and the stock hull's
   // own cell left untouched under it
-  {
+  if (needs("boss", [KING_CELLS.full, KING_CELLS.body, KING_CELLS.wing])) {
     const a = king();
     const full = toCanvas(a.full);
     part(KING_CELLS.full, full);
@@ -3324,10 +3355,78 @@ const TEAM_CELL_PAD = 8;
  * of its art (`w` x `h` in the sprite's frame). Throws like reserve when
  * the sheet cannot hold it, which is the check's gate.
  */
-export function reserveTeamCellBound(kind: string, w: number, h: number): void {
-  const pw = Math.ceil(h) + TEAM_CELL_PAD * 2, ph = Math.ceil(w) + TEAM_CELL_PAD * 2;
-  reserve(`${kind}-cell`, pw, ph, { art: [pw - TEAM_CELL_PAD * 2, ph - TEAM_CELL_PAD * 2] });
+export function planAtlas(
+  units: readonly string[],
+  teamCells: readonly { kind: string; w: number; h: number }[],
+): { cells: number; pct: number; largestFree: { w: number; h: number } } {
+  const sheet = new Sheet(ATLAS_W, ATLAS_H, false);
+  const lines = linesOf(units);
+  placeAll(sheet, lines, true);
+  for (const t of teamCells) {
+    const line = lineOf(t.kind);
+    if (line && !lines.has(line)) continue;
+    const pw = Math.ceil(t.h) + TEAM_CELL_PAD * 2, ph = Math.ceil(t.w) + TEAM_CELL_PAD * 2;
+    sheet.place({ name: `${t.kind}-cell`, x: 0, y: 0, w: pw, h: ph, inset: 0, art: null, upright: false, pad: 0, uv: [0, 0, 0, 0], units: null });
+  }
+  return { ...sheet.fill(), largestFree: sheet.largestFree() };
 }
+
+/** the sheet px each unit line costs, gutters in — for the check's worst case */
+export function atlasWeights(): Record<string, number> {
+  deriveUnits();
+  const out: Record<string, number> = {};
+  for (const cell of CELLS.values())
+    for (const line of cell.units ?? []) out[line] = (out[line] ?? 0) + (cell.w + 2 * cell.pad) * (cell.h + 2 * cell.pad);
+  return out;
+}
+
+/** every cell a sheet holding these lines wants, biggest first — the order MaxRects packs tightest */
+function placeAll(sheet: Sheet, lines: ReadonlySet<string>, shared: boolean): void {
+  deriveUnits();
+  const wanted = (cell: Cell): boolean => (cell.units ? [...cell.units].some((l) => lines.has(l)) : shared);
+  const todo = [...CELLS.values()].filter((cell) => wanted(cell) && !sheet.at.has(cell));
+  todo.sort((a, b) => Math.max(b.w, b.h) - Math.max(a.w, a.h) || b.w * b.h - a.w * a.h);
+  for (const cell of todo) sheet.place(cell);
+}
+
+/**
+ * The unit lines a sheet may hold or leave out (docs/sprite-sheet.md); a
+ * kind of any other line — the boss, the crosser, the marks — is on
+ * every sheet. Which cells are a line's is read off the renderer's own
+ * tables, so a cell two lines share is resident with either.
+ */
+const UNIT_LINES: readonly string[] = ["ironhide", "dartback", "starhart", "stoop", "skate", "livewire", "tusker", "grapnel", "kettle", "whale", "ratking"];
+const lineOf = (kind: string): string | null => {
+  const line = kind.replace(/\d+$/, "");
+  return UNIT_LINES.includes(line) ? line : null;
+};
+const linesOf = (units: readonly string[] = []): Set<string> =>
+  new Set(units.map(lineOf).filter((l): l is string => l !== null));
+let unitsDerived = false;
+function deriveUnits(): void {
+  if (unitsDerived) return;
+  unitsDerived = true;
+  const touched = new Map<Cell, Set<string> | null>();
+  const walk = (v: unknown, line: string | null, seen: Set<unknown>): void => {
+    if (!v || typeof v !== "object" || seen.has(v)) return;
+    seen.add(v);
+    const cell = CELLS.get(v as UVRect);
+    if (cell) {
+      const had = touched.get(cell);
+      if (line === null || had === null) touched.set(cell, null);
+      else touched.set(cell, new Set([...(had ?? []), line]));
+      return;
+    }
+    for (const x of Object.values(v as Record<string, unknown>)) walk(x, line, seen);
+  };
+  for (const kind of Object.keys(UNIT_ART) as UnitKind[]) {
+    const line = lineOf(kind), seen = new Set<unknown>();
+    for (const table of [UNIT_ART[kind], MECH_ART[kind], LEG_ART[kind], FLYER_PARTS[kind], SEGMENT_ART[kind]]) walk(table, line, seen);
+  }
+  for (const [cell, units] of touched) cell.units = units;
+}
+/** a kind's team cell, once its size is known; the same cell on every sheet after */
+const TEAM_CELLS = new Map<UnitKind, Cell>();
 
 /**
  * Composites the Mindustry sprites (GPL-3.0, github.com/Anuken/Mindustry)
@@ -3338,16 +3437,51 @@ export function reserveTeamCellBound(kind: string, w: number, h: number): void {
  * cell is was the packer's decision (see reserve), and drawCell clips to
  * it. There is no coordinate in this function.
  */
-async function packAtlas(): Promise<HTMLCanvasElement> {
-  const img = await loadImages();
-  const a = document.createElement("canvas");
-  a.width = ATLAS_W;
-  a.height = ATLAS_H;
-  const c = a.getContext("2d");
-  if (!c) throw new Error("2d context unavailable for atlas build");
-  c.imageSmoothingEnabled = false; // integer upscales keep the pixel art crisp
+let images: Promise<Record<SpriteKey, HTMLImageElement>> | null = null;
 
-  const draw = (uv: UVRect, src: Src, size?: readonly [number, number]): void => drawCell(c, uv, src, size);
+/**
+ * The cells a sheet holding `units` wants, placed and painted: the shared
+ * roster, the unit lines named and, on the live sheet, the family slots'
+ * paint. What `prev` already had painted is copied across rather than
+ * drawn again; what is on `sheet` already is left alone, which is how a
+ * line is added to a sheet in play. Returns each painted body's team cell.
+ */
+async function packInto(sheet: Sheet, units: ReadonlySet<string>, shared: boolean, prev: Sheet | null): Promise<Map<UnitKind, CellArt>> {
+  const img = await (images ??= loadImages());
+  placeAll(sheet, units, shared);
+  const c = sheet.c;
+  if (!c || !sheet.canvas) throw new Error("a sheet without a canvas cannot be painted");
+  if (prev && prev !== sheet && prev.canvas)
+    for (const cell of prev.drawn) {
+      const from = prev.at.get(cell), to = sheet.at.get(cell);
+      if (!from || !to || sheet.drawn.has(cell)) continue;
+      const w = cell.w + 2 * cell.pad, h = cell.h + 2 * cell.pad;
+      c.drawImage(prev.canvas, from.x - cell.pad, from.y - cell.pad, w, h, to.x - cell.pad, to.y - cell.pad, w, h);
+      sheet.drawn.add(cell);
+    }
+  const have = new Set(sheet.drawn);
+  const fresh = (uv: UVRect): boolean => {
+    const cell = cellOf(uv);
+    return sheet.at.has(cell) && !have.has(cell);
+  };
+  const teamDone = (kind: UnitKind): boolean => {
+    const cell = TEAM_CELLS.get(kind);
+    return !!cell && sheet.at.has(cell) && have.has(cell);
+  };
+  const resident = (kind: UnitKind): boolean => {
+    const art = UNIT_ART[kind];
+    return !!art && sheet.at.has(cellOf(art.uv));
+  };
+  const needs = (kind: UnitKind, cells: readonly UVRect[]): boolean => resident(kind) && (cells.some(fresh) || !teamDone(kind));
+  const teamGeom = new Map<UnitKind, CellArt>();
+
+  const draw = (uv: UVRect, src: Src | (() => Src), size?: readonly [number, number]): void => {
+    if (!fresh(uv)) return;
+    drawCell(sheet, uv, typeof src === "function" ? src() : src, size);
+  };
+  const paint = (uv: UVRect, fn: Parameters<typeof paintCell>[2]): void => {
+    if (fresh(uv)) paintCell(sheet, uv, fn);
+  };
   const outlinedUnit = (src: HTMLImageElement): HTMLCanvasElement =>
     antialiased(outlined(src, UNIT_OUTLINE, UNIT_OUTLINE_R));
   const outlinedBlock = (src: Src): HTMLCanvasElement =>
@@ -3383,6 +3517,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
     w: number,
     h = w,
   ): void => {
+    if (!resident(kind) || teamDone(kind)) return;
     const art = antialiased(cellArt(body, cell));
     const crop = opaqueBounds(art);
     if (!crop) throw new Error(`the ${kind} team cell has no pixels in it`);
@@ -3418,8 +3553,17 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
       const lw = j.crop.w * j.sx, lh = j.crop.h * j.sy;
       // ...and on the sheet, where the quarter turn swaps the two axes
       const pw = Math.ceil(lh) + TEAM_CELL_PAD * 2, ph = Math.ceil(lw) + TEAM_CELL_PAD * 2;
-      const uv = reserve(`${j.kind}-cell`, pw, ph, { art: [pw - TEAM_CELL_PAD * 2, ph - TEAM_CELL_PAD * 2] });
-      paintCell(c, uv, (cc, cell) => {
+      let tc = TEAM_CELLS.get(j.kind);
+      if (!tc || tc.w !== pw || tc.h !== ph) {
+        if (tc) CELLS.delete(tc.uv);
+        tc = cellOf(reserve(`${j.kind}-cell`, pw, ph, { art: [pw - TEAM_CELL_PAD * 2, ph - TEAM_CELL_PAD * 2] }));
+        const line = lineOf(j.kind);
+        tc.units = line ? new Set([line]) : null;
+        TEAM_CELLS.set(j.kind, tc);
+      }
+      sheet.place(tc);
+      const uv = tc.uv;
+      paintCell(sheet, uv, (cc, cell) => {
         cc.translate(cell.w / 2, cell.h / 2);
         cc.rotate(Math.PI / 2);
         cc.drawImage(j.art, j.crop.x, j.crop.y, j.crop.w, j.crop.h, -lw / 2, -lh / 2, lw, lh);
@@ -3428,13 +3572,14 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
       // on the sheet's axes — the same turn the art just went through
       const ox = (j.crop.x + j.crop.w / 2 - j.srcW / 2) * j.sx;
       const oy = (j.crop.y + j.crop.h / 2 - j.srcH / 2) * j.sy;
-      UNIT_CELL[j.kind] = {
-        uv,
-        w: pw / j.cellW,
-        h: ph / j.cellH,
-        dx: -oy / j.cellW,
-        dy: ox / j.cellH,
-      };
+      const geom: CellArt = { uv, w: pw / j.cellW, h: ph / j.cellH, dx: -oy / j.cellW, dy: ox / j.cellH };
+      teamGeom.set(j.kind, geom);
+      if (sheet.live) {
+        // the same object the renderer already holds, when it holds one
+        const held = UNIT_CELL[j.kind];
+        if (held) Object.assign(held, geom);
+        else UNIT_CELL[j.kind] = geom;
+      }
     }
   };
 
@@ -3474,30 +3619,29 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
     // swell shader displaces the painted tile exactly as it did the file
     if ("water" in g)
       cells.forEach((cell, v) =>
-        draw(cell, waterBlock(LINOCUT_TERRAIN ? waterCanvas(g.water, v) : img[g.water])),
+        draw(cell, () => waterBlock(LINOCUT_TERRAIN ? waterCanvas(g.water, v) : img[g.water])),
       );
-    else cells.forEach((cell, slot) => draw(cell, antialiased(floor(g.kind, slot))));
+    else cells.forEach((cell, slot) => draw(cell, () => antialiased(floor(g.kind, slot))));
   });
 
   // THE WALLS ARE PAINTED TOO (game/tiles.ts): two blocks a family, and a
   // 2×2 block where the family has a large cell, through the same
   // antialias pass the floors take
   WALL_KINDS_IN_ORDER.forEach((k, i) => {
-    if (k) WALL_CELLS[i]!.forEach((cell, v) => draw(cell, antialiased(wallCanvas(k, v % WALL_VARIANTS))));
+    if (k) WALL_CELLS[i]!.forEach((cell, v) => draw(cell, () => antialiased(wallCanvas(k, v % WALL_VARIANTS))));
   });
   LARGE_KINDS.forEach((k, i) => {
-    if (k) draw(LARGE_CELLS[i]!, antialiased(wallCanvas(k, 0, 2)));
+    if (k) draw(LARGE_CELLS[i]!, () => antialiased(wallCanvas(k, 0, 2)));
   });
 
   // THE PROPS ARE PAINTED TOO (game/propArt.ts): each at its native size,
   // 2x into a cell cut to it, through the same antialias pass
-  PROP_KINDS.forEach((_k, i) => UV_PROPS[i].forEach((cell, v) => draw(cell, antialiased(propCanvas(i, v)))));
-  sheet = c;
+  PROP_KINDS.forEach((_k, i) => UV_PROPS[i].forEach((cell, v) => draw(cell, () => antialiased(propCanvas(i, v)))));
   draw(UV_SPAWN, antialiased(img.spawnPad));
   draw(UV_MARK_PAD, antialiased(markPadCanvas()));
   // THE RAIL PIECES, painted like the floors and through the same filter
   RAIL_STYLES.forEach((_, st) =>
-    RAIL_PIECES.forEach((_p, i) => draw(UV_RAILS[st][i], antialiased(railCanvas(st, i)))),
+    RAIL_PIECES.forEach((_p, i) => draw(UV_RAILS[st][i], () => antialiased(railCanvas(st, i)))),
   );
 
   // ---------- the units ----------
@@ -3615,7 +3759,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // and the ironhide1 have no cell art of their own and fall back to
   // power-cell, exactly as UnitType.load does
   const hull = (kind: UnitKind, src: HTMLImageElement, cell: HTMLImageElement, uv: UVRect): void => {
-    draw(uv, outlinedUnit(src));
+    draw(uv, () => outlinedUnit(src));
     teamCell(kind, src, cell, uv, srcW(src), srcH(src));
   };
   hull("stoop1", img.stoop1, img.powerCell, UV_STOOP1);
@@ -3658,7 +3802,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   draw(UV_LASER, antialiased(img.laser));
 
   // ---------- the procedural shapes ----------
-  paintCell(c, UV_RING, (cc, cell) => {
+  paint(UV_RING, (cc, cell) => {
     cc.strokeStyle = "#ffffff";
     cc.lineWidth = 5;
     cc.beginPath();
@@ -3666,20 +3810,20 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
     cc.stroke();
   });
   // the stroke source for procedural lines: pure white to the cell's edge
-  paintCell(c, UV_SOLID, (cc, cell) => {
+  paint(UV_SOLID, (cc, cell) => {
     cc.fillStyle = "#ffffff";
     cc.fillRect(0, 0, cell.w, cell.h);
   });
   // the flame particle disc, and the shield domes' disc at 256 — each
   // kept a few px inside its cell so the antialiased rim sits clear of
   // the edge (see UV_DISC_BIG)
-  paintCell(c, UV_DISC, (cc, cell) => {
+  paint(UV_DISC, (cc, cell) => {
     cc.fillStyle = "#ffffff";
     cc.beginPath();
     cc.arc(cell.w / 2, cell.h / 2, 27, 0, TAU);
     cc.fill();
   });
-  paintCell(c, UV_DISC_BIG, (cc, cell) => {
+  paint(UV_DISC_BIG, (cc, cell) => {
     cc.fillStyle = "#ffffff";
     cc.beginPath();
     cc.arc(cell.w / 2, cell.h / 2, 124, 0, TAU);
@@ -3692,7 +3836,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // slope against slope, and a slope even a texel short leaves a seam
   // down every one of those joins; a texel proud leaves a doubled-alpha
   // one instead
-  paintCell(c, UV_TRI, (cc, cell) => {
+  paint(UV_TRI, (cc, cell) => {
     const i = cell.inset;
     cc.fillStyle = "#ffffff";
     cc.beginPath();
@@ -3783,22 +3927,20 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // the animal trial goes over the stock cells it replaces, once they are
   // all drawn and before the team cells are packed, since it requeues its own
   if (ANIMAL_ART) {
-    packAnimalArt(c, teamCell, (kind) => {
+    packAnimalArt(sheet, teamCell, (kind) => {
       const i = cellJobs.findIndex((j) => j.kind === kind);
       if (i >= 0) cellJobs.splice(i, 1);
-    });
+    }, needs);
   }
 
   // ...and the mission's crosser, which is nobody's trial and is packed
   // whichever way the switch is thrown (see packWormArt)
-  packWormArt(c);
+  packWormArt(sheet, fresh);
 
   // last, because it is the only thing on the sheet whose cells are cut
   // to art that had to be drawn first: every body's team cell
   packTeamCells();
-  sealed = true;
-
-  return a;
+  return teamGeom;
 }
 
 /**
@@ -3815,29 +3957,49 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
  * same build instead of racing two of them. A failure is not cached: the
  * memo is dropped so a retry can actually retry.
  */
-let atlasBuild: Promise<HTMLCanvasElement> | null = null;
-let atlasPacked = false;
+let queue: Promise<unknown> = Promise.resolve();
+let liveUnits = new Set<string>();
 
-export function buildAtlas(): Promise<HTMLCanvasElement> {
-  atlasBuild ??= packAtlas().then(
-    (sheet) => {
-      atlasPacked = true;
-      return sheet;
-    },
-    (err: unknown) => {
-      atlasBuild = null;
-      throw err;
-    },
-  );
-  return atlasBuild;
+export interface AtlasWant {
+  /** the unit kinds (or lines) the sheet must hold, on top of the shared roster */
+  units?: readonly string[];
+  /** add to the sheet in play, moving nothing on it — for a body that turned up unannounced */
+  keep?: boolean;
 }
 
 /**
- * True once the sheet is FINISHED — deliberately not "once a build has
- * started". A level opened while an earlier build is still in flight still
- * has to wait for it, so it must still say "Packing sprites"; keying this
- * off the promise merely existing would label that wait as something else.
+ * The live sheet holding at least `want` (docs/sprite-sheet.md). A sheet
+ * that already does is returned as it is; otherwise one is packed —
+ * fresh, with what the last one had painted copied across, or in place
+ * with `keep`. Builds queue, so two callers never pack at once.
  */
-export function atlasReady(): boolean {
-  return atlasPacked;
+export function buildAtlas(want: AtlasWant = {}): Promise<HTMLCanvasElement> {
+  const need = linesOf(want.units);
+  const run = async (): Promise<HTMLCanvasElement> => {
+    if (live?.canvas && [...need].every((l) => liveUnits.has(l))) return live.canvas;
+    const all = new Set([...(want.keep && live ? liveUnits : []), ...need]);
+    const next = want.keep && live ? live : new Sheet(ATLAS_W, ATLAS_H, true).withCanvas();
+    await packInto(next, all, true, live);
+    live = next;
+    liveUnits = all;
+    return next.canvas!;
+  };
+  const p = queue.then(run, run);
+  queue = p.catch(() => undefined);
+  return p;
 }
+
+/** true once a live sheet holding `units` is finished — a level opened
+ *  while a pack is in flight still waits, and still says so */
+export function atlasReady(units: readonly string[] = []): boolean {
+  return !!live?.canvas && [...linesOf(units)].every((l) => liveUnits.has(l));
+}
+
+/** whether the live sheet draws this kind; a kind of no line always is */
+export function isResident(kind: string): boolean {
+  const line = lineOf(kind);
+  return line === null || liveUnits.has(line);
+}
+
+/** the unit lines the live sheet holds */
+export const residentUnits = (): readonly string[] => [...liveUnits];

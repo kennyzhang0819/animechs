@@ -372,25 +372,29 @@ const atlasProblems = [];
 let atlasDetail = "";
 try {
   const A = R("atlas.js");
-  const fixed = A.atlasFill();
-  let packed = 0;
-  for (const c of cellBounds) {
-    try {
-      A.reserveTeamCellBound(c.kind, c.w, c.h);
-      packed++;
-    } catch (e) {
-      atlasProblems.push(`the ${c.kind} team cell does not fit: ${e.message.split("\n")[0]}`);
-      break;
+  const weights = A.atlasWeights();
+  const lines = Object.keys(weights).sort((a, b) => weights[b] - weights[a]);
+  // a level's sheet holds four lines, and the hands of the seven heaviest
+  // are the ones that could fail to pack
+  const t0 = Date.now();
+  const heavy = lines.slice(0, 7);
+  let worst = null, hands = 0;
+  const pick = (from, n, acc) => {
+    if (acc.length === n) {
+      hands++;
+      const plan = A.planAtlas(acc, cellBounds);
+      if (!worst || plan.pct > worst.plan.pct) worst = { plan, hand: [...acc] };
+      return;
     }
-  }
-  const fill = A.atlasFill();
-  const room = A.atlasLargestFree();
+    for (let i = from; i < heavy.length; i++) pick(i + 1, n, [...acc, heavy[i]]);
+  };
+  pick(0, Math.min(4, heavy.length), []);
   atlasDetail =
-    `${fixed.cells} static cells at ${fixed.pct}%, ${packed} team cells at their worst case on top: ` +
-    `${fill.pct}% of ${A.ATLAS_SIZE[0]}x${A.ATLAS_SIZE[1]}, biggest free rect ${room.w}x${room.h}`;
-  if (fill.pct > 85) notes.push(`the sheet is ${fill.pct}% full; the next family may not pack (game/atlas.ts, ATLAS_W is at its 4096 ceiling)`);
+    `${hands} four-line hands pack in ${Date.now() - t0}ms; the fullest (${worst.hand.join(", ")}) is ${worst.plan.cells} cells at ` +
+    `${worst.plan.pct}% of ${A.ATLAS_SIZE[0]}x${A.ATLAS_SIZE[1]}, biggest free rect ${worst.plan.largestFree.w}x${worst.plan.largestFree.h}`;
+  if (worst.plan.pct > 85) notes.push(`the fullest four-line sheet is ${worst.plan.pct}% full; the next line may not pack (game/atlas.ts)`);
 } catch (e) {
-  atlasProblems.push(`game/atlas.ts did not import: ${e.message}`);
+  atlasProblems.push(`the sheet does not pack: ${e.message}`);
 }
 report("atlas", atlasProblems, atlasDetail);
 

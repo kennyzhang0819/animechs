@@ -17,6 +17,9 @@ import {
   UV_BASE,
   UV_FLOORS,
   ensureFamilies,
+  buildAtlas,
+  isResident,
+  residentUnits,
   propUV,
   UV_RAILS,
   UV_MARK_PAD,
@@ -1514,7 +1517,11 @@ export class Renderer {
    * imported and before a renderer exists — so it is taken here rather
    * than beside the other per-kind tables at the top of the file.
    */
-  private readonly kindCell: readonly (CellArt | null)[] = UNIT_KINDS.map((k) => UNIT_CELL[k] ?? null);
+  private kindCell: readonly (CellArt | null)[] = UNIT_KINDS.map((k) => UNIT_CELL[k] ?? null);
+  /** which kinds the sheet holds (atlas.ts isResident); a body of any other asks for its line */
+  private resident: readonly boolean[] = UNIT_KINDS.map(isResident);
+  private readonly missing = new Set<number>();
+  private fetching = false;
   private readonly cellTint: [number, number, number] = [1, 1, 1];
   /**
    * THE SHADOW MASK, in two halves.
@@ -2635,8 +2642,30 @@ export class Renderer {
     }
   }
 
-  /** the sheet again, after the family slots were repainted */
+  /** a body of a line the sheet does not hold: its line is added to the
+   *  sheet in place and the texture sent again, so it draws from then on */
+  private fetchLine(k: number): void {
+    this.missing.add(k);
+    if (this.fetching) return;
+    this.fetching = true;
+    // once the frame is drawn, so every body it missed rides one pack
+    queueMicrotask(() => {
+      const units = [...residentUnits(), ...[...this.missing].map((i) => UNIT_KINDS[i])];
+      this.missing.clear();
+      buildAtlas({ units, keep: true })
+        .then(() => this.uploadAtlas(), (e: unknown) => console.warn("a body's line does not fit on the sheet", e))
+        .finally(() => {
+          this.fetching = false;
+          const next = this.missing.values().next();
+          if (!next.done) this.fetchLine(next.value);
+        });
+    });
+  }
+
+  /** the sheet again, after the family slots were repainted or a line was added */
   private uploadAtlas(): void {
+    this.kindCell = UNIT_KINDS.map((k) => UNIT_CELL[k] ?? null);
+    this.resident = UNIT_KINDS.map(isResident);
     const gl = this.gl;
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
@@ -3324,6 +3353,7 @@ export class Renderer {
       this.cellTint[1] = team[1] * tint[1];
       this.cellTint[2] = team[2] * tint[2];
       if (!lod && grow !== 1 && !shadow) this.tally.bigGrown++;
+      if (!this.resident[k]) this.fetchLine(k);
       if (lod) {
         this.tally.lodBodies++;
         this.push(dyn, upx[i], upy[i], usz, usz, urot[i], KIND_UV[k],
