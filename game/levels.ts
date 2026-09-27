@@ -694,7 +694,8 @@ export interface UnitStats {
    * light, fast one; this is the tier that makes the rest of the family —
    * and whatever else the wave happens to be carrying — move like it.
    */
-  hasteField?: { mult: number; reload: number; range: number };
+  /** `targets`: stamp only this many nearest bodies in `range`, each drawn a beam (Sim.hasteNearest) */
+  hasteField?: { mult: number; reload: number; range: number; targets?: number };
   /**
    * THE JAMMING AURA — the stoop4's, and the Skyfall bombers' second family
    * trait made into a rule (FAMILIES). Every `reload` seconds the carrier
@@ -2316,9 +2317,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // moment it falls — so it is the one worth defending, and a mission
   // that wants it answered early should place it where a board can get at
   // it rather than make it soft.
-  // ...and on a side site (sites.ts shrine) each is a stamp aura over the
-  // ground round it, pulsed every ten seconds out to a wide ring: the Goad
-  // hastes every body in it, the Bastion plates it. Local, never the board
+  // ...and on a side site (sites.ts shrine) each is a stamp aura: every
+  // thirty seconds the Goad beams double pace onto the ten bodies nearest
+  // it, and every ten the Bastion plates the ring round it. Local, never the board
   goad: {
     hp: 9000,
     speed: 0,
@@ -2327,7 +2328,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 5,
     rotateSpeed: 30,
     unslowable: true,
-    hasteField: { mult: 1.5, reload: 10, range: 26 * CELL },
+    hasteField: { mult: 2, reload: 30, range: 30 * CELL, targets: 10 },
   },
   bastion: {
     hp: 14000,
@@ -2732,9 +2733,8 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // treat them as the heavies they are.
 
   // THE BULWARK — the wall. A little under a Tusker apex's pool and
-  // plating on a body whose whole reach is its ram: it CHARGES like the
-  // elephants do and for the same reason, and everything it costs a board
-  // is paid at arm's length.
+  // plating on a body that lobs mortars on the way in and then rams: it
+  // CHARGES like the elephants do and for the same reason.
   bulwark: {
     hp: 32000,
     speed: 2.6 * CELL,

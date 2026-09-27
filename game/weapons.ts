@@ -1628,12 +1628,21 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // THE BULWARK'S TUSKS are the Tusker apex's, number for number
   // (tusker5 above): 800 a swing off a mirrored pair, 280 of splash over
   // four and a half tiles, and the rend that eats a building's armour.
-  // "This is a T5 melee body" is the entire brief, so copying the row
-  // rather than inventing one is the honest way to say it.
+  // The mortar's reach stays under the charge's 22 tiles so the seek does not grow.
   bulwark: [
     {
       name: "bulwark-tusks", reload: t(40), mounts: 2, damage: 1000, splash: 340, splashRadius: u(36),
       range: u(38), speed: 0, fx: "melee", rend: 0.012,
+    },
+    {
+      name: "bulwark-mortar", reload: t(100), mounts: 2, damage: 300, splash: 220, splashRadius: u(28),
+      range: rng(3.5, 50), speed: spd(3.5), fx: "shell",
+      look: {
+        region: "shell", width: u(12), height: u(16), shrinkX: 0, shrinkY: 0.4, slope: true,
+        back: WARDEN_SHOT_BACK, front: WARDEN_SHOT, hitColor: WARDEN_SHOT,
+        shoot: FxKind.ShootBig, smoke: FxKind.SmokeSmall, hit: FxKind.BlastExplosion,
+        trail: { size: u(3), mult: 1, color: WARDEN_SHOT_BACK },
+      },
     },
   ],
   // THE LANCE'S BEAM is the Starlight apex's bite on a sixth of its cycle
@@ -1654,6 +1663,16 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
     {
       name: "halberd-arcs", reload: t(80), mounts: 1, shots: 5, damage: 300, range: u(230), speed: 0,
       fx: "arc", arc: { jumps: 3, reach: u(32), decay: 0.7, color: WARDEN_SHOT },
+    },
+    {
+      name: "halberd-orbs", reload: t(60), mounts: 2, damage: 260, splash: 180, splashRadius: u(20),
+      range: rng(4.5, 48), speed: spd(4.5), fx: "bullet",
+      look: {
+        region: "orb", width: u(14), height: u(14), shrinkX: 0, shrinkY: 0,
+        back: WARDEN_SHOT_BACK, front: WARDEN_SHOT, hitColor: WARDEN_SHOT,
+        shoot: FxKind.ShootBig, hit: FxKind.BlastExplosion,
+        trail: { size: u(4), mult: 1, color: WARDEN_SHOT_BACK },
+      },
     },
   ],
   // THE JUGGERNAUT THROWS OUT OF BOTH FLANKS — six homing missiles a
@@ -1683,14 +1702,14 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   fabricatorSmall: [],
   fabricatorLarge: [],
   // THE BRANDER'S BEAM is CONSTANT: a held beam that bites the Hauler
-  // (levels.ts huntsConvoy) every tenth of a second, no charge, and a
-  // reload of nothing so the next burn opens the tick the last goes out.
+  // (levels.ts huntsConvoy) and everything else on its line every tenth of
+  // a second, no charge, and a reload of nothing so the next burn opens the tick the last goes out.
   // Twenty tiles of reach against the cart's twelve-tile box, and 150 a
   // bite over the cart's forty plating is ~1,100 a second — a leg past
   // one tower costs the cart what one halt mends
   brander: [
     {
-      name: "brander-beam", reload: 0, mounts: 1, damage: 150, range: u(160), speed: 0, fx: "laser",
+      name: "brander-beam", reload: 0, mounts: 1, damage: 150, range: u(160), speed: 0, fx: "laser", pierce: true,
       beam: { duration: 2, interval: t(6) }, beamStyle: BRANDER_BEAM,
     },
   ],

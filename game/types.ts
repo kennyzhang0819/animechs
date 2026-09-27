@@ -642,6 +642,7 @@ export const enum FxKind {
   NukeBurst = 64,
   Cleave = 65, // the cleaver's slash: a thick crescent swept out through its cone
   Torch = 66, // the torch's tongue: a fat round jet, the whole visible weapon
+  GoadBeam = 67, // a Goad's haste beam: shoots out to `len` along `rot`, then fades
 }
 
 /** an r,g,b triple in 0..1, the form every draw call wants */

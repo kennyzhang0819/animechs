@@ -643,7 +643,9 @@ function unitTraits(kind: UnitKind): StatusChip[] {
   if (u.hasteField)
     add(
       "hastens",
-      `x${u.hasteField.mult} pace to everything within ${tiles(u.hasteField.range)}`,
+      u.hasteField.targets
+        ? `x${u.hasteField.mult} pace to the ${u.hasteField.targets} nearest within ${tiles(u.hasteField.range)}`
+        : `x${u.hasteField.mult} pace to everything within ${tiles(u.hasteField.range)}`,
     );
   if (u.jamField)
     add(

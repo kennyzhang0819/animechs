@@ -3713,7 +3713,7 @@ export class Renderer {
           kind === FxKind.HealWave || kind === FxKind.ShieldBreak ||
           kind === FxKind.Sap || kind === FxKind.EmpHit ||
           kind === FxKind.WaterBurst || kind === FxKind.Scatter ||
-          kind === FxKind.Blink || kind === FxKind.NukeBurst
+          kind === FxKind.Blink || kind === FxKind.NukeBurst || kind === FxKind.GoadBeam
         )
           em += fxLen[f];
         else if (kind === FxKind.UnitSpawn) em += KIND_SPRITE[fxUnit[f]] * 2;
@@ -3875,6 +3875,17 @@ export class Renderer {
         const len = (e.len ?? 0) * (1 - t * 0.6);
         this.strokeLine(dyn, e.x, e.y, e.rot ?? 0, len, (1.8 + (1 - t) * 2.6) * MU, col, (1 - t) * 0.9);
         this.strokeCircle(dyn, e.x, e.y, (1 - t) * 6 * MU, ((1 - t) * 2.5 + 0.6) * MU, col[0], col[1], col[2], RING_ALPHA);
+      } else if (e.kind === FxKind.GoadBeam) {
+        const col = e.col ?? TEAM_CRUX_RGB;
+        const reach = Math.min(1, t / 0.2);
+        const fade = t < 0.4 ? 1 : 1 - (t - 0.4) / 0.6;
+        const len = (e.len ?? 0) * reach;
+        this.strokeLine(dyn, e.x, e.y, e.rot ?? 0, len, 3.2 * MU, col, fade * 0.8);
+        this.strokeLine(dyn, e.x, e.y, e.rot ?? 0, len, 1.2 * MU, PAL.white, fade);
+        if (reach >= 1) {
+          const tx = e.x + Math.cos(e.rot ?? 0) * len, ty = e.y + Math.sin(e.rot ?? 0) * len;
+          this.strokeCircle(dyn, tx, ty, (4 + (t - 0.2) * 10) * MU, 1.6 * MU * fade, col[0], col[1], col[2], fade);
+        }
       } else if (e.kind === FxKind.NukeBurst) {
         // THE NUKE (Sim.detonate, levels.ts payload.fuse): a flash that
         // fills the whole blast radius (e.len), white into the sky's

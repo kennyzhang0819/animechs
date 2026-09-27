@@ -7743,6 +7743,9 @@ export class Sim {
                   this.hitStructure(hit[k], wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
                   if (k < 4) this.pushFxCol(hit[k].x, hit[k].y, 12 / 60, FxKind.HitMeltHeal, 0, 0, wp.beamStyle?.colors[2][0] ?? PAL.heal);
                 }
+                // the Hauler is off the grid the line walks
+                if (tgt && this.aimIsConvoy(tgt) && this.aimReach(tgt, x, y, wreach))
+                  this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
               } else if (tgt && this.aimReach(tgt, x, y, wreach)) {
                 this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
                 this.pushFxCol(tgt.x, tgt.y, 12 / 60, FxKind.HitMeltHeal, 0, 0, wp.beamStyle?.colors[2][0] ?? PAL.heal);
@@ -9779,6 +9782,10 @@ export class Sim {
       uability[i] += dt;
       if (uability[i] < reload) continue;
       uability[i] = 0;
+      if (hasteF?.targets) {
+        if (!this.hasteNearest(i, hasteF)) uability[i] = reload - 1;
+        continue;
+      }
 
       const range = spec.range;
       // THE JAM lands on BUILDINGS, not bodies: one structure search per
@@ -9842,7 +9849,7 @@ export class Sim {
           if (hasteF) {
             if (this.uhasteT[j] <= 0 || hasteF.mult > this.uhasteMul[j])
               this.uhasteMul[j] = hasteF.mult;
-            this.uhasteT[j] = reload + AURA_LINGER;
+            this.uhasteT[j] = Math.max(this.uhasteT[j], reload + AURA_LINGER);
             did = true;
           }
           // ...and THE BOW WAVE, on hulls and on nothing else: the land tax
@@ -9910,6 +9917,49 @@ export class Sim {
           repair || energy ? PAL.heal : hasteF ? PAL.venom : wakeF || spotF || drillF ? PAL.harpoon : TEAM_CRUX_RGB,
         );
     }
+  }
+
+  private readonly hasteIdx = new Int32Array(32);
+  private readonly hasteD2 = new Float64Array(32);
+
+  private hasteNearest(i: number, f: { mult: number; reload: number; range: number; targets?: number }): boolean {
+    const { upx, upy, uhp, ugar, uspawn, uhasteT, uhasteMul } = this;
+    const idx = this.hasteIdx, dd = this.hasteD2;
+    const want = Math.min(f.targets ?? 0, idx.length);
+    const x = upx[i], y = upy[i], r2 = f.range * f.range;
+    let got = 0;
+    const hx0 = clamp(((x - f.range) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((y - f.range) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((x + f.range) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((y + f.range) / HC) | 0, 0, HROWS - 1);
+    for (let hy = hy0; hy <= hy1; hy++) {
+      const row = hy * HCOLS;
+      const e = this.bStart[row + hx1 + 1];
+      const e0 = this.bStart[row + hx0];
+      this.probes += e - e0;
+      for (let b = e0; b < e; b++) {
+        const j = this.bUnits[b];
+        if (j >= this.n || j === i || uhp[j] <= 0 || ugar[j] === 2 || uspawn[j] > 0) continue;
+        const dx = upx[j] - x, dy = upy[j] - y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > r2 || (got === want && d2 >= dd[got - 1])) continue;
+        let p = got < want ? got++ : got - 1;
+        while (p > 0 && dd[p - 1] > d2) {
+          dd[p] = dd[p - 1];
+          idx[p] = idx[p - 1];
+          p--;
+        }
+        dd[p] = d2;
+        idx[p] = j;
+      }
+    }
+    for (let k = 0; k < got; k++) {
+      const j = idx[k];
+      if (uhasteT[j] <= 0 || f.mult > uhasteMul[j]) uhasteMul[j] = f.mult;
+      uhasteT[j] = Math.max(uhasteT[j], f.reload + AURA_LINGER);
+      this.pushFxCol(x, y, 0.55, FxKind.GoadBeam, Math.atan2(upy[j] - y, upx[j] - x), Math.sqrt(dd[k]), TEAM_CRUX_RGB, 0, true);
+    }
+    return got > 0;
   }
 
   /**
