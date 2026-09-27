@@ -213,7 +213,7 @@ const CLUTTER = {
   [FLOOR_BASALT]: [DECOR.shaleBoulder, DECOR.boulder],
 };
 const CELL = 20; // world px per cell (game/constants.ts)
-const CORE = 5; // the core's edge, in cells (BASE.size)
+const CORE = 6; // the core's edge, in cells (BASE.size)
 
 /**
  * THE MINIMUM THROUGH GAP, on land and at sea. An ironhide5 is UR*3.75 across

@@ -879,6 +879,10 @@ export function terrainFromMap(m: MapData): Terrain {
   // `core` is the field's old name — see MapData.core
   const at = m.base ?? m.core;
   const base = { x: at?.x ?? BASE.x, y: at?.y ?? BASE.y, size: BASE.size };
+  // the core stands on open ground whatever the document says under it:
+  // a base authored at the old five cells has rock under its sixth row
+  for (let y = base.y; y < Math.min(ROWS, base.y + base.size); y++)
+    for (let x = base.x; x < Math.min(COLS, base.x + base.size); x++) { blocked[y * COLS + x] = 0; wall[y * COLS + x] = 0; }
   const t: Terrain = {
     floor,
     wall,

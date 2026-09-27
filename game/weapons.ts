@@ -1632,29 +1632,27 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // rather than inventing one is the honest way to say it.
   bulwark: [
     {
-      name: "bulwark-tusks", reload: t(40), mounts: 2, damage: 800, splash: 280, splashRadius: u(36),
+      name: "bulwark-tusks", reload: t(40), mounts: 2, damage: 1000, splash: 340, splashRadius: u(36),
       range: u(38), speed: 0, fx: "melee", rend: 0.012,
     },
   ],
-  // THE LANCE'S BEAM is the Starlight apex's bite on a third of its cycle
-  // and a third of its reach, and it PIERCES like the Starlight beams do.
-  // A starhart5 fires 560 down fifty-seven tiles and then spends five
-  // seconds doing nothing; this one carries the same 560 into a
-  // twenty-four-tile line every two seconds, at everything on the line —
-  // constant rather than enormous.
+  // THE LANCE'S BEAM is the Starlight apex's bite on a sixth of its cycle
+  // and a third of its reach, and it PIERCES like the Starlight beams do:
+  // 640 into a twenty-four-tile line every second, at everything on the
+  // line — constant rather than enormous.
   lance: [
     {
-      name: "lance-beam", reload: t(130), mounts: 1, damage: 560, range: u(190), speed: 0,
+      name: "lance-beam", reload: t(65), mounts: 1, damage: 640, range: u(190), speed: 0,
       fx: "laser", pierce: true, laser: WARDEN_LASER, charge: t(20), shoot: FxKind.ShootBig,
     },
   ],
-  // THE HALBERD THROWS FOUR ARCS AT ONCE: chain lightning on the Coil's
-  // and the Livewires' logic (fx "arc"), four chains a pull, each leaving
+  // THE HALBERD THROWS FIVE ARCS AT ONCE: chain lightning on the Coil's
+  // and the Livewires' logic (fx "arc"), five chains a pull, each leaving
   // for a structure the others have not struck and jumping three times
   // from there. What it does to a patch is light the whole patch.
   halberd: [
     {
-      name: "halberd-arcs", reload: t(90), mounts: 1, shots: 4, damage: 260, range: u(230), speed: 0,
+      name: "halberd-arcs", reload: t(80), mounts: 1, shots: 5, damage: 300, range: u(230), speed: 0,
       fx: "arc", arc: { jumps: 3, reach: u(32), decay: 0.7, color: WARDEN_SHOT },
     },
   ],

@@ -2736,9 +2736,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // elephants do and for the same reason, and everything it costs a board
   // is paid at arm's length.
   bulwark: {
-    hp: 21000,
+    hp: 32000,
     speed: 2.6 * CELL,
-    armor: 85,
+    armor: 95,
     radius: UR * 4,
     tier: 5,
     rotateSpeed: 1.6,
@@ -2751,35 +2751,38 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // size. One of them is a wall you cannot get past and the other is a
   // gun you cannot get away from.
   lance: {
-    hp: 14500,
+    hp: 29000,
     speed: 5 * CELL,
-    armor: 12,
+    armor: 20,
     radius: UR * 2.25,
     tier: 5,
     rotateSpeed: 4.5,
   },
 
-  // THE HALBERD — the arc thrower, and the one of the four that walks
-  // behind a FORCE FIELD (the same bubble a Tusker carries). Four chains
-  // of lightning on one pull (weapons.ts) and a bubble that has to come
-  // down before any of it can be answered.
+  // THE HALBERD — the warlock. Five chains of lightning on one pull
+  // (weapons.ts), and the garrison's support: it walks behind a FORCE
+  // FIELD (the Tusker's bubble, wider), mends every Warden round it and
+  // lays absorbing shield on them, so a garrison with a Halberd in it
+  // does not come apart until the Halberd does.
   halberd: {
-    hp: 46000,
+    hp: 60000,
     speed: 2.2 * CELL,
-    armor: 95,
+    armor: 100,
     radius: UR * 5,
     tier: 5,
     rotateSpeed: 1.4,
-    forceField: { radius: 11 * CELL, regen: 60, max: 9000, cooldown: 7 },
+    forceField: { radius: 14 * CELL, regen: 90, max: 14000, cooldown: 6 },
+    repairField: { amount: 500, reload: 2, range: 14 * CELL },
+    shieldField: { amount: 600, max: 6000, reload: 2, range: 14 * CELL },
   },
 
   // THE JUGGERNAUT — the fortress. The heaviest thing on the ground in
   // this game, slower than anything else that walks, throwing missiles
   // out of both flanks the whole way in.
   juggernaut: {
-    hp: 170000,
+    hp: 240000,
     speed: 1.6 * CELL,
-    armor: 125,
+    armor: 140,
     radius: UR * 7,
     tier: 5,
     rotateSpeed: 0.9,

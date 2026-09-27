@@ -135,7 +135,13 @@ All twenty-two render through the same run check with none flagged.
 
 ### The core
 
-The core (`mill-core.png`, `drawCore`) is drawn to the same rules on the
+The core is now painted in code at six cells square (`propArt.ts
+coreCanvas`, drawn into `UV_BASE` at 192 px): an octagonal slab of slate,
+an iron course inside it and a well of the team's amber, in the props'
+three bands. What follows is the foundry drawing it replaced, kept for
+the record.
+
+The core (`mill-core.png`, `drawCore`) was drawn to the same rules on the
 nucleus's 160 px, five cells square: a hard square slab with four square
 courses stepping in — slate, iron, slate — to a well of the team's
 sharded yellow, its innermost square in the reversed shade and a bore at

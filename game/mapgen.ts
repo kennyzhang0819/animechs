@@ -205,7 +205,7 @@ export const WALL_FUNGAL = 50;
 export const WALL_CRYSTAL_ROCK = 52;
 export const WALL_SLATE = 54;
 const WATER_FLOORS = [FLOOR_SHALLOW_WATER, FLOOR_DEEP_WATER, FLOOR_TAINTED_WATER, FLOOR_DEEP_TAINTED_WATER];
-const CORE = 5;
+const CORE = 6;
 export const GAP_GROUND = 5;
 export const GAP_WATER = 11;
 /** a spawn tile must sit on ground that reaches the core through corridors

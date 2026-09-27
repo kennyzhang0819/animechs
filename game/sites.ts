@@ -43,9 +43,9 @@ export const SITE_DEFS: Readonly<Record<SiteKind, SiteDef>> = {
     name: "Cairn",
     blurb: "A cache in a ring of stones, and the Wardens that hold it.",
     tiers: {
-      small: { radius: 12, hp: 40000, guards: { lance: 1 } },
-      medium: { radius: 15, hp: 100000, guards: { lance: 2, bulwark: 1 } },
-      large: { radius: 18, hp: 220000, guards: { lance: 2, bulwark: 2, halberd: 1 } },
+      small: { radius: 12, hp: 80000, guards: { lance: 1 } },
+      medium: { radius: 15, hp: 200000, guards: { lance: 2, bulwark: 1 } },
+      large: { radius: 18, hp: 440000, guards: { lance: 2, bulwark: 2, halberd: 1 } },
     },
   },
   mirror: {
@@ -53,9 +53,9 @@ export const SITE_DEFS: Readonly<Record<SiteKind, SiteDef>> = {
     name: "Mirror cache",
     blurb: "Unguarded. Every hit on it comes back at the nearest turret.",
     tiers: {
-      small: { radius: 6, hp: 30000, reflect: 0.1 },
-      medium: { radius: 6, hp: 80000, reflect: 0.2 },
-      large: { radius: 6, hp: 160000, reflect: 0.35 },
+      small: { radius: 6, hp: 60000, reflect: 0.1 },
+      medium: { radius: 6, hp: 160000, reflect: 0.2 },
+      large: { radius: 6, hp: 320000, reflect: 0.35 },
     },
   },
   sleeper: {
@@ -63,11 +63,11 @@ export const SITE_DEFS: Readonly<Record<SiteKind, SiteDef>> = {
     name: "Sleeping house",
     blurb: "A dormant Fabricator beside the cache. Wake it and it blasts everything near, then sends.",
     tiers: {
-      small: { radius: 10, hp: 40000, houses: [{ kind: "fabricatorSmall", every: 2 }] },
-      medium: { radius: 12, hp: 90000, houses: [{ kind: "fabricatorLarge", every: 4 }] },
+      small: { radius: 10, hp: 80000, houses: [{ kind: "fabricatorSmall", every: 2 }] },
+      medium: { radius: 12, hp: 180000, houses: [{ kind: "fabricatorLarge", every: 4 }] },
       large: {
         radius: 14,
-        hp: 180000,
+        hp: 360000,
         houses: [{ kind: "fabricatorLarge", every: 2 }, { kind: "fabricatorSmall", every: 1 }],
       },
     },
@@ -77,9 +77,9 @@ export const SITE_DEFS: Readonly<Record<SiteKind, SiteDef>> = {
     name: "Shrine",
     blurb: "A Pylon over the cache buffs every body near it, waves included, until it falls.",
     tiers: {
-      small: { radius: 12, hp: 40000, pylons: ["goad"], guards: { lance: 1 } },
-      medium: { radius: 15, hp: 100000, pylons: ["bastion"], guards: { lance: 1, bulwark: 1 } },
-      large: { radius: 18, hp: 220000, pylons: ["goad", "bastion"], guards: { lance: 2, bulwark: 2 } },
+      small: { radius: 12, hp: 80000, pylons: ["goad"], guards: { lance: 1 } },
+      medium: { radius: 15, hp: 200000, pylons: ["bastion"], guards: { lance: 1, bulwark: 1 } },
+      large: { radius: 18, hp: 440000, pylons: ["goad", "bastion"], guards: { lance: 2, bulwark: 2 } },
     },
   },
   beacon: {
@@ -87,9 +87,9 @@ export const SITE_DEFS: Readonly<Record<SiteKind, SiteDef>> = {
     name: "Beacon",
     blurb: "A Brander beside the cache burns any turret in its reach.",
     tiers: {
-      small: { radius: 12, hp: 40000, branders: 1 },
-      medium: { radius: 15, hp: 100000, branders: 1, guards: { bulwark: 2 } },
-      large: { radius: 18, hp: 220000, branders: 2, guards: { bulwark: 2, halberd: 1 } },
+      small: { radius: 12, hp: 80000, branders: 1 },
+      medium: { radius: 15, hp: 200000, branders: 1, guards: { bulwark: 2 } },
+      large: { radius: 18, hp: 440000, branders: 2, guards: { bulwark: 2, halberd: 1 } },
     },
   },
   bomber: {

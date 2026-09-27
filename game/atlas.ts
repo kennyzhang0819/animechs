@@ -9,11 +9,11 @@ import {
   type FloorKind,
   type WallKind,
 } from "./tiles";
-import { FAMILY_SLOTS, familyKinds, PROP_KINDS, propCanvas } from "./propArt";
+import { coreCanvas, FAMILY_SLOTS, familyKinds, PROP_KINDS, propCanvas } from "./propArt";
 import { CONVOY_SIZE, FABRICATOR_KINDS, type UnitKind } from "./levels";
 import { ANIMAL_ART } from "./animalFlag";
 import { FOUNDRY_ART } from "./turretFlag";
-import { FOUNDRY_BASE_URLS, FOUNDRY_CORE_URL, FOUNDRY_HEAD_URLS, foundryHeadUrl } from "./foundryArt";
+import { FOUNDRY_BASE_URLS, FOUNDRY_HEAD_URLS, foundryHeadUrl } from "./foundryArt";
 import { TOWER_ICONS } from "./towerIcons";
 import type { TowerKind } from "./types";
 import {
@@ -802,8 +802,8 @@ export const UV_FIXER = flat("fixer", 64);
  */
 export const UV_TETHER_LASER = reserve("tether-laser", 24, 4, { art: [24, 4] });
 export const UV_TETHER_LASER_END = sprite("tether-laser-end", 32, 32);
-// the player's base, the core nucleus at native 160px
-export const UV_BASE = flat("base", 160);
+// the player's base, six cells square at 32 px a cell (propArt.ts coreCanvas)
+export const UV_BASE = flat("base", 192);
 
 /**
  * The bullet regions and the shell regions. Every one is packed WHITE and
@@ -2317,7 +2317,6 @@ const SPRITES = {
   livewire5: "/stock/sprites/units/navanax.png",
   // FOUNDRY (foundryArt.ts): the hand-authored heads and core, the art
   // this game actually draws, loaded like any other sprite
-  foundryCore: FOUNDRY_CORE_URL,
   foundryBase1: FOUNDRY_BASE_URLS[0],
   foundryBase2: FOUNDRY_BASE_URLS[1],
   foundryBase3: FOUNDRY_BASE_URLS[2],
@@ -2392,8 +2391,6 @@ const SPRITES = {
   // ...and the 2x2 large walls, 64px block art
   tetherLaser: "/stock/sprites/effects/parallax-laser.png",
   tetherLaserEnd: "/stock/sprites/effects/parallax-laser-end.png",
-  base: "/stock/sprites/blocks/storage/core-nucleus.png",
-  baseTeam: "/stock/sprites/blocks/storage/core-nucleus-team.png",
   // the sap beam's line and cap (see UV_LASER)
   laser: "/stock/sprites/effects/laser.png",
   laserEnd: "/stock/sprites/effects/laser-end.png",
@@ -2434,7 +2431,6 @@ const SPRITES = {
 } as const;
 
 // Mindustry's sharded (player) team color — the team overlay multiplies by it
-const TEAM_COLOR = "#ffd37f";
 
 type SpriteKey = keyof typeof SPRITES;
 /** the sprite keys that are Foundry heads (foundryArt.ts) */
@@ -3902,27 +3898,8 @@ async function packInto(sheet: Sheet, units: ReadonlySet<string>, shared: boolea
   draw(UV_SHIELD_TOWER, outlinedBlock(img.shieldTower));
   draw(UV_RESTORER, antialiased(mendBlock(img.restorer, img.restorerTop)));
   draw(UV_FIXER, antialiased(mendBlock(img.fixer, img.fixerTop)));
-  // the base building at native 160px: the block, then the team overlay
-  // tinted sharded-yellow the way Mindustry composites team regions
-  if (FOUNDRY_ART) {
-    // FOUNDRY's core (foundryArt.ts): the same plating as the heads, the
-    // team's colour drawn into it, no overlay to composite
-    draw(UV_BASE, antialiased(img.foundryCore));
-  } else {
-    draw(UV_BASE, antialiased(img.base));
-    const baseTeam = antialiased(img.baseTeam);
-    const team = document.createElement("canvas");
-    team.width = team.height = 160;
-    const tc = team.getContext("2d");
-    if (!tc) throw new Error("2d context unavailable");
-    tc.drawImage(baseTeam, 0, 0, 160, 160);
-    tc.globalCompositeOperation = "multiply";
-    tc.fillStyle = TEAM_COLOR;
-    tc.fillRect(0, 0, 160, 160);
-    tc.globalCompositeOperation = "destination-in";
-    tc.drawImage(baseTeam, 0, 0, 160, 160);
-    draw(UV_BASE, team);
-  }
+  // the base building, painted (propArt.ts coreCanvas)
+  draw(UV_BASE, antialiased(coreCanvas()));
 
   // the animal trial goes over the stock cells it replaces, once they are
   // all drawn and before the team cells are packed, since it requeues its own

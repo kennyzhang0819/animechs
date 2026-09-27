@@ -43,7 +43,7 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 - Every ground zone reaches the core on foot; every water zone reaches the core over the naval mask (rock only), and no pond lies nearer the core than the sea.
 - No gate is a short cut: walks to the core within 50% of each other.
 - Open == reachable from the core.
-- The core's 5x5 is open dry ground, off every drop zone, in a dry clearing.
+- The core's 6x6 is open dry ground, off every drop zone, in a dry clearing.
 
 ## Room to build
 
