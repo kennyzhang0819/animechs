@@ -417,9 +417,9 @@ export default function MenuBackground({
       frame(now, dt);
     };
 
-    // the atlas is packed once per page and shared with the game; without
-    // WebGL2 there is no menu ground and no game either, so the wash is
-    // simply left over black
+    // the shared roster of the sheet, which a run's pack then copies
+    // (docs/sprite-sheet.md); without WebGL2 there is no menu ground and no
+    // game either, so the wash is simply left over black
     void buildAtlas()
       .then((atlas) => {
         if (!alive) return;

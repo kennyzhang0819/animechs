@@ -461,21 +461,17 @@ export const BOOT_STEP_LABEL: Record<BootStep, string> = {
   warmup: "Warming up",
 };
 
-/**
- * Which step a cold start really begins at. Packing the sheet is the only
- * genuinely slow stage, and it happens once per page — so after the first
- * level the bar would sit at "Packing sprites" for a millisecond and then
- * leap, which reads as a stutter. Starting the bar past the finished work
- * instead makes a warm start look like what it is: nearly instant.
- */
 /** the unit kinds a run may put on the board: its families' trees */
 export function runUnits(spec: LevelSpec): UnitKind[] {
   const families = spec.families ?? scriptFamilies(spec.script);
   return families.flatMap((f) => [...familyByKey(f).kinds]);
 }
 
-export function firstLoadStep(): LoadStep {
-  return atlasReady() ? "map" : "sprites";
+/** where the bar starts for this run: past the sheet when it already holds
+ *  the run's lines, so a warm start reads as nearly instant rather than as
+ *  a "Packing sprites" that leaps */
+export function firstLoadStep(spec: LevelSpec): LoadStep {
+  return atlasReady(runUnits(spec)) ? "map" : "sprites";
 }
 
 /**

@@ -2276,7 +2276,8 @@ export default function Animechs() {
    * changed is that the page is covered until it is done.
    *
    * The sheet goes first because everything else is cut out of it and it is
-   * the one genuinely long step (~200ms of packing, once per page). Then
+   * the one genuinely long step: the shared roster, which every run's sheet
+   * then copies rather than paints (docs/sprite-sheet.md). Then
    * the documents — level documents overlay WORLDS in place (see levels.ts),
    * so a script edited in the admin level editor is what the menu counts and
    * the run plays; a level with no document keeps the campaign as shipped.
@@ -2295,7 +2296,11 @@ export default function Animechs() {
   useEffect(() => {
     let alive = true;
     void (async () => {
-      if (!atlasReady()) await buildAtlas().catch(() => {});
+      // a track that has opened exactly the die's count can only deal those
+      // lines, so a fresh save's first run finds its sheet already packed
+      const pool = familiesAt(effectiveLevel(loadProgress()));
+      const units = pool.length <= FAMILIES_PER_RUN ? pool.flatMap((f) => [...familyByKey(f).kinds]) : [];
+      if (!atlasReady(units)) await buildAtlas({ units }).catch(() => {});
       if (!alive) return;
       setBoot((b) => (b ? { ...b, step: "maps" } : b));
       await Promise.all([
@@ -2364,7 +2369,7 @@ export default function Animechs() {
     // the overlay covers the canvases from the first render of the game
     // screen, so the black canvas is never seen at all
     const startedAt = performance.now();
-    setLoadUi({ step: firstLoadStep(), out: false });
+    setLoadUi({ step: firstLoadStep(level), out: false });
     Game.create(glRef.current, uiRef.current, level, (step) => {
       // a step arriving after teardown must not resurrect the overlay
       if (alive) setLoadUi((ui) => (ui ? { ...ui, step } : ui));
@@ -2719,23 +2724,22 @@ export default function Animechs() {
     // the family die is rolled inside runSpec, against the script it is
     // dealt into — see there for why it cannot be rolled out here. The
     // custom hand goes the same way, and is empty in regular mode
-    setLevel(
-      runSpec(
-        w,
-        tier,
-        roll,
-        custom ? families : [],
-        // THE HAT IS WHAT THE TRACK HAS OPENED, the same rule the deck
-        // follows: four factions on a fresh save and one more every
-        // FAMILY_STEP levels. Custom draws from the whole roster
-        custom ? ACTIVE_FAMILIES : familiesAt(effectiveLevel(p)),
-      ),
+    const spec = runSpec(
+      w,
+      tier,
+      roll,
+      custom ? families : [],
+      // THE HAT IS WHAT THE TRACK HAS OPENED, the same rule the deck
+      // follows: four factions on a fresh save and one more every
+      // FAMILY_STEP levels. Custom draws from the whole roster
+      custom ? ACTIVE_FAMILIES : familiesAt(effectiveLevel(p)),
     );
+    setLevel(spec);
     setScreen("game");
     // raised in the same batch as the screen switch, so the game screen's
     // FIRST paint is already covered - an effect would run after that
     // paint and let a frame of black canvas through
-    setLoadUi({ step: firstLoadStep(), out: false });
+    setLoadUi({ step: firstLoadStep(spec), out: false });
   };
 
   /**

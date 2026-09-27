@@ -13,8 +13,8 @@
  * question about ONE board, and the cheapest way to be sure nothing of the
  * last one is still standing — a bench override, a wave the script was
  * mid-way through sending — is to tear the level down and build it again.
- * The atlas is packed once per page (Game.create), so the second and later
- * builds cost the world and not the sprites.
+ * The sheet is packed once for the lines a scene sends (Game.create), so the
+ * second and later builds cost the world and not the sprites.
  *
  * THE BOARD IS STOOD THROUGH THE HOST (Game.benchHost), never the sim: on
  * the shipping path the sim is on a worker and this thread cannot touch
