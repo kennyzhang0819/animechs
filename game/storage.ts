@@ -40,6 +40,9 @@ export interface DisplayInfo {
   width: number;
   height: number;
   primary: boolean;
+  /** the part a framed window can use — what the Window size row offers from */
+  workWidth?: number;
+  workHeight?: number;
 }
 
 /** what the shell says about the display right now */
@@ -48,6 +51,8 @@ export interface DisplayState {
   /** the monitor the game is on — always one of `displays` */
   displayId: number;
   displays: DisplayInfo[];
+  /** the windowed size, whatever mode the window is in now */
+  window?: { width: number; height: number };
 }
 
 /**
@@ -60,6 +65,8 @@ export interface DisplayBridge {
   get(): DisplayState | null;
   setMode(mode: DisplayMode): void;
   setMonitor(id: number): void;
+  /** optional: a shell packaged before the Window size row cannot be sized */
+  setWindowSize?(width: number, height: number): void;
   onChange(fn: (state: DisplayState) => void): () => void;
 }
 

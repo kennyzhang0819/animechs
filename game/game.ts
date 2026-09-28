@@ -1137,6 +1137,16 @@ export class Game {
   private panSpeed = 1;
   /** the Controls tab's zoom direction — see Progress.invertZoom */
   private invertZoom = false;
+  /** the Controls tab's multiplier on the wheel's zoom rate */
+  private zoomSpeed = 1;
+  /** the Video tab's frame rate limit; 0 is every frame rAF offers */
+  private fpsCap = 0;
+  /** when the last frame that was actually drawn began (fpsCap) */
+  private lastDrawn = 0;
+  /** the Video tab's render scale: backing pixels per device pixel */
+  private renderScale = 1;
+  /** the Game tab's pause when the window loses focus */
+  private pauseOnBlur = true;
   /**
    * WHO WEARS A HEALTH BAR ON THE FIELD — the Interface tab's two knobs,
    * one a side (setHealthBars). They govern units and buildings alike:
@@ -1468,6 +1478,10 @@ export class Game {
   // missed keyups (cmd+tab away mid-pan) would leave the camera drifting
   private readonly onBlur = (): void => {
     this.keysDown.clear();
+    if (this.pauseOnBlur) this.openMenu();
+  };
+  private readonly onVisibility = (): void => {
+    if (document.hidden) this.onBlur();
   };
   // THE MINIMAP'S POINTER: a press puts the place under it in view, and
   // the press held is a drag of the view — captured, so a drag that runs
@@ -1525,7 +1539,7 @@ export class Game {
     if (this.invertZoom) dy = -dy;
     const before = this.mouseWorld(e);
     this.zoom = clamp(
-      this.zoom * Math.exp(-dy * (pinch ? 0.012 : 0.0015)),
+      this.zoom * Math.exp(-dy * (pinch ? 0.012 : 0.0015) * this.zoomSpeed),
       this.minZoom(),
       ZOOM_MAX,
     );
@@ -2471,6 +2485,7 @@ export class Game {
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("blur", this.onBlur);
+    document.addEventListener("visibilitychange", this.onVisibility);
     window.addEventListener("pointerup", this.onMouseUp);
     window.addEventListener("pointercancel", this.onMouseUp);
     window.addEventListener("wheel", this.onWinWheel, { passive: false });
@@ -2516,6 +2531,7 @@ export class Game {
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
     window.removeEventListener("blur", this.onBlur);
+    document.removeEventListener("visibilitychange", this.onVisibility);
     window.removeEventListener("pointerup", this.onMouseUp);
     window.removeEventListener("pointercancel", this.onMouseUp);
     window.removeEventListener("wheel", this.onWinWheel);
@@ -2786,6 +2802,25 @@ export class Game {
   /** the Controls tab's Reverse mouse zoom switch — live, mid-run */
   setInvertZoom(on: boolean): void {
     this.invertZoom = on;
+  }
+
+  setZoomSpeed(mult: number): void {
+    this.zoomSpeed = Number.isFinite(mult) && mult > 0 ? mult : 1;
+  }
+
+  setFpsCap(fps: number): void {
+    this.fpsCap = Number.isFinite(fps) && fps > 0 ? fps : 0;
+  }
+
+  setRenderScale(scale: number): void {
+    const next = Number.isFinite(scale) && scale > 0 ? scale : 1;
+    if (next === this.renderScale) return;
+    this.renderScale = next;
+    this.resize();
+  }
+
+  setPauseOnBlur(on: boolean): void {
+    this.pauseOnBlur = on;
   }
 
 
@@ -3170,7 +3205,7 @@ export class Game {
   }
 
   private resize(): void {
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = (window.devicePixelRatio || 1) * this.renderScale;
     const bw = Math.round((this.glCanvas.clientWidth || this.worldW) * dpr);
     const bh = Math.round((this.glCanvas.clientHeight || H) * dpr);
     // only skip the canvas attribute writes (they clear the canvas) — the
@@ -3204,6 +3239,19 @@ export class Game {
 
   private readonly frame = (now: number): void => {
     if (this.destroyed) return;
+    // the frame rate limit: a frame due sooner than the cap's period is
+    // not drawn, and `this.last` is left alone so the sim hears the whole
+    // gap on the frame that is. The 1ms slack keeps a 60 cap on a 60Hz
+    // display from dropping every other frame to timer jitter.
+    if (this.fpsCap > 0) {
+      const period = 1000 / this.fpsCap;
+      if (now - this.lastDrawn < period - 1) {
+        this.raf = requestAnimationFrame(this.frame);
+        return;
+      }
+      // advance by whole periods so the cap does not drift below its rate
+      this.lastDrawn = now - this.lastDrawn < 2 * period ? this.lastDrawn + period : now;
+    }
     // A FRAME HAS TWO ELAPSED TIMES AND THEY ARE NOT THE SAME NUMBER.
     // `raw` is how long the frame took. `dt` is how much of that the SIM is
     // allowed to hear about, capped so a tab that was hidden for a minute

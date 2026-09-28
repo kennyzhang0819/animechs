@@ -50,6 +50,9 @@ export interface DisplayInfo {
   width: number;
   height: number;
   primary: boolean;
+  /** the work area — what a framed window can actually fill */
+  workWidth: number;
+  workHeight: number;
 }
 
 /** everything the Video tab draws itself from */
@@ -58,6 +61,8 @@ export interface DisplayState {
   /** the monitor the game is on — always one of `displays` */
   displayId: number;
   displays: DisplayInfo[];
+  /** the windowed size, whatever mode the window is in now */
+  window: { width: number; height: number };
 }
 
 export interface ShellOptions {
@@ -173,8 +178,25 @@ export class Shell {
         width: Math.round(d.bounds.width),
         height: Math.round(d.bounds.height),
         primary: d.id === primary.id,
+        workWidth: Math.round(d.workArea.width),
+        workHeight: Math.round(d.workArea.height),
       })),
+      window: { width: this.windowed.width, height: this.windowed.height },
     };
+  }
+
+  /**
+   * The Window size row: the windowed size, re-centred on the monitor
+   * (place() with no position). Only applied at once when windowed; the
+   * other two modes keep it as the size to come back to.
+   */
+  setWindowSize(width: number, height: number): void {
+    const w = Math.max(this.opts.minWidth, Math.floor(width));
+    const h = Math.max(this.opts.minHeight, Math.floor(height));
+    if (w === this.windowed.width && h === this.windowed.height) return;
+    this.windowed = this.place(this.target(), w, h);
+    if (this.mode === "windowed" && !this.win.isFullScreen()) this.win.setBounds(this.windowed);
+    this.emit();
   }
 
   setMode(mode: DisplayMode): void {
@@ -345,12 +367,13 @@ export class Shell {
    */
   private remember(): void {
     if (this.mode !== "windowed" || this.win.isFullScreen()) return;
+    const was = this.windowed;
     this.windowed = this.win.getBounds();
     const on = screen.getDisplayMatching(this.windowed).id;
-    if (on !== this.displayId) {
-      this.displayId = on;
-      this.emit();
-    }
+    const resized = was.width !== this.windowed.width || was.height !== this.windowed.height;
+    const moved = on !== this.displayId;
+    this.displayId = on;
+    if (moved || resized) this.emit();
   }
 
   /** the monitor to play on: the chosen one while it exists, else where the window is */
@@ -433,5 +456,15 @@ export function installDisplayHandlers(current: () => Shell | null): void {
   });
   ipcMain.on("display:monitor", (_event, id: unknown) => {
     if (typeof id === "number" && Number.isFinite(id)) current()?.setDisplay(id);
+  });
+  ipcMain.on("display:size", (_event, width: unknown, height: unknown) => {
+    if (
+      typeof width === "number" &&
+      typeof height === "number" &&
+      Number.isFinite(width) &&
+      Number.isFinite(height)
+    ) {
+      current()?.setWindowSize(width, height);
+    }
   });
 }

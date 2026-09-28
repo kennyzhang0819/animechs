@@ -28,6 +28,8 @@ const bridge = {
     get: (): unknown => ipcRenderer.sendSync("display:state"),
     setMode: (mode: string): void => ipcRenderer.send("display:mode", mode),
     setMonitor: (id: number): void => ipcRenderer.send("display:monitor", id),
+    setWindowSize: (width: number, height: number): void =>
+      ipcRenderer.send("display:size", width, height),
     onChange: (fn: (state: unknown) => void): (() => void) => {
       const listener = (_event: unknown, state: unknown): void => fn(state);
       ipcRenderer.on("display:changed", listener);

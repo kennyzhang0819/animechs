@@ -195,6 +195,18 @@ export interface Progress {
    * switch. Absent means INVERT_ZOOM_DEFAULT.
    */
   invertZoom?: boolean;
+  /** the wheel's zoom rate, one of ZOOM_SPEEDS (Game.setZoomSpeed) */
+  zoomSpeed?: number;
+  /** the frame the game stops drawing at, one of FPS_CAPS; 0 is the display's own rate */
+  fpsCap?: number;
+  /** the field's backing store as a share of device pixels, one of RENDER_SCALES */
+  renderScale?: number;
+  /** a CSS brightness on the field's canvases, one of BRIGHTNESS_STEPS */
+  brightness?: number;
+  /** the pause sheet comes up when the window loses focus (Game.setPauseOnBlur) */
+  pauseOnBlur?: boolean;
+  /** the Audio tab's dials — stored ahead of the sound that will read them */
+  audio?: AudioSettings;
   /**
    * WHEN A HEALTH BAR RIDES OVER A BODY ON THE FIELD, the player's own
    * (`allyBars`) and the swarm's (`enemyBars`) set apart — a player who
@@ -316,6 +328,48 @@ export const PAN_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
 export const PAN_SPEED_DEFAULT = 1.5;
 /** the wheel follows its own sign until the Controls tab says otherwise */
 export const INVERT_ZOOM_DEFAULT = false;
+export const ZOOM_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+export const ZOOM_SPEED_DEFAULT = 1;
+/** 0 draws every frame the display offers; rAF is vsync-locked, so nothing above that exists */
+export const FPS_CAPS = [0, 30, 60, 120, 144] as const;
+export const FPS_CAP_DEFAULT = 0;
+// no supersampling: the field is pixel art, and above 1 the extra pixels buy nothing
+export const RENDER_SCALES = [0.5, 0.75, 1] as const;
+export const RENDER_SCALE_DEFAULT = 1;
+export const BRIGHTNESS_STEPS = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5] as const;
+export const BRIGHTNESS_DEFAULT = 1;
+export const PAUSE_ON_BLUR_DEFAULT = true;
+
+export interface AudioSettings {
+  master: number;
+  music: number;
+  sfx: number;
+  ui: number;
+  muteInBackground: boolean;
+}
+export const VOLUME_STEPS = Array.from({ length: 21 }, (_, i) => i / 20);
+export const AUDIO_DEFAULT: AudioSettings = { master: 0.8, music: 0.7, sfx: 1, ui: 1, muteInBackground: true };
+
+function readVolume(v: unknown, fallback: number): number {
+  return typeof v === "number" && Number.isFinite(v) ? Math.min(1, Math.max(0, Math.round(v * 20) / 20)) : fallback;
+}
+
+function readAudio(p: { audio?: unknown }): AudioSettings | undefined {
+  const a = p.audio as Partial<AudioSettings> | undefined;
+  if (!a || typeof a !== "object") return undefined;
+  return {
+    master: readVolume(a.master, AUDIO_DEFAULT.master),
+    music: readVolume(a.music, AUDIO_DEFAULT.music),
+    sfx: readVolume(a.sfx, AUDIO_DEFAULT.sfx),
+    ui: readVolume(a.ui, AUDIO_DEFAULT.ui),
+    muteInBackground: typeof a.muteInBackground === "boolean" ? a.muteInBackground : AUDIO_DEFAULT.muteInBackground,
+  };
+}
+
+/** a stored number, if it is one of the stops the slider has */
+function readStop(v: unknown, stops: readonly number[]): number | undefined {
+  return typeof v === "number" && stops.includes(v) ? v : undefined;
+}
 
 function readPanSpeed(p: { panSpeed?: unknown }): number | undefined {
   const s = p.panSpeed;
@@ -388,6 +442,13 @@ export function loadProgress(): Progress {
       uiScale: readUiScale(p),
       cursor: readCursor(p),
       panSpeed: readPanSpeed(p),
+      ...(p.invertZoom === true ? { invertZoom: true } : null),
+      zoomSpeed: readStop(p.zoomSpeed, ZOOM_SPEEDS),
+      fpsCap: readStop(p.fpsCap, FPS_CAPS),
+      renderScale: readStop(p.renderScale, RENDER_SCALES),
+      brightness: readStop(p.brightness, BRIGHTNESS_STEPS),
+      ...(p.pauseOnBlur === false ? { pauseOnBlur: false } : null),
+      audio: readAudio(p),
       // absent means ON — only an explicit false switches it off
       allyBars: readBars(p.allyBars),
       enemyBars: readBars(p.enemyBars),
@@ -556,6 +617,41 @@ export function saveInvertZoom(on: boolean): void {
  */
 export function loadInvertZoom(): boolean {
   return loadProgress().invertZoom ?? INVERT_ZOOM_DEFAULT;
+}
+
+/** every key on the settings screen — what "Restore defaults" strips and nothing else */
+const SETTING_KEYS = [
+  "effects",
+  "showFps",
+  "uiScale",
+  "cursor",
+  "panSpeed",
+  "invertZoom",
+  "zoomSpeed",
+  "fpsCap",
+  "renderScale",
+  "brightness",
+  "pauseOnBlur",
+  "audio",
+  "allyBars",
+  "enemyBars",
+  "propBars",
+  "statusMarks",
+] as const satisfies readonly (keyof Progress)[];
+export type SettingKey = (typeof SETTING_KEYS)[number];
+
+/** one writer for the newer knobs: the key and its value, no per-field function */
+export function saveSetting<K extends SettingKey>(key: K, value: Progress[K]): void {
+  const p = loadProgress();
+  if (p[key] === value) return;
+  saveProgress({ ...p, [key]: value });
+}
+
+/** the settings back to their defaults — the campaign, the run pick and the skills untouched */
+export function resetSettings(): void {
+  const p: Progress = { ...loadProgress() };
+  for (const k of SETTING_KEYS) delete p[k];
+  saveProgress(p);
 }
 
 

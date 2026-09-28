@@ -111,6 +111,20 @@ import {
   INVERT_ZOOM_DEFAULT,
   UI_SCALE_DEFAULT,
   UI_SCALES,
+  ZOOM_SPEEDS,
+  ZOOM_SPEED_DEFAULT,
+  FPS_CAPS,
+  FPS_CAP_DEFAULT,
+  RENDER_SCALES,
+  RENDER_SCALE_DEFAULT,
+  BRIGHTNESS_STEPS,
+  BRIGHTNESS_DEFAULT,
+  PAUSE_ON_BLUR_DEFAULT,
+  AUDIO_DEFAULT,
+  VOLUME_STEPS,
+  type AudioSettings,
+  saveSetting,
+  resetSettings,
   saveRunPick,
   techOf,
   topOpenTier,
@@ -1825,17 +1839,19 @@ function StepSlider({
 /**
  * THE SETTINGS SECTIONS, in the order they are printed:
  *
- * - `game` — the save, and nothing else so far. Not offered mid-run,
- *   where wiping the save under a running game is the one thing it holds
+ * - `game` — the general knobs and the save. The save-surgery rows are
+ *   not offered mid-run, where wiping the save under a running game is
+ *   the one thing they would do
  * - `video` — what the game looks like and what window it looks like it
- *   in. The three window rows need the desktop shell and are dropped in a
- *   browser tab (`video` below); Effects is there either way
+ *   in. The window rows need the desktop shell and are dropped in a
+ *   browser tab (`video` below); the rest is there either way
+ * - `audio` — the volumes, stored for the sound that is not in yet
  * - `interface` — the size of the UI over the field
  * - `controls` — the mouse and the keys
  * - `info` — what this is, who made it, what it came from. Last, because
  *   it is the only tab that sets nothing
  */
-type SettingsTab = "game" | "video" | "interface" | "controls" | "info";
+type SettingsTab = "game" | "video" | "audio" | "interface" | "controls" | "info";
 
 /**
  * THE DISPLAY MODES, in the order the Video tab prints them: least to most
@@ -1845,6 +1861,32 @@ const DISPLAY_MODES: ReadonlyArray<{ mode: DisplayMode; label: string }> = [
   { mode: "windowed", label: "Windowed" },
   { mode: "borderless", label: "Borderless" },
   { mode: "fullscreen", label: "Fullscreen" },
+];
+
+/** the windowed sizes on offer, of which the Video tab lists the ones that fit the monitor */
+const WINDOW_SIZES: ReadonlyArray<readonly [number, number]> = [
+  [1280, 720],
+  [1366, 768],
+  [1600, 900],
+  [1920, 1080],
+  [2560, 1440],
+  [3440, 1440],
+  [3840, 2160],
+];
+
+const FPS_CAP_CHOICES: ReadonlyArray<{ mode: string; label: string }> = FPS_CAPS.map((fps) => ({
+  mode: String(fps),
+  label: fps === 0 ? "Unlimited" : String(fps),
+}));
+
+/** the keys the field answers to, for the Controls tab's reference rows */
+const KEY_ROWS: ReadonlyArray<[string, string]> = [
+  ["Pan camera", "W A S D · arrows"],
+  ["Zoom", "Mouse wheel"],
+  ["Pause", "Space"],
+  ["Menu", "Esc"],
+  ["Sell selection", "Delete"],
+  ["Build slots", BUILD_SLOTS.flatMap((slot) => (slot ? [slot.key] : [])).join(" ")],
 ];
 
 export default function Animechs() {
@@ -2125,6 +2167,12 @@ export default function Animechs() {
    */
   const [panSpeed, setPanSpeed] = useState<number>(PAN_SPEED_DEFAULT);
   const [invertZoom, setInvertZoom] = useState(INVERT_ZOOM_DEFAULT);
+  const [zoomSpeed, setZoomSpeed] = useState<number>(ZOOM_SPEED_DEFAULT);
+  const [fpsCap, setFpsCap] = useState<number>(FPS_CAP_DEFAULT);
+  const [renderScale, setRenderScale] = useState<number>(RENDER_SCALE_DEFAULT);
+  const [brightness, setBrightness] = useState<number>(BRIGHTNESS_DEFAULT);
+  const [pauseOnBlur, setPauseOnBlur] = useState(PAUSE_ON_BLUR_DEFAULT);
+  const [audio, setAudio] = useState<AudioSettings>(AUDIO_DEFAULT);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("game");
   /**
    * THE DISPLAY, as the desktop shell has it: the mode the window is in,
@@ -2220,6 +2268,41 @@ export default function Animechs() {
    */
   const [pauseSettings, setPauseSettings] = useState(false);
 
+  /**
+   * THE SETTINGS OFF THE SAVE, into state and into a run under way — at
+   * boot, and again after Restore defaults, which is a boot of the panel.
+   */
+  const applySettings = useCallback((p: Progress) => {
+    setEffects(p.effects ?? true);
+    setShowFps(p.showFps ?? false);
+    setUiScale(p.uiScale ?? UI_SCALE_DEFAULT);
+    setCursorStyle(p.cursor ?? CURSOR_DEFAULT);
+    setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
+    setInvertZoom(p.invertZoom ?? INVERT_ZOOM_DEFAULT);
+    setZoomSpeed(p.zoomSpeed ?? ZOOM_SPEED_DEFAULT);
+    setFpsCap(p.fpsCap ?? FPS_CAP_DEFAULT);
+    setRenderScale(p.renderScale ?? RENDER_SCALE_DEFAULT);
+    setBrightness(p.brightness ?? BRIGHTNESS_DEFAULT);
+    setPauseOnBlur(p.pauseOnBlur ?? PAUSE_ON_BLUR_DEFAULT);
+    setAudio(p.audio ?? AUDIO_DEFAULT);
+    setAllyBars(p.allyBars ?? HEALTH_BARS_DEFAULT);
+    setEnemyBars(p.enemyBars ?? HEALTH_BARS_DEFAULT);
+    setPropBars(p.propBars ?? HEALTH_BARS_DEFAULT);
+    setStatusMarks(p.statusMarks ?? STATUS_MARKS_DEFAULT);
+    const g = gameRef.current;
+    if (!g) return;
+    g.setEffects(p.effects ?? true);
+    g.setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
+    g.setInvertZoom(p.invertZoom ?? INVERT_ZOOM_DEFAULT);
+    g.setZoomSpeed(p.zoomSpeed ?? ZOOM_SPEED_DEFAULT);
+    g.setFpsCap(p.fpsCap ?? FPS_CAP_DEFAULT);
+    g.setRenderScale(p.renderScale ?? RENDER_SCALE_DEFAULT);
+    g.setPauseOnBlur(p.pauseOnBlur ?? PAUSE_ON_BLUR_DEFAULT);
+    g.setHealthBars(p.allyBars ?? HEALTH_BARS_DEFAULT, p.enemyBars ?? HEALTH_BARS_DEFAULT);
+    g.setPropBars(p.propBars ?? HEALTH_BARS_DEFAULT);
+    g.setStatusMarks(p.statusMarks ?? STATUS_MARKS_DEFAULT);
+  }, []);
+
   useEffect(() => {
     const p = loadProgress();
     setProgress(p);
@@ -2228,17 +2311,8 @@ export default function Animechs() {
     setMode(p.mode ?? GAME_MODE_DEFAULT);
     setFamilies(p.families ?? []);
     setMutators(p.mutators ?? []);
-    setEffects(p.effects ?? true);
-    setShowFps(p.showFps ?? false);
-    setUiScale(p.uiScale ?? UI_SCALE_DEFAULT);
-    setCursorStyle(p.cursor ?? CURSOR_DEFAULT);
-    setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
-    setInvertZoom(p.invertZoom ?? INVERT_ZOOM_DEFAULT);
-    setAllyBars(p.allyBars ?? HEALTH_BARS_DEFAULT);
-    setEnemyBars(p.enemyBars ?? HEALTH_BARS_DEFAULT);
-    setPropBars(p.propBars ?? HEALTH_BARS_DEFAULT);
-    setStatusMarks(p.statusMarks ?? STATUS_MARKS_DEFAULT);
-  }, []);
+    applySettings(p);
+  }, [applySettings]);
 
   /**
    * The one place the preference becomes pixels: --ui-scale on the root,
@@ -2415,6 +2489,10 @@ export default function Animechs() {
         // the controls, off the save for the same reason as the effects
         g.setPanSpeed(save.panSpeed ?? PAN_SPEED_DEFAULT);
         g.setInvertZoom(save.invertZoom ?? INVERT_ZOOM_DEFAULT);
+        g.setZoomSpeed(save.zoomSpeed ?? ZOOM_SPEED_DEFAULT);
+        g.setFpsCap(save.fpsCap ?? FPS_CAP_DEFAULT);
+        g.setRenderScale(save.renderScale ?? RENDER_SCALE_DEFAULT);
+        g.setPauseOnBlur(save.pauseOnBlur ?? PAUSE_ON_BLUR_DEFAULT);
         g.setHealthBars(save.allyBars ?? HEALTH_BARS_DEFAULT, save.enemyBars ?? HEALTH_BARS_DEFAULT);
         g.setPropBars(save.propBars ?? HEALTH_BARS_DEFAULT);
         g.setStatusMarks(save.statusMarks ?? STATUS_MARKS_DEFAULT);
@@ -2779,16 +2857,34 @@ export default function Animechs() {
    * rebuild progress state under a run that is still holding the old one.
    */
   const settingsPanel = (inGame: boolean) => {
-    // the sections there are HERE: the save cannot be wiped from under a
-    // running game, so mid-run there is no Game tab to show at all — and
-    // a tab that is not there cannot be the one that is open
     const tabs: ReadonlyArray<[SettingsTab, string]> = [
-      ...(inGame ? [] : ([["game", "Game"]] as [SettingsTab, string][])),
+      ["game", "Game"],
       ["video", "Video"],
+      ["audio", "Audio"],
       ["interface", "Interface"],
       ["controls", "Controls"],
       ["info", "Info"],
     ];
+    const onOff = (on: boolean, flip: () => void, label: string) => (
+      <SettingRow label={label}>
+        <button aria-pressed={on} onClick={flip} className="ms-btn w-16 shrink-0 px-3 py-1.5 text-[15px]">
+          {on ? "On" : "Off"}
+        </button>
+      </SettingRow>
+    );
+    const setAudioDial = (next: AudioSettings): void => {
+      setAudio(next);
+      saveSetting("audio", next);
+    };
+    const target = video?.displays.find((d) => d.id === video.displayId);
+    const fitW = target?.workWidth ?? target?.width ?? 0;
+    const fitH = target?.workHeight ?? target?.height ?? 0;
+    const sizeKey = (w: number, h: number): string => `${w}x${h}`;
+    const windowSizes = WINDOW_SIZES.filter(([w, h]) => w <= fitW && h <= fitH);
+    const current = video?.window;
+    if (current && !windowSizes.some(([w, h]) => w === current.width && h === current.height)) {
+      windowSizes.unshift([current.width, current.height]);
+    }
     const tab = tabs.some(([t]) => t === settingsTab) ? settingsTab : tabs[0][0];
     return (
       <>
@@ -2808,32 +2904,63 @@ export default function Animechs() {
 
         {tab === "game" && (
           <SettingsBox>
-            <SettingRow label="Reset save">
+            {onOff(
+              pauseOnBlur,
+              () => {
+                const next = !pauseOnBlur;
+                setPauseOnBlur(next);
+                saveSetting("pauseOnBlur", next);
+                gameRef.current?.setPauseOnBlur(next);
+              },
+              "Pause when unfocused",
+            )}
+            <SettingRow label="Restore default settings">
               <button
                 onClick={async () => {
                   const ok = await confirm({
-                    title: "Wipe all progress?",
-                    body: "Resources, tech and every cleared tier go back to nothing. This cannot be undone.",
-                    confirmLabel: "Wipe",
+                    title: "Restore default settings?",
+                    body: "Every tab goes back to how it shipped. Your campaign is not touched.",
+                    confirmLabel: "Restore",
                   });
-                  if (ok) {
-                    resetProgress();
-                    const p = loadProgress();
-                    setProgress(p);
-                    // the deploy screen goes back to a fresh save's own:
-                    // regular, Incursion, everything rolled
-                    setTier(0);
-                    setMapPick(null);
-                    setMode(GAME_MODE_DEFAULT);
-                    setFamilies([]);
-                    setMutators([]);
-                  }
+                  if (!ok) return;
+                  resetSettings();
+                  applySettings(loadProgress());
                 }}
-                className="ms-btn ms-btn-red shrink-0 px-3 py-1.5 text-[15px]"
+                className="ms-btn shrink-0 px-3 py-1.5 text-[15px]"
               >
-                Wipe
+                Restore
               </button>
             </SettingRow>
+            {/* the save cannot be wiped from under a running game */}
+            {!inGame && (
+              <SettingRow label="Reset save">
+                <button
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: "Wipe all progress?",
+                      body: "Resources, tech and every cleared tier go back to nothing. This cannot be undone.",
+                      confirmLabel: "Wipe",
+                    });
+                    if (ok) {
+                      resetProgress();
+                      const p = loadProgress();
+                      setProgress(p);
+                      applySettings(p);
+                      // the deploy screen goes back to a fresh save's own:
+                      // regular, Incursion, everything rolled
+                      setTier(0);
+                      setMapPick(null);
+                      setMode(GAME_MODE_DEFAULT);
+                      setFamilies([]);
+                      setMutators([]);
+                    }
+                  }}
+                  className="ms-btn ms-btn-red shrink-0 px-3 py-1.5 text-[15px]"
+                >
+                  Wipe
+                </button>
+              </SettingRow>
+            )}
           </SettingsBox>
         )}
 
@@ -2884,6 +3011,61 @@ export default function Animechs() {
               </SettingRow>
             )}
 
+            {/* the windowed size; the other two modes are the monitor's own,
+                so the row is greyed under them and keeps the size to come
+                back to. A shell from before the row has no setWindowSize */}
+            {video && current && displayControls()?.setWindowSize && (
+              <SettingRow label="Window size">
+                <select
+                  aria-label="Window size"
+                  className="ms-select max-w-[19rem] shrink-0 px-3 py-1.5 text-[15px]"
+                  disabled={video.mode !== "windowed"}
+                  value={sizeKey(current.width, current.height)}
+                  onChange={(e) => {
+                    const [w, h] = e.target.value.split("x").map(Number);
+                    displayControls()?.setWindowSize?.(w, h);
+                  }}
+                >
+                  {windowSizes.map(([w, h]) => (
+                    <option key={sizeKey(w, h)} value={sizeKey(w, h)}>
+                      {`${w} × ${h}`}
+                    </option>
+                  ))}
+                </select>
+              </SettingRow>
+            )}
+
+            <StepSlider
+              label="Render scale"
+              steps={RENDER_SCALES}
+              value={renderScale}
+              onPick={(scale) => {
+                setRenderScale(scale);
+                saveSetting("renderScale", scale);
+                gameRef.current?.setRenderScale(scale);
+              }}
+            />
+            <ChoiceRow
+              label="FPS limit"
+              choices={FPS_CAP_CHOICES}
+              value={String(fpsCap)}
+              onPick={(v) => {
+                const cap = Number(v);
+                setFpsCap(cap);
+                saveSetting("fpsCap", cap);
+                gameRef.current?.setFpsCap(cap);
+              }}
+            />
+            <StepSlider
+              label="Brightness"
+              steps={BRIGHTNESS_STEPS}
+              value={brightness}
+              onPick={(v) => {
+                setBrightness(v);
+                saveSetting("brightness", v);
+              }}
+            />
+
             {/* every turret still shows its shot with effects off (see
                 Sim.setEffects) — what goes is the dressing around it */}
             <SettingRow label="Effects">
@@ -2920,6 +3102,43 @@ export default function Animechs() {
                 {showFps ? "On" : "Off"}
               </button>
             </SettingRow>
+          </SettingsBox>
+        )}
+
+        {/* AUDIO — stored now, heard later: nothing in the game plays a
+            sound yet, and the dials are here so the sound that arrives
+            reads a preference the player has already set. */}
+        {tab === "audio" && (
+          <SettingsBox>
+            <StepSlider
+              label="Master volume"
+              steps={VOLUME_STEPS}
+              value={audio.master}
+              onPick={(master) => setAudioDial({ ...audio, master })}
+            />
+            <StepSlider
+              label="Music volume"
+              steps={VOLUME_STEPS}
+              value={audio.music}
+              onPick={(music) => setAudioDial({ ...audio, music })}
+            />
+            <StepSlider
+              label="Effects volume"
+              steps={VOLUME_STEPS}
+              value={audio.sfx}
+              onPick={(sfx) => setAudioDial({ ...audio, sfx })}
+            />
+            <StepSlider
+              label="Interface volume"
+              steps={VOLUME_STEPS}
+              value={audio.ui}
+              onPick={(ui) => setAudioDial({ ...audio, ui })}
+            />
+            {onOff(
+              audio.muteInBackground,
+              () => setAudioDial({ ...audio, muteInBackground: !audio.muteInBackground }),
+              "Mute when unfocused",
+            )}
           </SettingsBox>
         )}
 
@@ -3047,6 +3266,16 @@ export default function Animechs() {
                 gameRef.current?.setPanSpeed(mult); // live, mid-run
               }}
             />
+            <StepSlider
+              label="Zoom speed"
+              steps={ZOOM_SPEEDS}
+              value={zoomSpeed}
+              onPick={(mult) => {
+                setZoomSpeed(mult);
+                saveSetting("zoomSpeed", mult);
+                gameRef.current?.setZoomSpeed(mult);
+              }}
+            />
             {/* WHICH WAY THE WHEEL ZOOMS. The wheel's own sign is not a
                 fact about what the player meant by the flick: macOS's
                 "natural scrolling" flips deltaY for mice as well as
@@ -3068,6 +3297,15 @@ export default function Animechs() {
                 {invertZoom ? "On" : "Off"}
               </button>
             </SettingRow>
+          </SettingsBox>
+        )}
+        {tab === "controls" && (
+          <SettingsBox>
+            {KEY_ROWS.map(([label, keys]) => (
+              <FactRow key={label} label={label}>
+                {keys}
+              </FactRow>
+            ))}
           </SettingsBox>
         )}
 
@@ -3498,6 +3736,9 @@ export default function Animechs() {
   }
 
   const onField = hud ? hud.byKind.reduce((a, b) => a + b, 0) : 0;
+  // on each canvas, never a wrapper: a filter makes its element the
+  // containing block for the fixed-position corner chrome inside it
+  const fieldFilter = brightness === BRIGHTNESS_DEFAULT ? undefined : { filter: `brightness(${brightness})` };
 
   return (
     // select-none keeps a press-and-drag across the field from turning into
@@ -3509,6 +3750,7 @@ export default function Animechs() {
           width={2560}
           height={1440}
           className="block h-full w-full touch-none"
+          style={fieldFilter}
         />
         {/* touch-none is load-bearing on a tablet: without it Safari keeps
             the pan and the pinch for the page and the board never sees a
@@ -3520,6 +3762,7 @@ export default function Animechs() {
           className={`absolute inset-0 h-full w-full touch-none [-webkit-touch-callout:none] ${
             hud?.buildKind ? "cursor-crosshair" : "cursor-default"
           }`}
+          style={fieldFilter}
         />
         {loadUi && (
           <LoadingScreen

@@ -513,8 +513,14 @@
     text-overflow: ellipsis;
     cursor: var(--cur-hand, pointer);
   }
-  .ms-select:hover {
+  .ms-select:hover:not(:disabled) {
     border-color: var(--ms-accent);
+  }
+  .ms-select:disabled {
+    background: var(--ms-disabled);
+    box-shadow: none;
+    color: var(--ms-gray);
+    cursor: var(--cur-arrow, default);
   }
   .ms-select:focus-visible {
     outline: 3px solid var(--ms-accent);

@@ -65,7 +65,7 @@ by design; the admin page is compiled out of a production bundle too.
 | `desktop/src/serve.ts` | serves `out/` on **`app://game/`**. The game fetches by absolute path — `/levels/…`, `/maps/…`, `/_next/static/…` — which `file://` cannot resolve, so the export gets a scheme with a root. `/admin` → `admin.html`, Next-style; nothing outside `out/` is ever served |
 | `desktop/src/saves.ts` | the save file: `progress.json` under the data directory, written atomically with a `.bak` of the previous save |
 | `desktop/src/steam.ts` | Steamworks, off until there is an app id |
-| `desktop/src/preload.ts` | **the bridge**: `window.animechsDesktop` — `saves.read/write/clear`, `display.get/setMode/setMonitor/onChange`, `steam.available`, `steam.unlockAchievement`, `platform`. Sandboxed and context-isolated; the page never sees Node |
+| `desktop/src/preload.ts` | **the bridge**: `window.animechsDesktop` — `saves.read/write/clear`, `display.get/setMode/setMonitor/setWindowSize/onChange`, `steam.available`, `steam.unlockAchievement`, `platform`. Sandboxed and context-isolated; the page never sees Node |
 | `desktop/electron-builder.yml` | the pack: `dist/` in the asar, `out/` as `resources/game`, steamworks.js unpacked beside its redistributable |
 | `desktop/test/smoke.mjs` | the smoke test |
 
@@ -78,15 +78,23 @@ them in a browser tab, where there is no window of ours to set.
 ## Display modes and monitors
 
 The **Video tab** of Settings (menu and pause overlay both) offers three
-modes and the list of monitors the system reports, alongside the
-ambient-effects switch, which is the game's own and is there in a browser
-too:
+modes, the list of monitors the system reports and a windowed size, alongside
+the rows that are the game's own and are there in a browser too (render
+scale, FPS limit, brightness, effects — see `docs/settings.md`):
 
 | mode | what it is |
 |---|---|
 | windowed | a framed window at the remembered size. Drag it to another monitor and that monitor becomes the choice |
 | borderless | a frameless window covering the whole monitor: it looks like fullscreen but stays a window, so alt-tab is instant and the cursor leaves for another screen freely |
 | fullscreen | the platform's own — a Space on macOS, the window manager's fullscreen on Windows and Linux. Chromium has no exclusive/mode-setting fullscreen to offer, so no resolution is ever changed |
+
+**Window size** lists the common sizes that fit the chosen monitor's work
+area, plus whatever size the window is at if it is none of them; it is
+greyed under borderless and fullscreen, where the monitor decides, and the
+pick is the size windowed comes back to. Dragging a window edge updates the
+row the same way. Nothing here sets a display resolution: Chromium has no
+exclusive fullscreen, and the game's own **render scale** (the Video tab,
+`Game.setRenderScale`) is the knob that trades pixels for frame time.
 
 **The game is a `WebContentsView` inside a `BaseWindow`, not a
 `BrowserWindow`.** Electron fixes a window's frame at construction — there
