@@ -175,6 +175,9 @@ export const FLOOR_MYCELIUM = 102;
 export const FLOOR_BLIGHT = 105;
 export const FLOOR_QUARTZ = 108;
 export const FLOOR_SLATE = 111;
+export const FLOOR_FLAGSTONE = 114;
+export const FLOOR_SANDSTONE = 117;
+export const FLOOR_PLATE = 120;
 export const WALL_STONE = 0;
 export const WALL_DIRT = 2;
 export const WALL_PROP = 4;
@@ -204,6 +207,8 @@ export const WALL_SPORE_ROCK = 48;
 export const WALL_FUNGAL = 50;
 export const WALL_CRYSTAL_ROCK = 52;
 export const WALL_SLATE = 54;
+export const WALL_MASONRY = 56;
+export const WALL_PLATING = 58;
 const WATER_FLOORS = [FLOOR_SHALLOW_WATER, FLOOR_DEEP_WATER, FLOOR_TAINTED_WATER, FLOOR_DEEP_TAINTED_WATER];
 const CORE = 10;
 /** the core's cells round its centre: CORE_LO..CORE_HI on either axis */
@@ -220,6 +225,12 @@ const ROUTE_MIN_GROUND = 12;
 const ROUTE_MIN_WATER = 16;
 /** rock this far over the threshold keeps its head above the water */
 const SEA_ROCK = 0.06;
+/** the most of the land (every cell that is not deep water) that may be
+ *  rock: the noise is cut back to ROCK_CAP_RAW of the board before the
+ *  water, and a board over ROCK_CAP after the seal is rerolled. See
+ *  docs/random-maps.md */
+export const ROCK_CAP = 0.35;
+const ROCK_CAP_RAW = 0.36;
 
 // ---------- raster helpers (scripts/maps/geom.mjs) ----------
 
@@ -557,9 +568,13 @@ export function build(spec: MapSpec): Built {
   const rockBias: Bias = spec.rock.bias ?? (() => 0);
   // no rim bias: the edge is whatever the noise makes it, so a side can
   // be open ground running off the board as easily as a mountain
+  const rockV = new Float32Array(N);
   for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++)
-      kind[y * W + x] = rockN(x, y) + rockBias(x, y) > spec.rock.threshold ? WALL : OPEN;
+    for (let x = 0; x < W; x++) rockV[y * W + x] = rockN(x, y) + rockBias(x, y);
+  let rockT = spec.rock.threshold;
+  const capT = rockV.slice().sort()[Math.floor(N * (1 - ROCK_CAP_RAW))];
+  if (capT > rockT) { say(`rock capped at ${(ROCK_CAP_RAW * 100).toFixed(0)}%: threshold ${rockT.toFixed(3)} raised to ${capT.toFixed(3)}`); rockT = capT; }
+  for (let i = 0; i < N; i++) kind[i] = rockV[i] > rockT ? WALL : OPEN;
 
   if (spec.water) {
     const wN = makeWarped(rnd, spec.water.scale, spec.water.warp ?? spec.water.scale * 0.4, 3);
@@ -567,7 +582,7 @@ export function build(spec: MapSpec): Built {
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
         const h = wN(x, y) + bias(x, y);
-        if (kind[y * W + x] === WALL && rockN(x, y) + rockBias(x, y) > spec.rock.threshold + SEA_ROCK) continue;
+        if (kind[y * W + x] === WALL && rockV[y * W + x] > rockT + SEA_ROCK) continue;
         if (h < spec.water.level - spec.water.shore) kind[y * W + x] = DEEP;
         else if (h < spec.water.level) kind[y * W + x] = SHALLOW;
       }
@@ -1097,7 +1112,7 @@ export function build(spec: MapSpec): Built {
       const g = gN(x / gs, y / gs);
       const hug = dOpen[i] <= 2.5, tb = tab(i);
       const thick = g > 0.6, some = g > 0.5;
-      const pg = tb.pp.growth * (thick ? 0.28 : some ? 0.07 : 0.012) * (hug ? 1.8 : 1);
+      const pg = tb.pp.growth * (thick ? 0.28 : some ? 0.07 : 0.003) * (hug ? 1.8 : 1);
       if (rnd() < pg) {
         // the big ones are rare, the ten-tile one rarest, and each falls
         // back to the next size down where it does not fit (tryStand)
@@ -1106,7 +1121,7 @@ export function build(spec: MapSpec): Built {
         tryStand(i, tb.flora, wantT, (k) => tb.toneFor(k, i));
         continue;
       }
-      const ps = tb.pp.stone * (hug ? 0.05 : 0.004);
+      const ps = tb.pp.stone * (hug ? 0.05 : 0.001);
       if (rnd() < ps) {
         const r = rnd();
         const wantT = hug ? (r < 0.005 ? 10 : r < 0.025 ? 6 : r < 0.27 ? 3 : r < 0.5 ? 2 : 1) : 1;
@@ -1247,8 +1262,8 @@ export function build(spec: MapSpec): Built {
         const x = i % W, y = (i / W) | 0;
         const g = gN(x / gs, y / gs);
         const tb = tab(i);
-        const pg = tb.pp.growth * (g > 0.6 ? 0.06 : g > 0.5 ? 0.02 : 0.004);
-        const ps = tb.pp.stone * 0.012;
+        const pg = tb.pp.growth * (g > 0.6 ? 0.06 : g > 0.5 ? 0.02 : 0.001);
+        const ps = tb.pp.stone * (g > 0.5 ? 0.012 : 0.004);
         const r = rnd();
         const table = r < pg ? tb.flora : r < pg + ps ? tb.stones : null;
         if (!table) continue;
@@ -1283,6 +1298,7 @@ export function build(spec: MapSpec): Built {
       const chestK = propKind("chest");
       const stood: { x: number; y: number; r: number }[] = [];
       const sitePocket = new Uint8Array(N);
+      const sN = makeNoise(srnd, 2);
       let hills = 0;
       for (const size of plan) {
         const sk = SITE_KINDS[(srnd() * SITE_KINDS.length) | 0];
@@ -1302,21 +1318,26 @@ export function build(spec: MapSpec): Built {
           const inRock = (i: number): boolean => kind[i] === WALL && !claim[i] && !keep[i];
           const hill = !fits(x0 - 2, y0 - 2, 6, open) && fits(x0 - 2, y0 - 2, 6, inRock);
           if (!hill && !fits(x0 - 2, y0 - 2, 6, open)) continue;
+          // THE RING IS CARVED TO THE PRECINCT: rock inside it, hill or
+          // open ground, is cut down to floor, all but a few knobs near the
+          // rim the noise leaves buried, so the build keeps its shape
+          const level = SITE_SIZES.indexOf(size);
           const pocket: number[] = [];
-          if (hill) {
-            const pr = r * 0.6, w0 = srnd() * 6.28;
-            disc(cx, cy, pr * 1.25, (i, x, y) => {
-              const a = Math.atan2(y + 0.5 - cy, x + 0.5 - cx), d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
-              if (d > pr * (1 + 0.2 * Math.sin(a * 3 + w0)) || !inRock(i)) return;
-              kind[i] = OPEN; blocked[i] = 0; wall[i] = 0; floor[i] = variant(famAt(i).floor);
-              pocket.push(i);
-            });
-            if (pocket.length < 40) { for (const i of pocket) { kind[i] = WALL; blocked[i] = 1; wall[i] = variant(famAt(i).wall, 2); } continue; }
-            for (const i of pocket) sitePocket[i] = 1;
-          }
+          const rim = r * 0.92;
+          disc(cx, cy, rim, (i, x, y) => {
+            if (kind[i] !== WALL || claim[i] || keep[i] || wall[i] === WALL_PROP) return;
+            const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) / rim;
+            if (d > 0.72 && sN(x / 4, y / 4) > 0.62) return;
+            kind[i] = OPEN; blocked[i] = 0; wall[i] = 0; floor[i] = variant(famAt(i).floor);
+            pocket.push(i);
+          });
+          const unlevel = (): void => { for (const i of pocket) { kind[i] = WALL; blocked[i] = 1; wall[i] = variant(famAt(i).wall, 2); sitePocket[i] = 0; } };
+          // a hill site's pocket is ground the core never reaches; the pocket
+          // pass and the orphan check leave it alone
+          if (hill) for (const i of pocket) sitePocket[i] = 1;
           let all = 0, ok = 0;
           disc(cx, cy, r, (i) => { all++; if (kind[i] === OPEN && !claim[i]) ok++; });
-          if (ok < all * (hill ? 0.25 : 0.6)) { for (const i of pocket) { kind[i] = WALL; blocked[i] = 1; wall[i] = variant(famAt(i).wall, 2); sitePocket[i] = 0; } continue; }
+          if (ok < all * 0.5) { unlevel(); continue; }
           let padX = x0, padY = y0;
           if (tier.flight) {
             const a0 = srnd() * Math.PI * 2;
@@ -1324,17 +1345,16 @@ export function build(spec: MapSpec): Built {
             for (let k = 0; k < 24 && !found; k++) {
               const a = a0 + (k / 24) * Math.PI * 2;
               const px = Math.round(cx + Math.cos(a) * tier.flight), py = Math.round(cy + Math.sin(a) * tier.flight);
-              if (inb(px, py) && edgeDist(px, py) >= 8 && Math.hypot(px - core.x, py - core.y) > 40) { padX = px; padY = py; found = true; }
+              if (inb(px, py) && edgeDist(px, py) >= 8 && Math.hypot(px - core.x, py - core.y) > 40 && fits(px - 3, py - 3, 7, open)) { padX = px; padY = py; found = true; }
             }
-            if (!found) continue;
+            if (!found) { unlevel(); continue; }
           }
           const before = reach(), from = props.length;
           let placed = 4;
           stand(x0, y0, chestK, pp.weather, 0);
-          // WHAT IT IS BUILT OUT OF (docs/sites.md): the ritual kinds pave
-          // a floor and stand stones, pillars and braziers; the strongholds
-          // wall the ring with ramparts, litter it and plate the cache
-          const level = SITE_SIZES.indexOf(size);
+          // WHAT IT IS BUILT OUT OF (docs/sites.md): each kind dresses its
+          // ring as a small place of its own — its ground, its walls, its
+          // furniture — and a bigger site is more of the same, not a building
           const put = (id: string, ax: number, ay: number, rot?: number, tone?: number): boolean => {
             const k = propKind(id), t = PROP_KINDS[k].tiles;
             const lx = Math.round(ax - t / 2), ly = Math.round(ay - t / 2);
@@ -1343,28 +1363,72 @@ export function build(spec: MapSpec): Built {
             placed += t * t;
             return true;
           };
-          const pave = (ax: number, ay: number, rad: number, fl: number): void =>
-            disc(ax, ay, rad, (i) => { if (kind[i] === OPEN) floor[i] = fl + ((srnd() * 3) | 0); });
-          // A WALL IS ROCK, drawn like every hill: a ring `thick` cells deep
-          // with `gaps` openings in it, on the ground's own wall family
-          const rocked: number[] = [];
-          const rampart = (dist: number, thick: number, gaps: number): void => {
-            const g0 = srnd() * Math.PI * 2, per = (Math.PI * 2) / gaps;
-            disc(cx, cy, dist + thick / 2, (i) => {
-              if (kind[i] !== OPEN || claim[i] || keep[i]) return;
-              const x = (i % W) + 0.5 - cx, y = ((i / W) | 0) + 0.5 - cy;
-              if (Math.hypot(x, y) < dist - thick / 2) return;
-              const t = (((Math.atan2(y, x) - g0) % per) + per) % per;
-              if (t < 0.5) return;
-              kind[i] = WALL; blocked[i] = 1; wall[i] = famAt(i).wall + ((srnd() * 2) | 0); claim[i] = 1;
-              rocked.push(i);
-            });
-            placed += rocked.length;
+          const floored: [number, number][] = [];
+          // a floor laid to a shape: solid where `d` (the distance past the
+          // edge) is under zero, thinning over `fade` cells on the fine noise
+          const lay = (ax: number, ay: number, ext: number, fl: number, fade: number, d: (x: number, y: number) => number): void => {
+            for (let y = Math.max(0, Math.floor(ay - ext)); y <= Math.min(H - 1, Math.ceil(ay + ext)); y++)
+              for (let x = Math.max(0, Math.floor(ax - ext)); x <= Math.min(W - 1, Math.ceil(ax + ext)); x++) {
+                const i = y * W + x;
+                if (kind[i] !== OPEN) continue;
+                const v = d(x + 0.5, y + 0.5);
+                if (v > 0 && (v >= fade || sN(x / 2.5, y / 2.5) < v / fade)) continue;
+                floored.push([i, floor[i]]);
+                floor[i] = fl + ((srnd() * 3) | 0);
+              }
           };
-          const around = (id: string, n: number, dist: number, tone?: (i: number) => number): void => {
-            const a0 = srnd() * Math.PI * 2;
+          const discF = (ax: number, ay: number, rad: number, fl: number, fade: number): void =>
+            lay(ax, ay, rad + fade, fl, fade, (x, y) => Math.hypot(x - ax, y - ay) - rad);
+          const boxF = (ax: number, ay: number, hw: number, hh: number, fl: number, fade: number): void =>
+            lay(ax, ay, Math.max(hw, hh) + fade, fl, fade, (x, y) => Math.max(Math.abs(x - ax) - hw, Math.abs(y - ay) - hh));
+          const strip = (x0: number, y0: number, x1: number, y1: number, w: number, fl: number, fade = 0.5): void => {
+            const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, ext = Math.hypot(x1 - x0, y1 - y0) / 2 + w + fade;
+            lay(mx, my, ext, fl, fade, (x, y) => {
+              const dx = x1 - x0, dy = y1 - y0, l2 = dx * dx + dy * dy || 1;
+              const t = Math.max(0, Math.min(1, ((x - x0) * dx + (y - y0) * dy) / l2));
+              return Math.hypot(x - x0 - t * dx, y - y0 - t * dy) - w / 2;
+            });
+          };
+          // A WALL IS A ROW OF ROCK CELLS on a family of its own — cut stone,
+          // steel hull, or the ground's own rock — drawn on a contour like every hill
+          const rocked: number[] = [];
+          const wallCell = (i: number, fam: number): void => {
+            if (kind[i] !== OPEN || claim[i] || keep[i]) return;
+            kind[i] = WALL; blocked[i] = 1; wall[i] = fam + ((srnd() * 2) | 0); claim[i] = 1;
+            rocked.push(i); placed++;
+          };
+          const own = (i: number): number => famAt(i).wall;
+          /** a ring `thick` deep with `gaps` openings, the first at angle `g0` */
+          const ringW = (ax: number, ay: number, dist: number, thick: number, gaps: number, fam: number | ((i: number) => number), g0: number, arc?: [number, number]): void => {
+            const per = (Math.PI * 2) / gaps;
+            disc(ax, ay, dist + thick / 2, (i, x, y) => {
+              const dx = x + 0.5 - ax, dy = y + 0.5 - ay;
+              if (Math.hypot(dx, dy) < dist - thick / 2) return;
+              const a = Math.atan2(dy, dx);
+              if (arc) { const t = ((a - arc[0]) % 6.2832 + 6.2832) % 6.2832; if (t > arc[1] - arc[0]) return; }
+              const t = (((a - g0) % per) + per) % per;
+              if (gaps > 0 && t < 0.5) return;
+              wallCell(i, typeof fam === "number" ? fam : fam(i));
+            });
+          };
+          /** an axis-aligned box one cell thick, with a `gate`-wide gap on each side listed */
+          const boxW = (ax: number, ay: number, hw: number, hh: number, gates: readonly number[], fam: number, gate: number): void => {
+            for (let y = Math.floor(ay - hh); y <= Math.ceil(ay + hh); y++)
+              for (let x = Math.floor(ax - hw); x <= Math.ceil(ax + hw); x++) {
+                if (!inb(x, y)) continue;
+                const dx = x + 0.5 - ax, dy = y + 0.5 - ay;
+                const onX = Math.abs(dx) >= hw - 1 && Math.abs(dx) <= hw, onY = Math.abs(dy) >= hh - 1 && Math.abs(dy) <= hh;
+                if ((!onX && !onY) || Math.abs(dx) > hw || Math.abs(dy) > hh) continue;
+                const side = onX && !onY ? (dx > 0 ? 0 : 2) : onY && !onX ? (dy > 0 ? 1 : 3) : -1;
+                const along = side === 0 || side === 2 ? dy : dx;
+                if (side >= 0 && gates.includes(side) && Math.abs(along) < gate / 2) continue;
+                wallCell(y * W + x, fam);
+              }
+          };
+          const post = (ax: number, ay: number, fam: number): void => { const x = Math.floor(ax), y = Math.floor(ay); if (inb(x, y)) wallCell(y * W + x, fam); };
+          const around = (id: string, n: number, dist: number, tone?: (i: number) => number, a0 = srnd() * Math.PI * 2, jitter = 0.4): void => {
             for (let m = 0; m < n; m++) {
-              const a = a0 + (m / n) * Math.PI * 2 + (srnd() - 0.5) * 0.4;
+              const a = a0 + (m / n) * Math.PI * 2 + (srnd() - 0.5) * jitter;
               // a slot on rock or water steps inward a little before it is given up
               for (let tr = 0; tr < 3; tr++) {
                 const d = dist * (0.92 + srnd() * 0.16) * (1 - tr * 0.12);
@@ -1373,54 +1437,116 @@ export function build(spec: MapSpec): Built {
               }
             }
           };
-          // THE STRUCTURE: a medium site stands its kind's building beside the
-          // cache, a large one the great version, on whichever side has room
-          const structure = (id: string): void => {
-            if (level === 0) return;
-            const kid = level === 2 ? `${id}-great` : id, t = PROP_KINDS[propKind(kid)].tiles;
-            const a0 = srnd() * Math.PI * 2;
-            for (let k = 0; k < 4; k++) {
-              const a = a0 + (k / 4) * Math.PI * 2, d = 1.5 + t / 2 + 1;
-              if (put(kid, cx + Math.cos(a) * d, cy + Math.sin(a) * d, 0)) return;
-            }
-          };
+          const DIR = [[1, 0], [0, 1], [-1, 0], [0, -1]] as const;
+          const g0 = srnd() * Math.PI * 2, side = (srnd() * 4) | 0;
+          const n = (k: number, least = 1): number => Math.max(least, Math.round(r * k));
           if (sk === "cairn") {
-            pave(cx, cy, 3.5, FLOOR_BASALT);
-            structure("temple");
-            around("menhir", 6 + level * 2, r * 0.85, rockToneAt);
-            around("boulder", 3 + level, r * 0.5, rockToneAt);
+            // THE HENGE: a paved disc under the cache, a paved ring path with spokes
+            // out to it, standing stones on the rim, a cut-stone ring from medium
+            // up and a second ring of stones and stone inside a large one
+            const spokes = 3 + level, ring = r * 0.8;
+            discF(cx, cy, Math.max(3.5, r * 0.18), FLOOR_FLAGSTONE, 2);
+            lay(cx, cy, ring + 3, FLOOR_FLAGSTONE, 0.5, (x, y) => Math.abs(Math.hypot(x - cx, y - cy) - ring) - 1);
+            for (let k = 0; k < spokes; k++) {
+              const a = g0 + (k / spokes) * Math.PI * 2 + 0.25;
+              strip(cx + Math.cos(a) * 3, cy + Math.sin(a) * 3, cx + Math.cos(a) * ring, cy + Math.sin(a) * ring, 1.6, FLOOR_FLAGSTONE);
+            }
+            if (level > 0) ringW(cx, cy, r * 0.55, level > 1 ? 2 : 1, spokes, WALL_MASONRY, g0);
+            if (level > 1) {
+              ringW(cx, cy, r * 0.3, 1, spokes, WALL_MASONRY, g0);
+              around("menhir", n(0.25), r * 0.42, rockToneAt, g0 + 0.1, 0.2);
+              around("brazier", spokes, r * 0.36, undefined, g0 + 0.25 + 0.16, 0);
+            }
+            around("menhir", n(0.5), r * 0.9, rockToneAt, g0 + 0.1, 0.2);
+            around("boulder", n(0.2), level > 1 ? r * 0.68 : r * 0.42, rockToneAt);
+            if (level > 0) around("brazier", spokes, r * 0.66, undefined, g0 + 0.25 + 0.16, 0);
+            if (level > 1) put("altar", cx - 3.5, cy + 0.5, 0);
           } else if (sk === "mirror") {
-            pave(cx, cy, 3.5, FLOOR_BASALT);
-            structure("temple");
+            // THE MIRROR GARDEN: a quartz disc, four slate paths, mirror plates round
+            // the cache, pillars from medium up, a crystal ring round a large one
+            discF(cx, cy, r * 0.75, FLOOR_QUARTZ, 2);
+            for (let k = 0; k < 4; k++) { const a = g0 + (k / 4) * Math.PI * 2; strip(cx, cy, cx + Math.cos(a) * r, cy + Math.sin(a) * r, 1.2, FLOOR_SLATE); }
+            around("lens", n(0.4, 2), r * 0.55, undefined, g0 + 0.785, 0.2);
+            if (level > 0) around("pillar", 4 + level * 4, r * 0.8, undefined, g0 + 0.785, 0);
+            if (level > 1) ringW(cx, cy, r * 0.92, 1, 4, WALL_CRYSTAL_ROCK, g0);
           } else if (sk === "sleeper") {
-            pave(cx, cy, 5 + level, FLOOR_CINDER);
-            structure("keep");
-            rampart(r * 0.72, 2, 3);
-            around(level > 0 ? "barrels" : "crate", 3 + level, r * 0.4);
-            around("scrap", 1 + level, r * 0.3);
+            // THE FOUNDRY: a cinder yard, a steel-decked hall walled in hull
+            // plating with a gate or two, chimneys and pipes inside, scrap outside;
+            // a large one is a compound, the yard walled in plating too
+            const hw = Math.round(r * 0.5), hh = Math.round(r * 0.4);
+            discF(cx, cy, r * 0.85, FLOOR_CINDER, 4);
+            boxF(cx, cy, hw - 1, hh - 1, FLOOR_PLATE, 0);
+            const gates = level > 0 ? [side, (side + 2) % 4] : [side];
+            for (const g of gates) strip(cx + DIR[g][0] * hw, cy + DIR[g][1] * hw, cx + DIR[g][0] * r * 0.95, cy + DIR[g][1] * r * 0.95, 2.4, FLOOR_PLATE);
+            boxW(cx, cy, hw, hh, gates, WALL_PLATING, 4);
+            if (level > 1) ringW(cx, cy, r * 0.88, 1, 4, WALL_PLATING, side * 1.5708 - 0.25);
+            const stacks = level > 1 ? 4 : 1 + level;
+            for (let k = 0; k < stacks; k++) { const sx = k % 2 ? -1 : 1, sy = k < 2 ? -1 : 1; put("stack", cx + sx * (hw - 2.5), cy + sy * (hh - 2.5), 0); }
+            around("pipe", n(0.12), Math.min(hw, hh) * 0.55);
+            around(level > 0 ? "barrels" : "crate", n(0.15, 2), Math.min(hw, hh) * 0.6);
+            around("scrap", n(0.1), r * 0.72);
+            if (level > 0) around("silo", level, r * 0.72);
           } else if (sk === "shrine") {
-            pave(cx, cy, 5 + level, FLOOR_BASALT);
-            structure("ziggurat");
-            around("pillar", 6 + level * 2, r * 0.55);
-            around("brazier", 4 + level * 2, r * 0.85);
-            if (level > 0) put("altar", cx + 4, cy + 1);
+            // THE TEMPLE PRECINCT: a sandstone court walled in cut stone, a
+            // paved avenue lined with pillars in through the gate, braziers at
+            // the corners, obelisks at the gate; a large one holds a second court
+            // and a colonnade along the outer walls
+            const hw = Math.round(r * 0.55), gates = level > 0 ? [side, (side + 2) % 4] : [side];
+            const [dx, dy] = DIR[side], [px, py] = [-dy, dx];
+            boxF(cx, cy, hw + 1, hw + 1, FLOOR_SANDSTONE, 3);
+            boxW(cx, cy, hw, hw, gates, WALL_MASONRY, 3);
+            strip(cx + dx * 2, cy + dy * 2, cx + dx * r * 0.95, cy + dy * r * 0.95, 3, FLOOR_FLAGSTONE);
+            for (let d = hw + 2; d < r * 0.95; d += 3) for (const q of [2.5, -2.5]) put("pillar", cx + dx * d + px * q, cy + dy * d + py * q, 0);
+            for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) put("brazier", cx + sx * (hw - 2), cy + sy * (hw - 2), 0);
+            if (level > 1) {
+              const iw = Math.round(r * 0.3);
+              boxW(cx, cy, iw, iw, [side], WALL_MASONRY, 3);
+              strip(cx + dx * 2, cy + dy * 2, cx + dx * hw, cy + dy * hw, 3, FLOOR_FLAGSTONE);
+              for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) put("brazier", cx + sx * (iw - 2), cy + sy * (iw - 2), 0);
+              for (let t = -(hw - 4); t <= hw - 4; t += 3) for (const q of [hw - 2.5, -(hw - 2.5)]) put("pillar", cx + px * q + dx * t, cy + py * q + dy * t, 0);
+              for (const q of [3, -3]) put("obelisk", cx + dx * (iw + 1) + px * q, cy + dy * (iw + 1) + py * q, 0);
+            }
+            if (level > 0) for (const q of [3, -3]) put("obelisk", cx + dx * (hw + 1) + px * q, cy + dy * (hw + 1) + py * q, 0);
+            if (level > 0) put("altar", cx - dx * 3.5, cy - dy * 3.5, 0);
           } else if (sk === "beacon") {
-            pave(cx, cy, 6 + level, FLOOR_CINDER);
-            structure("keep");
-            rampart(r * 0.8, 2 + level, 3 + level);
-            around("bunker", 1 + level, r * 0.5);
-            around("barrels", 2 + level, r * 0.3);
+            // THE SCORCHED WATCH: burnt ground out to a rock rampart, a pyre by
+            // the cache, fire pits inside a ring of cut-stone stakes, braziers at
+            // the openings; a large one is a fortress, its rampart four deep
+            const gaps = 3 + level;
+            discF(cx, cy, r * 0.75, FLOOR_CINDER, 4);
+            discF(cx, cy, r * 0.4, FLOOR_OBSIDIAN, 3);
+            ringW(cx, cy, r * 0.85, 2 + level, gaps, own, g0);
+            if (level > 0) {
+              const posts = n(0.45);
+              for (let k = 0; k < posts; k++) { const a = g0 + (k / posts) * Math.PI * 2; post(cx + Math.cos(a) * r * 0.55, cy + Math.sin(a) * r * 0.55, WALL_MASONRY); }
+            }
+            put("pyre", cx + 3.5, cy - 0.5, 0);
+            if (level > 1) around("pyre", 3, r * 0.25, undefined, g0 + 1);
+            around("firepit", n(0.2, 2), r * 0.42, undefined, g0 + 0.3);
+            around("brazier", gaps, r * 0.72, undefined, g0 + 0.25, 0);
+            around("bunker", level > 1 ? 4 : level, r * 0.65);
           } else if (sk === "bomber") {
-            pave(cx, cy, 3.5, FLOOR_CINDER);
-            structure("keep");
-            around("crate", 3, 4);
-            // THE PAD, where the flight sits until the clock: a launch pad and its fuel dump
-            pave(padX, padY, 6, FLOOR_CINDER);
-            put("launchpad", padX, padY, 0);
-            const sa = srnd() * Math.PI * 2;
-            put("silo", padX + Math.cos(sa) * 7, padY + Math.sin(sa) * 7);
-            put("barrels", padX + Math.cos(sa + 2) * 6, padY + Math.sin(sa + 2) * 6);
-            put("crate", padX + Math.cos(sa + 4) * 6, padY + Math.sin(sa + 4) * 6);
+            // THE AIRFIELD: a plated depot round the cache; at the pad a plated
+            // runway pointed at the cache, lit down both edges, the fuel dump
+            // beside it and a hull-plate wall behind
+            discF(cx, cy, r * 0.55, FLOOR_PLATE, 2);
+            around("crate", 3 + level * 2, r * 0.6);
+            if (level > 0) around("barrels", level, r * 0.35);
+            const a = Math.atan2(cy - padY, cx - padX), ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux;
+            const len = 10 + level * 5, half = 2.5 + level * 0.5, ox = padX + 0.5, oy = padY + 0.5;
+            lay(ox + ux * len * 0.3, oy + uy * len * 0.3, len, FLOOR_PLATE, 1, (x, y) => {
+              const dx = x - ox, dy = y - oy, u = dx * ux + dy * uy, v = dx * vx + dy * vy;
+              return Math.max(-u - 3, u - (len - 3), Math.abs(v) - half);
+            });
+            discF(ox, oy, 4 + level, FLOOR_PLATE, 1);
+            for (let d = -1; d < len - 3; d += 3) for (const q of [half + 1, -(half + 1)]) put("strobe", ox + ux * d + vx * q, oy + uy * d + vy * q, 0);
+            ringW(ox, oy, 6 + level * 2, 1, 0, WALL_PLATING, 0, [a + Math.PI - 1.1, a + Math.PI + 1.1]);
+            const off = 7 + level * 2;
+            for (const q of [off, -off]) {
+              put(q > 0 ? "silo" : "barrels", ox + vx * q - ux * 2, oy + vy * q - uy * 2);
+              if (level > 0) put(q > 0 ? "pipe" : "crate", ox + vx * q + ux * 3, oy + vy * q + uy * 3);
+              if (level > 1) put(q > 0 ? "barrels" : "silo", ox + vx * q - ux * 7, oy + vy * q - uy * 7);
+            }
           }
           if (before - reach() > placed + 6) {
             for (const q of props.splice(from)) {
@@ -1429,7 +1555,8 @@ export function build(spec: MapSpec): Built {
                 for (let x = q.x; x < q.x + qt; x++) { const i = y * W + x; blocked[i] = 0; wall[i] = 0; kind[i] = OPEN; claim[i] = 0; }
             }
             for (const i of rocked) { blocked[i] = 0; wall[i] = 0; kind[i] = OPEN; claim[i] = 0; }
-            for (const i of pocket) { kind[i] = WALL; blocked[i] = 1; wall[i] = variant(famAt(i).wall, 2); sitePocket[i] = 0; }
+            for (const [i, f] of floored) floor[i] = f;
+            unlevel();
             continue;
           }
           marks.push({ kind: SITE_MARK, x: x0, y: y0, opts: { site: sk, size, radius: r, padX, padY } });
@@ -1600,6 +1727,7 @@ export function check(spec: MapSpec, m: Built): { fails: string[]; lines: string
   const pct = (v: number): string => `${((100 * v) / N).toFixed(0)}%`;
   lines.push(`${W}x${H}: open ${pct(open)} (${pct(shallow)} of it ford)  rock ${pct(rock)}  under props ${pct(pine)}  deep ${pct(deep)}  ruins ${m.ruins}  holes ${m.holes}  lumps ${m.lumps}  props ${m.props.length}`);
   say(rock > 8000 * SCALE * SCALE, `rock for towers: ${rock}`);
+  say(rock <= ROCK_CAP * (N - deep), `rock ${((100 * rock) / (N - deep)).toFixed(0)}% of the land (cap ${ROCK_CAP * 100}%)`);
   let big = 0;
   for (let y = 0; y < H - 3; y++)
     for (let x = 0; x < W - 3; x++) {

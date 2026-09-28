@@ -4578,7 +4578,7 @@ export interface LevelSpec {
    * seconds held between waves. The clock starts when the previous wave
    * has finished ENTERING the field — the last unit spawning, not the last
    * unit dying — so a level whose waves outlive the gap will have several
-   * on the field at once. Nineteen seconds as authored (WAVE_GAP_DEFAULT):
+   * on the field at once. Fifteen seconds as authored (WAVE_GAP_DEFAULT):
    * the run is a tide, and the waves overlap.
    */
   waveGap: number;
@@ -4684,7 +4684,7 @@ export interface LevelDoc {
 
 
 /**
- * THE RUN'S CLOCK, as authored: FIFTY waves, one every 24 seconds. The
+ * THE RUN'S CLOCK, as authored: FIFTY waves, one every 18.5 seconds. The
  * document (public/levels/campaign.json) sets the gap; this is what a
  * missing document or a missing field plays.
  *
@@ -4692,11 +4692,10 @@ export interface LevelDoc {
  * gap plus WAVE_RELEASE_SECONDS, and it is the schedule ITSELF rather
  * than an average — wave n lands at WAVE_GAP_OPENING + (n-1) x cadence
  * and nothing about the board can move it (Sim.waveStartTime). So the
- * script's own clock is 3 + 49 x 24 = 1,179s, and with the last wave's
- * walk and die on the end a mission comes in a little past twenty minutes, which
- * is the sitting one is meant to be.
+ * script's own clock is 3 + 49 x 18.5 = 909.5s, and with the last wave's
+ * walk and die on the end a mission comes in at about sixteen minutes.
  */
-export const WAVE_GAP_DEFAULT = 21;
+export const WAVE_GAP_DEFAULT = 15;
 
 /** The OPENING gap only, in seconds: wave 1 is not made to wait a full
  *  cadence, because the first thing a run does is build and there is
@@ -4805,7 +4804,7 @@ export const WORLDS: LevelSpec[] = [
     // EVERY RUNG PLAYS THIS WHOLE LIST. There is one run per map and ten
     // difficulties to play it at, and a rung only scales the counts
     // (COUNT_SCALE in ladder.ts) — no wave is ever cut. THE SCRIPT IS
-    // FIFTY WAVES, 24.5 seconds apart on a clock nothing about the board
+    // FIFTY WAVES, 18.5 seconds apart on a clock nothing about the board
     // can move (Sim.waveStartTime), each stronger than the last: a few
     // dozen runts on wave 1, the first heavies by wave 10, waves in the
     // thousands by the end. The waves overlap — the gap is shorter than a

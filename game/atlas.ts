@@ -400,6 +400,10 @@ export const FLOOR_GROUPS: readonly ({ kind: FloorKind; slots: number } | { wate
   { kind: "blight", slots: 3 },
   { kind: "quartz", slots: 3 },
   { kind: "slate", slots: 3 },
+  // the sites' built ground (tiles.ts)
+  { kind: "flagstone", slots: 3 },
+  { kind: "sandstone", slots: 3 },
+  { kind: "plate", slots: 3 },
 ];
 /** each group's painted cells: one per variant, or the one water block */
 const FLOOR_CELLS: readonly (readonly UVRect[])[] = FLOOR_GROUPS.map((g) =>
@@ -525,6 +529,7 @@ const WALL_KINDS_IN_ORDER: readonly (WallKind | null)[] = [
   "spore", "shale", "snow", "ice", "salt", "sand", "dune", "dacite",
   "flint", "clay", "peat", "cinder", "chalk", "loam",
   "scoria", "obsidian", "reef", "limestone", "jungle", "laterite", "sporerock", "fungal", "crystalrock", "slate",
+  "masonry", "plating",
 ];
 const WALL_CELLS: readonly (readonly UVRect[] | null)[] = WALL_KINDS_IN_ORDER.map((k) =>
   k ? Array.from({ length: WALL_VARIANTS }, (_, v) => tile(`wall-${k}-${v}`, 64, WALL_INSET)) : null,
@@ -542,6 +547,7 @@ export const WALL_GROUP: readonly number[] = [
   3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10,
   11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 16, 16,
   17, 17, 18, 18, 19, 19, 20, 20, 21, 21, 22, 22, 23, 23, 24, 24, 25, 25, 26, 26,
+  27, 27, 28, 28,
 ];
 /** first index of each second-band wall family */
 export const WALL_SPORE = 8;
@@ -570,6 +576,8 @@ export const WALL_SPORE_ROCK = 48;
 export const WALL_FUNGAL = 50;
 export const WALL_CRYSTAL_ROCK = 52;
 export const WALL_SLATE = 54;
+export const WALL_MASONRY = 56;
+export const WALL_PLATING = 58;
 /**
  * Mindustry's <wall>-large art: one 2x2-tile block per family, split
  * into per-tile quadrant UVs [row][col] in screen space (y down). null
@@ -599,6 +607,7 @@ const LARGE_KINDS: readonly (WallKind | null)[] = [
   "stone", null, "dark", "spore", "shale", "snow", "ice", "salt", "sand", "dune", "dacite",
   "flint", "clay", "peat", "cinder", "chalk", "loam",
   "scoria", "obsidian", "reef", "limestone", "jungle", "laterite", "sporerock", "fungal", "crystalrock", "slate",
+  "masonry", "plating",
 ];
 const LARGE_CELLS: readonly (UVRect | null)[] = LARGE_KINDS.map((k) =>
   k ? reserve(`wall-${k}-large`, 128, 128, { upright: true }) : null,

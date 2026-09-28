@@ -68,8 +68,8 @@ const onOff = (arg: string | undefined, cur: boolean): boolean =>
  * A RUN TIME AS TYPED: "12" is twelve minutes, "12:30" is twelve and a
  * half, "0:45" is forty-five seconds. Null when it is not a time at all.
  *
- * MINUTES LEAD because a run is a twenty-minute sitting and a wave lands
- * every twenty-odd seconds — "jump to 14" is the question somebody
+ * MINUTES LEAD because a run is a fifteen-minute sitting and a wave lands
+ * every eighteen and a half seconds — "jump to 14" is the question somebody
  * actually has, and "jump to 840" is that question done as arithmetic.
  */
 export function parseClock(text: string): number | null {

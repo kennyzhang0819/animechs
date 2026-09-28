@@ -24,6 +24,8 @@ const STEEL = { hi: "#9aa3aa", mid: "#6e777e", lo: "#4a5158", deep: "#2c3035" } 
 const RUST = { hi: "#b86a3f", mid: "#8f4f2e", lo: "#673621" } as const;
 const CONCRETE = { hi: "#b3aea3", mid: "#938e84", lo: "#6d6960", deep: "#4a4741" } as const;
 const CRATE = { hi: "#8d895f", mid: "#6e6a49", lo: "#4f4c34" } as const;
+const QUARTZ = { hi: "#e6e4f2", mid: "#b4b0c8", lo: "#807c94" } as const;
+const ASH = { hi: "#5a5450", mid: "#3a3634", lo: "#232120" } as const;
 const GLASS = "#3b4a55", GLINT = "#c7d6df", HAZARD = "#b8983a", EYE = "#8a7030", SCORCH = "#33302d", SPILL = "#2b2d2f";
 
 const leaf = (c: string): string => (LINOCUT_TERRAIN ? mix(c, INK.canopy, 0.3) : c);
@@ -857,6 +859,38 @@ export const PROP_KINDS: readonly PropDef[] = [
   made("temple", "Temple", 6, "#c8c0ac", temple),
   made("temple-great", "Great temple", 10, "#c8c0ac", temple),
   made("launchpad", "Launch pad", 6, "#6d6960", launchpad),
+  // THE SITES' FURNITURE (docs/sites.md): the small things a precinct is dressed with
+  made("obelisk", "Obelisk", 2, "#c8c0ac", madeShape(MARBLE, 0.2, -0.28, (m, rng, c, R) => { m.poly(slab(c, c, R * 1.9, R * 0.6, 1.57 + (rng() - 0.5) * 0.2), MID); })),
+  made("lantern", "Lantern", 1, "#e8c060", madeShape(STEEL, 0.2, -0.3, (m, _rng, c, R) => {
+    m.disc(c, c, R * 0.8, R * 0.8, MID);
+    return (s) => s.disc(c, c, R * 0.42, R * 0.42, "#e8c060");
+  })),
+  made("lens", "Mirror plate", 2, "#b4b0c8", madeShape(QUARTZ, 0.1, -0.3, (m, _rng, c, R) => {
+    m.disc(c, c, R * 0.92, R * 0.92, MID);
+    return (s) => s.disc(c + R * 0.2, c - R * 0.2, R * 0.4, R * 0.4, GLINT);
+  })),
+  made("stack", "Chimney", 2, "#4a5158", madeShape(STEEL, 0.15, -0.3, (m, _rng, c, R) => {
+    m.disc(c, c, R * 0.88, R * 0.88, MID);
+    return (s) => s.disc(c, c, R * 0.42, R * 0.42, STEEL.deep);
+  })),
+  made("pipe", "Pipe", 2, "#6e777e", madeShape(STEEL, 0.2, -0.24, (m, rng, c, R) => {
+    const a = ((rng() * 4) | 0) * 0.785;
+    m.bar(along(c, a, -R * 0.9), along(c, a, R * 0.9), R * 0.42, MID);
+    const [x, y] = along(c, a, R * 0.55);
+    m.disc(x, y, R * 0.34, R * 0.34, MID);
+  })),
+  made("firepit", "Fire pit", 2, "#c8501e", madeShape(CONCRETE, 0.25, -0.3, (m, _rng, c, R) => {
+    m.disc(c, c, R * 0.92, R * 0.92, MID);
+    return (s) => s.disc(c, c, R * 0.5, R * 0.5, "#e0662a");
+  })),
+  made("pyre", "Pyre", 3, "#3a3634", madeShape(ASH, 0.2, -0.24, (m, rng, c, R) => {
+    m.poly(lumpy(rng, c, c, R * 0.9, 0.85, 9, 0.18), MID);
+    return (s) => s.disc(c, c, R * 0.3, R * 0.3, "#e0662a");
+  })),
+  made("strobe", "Runway light", 1, "#b8983a", madeShape(STEEL, 0.2, -0.3, (m, _rng, c, R) => {
+    m.disc(c, c, R * 0.7, R * 0.7, MID);
+    return (s) => s.disc(c, c, R * 0.34, R * 0.34, HAZARD);
+  })),
 ];
 /** the kinds a biome owns: its family's six footprints and its two auxiliaries */
 export const familyKinds = (biome: string): number[] => {

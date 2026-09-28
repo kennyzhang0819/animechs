@@ -30,24 +30,29 @@ rate(t) = CORE_INCOME_RATE x 2 ^ (min(t, CORE_INCOME_RAMP) / CORE_INCOME_DOUBLIN
 
 | | |
 |---|---|
-| `CORE_INCOME_RATE` | 60 scrap a second, at t = 0 |
-| `CORE_INCOME_DOUBLING` | 212 seconds |
-| `CORE_INCOME_RAMP` | 1,200 — twenty minutes, where the rate goes flat |
+| `CORE_INCOME_RATE` | 79 scrap a second, at t = 0 |
+| `CORE_INCOME_DOUBLING` | 160 seconds |
+| `CORE_INCOME_RAMP` | 906 — about when wave 50 lands, where the rate goes flat |
 | `SCRAP_START` | 1,200 |
 
-**The doubling is the one knob.** 212 seconds against the 24-second wave cadence
-(`docs/authoring-waves.md`) is about **8.2% a wave**, so the run's wealth spreads about 47x
+**The doubling is the one knob.** 160 seconds against the 18.5-second wave cadence
+(`docs/authoring-waves.md`) is about **8.3% a wave**, so the run's wealth spreads about 50x
 from the first wave to the fiftieth. `CORE_INCOME_RATE` moves the whole run's wealth and
 nothing else.
 
 | wave | second | rate/s | banked by then |
 |---|---|---|---|
-| 1 | 3 | 61 | 1,400 |
-| 10 | 219 | 123 | 20,400 |
-| 20 | 459 | 269 | 65,200 |
-| 30 | 699 | 590 | 163,200 |
-| 40 | 939 | 1,293 | 378,200 |
-| 50 | 1,179 | 2,833 | 849,400 |
+| 1 | 3 | 80 | 1,400 |
+| 10 | 169.5 | 165 | 21,000 |
+| 20 | 354.5 | 367 | 67,700 |
+| 30 | 539.5 | 818 | 171,700 |
+| 40 | 724.5 | 1,823 | 403,700 |
+| 50 | 909.5 | 4,001 | 920,600 |
+
+**The curve is authored per WAVE, not per second.** When the cadence went from 24.5s to 18.5s
+(`waveGap` 21 to 15) the rate was multiplied and the doubling, the ramp and `TIER_UNLOCK` were
+divided by 24.5/18.5, so the bank at every wave and the wave each band opens on stayed where they
+were. Move the cadence again and move these four with it.
 
 **THE WHOLE CURRENCY WAS DIVIDED BY TEN.** Every scrap figure in the game — the opening bank,
 the rate, the four tier prices, the mod and relic rolls, the kill-drop table — was cut by a
@@ -58,7 +63,7 @@ it reads in the old currency, so multiply by ten before comparing.
 
 **The baseline and the curve are the two knobs, and they have been raised together three times.**
 The pure redenomination would have been 33 a second over 255s. It went to 40 over 235s, and
-then to 52 over 205s, and now to the shipped **60 over 212s**. Prices did not move with any pass, so all of it is
+then to 52 over 205s, then to 60 over 212s (79 over 160s at the faster cadence, the same money a wave). Prices did not move with any pass, so all of it is
 turrets: against the first of those curves the board is now about **2.2x richer through the
 opening stage and 4.2x through the last one**, because a shorter doubling compounds and a
 higher baseline does not. That is the intended shape — the late board wants depth behind lanes
@@ -130,7 +135,7 @@ up on the board until they are redrawn.
 
 **Tier 4 used to steepen to eight**, on the argument that the 4x4 is the thing worth gating and
 a gap at the bottom gates nothing except whether the run gets started. The gate is the run
-clock now (`TIER_UNLOCK`), and a band already shut until fifteen minutes does not need to be
+clock now (`TIER_UNLOCK`), and a band already shut until wave thirty-seven does not need to be
 the dearest step on the ladder as well. At 51,200 a press a run could afford two before the
 script ended, which made tier 4 a thing you bought once rather than a thing you built with.
 
@@ -146,9 +151,9 @@ square so "the price of a 4x4" is a thing a player can hold in their head. Draw 
 paid over the odds; draw well and you got a 6x6 for the price of a 4x4.
 
 **What the numbers buy**, measured as SECONDS OF INCOME at the rate in force *when the band
-opens*. Tier 1 is thirteen seconds from the first frame; tier 2 about sixteen at 5:00; tier 3
-about twenty-seven at 10:00; tier 4 about seventy-six at 15:00. A whole run banks about
-911,000.
+opens*. Tier 1 is ten seconds from the first frame; tier 2 about twelve at 3:47; tier 3
+about twenty at 7:34; tier 4 about fifty-seven at 11:20. A whole run banks about
+921,000.
 
 ### The shape is the roll
 
@@ -172,7 +177,7 @@ players were buying as their floor.
 ### The bands open on the clock
 
 `TIER_UNLOCK` shuts a band until the run clock reaches it: tier 1 from the first frame, then
-**5:00, 10:00 and 15:00**. A shut button wears a grey sweep that retreats clockwise as its
+**3:47, 7:34 and 11:20** — a few seconds into waves 13, 25 and 37. A shut button wears a grey sweep that retreats clockwise as its
 minute comes round, and **no number**: the shade says "not yet" and roughly how far off, which
 is what a player glances at mid-wave. A countdown would be a clock to watch.
 
@@ -180,7 +185,7 @@ is what a player glances at mid-wave. A countdown would be a clock to watch.
 so a bank gate would be a clock gate in disguise — and a player who saved would meet the same
 wall as one who spent, later and with nothing to show for the wait.
 
-15:00 is wave thirty-eight of fifty (`docs/authoring-waves.md`), which is where `STAGES` puts tier 4
+11:20 is wave thirty-seven of fifty (`docs/authoring-waves.md`), close to where `STAGES` puts tier 4
 anyway: the gate is the stage table said in seconds rather than a new rule on top of it.
 
 ### The press pays

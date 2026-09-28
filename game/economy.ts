@@ -73,8 +73,8 @@ export const SCRAP_START = 1200;
  * the seconds it takes that rate to double; the rate stops climbing at
  * CORE_INCOME_RAMP so the tide cannot be banked out of.
  *
- * The doubling is the one knob that matters: 212s against the 24s wave
- * cadence is about 8.2% a wave, so the rate at the ramp is about fifty times
+ * The doubling is the one knob that matters: 160s against the 18.5s wave
+ * cadence is about 8.3% a wave, so the rate at the ramp is about fifty times
  * the opening one. A much longer doubling was tried and it put 98% of a
  * run's money after wave twenty and starved the opening — a tier-2 press
  * cost one and a half waves of TOTAL income at wave eight, so the only
@@ -82,10 +82,10 @@ export const SCRAP_START = 1200;
  * swarm grew. A doubling that long is a curve that only pays the player
  * who already survived it.
  */
-export const CORE_INCOME_RATE = 60;
-export const CORE_INCOME_DOUBLING = 212;
-/** twenty minutes: the rate is flat from here, whatever the script's length */
-export const CORE_INCOME_RAMP = 1200;
+export const CORE_INCOME_RATE = 79;
+export const CORE_INCOME_DOUBLING = 160;
+/** about when wave fifty lands: the rate is flat from here, whatever the script's length */
+export const CORE_INCOME_RAMP = 906;
 
 /** scrap a second at `t` seconds of run time */
 export function coreIncomeRate(t: number): number {
@@ -170,7 +170,7 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
  * ONE STEP, ABOUT SIX TIMES, ALL THE WAY UP — 200x end to end. It used to
  * steepen into tier 4 on the argument that the 4x4 is the thing worth
  * gating; the gate is the run clock now (TIER_UNLOCK), and a band that is
- * already shut until fifteen minutes does not also need to be the dearest
+ * already shut until wave thirty-seven does not also need to be the dearest
  * step on the ladder. A steeper tier 4 bought two presses in a whole run,
  * which made the band a thing you bought once rather than built with.
  *
@@ -238,7 +238,7 @@ export const nextBuyAmount = (n: BuyAmount): BuyAmount =>
 
 /**
  * WHEN EACH BAND OPENS, in seconds of run time. Tier 1 from the first
- * frame; the rest on the clock, five minutes apart.
+ * frame; the rest on the clock, a few seconds into waves 13, 25 and 37.
  *
  * IT IS THE RUN CLOCK AND NOT THE BANK, which is the point. Income is a
  * function of time alone (coreIncomeRate), so a bank gate would be a
@@ -247,16 +247,16 @@ export const nextBuyAmount = (n: BuyAmount): BuyAmount =>
  * the wait. A clock says the same thing out loud, and the corner can
  * draw it counting down.
  *
- * THE LAST ONE IS THE ONE THAT MATTERS. Fifteen minutes is wave forty of
- * fifty (levels.ts WAVE_GAP_DEFAULT), which is where STAGES puts tier 4
+ * THE LAST ONE IS THE ONE THAT MATTERS. 11:20 is wave thirty-seven of
+ * fifty (levels.ts WAVE_GAP_DEFAULT), close to where STAGES puts tier 4
  * anyway — so the gate is the stage table said in seconds rather than a
  * new rule on top of it.
  */
 export const TIER_UNLOCK: Record<TowerTier, number> = {
   1: 0,
-  2: 300,
-  3: 600,
-  4: 900,
+  2: 227,
+  3: 454,
+  4: 680,
 };
 
 /** the run cut into four stages, one a tier (see ladder.ts stageAudit) */

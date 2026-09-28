@@ -426,7 +426,7 @@ It does not touch the hitbox, the layer or the kind: a waded dartback1 still can
 
 ## Shield Towers — 2
 
-A 3×3 shield tower rises every `SHIELD_TOWER_SPAWN_PERIOD` (30s), up to
+A 3×3 shield tower rises every `SHIELD_TOWER_SPAWN_PERIOD` (22.5s), up to
 `SHIELD_TOWER_MAX_ALIVE` (20), and stands a **red** dome over the ground around it. Any
 projectile crossing the dome is absorbed. Only with the dome down can the body be hurt; a
 destroyed shield tower is gone for good.

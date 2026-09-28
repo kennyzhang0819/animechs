@@ -1,6 +1,6 @@
 {
  "id": "campaign",
- "waveGap": 21,
+ "waveGap": 15,
  "script": [
   {
    "wave": {

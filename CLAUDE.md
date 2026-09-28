@@ -44,7 +44,7 @@ CLOCK and nothing else — no kill drops, no wave bonus — so difficulty and in
 independent. A press costs its TIER (the gun's footprint in tiles, 2/3/4/6, picked with
 1/2/3/4) times `CARD_CELLS`, flat, times the AMOUNT (1/4/9/16, cycled with X); the SHAPE
 it hands over is rolled, 3x3 to 6x6. The bands open on the run clock — tier 1 at once,
-then 5:00, 10:00 and 15:00. **Mods** (`game/mods.ts`) are
+then 3:47, 7:34 and 11:20 (waves 13, 25, 37). **Mods** (`game/mods.ts`) are
 dealt by the side sites only; **relics** (`game/relics.ts`) are OUT OF PLAY: the catalog,
 odds and shelf are intact and `track.ts` deals neither, so nothing else in a run can roll
 one. Do not delete them.

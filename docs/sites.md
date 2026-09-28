@@ -46,12 +46,12 @@ it.
 
 | kind | what guards the cache | small | medium | large |
 |---|---|---|---|---|
-| **Cairn** | Wardens leashed to the ring, in a ring of stones | 40k, 1 Lance | 100k, 2 Lances 1 Bulwark | 220k, 2 Lances 2 Bulwarks 1 Halberd |
+| **Cairn** | Wardens leashed to the ring, in a ring of stones | 40k, 1 Lance | 100k, 2 Lances 1 Bulwark | 220k, 3 Lances 3 Bulwarks 2 Halberds |
 | **Mirror cache** | nothing. Every hit on the cache comes back at the nearest turret, at the site's share (`reflect`) | 30k, 10% back | 80k, 20% back | 160k, 35% back |
-| **Sleeping house** | a dormant Fabricator six tiles off (`docs/mission-marks.md` says what waking one costs); the cache sits inside its blast | 40k, small house | 90k, large house | 180k, a large and a small |
-| **Shrine** | a Pylon five tiles off, and Wardens. Every thirty seconds a Goad beams double pace onto the ten bodies nearest it, within thirty tiles (`levels.ts hasteField.targets`, `Sim.hasteNearest`); every ten seconds a Bastion plates everything within twenty-six (`armorField`), waves walking past included, until it falls. Local only: a site's pylon counts for nothing on the board at large (`Sim.goadMul`) | 40k, Goad | 100k, Bastion | 220k, both |
-| **Beacon** | a Brander five tiles off whose beam burns every turret on its line out to twenty tiles, and Bulwarks | 40k, 1 Brander | 100k, 1 Brander 2 Bulwarks | 220k, 2 Branders, 2 Bulwarks 1 Halberd |
-| **Bomber run** | the cache is sealed against the board. The flight sits parked on its launch pad from the first frame with the clock as a bar over it; on the clock it lifts off and flies at the cache, and the first to arrive bombs it and the site is lost. Shoot every one down, on the pad or in the air, and it opens | 1 T3 at 2:00, 60 cells out | T4 + T3 at 4:00, 90 out | T5 + 2 T4 at 7:00, 120 out |
+| **Sleeping house** | a dormant Fabricator six tiles off (`docs/mission-marks.md` says what waking one costs); the cache sits inside its blast | 40k, small house | 90k, large house | 180k, two large and two small |
+| **Shrine** | a Pylon five tiles off, and Wardens. Every thirty seconds a Goad beams double pace onto the ten bodies nearest it, within thirty tiles (`levels.ts hasteField.targets`, `Sim.hasteNearest`); every ten seconds a Bastion plates everything within twenty-six (`armorField`), waves walking past included, until it falls. Local only: a site's pylon counts for nothing on the board at large (`Sim.goadMul`) | 40k, Goad | 100k, Bastion | 220k, 4 Goads and a Bastion, with Wardens |
+| **Beacon** | a Brander five tiles off whose beam burns every turret on its line out to twenty tiles, and Bulwarks | 40k, 1 Brander | 100k, 1 Brander 2 Bulwarks | 220k, 4 Branders, 3 Bulwarks 2 Halberds |
+| **Bomber run** | the cache is sealed against the board. The flight sits parked on its launch pad from the first frame with the clock as a bar over it; on the clock it lifts off and flies at the cache, and the first to arrive bombs it and the site is lost. Shoot every one down, on the pad or in the air, and it opens | 1 T3 at 1:31, 60 cells out | T4 + T3 at 3:02, 90 out | 2 T5 + 2 T4 at 5:18, 120 out |
 
 The Wardens are the garrison's (`docs/mission-marks.md`), posted the same
 way (`Sim.garrisonUnit`): they fight what the board builds inside the ring
@@ -66,32 +66,45 @@ nothing and holds its line, and the last bomber down opens the cache.
 
 ## What they look like
 
-A site reads as a place before it reads as a mark, and it is built out
-of the ground's own vocabulary: floors and rock, which the renderer draws
-on a contour like every hill, plus a few props (`docs/props.md`). No
-decking and no wall props — a plate of tiles and a crenellated box are
-grid things on a ground that has no grid. Everything is laid after the
-cache is down, inside the same reach test, so a build that walls a room
-off is taken up with its cache:
+A site reads as a place before it reads as a mark: a small biome of its
+own inside the ring, the way a village is planks and soil paths rather
+than one block. Each kind lays its own ground (`tiles.ts`: the built
+floors `flagstone`, `sandstone` and `plate` beside the map's own), walls
+of its own family (`masonry` and `plating`, which take a tenth of the ink
+so they stand apart from every hill, or the ground's rock), and its own
+furniture (`docs/props.md`). A bigger site is more of the same — a second
+gate, an inner court, more stakes — never a building. Everything is laid
+after the cache is down, inside the same reach test, so a build that
+walls a room off is taken up with its cache, floors included. **Size is
+room**: a medium ring is a third wider than a small one and a large ring
+twice as wide (four times the ground), with the guard to match — a large
+site is one or two to a board, so it can be a whole courtyard or a
+fortress. Its bodies stand out in the courtyard at three tenths of the
+radius (`Sim.raiseSites`), not on the cache:
 
-- **Cairn**: a basalt disc under the cache, a ring of standing stones
-  (`menhir`, tinted like the map's rock) at the edge of the circle,
-  boulders inside it; a temple beside the cache from medium up.
-- **Mirror cache**: a basalt disc, and a temple from medium up.
-- **Sleeping house**: a cinder yard, a ring of rock two cells deep with
-  three openings, crates, barrels and scrap; a keep from medium up.
-- **Shrine**: a wide basalt floor, pillars, braziers round the rim, an
-  altar beside the cache and a ziggurat from medium up.
-- **Beacon**: the widest yard, a thicker rock ring with more openings as
-  it grows, ruined bunkers, barrels; a keep from medium up.
-- **Bomber run**: crates round the cache and a keep from medium up; at
-  the pad, a cinder apron with the launch pad, a silo, barrels and a
-  crate — the fuel dump the flight waits on.
-
-The buildings are the `ziggurat`, `keep`, `temple` and `launchpad` kinds
-(`propArt.ts`), six tiles for a medium site and ten for a large one, so
-every count above and the building itself grow with the size: the build
-is the size.
+- **Cairn — the henge**: a paved disc under the cache, a paved ring path
+  with spokes out to it, standing stones (`menhir`, tinted like the map's
+  rock) on the rim and boulders inside; a cut-stone ring with a gap on
+  every spoke and a brazier at each from medium up, an altar at large.
+- **Mirror cache — the mirror garden**: a quartz disc, four slate paths,
+  mirror plates (`lens`) round the cache; pillars at medium, a crystal-rock
+  ring at large.
+- **Sleeping house — the foundry**: a cinder yard, a steel-decked hall
+  walled in hull plating with a gate (two from medium), plated tracks out
+  of the gates, chimneys (`stack`), pipes, crates or barrels inside, scrap
+  outside, a silo at large.
+- **Shrine — the temple precinct**: a sandstone court walled in cut stone,
+  a paved avenue in through the gate lined with pillars, braziers at the
+  corners; a second gate, obelisks at the gate and an altar from medium
+  up, an inner court at large.
+- **Beacon — the scorched watch**: burnt ground out to a rampart of the
+  map's own rock with more openings as it grows, a pyre by the cache, fire
+  pits, braziers at the openings; a ring of cut-stone stakes and bunkers
+  from medium up.
+- **Bomber run — the airfield**: a plated depot with crates round the
+  cache; at the pad, a plated runway pointed at the cache and lit down
+  both edges (`strobe`), a hull-plate wall behind, a silo and barrels
+  beside it, more of the dump as it grows. The pad wants open ground.
 
 ## Rolling them
 
@@ -113,16 +126,17 @@ number of flips, an unlucky one down to none.
 The board carries at most `MAX_SITES` (24). The largest are placed first,
 each a kind drawn at random, so kinds repeat. The cache stands in a 6x6
 yard at least 26 cells in from the rim, 60 past the core, clear of
-every door's disc and every other site's ring. An open yard wants six
-tenths of its ring on open ground. **A yard that is all rock is a site in
-a hill**: a pocket six tenths of the ring wide is carved out of the hill
-round the cache, open ground the core never reaches. That is the point —
-the guards are there to keep the cache, not to walk anywhere, and the
-rock round the pocket is where the turrets that take it stand. The
-generator's pocket pass and the orphan check both leave a site's pocket
-alone. A site that finds no ground is simply not placed, and one that
-walls a room off is taken up again like a junk site. A
-bomber run also needs a pad `flight` cells out that is on the board and off
+every door's disc and every other site's ring. **The ring is carved to
+the precinct**: the rock inside it, on a hill or beside one, is cut down to
+floor out to nine tenths of the radius, all but a few knobs near the rim
+the noise leaves buried, so the build keeps its shape and a site in a hill
+is a courtyard cut into it, open ground the core never reaches, with the
+rock round it where the turrets that take it stand. The generator's
+pocket pass and the orphan check both leave a hill site's pocket alone. A
+yard less than half open ground after the carve (water is not carved) is
+passed over; a site that finds no ground is simply not placed, and one
+that walls a room off is taken up again, carve and all, like a junk site.
+A bomber run also needs a pad `flight` cells out that is on the board and off
 the core.
 
 ## What crosses the seam

@@ -579,7 +579,7 @@ export const SHIELD_TOWER_SHIELD_DELAY = 10;
 /** seconds between one shield tower rising and the next trying to. No
  *  opening grace: the first attempt is on the run's first tick, so a board
  *  builds around them rather than having one dropped into it later */
-export const SHIELD_TOWER_SPAWN_PERIOD = 30;
+export const SHIELD_TOWER_SPAWN_PERIOD = 22.5;
 /** shield towers standing at once, at most — the timer idles at the cap.
  *  Twenty is a landscape rather than an event: the rule competes with the
  *  player for the ground the turrets want */

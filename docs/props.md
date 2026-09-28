@@ -13,16 +13,15 @@ disk already carries it). So a prop is a wall the swarm walks round, a
 cell no tower stands on and no spawn tile is painted on, and — like the
 old pines — open sky to a flyer and no wall to sight (`isBuildableWall`
 names only rock). Its floor shows under it; the sprite is drawn over.
-A prop casts the hills' rim shadow on the floor round it but never
-darkens inside: a prop is a thing on the ground, not a mass.
+A prop casts a drop shadow of its own silhouette, down and right like a
+unit's, and never the hills' rim: a prop is a thing on the ground, not a
+mass. The core casts the same way.
 
 `Terrain.props` is the list that is drawn; the cell layers are what the
 sim reads. The loader (`maps.ts propsOf`) keeps them honest both ways: a
 listed prop whose footprint is not all sentinel cells is dropped, and a
 sentinel cell no prop covers is grown over (`terrain.ts forestOf`) so
-nothing blocks the swarm invisibly. A prop casts the rim shadow at less
-than half a hill's (`PROP_SHADOW`); a thicket at full strength went to
-mud. That second rule is also how a
+nothing blocks the swarm invisibly. That second rule is also how a
 legacy document's `pines` become trees: a pine cell already wears the
 sentinel, and the loader tiles the pine cells into oaks, trees and
 shrubs in the tone its forest kind meant. The old non-blocking `decor`
@@ -56,8 +55,11 @@ reorder.**
 | walker, bunker | 4 | a dead mech, a ruined emplacement |
 | wreck, colossus | 6 | a crashed gunship, a fallen giant |
 | chest | 2 | a side site's cache (docs/sites.md): the generator stands one at each site |
-| ziggurat, keep, temple, launchpad | 6 | a site's building (docs/sites.md): a stepped pyramid, a walled keep with four towers, a hall with a ridged roof and a portico, a round pad |
-| ziggurat-great, keep-great, temple-great | 10 | the same, for a large site |
+| ziggurat, keep, temple, launchpad | 6 | buildings the generator no longer stands (a site is a precinct, docs/sites.md); kept because a kind is its index |
+| ziggurat-great, keep-great, temple-great | 10 | the same |
+| lantern, strobe | 1 | a lamp post, a runway light |
+| obelisk, lens, stack, pipe, firepit | 2 | a temple's obelisk, a mirror plate, a chimney, a pipe, a ring of stones round a fire |
+| pyre | 3 | a heap of char with an ember in it |
 | menhir | 1 | a standing stone, tinted like the rock: a cairn's ring |
 | pillar, brazier | 1 | a column, an iron fire bowl: a shrine's furniture |
 | altar | 2 | a stained slab on a plinth |
@@ -143,8 +145,9 @@ thick):
    (`hug`) both growth and stones lie thicker; the big kinds go in the
    thick of a thicket, the small ones at its edge — inside a thicket
    mostly the brush and thicket patches, with trees rising out of them
-   and single shrubs as strays. Stones wear the rock tone of the wall
-   the floor family under them wears.
+   and single shrubs as strays, few of them: a stray off the noise or off
+   the rock is rare. Stones wear the rock tone of the wall the floor
+   family under them wears.
 5. **Pockets.** A pocket the props closed is grown over with shrubs and
    trees rather than sealed as rock, so a thicket stays a thicket. A wet
    one, or one no flora fits, is sealed as before.

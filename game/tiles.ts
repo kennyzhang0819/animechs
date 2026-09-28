@@ -95,7 +95,10 @@ export type FloorKind =
   | "mycelium"
   | "blight"
   | "quartz"
-  | "slate";
+  | "slate"
+  | "flagstone"
+  | "sandstone"
+  | "plate";
 
 const STOCK_FLOOR_STYLE: Readonly<Record<FloorKind, FloorStyle>> = {
   grass: { base: "#78995a", light: "#88a866", dark: "#68884c", mark: "tussock" },
@@ -140,6 +143,10 @@ const STOCK_FLOOR_STYLE: Readonly<Record<FloorKind, FloorStyle>> = {
   blight: { base: "#4a3a52", light: "#56455e", dark: "#3e3046", mark: "dune" },
   quartz: { base: "#b4b0c8", light: "#c2bed4", dark: "#a29eb6", mark: "spotted" },
   slate: { base: "#4e5262", light: "#5a5e6e", dark: "#424656", mark: "soft" },
+  // the sites' built ground (docs/sites.md): paving, cut sandstone, steel deck
+  flagstone: { base: "#8c8f96", light: "#9a9da4", dark: "#7a7d84", mark: "spotted" },
+  sandstone: { base: "#cdb388", light: "#d9c298", dark: "#b89e74", mark: "soft" },
+  plate: { base: "#4a5560", light: "#56616c", dark: "#3e4852", mark: "spotted" },
 };
 
 
@@ -400,7 +407,9 @@ export type WallKind =
   | "sporerock"
   | "fungal"
   | "crystalrock"
-  | "slate";
+  | "slate"
+  | "masonry"
+  | "plating";
 
 export interface WallStyle {
   /** the mid tone: the band across the middle of the tile */
@@ -447,6 +456,9 @@ const STOCK_WALL_STYLE: Readonly<Record<WallKind, WallStyle>> = {
   fungal: { face: "#8a6a80", light: "#a88a9e", dark: "#5e4658", grain: "glassy" },
   crystalrock: { face: "#7a7fa0", light: "#a3a8cc", dark: "#555a78", grain: "glassy" },
   slate: { face: "#454a5a", light: "#5c6274", dark: "#2e3240", grain: "rough" },
+  // the sites' built walls (docs/sites.md): cut stone and steel hull
+  masonry: { face: "#b0aa9c", light: "#cfc9ba", dark: "#8a857a", grain: "soft" },
+  plating: { face: "#5a6672", light: "#7c8894", dark: "#3c454e", grain: "glassy" },
 };
 
 /** a rock family under the ink: the face burnt umber over the family's
@@ -454,8 +466,8 @@ const STOCK_WALL_STYLE: Readonly<Record<WallKind, WallStyle>> = {
  *  The hill's edges carry no band of their own — the carved bands the
  *  concepts drew along every rock/ground border are gone; what shades a
  *  hill now is the game's own darkness and its shadow */
-const linocutWall = (s: WallStyle): WallStyle => {
-  const face = mix(shd(s.face, 0.18), INK.umber, 0.45);
+const linocutWall = (s: WallStyle, ink = 0.45): WallStyle => {
+  const face = mix(shd(s.face, 0.18), INK.umber, ink);
   return {
     ...s,
     face,
@@ -463,8 +475,10 @@ const linocutWall = (s: WallStyle): WallStyle => {
     dark: shd(mix(face, INK.umberDeep, 0.4), LINOCUT_SHADE.dark),
   };
 };
+/** the built walls take a tenth of the ink, so cut stone and hull plate stand apart from every hill */
+const BUILT_WALLS: readonly WallKind[] = ["masonry", "plating"];
 export const WALL_STYLE: Readonly<Record<WallKind, WallStyle>> = LINOCUT_TERRAIN
-  ? mapStyles(STOCK_WALL_STYLE, linocutWall)
+  ? Object.fromEntries((Object.keys(STOCK_WALL_STYLE) as WallKind[]).map((k) => [k, linocutWall(STOCK_WALL_STYLE[k], BUILT_WALLS.includes(k) ? 0.1 : 0.45)])) as Record<WallKind, WallStyle>
   : STOCK_WALL_STYLE;
 export const WALL_KINDS = Object.keys(WALL_STYLE) as WallKind[];
 

@@ -107,6 +107,15 @@ there rather than on the deploy screen.
 
 ## The seal and the spawn layer
 
+**The rock cap.** No more than `ROCK_CAP` (35%) of the land — every cell
+that is not deep water — is rock, whatever the archetype rolled: the
+noise threshold is raised until at most `ROCK_CAP_RAW` (36%) of the board
+is rock before the water is laid, and a board still over the cap after
+the seal fails its check and is rerolled. The archetypes' thresholds are
+a shape, not a share: the canyons stay fine and twisting, the highlands
+keep their rooms, but each is cut back to a board the walkers can cross.
+The floor of it is `rock for towers`, which still wants a hill to build on.
+
 **Rock in the water.** Rock that clears the threshold by `SEA_ROCK` keeps
 its head above the water: stacks in the sea, islands in a lake. The water
 routes are carved through whatever stands in their way, so a channel is

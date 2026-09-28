@@ -402,7 +402,7 @@ export default function LevelEditorView({
                 />
                 {/* THE TWO ABOVE, ADDED UP — the sitting the script asks
                     for. It is the clock a mission is authored against
-                    (WAVE_GAP_DEFAULT is set to land it near twenty
+                    (WAVE_GAP_DEFAULT is set to land it near fifteen
                     minutes), and reading it off two rows in seconds was
                     arithmetic nobody did. Sums the same way budget() does
                     in ladder.ts; the walk-and-die on the end of the last

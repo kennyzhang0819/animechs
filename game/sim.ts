@@ -283,7 +283,7 @@ import {
 } from "./missions";
 import { NO_UPGRADES, skilledTower, upgradedTower, type TechState } from "./tech";
 
-import { countSensitive } from "./upgrades";
+import { countSensitive, reaching } from "./upgrades";
 import {
   applyTurretMods,
   modBit,
@@ -3805,7 +3805,8 @@ export class Sim {
     // the effect, so a copy bought mid-wave lands on the board already
     // standing, through this very call
     t.spec = applyTurretMods(kind, t.mods, this.mods);
-    if (t.high) t.spec = { ...t.spec, range: t.spec.range * HIGH_GROUND_RANGE };
+    // the shot has to fly as far as the reach, or the gun locks on what it cannot hit
+    if (t.high) t.spec = reaching(t.spec, HIGH_GROUND_RANGE);
     // ...under the bench's reach when one is set — see setBench
     if (this.benchTowerRange !== null) t.spec = { ...t.spec, range: this.benchTowerRange };
     const max = t.spec.health * TOWER_HP_SCALE;
@@ -5684,19 +5685,21 @@ export class Sim {
         this.uheldRot[i] = Math.PI / 2;
         return i;
       };
+      // a large site's bodies stand out in its courtyard, not on the cache
+      const out = Math.max(5, site.radius * 0.3) * CELL;
       for (const h of t.houses ?? []) {
-        const i = plant(h.kind, 6 * CELL);
+        const i = plant(h.kind, out + CELL);
         if (i < 0) continue;
         this.ufabEvery[i] = h.every;
         this.ufabT[i] = h.every;
         this.ufabState[i] = 0;
       }
       for (const p of t.pylons ?? [])
-        if (plant(p, 5 * CELL) >= 0) {
+        if (plant(p, out) >= 0) {
           if (p === "goad") this.siteGoads++;
           else this.siteBastions++;
         }
-      for (let b = 0; b < (t.branders ?? 0); b++) plant("brander", 5 * CELL);
+      for (let b = 0; b < (t.branders ?? 0); b++) plant("brander", out);
       // THE FLIGHT SITS ON ITS PAD until the clock (runSites): parked bodies
       // the board can see, shoot, and count down over (Game.drawSites)
       if (t.bombers) {
@@ -7267,22 +7270,30 @@ export class Sim {
     const half = this.propHalf(k);
     return Math.hypot(Math.max(0, Math.abs(this.propX(k) - x) - half), Math.max(0, Math.abs(this.propY(k) - y) - half));
   }
+  /** standing, and a hit would land: a bomber run's cache takes none until the flight is down (propHit) */
+  private propTargetable(k: number): boolean {
+    if (this.propHp[k] <= 0) return false;
+    const s = this.propSite[k] > 0 ? this.sites[this.propSite[k] - 1] : null;
+    return !(s && s.state === 0 && s.site.tier.bombers);
+  }
   /** is the prop still standing, and within this reach of the point, by its edge? */
-  private propReach(k: number, x: number, y: number, reach: number): boolean {
-    return this.propHp[k] > 0 && this.propDist(k, x, y) <= reach;
+  private propReach(k: number, x: number, y: number, reach: number, min = 0): boolean {
+    if (!this.propTargetable(k)) return false;
+    const d = this.propDist(k, x, y);
+    return d <= reach && d >= min;
   }
   /** the standing prop nearest a point by its edge, within reach, or -1:
    *  rings of cells outward, stopped once a ring cannot beat the best */
-  private nearestProp(x: number, y: number, reach: number): number {
+  private nearestProp(x: number, y: number, reach: number, min = 0): number {
     const cx = (x / CELL) | 0, cy = (y / CELL) | 0;
     const R = Math.ceil(reach / CELL) + 1;
     let best = -1, bd = reach;
     const look = (xx: number, yy: number): void => {
       if (xx < 0 || yy < 0 || xx >= COLS || yy >= ROWS) return;
       const k = this.propAt[yy * COLS + xx];
-      if (k < 0 || k === best || this.propHp[k] <= 0) return;
+      if (k < 0 || k === best || !this.propTargetable(k)) return;
       const d = this.propDist(k, x, y);
-      if (d <= bd) { bd = d; best = k; }
+      if (d <= bd && d >= min) { bd = d; best = k; }
     };
     for (let r = 0; r <= R; r++) {
       if (best >= 0 && (r - 0.5) * CELL - 3 * CELL > bd) break;
@@ -13166,9 +13177,10 @@ export class Sim {
       // is asked only once the three above came up empty
       let aimP = -1;
       if (!hostile && best < 0 && !shr && !aimT && st.targetGround) {
-        const held = t.aimProp;
-        if (held >= 0 && this.propReach(held, t.x, t.y, st.range)) aimP = held;
-        else if (scan) aimP = this.nearestProp(t.x, t.y, st.range);
+        // a prop inside an artillery piece's minRange never walks out of it
+        const held = t.aimProp, lo = st.minRange ?? 0;
+        if (held >= 0 && this.propReach(held, t.x, t.y, st.range, lo)) aimP = held;
+        else if (scan) aimP = this.nearestProp(t.x, t.y, st.range, lo);
       }
       t.targetIdx = best;
       t.aimShieldTower = shr ? this.shieldTowers.indexOf(shr) : -1;

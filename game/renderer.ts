@@ -812,8 +812,10 @@ const NO_CLIP = -1;
 // wall shadow strength: lighter than BlockRenderer.shadowColor's 0.71 — the
 // premultiplied blend of a black quad at this alpha equals its multiply
 export const WALL_SHADOW_A = 0.35;
-/** what a prop's cell stamps into the shadow mask, out of a hill's 255 */
-const PROP_SHADOW = 115;
+/** a prop's drop shadow is its own sprite thrown down-right by
+ *  GROUND_SHADOW_ELEV of its side, no shorter than this: a shrub's rim
+ *  at 3.5% of a cell was nothing */
+const STANDING_SHADOW_MIN = 4;
 /** how far a hill's shadow reaches onto the floor round it, in cells, and
  *  the distance in cells over which it fades from full to nothing past the
  *  first cell. The same on every side: it is the mass's weight on the
@@ -2181,66 +2183,39 @@ export class Renderer {
    */
   private castReach = WALL_CAST;
   private castFade = WALL_CAST_FADE;
-  /** each prop's instance in the walls batch, so one can be taken out
-   *  of the picture without rebuilding the terrain (killProp) */
-  private readonly propSlots = new Map<Prop, number>();
+  /** each prop's shadow and sprite in the walls batch, so one can be taken
+   *  out of the picture without rebuilding the terrain (killProp) */
+  private readonly propSlots = new Map<Prop, [number, number]>();
 
   /**
-   * A PROP CAME DOWN (game.ts, on the terrain version): its quad in the
-   * walls batch collapses to nothing and its cells' shadow is what the
-   * terrain alone casts there now, uploaded as one small window — the
-   * whole board is not rebuilt for a shrub. The terrain handed in is the
-   * copy the batch was built from, already opened where the prop stood.
+   * A PROP CAME DOWN (game.ts, on the terrain version): its two quads in
+   * the walls batch collapse to nothing — the whole board is not rebuilt
+   * for a shrub. Its shadow was its own sprite, so nothing in the mask
+   * changes.
    */
-  killProp(src: { terrain: Terrain }, p: Prop): void {
-    const slot = this.propSlots.get(p);
-    if (slot === undefined) return;
+  killProp(_src: { terrain: Terrain }, p: Prop): void {
+    const slots = this.propSlots.get(p);
+    if (slots === undefined) return;
     this.propSlots.delete(p);
     const gl = this.gl;
     const w = this.walls;
-    const o = slot * FLOATS;
-    w.data[o + 2] = 0;
-    w.data[o + 3] = 0;
     gl.bindVertexArray(w.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, w.vbo);
-    gl.bufferSubData(gl.ARRAY_BUFFER, o * 4, w.data, o, FLOATS);
-    // the shadow under where it stood: nothing of its own any more, only
-    // the neighbouring rock's cast (the same rule rebuildTerrain applies)
-    const T = src.terrain;
-    const n = PROP_KINDS[p.kind]?.tiles ?? 1;
-    const isRock = (j: number): boolean => T.blocked[j] !== 0 && T.wall[j] !== WALL_DEEP && T.wall[j] !== WALL_PROP;
-    const R = Math.ceil(this.castReach);
-    const mask = this.shadowMask;
-    const x0 = Math.max(0, p.x), y0 = Math.max(0, p.y);
-    const x1 = Math.min(COLS - 1, p.x + n - 1), y1 = Math.min(ROWS - 1, p.y + n - 1);
-    for (let y = y0; y <= y1; y++)
-      for (let x = x0; x <= x1; x++) {
-        const i = y * COLS + x;
-        let v = isRock(i) ? 255 : 0;
-        if (!isRock(i))
-          for (let dy = -R; dy <= R; dy++)
-            for (let dx = -R; dx <= R; dx++) {
-              const nx = x + dx, ny = y + dy;
-              if ((dx === 0 && dy === 0) || nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
-              const dist = Math.hypot(dx, dy);
-              if (dist > this.castReach || !isRock(ny * COLS + nx)) continue;
-              const cw = 255 * Math.min(1, 1 - (dist - 1) / this.castFade);
-              if (cw > v) v = cw;
-            }
-        const a = Math.round(v);
-        this.shadowStatic[i] = a;
-        mask[i * 4] = mask[i * 4 + 1] = mask[i * 4 + 2] = mask[i * 4 + 3] = a;
-        this.shade[i] = a / 255;
-      }
-    gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
-    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, COLS);
-    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, x0);
-    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, y0);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, x0, y0, x1 - x0 + 1, y1 - y0 + 1, gl.RGBA, gl.UNSIGNED_BYTE, mask);
-    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
-    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
-    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    for (const slot of slots) {
+      if (slot < 0) continue;
+      const o = slot * FLOATS;
+      w.data[o + 2] = 0;
+      w.data[o + 3] = 0;
+      gl.bufferSubData(gl.ARRAY_BUFFER, o * 4, w.data, o, FLOATS);
+    }
+  }
+
+  /** the core's sprite flattened to black and thrown down-right, on the
+   *  ground under everything that walks at it */
+  private pushCoreShadow(dyn: Batch, x: number, y: number, size: number): void {
+    const px = size * CELL;
+    const off = Math.max(STANDING_SHADOW_MIN, px * GROUND_SHADOW_ELEV);
+    this.push(dyn, x + off, y + off, px, px, 0, UV_BASE, 0, 0, 0, GROUND_SHADOW_ALPHA);
   }
   private lastTerrain: { terrain: Terrain } | null = null;
   private lastLayers: TerrainLayers = ALL_LAYERS;
@@ -2371,20 +2346,20 @@ export class Renderer {
     // DEEP WATER IS BLOCKED BUT CASTS NOTHING. The shadow is a HILL's rim —
     // the ground beside something standing above it — and water is a hole,
     // not a hill. Stamping it would ring every lake with the same dark
-    // fringe a cliff gets, which reads as the water being piled on the map
-    // ...and a prop casts at PROP_SHADOW of a hill's: a thing on the
-    // ground, not a mass, and a thicket of them at full went to mud
+    // fringe a cliff gets, which reads as the water being piled on the map.
+    // A prop casts nothing here either: it throws its own sprite as a drop
+    // shadow (pass 3), a thing on the ground, not a mass
+    const isRock = (j: number): boolean => T.blocked[j] !== 0 && T.wall[j] !== WALL_DEEP && T.wall[j] !== WALL_PROP;
     if (layers.wall)
       for (let y = 0; y < mapRows; y++)
         for (let x = 0; x < mapCols; x++) {
           const i = y * COLS + x;
-          if (T.blocked[i] && T.wall[i] !== WALL_DEEP) stamp(i, T.wall[i] === WALL_PROP ? PROP_SHADOW : 255);
+          if (isRock(i)) stamp(i);
         }
     // ...and the hill's shadow on the floor round it, the same on every
     // side: full on the cells touching rock, fading over castFade cells
-    // past that, out to castReach. Rock only, not props
+    // past that, out to castReach
     if (layers.wall) {
-      const isRock = (j: number): boolean => T.blocked[j] !== 0 && T.wall[j] !== WALL_DEEP && T.wall[j] !== WALL_PROP;
       const R = Math.ceil(this.castReach);
       for (let y = 0; y < mapRows; y++)
         for (let x = 0; x < mapCols; x++) {
@@ -2403,14 +2378,8 @@ export class Renderer {
           if (v > mask[i * 4 + 3]) stamp(i, Math.round(v));
         }
     }
-    // buildings on the ground stamp their footprint too, like Mindustry's
-    // displayShadow blocks — the base sprite covers the middle, so what
-    // shows is the rim hugging its sides. The core is the one building the
-    // terrain knows about; the towers go up and come down mid-run, so they
-    // are stamped over this mask instead of into it (syncBuildShadow)
-    if (layers.base)
-      for (let y = T.base.y; y < T.base.y + T.base.size; y++)
-        for (let x = T.base.x; x < T.base.x + T.base.size; x++) stamp(y * COLS + x);
+    // the towers stamp their footprints over this mask, not into it
+    // (syncBuildShadow); the core throws its own sprite instead (pushCoreShadow)
     // what the terrain alone casts, kept so a tower's stamp can be laid
     // over it and lifted off again when the tower is wrecked
     for (let i = 0; i < NCELLS; i++) this.shadowStatic[i] = mask[i * 4 + 3];
@@ -2622,17 +2591,31 @@ export class Renderer {
     // the board's biomes take the family slots on the sheet (atlas.ts FAMILY_SETS)
     if (layers.props && ensureFamilies(biomesOf(T.props))) this.uploadAtlas();
     if (layers.props) {
-      // a prop's own cells cast the rim shadow (pass 2), so it is not shaded
-      // by it: its tone is the whole of its colour (propArt.ts PROP_TINT)
+      // every shadow before any prop, so one prop's shadow never lands on
+      // its neighbour's face; a prop is not shaded by the rim (pass 2): its
+      // tone is the whole of its colour (propArt.ts PROP_TINT)
       this.propSlots.clear();
-      for (const p of T.props) {
+      const quad = (p: Prop): [number, number, number, number, UVRect] | null => {
         const def = PROP_KINDS[p.kind];
-        if (!def) continue;
+        if (!def) return null;
         const half = (def.tiles * CELL) / 2, side = def.reach * CELL;
+        return [p.x * CELL + half, p.y * CELL + half, side, def.turns ? p.rot * (Math.PI / 2) : 0, propUV(p.kind, def.turns ? 0 : p.rot)];
+      };
+      for (const p of T.props) {
+        const q = quad(p);
+        if (!q) continue;
+        const [x, y, side, rot, uv] = q;
+        const off = Math.max(STANDING_SHADOW_MIN, side * GROUND_SHADOW_ELEV);
+        this.propSlots.set(p, [w.n, -1]);
+        this.push(w, x + off, y + off, side, side, rot, uv, 0, 0, 0, GROUND_SHADOW_ALPHA);
+      }
+      for (const p of T.props) {
+        const q = quad(p);
+        if (!q) continue;
+        const [x, y, side, rot, uv] = q;
         const tint = PROP_TINT[p.tone] ?? PROP_TINT[0];
-        const uv = propUV(p.kind, def.turns ? 0 : p.rot);
-        this.propSlots.set(p, w.n);
-        this.push(w, p.x * CELL + half, p.y * CELL + half, side, side, def.turns ? p.rot * (Math.PI / 2) : 0, uv, tint[0], tint[1], tint[2], 1);
+        this.propSlots.get(p)![1] = w.n;
+        this.push(w, x, y, side, side, rot, uv, tint[0], tint[1], tint[2], 1);
       }
     }
     for (const b of [t, wt, sh, rk, w, dq]) {
@@ -2688,15 +2671,12 @@ export class Renderer {
   /**
    * THE BUILDINGS CAST TOO.
    *
-   * The core has always sat ON the ground rather than on top of it: its
-   * footprint is stamped into the shadow mask along with the hills (pass 2
-   * above), and the half-cell bilinear rim that melts out of those texels
-   * is the dark hugging its sides. Everything else that gets put down —
-   * turrets and the shield towers — was drawn flat, a sprite laid on the floor instead of a
-   * thing standing on it.
+   * The core throws its own sprite as a drop shadow (pushCoreShadow).
+   * Everything else that gets put down — turrets and the shield towers —
+   * was drawn flat, a sprite laid on the floor instead of a thing
+   * standing on it.
    *
-   * They stamp the same mask now, and read identically, because it IS the
-   * same mask: the terrain's half is stamped once per map (shadowStatic)
+   * They stamp the hills' mask: the terrain's half is stamped once per map (shadowStatic)
    * and the buildings' half is laid over it here, whenever the line
    * changes. A footprint is at most five cells square, so the work is
    * per-building rather than per-map — the old stamps are wiped back to
@@ -2936,6 +2916,7 @@ export class Renderer {
       return;
     }
     const baseSz = base.size * CELL;
+    this.pushCoreShadow(dyn, (base.x + base.size / 2) * CELL, (base.y + base.size / 2) * CELL, base.size);
     this.push(
       dyn,
       (base.x + base.size / 2) * CELL,
@@ -3498,6 +3479,7 @@ export class Renderer {
     this.drawForceFields(sim, buffered);
     this.drawCloudFields(sim, buffered);
     this.drawFieldRings(sim, buffered);
+    this.pushCoreShadow(dyn, sim.core.x, sim.core.y, sim.core.size);
     n0 = dyn.n;
     for (const t of sim.towers) {
       // THE FOOTPRINT IT ACTUALLY STANDS ON (Tower.size), not the table's:

@@ -35,7 +35,7 @@ import { tile } from "./tile";
  *   sometimes thirty-six. The card drops into the corner already aimed.
  *
  *   THE BANDS OPEN ON THE RUN CLOCK (economy.ts TIER_UNLOCK): tier 1 from
- *   the first frame, then one every five minutes. A shut button wears a
+ *   the first frame, then at 3:47, 7:34 and 11:20. A shut button wears a
  *   grey sweep that retreats clockwise as its minute comes round, and NO
  *   NUMBER: the shade says "not yet" and how far off it is, which is what
  *   a player glances at mid-wave — a countdown would be a clock to watch.

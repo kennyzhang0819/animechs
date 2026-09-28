@@ -156,6 +156,9 @@ export const FLOOR_MYCELIUM = 102;
 export const FLOOR_BLIGHT = 105;
 export const FLOOR_QUARTZ = 108;
 export const FLOOR_SLATE = 111;
+export const FLOOR_FLAGSTONE = 114;
+export const FLOOR_SANDSTONE = 117;
+export const FLOOR_PLATE = 120;
 export const WALL_STONE = 0;
 export const WALL_DIRT = 2;
 export const WALL_PINE = 4;
@@ -179,6 +182,8 @@ export const WALL_SPORE_ROCK = 48;
 export const WALL_FUNGAL = 50;
 export const WALL_CRYSTAL_ROCK = 52;
 export const WALL_SLATE = 54;
+export const WALL_MASONRY = 56;
+export const WALL_PLATING = 58;
 /** the water floors, and which deep floor each shallow one sinks to */
 const WATER_FLOORS = [FLOOR_SHALLOW_WATER, FLOOR_DEEP_WATER, FLOOR_TAINTED_WATER, FLOOR_DEEP_TAINTED_WATER];
 /** decor kinds (UV_DECOR) and their width in tiles (DECOR_TILES) */
