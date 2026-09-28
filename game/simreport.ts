@@ -121,8 +121,26 @@ export const HDR = {
    *  state packed two bits each (0 standing, 1 opened, 2 lost) (Sim.sites) */
   SITES_OPENED: 36,
   SITE_STATES: 38,
+  /** the hero (herosim.ts): 0/1 on the board, position, aim, pool, respawn
+   *  countdown, the four cooldowns left, dash/ult/sprint time left, grace */
+  HERO_ON: 39,
+  HERO_X: 40,
+  HERO_Y: 41,
+  HERO_AIM: 42,
+  HERO_HP: 43,
+  HERO_HPMAX: 44,
+  HERO_RESPAWN: 45,
+  HERO_CD0: 46,
+  HERO_CD1: 47,
+  HERO_CD2: 48,
+  HERO_CD3: 49,
+  HERO_DASH_T: 50,
+  HERO_ULT_T: 51,
+  HERO_SPRINT_T: 52,
+  HERO_GRACE: 53,
+  HERO_DEATHS: 54,
 } as const;
-export const HEADER_LEN = 39;
+export const HEADER_LEN = 55;
 
 /** the sim's scalars, into its own header — after every step, and on reset */
 export function writeHeader(sim: Sim): void {
@@ -166,6 +184,25 @@ export function writeHeader(sim: Sim): void {
     h[HDR.CONVOY_AT] = cv ? cv.at : 0;
     h[HDR.CONVOY_HALTS] = cv ? cv.halts : 0;
     h[HDR.CONVOY_HALTED] = cv && cv.halted ? 1 : 0;
+  }
+  const hero = sim.hero;
+  h[HDR.HERO_ON] = hero ? 1 : 0;
+  if (hero) {
+    h[HDR.HERO_X] = hero.x;
+    h[HDR.HERO_Y] = hero.y;
+    h[HDR.HERO_AIM] = hero.aim;
+    h[HDR.HERO_HP] = hero.hp;
+    h[HDR.HERO_HPMAX] = hero.hpMax;
+    h[HDR.HERO_RESPAWN] = hero.dead ? hero.respawnT : 0;
+    h[HDR.HERO_CD0] = hero.cd[0];
+    h[HDR.HERO_CD1] = hero.cd[1];
+    h[HDR.HERO_CD2] = hero.cd[2];
+    h[HDR.HERO_CD3] = hero.cd[3];
+    h[HDR.HERO_DASH_T] = hero.dashT;
+    h[HDR.HERO_ULT_T] = hero.ultT;
+    h[HDR.HERO_SPRINT_T] = hero.sprintT;
+    h[HDR.HERO_GRACE] = hero.graceT;
+    h[HDR.HERO_DEATHS] = hero.deaths;
   }
 }
 

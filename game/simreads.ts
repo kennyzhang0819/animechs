@@ -65,6 +65,23 @@ const emptyReport = (): WorldReport => ({
   profile: null,
 });
 
+export interface HeroRead {
+  x: number;
+  y: number;
+  aim: number;
+  hp: number;
+  hpMax: number;
+  /** seconds until the hero stands back up; 0 while alive */
+  respawn: number;
+  /** seconds left on primary, secondary, dash, ult */
+  cd: [number, number, number, number];
+  dashT: number;
+  ultT: number;
+  sprintT: number;
+  grace: number;
+  deaths: number;
+}
+
 export class World {
   readonly level: LevelSpec;
   /** built here from the same map document the sim built its own from */
@@ -326,6 +343,26 @@ export class World {
    * difference is exactly the commands in flight, which is what a mirror
    * is for. The command itself still goes through the host.
    */
+  /** the hero's live numbers (herosim.ts), or null on a run without one */
+  get hero(): HeroRead | null {
+    const h = this.header;
+    if (h[HDR.HERO_ON] === 0) return null;
+    return {
+      x: h[HDR.HERO_X],
+      y: h[HDR.HERO_Y],
+      aim: h[HDR.HERO_AIM],
+      hp: h[HDR.HERO_HP],
+      hpMax: h[HDR.HERO_HPMAX],
+      respawn: h[HDR.HERO_RESPAWN],
+      cd: [h[HDR.HERO_CD0], h[HDR.HERO_CD1], h[HDR.HERO_CD2], h[HDR.HERO_CD3]],
+      dashT: h[HDR.HERO_DASH_T],
+      ultT: h[HDR.HERO_ULT_T],
+      sprintT: h[HDR.HERO_SPRINT_T],
+      grace: h[HDR.HERO_GRACE],
+      deaths: h[HDR.HERO_DEATHS],
+    };
+  }
+
   spend(n: number): boolean {
     if (!this.charging || this.rich) return true;
     const amount = Math.max(0, n);

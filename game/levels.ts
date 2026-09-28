@@ -5,6 +5,7 @@ import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // type only — mutation.ts must never depend on the campaign, and this
 // import must never become a value one or the two files form a cycle
 import type { MutationId } from "./mutation";
+import type { HeroId } from "./heroes";
 
 export const UNIT_KINDS = ["ironhide1", "ironhide2", "ironhide3", "ironhide4", "ironhide5", "dartback1", "dartback2", "dartback3", "dartback4", "dartback5", "starhart1", "starhart2", "starhart3", "starhart4", "starhart5", "stoop1", "stoop2", "stoop3", "stoop4", "stoop5", "skate1", "skate2", "skate3", "skate4", "skate5", "livewire1", "livewire2", "livewire3", "livewire4", "livewire5", "tusker1", "tusker2", "tusker3", "tusker4", "tusker5", "boss", "grapnel1", "grapnel2", "grapnel3", "grapnel4", "grapnel5", "kettle1", "kettle2", "kettle3", "kettle4", "kettle5", "wormhead", "wormcar", "wormtail", "railgun", "goad", "bastion", "bulwark", "lance", "halberd", "juggernaut", "fabricatorSmall", "fabricatorLarge", "brander", "whale1", "whale2", "whale3", "whale4", "whale5", "ratking1", "ratking2", "ratking3", "ratking4", "ratking5"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
@@ -4621,6 +4622,8 @@ export interface LevelSpec {
    * in ladder.ts stay true whatever was rolled.
    */
   mutation?: readonly MutationId[];
+  /** the run is played as this hero (heroes.ts); unset is the classic game */
+  hero?: HeroId;
 }
 
 /**

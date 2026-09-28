@@ -3435,6 +3435,19 @@ export class Renderer {
    * (see the spriteless case in the projectile pass), so no turret goes
    * silent for want of a particle.
    */
+  /** the hero's picture for this frame; `on` false draws none */
+  private readonly hero = { on: false, x: 0, y: 0, rot: 0, kind: "tacker" as TowerKind, accent: [1, 1, 1] as RGB, alpha: 1 };
+  setHero(on: boolean, x: number, y: number, rot: number, kind: TowerKind, accent: RGB, alpha: number): void {
+    const h = this.hero;
+    h.on = on;
+    h.x = x;
+    h.y = y;
+    h.rot = rot;
+    h.kind = kind;
+    h.accent = accent;
+    h.alpha = alpha;
+  }
+
   setEffects(on: boolean): void {
     this.fxOn = on;
   }
@@ -3595,6 +3608,20 @@ export class Renderer {
             tint[0] * dk, tint[1] * dk, tint[2] * dk, 1);
         }
         this.push(dyn, cv.x, cv.y, CONVOY_QUAD, CONVOY_QUAD, cv.rot, UV_CONVOY, tint[0], tint[1], tint[2], 1);
+      }
+    }
+    // THE HERO (heroes.ts): its line's first turret head on a plate,
+    // turning with the aim, over a rim in the hero's own accent — the one
+    // player-coloured ring on the board, so the eye finds it in a crowd.
+    // Its numbers come straight off the header (Game.frame, setHero)
+    {
+      const hr = this.hero;
+      if (hr.on) {
+        const q = CELL * 1.7;
+        const a = hr.alpha;
+        this.push(dyn, hr.x, hr.y, q * 1.55, q * 1.55, 0, UV_RING, hr.accent[0], hr.accent[1], hr.accent[2], -0.9 * a);
+        this.push(dyn, hr.x, hr.y, q, q, 0, UV_TOWER_BASE1, 1, 1, 1, a);
+        this.push(dyn, hr.x, hr.y, q, q, hr.rot, UV_TURRETS[hr.kind], 1, 1, 1, a);
       }
     }
     // a lock turret's beam sits over the turrets and under the body it is

@@ -279,6 +279,12 @@ export class WorkerHost implements SimHost {
   spawnMany(kind: UnitKind, n: number, opts?: SpawnManyOpts): void {
     this.cmd("spawnMany", kind, n, opts);
   }
+  heroInput(mx: number, my: number, ax: number, ay: number, firing: boolean): void {
+    this.cmd("heroInput", mx, my, ax, ay, firing);
+  }
+  heroCast(slot: number, x: number, y: number): void {
+    this.cmd("heroCast", slot, x, y);
+  }
   scatterTowers(kinds: readonly TowerKind[], n: number, fill?: boolean): void {
     this.cmd("scatterTowers", kinds, n, fill);
   }

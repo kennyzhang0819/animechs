@@ -142,7 +142,7 @@ import {
   type DisplayState,
 } from "@/game/storage";
 import { BUILD } from "@/game/version";
-import { BUILD_COLS, BUILD_SLOTS, slotForCode, type BuildSlot } from "@/game/tech";
+import { BUILD_COLS, BUILD_SLOTS, slotForCode, type BuildSlot, type TechState } from "@/game/tech";
 import { familiesAt, lockedMutators, rewardsAt, rewardText } from "@/game/track";
 import { TOWER_DESC, TOWERS } from "@/game/constants";
 import { TOWER_ICONS } from "@/game/towerIcons";
@@ -158,6 +158,8 @@ import { useEscapeBack } from "./Board";
 import { DealCorner, useDeal } from "./Deal";
 import TouchControls, { useCoarsePointer } from "./TouchControls";
 import { Inspector } from "./Inspector";
+import HeroBar from "./HeroBar";
+import { HERO_DEFS, HERO_IDS, type HeroId } from "@/game/heroes";
 import { BLANK_ICON, carveUnitIcon, unitIconOf } from "./unitIcons";
 import { ModChoice, RelicShelf } from "./Relics";
 import { useConfirm } from "./ConfirmDialog";
@@ -447,6 +449,95 @@ function MacroButton({
  * than the viewport. The panel carries its own ui-zoom, so the UI-size
  * knob still moves it.
  */
+const cssRgb = (c: readonly [number, number, number]): string =>
+  `rgb(${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)})`;
+
+/** a hero run's roster is the hero's four turrets, whatever the track has dealt */
+function heroTech(tech: TechState, hero: HeroId | undefined): TechState {
+  if (!hero) return tech;
+  return { ...tech, unlocked: new Set(HERO_DEFS[hero].towers) };
+}
+
+function HeroPicker({
+  pick,
+  onPick,
+  onClose,
+}: {
+  pick: HeroId | null;
+  onPick: (id: HeroId | null) => void;
+  onClose: () => void;
+}) {
+  const [focus, setFocus] = useState<HeroId | null>(pick);
+  const def = focus ? HERO_DEFS[focus] : null;
+  const rows: (HeroId | null)[] = [null, ...HERO_IDS];
+  return (
+    <PickerDialog
+      title="Hero"
+      onClose={onClose}
+      list={rows.map((id) => {
+        const d = id ? HERO_DEFS[id] : null;
+        return (
+          <button
+            key={id ?? "none"}
+            role="option"
+            aria-selected={focus === id}
+            onClick={() => setFocus(id)}
+            onDoubleClick={() => onPick(id)}
+            className={`ms-btn w-full justify-between px-3 py-2 text-left text-[14px] ${
+              focus === id ? "ms-btn-accent" : ""
+            }`}
+          >
+            <span style={d ? { color: cssRgb(d.accent) } : undefined}>{d ? d.name : "None"}</span>
+            {d && <span className="text-[11px] uppercase tracking-widest text-[#71717C]">{d.line}</span>}
+            {pick === id && <span className="text-[11px] text-[#71717C]">picked</span>}
+          </button>
+        );
+      })}
+      detail={
+        def ? (
+          <>
+            <h3 className="font-display text-[19px] font-bold uppercase tracking-widest" style={{ color: cssRgb(def.accent) }}>
+              {def.name}
+            </h3>
+            <p className="text-[14px] text-[#A6A6AF]">{def.blurb}</p>
+            <DetailLine label="Hull">{def.hp}</DetailLine>
+            <DetailLine label="Speed">{(def.speed / 20).toFixed(1)} tiles/s</DetailLine>
+            <DetailLine label="Turrets">{def.towers.map((k) => TOWERS[k].name).join(", ")}</DetailLine>
+            <div className="flex flex-col gap-1.5 text-[13px]">
+              {(
+                [
+                  ["LMB", def.primary],
+                  ["RMB", def.secondary],
+                  ["Space", def.dash],
+                  ["R", def.ult],
+                ] as const
+              ).map(([key, sk]) => (
+                <div key={key} className="flex gap-2">
+                  <span className="w-[3.2rem] shrink-0 uppercase tracking-widest text-[#71717C]">{key}</span>
+                  <span className="text-[#EDEDEF]">
+                    <span className="font-bold">{sk.name}</span> <span className="text-[#A6A6AF]">{sk.blurb}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[12px] text-[#71717C]">
+              WASD walks, the mouse aims, 1-4 drop a turret at the cursor, X sells under it, P pauses.
+              Down for ten seconds when the hull goes; back at the core.
+            </p>
+            <SelectButton onClick={() => onPick(focus)} />
+          </>
+        ) : (
+          <>
+            <h3 className="font-display text-[19px] font-bold uppercase tracking-widest">None</h3>
+            <p className="text-[14px] text-[#A6A6AF]">The classic game: the deal, the presses, the board.</p>
+            <SelectButton onClick={() => onPick(null)} />
+          </>
+        )
+      }
+    />
+  );
+}
+
 function PickerDialog({
   title,
   onClose,
@@ -1899,7 +1990,7 @@ export default function Animechs() {
    */
   const [menuView, setMenuView] = useState<"home" | "settings" | "deploy">("home");
   /** which macro's list is open over the deploy screen, if any */
-  const [picker, setPicker] = useState<"maps" | "difficulty" | "factions" | "mutators" | null>(
+  const [picker, setPicker] = useState<"maps" | "difficulty" | "factions" | "mutators" | "hero" | null>(
     null,
   );
   const [level, setLevel] = useState<LevelSpec | null>(null);
@@ -1922,6 +2013,27 @@ export default function Animechs() {
    * about nothing.
    */
   const [mode, setMode] = useState<GameMode>(GAME_MODE_DEFAULT);
+  // THE HERO PICK (heroes.ts) — an experiment beside the two modes rather
+  // than a third: any run may be played as a hero. Remembered on its own
+  // key, never in the save
+  const [heroPick, setHeroPick] = useState<HeroId | null>(null);
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("animechsHero");
+      if (v && (HERO_IDS as readonly string[]).includes(v)) setHeroPick(v as HeroId);
+    } catch {
+      /* no storage */
+    }
+  }, []);
+  const pickHero = (id: HeroId | null): void => {
+    setHeroPick(id);
+    try {
+      if (id) localStorage.setItem("animechsHero", id);
+      else localStorage.removeItem("animechsHero");
+    } catch {
+      /* no storage */
+    }
+  };
   /**
    * The map macro: a world id, or null for RANDOM. CUSTOM MODE'S ONLY —
    * a regular deploy rolls its map on Start and never reads this, which
@@ -2281,7 +2393,7 @@ export default function Animechs() {
   useEffect(() => {
     const g = gameRef.current;
     if (!g) return;
-    const tech = techOf(loadProgress());
+    const tech = heroTech(techOf(loadProgress()), level?.hero);
     g.setTech(admin ? null : tech);
     // the sandbox lifts the LOCKS, not the economy: the run stays charged
     // (same prices, same deal, same odds in the corner) and the purse just
@@ -2406,7 +2518,7 @@ export default function Animechs() {
           return;
         }
         const save = loadProgress();
-        g.setTech(admin ? null : techOf(save));
+        g.setTech(admin ? null : heroTech(techOf(save), level?.hero));
         // a sandbox run comes up lit, the same as one toggled into it
             // the device's own preference, read from the save rather than
         // from state: this runs once at create, and a run started right
@@ -2727,7 +2839,10 @@ export default function Animechs() {
     // stands, locks and all; Random there is the same fresh board
     const picked = custom ? pickedWorld : null;
     const random = picked == null;
-    const w: LevelSpec = picked ?? { ...SWARM_WORLD, mapSeed: rollMapSeed() };
+    const w: LevelSpec = {
+      ...(picked ?? { ...SWARM_WORLD, mapSeed: rollMapSeed() }),
+      hero: heroPick ?? undefined,
+    };
     const rules = tierMutationCount(tier);
     const named = custom ? cleanMutations(mutators) : [];
     const roll =
@@ -3320,6 +3435,19 @@ export default function Animechs() {
                         <span className="text-[14px] text-[#71717C]">No XP</span>
                       )}
                     </MacroButton>
+                    <MacroButton
+                      label="Hero"
+                      value={heroPick ? HERO_DEFS[heroPick].name : "None"}
+                      onClick={() => setPicker("hero")}
+                    >
+                      {heroPick ? (
+                        <span style={{ color: cssRgb(HERO_DEFS[heroPick].accent) }}>
+                          {HERO_DEFS[heroPick].name}
+                        </span>
+                      ) : (
+                        <span className="text-[#71717C]">None</span>
+                      )}
+                    </MacroButton>
                     {mode === "custom" && (
                       <MacroButton
                         label="Factions"
@@ -3401,6 +3529,16 @@ export default function Animechs() {
               onPick={(id) => {
                 setMapPick(id);
                 savePick({ map: id });
+                setPicker(null);
+              }}
+            />
+          )}
+          {picker === "hero" && (
+            <HeroPicker
+              pick={heroPick}
+              onClose={() => setPicker(null)}
+              onPick={(id) => {
+                pickHero(id);
                 setPicker(null);
               }}
             />
@@ -3874,7 +4012,12 @@ export default function Animechs() {
             It stands only while the run does — the end screens own the
             frame — and it goes with the pause menu, which is the one time
             a panel over the field is in the way of reading the field. */}
-        {hud?.inspect && !hud.lost && !hud.won && !hud.menuOpen && (
+        {hud?.hero && !hud.lost && !hud.won && !hud.menuOpen && (
+          <div className="ui-zoom pointer-events-none absolute bottom-[1rem] left-1/2 z-10 -translate-x-1/2">
+            <HeroBar hero={hud.hero} scrap={hud.scrap} icons={icons} />
+          </div>
+        )}
+        {hud?.inspect && !hud.hero && !hud.lost && !hud.won && !hud.menuOpen && (
           <div className="ui-zoom pointer-events-none absolute bottom-[1rem] left-1/2 z-10 -translate-x-1/2">
             <Inspector inspect={hud.inspect} icons={icons} />
           </div>
@@ -3919,7 +4062,7 @@ export default function Animechs() {
                 }}
               />
             )}
-            {hud.dealing ? (
+            {hud.hero ? null : hud.dealing ? (
               <DealCorner hud={hud} icons={icons} deal={deal} />
             ) : (
               <div className="ms-pane p-1">

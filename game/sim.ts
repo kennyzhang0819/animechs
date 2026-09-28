@@ -329,6 +329,8 @@ import {
   type StarSpec,
   type UnitWeapon,
 } from "./weapons";
+import { HeroRig, type HeroPorts } from "./herosim";
+import { HERO_DEFS } from "./heroes";
 import { Projs, TOWER_KIND_ID, PROJ_FRAG, PROJ_ALT, PROJ_ENEMY, PROJ_BARE } from "./projs";
 import {
   FxKind,
@@ -1956,6 +1958,9 @@ export class Sim {
    * a body that reaches the core stays there and chews on it.
    */
   core!: Core;
+  /** the player's hero, on a run deployed with one (LevelSpec.hero); stood
+   *  up in reset, once the ground its phantom guns read is there */
+  hero: HeroRig | null = null;
   /**
    * THE MISSION'S CLOCK, in seconds of run time: a survive mission is won
    * the moment `time` reaches it. 0 on every mission that is not kept to a
@@ -2629,6 +2634,48 @@ export class Sim {
     this.reset();
   }
 
+  heroInput(mx: number, my: number, ax: number, ay: number, firing: boolean): void {
+    this.hero?.input(mx, my, ax, ay, firing);
+  }
+  heroCast(slot: number, x: number, y: number): void {
+    this.hero?.cast(slot, x, y);
+  }
+
+  /** the sim's private paths, lent to the hero rig (herosim.ts HeroPorts) */
+  private heroPorts(): HeroPorts {
+    return {
+      upx: this.upx, upy: this.upy, uhp: this.uhp, urad: this.urad, ukind: this.ukind,
+      uid: this.uid, bStart: this.bStart, bUnits: this.bUnits,
+      n: () => this.n,
+      core: () => this.core,
+      flying: (k) => KIND_FLYING[k],
+      tier: (k) => KIND_TIER[k],
+      hitR: (i, dx, dy, d2) => this.hitR(i, dx, dy, d2),
+      rmax: () => this.rmaxAliveFor(true, true),
+      phantom: (kind) => this.newTower(0, 0, kind, TOWERS[kind].size, 0),
+      fire: (t, st, idx) => this.fireShot(t, st, idx),
+      splash: (x, y, radius, dmg, burn, poison) =>
+        this.splash(x, y, radius, dmg, true, true, burn, undefined, DMG_NEITHER, poison),
+      line: (x, y, dirx, diry, len, hits, dists) =>
+        this.collideLine(x, y, dirx, diry, len, true, true, hits, dists),
+      damage: (i, raw, pierceArmor, armorMult) => this.damageUnit(i, raw, pierceArmor, armorMult, DMG_NEITHER),
+      burn: (i, stacks) => {
+        if (!KIND_BURN_IMMUNE[this.ukind[i]]) this.applyBurn(i, stacks);
+      },
+      reap: (hits) => {
+        const dead: number[] = [];
+        for (const i of hits) if (this.uhp[i] <= 0) dead.push(i);
+        dead.sort((p, q) => q - p);
+        for (const i of dead) if (i < this.n && this.uhp[i] <= 0) this.killUnit(i);
+      },
+      fx: (x, y, ttl, kind, rot, len, sides) => this.pushFx(x, y, ttl, kind, rot, len, 0, sides, true),
+      fxCol: (x, y, ttl, kind, rot, len, col) => this.pushFxCol(x, y, ttl, kind, rot, len, col, 0, true),
+      bulletFx: (kind, x, y, rot, col) => {
+        this.bulletFx(kind, x, y, rot, col);
+      },
+    };
+  }
+
   /**
    * THE ROUTE SOLVER'S THREAD (fieldport.ts), or null where there is no
    * such thing — node, where the headless tools run and every solve is
@@ -2906,6 +2953,8 @@ export class Sim {
         this.cellTower[y * COLS + x] = this.core;
         this.occupied[y * COLS + x] = 1;
       }
+    if (this.level.hero && !this.hero) this.hero = new HeroRig(HERO_DEFS[this.level.hero], this.heroPorts());
+    this.hero?.reset();
     this.buildPads();
     // a new map is a new set of mouths, and a new pad list for the hulls
     // to be cut from (waterPads)
@@ -4878,6 +4927,7 @@ export class Sim {
     this.mark("domes");
     this.fireTowers(dt);
     this.mark("towers");
+    this.hero?.update(dt);
     this.updateProjectiles(dt);
     this.mark("projectiles");
     this.updateUnitWeapons(dt);

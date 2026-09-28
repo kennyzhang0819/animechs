@@ -109,6 +109,12 @@ export interface SimHost {
   takeMod(id: ModId): void;
   takeRelic(id: RelicId): void;
 
+  // ---- the hero (herosim.ts) ----
+  /** the stick and the cursor, every frame: move vector, aim point, trigger held */
+  heroInput(mx: number, my: number, ax: number, ay: number, firing: boolean): void;
+  /** one press of a skill: 1 secondary, 2 dash, 3 ultimate, at the cursor */
+  heroCast(slot: number, x: number, y: number): void;
+
   // ---- settings the world keeps ----
   setTech(tech: TechState | null): void;
   setRich(on: boolean): void;
@@ -227,6 +233,12 @@ export class LocalHost implements SimHost {
   }
   takeRelic(id: RelicId): void {
     this.sim.takeRelic(id);
+  }
+  heroInput(mx: number, my: number, ax: number, ay: number, firing: boolean): void {
+    this.sim.heroInput(mx, my, ax, ay, firing);
+  }
+  heroCast(slot: number, x: number, y: number): void {
+    this.sim.heroCast(slot, x, y);
   }
   setTech(tech: TechState | null): void {
     this.sim.setTech(tech);

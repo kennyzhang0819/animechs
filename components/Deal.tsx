@@ -98,7 +98,8 @@ export function useDeal(
   hud: UiState | null,
   refresh: () => void,
 ): DealActions {
-  const dealing = hud?.dealing ?? false;
+  // a hero run has the deal's keys for itself (game.ts onHeroKey)
+  const dealing = (hud?.dealing ?? false) && !hud?.hero;
   const over = !hud || hud.lost || hud.won;
 
   const buy = useCallback(

@@ -63,6 +63,8 @@ const COMMANDS = new Set<string>([
   "setRich",
   "setEffects",
   "profile",
+  "heroInput",
+  "heroCast",
   // the bench's three (Sim.setBench) — the perf suite's, never the game's
   "setBench",
   "spawnMany",

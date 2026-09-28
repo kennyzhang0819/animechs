@@ -15,12 +15,14 @@ import { repaintThumbCells,
 import { generateRandomMap, rollMapSeed } from "./mapgen";
 import { garrisonsFor, postsFor, roadAt, roadsFor, siegeFor } from "./missions";
 import { SHIELD_TOWER_SIZE } from "./mutation";
+import { HERO_BUILD_REACH, HERO_DEFS, type HeroDef, type HeroId } from "./heroes";
 import { towerBaseIcon, towerGhostIcon } from "./towerIcons";
 import {
   CELL,
   clamp,
   COLS,
   H,
+  PAL,
   ROWS,
   structStats,
   targetingLine,
@@ -161,6 +163,25 @@ export interface ModOffer {
   from?: string;
 }
 
+export interface HeroUi {
+  id: HeroId;
+  hp: number;
+  hpMax: number;
+  respawn: number;
+  /** seconds left on primary, secondary, dash, ult */
+  cd: [number, number, number, number];
+  dashT: number;
+  ultT: number;
+  sprintT: number;
+  deaths: number;
+  /** what one of each of the hero's four turrets costs now */
+  prices: [number, number, number, number];
+  /** the run clock's gate on each (Game.tierGate) */
+  gates: { left: number; of: number }[];
+  /** the last refused placement, in words, and how long ago */
+  note: string | null;
+}
+
 export interface UiState {
   levelId: string;
   /** which tier of the ladder is being played (see ladder.ts) */
@@ -198,6 +219,8 @@ export interface UiState {
    *  click clears buildKind and leaves this standing, so the corner keeps
    *  drawing it and a click picks it back up */
   held: { kind: TowerKind; form: FormationId; n: number } | null;
+  /** the hero run's whole HUD (heroes.ts), or null on the classic game */
+  hero: HeroUi | null;
   /** the demolish tool is picked: the next press sells instead of selecting */
   sellMode: boolean;
   paused: boolean;
@@ -1324,6 +1347,12 @@ export class Game {
   /** the touch stand-in for the right button, which a tablet has not got */
   private sellMode = false;
   private readonly keysDown = new Set<string>();
+  /** the hero run (heroes.ts): WASD walks, the mouse aims, the keys cast */
+  private readonly heroDef: HeroDef | null;
+  private heroFiring = false;
+  private lastClient = { x: -1, y: -1 };
+  private heroNote: string | null = null;
+  private heroNoteAt = 0;
   private paused = false;
   /**
    * The route overlay: the spawn layer's edge, and the lines flyers fly
@@ -1443,6 +1472,7 @@ export class Game {
       this.host.sellSelected();
       return;
     }
+    if (this.heroDef && this.onHeroKey(e)) return;
     if (e.code === "Space" && !e.repeat) {
       if (this.menuOpen) return; // the menu already holds the sim
       // space ALWAYS pauses — even with a UI button focused after a click,
@@ -1468,6 +1498,7 @@ export class Game {
   // missed keyups (cmd+tab away mid-pan) would leave the camera drifting
   private readonly onBlur = (): void => {
     this.keysDown.clear();
+    this.heroFiring = false;
   };
   // THE MINIMAP'S POINTER: a press puts the place under it in view, and
   // the press held is a drag of the view — captured, so a drag that runs
@@ -1536,6 +1567,16 @@ export class Game {
   };
   private readonly onMouseDown = (e: MouseEvent): void => {
     if (isTouch(e) && this.touchDown(e)) return;
+    if (this.heroDef) {
+      this.lastClient = { x: e.clientX, y: e.clientY };
+      if (e.button === 0) this.heroFiring = true;
+      else if (e.button === 2) {
+        e.preventDefault();
+        const p = this.mouseWorld(e);
+        this.host.heroCast(1, p.x, p.y);
+      }
+      return;
+    }
     if (e.button === 0 && !this.panning) {
       const p = this.mouseWorld(e);
       if (this.buildKind && this.dealing) {
@@ -1609,6 +1650,10 @@ export class Game {
   };
   private readonly onMouseUp = (e: MouseEvent): void => {
     if (isTouch(e) && this.touchUp(e)) return;
+    if (this.heroDef) {
+      if (e.button === 0) this.heroFiring = false;
+      return;
+    }
     const wasBuilding = this.building;
     this.selling = false;
     this.panning = false;
@@ -1640,6 +1685,7 @@ export class Game {
   };
   private readonly onMove = (e: MouseEvent): void => {
     if (isTouch(e) && this.touchMove(e)) return;
+    this.lastClient = { x: e.clientX, y: e.clientY };
     if (this.panning) {
       const r = this.uiCanvas.getBoundingClientRect();
       const dx = e.clientX - this.lastMouse.x;
@@ -2334,6 +2380,118 @@ export class Game {
    * it at all, because nothing there is being paced, and the admin sandbox
    * (rich) lifts it while it is on; off again, the clock rules as before.
    */
+  // ---------- the hero run (heroes.ts, herosim.ts) ----------
+
+  /** the stick and the cursor to the sim, and the camera onto the hero */
+  private driveHero(mx: number, my: number, dt: number): void {
+    const hero = this.world.hero;
+    if (!hero) return;
+    // the aim is where the cursor is over the WORLD right now, even while
+    // the mouse rests and the hero walks under it
+    const aim =
+      this.lastClient.x >= 0
+        ? this.mouseWorld({ clientX: this.lastClient.x, clientY: this.lastClient.y })
+        : { x: hero.x + 1, y: hero.y };
+    const run = !this.paused && !this.menuOpen;
+    this.host.heroInput(mx, my, aim.x, aim.y, run && this.heroFiring && hero.respawn <= 0);
+    // the camera eases onto the hero rather than snapping: a dash or a
+    // blink reads as a move across the screen, not a cut
+    const cx = this.tlx + this.visW() / 2, cy = this.tly + this.visH() / 2;
+    const k = 1 - Math.exp(-dt * 10);
+    this.tlx += (hero.x - cx) * k;
+    this.tly += (hero.y - cy) * k;
+    this.clampCamera();
+  }
+
+  /** the hero's keys, handled: true when the press was one of them */
+  private onHeroKey(e: KeyboardEvent): boolean {
+    if (!this.heroDef) return false;
+    if (e.target instanceof HTMLElement && e.target.closest("input, textarea, [contenteditable]")) return false;
+    // a held key repeats: the stick keys fall through to keysDown, the rest are swallowed
+    if (e.repeat) return PAN_KEYS[e.code] === undefined;
+    const over = this.menuOpen || this.world.lost || this.won();
+    const cursor = this.lastClient.x >= 0
+      ? this.mouseWorld({ clientX: this.lastClient.x, clientY: this.lastClient.y })
+      : null;
+    switch (e.code) {
+      case "Space":
+      case "ShiftLeft":
+      case "ShiftRight":
+        e.preventDefault();
+        if (!over && cursor) this.host.heroCast(2, cursor.x, cursor.y);
+        return true;
+      case "KeyR":
+      case "KeyQ":
+        e.preventDefault();
+        if (!over && cursor) this.host.heroCast(3, cursor.x, cursor.y);
+        return true;
+      case "KeyP":
+        e.preventDefault();
+        if (!this.menuOpen) this.paused = !this.paused;
+        return true;
+      case "Digit1":
+      case "Digit2":
+      case "Digit3":
+      case "Digit4":
+        e.preventDefault();
+        if (!over && cursor) this.placeHeroTower(Number(e.code.slice(5)) - 1, cursor);
+        return true;
+      case "KeyX":
+        e.preventDefault();
+        if (!over && cursor) this.host.sellTowerAt(cursor.x, cursor.y);
+        return true;
+    }
+    return false;
+  }
+
+  /** drop the hero's turret `slot` (0-3) with the cursor at its centre — one
+   *  turret at the tier's price, from within the hero's build reach */
+  private placeHeroTower(slot: number, p: { x: number; y: number }): void {
+    const def = this.heroDef;
+    const hero = this.world.hero;
+    if (!def || !hero) return;
+    const kind = def.towers[slot];
+    if (!kind) return;
+    const tier = TOWER_TIER[kind];
+    if (this.tierGate(tier).left > 0) return this.heroSay("not open yet");
+    if (hero.respawn > 0) return this.heroSay("down — respawning");
+    const size = TOWERS[kind].size;
+    const gx = clamp(Math.round(p.x / CELL - size / 2), 0, COLS - size);
+    const gy = clamp(Math.round(p.y / CELL - size / 2), 0, ROWS - size);
+    const cx = (gx + size / 2) * CELL, cy = (gy + size / 2) * CELL;
+    if (Math.hypot(cx - hero.x, cy - hero.y) > HERO_BUILD_REACH) return this.heroSay("out of reach");
+    if (!this.view.canPlace(gx, gy, kind)) return this.heroSay("no room");
+    const price = scrapPriceOf(kind);
+    if (!this.world.spend(price)) return this.heroSay("not enough scrap");
+    this.host.spend(price);
+    this.host.placeTower(gx, gy, kind);
+  }
+
+  private heroSay(note: string): void {
+    this.heroNote = note;
+    this.heroNoteAt = performance.now();
+  }
+
+  private heroUi(): HeroUi | null {
+    const def = this.heroDef;
+    const h = this.world.hero;
+    if (!def || !h) return null;
+    return {
+      id: def.id,
+      hp: h.hp,
+      hpMax: h.hpMax,
+      respawn: h.respawn,
+      cd: h.cd,
+      dashT: h.dashT,
+      ultT: h.ultT,
+      sprintT: h.sprintT,
+      deaths: h.deaths,
+      prices: def.towers.map((k) => scrapPriceOf(k)) as [number, number, number, number],
+      gates: def.towers.map((k) => this.tierGate(TOWER_TIER[k])),
+      note: performance.now() - this.heroNoteAt < 1500 ? this.heroNote : null,
+    };
+  }
+
   private tierGate(tier: TowerTier): { left: number; of: number } {
     const of = TIER_UNLOCK[tier];
     if (!this.dealing || this.world.rich || of <= 0) return { left: 0, of: 0 };
@@ -2458,6 +2616,7 @@ export class Game {
     this.host = host;
     this.sim = host.sim;
     this.world = host.world;
+    this.heroDef = host.world.level.hero ? HERO_DEFS[host.world.level.hero] : null;
     this.renderer = new Renderer(glCanvas, atlas);
     const ctx = uiCanvas.getContext("2d");
     if (!ctx) throw new Error("2d context unavailable");
@@ -2878,6 +3037,7 @@ export class Game {
       buildForm: this.buildForm,
       buildFacing: this.buildFacing,
       held: this.heldCard,
+      hero: this.heroUi(),
       sellMode: this.sellMode,
       paused: this.paused,
       fps: Math.round(this.fpsEma),
@@ -3215,7 +3375,9 @@ export class Game {
     const dt = Math.min(raw, 0.05);
     this.last = now;
 
-    // keyboard pan: PAN_RATE of a viewport per second, times the setting
+    // keyboard pan: PAN_RATE of a viewport per second, times the setting —
+    // or, on a hero run, the stick: the same keys walk the hero and the
+    // camera follows it (driveHero)
     const panStep = PAN_RATE * this.panSpeed * dt;
     let panX = 0, panY = 0;
     for (const code of this.keysDown) {
@@ -3223,7 +3385,8 @@ export class Game {
       panX += dir[0];
       panY += dir[1];
     }
-    if (panX !== 0 || panY !== 0) {
+    if (this.heroDef) this.driveHero(panX, panY, dt);
+    else if (panX !== 0 || panY !== 0) {
       this.tlx += Math.sign(panX) * this.visW() * panStep;
       this.tly += Math.sign(panY) * this.visH() * panStep;
       this.clampCamera();
@@ -3278,6 +3441,13 @@ export class Game {
       const k = this.scale * this.zoom;
       this.tlx = (this.worldW - this.glCanvas.width / k) / 2;
       this.tly = (this.worldH - this.glCanvas.height / k) / 2;
+    }
+    {
+      const def = this.heroDef, h = this.world.hero;
+      const up = !!def && !!h && h.respawn <= 0;
+      // the grace after a respawn blinks, as a spawn immunity does
+      const alpha = up && h.grace > 0 ? (Math.floor(h.grace * 8) % 2 === 0 ? 0.45 : 1) : 1;
+      this.renderer.setHero(up, h?.x ?? 0, h?.y ?? 0, h?.aim ?? 0, def?.towers[0] ?? "tacker", def?.accent ?? PAL.white, alpha);
     }
     this.renderer.render(
       this.view,
@@ -3782,6 +3952,23 @@ export class Game {
    * and a three-quarter-full one look alike at the zoom this game is
    * played at. A bar is read left to right at any size.
    */
+  /** the hero's pool over its head, and the reach a turret can be dropped in */
+  private drawHeroOverlay(c: CanvasRenderingContext2D, s: number): void {
+    const def = this.heroDef;
+    const h = this.world.hero;
+    if (!def || !h || h.respawn > 0) return;
+    const [r, g, b] = def.accent;
+    const col = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+    c.beginPath();
+    c.arc(h.x, h.y, HERO_BUILD_REACH, 0, Math.PI * 2);
+    c.strokeStyle = `rgba(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)},0.22)`;
+    c.lineWidth = Math.max(1.5 / s, 2);
+    c.setLineDash([12, 10]);
+    c.stroke();
+    c.setLineDash([]);
+    this.drawBars(h.x, h.y - def.radius - 6, 44, [{ v: h.hp / h.hpMax, col }]);
+  }
+
   private drawBars(
     cx: number,
     topY: number,
@@ -4633,6 +4820,7 @@ export class Game {
     this.drawStructureBars(view, c);
     // ...and what every BODY has left, on the Interface tab's terms
     this.drawUnitBars(c);
+    this.drawHeroOverlay(c, s);
     this.flushBars(c);
     // ...and the STATUS SYMBOLS both passes queued, every one of them in a
     // single pass in device pixels (flushStatusRows). Drawing them where

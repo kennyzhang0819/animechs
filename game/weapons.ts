@@ -643,6 +643,16 @@ export const RAIL_LASER = laserStyle({
   lifetime: t(22),
 });
 
+/** the hero's held furnace beam (herosim.ts), drawn as a laser in the furnace's washes */
+export const HERO_FURNACE_LASER = laserStyle({
+  colors: [[PAL.lightOrange, 0.45], [PAL.lightOrange, 1], [WHITE, 1]],
+  width: 18,
+  sideAngle: 0,
+  sideWidth: 0,
+  sideLength: 0,
+  lifetime: t(4),
+});
+
 export const TOWER_LASER_STYLE: Partial<Record<TowerKind, number>> = {
   tether: TETHER_LASER.id,
   railhead: RAIL_LASER.id,
