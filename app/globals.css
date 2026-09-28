@@ -57,7 +57,7 @@
   --ms-plate-dark: #101114;
   --ms-plate-strip: #2a2d34; /* the header strip */
   --ms-key-face: #c9ccd2; /* the light tile the keycap letter is printed on */
-  --ms-gray: #4a4d55; /* a quiet line: the segment strip's frame, the scrollbar */
+  --ms-gray: #4a4d55; /* a quiet line: the segment strip's frame */
   --ms-disabled: #1b1d22;
   --ms-red: #e55454; /* Pal.negativeStat */
   --ms-green: #7be58a;
@@ -153,7 +153,7 @@
     text-transform: uppercase;
     letter-spacing: 0.02em;
     line-height: 1.2;
-    cursor: pointer;
+    cursor: var(--cur-hand, pointer);
     user-select: none;
   }
   .ms-btn:hover:not(:disabled):not([aria-disabled="true"]) {
@@ -180,7 +180,30 @@
     box-shadow:
       inset 3px 3px 0 #2a2d34,
       inset -3px -3px 0 var(--ms-plate-dark);
-    cursor: not-allowed;
+    cursor: var(--cur-arrow, default);
+  }
+  /* THE SWATCH (components/ColorPicker): a colour on a bevel, the picked
+     one ringed gold */
+  .ms-swatch {
+    width: 1.5rem;
+    height: 1.5rem;
+    border: var(--ms-px) solid var(--ms-outline);
+    box-shadow:
+      inset 3px 3px 0 rgba(255, 255, 255, 0.25),
+      inset -3px -3px 0 rgba(0, 0, 0, 0.35);
+    cursor: var(--cur-hand, pointer);
+  }
+  .ms-swatch:hover,
+  .ms-swatch[aria-checked="true"] {
+    border-color: var(--ms-accent);
+  }
+  .ms-swatch[aria-checked="true"] {
+    outline: 3px solid var(--ms-accent);
+    outline-offset: 3px;
+  }
+  .ms-swatch:focus-visible {
+    outline: 3px solid var(--ms-ink);
+    outline-offset: 3px;
   }
   /* a toggle that is ON, or a tab that is showing: the face sunk and
      gold, the outline gold */
@@ -420,7 +443,7 @@
     appearance: none;
     height: 24px;
     background: transparent;
-    cursor: pointer;
+    cursor: var(--cur-hand, pointer);
   }
   .ms-slider::-webkit-slider-runnable-track {
     height: 12px;
@@ -488,7 +511,7 @@
     font-weight: 700;
     letter-spacing: 0;
     text-overflow: ellipsis;
-    cursor: pointer;
+    cursor: var(--cur-hand, pointer);
   }
   .ms-select:hover {
     border-color: var(--ms-accent);
@@ -731,33 +754,59 @@ svg {
   user-select: none;
 }
 
+/* No scrollbar anywhere: a panel still scrolls, it just does not show a
+   browser's bar doing it. */
 * {
-  scrollbar-width: thin;
-  scrollbar-color: #4a4d55 transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 *::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
-*::-webkit-scrollbar-track {
-  background: transparent;
+/* THE CURSORS are drawn (game/cursorArt.ts, installed by components/Cursors):
+   the arrow on everything, the hand on anything pressable, the cross while
+   a build is aimed. Text inherits the arrow, so no I-beam appears on a
+   label. These sit outside every layer so they beat the cursor-* utilities. */
+html,
+body,
+.cursor-default,
+.cursor-not-allowed {
+  cursor: var(--cur-arrow, default);
 }
 
-*::-webkit-scrollbar-thumb {
-  background: #4a4d55;
-  border: 3px solid transparent;
-  background-clip: padding-box;
+a,
+button,
+[role="button"],
+label,
+select,
+summary,
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"],
+.cursor-pointer {
+  cursor: var(--cur-hand, pointer);
 }
 
-*::-webkit-scrollbar-thumb:hover {
-  background: #ffd37f;
-  background-clip: padding-box;
+button:disabled,
+[aria-disabled="true"] {
+  cursor: var(--cur-arrow, default);
 }
 
-*::-webkit-scrollbar-corner {
-  background: transparent;
+.cursor-crosshair {
+  cursor: var(--cur-cross, crosshair);
+}
+
+/* the other tells of a page: a tap's grey flash, the press-and-hold sheet */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  -webkit-touch-callout: none;
 }
 
 /* ---- the ultimate node's halo ----------------------------------------

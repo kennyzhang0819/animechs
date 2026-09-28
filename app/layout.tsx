@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Jersey_20, Silkscreen } from "next/font/google";
 import AdminShortcut from "@/components/AdminShortcut";
 import CrashGuard from "@/components/CrashGuard";
+import Cursors from "@/components/Cursors";
 import OfflineReady from "@/components/OfflineReady";
 import { BUILD } from "@/game/version";
 import "./globals.css";
@@ -59,6 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             reaches a React boundary — this catches both and puts the fault
             screen over the whole app (components/CrashGuard.tsx) */}
         <CrashGuard />
+        <Cursors />
         <OfflineReady />
         {children}
         {/* the build stamp: the only proof of WHICH build this browser is

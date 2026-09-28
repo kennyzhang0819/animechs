@@ -1646,7 +1646,6 @@ export class Sim {
   private readonly usite = new Int16Array(MAX_UNITS);
   private propSite = new Int16Array(0);
   sitesOpened = 0;
-  siteLast = -1;
   private siteBombers = 0;
   private siteGoads = 0;
   private siteBastions = 0;
@@ -2546,6 +2545,7 @@ export class Sim {
    */
   private propAt: Int32Array = new Int32Array(NCELLS).fill(-1);
   private propHp: Float32Array = new Float32Array(0);
+  private propHpMax: Float32Array = new Float32Array(0);
   propsDead: number[] = [];
   terrainVersion = 0;
   /** firstPropAlong's answer, beside the distance it returns */
@@ -2738,7 +2738,6 @@ export class Sim {
     this.fabTotal = 0;
     this.sites = [];
     this.sitesOpened = 0;
-    this.siteLast = -1;
     this.siteBombers = 0;
     this.siteGoads = 0;
     this.siteBastions = 0;
@@ -2946,9 +2945,10 @@ export class Sim {
     {
       const props = this.terrain.props;
       this.propHp = new Float32Array(props.length);
+      this.propHpMax = new Float32Array(props.length);
       for (let k = 0; k < props.length; k++) {
         const p = props[k], n = PROP_KINDS[p.kind].tiles;
-        this.propHp[k] = propHpFor(p.kind);
+        this.propHp[k] = this.propHpMax[k] = propHpFor(p.kind);
         for (let y = p.y; y < p.y + n; y++)
           for (let x = p.x; x < p.x + n; x++) this.propAt[y * COLS + x] = k;
       }
@@ -5671,7 +5671,7 @@ export class Sim {
       const idx = this.sites.push(st) - 1;
       this.propSite[k] = idx + 1;
       const t = site.tier;
-      if (t.hp) this.propHp[k] = t.hp;
+      if (t.hp) this.propHp[k] = this.propHpMax[k] = t.hp;
       const plant = (kind: UnitKind, d: number): number => {
         ang += 2.4;
         const spot = this.clearNear(x + Math.cos(ang) * d, y + Math.sin(ang) * d, HB_OUTER[UNIT_ID[kind]]);
@@ -5778,7 +5778,6 @@ export class Sim {
     if (st.state !== 0) return;
     st.state = 1;
     this.sitesOpened++;
-    this.siteLast = s;
     this.pushFxCol(st.x, st.y, 40 / 60, FxKind.ShieldWave, 0, st.r, PAL.lighterOrange);
   }
 
@@ -6827,6 +6826,8 @@ export class Sim {
     team: Team = "player",
     /** a ground attacker: a building on a hill is not one it can hit */
     ground = false,
+    /** a charger's field: only what it can walk straight at, never a building on a hill */
+    walker: FlowField | null = null,
   ): Structure | null {
     // THE CART IS OFFERED HERE AND ONLY HERE (levels.ts CONVOY_HP), and it
     // has to be offered BEFORE the box. It is not in the building index
@@ -6885,7 +6886,7 @@ export class Sim {
         const d = Math.sqrt(dx * dx + dy * dy) - half;
         // the cheap tests first: the raycast is only spent on a candidate
         // that would actually be taken
-        if (d <= reach && d < bd && (!sighted || this.canSee(t, x, y))) {
+        if (d <= reach && d < bd && (!sighted || this.canSee(t, x, y)) && (!walker || this.canCharge(t, x, y, walker))) {
           bd = d;
           best = t;
         }
@@ -7363,7 +7364,7 @@ export class Sim {
         if (t && !isCore(t)) this.damageTower(t, dmg * back);
       }
     }
-    if (this.propHp[k] >= propHpFor(this.terrain.props[k].kind)) this.propHurt.push(k);
+    if (this.propHp[k] >= this.propHpMax[k]) this.propHurt.push(k);
     if (nature & DMG_ELECTRIC && this.propWet[k] > 0) dmg *= WET_SHOCK_MUL;
     this.propHp[k] -= dmg;
     const half = this.propHalf(k);
@@ -7467,7 +7468,7 @@ export class Sim {
   /** every hurt, standing prop with what is left of it: flat [index, fraction, ...] pairs (simreport.ts) */
   propsHurt(): number[] {
     const out: number[] = [];
-    for (const k of this.propHurt) out.push(k, Math.max(0, this.propHp[k]) / propHpFor(this.terrain.props[k].kind));
+    for (const k of this.propHurt) out.push(k, Math.max(0, this.propHp[k]) / this.propHpMax[k]);
     return out;
   }
 
@@ -7514,9 +7515,13 @@ export class Sim {
     return this.hills[t.gy * COLS + t.gx] === 1;
   }
 
-  private pickAim(x: number, y: number, reach: number, sighted: boolean, ground = false): Aim | null {
+  private canCharge(t: Structure, x: number, y: number, f: FlowField): boolean {
+    return !this.onHill(t) && this.canWalkTo(x, y, t.x, t.y, f);
+  }
+
+  private pickAim(x: number, y: number, reach: number, sighted: boolean, ground = false, walker: FlowField | null = null): Aim | null {
     this.picks++;
-    const s = this.nearestStructure(x, y, reach, sighted, "player", ground);
+    const s = this.nearestStructure(x, y, reach, sighted, "player", ground, walker);
     if (!s) return null;
     return { x: s.x, y: s.y, half: (this.sizeOf(s) * CELL) / 2, s };
   }
@@ -7628,7 +7633,8 @@ export class Sim {
             ? null
             : HAS_HUNTS_CONVOY && KIND_HUNTS_CONVOY[ukind[i]] && !onSite
               ? this.pickConvoyAim(x, y, reach)
-              : this.pickAim(x, y, reach, sighted && (seek || this.ugar[i] === 1), this.ufly[i] === 0);
+              : this.pickAim(x, y, reach, sighted && (seek || this.ugar[i] === 1), this.ufly[i] === 0,
+                  seek && this.ufly[i] === 0 ? (this.unav[i] !== 0 ? this.navalField : this.field) : null);
         // A POSTED BODY SEES ONLY ITS OWN GROUND (see ugar). The pick is
         // the ordinary one and then it is CLIPPED to the post's circle:
         // anything standing outside the leash is not a target, however
@@ -12521,7 +12527,7 @@ export class Sim {
   /** what the panel prints of the marked prop (simreport.ts inspectPanel) */
   propPanel(k: number): { kind: number; tone: number; label: string; hp: number; hpMax: number } {
     const p = this.terrain.props[k];
-    return { kind: p.kind, tone: p.tone, label: PROP_KINDS[p.kind].label, hp: Math.ceil(Math.max(0, this.propHp[k])), hpMax: propHpFor(p.kind) };
+    return { kind: p.kind, tone: p.tone, label: PROP_KINDS[p.kind].label, hp: Math.ceil(Math.max(0, this.propHp[k])), hpMax: this.propHpMax[k] };
   }
 
   /**

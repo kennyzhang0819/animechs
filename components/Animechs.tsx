@@ -1,5 +1,7 @@
 "use client";
 
+import ColorPicker from "@/components/ColorPicker";
+import { applyCursors, cursorSet } from "@/game/cursorArt";
 import {
   useCallback,
   useEffect,
@@ -88,6 +90,10 @@ import {
   saveEffects,
   saveShowFps,
   saveUiScale,
+  saveCursor,
+  CURSOR_DEFAULT,
+  CURSOR_SIZES,
+  type CursorStyle,
   savePanSpeed,
   saveInvertZoom,
   saveAllyBars,
@@ -1657,6 +1663,20 @@ function ChoiceRow<T extends string>({
   );
 }
 
+/** the three cursors as the settings have them, drawn at four times their size */
+function CursorPreview({ style }: { style: CursorStyle }) {
+  const set = cursorSet(style);
+  const src = (v: string): string => v.slice(v.indexOf('"') + 1, v.lastIndexOf('"'));
+  return (
+    <div className="flex shrink-0 items-end gap-4 bg-[#3a3f4a] px-3 py-2">
+      {[set.arrow, set.hand, set.cross].map((v, i) => (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img key={i} alt="" src={src(v)} className="h-auto w-auto [image-rendering:pixelated]" style={{ zoom: 2 }} />
+      ))}
+    </div>
+  );
+}
+
 /** a row that states something rather than setting it — the Info tab */
 function FactRow({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -2080,6 +2100,7 @@ export default function Animechs() {
    * first tab the way every other screen opens at its top.
    */
   const [uiScale, setUiScale] = useState(UI_SCALE_DEFAULT);
+  const [cursorStyle, setCursorStyle] = useState<CursorStyle>(CURSOR_DEFAULT);
   /**
    * WHO WEARS A HEALTH BAR on the field, one knob a side (Progress.allyBars,
    * Progress.enemyBars). Saved preferences like `uiScale`, and live: both
@@ -2210,6 +2231,7 @@ export default function Animechs() {
     setEffects(p.effects ?? true);
     setShowFps(p.showFps ?? false);
     setUiScale(p.uiScale ?? UI_SCALE_DEFAULT);
+    setCursorStyle(p.cursor ?? CURSOR_DEFAULT);
     setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
     setInvertZoom(p.invertZoom ?? INVERT_ZOOM_DEFAULT);
     setAllyBars(p.allyBars ?? HEALTH_BARS_DEFAULT);
@@ -2228,6 +2250,10 @@ export default function Animechs() {
   useEffect(() => {
     document.documentElement.style.setProperty("--ui-scale", String(uiScale));
   }, [uiScale]);
+
+  useEffect(() => {
+    applyCursors(cursorStyle);
+  }, [cursorStyle]);
 
   /**
    * THE SANDBOX DOOR, and it opens on any run, regular or custom.
@@ -2911,6 +2937,41 @@ export default function Animechs() {
                 saveUiScale(scale); // remembered across sessions
               }}
             />
+            <StepSlider
+              label="Cursor size"
+              steps={CURSOR_SIZES}
+              value={cursorStyle.size}
+              onPick={(size) => {
+                const next = { ...cursorStyle, size };
+                setCursorStyle(next);
+                saveCursor(next);
+              }}
+            />
+            <SettingRow label="Cursor fill">
+              <ColorPicker
+                label="Cursor fill"
+                value={cursorStyle.fill}
+                onPick={(fill) => {
+                  const next = { ...cursorStyle, fill };
+                  setCursorStyle(next);
+                  saveCursor(next);
+                }}
+              />
+            </SettingRow>
+            <SettingRow label="Cursor border">
+              <ColorPicker
+                label="Cursor border"
+                value={cursorStyle.edge}
+                onPick={(edge) => {
+                  const next = { ...cursorStyle, edge };
+                  setCursorStyle(next);
+                  saveCursor(next);
+                }}
+              />
+            </SettingRow>
+            <SettingRow label="Cursor">
+              <CursorPreview style={cursorStyle} />
+            </SettingRow>
             {/* WHEN A BODY WEARS ITS HEALTH, one knob a side — the player's
                 own bars run the HUD's green-amber-red ramp, the swarm's are
                 red throughout, and that is the whole of how a bar says
@@ -3849,6 +3910,15 @@ export default function Animechs() {
                 apart (see the minimap block). The prices it has to cover
                 are still a card away, which is a shorter trip than the
                 one across the board it used to ask of the clock. */}
+            {hud.modOffer && (
+              <ModChoice
+                offer={hud.modOffer}
+                onChoose={(id) => {
+                  gameRef.current?.chooseMod(id);
+                  refresh();
+                }}
+              />
+            )}
             {hud.dealing ? (
               <DealCorner hud={hud} icons={icons} deal={deal} />
             ) : (
@@ -4139,21 +4209,6 @@ export default function Animechs() {
         )}
         {/* THE PAUSE SHEET. Opening it holds the sim (Game.openMenu), so
             its heading says what the run is doing */}
-        {/* A CACHE OPENED (game.ts offerSites): the three on the table
-            over a held world, under the pause sheet if that is up too */}
-        {hud?.modOffer && !hud.lost && !hud.won && !hud.menuOpen && (
-          <div className="ms-screen absolute inset-0 flex items-center justify-center">
-            <div className="ui-zoom">
-              <ModChoice
-                offer={hud.modOffer}
-                onChoose={(id) => {
-                  gameRef.current?.chooseMod(id);
-                  refresh();
-                }}
-              />
-            </div>
-          </div>
-        )}
         {hud?.menuOpen && !hud.lost && !hud.won && !pauseSettings && (
           <div className="ms-screen absolute inset-0 flex items-center justify-center">
             <div className="ui-zoom ms-pane flex max-h-[calc(100vh-2rem)] w-[30rem] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 overflow-y-auto p-6">

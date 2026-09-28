@@ -23,8 +23,8 @@ Every site is the same skeleton:
   ultra), and a number of copies set by the size alone (`SITE_MOD_COPIES`:
   one for a small, three for a medium, ten for a large). `docs/economy.md`
   says why mods are dealt nowhere else. Break the cache and the three go
-  on the table (`components/Relics.tsx ModChoice`); the world holds until
-  one is taken (`Game.chooseMod` → `Sim.takeMod`), that many times over.
+  on the table (`components/Relics.tsx ModChoice`) above the deal, keys 5-7,
+  while the run goes on, until one is taken (`Game.chooseMod` → `Sim.takeMod`), that many times over.
   Every copy the run owns adds to what a turret born with the mod gets,
   and every turret placed from then on rolls it at its chance (`mods.ts
   rollTurretMods`). Nothing is applied to a standing turret.

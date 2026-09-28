@@ -1,3 +1,4 @@
+import { isPaletteHex, type PaletteHex } from "./palette";
 import { BANK_WORLDS, cleanFamilies, VISIBLE_WORLDS, WORLD, WORLDS, type FamilyKey } from "./levels";
 import { cleanMutations, type MutationId } from "./mutation";
 import {
@@ -189,6 +190,8 @@ export interface Progress {
   showFps?: boolean;
   /** the in-game HUD's size, as the --ui-scale multiplier — one of UI_SCALES */
   uiScale?: number;
+  /** the drawn mouse cursor (game/cursorArt.ts): its pixel size and two palette colours */
+  cursor?: CursorStyle;
   /**
    * HOW FAST THE CAMERA PANS — one of PAN_SPEEDS, a multiplier on the
    * rate the keys and the screen's edges move the view at (Game.setPanSpeed).
@@ -332,6 +335,28 @@ function readPanSpeed(p: { panSpeed?: unknown }): number | undefined {
   return typeof s === "number" && (PAN_SPEEDS as readonly number[]).includes(s) ? s : undefined;
 }
 
+export interface CursorStyle {
+  /** one of CURSOR_SIZES: a multiplier on the 2px pixel the cursors are drawn at */
+  size: number;
+  fill: PaletteHex;
+  edge: PaletteHex;
+}
+export const CURSOR_SIZES = [0.5, 1, 1.5, 2] as const;
+export const CURSOR_DEFAULT: CursorStyle = { size: 1, fill: "#e8e4d8", edge: "#0d0d10" };
+
+function readCursor(p: { cursor?: unknown }): CursorStyle | undefined {
+  const c = p.cursor as Partial<CursorStyle> | undefined;
+  if (!c || typeof c !== "object") return undefined;
+  return {
+    size:
+      typeof c.size === "number" && (CURSOR_SIZES as readonly number[]).includes(c.size)
+        ? c.size
+        : CURSOR_DEFAULT.size,
+    fill: isPaletteHex(c.fill) ? c.fill : CURSOR_DEFAULT.fill,
+    edge: isPaletteHex(c.edge) ? c.edge : CURSOR_DEFAULT.edge,
+  };
+}
+
 function readUiScale(p: { uiScale?: unknown }): number | undefined {
   const s = p.uiScale;
   return typeof s === "number" && (UI_SCALES as readonly number[]).includes(s) ? s : undefined;
@@ -374,6 +399,7 @@ export function loadProgress(): Progress {
       // absent means OFF — only an explicit true switches it on
       showFps: p.showFps === true,
       uiScale: readUiScale(p),
+      cursor: readCursor(p),
       panSpeed: readPanSpeed(p),
       // absent means ON — only an explicit false switches it off
       allyBars: readBars(p.allyBars),
@@ -488,6 +514,10 @@ export function saveUiScale(scale: number): void {
   const p = loadProgress();
   if ((p.uiScale ?? UI_SCALE_DEFAULT) === scale) return;
   saveProgress({ ...p, uiScale: scale });
+}
+
+export function saveCursor(cursor: CursorStyle): void {
+  saveProgress({ ...loadProgress(), cursor });
 }
 
 /**

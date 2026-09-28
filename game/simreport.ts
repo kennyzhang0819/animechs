@@ -117,11 +117,9 @@ export const HDR = {
    *  order (Sim.garrisonHeldMask) — the leash does not cross the seam, so
    *  the overlay cannot work it out from kinds */
   GARRISON_HELD: 34,
-  /** the side sites (sites.ts): caches opened so far, the last one opened
-   *  (its index in mark order), and every site's state packed two bits
-   *  each (0 standing, 1 opened, 2 lost) (Sim.sites) */
+  /** the side sites (sites.ts): caches opened so far, and every site's
+   *  state packed two bits each (0 standing, 1 opened, 2 lost) (Sim.sites) */
   SITES_OPENED: 36,
-  SITE_LAST: 37,
   SITE_STATES: 38,
 } as const;
 export const HEADER_LEN = 39;
@@ -149,7 +147,6 @@ export function writeHeader(sim: Sim): void {
   h[HDR.SPECS] = sim.specsVersion;
   h[HDR.TERRAIN] = sim.terrainVersion;
   h[HDR.SITES_OPENED] = sim.sitesOpened;
-  h[HDR.SITE_LAST] = sim.siteLast;
   h[HDR.SITE_STATES] = sim.siteStates();
   h[HDR.CROSS_KILLED] = sim.crossKilled;
   h[HDR.CROSS_LEAKED] = sim.crossLeaked;

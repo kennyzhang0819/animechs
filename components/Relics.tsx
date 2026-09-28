@@ -271,9 +271,8 @@ const drawnRelic = (id: RelicId): Drawn => {
  * before and a mystery to everyone else, and the one thing a player must
  * not have to work out mid-wave is what the game is waiting for.
  *
- * ONE, TWO, THREE ARE KEYS. The whole corner is a keyboard — T, M, G, X,
- * R — so the panel that interrupts it is one too, and the number printed
- * on each card is the key that takes it (Deal.tsx).
+ * FIVE, SIX, SEVEN ARE KEYS, printed on the cards: the deal beside it keeps
+ * 1-4, T, X and R (Deal.tsx), and the run does not stop while it stands.
  *
  * EACH CARD IS THE REVEAL'S OWN CARD (SingleReveal, right below): the
  * band's colour, the band's name and the mod's blurb. What a player needs
@@ -293,9 +292,9 @@ export function ModChoice({
     if (ids.length === 0) return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
-      const m = /^Digit([1-3])$/.exec(e.code);
+      const m = /^Digit([5-7])$/.exec(e.code);
       if (!m) return;
-      const id = ids[Number(m[1]) - 1];
+      const id = ids[Number(m[1]) - 5];
       if (!id) return;
       e.preventDefault();
       onChoose(id);
@@ -307,36 +306,29 @@ export function ModChoice({
   const copies = Math.max(1, offer.copies);
   return (
     <div
-      className="ms-pane pointer-events-auto flex w-[17rem] flex-col gap-1.5 p-2"
+      className="ms-pane pointer-events-auto flex flex-col gap-1.5 p-2"
       role="group"
-      aria-label={`Choose 1 mod of ${offer.ids.length}`}
+      aria-label={`Cache opened: choose 1 reward of ${ids.length}`}
     >
-      <div className="flex items-baseline justify-between gap-2">
+      <div className="flex items-baseline justify-between gap-3">
         <span className="font-display text-[13px] font-bold uppercase leading-none tracking-wide text-[#FFD37F]">
-          {offer.from ? `${offer.from} opened` : "Choose 1 mod"}
+          Cache opened
         </span>
-        {/* THE AMOUNT, WHERE IT MATTERS: a x4 press paid four fees and the
-            one card taken is taken four times (game.ts ModOffer). That is
-            a fact about the choice, so it is read before it and not after */}
-        {copies > 1 && (
-          <span className="font-display text-[10px] font-bold uppercase leading-none tabular-nums text-[#7BDFF2]">
-            {"×"}
-            {copies} copies
-          </span>
-        )}
+        <span className="font-display text-[9px] font-bold uppercase leading-none tracking-widest text-[#8A8E98]">
+          Choose 1 reward{copies > 1 ? ` · ×${copies}` : ""}
+        </span>
       </div>
-      <span className="text-[9px] font-bold uppercase leading-none tracking-widest text-[#8A8E98]">
-        {copies > 1 ? `The one you pick, ${copies} times over` : "The other two are gone"}
-      </span>
-      {offer.ids.map((id, i) => (
-        <ChoiceCard key={id} id={id} slot={i + 1} copies={copies} onChoose={onChoose} />
-      ))}
+      <div className="flex flex-row gap-1.5">
+        {ids.map((id, i) => (
+          <ChoiceCard key={id} id={id} slot={i + 5} copies={copies} onChoose={onChoose} />
+        ))}
+      </div>
     </div>
   );
 }
 
-/** one of the three, as a button: its band's colour, its glyph, what it
- *  does, and the number key that takes it */
+/** one of the three, the turret card's shape (Deal.tsx TurretCard): the
+ *  glyph on its band's ground, the name under it, the key in the corner */
 function ChoiceCard({
   id,
   slot,
@@ -344,58 +336,43 @@ function ChoiceCard({
   onChoose,
 }: {
   id: ModId;
-  /** its place on the table, which is also its key: 1, 2 or 3 */
+  /** its key: 5, 6 or 7 */
   slot: number;
   copies: number;
   onChoose: (id: ModId) => void;
 }) {
+  const tip = useHoverCard("up");
   const d = drawnMod(id);
   const r = RARITY[d.rarity];
-  // WHAT THE PRESS ADDS, and only where the amount makes that differ from
-  // the blurb — every mod is linear in copies (mods.ts), so the total at
-  // `copies` IS what these copies are worth, and at x1 it would be the
-  // blurb's own number said twice
   const stack = copies > 1 ? stackLine(modDef(id), copies) : null;
   return (
     <button
+      ref={tip.ref as RefObject<HTMLButtonElement | null>}
+      {...tip.anchorProps}
       onClick={() => onChoose(id)}
       aria-keyshortcuts={String(slot)}
       aria-label={`Take ${d.name}, ${r.name}. ${d.blurb} Shortcut ${slot}.`}
-      className="ms-deal-card ms-tile flex w-full cursor-pointer flex-col gap-1 p-2 text-left"
+      className="ms-deal-card ms-tile pointer-events-auto relative flex h-[5rem] w-[4.5rem] cursor-pointer flex-col items-center justify-center gap-0.5 p-0"
       style={tile(r.color)}
     >
-      <div className="flex items-center gap-1.5">
-        {/* the number key, printed the way the deal's letters are
-            (globals.css .ms-key) but sitting IN the row rather than over
-            the corner, because the glyph already owns the corner */}
-        <span className="shrink-0 bg-[var(--ms-key-face)] px-[3px] font-display text-[9px] font-bold leading-[12px] text-[var(--ms-outline)]">
-          {slot}
-        </span>
-        <span
-          className="ms-tile ms-tile-sm flex h-[22px] w-[22px] shrink-0 items-center justify-center"
-          style={tile(r.color)}
-        >
-          <Glyph glyph={d.glyph} />
-        </span>
-        <span
-          className="min-w-0 flex-1 truncate text-[11px] font-bold uppercase leading-none tracking-wide"
-          style={{ color: r.color }}
-        >
-          {d.name}
-        </span>
-      </div>
-      <span
-        className="text-[9px] font-bold uppercase leading-none tracking-wide opacity-70"
-        style={{ color: r.color }}
-      >
+      <span className="pointer-events-none absolute left-[3px] top-[3px] bg-[var(--ms-key-face)] px-[3px] font-display text-[9px] font-bold leading-[12px] text-[var(--ms-outline)]">
+        {slot}
+      </span>
+      <Glyph glyph={d.glyph} className="mt-1.5 h-8 w-8" />
+      <span className="max-w-full px-0.5 text-center font-display text-[8px] font-bold uppercase leading-[1.15]">
+        {d.name}
+      </span>
+      <span className="max-w-full truncate px-0.5 font-display text-[7px] font-bold uppercase leading-none opacity-70">
         {r.name}
       </span>
-      <span className="text-[10px] leading-snug text-[#EDEDEF]">{d.blurb}</span>
-      {stack && (
-        <span className="text-[10px] font-bold leading-snug" style={{ color: r.color }}>
-          {stack} at {copies} copies
-        </span>
-      )}
+      <HoverCard tip={tip} title={d.name} tag={copies > 1 ? `${r.name} · ×${copies}` : r.name} color={r.color} align="right">
+        {d.blurb}
+        {stack && (
+          <span className="mt-1.5 block font-bold" style={{ color: r.color }}>
+            {stack} at {copies} copies
+          </span>
+        )}
+      </HoverCard>
     </button>
   );
 }

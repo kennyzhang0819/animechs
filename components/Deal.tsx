@@ -171,7 +171,7 @@ export function useDeal(
       if (!act) return;
       const g = gameRef.current;
       const ui = g?.ui();
-      if (!g || !ui || ui.menuOpen || ui.modOffer) return;
+      if (!g || !ui || ui.menuOpen) return;
       e.preventDefault();
       act();
     };

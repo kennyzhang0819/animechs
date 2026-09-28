@@ -69,7 +69,7 @@ import {
   rollMod,
   type ModId,
 } from "./mods";
-import { SITE_DEFS, SITE_MOD_COPIES, SITE_MOD_ODDS, sitesOf } from "./sites";
+import { SITE_DEFS, SITE_MOD_COPIES, SITE_MOD_ODDS, sitesOf, type Site } from "./sites";
 import {
   anyRelicLeft,
   anyRelicOpen,
@@ -1324,8 +1324,9 @@ export class Game {
    * re-mount would throw away.
    */
   private modOffer: ModOffer | null = null;
-  /** caches opened that have already put their three on the table */
+  /** caches opened that have already put their three on the table: how many, and which (a bit a site) */
   private sitesSeen = 0;
+  private sitesOffered = 0;
   /**
    * HOW MANY STRUCTURES THIS RUN HAS PLACED, only ever going up. The card
    * layer (Animechs) owns the deal, and it has no other way to learn that
@@ -2098,15 +2099,20 @@ export class Game {
   /**
    * A CACHE OPENED (Sim.openSite): three mods rolled at the sites' odds go
    * on the table, the size saying how many copies of the pick (sites.ts),
-   * and the world holds until one is taken (chooseMod). The opens
-   * are counted on the header, so one missed while the offer was up is
-   * put up the moment the table clears.
+   * and they stand beside the deal until one is taken (chooseMod). One
+   * table at a time: caches opened while it stands, or several in one
+   * step, each get their turn the moment it clears, in mark order.
    */
   private offerSites(): void {
     if (this.modOffer || this.world.sitesOpened <= this.sitesSeen) return;
-    this.sitesSeen++;
     const sites = sitesOf(this.world.terrain.marks);
-    const site = sites[this.world.siteLast];
+    let site: Site | null = null;
+    for (let i = 0; i < sites.length && !site; i++) {
+      if (this.sitesOffered & (1 << i) || this.world.siteState(i) !== 1) continue;
+      this.sitesOffered |= 1 << i;
+      this.sitesSeen++;
+      site = sites[i];
+    }
     if (!site) return;
     // ONE RARITY FOR THE WHOLE TABLE: the roll is made once and all three
     // are drawn from that band, since a table that mixed bands would have
@@ -2924,6 +2930,7 @@ export class Game {
     // ...and a question nobody answered dies with the run that asked it
     this.modOffer = null;
     this.sitesSeen = 0;
+    this.sitesOffered = 0;
     this.soakLayer = null; // a new level is a new coastline
     this.spawnOutline = null; // ...and new mouths
     this.mmBase = null; // ...and a new ground under the minimap
@@ -3167,8 +3174,7 @@ export class Game {
     // game freezes mid-carnage (the host knows that one itself). How the
     // real time becomes fixed steps is the host's — in this thread it
     // steps here, on a worker it only hears whether to be moving
-    // ...and a cache waiting to be answered holds the world too
-    this.host.advance(dt, !this.paused && !this.menuOpen && !this.modOffer);
+    this.host.advance(dt, !this.paused && !this.menuOpen);
     const simMs = performance.now() - t0;
     this.offerSites();
 

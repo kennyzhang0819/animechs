@@ -269,13 +269,9 @@ export class World {
   get garrisonHeld(): number {
     return this.header[HDR.GARRISON_HELD];
   }
-  /** the side sites (sites.ts): caches opened, the last opened by index,
-   *  every state packed two bits each */
+  /** the side sites (sites.ts): caches opened, every state packed two bits each */
   get sitesOpened(): number {
     return this.header[HDR.SITES_OPENED];
-  }
-  get siteLast(): number {
-    return this.header[HDR.SITE_LAST];
   }
   siteState(i: number): number {
     return Math.floor(this.header[HDR.SITE_STATES] / 4 ** i) % 4;
