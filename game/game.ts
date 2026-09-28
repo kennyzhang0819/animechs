@@ -36,6 +36,7 @@ import {
   loadLevelDocs,
   UNIT_ID,
   UNIT_KINDS,
+  UNIT_TREES,
   razeWave,
   type LevelSpec,
   type Mission,
@@ -908,6 +909,52 @@ const BAR_MIN_W = 14;
  * a frame, of the camera (barsLegible)
  */
 const BAR_MIN_SCREEN_PX = 1;
+/** ...and under this height the edge stroke is skipped: a half-px line round
+ *  a two-px bar is a smear, and it was a strokeRect a bar on thousands of props */
+const BAR_EDGE_MIN_PX = 3;
+/** how long a bar stays after the hit that put it there, in sim seconds */
+const BAR_LINGER_S = 3;
+/** the objective bodies keep their bar whenever hurt — their HUD bar is unchanged too */
+const OBJECTIVE_KIND = (() => {
+  const objective = new Set(UNIT_TREES.filter((t) => "objective" in t && t.objective).flatMap((t) => t.kinds as readonly string[]));
+  return Uint8Array.from(UNIT_KINDS, (k) => (objective.has(k) ? 1 : 0));
+})();
+/** the core's slot in the structures' HitClock, one past the last cell */
+const CORE_KEY = COLS * ROWS;
+
+/**
+ * WHEN A THING WAS LAST HIT, worked out on this thread from the health the
+ * seam hands over: a fall since the last frame is a hit. Keyed by a small
+ * integer (body uid, cell index, prop index), so it is two typed arrays.
+ */
+class HitClock {
+  private hp = new Float32Array(1024);
+  private at = new Float32Array(1024).fill(-1e9);
+  /** note `hp` for `key` at sim time `now`; `newIsHit` for a list a thing only
+   *  joins by being hurt (the props'), where first sight is the hit */
+  mark(key: number, hp: number, now: number, newIsHit: boolean): void {
+    if (key >= this.hp.length) this.grow(key + 1);
+    const prev = this.hp[key];
+    if (hp < prev || (newIsHit && prev === 0)) this.at[key] = now;
+    this.hp[key] = hp;
+  }
+  lastHit(key: number): number {
+    return key < this.at.length ? this.at[key] : -1e9;
+  }
+  private grow(min: number): void {
+    let n = this.hp.length;
+    while (n < min) n *= 2;
+    const hp = new Float32Array(n), at = new Float32Array(n).fill(-1e9);
+    hp.set(this.hp);
+    at.set(this.at);
+    this.hp = hp;
+    this.at = at;
+  }
+  clear(): void {
+    this.hp.fill(0);
+    this.at.fill(-1e9);
+  }
+}
 /** ...and under a mod pip (drawStructureBars), in device px of its RADIUS */
 const PIP_MIN_SCREEN_PX = 1;
 /**
@@ -1099,7 +1146,17 @@ export class Game {
   private enemyBars: HealthBarMode = HEALTH_BARS_DEFAULT;
   /** ...and the props' bars (drawPropBars), the same three ways */
   private propBars: HealthBarMode = HEALTH_BARS_DEFAULT;
-  private readonly propBarBuf: { v: number; col: string }[] = [];
+  private readonly unitHits = new HitClock();
+  private readonly structHits = new HitClock();
+  private readonly propHits = new HitClock();
+  private readonly propBar = { v: 0, col: "" };
+  private readonly propBarBuf = [this.propBar];
+  /** the frame's bars by layer, x y w h each, painted once by flushBars */
+  private readonly bqBack: number[] = [];
+  private readonly bqFill = new Map<string, number[]>();
+  private readonly bqSoak: number[] = [];
+  private readonly bqEdge: number[] = [];
+  private readonly bqGlass: number[] = [];
   /**
    * ...AND WHO WEARS THE ROW OF STATUS SYMBOLS over that (setStatusMarks).
    * One knob for both sides, because what is being done to a thing reads
@@ -2921,6 +2978,9 @@ export class Game {
 
   reset(): void {
     this.host.reset();
+    this.unitHits.clear();
+    this.structHits.clear();
+    this.propHits.clear();
     // the run's modules went with the sim's reset (Sim.mods, Sim.relics), so
     // the odds Ascendancy was bending go back to the opening table and the
     // reveal empties
@@ -3705,7 +3765,9 @@ export class Game {
   /**
    * A STACK OF BARS OVER ONE THING ON THE BOARD — the game's only readout
    * for "how far along is this", drawn on the overlay in world space so it
-   * scales with the zoom like everything else on the field.
+   * scales with the zoom like everything else on the field. Nothing is
+   * painted here: the rects are queued by layer and painted once a frame
+   * (flushBars), one path a colour rather than four calls a bar.
    *
    * A bar is a fraction and a colour. They stack UPWARDS from `topY` in
    * the order given, so the caller's order is the reading order from the
@@ -3721,7 +3783,6 @@ export class Game {
    * played at. A bar is read left to right at any size.
    */
   private drawBars(
-    c: CanvasRenderingContext2D,
     cx: number,
     topY: number,
     width: number,
@@ -3734,44 +3795,79 @@ export class Game {
     for (const b of bars) {
       if ((b.shield ?? 0) > 0) y -= BAR_GLASS_PAD * 2;
       y -= BAR_H;
-      c.fillStyle = BAR_BACK;
-      c.fillRect(x, y, w, BAR_H);
+      this.bqBack.push(x, y, w, BAR_H);
       const f = clamp(b.v, 0, 1);
       if (f > 0) {
-        c.fillStyle = b.col;
-        c.fillRect(x, y, w * f, BAR_H);
+        let q = this.bqFill.get(b.col);
+        if (!q) this.bqFill.set(b.col, (q = []));
+        q.push(x, y, w * f, BAR_H);
       }
       // the soak threshold, over the fill rather than under it: the blue is
       // health the body no longer gets to spend, so the coloured part
       // shrinking to meet it IS the moment it breaks down
       const d = clamp(b.doomed ?? 0, 0, 1);
-      if (d > 0) {
-        c.fillStyle = BAR_SOAK;
-        c.fillRect(x, y, w * d, BAR_H);
-      }
-      c.strokeStyle = BAR_EDGE;
-      c.lineWidth = 0.5;
-      c.strokeRect(x, y, w, BAR_H);
+      if (d > 0) this.bqSoak.push(x, y, w * d, BAR_H);
+      this.bqEdge.push(x, y, w, BAR_H);
       // the shield, as a CASING round the bar: a bold frame a little
       // larger than the bar on every side, glass inside it, the pool's
       // share wide — so a shielded bar reads as boxed in, and the box is
       // seen shortening from the right as the pool burns down
       const g = clamp(b.shield ?? 0, 0, 1);
-      if (g > 0) {
-        const fw = (w + BAR_GLASS_PAD * 2) * g;
-        c.fillStyle = BAR_GLASS;
-        c.fillRect(x - BAR_GLASS_PAD, y - BAR_GLASS_PAD, fw, BAR_H + BAR_GLASS_PAD * 2);
-        c.strokeStyle = BAR_GLASS_EDGE;
-        c.lineWidth = BAR_GLASS_LINE;
-        c.strokeRect(x - BAR_GLASS_PAD, y - BAR_GLASS_PAD, fw, BAR_H + BAR_GLASS_PAD * 2);
-      }
+      if (g > 0)
+        this.bqGlass.push(x - BAR_GLASS_PAD, y - BAR_GLASS_PAD, (w + BAR_GLASS_PAD * 2) * g, BAR_H + BAR_GLASS_PAD * 2);
       y -= BAR_GAP;
     }
-    c.lineWidth = 1;
     // WHERE THE STACK ENDED, so the status row knows what to sit on top
     // of (drawStatusRow). A body wearing a health bar puts its symbols
     // above it; one wearing none puts them where the bar would have been
     return y;
+  }
+
+  /** every queued bar, one path per layer and colour: backs, fills, soak,
+   *  edges (only when a bar is tall enough for one), then the shield glass */
+  private flushBars(c: CanvasRenderingContext2D): void {
+    const rects = (q: number[]): void => {
+      c.beginPath();
+      for (let i = 0; i < q.length; i += 4) c.rect(q[i], q[i + 1], q[i + 2], q[i + 3]);
+    };
+    if (this.bqBack.length > 0) {
+      c.fillStyle = BAR_BACK;
+      rects(this.bqBack);
+      c.fill();
+      this.bqBack.length = 0;
+    }
+    for (const [col, q] of this.bqFill) {
+      if (q.length === 0) continue;
+      c.fillStyle = col;
+      rects(q);
+      c.fill();
+      q.length = 0;
+    }
+    if (this.bqSoak.length > 0) {
+      c.fillStyle = BAR_SOAK;
+      rects(this.bqSoak);
+      c.fill();
+      this.bqSoak.length = 0;
+    }
+    if (this.bqEdge.length > 0) {
+      if (BAR_H * this.scale * this.zoom >= BAR_EDGE_MIN_PX) {
+        c.strokeStyle = BAR_EDGE;
+        c.lineWidth = 0.5;
+        rects(this.bqEdge);
+        c.stroke();
+      }
+      this.bqEdge.length = 0;
+    }
+    if (this.bqGlass.length > 0) {
+      c.fillStyle = BAR_GLASS;
+      rects(this.bqGlass);
+      c.fill();
+      c.strokeStyle = BAR_GLASS_EDGE;
+      c.lineWidth = BAR_GLASS_LINE;
+      c.stroke();
+      this.bqGlass.length = 0;
+    }
+    c.lineWidth = 1;
   }
 
   /**
@@ -3884,12 +3980,25 @@ export class Game {
    * field at large is set to. A full-health selection still wears nothing
    * — the amber ring or outline on it is the mark that says it is picked.
    */
-  private barsOn(ally: boolean, f: number, selected: boolean): boolean {
+  private barsOn(ally: boolean, f: number, selected: boolean, hitAt: number, now: number): boolean {
     const mode = ally ? this.allyBars : this.enemyBars;
     if (mode === "never") return false;
-    if (mode === "always") return true;
     if (selected && f < 1) return true;
-    return f < 1;
+    return f < 1 && now - hitAt <= BAR_LINGER_S;
+  }
+
+  /** every body, building and hurt prop marked once a frame, on screen or
+   *  not, so a fall between two frames is never missed (HitClock) */
+  private trackHits(view: SimView): void {
+    const w = this.world, now = w.time;
+    const { uhp } = w.flat;
+    const { uid, n } = view;
+    for (let i = 0; i < n; i++) if (uhp[i] > 0) this.unitHits.mark(uid[i], uhp[i], now, false);
+    for (const t of view.towers) this.structHits.mark(t.gy * COLS + t.gx, t.hp, now, false);
+    for (const t of view.shieldTowers) if (t.hp > 0) this.structHits.mark(t.gy * COLS + t.gx, t.hp, now, false);
+    this.structHits.mark(CORE_KEY, view.core.hp, now, false);
+    const h = w.propHurt;
+    for (let i = 0; i < h.length; i += 2) this.propHits.mark(h[i], h[i + 1], now, true);
   }
 
   /**
@@ -3903,6 +4012,8 @@ export class Game {
   private drawUnitBars(c: CanvasRenderingContext2D): void {
     const w = this.world;
     const { upx, upy, urad, uhp, uhpmax, usoak, ushield, ushieldMax } = w.flat;
+    const { uid, ukind } = this.view;
+    const now = w.time;
     const n = w.n;
     const bars = this.barBuf;
     const ids = this.statusBuf;
@@ -3944,7 +4055,9 @@ export class Game {
         // would have hidden
         const doomed = clamp(usoak[i] / Math.max(1, uhpmax[i]), 0, 1);
         const shield = ushieldMax[i] > 0 ? clamp(ushield[i] / ushieldMax[i], 0, 1) : 0;
-        if (this.barsOn(false, f, false) || ((doomed > 0 || (shield > 0 && shield < 1)) && this.enemyBars !== "never"))
+        const hitAt = OBJECTIVE_KIND[ukind[i]] === 1 ? now : this.unitHits.lastHit(uid[i]);
+        const recent = now - hitAt <= BAR_LINGER_S;
+        if (this.barsOn(false, f, false, hitAt, now) || (recent && (doomed > 0 || (shield > 0 && shield < 1)) && this.enemyBars !== "never"))
           bars.push({ v: f, col: ENEMY_HP, doomed, shield });
       }
       // THE GATE, and why this is affordable over eight hundred bodies:
@@ -3953,7 +4066,7 @@ export class Game {
       const flagged = symbols && (!onlyMarked || i === only) && unitHasFieldStatus(this.view, i);
       if (bars.length === 0 && !flagged) continue;
       const r = Math.max(urad[i] * 1.25, 7);
-      const top = this.drawBars(c, bx, by - r, Math.max(r * 2, BAR_MIN_W), bars);
+      const top = this.drawBars(bx, by - r, Math.max(r * 2, BAR_MIN_W), bars);
       if (flagged) this.queueStatusRow(bx, top, ids, unitFieldStatuses(this.view, i, ids));
     }
   }
@@ -4028,14 +4141,13 @@ export class Game {
       const n = PROP_KINDS[p.kind]?.tiles ?? 1;
       const cx = (p.x + n / 2) * CELL, cy = (p.y + n / 2) * CELL;
       if (cx < x0 || cx > x1 || cy < y0 || cy > y1) return;
-      bars.length = 0;
-      bars.push({ v: f, col: hpColor(f) });
-      this.drawBars(c, cx, cy - (n * CELL) / 2, n * CELL - 2, bars);
+      this.propBar.v = f;
+      this.propBar.col = hpColor(f);
+      this.drawBars(cx, cy - (n * CELL) / 2, n * CELL - 2, bars);
     };
-    if (this.propBars === "damaged") {
-      const h = w.propHurt;
-      for (let i = 0; i < h.length; i += 2) one(h[i], h[i + 1]);
-    } else for (let k = 0; k < all.length; k++) if (!w.isPropDead(k)) one(k, w.propFrac[k]);
+    const now = w.time;
+    const h = w.propHurt;
+    for (let i = 0; i < h.length; i += 2) if (now - this.propHits.lastHit(h[i]) <= BAR_LINGER_S) one(h[i], h[i + 1]);
   }
 
   private drawStructureBars(view: SimView, c: CanvasRenderingContext2D): void {
@@ -4061,13 +4173,14 @@ export class Game {
     const off = (x: number, y: number): boolean => x < x0 || x > x1 || y < y0 || y > y1;
     // the core's shipment, and what is left of the thing the whole run is
     // spent defending — one body, both bars, on the player's own terms
+    const now = this.world.time;
     const core = view.core;
     const csz = core.size * CELL;
     bars.length = 0;
     const cf = clamp(core.hp / Math.max(1, core.hpMax), 0, 1);
-    if (this.barsOn(true, cf, core.selected))
+    if (this.barsOn(true, cf, core.selected, this.structHits.lastHit(CORE_KEY), now))
       bars.push({ v: cf, col: hpColor(cf) });
-    this.drawBars(c, core.x, core.y - csz / 2, csz - 2, bars);
+    this.drawBars(core.x, core.y - csz / 2, csz - 2, bars);
     for (const t of view.towers) {
       if (off(t.x, t.y)) continue;
       const st = structStats(t.kind);
@@ -4080,9 +4193,9 @@ export class Game {
       // bodies' are, so "how much is left of that" reads the same whether
       // the thing standing there walks or not
       const own = t.team === "player";
-      if (this.barsOn(own, f, own && t.selected))
+      if (this.barsOn(own, f, own && t.selected, this.structHits.lastHit(t.gy * COLS + t.gx), now))
         bars.push({ v: f, col: own ? hpColor(f) : ENEMY_HP });
-      const top = this.drawBars(c, t.x, t.y - sz / 2, sz - 2, bars);
+      const top = this.drawBars(t.x, t.y - sz / 2, sz - 2, bars);
       // ...and WHAT IS BEING DONE TO IT (status.ts) over the bar: the rot
       // eating it, the dying neighbour's charge, the water tax it was
       // built into, the fact that it is not ours any more. Gated the same
@@ -4121,8 +4234,8 @@ export class Game {
     for (const s of view.shieldTowers) {
       if (s.hp <= 0 || off(s.x, s.y)) continue;
       const f = clamp(s.hp / Math.max(1, s.hpMax), 0, 1);
-      if (!this.barsOn(false, f, false)) continue;
-      this.drawBars(c, s.x, s.y - ssz / 2, ssz - 2, [{ v: f, col: ENEMY_HP }]);
+      if (!this.barsOn(false, f, false, this.structHits.lastHit(s.gy * COLS + s.gx), now)) continue;
+      this.drawBars(s.x, s.y - ssz / 2, ssz - 2, [{ v: f, col: ENEMY_HP }]);
     }
   }
 
@@ -4172,7 +4285,7 @@ export class Game {
    *  no line, no ring, no name — the pad, the flight and the cache are props and bodies */
   private drawSites(c: CanvasRenderingContext2D): void {
     const sites = sitesOf(this.world.terrain.marks);
-    if (sites.length === 0) return;
+    if (sites.length === 0 || !this.barsLegible()) return;
     const w = this.world;
     c.save();
     c.beginPath();
@@ -4182,7 +4295,7 @@ export class Game {
       const launch = s.tier.launch ?? 0;
       if (!s.tier.bombers || w.siteState(n) !== 0 || w.time >= launch) continue;
       const bx = (s.padX + 0.5) * CELL, by = (s.padY + 0.5) * CELL;
-      this.drawBars(c, bx, by - 2.5 * CELL, 5 * CELL, [{ v: w.time / launch, col: SPAWN_STYLE.css }]);
+      this.drawBars(bx, by - 2.5 * CELL, 5 * CELL, [{ v: w.time / launch, col: SPAWN_STYLE.css }]);
     }
     c.restore();
   }
@@ -4515,10 +4628,12 @@ export class Game {
     }
 
     // WHAT EVERY STRUCTURE IS DOING, as a stack of bars over it (drawBars)
+    this.trackHits(view);
     this.drawPropBars(c);
     this.drawStructureBars(view, c);
     // ...and what every BODY has left, on the Interface tab's terms
     this.drawUnitBars(c);
+    this.flushBars(c);
     // ...and the STATUS SYMBOLS both passes queued, every one of them in a
     // single pass in device pixels (flushStatusRows). Drawing them where
     // they were queued, one body at a time in world space, is what made

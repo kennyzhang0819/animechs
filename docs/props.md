@@ -203,8 +203,8 @@ by the terrain version (`simreport.ts TERRAIN`), catches its own copy of
 the ground up in place, and takes the one prop out of the picture — its quad,
 its shadow, its cells on the corner map (`renderer.killProp`,
 `maps.ts repaintThumbCells`) — rather than rebuilding the board. A prop
-wears a health bar like a building does, under the Interface tab's own
-knob for props: always, damaged or never.
+wears a health bar like a building does — for a few seconds after a hit —
+under the Interface tab's own knob for props: recently hit, or never.
 
 ## On the hills
 
