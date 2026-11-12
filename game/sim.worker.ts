@@ -57,6 +57,8 @@ const COMMANDS = new Set<string>([
   "clearStructSelection",
   "click",
   "spend",
+  "heroAim",
+  "heroCast",
   "takeMod",
   "takeRelic",
   "setTech",

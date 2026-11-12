@@ -124,6 +124,10 @@ const PAL = PAL_IMPORT;
 const ROWS = ROWS_IMPORT;
 const TOWERS = TOWERS_IMPORT;
 const W = W_IMPORT;
+import { artStyle, postOn, setArtStyle, type ArtStyleName } from "./artStyle";
+import { isVox } from "./pixelStyle";
+import { UV_VOX_CLIFF, VOX_ANCHOR, VOX_ASPECT, VOX_BODY, VOX_BODY_PX, VOX_HEAD, VOX_PLATE, VOX_SCALE, VOX_WEAPON } from "./atlas";
+const facingOf = (rot: number): number => ((Math.round(rot / (Math.PI / 4)) % 8) + 8) % 8;
 import {
   UNIT_KINDS,
   UNIT_STATS,
@@ -648,6 +652,7 @@ const RING_ALPHA = 0.4;
 // unit art indexed by the sim's numeric kind id (UNIT_ID order)
 const KIND_UV = UNIT_KINDS.map((k) => UNIT_ART[k].uv);
 const KIND_SPRITE = UNIT_KINDS.map((k) => UNIT_ART[k].sprite);
+const KIND_VOX = UNIT_KINDS.map((k) => VOX_BODY[k] ?? null);
 const KIND_FLYING = UNIT_KINDS.map((k) => !!UNIT_STATS[k].flying);
 const KIND_MECH = UNIT_KINDS.map((k) => MECH_ART[k] ?? null);
 // the legged pair (dartback2, dartback3): part art and the gait that moves it
@@ -1130,6 +1135,7 @@ layout(location=5) in vec4 aTint;
 uniform vec2 uRes;
 uniform float uZoom;
 uniform vec2 uOff;
+uniform float uSquash;
 out vec2 vUV;
 flat out vec4 vRect;
 out vec4 vTint;
@@ -1138,7 +1144,9 @@ void main() {
   // scale to sprite size FIRST, then rotate — the reverse order stretches
   // any non-square quad along the world axes instead of its own axis
   vec2 sc = aCorner * aSize;
-  vec2 p = vec2(sc.x * c - sc.y * s, sc.x * s + sc.y * c) + aPos;
+  vec2 off = vec2(sc.x * c - sc.y * s, sc.x * s + sc.y * c);
+  off.y *= uSquash;
+  vec2 p = off + aPos;
   vec2 view = p * uZoom + uOff;
   vec2 clip = view / uRes * 2.0 - 1.0;
   gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
@@ -1188,6 +1196,9 @@ const FS = `#version 300 es
 precision highp float;
 uniform sampler2D uTex;
 uniform vec2 uTexel;  // one sheet pixel as a UV step
+uniform float uOutline;  // rim width in sheet px, 0 = none (artStyle.ts)
+uniform float uOutlinePx;  // ...and no thinner than this many device px
+uniform vec3 uOutlineCol;
 in vec2 vUV;
 flat in vec4 vRect;
 in vec4 vTint;
@@ -1199,11 +1210,76 @@ void main() {
   vec2 inset = min(exp2(lod), 6.0) * uTexel;
   vec2 mid = (vRect.xy + vRect.zw) * 0.5;
   vec2 lo = min(vRect.xy + inset, mid), hi = max(vRect.zw - inset, mid);
-  vec4 t = textureGrad(uTex, clamp(vUV, lo, hi), dx, dy);
+  vec2 uv = clamp(vUV, lo, hi);
+  vec4 t = textureGrad(uTex, uv, dx, dy);
+  if (uOutline > 0.0 && t.a < 0.5) {
+    // a rim one sheet px wide zoomed in, one device px wide zoomed out
+    vec2 e = max(uOutline, rho * uOutlinePx) * uTexel;
+    float m = textureGrad(uTex, clamp(uv + vec2(e.x, 0.0), lo, hi), dx, dy).a;
+    m = max(m, textureGrad(uTex, clamp(uv - vec2(e.x, 0.0), lo, hi), dx, dy).a);
+    m = max(m, textureGrad(uTex, clamp(uv + vec2(0.0, e.y), lo, hi), dx, dy).a);
+    m = max(m, textureGrad(uTex, clamp(uv - vec2(0.0, e.y), lo, hi), dx, dy).a);
+    if (m > 0.5) t = vec4(uOutlineCol, 1.0);
+  }
   // a tint alpha below zero is the flat mode: the cell's alpha in the tint's
   // colour, which is how a body's own cell draws the rim under it
   float a = abs(vTint.a);
   o = vTint.a < 0.0 ? vec4(vTint.rgb, 1.0) * (t.a * a) : t * vec4(vTint.rgb * a, a);
+}`;
+
+// the post pass (artStyle.ts): the frame drawn into a texture and put on
+// screen through this — blocks, a palette with ordered dither, scanlines
+const POST_VS = `#version 300 es
+layout(location=0) in vec2 aCorner;
+out vec2 vUV;
+void main() {
+  gl_Position = vec4(aCorner * 2.0, 0.0, 1.0);
+  vUV = aCorner + 0.5;
+}`;
+const POST_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uScene;
+uniform vec2 uSize;
+uniform float uPixel;
+uniform float uPalette;
+uniform float uDither;
+uniform float uScan;
+uniform float uVignette;
+uniform float uSat;
+uniform float uContrast;
+uniform vec3 uPal[32];
+in vec2 vUV;
+out vec4 o;
+const float BAYER[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+void main() {
+  vec2 px = vUV * uSize;
+  vec2 blk = floor(px / uPixel);
+  vec2 q = (blk + 0.5) * uPixel;
+  vec3 c = texture(uScene, q / uSize).rgb;
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  c = mix(vec3(l), c, uSat);
+  c = (c - 0.5) * uContrast + 0.5;
+  if (uPalette > 0.5) {
+    int bi = int(mod(blk.y, 4.0)) * 4 + int(mod(blk.x, 4.0));
+    c += (BAYER[bi] / 16.0 - 0.5) * uDither * 0.12;
+    float best = 1e9;
+    vec3 bc = c;
+    for (int i = 0; i < 32; i++) {
+      vec3 d = c - uPal[i];
+      float dist = dot(d * d, vec3(2.0, 4.0, 3.0));
+      if (dist < best) { best = dist; bc = uPal[i]; }
+    }
+    c = bc;
+  }
+  if (uScan > 0.0) {
+    float row = mod(floor(px.y), uPixel);
+    c *= 1.0 - uScan * step(uPixel - 1.0, row);
+  }
+  if (uVignette > 0.0) {
+    float r = length((vUV - 0.5) * vec2(uSize.x / uSize.y, 1.0));
+    c *= 1.0 - uVignette * smoothstep(0.55, 1.1, r);
+  }
+  o = vec4(clamp(c, 0.0, 1.0), 1.0);
 }`;
 
 /** the ground's vertex stage: VS with the rotation slot carrying the quad's
@@ -1250,6 +1326,12 @@ uniform sampler2D uTex;
 uniform mediump sampler2DArray uCover;
 uniform vec2 uTexel;
 uniform vec2 uWorld;  // the map in world px
+uniform vec2 uCoverOff;  // the coverage read this far back in world px (artStyle.ts wallFace)
+uniform float uDarken;
+uniform float uRockEdge;  // a rim this wide (in coverage) along the rock mass's outline, 0 = none
+uniform float uRockLayer;
+uniform vec4 uFace;      // the cliff face strip's cell, for the face pass; w = 0 is none
+uniform vec2 uFaceCell;  // world px one repeat of the strip covers
 in vec2 vUV;
 in vec2 vWorld;
 flat in vec4 vRect;
@@ -1264,10 +1346,15 @@ void main() {
   vec2 mid = (vRect.xy + vRect.zw) * 0.5;
   vec2 lo = min(vRect.xy + inset, mid), hi = max(vRect.zw - inset, mid);
   vec4 t = textureGrad(uTex, clamp(vUV, lo, hi), dx, dy);
-  float c = texture(uCover, vec3(vWorld / uWorld, max(vLayer, 0.0))).r;
+  if (uFace.z > uFace.x && uCoverOff.y > 0.0) {
+    vec2 ft = fract(vWorld / uFaceCell);
+    t = texture(uTex, mix(uFace.xy, uFace.zw, ft));
+  }
+  float c = texture(uCover, vec3((vWorld - uCoverOff) / uWorld, max(vLayer, 0.0))).r;
   float w = max(fwidth(c), 0.001) * 0.5;
   float k = vLayer < 0.0 ? 1.0 : smoothstep(0.5 - w, 0.5 + w, c);
-  o = t * vec4(vTint.rgb * vTint.a, vTint.a) * k;
+  float rim = (uRockEdge > 0.0 && vLayer >= uRockLayer && c < 0.5 + uRockEdge) ? 0.55 : 1.0;
+  o = vec4(t.rgb * uDarken * rim, t.a) * vec4(vTint.rgb * vTint.a, vTint.a) * k;
 }`;
 
 /**
@@ -1403,6 +1490,11 @@ export class Renderer {
   private readonly uClipRes: WebGLUniformLocation;
   private readonly uClipZoom: WebGLUniformLocation;
   private readonly uClipOff: WebGLUniformLocation;
+  private readonly uClipCoverOff: WebGLUniformLocation;
+  private readonly uClipDarken: WebGLUniformLocation;
+  private readonly uClipRockEdge: WebGLUniformLocation;
+  private readonly uClipFace: WebGLUniformLocation;
+  private readonly uClipFaceCell: WebGLUniformLocation;
   /** COVER_LAYERS of one byte a cell, 255 where the cell shows that floor
    *  (or is rock), LINEAR; lives on texture unit 1 */
   private readonly coverTex: WebGLTexture;
@@ -1557,6 +1649,8 @@ export class Renderer {
     if (!gl) throw new Error("WebGL2 is required");
     this.gl = gl;
 
+    // the re-authored sets carry their own render preset (artStyle.ts)
+    if (isVox()) setArtStyle("vox");
     this.prog = this.link(VS, FS);
     const need = (name: string): WebGLUniformLocation => {
       const loc = gl.getUniformLocation(this.prog, name);
@@ -1566,10 +1660,25 @@ export class Renderer {
     this.uRes = need("uRes");
     this.uZoom = need("uZoom");
     this.uOff = need("uOff");
+    this.uSquash = need("uSquash");
+    this.uOutline = need("uOutline");
+    this.uOutlineCol = need("uOutlineCol");
+    this.uOutlinePx = need("uOutlinePx");
     // the sheet's pixel pitch, for the fragment clamp (see the FS note);
     // set once, since the sheet never changes size
     gl.useProgram(this.prog);
     gl.uniform2f(need("uTexel"), 1 / atlas.width, 1 / atlas.height);
+    gl.uniform1f(this.uSquash, 1);
+    gl.uniform1f(this.uOutline, 0);
+    gl.uniform1f(this.uOutlinePx, 1);
+    gl.uniform3f(this.uOutlineCol, 0, 0, 0);
+    this.postProg = this.link(POST_VS, POST_FS);
+    const needPost = (name: string): WebGLUniformLocation | null => gl.getUniformLocation(this.postProg, name);
+    this.uPost = {
+      size: needPost("uSize"), pixel: needPost("uPixel"), palette: needPost("uPalette"), dither: needPost("uDither"),
+      scan: needPost("uScan"), vignette: needPost("uVignette"), sat: needPost("uSat"), contrast: needPost("uContrast"),
+      pal: needPost("uPal[0]"),
+    };
 
     const quad = gl.createBuffer();
     if (!quad) throw new Error("buffer alloc failed");
@@ -1580,6 +1689,13 @@ export class Renderer {
       new Float32Array([-0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5]),
       gl.STATIC_DRAW,
     );
+    const postVao = gl.createVertexArray();
+    if (!postVao) throw new Error("vao alloc failed");
+    this.postVao = postVao;
+    gl.bindVertexArray(postVao);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
 
     // a floor tile a cell, and one more for each different floor among its
     // neighbours — two a cell covers any map that is not a chessboard
@@ -1629,7 +1745,18 @@ export class Renderer {
     this.uClipRes = needClip("uRes");
     this.uClipZoom = needClip("uZoom");
     this.uClipOff = needClip("uOff");
+    this.uClipCoverOff = needClip("uCoverOff");
+    this.uClipDarken = needClip("uDarken");
+    this.uClipRockEdge = needClip("uRockEdge");
+    this.uClipFace = needClip("uFace");
+    this.uClipFaceCell = needClip("uFaceCell");
     gl.useProgram(this.clipProg);
+    gl.uniform4f(this.uClipFace, 0, 0, 0, 0);
+    gl.uniform2f(this.uClipFaceCell, CELL * 2, CELL);
+    gl.uniform2f(this.uClipCoverOff, 0, 0);
+    gl.uniform1f(this.uClipDarken, 1);
+    gl.uniform1f(this.uClipRockEdge, 0);
+    gl.uniform1f(needClip("uRockLayer"), ROCK_LAYER);
     gl.uniform2f(needClip("uTexel"), 1 / atlas.width, 1 / atlas.height);
     gl.uniform2f(needClip("uWorld"), W, H);
     gl.uniform1i(needClip("uCover"), 1);
@@ -2162,6 +2289,13 @@ export class Renderer {
   private draw(b: Batch, upload: boolean): void {
     if (b.n === 0) return;
     const gl = this.gl;
+    // the ground batches ride other programs; squash only what stands (the
+    // dynamic batch), and no rim on the hill-shadow mask
+    if (b !== this.terrain && b !== this.rock && b !== this.water) {
+      const st = artStyle.current;
+      gl.uniform1f(this.uSquash, b === this.dyn ? st.squash : 1);
+      gl.uniform1f(this.uOutline, b === this.shadow ? 0 : st.outline);
+    }
     gl.bindVertexArray(b.vao);
     if (upload) {
       gl.bindBuffer(gl.ARRAY_BUFFER, b.vbo);
@@ -2186,6 +2320,89 @@ export class Renderer {
   /** each prop's shadow and sprite in the walls batch, so one can be taken
    *  out of the picture without rebuilding the terrain (killProp) */
   private readonly propSlots = new Map<Prop, [number, number]>();
+  private readonly uSquash: WebGLUniformLocation;
+  private readonly uOutline: WebGLUniformLocation;
+  private readonly uOutlineCol: WebGLUniformLocation;
+  private readonly uOutlinePx: WebGLUniformLocation;
+  private readonly postProg: WebGLProgram;
+  private readonly postVao: WebGLVertexArrayObject;
+  private readonly uPost: Record<"size" | "pixel" | "palette" | "dither" | "scan" | "vignette" | "sat" | "contrast" | "pal", WebGLUniformLocation | null>;
+  private palUploaded: readonly string[] | null = null;
+  private sceneFbo: WebGLFramebuffer | null = null;
+  private sceneTex: WebGLTexture | null = null;
+  private sceneW = 0;
+  private sceneH = 0;
+  private postActive = false;
+
+  /** the art style switched (artStyle.ts) */
+  setStyle(name: ArtStyleName): void {
+    setArtStyle(name);
+  }
+
+  /** where the frame is being drawn: the post pass's texture, or the screen */
+  private sceneTarget(): WebGLFramebuffer | null {
+    return this.postActive ? this.sceneFbo : null;
+  }
+
+  private ensureSceneTarget(w: number, h: number): boolean {
+    if (this.sceneFbo && this.sceneW === w && this.sceneH === h) return true;
+    const gl = this.gl;
+    if (!this.sceneTex) this.sceneTex = gl.createTexture();
+    if (!this.sceneFbo) this.sceneFbo = gl.createFramebuffer();
+    if (!this.sceneTex || !this.sceneFbo) return false;
+    gl.bindTexture(gl.TEXTURE_2D, this.sceneTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneFbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sceneTex, 0);
+    const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    if (!ok) return false;
+    this.sceneW = w;
+    this.sceneH = h;
+    return true;
+  }
+
+  /** the drawn frame through the style's post shader, onto the screen */
+  private postPass(): void {
+    if (!this.postActive) return;
+    const gl = this.gl;
+    const st = artStyle.current;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.disable(gl.SCISSOR_TEST);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.useProgram(this.postProg);
+    gl.bindTexture(gl.TEXTURE_2D, this.sceneTex);
+    const u = this.uPost;
+    gl.uniform2f(u.size, this.canvas.width, this.canvas.height);
+    gl.uniform1f(u.pixel, st.pixel);
+    gl.uniform1f(u.palette, st.palette ? 1 : 0);
+    if (st.palette && st.palette !== this.palUploaded) {
+      const pal = new Float32Array(32 * 3);
+      st.palette.slice(0, 32).forEach((hex, i) => {
+        pal[i * 3] = parseInt(hex.slice(1, 3), 16) / 255;
+        pal[i * 3 + 1] = parseInt(hex.slice(3, 5), 16) / 255;
+        pal[i * 3 + 2] = parseInt(hex.slice(5, 7), 16) / 255;
+      });
+      gl.uniform3fv(u.pal, pal);
+      this.palUploaded = st.palette;
+    }
+    gl.uniform1f(u.dither, st.dither);
+    gl.uniform1f(u.scan, st.scan);
+    gl.uniform1f(u.vignette, st.vignette);
+    gl.uniform1f(u.sat, st.sat);
+    gl.uniform1f(u.contrast, st.contrast);
+    gl.bindVertexArray(this.postVao);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindVertexArray(null);
+    gl.useProgram(this.prog);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    this.postActive = false;
+  }
 
   /**
    * A PROP CAME DOWN (game.ts, on the terrain version): its two quads in
@@ -2214,7 +2431,7 @@ export class Renderer {
    *  ground under everything that walks at it */
   private pushCoreShadow(dyn: Batch, x: number, y: number, size: number): void {
     const px = size * CELL;
-    const off = Math.max(STANDING_SHADOW_MIN, px * GROUND_SHADOW_ELEV);
+    const off = Math.max(STANDING_SHADOW_MIN, px * GROUND_SHADOW_ELEV) * artStyle.current.shadowElev;
     this.push(dyn, x + off, y + off, px, px, 0, UV_BASE, 0, 0, 0, GROUND_SHADOW_ALPHA);
   }
   private lastTerrain: { terrain: Terrain } | null = null;
@@ -2599,13 +2816,13 @@ export class Renderer {
         const def = PROP_KINDS[p.kind];
         if (!def) return null;
         const half = (def.tiles * CELL) / 2, side = def.reach * CELL;
-        return [p.x * CELL + half, p.y * CELL + half, side, def.turns ? p.rot * (Math.PI / 2) : 0, propUV(p.kind, def.turns ? 0 : p.rot)];
+        return [p.x * CELL + half, p.y * CELL + half, side, def.turns && !isVox() ? p.rot * (Math.PI / 2) : 0, propUV(p.kind, def.turns ? 0 : p.rot)];
       };
       for (const p of T.props) {
         const q = quad(p);
         if (!q) continue;
         const [x, y, side, rot, uv] = q;
-        const off = Math.max(STANDING_SHADOW_MIN, side * GROUND_SHADOW_ELEV);
+        const off = Math.max(STANDING_SHADOW_MIN, side * GROUND_SHADOW_ELEV) * artStyle.current.shadowElev;
         this.propSlots.set(p, [w.n, -1]);
         this.push(w, x + off, y + off, side, side, rot, uv, 0, 0, 0, GROUND_SHADOW_ALPHA);
       }
@@ -2691,6 +2908,8 @@ export class Renderer {
    * its ground is open again, which is what the rest of the drawing says.
    */
   private syncBuildShadow(sim: SimView): void {
+    // the chibi set (pixelStyle.ts isVox) draws no footprint shadow: its tiles are one size, not the footprint
+    if (isVox()) return;
     // the line as it stands, packed cell-and-size in field order, so a
     // footprint appearing, moving, resizing or being replaced by another
     // in the same frame all read as a change. FOUR bits for the size: it
@@ -2780,12 +2999,30 @@ export class Renderer {
       gl.uniform2f(this.uClipRes, this.canvas.width / kPx, this.canvas.height / kPx);
       gl.uniform1f(this.uClipZoom, zoom);
       gl.uniform2f(this.uClipOff, offX, offY);
+      gl.uniform1f(this.uClipRockEdge, artStyle.current.rockEdge);
       this.draw(this.terrain, false);
       gl.useProgram(this.prog);
       gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
       this.draw(this.shadow, false);
       gl.bindTexture(gl.TEXTURE_2D, this.tex);
       gl.useProgram(this.clipProg);
+      // artStyle.ts wallFace: the rock mass once more with its mask shifted
+      // down and the tile darkened, so a face follows its outline; the
+      // floor-beside-rock quads give the band below the mass something to
+      // draw on (rebuildTerrain pushRockNeighbours)
+      const face = artStyle.current.wallFace;
+      if (face > 0) {
+        gl.uniform2f(this.uClipCoverOff, 0, face * CELL);
+        const strip = isVox() && UV_VOX_CLIFF;
+        if (strip) {
+          gl.uniform4f(this.uClipFace, strip[0], strip[1], strip[2], strip[3]);
+          gl.uniform2f(this.uClipFaceCell, CELL * 2, face * CELL);
+        } else gl.uniform1f(this.uClipDarken, 0.45);
+        this.draw(this.rock, false);
+        gl.uniform2f(this.uClipCoverOff, 0, 0);
+        gl.uniform4f(this.uClipFace, 0, 0, 0, 0);
+        gl.uniform1f(this.uClipDarken, 1);
+      }
       this.draw(this.rock, false);
       gl.useProgram(this.prog);
     }
@@ -2842,6 +3079,9 @@ export class Renderer {
       this.dotRows = dr;
       this.dotGrid = new Uint8Array(dc * dr);
     } else this.dotGrid.fill(0);
+    const st = artStyle.current;
+    this.postActive = postOn(st) && this.ensureSceneTarget(this.canvas.width, this.canvas.height);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneTarget());
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.disable(gl.SCISSOR_TEST); // the clear is the whole canvas (scissorWorld)
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -2850,6 +3090,8 @@ export class Renderer {
     gl.uniform2f(this.uRes, this.canvas.width / kPx, this.canvas.height / kPx);
     gl.uniform1f(this.uZoom, zoom);
     gl.uniform2f(this.uOff, offX, offY);
+    gl.uniform3f(this.uOutlineCol, st.outlineColor[0], st.outlineColor[1], st.outlineColor[2]);
+    gl.uniform1f(this.uOutlinePx, st.pixel);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
   }
 
@@ -3272,12 +3514,13 @@ export class Renderer {
         // on the ground is the shape that is standing on it — the legs
         // and the guns are not in it, and at a rim's width nothing of
         // them would show past the body anyway.
-        const off = wantFly ? SHADOW_OFF : usz * GROUND_SHADOW_ELEV;
+        const off = (wantFly ? SHADOW_OFF : usz * GROUND_SHADOW_ELEV) * artStyle.current.shadowElev;
         // A GHOST CASTS A GHOST'S SHADOW: the Wraith hulls cloak (levels.ts)
         // and a full-strength shadow under a body drawn at a fifth would
         // hold the fleet's position through every cloak it spends
         const fade = ucloakT[i] > 0 ? 0.2 : 1;
-        this.push(dyn, upx[i] + off, upy[i] + off, usz, usz, urot[i], KIND_UV[k],
+        if (KIND_VOX[k]) this.push(dyn, upx[i], upy[i] + (wantFly ? VOX_BODY_PX * 0.3 : VOX_BODY_PX * 0.05), VOX_BODY_PX * 0.8, VOX_BODY_PX * 0.35, 0, UV_DISC, 0, 0, 0, (wantFly ? SHADOW_ALPHA : GROUND_SHADOW_ALPHA) * fade);
+        else this.push(dyn, upx[i] + off, upy[i] + off, usz, usz, urot[i], KIND_UV[k],
           0, 0, 0, (wantFly ? SHADOW_ALPHA : GROUND_SHADOW_ALPHA) * fade);
         this.endScale();
         continue;
@@ -3335,6 +3578,13 @@ export class Renderer {
       this.cellTint[2] = team[2] * tint[2];
       if (!lod && grow !== 1 && !shadow) this.tally.bigGrown++;
       if (!this.resident[k]) this.fetchLine(k);
+      const vb = KIND_VOX[k];
+      if (vb) {
+        this.push(dyn, upx[i], upy[i] - (VOX_ANCHOR - 0.5) * VOX_ASPECT * VOX_BODY_PX, VOX_BODY_PX, VOX_ASPECT * VOX_BODY_PX, 0, vb[facingOf(urot[i])],
+          tint[0], tint[1], tint[2], ucloakT[i] > 0 ? 0.2 : 1);
+        this.endScale();
+        continue;
+      }
       if (lod) {
         this.tally.lodBodies++;
         this.push(dyn, upx[i], upy[i], usz, usz, urot[i], KIND_UV[k],
@@ -3514,7 +3764,16 @@ export class Renderer {
       const g = own ? tint[1] : tint[1] * TEAM_CRUX_RGB[1];
       const b = own ? tint[2] : tint[2] * TEAM_CRUX_RGB[2];
       this.push(dyn, t.x, t.y, px, px, 0, base, r, g, b, 1);
-      this.push(dyn, t.x, t.y, px, px, angle, top, r, g, b, 1);
+      const vh = VOX_HEAD[t.kind];
+      const vw = VOX_WEAPON[t.kind], vp = VOX_PLATE[0];
+      if (vw && vp) {
+        // ONE SIZE FOR EVERY TURRET, whatever its footprint or giant edge: a 16 px tile on one cell, the
+        // enemies' own density; the plate, then the weapon turned to the head's angle (drawn pointing up)
+        this.push(dyn, t.x, t.y, CELL * VOX_SCALE, CELL * VOX_SCALE, 0, vp, r, g, b, 1);
+        this.push(dyn, t.x, t.y, CELL * VOX_SCALE, CELL * VOX_SCALE, angle + Math.PI / 2, vw, r, g, b, 1);
+      } else if (vh) { const w = Math.max(px, CELL * 1.6); this.push(dyn, t.x, t.y - (VOX_ANCHOR - 0.5) * VOX_ASPECT * w, w, VOX_ASPECT * w, 0, vh[facingOf(angle)], r, g, b, 1); }
+      // artStyle.ts headLift: the head sits up off its pad
+      else this.push(dyn, t.x, t.y - px * artStyle.current.headLift, px, px, angle, top, r, g, b, 1);
       // LOD (LOD_BODY_PX): a turret this small on screen is its plate and
       // its head and nothing else — the flash is under a pixel
       if (px * this.ppw < LOD_BODY_PX) continue;
@@ -4061,6 +4320,7 @@ export class Renderer {
     tl.shots += dyn.n - n0;
     tl.total += dyn.n;
     this.draw(dyn, true);
+    this.postPass();
   }
 
   /**
@@ -4382,7 +4642,7 @@ export class Renderer {
     this.draw(b, true);
     gl.blendEquation(gl.FUNC_ADD);
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneTarget());
     gl.useProgram(this.shieldProg);
     const camW = w / kPx / zoom / MU, camH = h / kPx / zoom / MU;
     gl.uniform4f(this.uShieldCam, -offX / zoom / MU, -offY / zoom / MU, camW, camH);

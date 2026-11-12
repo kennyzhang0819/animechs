@@ -513,6 +513,15 @@ export const PIERCER_LASER = laserStyle({
   sideLength: 29,
   lifetime: t(16),
 });
+/** the hero's lance (hero.ts) */
+export const HERO_LASER = laserStyle({
+  colors: [[PAL.piercerLaser, 0.4], [WHITE, 1], [WHITE, 1]],
+  width: 34,
+  sideAngle: 60 * DEG,
+  sideWidth: 0.9,
+  sideLength: 60,
+  lifetime: 0.45,
+});
 /** starhart3's beam-weapon: the family's star-gold, a wide 45-degree side stoop1 */
 const STARHART3_LASER = laserStyle({
   colors: [[PAL.starDark, 0.4], [PAL.star, 1], [WHITE, 1]],

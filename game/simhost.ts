@@ -104,6 +104,10 @@ export interface SimHost {
   /** one left click on the board, whatever it means (Sim.click) */
   click(x: number, y: number, add: boolean, like: boolean): void;
 
+  // ---- the hero (hero.ts) ----
+  heroAim(x: number, y: number, firing: boolean): void;
+  heroCast(slot: number, x: number, y: number): void;
+
   // ---- the run's money and what it buys ----
   spend(n: number): void;
   takeMod(id: ModId): void;
@@ -218,6 +222,12 @@ export class LocalHost implements SimHost {
   }
   click(x: number, y: number, add: boolean, like: boolean): void {
     this.sim.click(x, y, add, like);
+  }
+  heroAim(x: number, y: number, firing: boolean): void {
+    this.sim.heroAim(x, y, firing);
+  }
+  heroCast(slot: number, x: number, y: number): void {
+    this.sim.heroCast(slot, x, y);
   }
   spend(n: number): void {
     this.sim.spend(n);

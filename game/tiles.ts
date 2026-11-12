@@ -24,6 +24,8 @@
  */
 
 import { LINOCUT_TERRAIN } from "./terrainFlag";
+import { isBlock, isVox } from "./pixelStyle";
+import { paintFloorVox, paintRockTopVox, paintWaterVox, vivid } from "./voxelModels";
 
 /** pixels across a tile: the turrets' 32, drawn 1:1 into the cell */
 export const TILE_LOGICAL = 32;
@@ -294,7 +296,32 @@ export function paintFloor(kind: FloorKind, variant: number): Uint8ClampedArray<
   // of the cells bare and one mark on the rest, the ground is a colour
   // with something on it here and there, which is what ground looks like
   // from above
-  if (LINOCUT_TERRAIN) {
+  if (isVox()) {
+    const kindOf = st.mark === "tussock" || st.mark === "soft" ? "grass" : st.mark === "dune" ? "sand" : st.mark === "ember" ? "stone" : "earth";
+    const base = vivid(st.base, 0.4);
+    const g = paintFloorVox({ base, light: lit(base, 0.3), dark: shd(base, 0.3), kind: kindOf }, variant % FLOOR_VARIANTS, FLOOR_KINDS.indexOf(kind) * 131 + variant * 17 + 7);
+    return toRgba(g, N, TILE_PX);
+  }
+  if (isBlock()) {
+    // the block style: marks are laid in 2x2 px, a hand-set tuft or
+    // pebble, in the ground's own light and dark a step further apart
+    const light = lit(st.base, 0.22), dk = shd(st.base, 0.28);
+    const cell = (x: number, y: number, c: string): void => { for (let yy = 0; yy < 2; yy++) for (let xx = 0; xx < 2; xx++) put(x * 2 + xx, y * 2 + yy, c); };
+    const slot = (): [number, number] => [3 + Math.floor(rng() * 10), 3 + Math.floor(rng() * 10)];
+    const tuft = (): void => { const [x, y] = slot(); cell(x, y, light); cell(x + 1, y, light); cell(x + 1, y + 1, dk); };
+    const pebble = (): void => { const [x, y] = slot(); cell(x, y, light); cell(x + 1, y, dk); cell(x, y + 1, dk); cell(x + 1, y + 1, dk); };
+    const speck = (c: string): void => { const [x, y] = slot(); cell(x, y, c); };
+    if (variant % FLOOR_VARIANTS === 0) {
+      switch (st.mark) {
+        case "soft": tuft(); speck(light); break;
+        case "tussock": tuft(); tuft(); speck(dk); break;
+        case "spotted": speck(dk); speck(dk); speck(light); break;
+        case "dune": { const [x, y] = slot(); for (let i = 0; i < 4; i++) cell(Math.min(13, x + i), y, light); break; }
+        case "pebbled": pebble(); speck(light); break;
+        case "ember": speck(st.accent ?? st.light); speck(dk); break;
+      }
+    } else speck(rng() < 0.5 ? light : dk);
+  } else if (LINOCUT_TERRAIN) {
     // under the ink the one mark is a carved tick: a short diagonal
     // stroke, either way, in the ground's light — the pair's other tone
     // and nothing else — and never narrower than the turrets' four px
@@ -503,6 +530,26 @@ export function paintWall(
   const put = (x: number, y: number, c: string): void => {
     if (x >= 0 && y >= 0 && x < N && y < N) grid[y * N + x] = c;
   };
+  if (isVox()) return toRgba(paintRockTopVox(vivid(st.face, 0.2), variant % WALL_VARIANTS, 2000 + WALL_KINDS.indexOf(kind) * 131 + variant * 17, span), N, TILE_PX * span);
+  if (isBlock()) {
+    // the block style: a flat face with chips knocked out of it in 2x2
+    // px — light ones catching the top-left, dark hollows below — and one
+    // crack on the first painting, all clear of the rim the atlas crops
+    const light = lit(st.face, 0.24), dk = shd(st.face, 0.3);
+    const M = N / 2;
+    const cell = (x: number, y: number, c: string): void => { for (let yy = 0; yy < 2; yy++) for (let xx = 0; xx < 2; xx++) put(x * 2 + xx, y * 2 + yy, c); };
+    const slot = (): [number, number] => [4 + Math.floor(rng() * (M - 9)), 4 + Math.floor(rng() * (M - 9))];
+    const chips = 3 * span * span;
+    for (let i = 0; i < chips; i++) { const [x, y] = slot(); cell(x, y, light); cell(x + 1, y + 1, dk); }
+    for (let i = 0; i < chips; i++) { const [x, y] = slot(); cell(x, y, dk); }
+    if (variant % WALL_VARIANTS === 0) {
+      const [x, y] = slot();
+      const len = 3 + Math.floor(rng() * 2);
+      for (let i = 0; i < len; i++) cell(x + i, y + (i >> 1), dk);
+      cell(x, y - 1, light);
+    }
+    return toRgba(grid, N, TILE_PX * span);
+  }
   if (LINOCUT_TERRAIN) {
     // under the ink a rock is flat, and the first painting carries one
     // gouge: a diagonal stroke in the rock's light, five px across (the
@@ -616,6 +663,17 @@ export function paintWater(kind: WaterKind, variant = WATER_WAVE_VARIANT): Uint8
   const crest = mix(INK.crest, base, tainted ? 0.9 : 0.86);
   const rng = mulberry32(9000 + (deep ? 17 : 0) + (tainted ? 131 : 0));
   const grid = new Array<string>(N * N).fill(base);
+  if (isVox()) return toRgba(paintWaterVox(deep, tainted, variant % WATER_VARIANTS), N, TILE_PX);
+  if (isBlock()) {
+    // the block style: a swell is two 2px-tall dashes, stepped
+    if (variant % WATER_VARIANTS === WATER_WAVE_VARIANT) {
+      const x0 = 4 + 2 * Math.floor(rng() * 4), y = 8 + 2 * Math.floor(rng() * 6);
+      for (let yy = y; yy < y + 2; yy++) for (let x = x0; x < x0 + 12; x++) grid[yy * N + x] = crest;
+      for (let yy = y - 2; yy < y; yy++) for (let x = x0 + 8; x < x0 + 14; x++) grid[yy * N + x] = crest;
+      for (let yy = y + 4; yy < y + 6; yy++) for (let x = x0 + 14; x < x0 + 20; x++) grid[yy * N + x] = crest;
+    }
+    return toRgba(grid, N, TILE_PX);
+  }
   if (variant % WATER_VARIANTS === WATER_WAVE_VARIANT) {
     // one wave a tile: a 16px line six px deep somewhere in the middle
     // band, with a six-px block lifting off its trailing end — thicker

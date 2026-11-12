@@ -255,6 +255,12 @@ export class WorkerHost implements SimHost {
   click(x: number, y: number, add: boolean, like: boolean): void {
     this.cmd("click", x, y, add, like);
   }
+  heroAim(x: number, y: number, firing: boolean): void {
+    this.cmd("heroAim", x, y, firing);
+  }
+  heroCast(slot: number, x: number, y: number): void {
+    this.cmd("heroCast", slot, x, y);
+  }
   spend(n: number): void {
     this.cmd("spend", n);
   }

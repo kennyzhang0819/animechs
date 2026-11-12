@@ -233,6 +233,12 @@ export class World {
   get nextWaveIn(): number {
     return this.header[HDR.NEXT_WAVE_IN];
   }
+  get heroQ(): number {
+    return this.header[HDR.HERO_Q];
+  }
+  get heroW(): number {
+    return this.header[HDR.HERO_W];
+  }
   get wavesCleared(): number {
     return this.header[HDR.WAVES_CLEARED];
   }

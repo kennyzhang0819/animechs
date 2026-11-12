@@ -42,6 +42,7 @@
  * same outline + antialias pass as the stock tops.
  */
 import type { Art } from "./animalArt";
+import { blockRender, chunk, isBlock, rampOf, type Ramp } from "./pixelStyle";
 import type { TowerKind } from "./types";
 
 // ── materials ──────────────────────────────────────────────────────────
@@ -167,11 +168,25 @@ function grid(n: number): { mat: Cell[]; pen: Pen } {
  *  material's dark on the left half, its light on the right */
 function finish(mat: Cell[], n: number, mirror = true): Art {
   if (mirror) for (let y = 0; y < n; y++) for (let x = 0; x < n >> 1; x++) mat[y * n + (n - 1 - x)] = mat[y * n + x];
+  if (isBlock()) return { n, px: blockRender(chunk(mat, n, n), (n + 1) >> 1, (n + 1) >> 1, matRamp, {}, n, n) };
   return { n, px: mat.map((m, i) => (m === null ? null : m[i % n < n / 2 ? 0 : 1])) };
+}
+const RAMPS = new Map<Mat, Ramp>();
+/** the block style's four tones off a pair: its light, the two mixed, its dark, and a rim */
+function matRamp(m: Mat): Ramp {
+  let r = RAMPS.get(m);
+  if (!r) { r = rampOf(m[0], m[1]); RAMPS.set(m, r); }
+  return r;
 }
 /** the same drawing as a mask: white wherever material `m` was laid, for a
  *  team cell that is the family's accent and nothing else */
 function mask(mat: Cell[], n: number, m: Mat): Art {
+  if (isBlock()) {
+    const c = chunk(mat, n, n), h = (n + 1) >> 1;
+    const px: Art["px"] = new Array<string | null>(n * n).fill(null);
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (c[(y >> 1) * h + (x >> 1)] === m) px[y * n + x] = "#ffffff";
+    return { n, px };
+  }
   return { n, px: mat.map((c) => (c === m ? "#ffffff" : null)) };
 }
 

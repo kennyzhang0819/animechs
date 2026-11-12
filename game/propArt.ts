@@ -11,6 +11,8 @@
 
 import { ellipse, hex, INK, mix, mulberry32, WALL_KINDS, WALL_STYLE, type WallKind } from "./tiles";
 import { LINOCUT_TERRAIN } from "./terrainFlag";
+import { blockRgba, isBlock, isVox } from "./pixelStyle";
+import { keepPic, laid, propPic, propShapeOf } from "./chibiArt";
 
 export type PropTiles = 1 | 2 | 3 | 4 | 6 | 10;
 /** px a tile, the floors' own grid */
@@ -942,7 +944,7 @@ export function paintProp(kind: number, tint?: number, variant = 0): Uint8Clampe
     out[i * 4 + 2] = t ? b * t[2] : b;
     out[i * 4 + 3] = 255;
   }
-  return out;
+  return isBlock() ? blockRgba(out, n, n) : out;
 }
 
 /**
@@ -953,6 +955,17 @@ export function paintProp(kind: number, tint?: number, variant = 0): Uint8Clampe
  */
 export function coreCanvas(): HTMLCanvasElement {
   const n = 320, c = n / 2, s = new Sheet(n);
+  if (isVox()) {
+    const px = laid(keepPic(), 2, n, n, 0.5);
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = n;
+    const g = cv.getContext("2d");
+    if (!g) throw new Error("2d context unavailable for core");
+    const out = new Uint8ClampedArray(n * n * 4);
+    for (let i = 0; i < n * n; i++) { const col = px[i]; if (col === null) continue; const [r0, g0, b0] = hex(col); out[i * 4] = r0; out[i * 4 + 1] = g0; out[i * 4 + 2] = b0; out[i * 4 + 3] = 255; }
+    g.putImageData(new ImageData(out, n, n), 0, 0);
+    return cv;
+  }
   const SLATE = { hi: "#5e6478", mid: "#454a5c", lo: "#30343f" };
   const IRON = { hi: "#9aa0b0", mid: "#6e7484", lo: "#4c5160" };
   const oct = (r: number): Pt[] => { const p: Pt[] = []; for (let k = 0; k < 8; k++) { const a = (k / 8) * 6.28 + 0.39; p.push([c + Math.cos(a) * r, c + Math.sin(a) * r]); } return p; };
@@ -968,7 +981,7 @@ export function coreCanvas(): HTMLCanvasElement {
   if (!g) throw new Error("2d context unavailable for core");
   const out = new Uint8ClampedArray(n * n * 4);
   for (let i = 0; i < n * n; i++) { const col = s.px[i]; if (col === null) continue; const [r, gg, b] = hex(col); out[i * 4] = r; out[i * 4 + 1] = gg; out[i * 4 + 2] = b; out[i * 4 + 3] = 255; }
-  g.putImageData(new ImageData(out, n, n), 0, 0);
+  g.putImageData(new ImageData(isBlock() ? blockRgba(out, n, n) : out, n, n), 0, 0);
   return cv;
 }
 
@@ -979,6 +992,15 @@ export function propCanvas(kind: number, variant = 0): HTMLCanvasElement {
   c.width = c.height = n;
   const g = c.getContext("2d");
   if (!g) throw new Error("2d context unavailable for prop");
+  if (isVox()) {
+    // the 2.5D set: a model a tile wide, its footprint on the tile, its height above it
+    const def = PROP_KINDS[kind];
+    const px = laid(propPic(propShapeOf(def.id), def.tiles), 2, n, n, 0.72);
+    const out = new Uint8ClampedArray(n * n * 4);
+    for (let i = 0; i < n * n; i++) { const col = px[i]; if (col === null) continue; const [r0, g0, b0] = hex(col); out[i * 4] = r0; out[i * 4 + 1] = g0; out[i * 4 + 2] = b0; out[i * 4 + 3] = 255; }
+    g.putImageData(new ImageData(out, n, n), 0, 0);
+    return c;
+  }
   g.putImageData(new ImageData(paintProp(kind, undefined, variant), n, n), 0, 0);
   return c;
 }

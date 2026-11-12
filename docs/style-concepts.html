@@ -1,0 +1,120 @@
+<!doctype html>
+<!--
+  ART STYLE CONCEPTS. Eight presets of game/artStyle.ts, each rendered by the
+  real renderer on the same rolled board (seed 7), the same frozen frame: a
+  ring of every fielded turret round the core, a Nemesis roll's ground families
+  walking in, props and a cliff. Re-render with scripts/style-shots (see the
+  notes at the bottom). Click a style, then a view; "compare" lays every style
+  out at once.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Animechs art style concepts</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; background: #14151a; color: #d8d9e0; font: 14px/1.45 system-ui, sans-serif; }
+    header { padding: 16px 20px 8px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+    h1 { font-size: 18px; margin: 0 16px 0 0; }
+    .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .row span { opacity: .6; margin-right: 4px; }
+    button { background: #23252d; color: #d8d9e0; border: 1px solid #3a3d48; border-radius: 6px; padding: 6px 10px; cursor: pointer; font: inherit; }
+    button.on { background: #e2c05a; color: #1a1a1a; border-color: #e2c05a; }
+    main { padding: 0 20px 20px; }
+    .stage { position: relative; }
+    .stage img { width: 100%; max-width: 1280px; display: block; image-rendering: pixelated; border: 1px solid #2a2c35; border-radius: 6px; }
+    .note { max-width: 1280px; margin: 10px 0 0; padding: 10px 12px; background: #1b1c22; border-radius: 6px; }
+    .note b { color: #e2c05a; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 14px; max-width: 1280px; }
+    .grid figure { margin: 0; }
+    .grid img { width: 100%; display: block; image-rendering: pixelated; border: 1px solid #2a2c35; border-radius: 6px; }
+    .grid figcaption { padding: 6px 2px; }
+    .grid figcaption b { color: #e2c05a; }
+    .zoom { position: fixed; pointer-events: none; width: 320px; height: 320px; border: 2px solid #e2c05a; border-radius: 8px; background-repeat: no-repeat; image-rendering: pixelated; display: none; box-shadow: 0 8px 30px #000; }
+    footer { padding: 10px 20px 30px; max-width: 1280px; opacity: .8; }
+    code { background: #23252d; padding: 1px 5px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Art style concepts</h1>
+    <div class="row" id="styles"><span>style</span></div>
+    <div class="row" id="views"><span>view</span></div>
+    <div class="row"><button id="compare">compare all</button></div>
+  </header>
+  <main>
+    <div class="stage" id="stage"><img id="shot" alt="" /><div class="note" id="note"></div></div>
+    <div class="grid" id="grid" hidden></div>
+  </main>
+  <div class="zoom" id="zoom"></div>
+  <section style="padding: 0 20px 10px; max-width: 1280px">
+    <h2 style="font-size: 16px; margin: 18px 0 6px">The chibi sheet</h2>
+    <figure style="margin:0 0 16px"><img src="style-concepts/chibi-sheet.png" alt="chibi sheet" style="width:100%;max-width:616px;image-rendering:pixelated;border:1px solid #2a2c35;border-radius:6px" /></figure>
+    <h2 style="font-size: 16px; margin: 18px 0 6px">Design choices for the 2.5D set</h2>
+    <p style="margin: 0 0 10px; opacity: .85">The same models under three cameras (<code>VIEWS</code> in <code>game/voxelArt.ts</code>): how much of a front you see is the main choice, then outline weight and palette. The game render above uses <b>quarter</b>.</p>
+    <div class="grid">
+      <figure><img src="style-concepts/vox-steep.png" alt="steep" /><figcaption><b>Steep</b> — mostly tops, short fronts. Closest to today's overhead read; the safest for a tower-defense board.</figcaption></figure>
+      <figure><img src="style-concepts/vox-quarter.png" alt="quarter" /><figcaption><b>Quarter</b> — tops and fronts equal. The reference's look (My Heroes / Stardew); what the game render uses.</figcaption></figure>
+      <figure><img src="style-concepts/vox-low.png" alt="low" /><figcaption><b>Low</b> — tall fronts, foreshortened tops. Reads most like a side-on RPG; cliffs and buildings get big faces, but a dense board hides more behind them.</figcaption></figure>
+    </div>
+  </section>
+  <footer>
+    Hover a picture for a 3x loupe. Every frame is the real renderer with <code>Renderer.setStyle(name)</code>
+    (<code>game/artStyle.ts</code>), captured by <code>scripts/style-shots.mjs</code>; the sim was paused for
+    the whole set, so the frames differ only in style.
+  </footer>
+  <script>
+    const STYLES = {
+      base: ["Base", "What ships today: flat plates, no contour, the frame at native pixels."],
+      inked: ["Inked", "A one-pixel dark rim round every sprite — bodies, heads, props, shots, even the smoke puffs — put on in the fragment shader from the sheet's alpha, so no art is redrawn. Pads and walls are opaque to their edge and stay as they are. The contrast is nudged 6%."],
+      chunky: ["Chunky", "Inked, and the whole frame snapped to 2×2 device-pixel blocks in a post pass: half the resolution, nearest-neighbour up. The rim is widened to one block so it never dashes. The most 'pixel art' of the cheap ones."],
+      retro: ["Retro (Endesga 32)", "Chunky, then every block quantised to the 32-colour Endesga palette with a 4×4 Bayer dither. Shows the vibe, but a stock palette drags the grass to khaki — see Retro (native)."],
+      retroNative: ["Retro (native)", "The same pass with a 32-colour palette clustered off the game's own frame plus the family accents (PALETTE_NATIVE): greens stay green, ambers stay amber. The dither strength is a dial (0.8 here; 0.4 reads calmer)."],
+      crt: ["CRT", "2×2 blocks, the last device row of every block darkened 35% (a scanline), a vignette, saturation 1.2, contrast 1.08. Arcade cabinet. No rim."],
+      tilt: ["Tilt (semi-vertical)", "Three cheap cues toward a three-quarter view with no new art: every standing thing throws its drop shadow 2.6× further, turret heads sit up off their pads by a tenth of their size, what stands is squashed to 90% height, and a wall's south edge grows a dark face half a cell tall over the floor below it (see the cliff view). Honest verdict: it reads as 'lit from above-left', not as 3/4 — a real semi-vertical look needs the sprites redrawn with a front (pads with a visible foot, bodies with a belly), and for rotating bodies that means eight-direction art per tier."],
+      inkedTilt: ["Inked + tilt", "Both at once, which is roughly what a Stardew / Forager-flavoured take on this game would be."],
+      chibi: ["Chibi set (hand-drawn)", "Hand-authored 16x20 sprites, one size for everything, drawn the way My Heroes and Clockmaker Oasis draw theirs: a big head with large eyes and a mouth, a small body with one colour block, one feature that says who it is (a horn, antlers, eye-bumps, bat ears, a fin), a dark outline, flat colours. Turrets are top-down tiles like the reference: a raised plate with a light top edge and a dark front strip, and the weapon seen from above on it, drawn pointing up and turned with the head in play — a cannon, a mortar, a flamethrower, a tesla orb, a water cannon, a crossbow, a rocket rack, a sprayer, by what the turret throws. One density everywhere, 16 art px a cell: an enemy is a cell wide, every turret is the same 16-px tile on one cell whatever its footprint, and the keep is composed from wall, tower and brazier tiles at 160 px. Props are a palm (a bigger one for two-cell trees), a bush, a rock. The sheet is docs/style-concepts/chibi-sheet.png. No facings yet beyond a mirror, and no walk cycle."],
+      vox: ["2.5D set (new assets)", "Low fidelity on purpose: 12 pixels a tile, so a 1x1 turret is a 12-pixel object and a runt a 12-pixel animal, big flat shapes in two tones with one dark outline. Turrets are everyday things rather than machinery: a cannon on a crate, a pot mortar, a tiki torch, a crystal on a stone, a puffball; sandbagged cannons, a firework rack, a totem, a water barrel, a bell, a beehive, a cauldron; a bonfire, a catapult, a fountain, a windmill, mushrooms; a fort tower, a lighthouse, a ballista, a carnivorous plant. Everything drawn from nothing as a 2.5D asset set (game/voxelArt.ts, game/voxelModels.ts): each turret head, plinth, unit body, the core and the props is a small voxel model projected at a three-quarter angle, so its top and its front both show — lit top, darker front, a dark foot line, a baked hue-dark outline — and turned in the ground plane for eight facings, which is how a rotating head or a walking body works in 2.5D. The units are chibi animals (round bodies, short legs, a horn, antlers, a frog's folded legs, a bat's wings). The floors, rock tops and water are new flat painters with lit-top/dark-foot marks; the rock masses get a strata face strip under their outline in the ground shader. The design-choice sheets below render the same set under three cameras."],
+      block: ["Block (re-pixelled art)", "Not a post pass: the art itself is regenerated in a new style (game/pixelStyle.ts, the block pixel style). Every unit, turret head, plate and prop is re-pixelled at two native px a pixel from its material layout, lit from the top-left with its shadow on the bottom-right, each material change bevelled, and a hue-dark rim baked round the silhouette. The floors, walls and water are new painters (chunky tufts, pebbles, chips, stepped swells), the rock masses carry a rim and an extruded face in the ground shader, and the EPX smoothing the sheet used to apply is off, so the stair-steps stay. The effects and shots are untouched."],
+    };
+    const VIEWS = { near: "near (zoom 12)", mid: "mid (zoom 7)", cliff: "cliff (zoom 7)", far: "far (zoom 3.5)" };
+    let style = "chibi", view = "near";
+    const $ = (id) => document.getElementById(id);
+    const src = (s, v) => `style-concepts/${s}-${v}.png`;
+    function render() {
+      $("shot").src = src(style, view);
+      $("note").innerHTML = `<b>${STYLES[style][0]}</b> — ${STYLES[style][1]}`;
+      for (const b of $("styles").querySelectorAll("button")) b.classList.toggle("on", b.dataset.k === style);
+      for (const b of $("views").querySelectorAll("button")) b.classList.toggle("on", b.dataset.k === view);
+      const g = $("grid");
+      if (!g.hidden) {
+        g.innerHTML = Object.keys(STYLES).map((s) => `<figure><img src="${src(s, view)}" alt="${s}" /><figcaption><b>${STYLES[s][0]}</b></figcaption></figure>`).join("");
+        hookZoom();
+      }
+    }
+    for (const k of Object.keys(STYLES)) { const b = document.createElement("button"); b.textContent = STYLES[k][0]; b.dataset.k = k; b.onclick = () => { style = k; render(); }; $("styles").appendChild(b); }
+    for (const k of Object.keys(VIEWS)) { const b = document.createElement("button"); b.textContent = VIEWS[k]; b.dataset.k = k; b.onclick = () => { view = k; render(); }; $("views").appendChild(b); }
+    $("compare").onclick = () => { const g = $("grid"); g.hidden = !g.hidden; $("stage").hidden = !g.hidden; $("compare").classList.toggle("on", !g.hidden); render(); };
+    function hookZoom() {
+      const z = $("zoom");
+      for (const img of document.querySelectorAll("img")) {
+        img.onmousemove = (e) => {
+          const r = img.getBoundingClientRect();
+          const fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
+          const k = 3 * (img.naturalWidth / r.width) * (r.width / img.naturalWidth); // 3x of the native pixels
+          const W = img.naturalWidth * 3, H = img.naturalHeight * 3;
+          z.style.display = "block";
+          z.style.backgroundImage = `url(${img.src})`;
+          z.style.backgroundSize = `${W}px ${H}px`;
+          z.style.backgroundPosition = `${-fx * W + 160}px ${-fy * H + 160}px`;
+          z.style.left = `${Math.min(e.clientX + 24, innerWidth - 340)}px`;
+          z.style.top = `${Math.min(e.clientY + 24, innerHeight - 340)}px`;
+        };
+        img.onmouseleave = () => { z.style.display = "none"; };
+      }
+    }
+    render();
+    hookZoom();
+  </script>
+</body>
+</html>

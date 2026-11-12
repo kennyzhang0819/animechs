@@ -121,8 +121,11 @@ export const HDR = {
    *  state packed two bits each (0 standing, 1 opened, 2 lost) (Sim.sites) */
   SITES_OPENED: 36,
   SITE_STATES: 38,
+  /** the hero's cooldowns left, in seconds (hero.ts) */
+  HERO_Q: 39,
+  HERO_W: 40,
 } as const;
-export const HEADER_LEN = 39;
+export const HEADER_LEN = 41;
 
 /** the sim's scalars, into its own header — after every step, and on reset */
 export function writeHeader(sim: Sim): void {
@@ -158,6 +161,8 @@ export function writeHeader(sim: Sim): void {
   h[HDR.RAZE_UP] = sim.razeUp();
   h[HDR.FAB_KILLED] = sim.fabKilled;
   h[HDR.FAB_TOTAL] = sim.fabTotal;
+  h[HDR.HERO_Q] = sim.heroCd[0];
+  h[HDR.HERO_W] = sim.heroCd[1];
   h[HDR.GARRISON_HELD] = sim.garrisonHeldMask();
   h[HDR.CONVOY_DONE] = sim.convoyDone;
   h[HDR.CONVOY_LOST] = sim.convoyLost;

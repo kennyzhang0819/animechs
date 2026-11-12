@@ -10,6 +10,11 @@ import {
   type WallKind,
 } from "./tiles";
 import { coreCanvas, FAMILY_SLOTS, familyKinds, PROP_KINDS, propCanvas } from "./propArt";
+import { blockInk, isBlock, isRestyled, isVox } from "./pixelStyle";
+import { basePlate, turretHead } from "./turretArt";
+import { FAMILY_OF, GUN_AMMO, PX_PER_CELL, UNIT_PIC, flipped, laid } from "./chibiArt";
+import { platePic, weaponPic } from "./turretTiles";
+import { paintCliffFace } from "./voxelModels";
 import { CONVOY_SIZE, FABRICATOR_KINDS, type UnitKind } from "./levels";
 import { ANIMAL_ART } from "./animalFlag";
 import { FOUNDRY_ART } from "./turretFlag";
@@ -1428,6 +1433,48 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   wormtail: { uv: WORM_CELLS.tail, sprite: UNIT_SPRITE * 3 },
 };
 
+/**
+ * THE 2.5D SET'S OWN CELLS (pixelStyle.ts isVox, docs/style-concepts.html):
+ * every turret head and every body of the six active lines in eight
+ * facings, stored at one px an art px (the quad doubles it), and the
+ * cliff's face strip. Declared only under that style, so the shipped
+ * sheet never pays for them.
+ */
+/** every chibi body is 16 x 20: a cell is 1.25 times taller than wide, the feet 0.9 of the way down */
+export const VOX_ASPECT = 1.25;
+export const VOX_ANCHOR = 0.9;
+/** ONE DENSITY: PX_PER_CELL art px a cell, drawn VOX_SCALE times over — a 16-wide body and a turret tile are both VOX_SCALE cells wide, whatever the hitbox or footprint; the ground stays at its own scale */
+export const VOX_SCALE = 2;
+export const VOX_BODY_PX = (16 / PX_PER_CELL) * 20 * VOX_SCALE;
+const FACINGS = 8;
+/** four px a sprite px on the sheet, so the quad never has to magnify past the sheet's pitch */
+const CHIBI_K = 4;
+/** the turret's plate (static) and its weapon (turned with the head), each at the footprint's own size */
+export const VOX_PLATE: readonly (UVRect | null)[] = [1].map((s) => (isVox() ? reserve(`vox-plate-${s}`, 16 * s * CHIBI_K, 16 * s * CHIBI_K, { upright: true }) : null));
+export const VOX_WEAPON: Partial<Record<TowerKind, UVRect>> = {};
+export const VOX_HEAD: Partial<Record<TowerKind, readonly UVRect[]>> = {};
+export const VOX_BODY: Partial<Record<UnitKind, readonly UVRect[]>> = {};
+export const UV_VOX_CLIFF: UVRect | null = isVox() ? flat("vox-cliff", 64, 32) : null;
+if (isVox()) {
+  const byAmmo = new Map<string, UVRect>();
+  for (const kind of Object.keys(GUN_AMMO) as TowerKind[]) {
+    // one size for every turret, the enemies' own: the 16 px tile
+    const key = `${GUN_AMMO[kind]}-1`, n = 16 * CHIBI_K;
+    let uv = byAmmo.get(key);
+    if (!uv) { uv = reserve(`vox-weapon-${key}`, n, n, { upright: true }); byAmmo.set(key, uv); }
+    VOX_WEAPON[kind] = uv;
+  }
+  for (const kind of Object.keys(UNIT_ART) as UnitKind[]) {
+    const fam = FAMILY_OF[kind.replace(/\d+$/, "")];
+    if (!fam) continue;
+    // the body at VPT voxels a tile: the quad scales the cell's px up
+    // the sprite and its mirror: facings that look west take the mirror
+    const east = reserve(`vox-body-${kind}-e`, 16 * CHIBI_K, 20 * CHIBI_K, { upright: true });
+    const west = reserve(`vox-body-${kind}-w`, 16 * CHIBI_K, 20 * CHIBI_K, { upright: true });
+    VOX_BODY[kind] = [east, east, east, west, west, west, east, east];
+  }
+}
+
 // Mindustry world units → px (CELL / 8, see constants.ts)
 const MU = 2.5;
 
@@ -2796,6 +2843,8 @@ function antialiased(src: HTMLImageElement | HTMLCanvasElement): HTMLCanvasEleme
   if (!cc) throw new Error("2d context unavailable for antialias");
   cc.imageSmoothingEnabled = false;
   cc.drawImage(src, 0, 0);
+  // the block and 2.5D styles are stair-stepped on purpose; EPX would round them
+  if (isRestyled()) return cv;
   const id = cc.getImageData(0, 0, w, h);
   const d = id.data;
   // rgba packed into int32 so the EPX equality tests are single compares
@@ -3164,6 +3213,37 @@ function clearCell(sheet: Sheet, uv: UVRect): void {
  * it. It packs either way, which is also why it has no silhouette and no
  * team cell to requeue — see THE CROSSER'S CELLS.
  */
+/** the 2.5D set: every head and body turned to each facing, and the cliff face */
+function packVoxArt(sheet: Sheet, fresh: (u: UVRect) => boolean): void {
+  VOX_PLATE.forEach((uv, i) => {
+    if (!uv || !fresh(uv)) return;
+    const n = 16 * (i + 1) * CHIBI_K;
+    drawCell(sheet, uv, toCanvasRect(laid(platePic(i + 1), CHIBI_K, n, n, 1), n, n));
+  });
+  const done = new Set<UVRect>();
+  for (const kind of Object.keys(VOX_WEAPON) as TowerKind[]) {
+    const uv = VOX_WEAPON[kind]!;
+    if (done.has(uv) || !fresh(uv)) continue;
+    done.add(uv);
+    const n = 16 * CHIBI_K;
+    drawCell(sheet, uv, toCanvasRect(laid(weaponPic(GUN_AMMO[kind], 1), CHIBI_K, n, n, 1), n, n));
+  }
+  for (const kind of Object.keys(VOX_BODY) as UnitKind[]) {
+    const fam = FAMILY_OF[kind.replace(/\d+$/, "")]!;
+    const pic = UNIT_PIC[fam];
+    const [east, , , west] = VOX_BODY[kind]!;
+    for (const [uv, p] of [[east, pic], [west, flipped(pic)]] as const) {
+      if (!fresh(uv)) continue;
+      const c = cellOf(uv);
+      drawCell(sheet, uv, toCanvasRect(laid(p, CHIBI_K, c.w, c.h, VOX_ANCHOR), c.w, c.h));
+    }
+  }
+  if (UV_VOX_CLIFF && fresh(UV_VOX_CLIFF)) {
+    const f = paintCliffFace("#8c8278");
+    drawCell(sheet, UV_VOX_CLIFF, toCanvasRect(f.px, f.w, f.h));
+  }
+}
+
 function packWormArt(sheet: Sheet, fresh: (u: UVRect) => boolean): void {
   const pack = (u: UVRect, art: () => Art): void => {
     if (!fresh(u)) return;
@@ -3428,7 +3508,13 @@ function deriveUnits(): void {
     const line = lineOf(kind), seen = new Set<unknown>();
     for (const table of [UNIT_ART[kind], MECH_ART[kind], LEG_ART[kind], FLYER_PARTS[kind], SEGMENT_ART[kind]]) walk(table, line, seen);
   }
-  for (const [cell, units] of touched) cell.units = units;
+  // under the 2.5D set the lines' stock cells are never drawn, so they go
+  // to a line no run asks for and the facings take their room instead
+  for (const [cell, units] of touched) cell.units = isVox() && units ? new Set(["stock-unused"]) : units;
+  for (const kind of Object.keys(VOX_BODY) as UnitKind[]) {
+    const line = lineOf(kind);
+    if (line) for (const uv of VOX_BODY[kind]!) cellOf(uv).units = new Set([line]);
+  }
 }
 /** a kind's team cell, once its size is known; the same cell on every sheet after */
 const TEAM_CELLS = new Map<UnitKind, Cell>();
@@ -3862,42 +3948,53 @@ async function packInto(sheet: Sheet, units: ReadonlySet<string>, shared: boolea
   // kind without one (the fixers) keeps its stock sprite
   // the sheet's plates come DARKENED (foundryArt.ts), so the BASE_DARK
   // multiply that used to happen here is in the file already
-  const plateArt = (foundry: HTMLImageElement, stock: HTMLImageElement): HTMLCanvasElement =>
-    antialiased(FOUNDRY_ART ? foundry : stock);
-  const headArt = (key: FoundryKey, stock: () => HTMLCanvasElement): HTMLCanvasElement =>
-    FOUNDRY_ART ? outlinedBlock(img[key]) : stock();
-  draw(UV_TOWER_BASE, plateArt(img.foundryBase2, img.towerBase));
-  draw(UV_TOWER_BASE1, plateArt(img.foundryBase1, img.towerBase1));
-  draw(UV_TOWER_BASE3, plateArt(img.foundryBase3, img.towerBase3));
-  draw(UV_TOWER_BASE4, plateArt(img.foundryBase4, img.towerBase4));
-  draw(UV_TOWER_BASE6, plateArt(img.foundryBase6, img.towerBase4));
-  draw(UV_TURRET, headArt("foundryAutocannon", () => outlinedBlock(img.autocannonPreview)));
-  draw(UV_AIRBURST, headArt("foundryAirburst", () => outlinedBlock(img.airburstPreview)));
-  draw(UV_LOBBER, headArt("foundryLobber", () => outlinedBlock(img.lobber)));
-  draw(UV_CLEAVER, headArt("foundryCleaver", () => outlinedBlock(img.cleaver)));
-  draw(UV_TORCH, headArt("foundryTorch", () => outlinedBlock(img.torch)));
-  draw(UV_TACKER, headArt("foundryTacker", () => outlinedBlock(img.tackerPreview)));
-  draw(UV_COIL, headArt("foundryCoil", () => outlinedBlock(img.coil)));
-  draw(UV_PIERCER, headArt("foundryPiercer", () => outlinedBlock(img.piercer)));
-  draw(UV_TETHER, headArt("foundryTether", () => outlinedBlock(img.tether)));
-  draw(UV_BARRAGE, headArt("foundryBarrage", () => outlinedBlock(img.barrage)));
-  draw(UV_HIVE, headArt("foundryHive", () => outlinedBlock(img.hive)));
+  // the block style (pixelStyle.ts) draws plates and heads from the code
+  // rather than the shipped PNGs, since the style is in the engine's finish
+  const plateArt = (foundry: HTMLImageElement, stock: HTMLImageElement, size: number): HTMLCanvasElement => {
+    if (isVox()) {
+      // the tile carries its own plate at the footprint's size: nothing under it
+      const n = size * 64;
+      return toCanvasRect(new Array<string | null>(n * n).fill(null), n, n);
+    }
+    if (isBlock()) { const a = basePlate(size); return toCanvasRect(blockInk(a.px, a.n, a.n, { noOutline: true }), a.n, a.n); }
+    return antialiased(FOUNDRY_ART ? foundry : stock);
+  };
+  const headArt = (key: FoundryKey, stock: () => HTMLCanvasElement, kind?: TowerKind): HTMLCanvasElement => {
+    if (isBlock() && kind) { const a = turretHead(kind); if (a) return toCanvas(a); }
+    return FOUNDRY_ART ? outlinedBlock(img[key]) : stock();
+  };
+  draw(UV_TOWER_BASE, plateArt(img.foundryBase2, img.towerBase, 2));
+  draw(UV_TOWER_BASE1, plateArt(img.foundryBase1, img.towerBase1, 1));
+  draw(UV_TOWER_BASE3, plateArt(img.foundryBase3, img.towerBase3, 3));
+  draw(UV_TOWER_BASE4, plateArt(img.foundryBase4, img.towerBase4, 4));
+  draw(UV_TOWER_BASE6, plateArt(img.foundryBase6, img.towerBase4, 6));
+  draw(UV_TURRET, headArt("foundryAutocannon", () => outlinedBlock(img.autocannonPreview), "autocannon"));
+  draw(UV_AIRBURST, headArt("foundryAirburst", () => outlinedBlock(img.airburstPreview), "airburst"));
+  draw(UV_LOBBER, headArt("foundryLobber", () => outlinedBlock(img.lobber), "lobber"));
+  draw(UV_CLEAVER, headArt("foundryCleaver", () => outlinedBlock(img.cleaver), "cleaver"));
+  draw(UV_TORCH, headArt("foundryTorch", () => outlinedBlock(img.torch), "torch"));
+  draw(UV_TACKER, headArt("foundryTacker", () => outlinedBlock(img.tackerPreview), "tacker"));
+  draw(UV_COIL, headArt("foundryCoil", () => outlinedBlock(img.coil), "coil"));
+  draw(UV_PIERCER, headArt("foundryPiercer", () => outlinedBlock(img.piercer), "piercer"));
+  draw(UV_TETHER, headArt("foundryTether", () => outlinedBlock(img.tether), "tether"));
+  draw(UV_BARRAGE, headArt("foundryBarrage", () => outlinedBlock(img.barrage), "barrage"));
+  draw(UV_HIVE, headArt("foundryHive", () => outlinedBlock(img.hive), "hive"));
   // whirl's own art is the bare head; its three barrels are separate
   // sprites the preview already has assembled underneath
-  draw(UV_WHIRL, headArt("foundryWhirl", () => outlinedBlock(img.whirlPreview)));
-  draw(UV_REPEATER, headArt("foundryRepeater", () => outlinedBlock(img.repeater)));
-  draw(UV_FURNACE, headArt("foundryFurnace", () => outlinedBlock(img.furnace)));
-  draw(UV_RAILHEAD, headArt("foundryRailhead", () => outlinedBlock(img.railhead)));
+  draw(UV_WHIRL, headArt("foundryWhirl", () => outlinedBlock(img.whirlPreview), "whirl"));
+  draw(UV_REPEATER, headArt("foundryRepeater", () => outlinedBlock(img.repeater), "repeater"));
+  draw(UV_FURNACE, headArt("foundryFurnace", () => outlinedBlock(img.furnace), "furnace"));
+  draw(UV_RAILHEAD, headArt("foundryRailhead", () => outlinedBlock(img.railhead), "railhead"));
   // the toxin line has no stock block behind it: with the flag off the four
   // borrow the head their icon does (towerIcons.ts)
-  draw(UV_DUSTER, headArt("foundryDuster", () => outlinedBlock(img.torch)));
-  draw(UV_BLIGHTER, headArt("foundryBlighter", () => outlinedBlock(img.lobber)));
-  draw(UV_DRIFTER, headArt("foundryDrifter", () => outlinedBlock(img.deluge)));
-  draw(UV_STINGER, headArt("foundryStinger", () => outlinedBlock(img.autocannonPreview)));
+  draw(UV_DUSTER, headArt("foundryDuster", () => outlinedBlock(img.torch), "duster"));
+  draw(UV_BLIGHTER, headArt("foundryBlighter", () => outlinedBlock(img.lobber), "blighter"));
+  draw(UV_DRIFTER, headArt("foundryDrifter", () => outlinedBlock(img.deluge), "drifter"));
+  draw(UV_STINGER, headArt("foundryStinger", () => outlinedBlock(img.autocannonPreview), "stinger"));
   // the liquid turrets, composited flat (see liquidTurret)
   // (a Foundry tank carries its water window in the drawing)
-  draw(UV_DOUSER, headArt("foundryDouser", () => antialiased(liquidTurret(img.douser, img.douserLiquid, img.douserTop))));
-  draw(UV_DELUGE, headArt("foundryDeluge", () => antialiased(liquidTurret(img.deluge, img.delugeLiquid, img.delugeTop))));
+  draw(UV_DOUSER, headArt("foundryDouser", () => antialiased(liquidTurret(img.douser, img.douserLiquid, img.douserTop)), "douser"));
+  draw(UV_DELUGE, headArt("foundryDeluge", () => antialiased(liquidTurret(img.deluge, img.delugeLiquid, img.delugeTop)), "deluge"));
   // tether's beam: the end glow and the line, each the full source
   // centred on the cell that hugs its opaque part (see the UV note), the
   // line turned so its length runs along the +x axis pushSeg stretches
@@ -3922,6 +4019,7 @@ async function packInto(sheet: Sheet, units: ReadonlySet<string>, shared: boolea
   // ...and the mission's crosser, which is nobody's trial and is packed
   // whichever way the switch is thrown (see packWormArt)
   packWormArt(sheet, fresh);
+  if (isVox()) packVoxArt(sheet, fresh);
 
   // last, because it is the only thing on the sheet whose cells are cut
   // to art that had to be drawn first: every body's team cell

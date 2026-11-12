@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Animechs style shots</title>
+  <style>
+    html, body { margin: 0; background: #000; overflow: hidden; }
+    canvas.field { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+    #mm { position: fixed; right: 8px; bottom: 8px; width: 256px; height: 256px; display: none; }
+    #log { position: fixed; left: 8px; top: 8px; color: #9f9; font: 12px monospace; white-space: pre; pointer-events: none; display: none; }
+  </style>
+</head>
+<body>
+  <canvas id="gl" class="field"></canvas>
+  <canvas id="ui" class="field"></canvas>
+  <canvas id="mm"></canvas>
+  <div id="log"></div>
+  <script>globalThis.__pixelStyle = new URLSearchParams(location.search).get("pixel") || "foundry";</script>
+  <script type="module" src="/style.js"></script>
+</body>
+</html>

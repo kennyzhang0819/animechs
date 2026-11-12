@@ -275,6 +275,17 @@
         "5233"
       ],
       "port": 5233
+    },
+    {
+      "name": "docs-6100",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "serve",
+        "docs",
+        "-l",
+        "6100"
+      ],
+      "port": 6100
     }
   ]
 }

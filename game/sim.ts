@@ -110,6 +110,13 @@ const TOWERS = TOWERS_IMPORT;
 const W = W_IMPORT;
 const WALL_R = WALL_R_IMPORT;
 import { FlowField, type Footprint, type Vec2 } from "./flowfield";
+import {
+  HERO_MODE,
+  HERO_CORE_HP_MUL,
+  HERO_FIRE_RATE, HERO_FIRE_DMG, HERO_FIRE_RADIUS, HERO_FIRE_JITTER,
+  HERO_Q_CD, HERO_Q_SHELLS, HERO_Q_DMG, HERO_Q_RADIUS, HERO_Q_SPREAD, HERO_Q_SALVO,
+  HERO_W_CD, HERO_W_DMG, HERO_W_LEN, HERO_W_HALF, HERO_W_SHOVE,
+} from "./hero";
 
 type PostRoute = {
   gx0: number; gy0: number; w: number; h: number;
@@ -326,6 +333,7 @@ import {
   EXPLOSION_STYLES,
   TOWER_LASER_STYLE,
   LASER_STYLES,
+  HERO_LASER,
   type StarSpec,
   type UnitWeapon,
 } from "./weapons";
@@ -1956,6 +1964,13 @@ export class Sim {
    * a body that reaches the core stays there and chews on it.
    */
   core!: Core;
+  /** the hero's cooldowns left, Q then W (hero.ts) */
+  readonly heroCd = [0, 0];
+  private heroAimX = 0;
+  private heroAimY = 0;
+  private heroFiring = false;
+  private heroFireAcc = 0;
+  private readonly heroShells: { x: number; y: number; at: number }[] = [];
   /**
    * THE MISSION'S CLOCK, in seconds of run time: a survive mission is won
    * the moment `time` reaches it. 0 on every mission that is not kept to a
@@ -2660,6 +2675,10 @@ export class Sim {
     this.n = 0;
     this.time = 0;
     this.kills = 0;
+    this.heroCd[0] = 0;
+    this.heroCd[1] = 0;
+    this.heroShells.length = 0;
+    this.heroFiring = false;
     // a new board owes the bench nothing (setBench)
     this.benchTowerRange = null;
     this.benchUnitRange = null;
@@ -2896,8 +2915,8 @@ export class Sim {
       size: b.size,
       x: (b.x + b.size / 2) * CELL,
       y: (b.y + b.size / 2) * CELL,
-      hp: CORE_HP,
-      hpMax: CORE_HP,
+      hp: HERO_MODE ? CORE_HP * HERO_CORE_HP_MUL : CORE_HP,
+      hpMax: HERO_MODE ? CORE_HP * HERO_CORE_HP_MUL : CORE_HP,
     };
     this.goalX = this.core.x;
     this.goalY = this.core.y;
@@ -4830,6 +4849,7 @@ export class Sim {
     this.updatePhysics();
     this.mark("physics");
     this.updateUnits(dt);
+    this.updateHero(dt);
     // ...and the escort's cart, on the same beat and for the same reason
     // the crossers ride updateUnits: it is a body on a road, and the rot
     // burning on it has to tick whether or not it is rolling
@@ -4915,7 +4935,7 @@ export class Sim {
     // the bodies stand where they stand until the next tick: resolve the
     // pile now, on its own thread, and take the answer at the next tick's
     // physics phase (physport.ts)
-    this.physPort?.kick(this.n, this.tick);
+    if (!HERO_MODE) this.physPort?.kick(this.n, this.tick);
     // THE STEP AS ONE NUMBER, closed after the last phase. It is not the
     // sum of the phases — the marks leave the gaps between them out, and
     // a total that quietly differed from its own parts would be the first
@@ -9381,6 +9401,7 @@ export class Sim {
    * slingshots units forward.
    */
   private spawnSpotFree(x: number, y: number, r: number, fly: boolean, span: number): boolean {
+    if (HERO_MODE) return true;
     const f = fly ? 1 : 0;
     const hx = clamp((x / HC) | 0, 0, HCOLS - 1);
     const hy = clamp((y / HC) | 0, 0, HROWS - 1);
@@ -11342,6 +11363,12 @@ export class Sim {
     // on the shove's own thread the answer for the tick just ended is
     // waiting (or is not, and this tick goes without); in this thread the
     // kernel runs here over the same arrays
+    // the hero prototype's swarm overlaps: no crowd shove at all (hero.ts)
+    if (HERO_MODE) {
+      this.ushx.fill(0, 0, this.n);
+      this.ushy.fill(0, 0, this.n);
+      return;
+    }
     this.bodyIters += this.n;
     const port = this.physPort;
     if (port && port.take(this.tick, this.n, this.uid, this.physOut)) return;
@@ -15495,6 +15522,82 @@ export class Sim {
    * either splashes or applies a status and never both, so nothing that
    * shipped before this changes behaviour by one point.
    */
+  // ---------- the hero (hero.ts) ----------
+
+  heroAim(x: number, y: number, firing: boolean): void {
+    this.heroAimX = x;
+    this.heroAimY = y;
+    this.heroFiring = firing;
+  }
+
+  heroCast(slot: number, x: number, y: number): void {
+    if (this.core.hp <= 0 || this.heroCd[slot] > 0) return;
+    if (slot === 0) {
+      this.heroCd[0] = HERO_Q_CD;
+      for (let k = 0; k < HERO_Q_SHELLS; k++) {
+        const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * HERO_Q_SPREAD;
+        this.heroShells.push({
+          x: x + Math.cos(a) * d,
+          y: y + Math.sin(a) * d,
+          at: this.time + (k / HERO_Q_SHELLS) * HERO_Q_SALVO,
+        });
+      }
+    } else if (slot === 1) {
+      this.heroCd[1] = HERO_W_CD;
+      this.heroLance(x, y);
+    }
+  }
+
+  private heroShell(x: number, y: number, dmg: number, radius: number): void {
+    this.splash(x, y, radius, dmg, true, true);
+    this.pushFx(x, y, fxLife(FxKind.BlastExplosion), FxKind.BlastExplosion, 0, radius, (Math.random() * 0x7fffffff) | 0, 0, true);
+    if (radius >= HERO_Q_RADIUS) this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, radius, 0, 0, true);
+  }
+
+  private heroLance(tx: number, ty: number): void {
+    const ox = this.core.x, oy = this.core.y;
+    const a = Math.atan2(ty - oy, tx - ox);
+    const dx = Math.cos(a), dy = Math.sin(a);
+    const { upx, upy, uhp, urad } = this;
+    // descending: a kill swap-removes the last body into this slot, and the
+    // last body has already been looked at
+    for (let i = this.n - 1; i >= 0; i--) {
+      if (uhp[i] <= 0) continue;
+      const rx = upx[i] - ox, ry = upy[i] - oy;
+      const t = rx * dx + ry * dy;
+      if (t < 0 || t > HERO_W_LEN) continue;
+      const side = rx * dy - ry * dx;
+      if (Math.abs(side) > HERO_W_HALF + urad[i]) continue;
+      const push = side < 0 ? -HERO_W_SHOVE : HERO_W_SHOVE;
+      upx[i] = clamp(upx[i] + dy * push, 0, W);
+      upy[i] = clamp(upy[i] - dx * push, 0, H);
+      this.damageUnit(i, HERO_W_DMG, true);
+    }
+    this.pushFx(ox, oy, HERO_LASER.lifetime, FxKind.Laser, a, HERO_W_LEN, 0, HERO_LASER.id, true);
+  }
+
+  private updateHero(dt: number): void {
+    if (!HERO_MODE) return;
+    for (let k = 0; k < 2; k++) if (this.heroCd[k] > 0) this.heroCd[k] = Math.max(0, this.heroCd[k] - dt);
+    const shells = this.heroShells;
+    for (let k = shells.length - 1; k >= 0; k--) {
+      if (shells[k].at > this.time) continue;
+      this.heroShell(shells[k].x, shells[k].y, HERO_Q_DMG, HERO_Q_RADIUS);
+      shells[k] = shells[shells.length - 1];
+      shells.pop();
+    }
+    if (!this.heroFiring || this.core.hp <= 0) {
+      this.heroFireAcc = 0;
+      return;
+    }
+    this.heroFireAcc = Math.min(this.heroFireAcc + dt * HERO_FIRE_RATE, 2);
+    while (this.heroFireAcc >= 1) {
+      this.heroFireAcc--;
+      const a = Math.random() * Math.PI * 2, d = Math.random() * HERO_FIRE_JITTER;
+      this.heroShell(this.heroAimX + Math.cos(a) * d, this.heroAimY + Math.sin(a) * d, HERO_FIRE_DMG, HERO_FIRE_RADIUS);
+    }
+  }
+
   private splash(
     x: number,
     y: number,

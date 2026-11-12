@@ -13,6 +13,7 @@ import { repaintThumbCells,
   SPAWN_STYLE,
 } from "./maps";
 import { generateRandomMap, rollMapSeed } from "./mapgen";
+import { HERO_MODE, HERO_Q_CD, HERO_W_CD, HERO_FIRE_RADIUS, corridorMap } from "./hero";
 import { garrisonsFor, postsFor, roadAt, roadsFor, siegeFor } from "./missions";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { towerBaseIcon, towerGhostIcon } from "./towerIcons";
@@ -1129,6 +1130,10 @@ export class Game {
 
   // camera: zoom 1 fills the viewport; (tlx, tly) is the visible top-left in world px
   private zoom = 1;
+  /** the hero's aim in world px, and whether the button is down (hero.ts) */
+  private aimX = 0;
+  private aimY = 0;
+  private heroFiring = false;
   private tlx = 0;
   private tly = 0;
   private panning = false;
@@ -1463,6 +1468,13 @@ export class Game {
       this.paused = !this.paused;
       return;
     }
+    if (HERO_MODE && !e.repeat && (e.code === "KeyQ" || e.code === "KeyW")) {
+      if (this.menuOpen || this.world.lost) return;
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea, [contenteditable]")) return;
+      e.preventDefault();
+      this.host.heroCast(e.code === "KeyQ" ? 0 : 1, this.aimX, this.aimY);
+      return;
+    }
     if (!PAN_KEYS[e.code]) return;
     // ...but not while a field holds the caret. The arrows belong to what
     // is being typed there — the sandbox's wave field is a number input,
@@ -1577,6 +1589,8 @@ export class Game {
         this.rulerFrom = p;
         this.ruler = e.shiftKey;
         if (!this.ruler) this.buildTo(p, false);
+      } else if (HERO_MODE) {
+        this.heroFiring = true;
       } else {
         // normal cursor: a press starts a marquee and decides nothing.
         // What it meant is settled on release (onMouseUp)
@@ -1624,6 +1638,7 @@ export class Game {
   private readonly onMouseUp = (e: MouseEvent): void => {
     if (isTouch(e) && this.touchUp(e)) return;
     const wasBuilding = this.building;
+    this.heroFiring = false;
     this.selling = false;
     this.panning = false;
     this.building = false;
@@ -1665,6 +1680,8 @@ export class Game {
       this.clampCamera();
     }
     const p = this.mouseWorld(e);
+    this.aimX = p.x;
+    this.aimY = p.y;
     if (this.selecting) {
       this.selTo = p;
       this.selDragPx = Math.hypot(e.clientX - this.selFromScreen.x, e.clientY - this.selFromScreen.y);
@@ -1696,6 +1713,7 @@ export class Game {
     this.panning = false;
     this.building = false;
     this.selling = false;
+    this.heroFiring = false;
     // a marquee whose release happened off the canvas is abandoned rather
     // than applied to wherever the cursor left
     this.selecting = false;
@@ -2428,11 +2446,14 @@ export class Game {
     if (mapId === RANDOM_MAP_ID) {
       const seed = spec.mapSeed ?? rollMapSeed();
       const t0 = performance.now();
-      const gen = generateRandomMap(seed);
-      setGeneratedMap(gen.doc);
-      console.info(
-        `random map "${gen.doc.name}" from seed ${gen.seed.toString(16)} in ${Math.round(performance.now() - t0)}ms (${gen.tries} ${gen.tries === 1 ? "try" : "tries"})`,
-      );
+      if (HERO_MODE) setGeneratedMap(corridorMap(seed));
+      else {
+        const gen = generateRandomMap(seed);
+        setGeneratedMap(gen.doc);
+        console.info(
+          `random map "${gen.doc.name}" from seed ${gen.seed.toString(16)} in ${Math.round(performance.now() - t0)}ms (${gen.tries} ${gen.tries === 1 ? "try" : "tries"})`,
+        );
+      }
     }
     await Promise.all([
       OFFICIAL_MAPS.length === 0 ? loadOfficialMaps() : refreshMap(mapId),
@@ -3173,6 +3194,13 @@ export class Game {
     this.worldH = t.rows * CELL;
     this.worldW = t.cols * CELL;
     this.resize();
+    // the corridor opens at cover, from its west end: the mech on the left,
+    // the whole height on screen, the tide coming in from the right
+    if (HERO_MODE) {
+      this.zoom = clamp(1, this.minZoom(), ZOOM_MAX);
+      this.lookAt(this.visW() / 2, this.worldH / 2);
+      return;
+    }
     this.zoom = clamp(START_ZOOM, this.minZoom(), ZOOM_MAX);
     // the core stands where the map's base does (Sim.reset)
     const b = t.base;
@@ -3283,6 +3311,7 @@ export class Game {
     // real time becomes fixed steps is the host's — in this thread it
     // steps here, on a worker it only hears whether to be moving
     this.host.advance(dt, !this.paused && !this.menuOpen);
+    if (HERO_MODE) this.host.heroAim(this.aimX, this.aimY, this.heroFiring && !this.paused && !this.menuOpen);
     const simMs = performance.now() - t0;
     this.offerSites();
 
@@ -4701,6 +4730,67 @@ export class Game {
           : this.heldCells({ x: this.hoverX, y: this.hoverY });
       this.drawGhosts(view, c, cells, this.buildKind);
     }
+    if (HERO_MODE) this.drawHero(view, c);
+  }
+
+  private drawHero(view: SimView, c: CanvasRenderingContext2D): void {
+    const core = view.core;
+    const ax = this.aimX, ay = this.aimY;
+    const a = Math.atan2(ay - core.y, ax - core.x);
+    const s = this.scale * this.zoom;
+    const r = core.size * CELL * 0.22;
+    c.save();
+    c.translate(core.x, core.y);
+    c.rotate(a);
+    c.fillStyle = "#2a2d33";
+    c.strokeStyle = "#ffd37f";
+    c.lineWidth = Math.max(2 / s, 4);
+    c.beginPath();
+    c.rect(r * 0.3, -r * 0.42, r * 2.6, r * 0.84);
+    c.fill();
+    c.stroke();
+    c.beginPath();
+    c.arc(0, 0, r, 0, Math.PI * 2);
+    c.fill();
+    c.stroke();
+    c.restore();
+    c.strokeStyle = this.heroFiring ? "rgba(255,120,80,0.95)" : "rgba(255,211,127,0.85)";
+    c.lineWidth = Math.max(2 / s, 3);
+    c.beginPath();
+    c.arc(ax, ay, HERO_FIRE_RADIUS, 0, Math.PI * 2);
+    c.stroke();
+    const g = HERO_FIRE_RADIUS * 0.5;
+    c.beginPath();
+    c.moveTo(ax - g, ay);
+    c.lineTo(ax + g, ay);
+    c.moveTo(ax, ay - g);
+    c.lineTo(ax, ay + g);
+    c.stroke();
+    // the skill chips, in screen space
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    const cw = this.uiCanvas.width, ch = this.uiCanvas.height;
+    const box = Math.round(ch * 0.07), gap = Math.round(box * 0.25);
+    const x0 = Math.round(cw / 2 - box - gap / 2), y0 = ch - box - Math.round(ch * 0.04);
+    const chips: [string, number, number][] = [
+      ["Q", this.world.heroQ, HERO_Q_CD],
+      ["W", this.world.heroW, HERO_W_CD],
+    ];
+    chips.forEach(([key, left, max], k) => {
+      const x = x0 + k * (box + gap);
+      c.fillStyle = "rgba(10,12,16,0.8)";
+      c.fillRect(x, y0, box, box);
+      const f = max > 0 ? 1 - left / max : 1;
+      c.fillStyle = left > 0 ? "rgba(255,211,127,0.35)" : "rgba(255,211,127,0.9)";
+      c.fillRect(x, y0 + box * (1 - f), box, box * f);
+      c.strokeStyle = "rgba(255,211,127,0.9)";
+      c.lineWidth = 2;
+      c.strokeRect(x + 1, y0 + 1, box - 2, box - 2);
+      c.fillStyle = left > 0 ? "#ffd37f" : "#15171c";
+      c.font = `bold ${Math.round(box * 0.5)}px sans-serif`;
+      c.textAlign = "center";
+      c.textBaseline = "middle";
+      c.fillText(left > 0 ? left.toFixed(1) : key, x + box / 2, y0 + box / 2);
+    });
   }
 
   /**

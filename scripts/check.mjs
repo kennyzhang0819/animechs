@@ -661,7 +661,7 @@ try {
   //    a post would pass this stage without the script ever having been
   //    asked for anything. What it wants is a body walking at the core.
   const walker = () => {
-    for (let i = 0; i < sim.n; i++) if (sim.ugar[i] === 0) return i;
+    for (let i = 0; i < sim.n; i++) if (sim.ugar[i] === 0 && sim.ufly[i] === 0 && sim.unav[i] === 0) return i;
     return -1;
   };
   const FIRST_WAVE_BY = L.WAVE_GAP_OPENING + L.WAVE_RELEASE_SECONDS + 10;
@@ -674,7 +674,9 @@ try {
   // 2. the road one of them is on, cell by cell, down the gradient
   let placed = 0;
   if (first >= 0) {
-    const from = Math.round(sim.upy[first] / CELL) * COLS + Math.round(sim.upx[first] / CELL);
+    // the cell the body is IN: a body on the rim rounds to a row off the grid
+    const cellOf = (v, max) => Math.min(max - 1, Math.max(0, Math.floor(v / CELL)));
+    const from = cellOf(sim.upy[first], ROWS) * COLS + cellOf(sim.upx[first], COLS);
     const route = roadToCore(sim, from);
     if (route.length < 2) simProblems.push("no route from a live body to the core");
 
